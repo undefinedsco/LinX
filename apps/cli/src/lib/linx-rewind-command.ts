@@ -5,6 +5,7 @@ import {
   setLinxInteractiveAutoModeEnabled,
 } from './linx-interactive-shell-state.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { getLinxPodMirrorForRuntime } from './linx-pod-mirror-runtime-host.js'
 import {
   assertLinxRewindUserEntryTarget,
@@ -22,7 +23,7 @@ export async function handleInteractiveRewindSelector(interactive: any, runtime:
   const session = resolveInteractiveSession(interactive, runtime)
   if (!hasLinxSessionHistory({ interactive, runtime })) {
     showLinxInteractiveError(interactive, 'Cannot rewind: no active LinX session history.')
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, null)
     return
   }
 
@@ -33,8 +34,7 @@ export async function handleInteractiveRewindSelector(interactive: any, runtime:
 
   const userMessages = collectLinxRewindUserMessages({ interactive, runtime })
   if (userMessages.length === 0) {
-    interactive.showStatus?.('Nothing to rewind: no user turns in the active branch.')
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, 'Nothing to rewind: no user turns in the active branch.')
     return
   }
 
@@ -55,8 +55,7 @@ export async function handleInteractiveRewindSelector(interactive: any, runtime:
           await syncRewindProjection(interactive, runtime, result)
           const target = describeLinxRewindTarget(result.targetLeafId, result.cleanResult)
           const suffix = formatRemainingMessageSuffix(result.remainingMessages)
-          interactive.showStatus?.(`Rewound to before selected message at ${target}.${suffix}`)
-          interactive.ui?.requestRender?.()
+          showLinxInteractiveStatus(interactive, `Rewound to before selected message at ${target}.${suffix}`)
           done()
         } catch (error) {
           done()
@@ -65,7 +64,7 @@ export async function handleInteractiveRewindSelector(interactive: any, runtime:
       },
       () => {
         done()
-        interactive.ui?.requestRender?.()
+        showLinxInteractiveStatus(interactive, null)
       },
       initialSelectedId,
     )
@@ -79,15 +78,14 @@ export async function handleInteractiveRewindTurnsCommand(
   turns: number,
 ): Promise<void> {
   if (!Number.isSafeInteger(turns) || turns <= 0) {
-    interactive.showStatus?.('Usage: /rewind [turns] where turns is a positive integer.')
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, 'Usage: /rewind [turns] where turns is a positive integer.')
     return
   }
 
   const session = resolveInteractiveSession(interactive, runtime)
   if (!hasLinxSessionHistory({ interactive, runtime })) {
     showLinxInteractiveError(interactive, 'Cannot rewind: no active LinX session history.')
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, null)
     return
   }
 
@@ -96,8 +94,7 @@ export async function handleInteractiveRewindTurnsCommand(
 
   const result = rewindLinxSessionHistoryByTurns({ interactive, runtime }, turns)
   if (!result || result.rewound === 0) {
-    interactive.showStatus?.('Nothing to rewind: no user turns in the active branch.')
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, 'Nothing to rewind: no user turns in the active branch.')
     return
   }
 
@@ -105,8 +102,7 @@ export async function handleInteractiveRewindTurnsCommand(
   await syncRewindProjection(interactive, runtime, result)
   const target = describeLinxRewindTarget(result.targetLeafId, result.cleanResult)
   const suffix = formatRemainingMessageSuffix(result.remainingMessages)
-  interactive.showStatus?.(`Rewound ${result.rewound} turn${result.rewound === 1 ? '' : 's'} to ${target}.${suffix}`)
-  interactive.ui?.requestRender?.()
+  showLinxInteractiveStatus(interactive, `Rewound ${result.rewound} turn${result.rewound === 1 ? '' : 's'} to ${target}.${suffix}`)
 }
 
 function resolveInteractiveSession(interactive: any, runtime: any): any {
