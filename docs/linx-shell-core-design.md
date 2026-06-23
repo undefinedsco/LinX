@@ -97,6 +97,12 @@ Hard rules:
   that chooses to replace Pi's upstream check must return an explicit handled
   result even when no LinX update exists, so the router does not accidentally
   fall back to Pi's package/version surface.
+- Login UI methods are shell authentication UI lifecycle, not login-flow-owned
+  Pi method replacements. `interactive.showOAuthSelector` and
+  `interactive.showLoginDialog` are patched only by
+  `apps/cli/src/lib/linx-interactive-login-ui-router.ts`; login/auth modules
+  register ordered selector/dialog handlers instead of replacing Pi methods
+  directly.
 - Terminal-title patching is shell rendering lifecycle, not welcome-card
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
@@ -524,6 +530,14 @@ must not replace them directly. `linx-update-notification.ts` owns LinX package
 version semantics and selector rendering; it registers handlers with the update
 router. The router owns the Pi method patch and the fallback decision to the
 original Pi methods.
+
+Login UI selector/dialog methods belong behind
+`linx-interactive-login-ui-router.ts`. Pi exposes `showOAuthSelector` and
+`showLoginDialog` as mutable interactive methods. `linx-login-flow.ts` owns the
+LinX Cloud login/logout semantics, selector copy, and provider restrictions; it
+registers handlers with the login UI router instead of replacing those Pi
+methods directly. The router owns the Pi method patch and the fallback decision
+to the original Pi login UI methods.
 
 Terminal-title rendering belongs behind `linx-terminal-title-router.ts`.
 Feature modules may contribute title handlers, but they must not replace
