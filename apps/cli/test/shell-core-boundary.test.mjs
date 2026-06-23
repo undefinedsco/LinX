@@ -744,6 +744,16 @@ test('Pod mirror projection reads Pi archive state only through archive snapshot
 })
 
 
+test('startup control hydration consumes archive identity instead of Pi SessionManager', () => {
+  const source = readFileSync(join(libRoot, 'linx-pi-startup-control.ts'), 'utf8')
+
+  assert.doesNotMatch(source, /\bSessionManager\b/)
+  assert.doesNotMatch(source, /\bsessionManager\b/)
+  assert.doesNotMatch(source, /\.getSessionId\b/)
+  assert.doesNotMatch(source, /\.getEntries\b/)
+})
+
+
 test('direct sessionManager access stays in documented shell archive bridge modules', () => {
   const allowed = new Set([
     'linx-pi-runtime-execution.ts',

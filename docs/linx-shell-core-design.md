@@ -527,6 +527,14 @@ Startup side-effect ordering is part of the boundary:
 5. Build adapter/runtime options as data, then pass them into the runtime
    execution boundary.
 
+Startup control-state hydration is a core/Pod read, not a Pi archive adapter. It
+should consume an explicit archive identity DTO from the startup plan: session
+id and created-at time. The startup plan may derive that DTO from Pi's session
+manager because it owns session archive selection for launch; the hydration
+module must not call Pi `sessionManager` getters or accept a manager-like
+object. If hydration needs more archive facts later, add fields to the DTO in
+the startup plan instead of widening startup control back to Pi internals.
+
 The command module may sequence these boundaries, but it should stay thin. When
 new startup behavior needs login state, Pod session state, account base URLs,
 session archive selectors, restore-auto state, or agent directory details, put
