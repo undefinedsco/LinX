@@ -775,6 +775,19 @@ test('session-control reads Pi archive identity only through archive ref helpers
 })
 
 
+test('session metadata reads Pi archive fields only through a metadata snapshot helper', () => {
+  const source = readFileSync(join(libRoot, 'linx-session-metadata.ts'), 'utf8')
+  const allowedRanges = findFunctionRanges(source, [
+    'resolveLinxSessionMetadataArchiveSnapshot',
+  ])
+  const violations = [...source.matchAll(/\bsessionManager(?:\?\.)?\.(?:getCwd|getSessionName|getSessionId)(?:\?\.)?\s*\(/g)]
+    .filter((match) => !isOffsetInAnyRange(match.index ?? 0, allowedRanges))
+    .map((match) => `${lineNumberAt(source, match.index ?? 0)}:${match[0]}`)
+
+  assert.deepEqual(violations, [])
+})
+
+
 test('direct sessionManager access stays in documented shell archive bridge modules', () => {
   const allowed = new Set([
     'linx-pi-runtime-execution.ts',
