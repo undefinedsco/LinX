@@ -115,6 +115,11 @@ Hard rules:
   `apps/cli/src/lib/linx-interactive-streaming-message-host.ts`; features may
   request streaming cleanup but must not know Pi's mutable streaming field
   layout.
+- Custom header replacement is shell rendering state, not welcome-card business
+  logic. Writes to `interactive.customHeader` belong behind
+  `apps/cli/src/lib/linx-interactive-header-host.ts`; welcome or startup modules
+  may build replacement components but must not know Pi's header field/container
+  mutation details.
 - Terminal-title patching is shell rendering lifecycle, not welcome-card
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
@@ -567,6 +572,12 @@ message from the visible TUI, but they should call the host helper rather than
 reading or writing Pi's `streamingComponent` / `streamingMessage` fields
 directly. The host owns removing the component, clearing the fields, invalidating
 the footer, and requesting a render.
+
+Custom header replacement belongs behind `linx-interactive-header-host.ts`.
+Welcome/startup modules own the replacement component and its state, but the
+host owns how that component is installed into Pi's header container and how
+`interactive.customHeader` is updated. This keeps rendering feature code from
+depending on Pi's mutable header field layout.
 
 Terminal-title rendering belongs behind `linx-terminal-title-router.ts`.
 Feature modules may contribute title handlers, but they must not replace
