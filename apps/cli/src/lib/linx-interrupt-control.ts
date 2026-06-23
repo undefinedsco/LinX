@@ -1,5 +1,6 @@
 import { handleInteractiveRewindSelector } from './linx-rewind-command.js'
 import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
+import { stopLinxInteractiveSessionWorkNow } from './linx-session-work-control.js'
 import {
   isClearInterruptInstalled,
   isEscapeInterruptInstalled,
@@ -31,22 +32,13 @@ export function installLinxEscapeInterrupt(
   let lastIdleEscapeTime = 0
 
   const linxEscapeInterrupt = function linxEscapeInterrupt(): void {
-    const session = interactive?.session
-
     if (handBackAutoControlOnInterrupt(interactive, options)) {
       lastIdleEscapeTime = 0
       return
     }
 
-    if (session?.isBashRunning && typeof session.abortBash === 'function') {
+    if (stopLinxInteractiveSessionWorkNow(interactive)) {
       lastIdleEscapeTime = 0
-      void session.abortBash()
-      return
-    }
-
-    if (isLinxSessionRunning(interactive) && typeof session?.abort === 'function') {
-      lastIdleEscapeTime = 0
-      void session.abort()
       return
     }
 
@@ -122,20 +114,7 @@ function handBackAutoControlOnInterrupt(interactive: any, options: LinxInterrupt
     return false
   }
 
-  const session = interactive?.session
-  if (session?.isBashRunning && typeof session.abortBash === 'function') {
-    void session.abortBash()
-  } else if (isLinxSessionRunning(interactive) && typeof session?.abort === 'function') {
-    void session.abort()
-  }
-
+  stopLinxInteractiveSessionWorkNow(interactive)
   void options.disableAutoMode?.(interactive)
   return true
-}
-
-function isLinxSessionRunning(interactive: any): boolean {
-  return interactive?.session?.isStreaming === true
-    || Boolean(interactive?.loadingAnimation)
-    || Boolean(interactive?.autoCompactionEscapeHandler)
-    || Boolean(interactive?.retryEscapeHandler)
 }

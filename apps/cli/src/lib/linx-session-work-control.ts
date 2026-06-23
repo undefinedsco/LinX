@@ -24,3 +24,25 @@ export async function stopLinxActiveSessionWork(session: any, options: { waitTim
     new Promise((resolve) => setTimeout(resolve, options.waitTimeoutMs ?? 1_500)),
   ])
 }
+
+export function stopLinxInteractiveSessionWorkNow(interactive: any): boolean {
+  const session = interactive?.session
+  if (session?.isBashRunning === true && typeof session.abortBash === 'function') {
+    void session.abortBash()
+    return true
+  }
+
+  if (isLinxInteractiveSessionWorkActive(interactive) && typeof session?.abort === 'function') {
+    void session.abort()
+    return true
+  }
+
+  return false
+}
+
+function isLinxInteractiveSessionWorkActive(interactive: any): boolean {
+  return interactive?.session?.isStreaming === true
+    || Boolean(interactive?.loadingAnimation)
+    || Boolean(interactive?.autoCompactionEscapeHandler)
+    || Boolean(interactive?.retryEscapeHandler)
+}

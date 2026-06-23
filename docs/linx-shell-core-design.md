@@ -145,8 +145,9 @@ Hard rules:
 - Active session work control is shell session lifecycle, not feature command
   logic. Checks for Pi session streaming/bash state and abort calls belong
   behind `apps/cli/src/lib/linx-session-work-control.ts`; commands such as
-  `/rewind` may request active work to stop but must not know Pi's
-  `isStreaming`, `isBashRunning`, `abort`, or `abortBash` field layout.
+  `/rewind`, Escape interrupt, and auto handback may request active work to stop
+  but must not know Pi's `isStreaming`, `isBashRunning`, `abort`, or
+  `abortBash` field layout.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -175,6 +176,23 @@ possible outcomes:
 The router may parse enough to decide ownership. Once a command is backend-owned,
 LinX should preserve the backend command language rather than redefining it.
 When a command is Pi-native, the right action is often to not handle it at all.
+
+The default repair path for a command complaint is therefore:
+
+```text
+is there already a Pi/backend surface?
+  yes -> fix discovery, forwarding, adapter compatibility, or active-surface UI
+  no  -> decide whether LinX owns durable state or a scriptable product contract
+          yes -> add a LinX command at the narrowest valid surface
+          no  -> do not add a command
+```
+
+Do not fix command discoverability by cloning the command into another layer.
+If a user cannot find a Pi-native action, improve the TUI help/selector or
+backend forwarding. If a top-level command-shaped input reaches login or starts
+a chat turn, fix top-level admission. If a command is mostly interactive
+configuration, keep it inside the TUI unless there is a documented
+non-interactive scripting contract.
 
 A shell command may call shared core use-cases. It must not implement its own
 copy of shared business semantics. If a command needs provider config, auth
@@ -243,6 +261,11 @@ Native surface reuse rules:
 - Treat upstream Pi/backend commands as existing product surfaces. LinX parity
   means preserving or forwarding them where the upstream surface is active, not
   re-registering them as LinX top-level aliases.
+- When the upstream surface has the right concept but a broken LinX experience,
+  repair the adapter seam instead of creating a LinX-owned clone. Examples:
+  session listing belongs to Pi's resume selector, model switching belongs to
+  backend `/model`, and interactive help belongs to the active TUI/backend help
+  surface.
 - A missing LinX top-level alias is not a feature gap when Pi or the active
   backend already provides the selector, slash command, or help surface. Fix
   forwarding, adapter compatibility, or active-surface discoverability instead
@@ -384,6 +407,11 @@ Specific decisions currently in force:
   Removing a LinX-owned session-list command is intentional; users should not
   have to learn both `linx sessions` and Pi's resume selector for the same
   action.
+- Do not keep a hidden `sessions` compatibility path for normal humans. A
+  hidden path is still a second product surface if the expected caller is the
+  user. Session inventory repair or migration diagnostics may exist only as
+  maintainer-only archive tooling, with copy that does not present it as a way
+  to choose or resume conversations.
 - Do not add top-level `linx new`, `linx fork`, `linx session`, `linx model`,
   or `linx help` aliases. Those are backend/TUI command words.
 - Keep `linx models` only as Cloud model-list inspection. It is plural because
@@ -463,6 +491,15 @@ Current rules:
 - If a setting is primarily interactive and Pi already has an affordance, prefer
   a TUI slash command or selector. Add non-interactive `linx config` coverage
   only when scripting, diagnostics, or reproducible local setup need it.
+
+The status line/footer decision is the canonical example:
+
+- `/statusline` is the normal interactive configuration surface because users
+  need to see available footer tokens and toggle them in context.
+- `linx config status-line ...` may exist for scriptable app-local preferences.
+- `linx statusline`, `linx status-line`, and `linx footer` must not be added as
+  top-level shortcuts; they create a second command vocabulary for the same
+  shell setting.
 
 ### Package/update command boundary
 
@@ -598,9 +635,11 @@ writing `interactive.session.cwd` or `runtime.cwd` directly.
 
 Active session work control belongs behind `linx-session-work-control.ts`.
 Feature commands that need a quiet local branch repair, such as `/rewind`, may
-ask the seam to stop active work and wait briefly for idle. They must not
-directly inspect Pi session running fields or call Pi abort methods; the seam
-owns those upstream field names and the fail-soft abort behavior.
+ask the seam to stop active work and wait briefly for idle. Interactive
+interrupt paths such as Escape and auto handback may ask the seam for immediate
+best-effort cancellation before continuing shell-local control flow. They must
+not directly inspect Pi session running fields or call Pi abort methods; the
+seam owns those upstream field names and the fail-soft abort behavior.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router
