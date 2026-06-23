@@ -640,6 +640,16 @@ test('welcome header reads session metadata through the shell session metadata s
 
 
 
+test('resume output reads session id through the shell session metadata seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-resume-output.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-session-metadata\.js['"]/)
+  assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.getSessionId\b/)
+  assert.doesNotMatch(source, /sessionManager\b/)
+})
+
+
+
 test('concrete shell command execution lives in a dedicated executor module', () => {
   const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
 

@@ -35,7 +35,10 @@ export function resolveLinxSessionName(source: LinxSessionMetadataSource): strin
 
 export function resolveLinxSessionId(source: LinxSessionMetadataSource): string | undefined {
   return normalizeLinxSessionMetadataString(
-    source.session?.sessionManager?.getSessionId?.()
+    source.session?.sessionId
+      ?? source.interactive?.session?.sessionId
+      ?? source.runtime?.sessionId
+      ?? source.session?.sessionManager?.getSessionId?.()
       ?? source.interactive?.sessionManager?.getSessionId?.()
       ?? source.interactive?.session?.sessionManager?.getSessionId?.()
       ?? source.runtime?.session?.sessionManager?.getSessionId?.()
