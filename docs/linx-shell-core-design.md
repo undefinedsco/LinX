@@ -627,6 +627,24 @@ Startup side-effect ordering is part of the boundary:
 5. Build adapter/runtime options as data, then pass them into the runtime
    execution boundary.
 
+Authentication gates are launch-mode-specific:
+
+- Interactive TUI startup must not fail only because no LinX/Solid login is
+  currently available. The shell should enter the TUI, keep input responsive, and
+  expose `/login` plus the normal login selector/status flow from inside the
+  interactive surface.
+- Non-interactive surfaces that must access Cloud or Pod before they can produce
+  a result may fail before runtime execution. Examples include `--print` and
+  scriptable commands that require an authenticated Pod read/write. Their error
+  copy should point at `linx login` because there is no interactive TUI available
+  to collect credentials.
+- Startup planning may compute a pending login prompt for interactive mode, but
+  that prompt is shell state. It must not be confused with command admission, and
+  it must not block Pi/TUI bootstrap.
+- If a missing-login path unexpectedly prevents interactive bootstrap, fix the
+  startup-plan/runtime-execution split. Do not work around it by adding a second
+  top-level login or resume command.
+
 Startup control-state hydration is a core/Pod read, not a Pi archive adapter. It
 should consume an explicit archive identity DTO from the startup plan: session
 id and created-at time. The startup plan may derive that DTO from Pi's session

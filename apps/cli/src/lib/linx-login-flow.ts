@@ -18,6 +18,7 @@ import {
   registerLinxInteractiveEventHandler,
 } from './linx-interactive-event-router.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
@@ -132,7 +133,7 @@ function patchNativeOAuthSelectors(interactive: any, options: LinxLoginFlowOptio
         clearCredentials()
         clearOidcSessionStorage()
         await refreshLinxAuthState(target)
-        target.showStatus?.('Logged out of LinX Cloud.')
+        showLinxInteractiveStatus(target, 'Logged out of LinX Cloud.')
         return { handled: true }
       }
 
@@ -150,7 +151,7 @@ function patchNativeOAuthSelectors(interactive: any, options: LinxLoginFlowOptio
         return { handled: true }
       }
 
-      target.showStatus?.('LinX only supports LinX Cloud authentication in this TUI.')
+      showLinxInteractiveStatus(target, 'LinX only supports LinX Cloud authentication in this TUI.')
       await startLinxCloudLogin(target, { reason: 'manual' }, options)
       return { handled: true }
     },
@@ -246,12 +247,11 @@ function normalizeLinxCliErrorEvent(event: unknown): unknown {
 }
 
 function showLinxAuthExpiredRecoveryNotice(interactive: any): void {
-  interactive.showStatus?.([
+  showLinxInteractiveStatus(interactive, [
     'LinX Cloud login expired.',
     'Your message reached LinX, but the Cloud token was rejected.',
     'Choose a sign-in method below, or run /login if the selector is not visible.',
   ].join('\n'))
-  interactive.ui?.requestRender?.()
 }
 
 async function startLinxCloudLogin(interactive: any, loginOptions: { reason?: LinxAuthReason } = {}, options: LinxLoginFlowOptions = {}): Promise<void> {
@@ -270,7 +270,7 @@ async function startLinxCloudLogin(interactive: any, loginOptions: { reason?: Li
     const reason = loginOptions.reason ?? 'manual'
     const selected = await selectLinxAuthMethod(interactive, reason, options)
     if (!selected) {
-      interactive.showStatus?.('LinX Cloud authorization cancelled.')
+      showLinxInteractiveStatus(interactive, 'LinX Cloud authorization cancelled.')
       return
     }
 
@@ -294,7 +294,7 @@ async function startLinxCloudLogin(interactive: any, loginOptions: { reason?: Li
       if (reason === 'startup') {
         interactive.stop?.()
       } else {
-        interactive.showStatus?.('LinX Cloud authorization cancelled.')
+        showLinxInteractiveStatus(interactive, 'LinX Cloud authorization cancelled.')
       }
     }
   } catch (error) {
@@ -321,7 +321,7 @@ function scheduleLinxCloudLogin(interactive: any, reason: LinxAuthReason, option
 function reportLinxLoginError(interactive: any, message: string): void {
   const rendered = normalizeLinxLoginError(message)
   if (interactive[LINX_AUTH_REPORTING_ERROR]) {
-    interactive.showStatus?.(rendered)
+    showLinxInteractiveStatus(interactive, rendered)
     return
   }
 
@@ -405,7 +405,7 @@ async function promptForLinxClientCredentials(interactive: any, reason: LinxAuth
   )
   const trimmed = typeof credentials === 'string' ? credentials.trim() : ''
   if (!trimmed) {
-    interactive.showStatus?.('Solid client credentials entry cancelled.')
+    showLinxInteractiveStatus(interactive, 'Solid client credentials entry cancelled.')
     return
   }
 
@@ -430,12 +430,12 @@ async function finishLinxAuthSuccess(interactive: any, reason: LinxAuthReason, d
   const prefix = authStatusPrefix(reason)
   const retryStarted = await retryPendingLinxAuthTurn(interactive, reason)
   if (retryStarted) {
-    interactive.showStatus?.(`${prefix} ${detail} Retrying your message...`)
+    showLinxInteractiveStatus(interactive, `${prefix} ${detail} Retrying your message...`)
     return
   }
 
   const suffix = reason === 'expired' ? ' Retry your message.' : ''
-  interactive.showStatus?.(`${prefix} ${detail}${suffix}`)
+  showLinxInteractiveStatus(interactive, `${prefix} ${detail}${suffix}`)
 }
 
 function prepareLinxAuthExpiredRetry(interactive: any): void {
@@ -544,7 +544,7 @@ export async function refreshLinxAuthState(interactive: any): Promise<void> {
   syncRuntimeCredential(interactive)
   interactive.session?.modelRegistry?.refresh?.()
   await interactive.updateAvailableProviderCount?.()
-  interactive.ui?.requestRender?.()
+  showLinxInteractiveStatus(interactive, null)
 }
 
 
@@ -569,12 +569,11 @@ async function runLinxCloudLogin(
       showLinxLoginUrl(interactive, info)
       openLoginUrl(info.url, interactive)
       if (info.instructions) {
-        interactive.showStatus?.(info.instructions)
+        showLinxInteractiveStatus(interactive, info.instructions)
       }
     },
     onProgress(message: string) {
-      interactive.showStatus?.(message)
-      interactive.ui?.requestRender?.()
+      showLinxInteractiveStatus(interactive, message)
     },
     onManualCodeInput(signal?: AbortSignal) {
       return promptForLinxManualRedirectUrl(interactive, signal)
