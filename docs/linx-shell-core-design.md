@@ -29,6 +29,7 @@ The shell owns interaction and process lifecycle. The core owns durable semantic
 | Shell lifecycle | TTY raw-mode handoff, foreground process ownership, restart/exit, signal/escape wiring, terminal cleanup | Pod resource identity, backend credential semantics, approval policy |
 | Shell command router | Parsing CLI/TUI commands, dispatching to shell-owned handlers or forwarding backend-native commands | Duplicating backend command languages, creating alternate shared state machines |
 | Shell rendering | Footer/status line, selectors, login/update dialogs, error display, terminal text | Durable business state, provider aliases, resource paths |
+| Runtime projection | Model-only prompt wrappers, Secretary/worker routing instructions, xpod/tool guardrails, bounded steering deltas | Product Message content, visible TUI transcript, long-lived control truth |
 | Runtime adapters | Translating Pi/Codex/ACP/Claude events into shared DTOs; spawning and supervising local runtimes | Shared RDF predicates, subject templates, credential source of truth |
 | Shared core/models | Domain objects, Pod schemas/repositories, runtime contracts, auth/status normalization, backend capability contracts | TTY rendering, process handles, keyboard shortcuts, raw terminal state |
 
@@ -569,6 +570,15 @@ Boundary smells:
   components, or assumes footer/status layout. Move visible status text,
   transcript append, render invalidation, and focus handoff behind shell
   rendering seams.
+- **Projection text leakage:** internal Secretary/Symphony prompt wrappers,
+  worker-routing instructions, xpod guardrails, or tool-use policy appear as
+  normal TUI transcript text or Pod Message content. Keep runtime projection in
+  backend input/log surfaces and persist only visible product messages plus
+  control-resource pointers.
+- **Tool-layer confusion:** a raw Pod file operation succeeds but RDF/object
+  parsing, query transport, or model mapping fails, and the failure is reported
+  as missing login/permission. Keep xpod raw file I/O, RDF inspection, and
+  modeled object access as separate layers and fix the owning package.
 - **Hidden diagnostics as UX:** a hidden flag or command becomes the practical way
   to list, choose, resume, or repair normal user sessions. Either make a real
   product surface with a contract, or keep the diagnostic narrow and
@@ -707,6 +717,30 @@ Do not scatter calls to Pi fields such as `showStatus`, `showError`,
 feature modules. If a feature needs a new rendering operation, first add a
 narrow shell host/router and a boundary test, then call that seam from the
 feature.
+
+### Runtime projection and transcript boundary
+
+Runtime projection is input shaping for a backend model, not product chat.
+Secretary/Symphony may wrap a user message with model-only routing instructions,
+worker constraints, xpod guardrails, auth checks, or bounded steering deltas, but
+those projected instructions must not become visible chat content.
+
+Hard rules:
+
+- Product `Message` records store the user's actual message, visible assistant
+  answer, and visible state transitions. They do not store the full projected
+  prompt wrapper.
+- The TUI transcript must not render headings such as `AI Secretary Symphony
+  request`, internal routing policy, xpod auth guardrails, or tool-use policy
+  unless the user explicitly asks to inspect debug/projection internals.
+- Worker steering uses control-resource deltas and pointers to updated records.
+  Do not pass raw hidden conversation deltas as if they were user chat.
+- Tool diagnostics may be summarized visibly, but raw guardrail text and prompt
+  scaffolding stay in runtime logs/debug surfaces.
+- If projection text leaks into the transcript, Pod message content, or ordinary
+  assistant reply, fix the projection/rendering seam; do not treat it as a
+  prompt-style problem.
+
 
 ### Package/update command boundary
 

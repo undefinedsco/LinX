@@ -197,6 +197,10 @@ Hard rules:
 - If internal projection text appears in the TUI transcript, Pod message
   content, or normal assistant answer, treat it as a projection/rendering
   boundary bug rather than as a Secretary style issue.
+- Tool probes and xpod diagnostics should be summarized as visible outcomes, not
+  pasted as the product answer by default. Show raw command transcripts only
+  when the user asks for debugging detail or when the raw output is the evidence
+  needed to make a blocker actionable.
 
 When Symphony needs to inspect or mutate Pod control resources from the AI side,
 the direct tool surface is `xpod` running under the same Solid authority as the
