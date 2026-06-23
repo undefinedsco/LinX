@@ -17,7 +17,7 @@
 - 命名只在跨包公共 API、外部冲突边界、LinX Cloud 产品语义和品牌展示上使用 `Linx` 前缀；CLI/TUI 内部通用概念、helper、状态和 adapter 局部类型不要因为位于 LinX 仓库里重复加 `Linx` / `LinxPi` 前缀。
 - 添加、恢复或保留顶层 `linx <command>` 前必须按 `docs/linx-shell-core-design.md` 的 top-level admission checklist 判断；不要把 Pi/backend 已有的 session、thread、model、help 等原生命令克隆成 LinX 顶层产品面。
 - 移除已降级为 Pi/backend 原生面的顶层入口时，要一起移除 help/docs/command registration，并加 admission 测试证明不会触发 login、Pod lookup 或 interactive bootstrap；不要用 hidden alias 维持第二套人类可用入口。
-- 新增 CLI/TUI lifecycle patch 前必须先走 `docs/linx-shell-core-design.md` 的 shell seam：`interactive.init` 后置行为进 `linx-interactive-post-init.ts`，`interactive.run` 启动期行为进 `linx-interactive-run-router.ts`，terminal-title/rendering patch 进 shell rendering seam，editor component rebinding 进 `linx-editor-component-router.ts`，extension UI context augmentation 进 `linx-extension-ui-context-router.ts`，session thinking capability 进 `linx-session-thinking-capability-router.ts`，session/runtime cwd mutation 进 `linx-session-cwd-router.ts`，stop/submit/input/session patch 进各自 router；feature 模块不要直接包 Pi 方法。
+- 新增 CLI/TUI lifecycle patch 前必须先走 `docs/linx-shell-core-design.md` 的 shell seam：`interactive.init` 后置行为进 `linx-interactive-post-init.ts`，`interactive.run` 启动期行为进 `linx-interactive-run-router.ts`，update version check/notification 方法进 `linx-interactive-update-router.ts`，terminal-title/rendering patch 进 shell rendering seam，editor component rebinding 进 `linx-editor-component-router.ts`，extension UI context augmentation 进 `linx-extension-ui-context-router.ts`，session thinking capability 进 `linx-session-thinking-capability-router.ts`，session/runtime cwd mutation 进 `linx-session-cwd-router.ts`，stop/submit/input/session patch 进各自 router；feature 模块不要直接包 Pi 方法。
 
 ## Skill Routing
 

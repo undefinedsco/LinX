@@ -89,6 +89,14 @@ Hard rules:
   `interactive.run` themselves. This covers cases such as suppressing upstream
   Pi update notifications, preparing restart-aware output state, and other work
   that must execute exactly once before the foreground TUI loop takes ownership.
+- Update version methods are shell package/update lifecycle, not feature-local
+  Pi method replacements. `interactive.checkForNewVersion` and
+  `interactive.showNewVersionNotification` are patched only by
+  `apps/cli/src/lib/linx-interactive-update-router.ts`; update modules register
+  ordered version-check and notification handlers. A LinX version-check handler
+  that chooses to replace Pi's upstream check must return an explicit handled
+  result even when no LinX update exists, so the router does not accidentally
+  fall back to Pi's package/version surface.
 - Terminal-title patching is shell rendering lifecycle, not welcome-card
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
@@ -508,6 +516,14 @@ and register it with the run router. Update notification is the canonical
 example: LinX may suppress Pi's upstream version prompt while the LinX update
 surface is active, but the update module should not own the `interactive.run`
 wrapper itself.
+
+Update version-check and notification methods belong behind
+`linx-interactive-update-router.ts`. Pi exposes `checkForNewVersion` and
+`showNewVersionNotification` as mutable interactive methods, but LinX features
+must not replace them directly. `linx-update-notification.ts` owns LinX package
+version semantics and selector rendering; it registers handlers with the update
+router. The router owns the Pi method patch and the fallback decision to the
+original Pi methods.
 
 Terminal-title rendering belongs behind `linx-terminal-title-router.ts`.
 Feature modules may contribute title handlers, but they must not replace

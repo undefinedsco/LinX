@@ -9,6 +9,10 @@ import {
 import { openExternalUrl } from './linx-external-url.js'
 import { normalizeSelectorChoice } from './linx-selector-choice.js'
 import { registerLinxInteractiveRunHandler } from './linx-interactive-run-router.js'
+import {
+  registerLinxInteractiveUpdateNotificationHandler,
+  registerLinxInteractiveVersionCheckHandler,
+} from './linx-interactive-update-router.js'
 
 const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
 const LINX_UPDATE_CHECK_SCHEDULED = Symbol.for('linx.tui.updateCheckScheduled')
@@ -65,9 +69,14 @@ export function replayDeferredLinxUpdateNotification(
 function patchVersionCheck(interactive: any): void {
   installLinxUpstreamPiUpdateSuppression(interactive)
 
-  interactive.checkForNewVersion = async function patchedCheckForNewVersion(): Promise<string | undefined> {
-    return checkForNewLinxVersion()
-  }
+  registerLinxInteractiveVersionCheckHandler(interactive, {
+    name: 'linx-update-notification:check-linx-version',
+    priority: 0,
+    async handler() {
+      const version = await checkForNewLinxVersion()
+      return version ? { handled: true, version } : { handled: true }
+    },
+  })
 }
 
 function installLinxUpstreamPiUpdateSuppression(interactive: any): void {
@@ -81,18 +90,23 @@ function installLinxUpstreamPiUpdateSuppression(interactive: any): void {
 }
 
 function patchUpdateNotification(interactive: any, options: LinxUpdateNotificationOptions): void {
-  interactive.showNewVersionNotification = function patchedShowNewVersionNotification(newVersion: unknown): void {
-    if (this[LINX_SUPPRESS_UPSTREAM_PI_UPDATE]) {
-      return
-    }
+  registerLinxInteractiveUpdateNotificationHandler(interactive, {
+    name: 'linx-update-notification:show-linx-update',
+    priority: 0,
+    handler({ interactive: target, newVersion }) {
+      if (target[LINX_SUPPRESS_UPSTREAM_PI_UPDATE]) {
+        return true
+      }
 
-    const normalizedVersion = normalizeLinxUpdateVersion(newVersion)
-    if (!normalizedVersion) {
-      return
-    }
+      const normalizedVersion = normalizeLinxUpdateVersion(newVersion)
+      if (!normalizedVersion) {
+        return true
+      }
 
-    requestLinxUpdateNotification(this, normalizedVersion, options)
-  }
+      requestLinxUpdateNotification(target, normalizedVersion, options)
+      return true
+    },
+  })
 }
 
 export function scheduleLinxVersionCheckAfterInit(
