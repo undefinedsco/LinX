@@ -122,6 +122,11 @@ Hard rules:
   `apps/cli/src/lib/linx-interactive-header-host.ts`; welcome or startup modules
   may build replacement components but must not know Pi's header field/container
   mutation details.
+- Appending visible fallback text to the Pi chat transcript is shell rendering
+  state, not feature business logic. Feature modules may build the notice text,
+  but `Text` component creation, `interactive.chatContainer` mutation, and render
+  invalidation belong behind
+  `apps/cli/src/lib/linx-interactive-chat-text-host.ts`.
 - Terminal-title patching is shell rendering lifecycle, not welcome-card
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register

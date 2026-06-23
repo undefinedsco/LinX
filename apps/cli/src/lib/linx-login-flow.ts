@@ -1,5 +1,4 @@
 import { LoginDialogComponent } from '@earendil-works/pi-coding-agent'
-import { Text } from '@earendil-works/pi-tui'
 import { clearAccountSession } from './account-session.js'
 import { clearCredentials } from './credentials-store.js'
 import { clearOidcSessionStorage } from './oidc-session-storage.js'
@@ -20,6 +19,7 @@ import {
 } from './linx-interactive-event-router.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
+import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import {
   canMountLinxEditorComponent,
   mountLinxEditorComponent,
@@ -378,14 +378,13 @@ function buildLinxAuthPromptTitle(reason: LinxAuthReason, providerLabel: string)
 }
 
 function showLinxAuthFallback(interactive: any, title: string, options: string[]): void {
-  interactive.chatContainer?.addChild?.(new Text([
+  appendLinxInteractiveChatText(interactive, [
     `\x1b[1m${title}\x1b[22m`,
     '',
     ...options.map((option) => `- ${option}`),
     '',
     'This terminal build cannot render the LinX auth selector. Run `linx login` in another shell.',
-  ].join('\n'), 1, 0))
-  interactive.ui?.requestRender?.()
+  ].join('\n'))
 }
 
 async function promptForLinxClientCredentials(interactive: any, reason: LinxAuthReason, options: LinxLoginFlowOptions): Promise<void> {
@@ -738,8 +737,7 @@ function showLinxLoginUrl(interactive: any, info: { url: string; instructions?: 
   if (info.instructions) {
     lines.push('', `\x1b[2m${info.instructions}\x1b[22m`)
   }
-  interactive.chatContainer?.addChild?.(new Text(lines.join('\n'), 1, 0))
-  interactive.ui?.requestRender?.()
+  appendLinxInteractiveChatText(interactive, lines.join('\n'))
 }
 
 function openLoginUrl(url: string, interactive: any): void {
