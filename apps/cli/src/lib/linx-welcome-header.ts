@@ -8,7 +8,7 @@ import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_CLI_VERSION } from './linx-self-update.js'
 import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
 import { registerLinxTerminalTitleHandler } from './linx-terminal-title-router.js'
-import { replaceLinxInteractiveHeader } from './linx-interactive-header-host.js'
+import { invalidateLinxInteractiveHeader, replaceLinxInteractiveHeader } from './linx-interactive-header-host.js'
 import { resolveLinxSessionCwd, resolveLinxSessionId, resolveLinxSessionName } from './linx-session-metadata.js'
 
 export function installLinxWelcomeHeader(interactive: any): void {
@@ -45,8 +45,7 @@ export function renderLinxWelcomeHeaderAfterInit(interactive: any): void {
         return
       }
       profileDisplayName = displayName
-      replacement.invalidate()
-      interactive.ui?.requestRender?.()
+      invalidateLinxInteractiveHeader(interactive, replacement)
     })
     .catch(() => undefined)
 }

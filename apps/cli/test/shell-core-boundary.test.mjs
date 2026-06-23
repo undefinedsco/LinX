@@ -740,6 +740,14 @@ test('Symphony command status rendering goes through the shell status seam', () 
   assert.doesNotMatch(source, /\.ui(?:\?\.)?\.requestRender(?:\?\.)?\s*\(/)
 })
 
+test('welcome header render invalidation goes through the shell header host', () => {
+  const source = readFileSync(join(libRoot, 'linx-welcome-header.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-header-host\.js['"]/)
+  assert.match(source, /\binvalidateLinxInteractiveHeader\b/)
+  assert.doesNotMatch(source, /\.ui(?:\?\.)?\.requestRender(?:\?\.)?\s*\(/)
+})
+
 test('custom editor component rebinding is centralized in the shell editor component router', () => {
   const allowed = new Set([
     'linx-editor-component-router.ts',

@@ -7,3 +7,8 @@ export function replaceLinxInteractiveHeader(interactive: any, replacement: unkn
   interactive.customHeader = replacement
   interactive.ui?.requestRender?.()
 }
+
+export function invalidateLinxInteractiveHeader(interactive: any, header: { invalidate?: () => unknown } | null | undefined): void {
+  header?.invalidate?.()
+  interactive?.ui?.requestRender?.()
+}
