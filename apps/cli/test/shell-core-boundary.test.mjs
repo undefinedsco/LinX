@@ -695,6 +695,40 @@ test('Secretary auto input reads recent history through the shell session-histor
 
 
 
+test('direct sessionManager access stays in documented shell archive bridge modules', () => {
+  const allowed = new Set([
+    'linx-pi-runtime-execution.ts',
+    'linx-pi-startup-control.ts',
+    'linx-pi-startup-plan.ts',
+    'linx-pod-mirror-runtime-host.ts',
+    'linx-pod-mirror-sync-recovery.ts',
+    'linx-pod-mirror.ts',
+    'linx-runtime-adapter-contract.ts',
+    'linx-runtime-agent-session.ts',
+    'linx-session-history.ts',
+    'linx-session-metadata.ts',
+    'pod-mirror-mapping.ts',
+    'session-control.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/\bsessionManager\b/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
+
+
 test('concrete shell command execution lives in a dedicated executor module', () => {
   const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
 

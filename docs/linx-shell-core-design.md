@@ -449,6 +449,53 @@ Specific decisions currently in force:
 
 
 
+
+### Shell/core boundary smell checklist
+
+Use this checklist when a CLI/TUI bug looks like "LinX command line is weird"
+or "the shell/core split is unclear". A fix should repair the owning boundary
+instead of adding another wrapper around the symptom.
+
+Boundary smells:
+
+- **Second command vocabulary:** LinX exposes a top-level command, hidden alias,
+  or help entry for a Pi/backend-native concept such as session listing, thread
+  forking, model switching, or native help. Repair forwarding/discovery at the
+  active surface instead.
+- **Command-shaped prompt leakage:** a top-level positional token that looks like
+  a retired or backend-native command reaches login, Pod lookup, auto hydration,
+  or chat submission. Fix admission before side effects.
+- **Feature-owned Pi internals:** a feature/rendering module reads
+  `sessionManager`, `interactive.__linx*`, Pi editor fields, runtime hidden
+  fields, or original-method handles directly. Add or extend a named shell seam
+  and a boundary test.
+- **Runtime archive identity leaking upward:** code treats Pi session ids,
+  session dirs, local archive paths, or resume selector state as Pod Chat,
+  Thread, Contact, backend credential, or shared model identity. Keep runtime
+  archive identity local to shell startup/resume/diagnostics and map product
+  state through shared models.
+- **Lifecycle mixed with feature logic:** update, login, auto, Symphony, rewind,
+  or statusline code spawns processes, restores raw mode, patches Pi lifecycle
+  methods, or decides exit copy visibility by itself. Move that behavior to the
+  relevant lifecycle router/host.
+- **Hidden diagnostics as UX:** a hidden flag or command becomes the practical way
+  to list, choose, resume, or repair normal user sessions. Either make a real
+  product surface with a contract, or keep the diagnostic narrow and
+  maintainer-only.
+
+Preferred repair order:
+
+```text
+1. Identify the owning surface: top-level shell, interactive shell, active backend,
+   runtime adapter, shared model, or local archive diagnostic.
+2. If Pi/backend already owns the concept, preserve that surface and fix LinX's
+   adapter, forwarding, help, selector, or admission behavior.
+3. If LinX owns the concept, add the narrowest shell seam or shared use-case; do
+   not let feature modules patch Pi internals directly.
+4. Add a boundary test that would fail if the same smell returns.
+5. Update this design doc in the same change.
+```
+
 ### CLI startup composition boundary
 
 The default `linx` entry is a shell composition surface. It may connect command
