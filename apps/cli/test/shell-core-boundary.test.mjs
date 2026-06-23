@@ -729,6 +729,20 @@ test('Pod mirror mapping consumes archive DTOs instead of Pi SessionManager', ()
 })
 
 
+test('Pod mirror projection reads Pi archive state only through archive snapshot helpers', () => {
+  const source = readFileSync(join(libRoot, 'linx-pod-mirror.ts'), 'utf8')
+  const allowedRanges = findFunctionRanges(source, [
+    'getPodMirrorArchiveSnapshot',
+    'getActivePiSessionEntries',
+    'getSessionCreatedAt',
+  ])
+  const violations = [...source.matchAll(/\b(?:options\.)?sessionManager\.(?:getSessionId|getSessionFile|getSessionName|getEntries|getLeafId|getBranch)\b/g)]
+    .filter((match) => !isOffsetInAnyRange(match.index ?? 0, allowedRanges))
+    .map((match) => `${lineNumberAt(source, match.index ?? 0)}:${match[0]}`)
+
+  assert.deepEqual(violations, [])
+})
+
 
 test('direct sessionManager access stays in documented shell archive bridge modules', () => {
   const allowed = new Set([
@@ -760,6 +774,44 @@ test('direct sessionManager access stays in documented shell archive bridge modu
 
   assert.deepEqual(violations, [])
 })
+
+function findFunctionRanges(source, functionNames) {
+  return functionNames.map((name) => {
+    const declaration = new RegExp(`function\\s+${name}\\s*\\(`, 'u')
+    const match = declaration.exec(source)
+    assert.ok(match, `expected function ${name} to exist`)
+    const bodyStart = source.indexOf('{', match.index)
+    assert.notEqual(bodyStart, -1, `expected function ${name} to have a body`)
+    return {
+      start: match.index,
+      end: findMatchingBrace(source, bodyStart) + 1,
+    }
+  })
+}
+
+function findMatchingBrace(source, openingBraceIndex) {
+  let depth = 0
+  for (let index = openingBraceIndex; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === '{') {
+      depth += 1
+    } else if (char === '}') {
+      depth -= 1
+      if (depth === 0) {
+        return index
+      }
+    }
+  }
+  assert.fail('expected matching closing brace')
+}
+
+function isOffsetInAnyRange(offset, ranges) {
+  return ranges.some((range) => offset >= range.start && offset < range.end)
+}
+
+function lineNumberAt(source, offset) {
+  return source.slice(0, offset).split('\n').length
+}
 
 
 
