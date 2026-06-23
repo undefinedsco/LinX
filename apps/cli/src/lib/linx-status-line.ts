@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
 import { getSolidLinxAppDir } from './solid-local-store.js'
+import { resolveLinxSessionCwd, resolveLinxSessionName } from './linx-session-metadata.js'
 
 export type LinxStatusLineToken =
   | 'total-input-tokens'
@@ -129,7 +130,7 @@ function renderStatusLineToken(
     case 'git-branch':
       return context.gitBranch
     case 'session-name':
-      return normalizeText(context.session?.sessionManager?.getSessionName?.())
+      return resolveLinxSessionName({ session: context.session }) ?? null
   }
 }
 
@@ -369,7 +370,7 @@ function formatThinkingLevel(context: ReturnType<typeof createStatusLineContext>
 }
 
 function formatCurrentDir(session: any): string | null {
-  const cwd = normalizeText(session?.sessionManager?.getCwd?.())
+  const cwd = resolveLinxSessionCwd({ session }, '')
   if (!cwd) {
     return null
   }

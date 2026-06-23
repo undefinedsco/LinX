@@ -7,6 +7,7 @@ export type LinxSessionMetadataSource = {
 export function resolveLinxSessionCwd(source: LinxSessionMetadataSource, fallback: string): string {
   const candidates = [
     source.session?.cwd,
+    source.session?.sessionManager?.getCwd?.(),
     source.interactive?.session?.cwd,
     source.runtime?.cwd,
     source.interactive?.sessionManager?.getCwd?.(),
