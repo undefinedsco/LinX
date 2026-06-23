@@ -622,6 +622,13 @@ test('session command router clears consumed input through the shell editor text
   assert.doesNotMatch(source, /\.editor(?:\?\.)?\.setText\s*\(/)
 })
 
+test('input command routers clear consumed input through the shell editor text seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-input-command-routing.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-editor-text-host\.js['"]/)
+  assert.doesNotMatch(source, /(?:this|interactive)\.editor(?:\?\.)?\.setText(?:\?\.)?\s*\(/)
+})
+
 test('custom editor component rebinding is centralized in the shell editor component router', () => {
   const allowed = new Set([
     'linx-editor-component-router.ts',

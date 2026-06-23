@@ -1,4 +1,5 @@
 import { parseLinxShellCommand, type LinxShellCommand } from './linx-shell-command-router.js'
+import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import {
   isFinalSubmitWrappedHandler,
   isInputCommandRouterInstalled,
@@ -38,7 +39,7 @@ export function installLinxInputCommandRouter(
         return input
       }
 
-      this.editor?.setText?.('')
+      setLinxInteractiveEditorText(this, '')
       await handleShellCommand(this, runtime, command)
     }
   }
@@ -70,7 +71,7 @@ export function installLinxFinalSubmitCommandRouter(
         return
       }
 
-      interactive.editor?.setText?.('')
+      setLinxInteractiveEditorText(interactive, '')
       await handleShellCommand(interactive, runtime, command)
     }
     markFinalSubmitWrappedHandler(wrappedSubmit)
