@@ -774,9 +774,17 @@ planning, `linx-session-metadata.ts`, `linx-session-history.ts`, runtime
 archive diagnostics, and Pod-mirror/session-control bridge code that translates
 Pi archive entries into shared model resources. Even in those bridge modules,
 the output must be typed shell metadata or shared-model rows; callers should not
-receive Pi manager objects as a convenience. Pod projection mapping helpers are
-not archive bridge owners: they must consume explicit archive DTOs such as
-session id, optional session name, and active entries, instead of accepting a Pi
+receive Pi manager objects as a convenience.
+
+Pod mirror is an archive bridge, but its projection logic still should not
+scatter raw Pi getter calls through business operations. The bridge must first
+materialize a narrow archive snapshot DTO (session id, optional session name,
+optional session file, creation time, active entries) and then pass that DTO
+through projection, mapping, token-usage, thread-title, checkpoint binding, and
+metadata code. Only the snapshot/helper functions should call Pi archive getters
+such as `getSessionId`, `getSessionFile`, `getSessionName`, `getEntries`,
+`getLeafId`, or `getBranch`. Pod projection mapping helpers are not archive
+bridge owners: they must consume explicit archive DTOs instead of accepting a Pi
 `SessionManager`. Feature/rendering modules that only need a session id, cwd,
 name, recent messages, or branch operation should request a named seam helper
 instead of widening this exception.
