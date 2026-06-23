@@ -4,6 +4,7 @@ import { runSymphony } from './symphony/run.js'
 import { createSymphonyRuntimeForPodProjection } from './symphony/runtime.js'
 import { formatSymphonyStatus } from './symphony/status.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { DEFAULT_SECRETARY_CHAT_ID, secretaryChatUri, secretaryThreadUri } from './pod-mirror-mapping.js'
 import { getSessionControlManager } from './session-control.js'
 import { resolveInteractiveCwd } from './linx-workspace-command.js'
@@ -99,8 +100,7 @@ function parseSymphonyCommand(input: string): SymphonyCommand | null {
 async function handleSymphonyCommand(interactive: any, command: SymphonyCommand): Promise<void> {
   if (command.action === 'enable') {
     setLinxInteractiveSymphonyModeEnabled(interactive, interactive.runtime, true)
-    interactive.showStatus?.(formatSymphonyModeChangeStatus(true))
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, formatSymphonyModeChangeStatus(true))
     await notifyLinxInteractiveSymphonyControlChange(interactive, true)
     return
   }
@@ -108,14 +108,13 @@ async function handleSymphonyCommand(interactive: any, command: SymphonyCommand)
   if (command.action === 'disable') {
     setLinxInteractiveSymphonyModeEnabled(interactive, interactive.runtime, false)
     abortInteractiveSymphonyDispatches(interactive)
-    interactive.showStatus?.(formatSymphonyModeChangeStatus(false))
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, formatSymphonyModeChangeStatus(false))
     await notifyLinxInteractiveSymphonyControlChange(interactive, false)
     return
   }
 
   if (command.action === 'status') {
-    interactive.showStatus?.(await formatSymphonyStatus({
+    showLinxInteractiveStatus(interactive, await formatSymphonyStatus({
       enabled: isLinxInteractiveSymphonyModeEnabled(interactive),
       source: await resolveSymphonySourceContext(interactive),
       podProjectionRuntime: getLinxInteractiveSymphonyPodProjectionRuntime(interactive),
@@ -123,12 +122,10 @@ async function handleSymphonyCommand(interactive: any, command: SymphonyCommand)
       listLocalIssues: getLinxInteractiveListSymphonyIssues(interactive),
       listLocalSessions: getLinxInteractiveListSymphonySessions(interactive),
     }))
-    interactive.ui?.requestRender?.()
     return
   }
 
-  interactive.showStatus?.(formatSymphonyUsage(command.input))
-  interactive.ui?.requestRender?.()
+  showLinxInteractiveStatus(interactive, formatSymphonyUsage(command.input))
 }
 
 function formatSymphonyModeChangeStatus(enabled: boolean): string {
@@ -191,12 +188,12 @@ async function dispatchSymphonyWorkerFromInteractive(
   const controllers = getLinxInteractiveSymphonyDispatchControllers(interactive)
   controllers.add(controller)
 
-  interactive.showStatus?.(
+  showLinxInteractiveStatus(
+    interactive,
     `Symphony handoff started: ${backend}${workerModel ? ` · ${workerModel}` : ''}`
     + `${workerGoalMode ? ` · supervised every ${formatSymphonySupervisorInterval(workerSupervisorIntervalMs)}` : ''}.`
     + ' Use /symphony status for details.',
   )
-  interactive.ui?.requestRender?.()
 
   const run = getLinxInteractiveRunSymphony(interactive) ?? runSymphony
   const dispatchArgs = {
@@ -231,14 +228,14 @@ async function dispatchSymphonyWorkerFromInteractive(
       if (!isCurrentSymphonyDispatch(interactive, dispatchGeneration)) {
         return
       }
-      interactive.showStatus?.(formatSymphonyDispatchResult(plan))
+      showLinxInteractiveStatus(interactive, formatSymphonyDispatchResult(plan), { render: false })
     })
     .catch((error: unknown) => {
       if (!isCurrentSymphonyDispatch(interactive, dispatchGeneration)) {
         return
       }
       if (isSymphonyAbortError(error)) {
-        interactive.showStatus?.('Symphony dispatch cancelled.')
+        showLinxInteractiveStatus(interactive, 'Symphony dispatch cancelled.', { render: false })
         return
       }
       const message = error instanceof Error ? error.message : String(error)
@@ -249,7 +246,7 @@ async function dispatchSymphonyWorkerFromInteractive(
       if (!isCurrentSymphonyDispatch(interactive, dispatchGeneration)) {
         return
       }
-      interactive.ui?.requestRender?.()
+      showLinxInteractiveStatus(interactive, null)
     })
 
   dispatches.push(dispatch)

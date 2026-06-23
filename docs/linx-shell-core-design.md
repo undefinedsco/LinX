@@ -718,6 +718,23 @@ feature modules. If a feature needs a new rendering operation, first add a
 narrow shell host/router and a boundary test, then call that seam from the
 feature.
 
+Status rendering is intentionally not a product message or durable control
+record. Command handlers such as auto, Symphony, update, rewind, login, and
+backend command routing may choose the semantic status copy they want to
+surface, but they must hand that copy to the shell status seam. The seam owns
+Pi's `showStatus` call, render invalidation, footer refresh timing, and
+render-only requests. This applies equally to synchronous command responses
+(`/symphony on`, `/symphony status`, `/auto off`) and asynchronous background
+results such as handoff completion, cancellation, or failure notices.
+
+If an operation also changes durable state, write that state through the shared
+core/model or runtime-control resource first, then surface a short status
+summary through the rendering seam. Do not use the status line as the source of
+truth, and do not persist status-only wrapper text as Pod `Message` content.
+When existing behavior needs "status now, render later" semantics, preserve that
+as an option on the shell status seam rather than by calling
+`interactive.showStatus` directly in the feature module.
+
 ### Runtime projection and transcript boundary
 
 Runtime projection is input shaping for a backend model, not product chat.
