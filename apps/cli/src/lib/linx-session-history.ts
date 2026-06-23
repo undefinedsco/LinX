@@ -175,6 +175,11 @@ export function hasLinxSessionHistory(source: LinxSessionHistorySource): boolean
   return Boolean(resolveLinxSessionHistoryManager(source))
 }
 
+export function getLinxActiveSessionHistoryEntries(source: LinxSessionHistorySource): any[] {
+  const sessionManager = resolveLinxSessionHistoryManager(source)
+  return sessionManager ? getActiveSessionBranch(sessionManager) : []
+}
+
 export function collectLinxRewindUserMessages(source: LinxSessionHistorySource): LinxRewindMessageItem[] {
   const sessionManager = resolveLinxSessionHistoryManager(source)
   if (!sessionManager) {

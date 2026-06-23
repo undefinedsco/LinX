@@ -17,6 +17,7 @@ import { resolveRuntimeTarget } from './runtime-target.js'
 import type { SessionControlManager, SessionControlSnapshot } from './session-control.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 import { canSubmitLinxSessionUserInputNow, submitLinxSessionUserInput } from './linx-session-work-control.js'
+import { getLinxActiveSessionHistoryEntries } from './linx-session-history.js'
 import {
   getLinxInteractiveAutoInputController,
   getLinxInteractiveGoalModeSupervisorLastAt,
@@ -932,8 +933,7 @@ function renderSecretaryAutoInputRetryContext(inputText: string): string {
 }
 
 function resolveRecentMessages(interactive: any): Array<{ role: string; text: string }> {
-  const fromEntries = resolveRecentMessagesFromEntries(interactive?.sessionManager?.getEntries?.()
-    ?? interactive?.session?.sessionManager?.getEntries?.())
+  const fromEntries = resolveRecentMessagesFromEntries(getLinxActiveSessionHistoryEntries({ interactive, session: interactive?.session }))
   if (fromEntries.length > 0) {
     return fromEntries
   }
