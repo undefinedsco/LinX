@@ -127,6 +127,11 @@ Hard rules:
   but `Text` component creation, `interactive.chatContainer` mutation, and render
   invalidation belong behind
   `apps/cli/src/lib/linx-interactive-chat-text-host.ts`.
+- Editor text mutation, focus restoration, and render invalidation are shell
+  input/rendering state, not login or feature business logic. Feature modules
+  may decide the desired text, but `interactive.editor.setText`,
+  `interactive.ui.setFocus`, and follow-up render invalidation belong behind
+  `apps/cli/src/lib/linx-interactive-editor-text-host.ts`.
 - Terminal-title patching is shell rendering lifecycle, not welcome-card
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
