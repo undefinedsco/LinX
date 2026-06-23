@@ -175,6 +175,37 @@ exploration. When Secretary creates/updates work, hands off a task, hits a
 blocker, or needs a decision, summarize the visible outcome and next step
 briefly; `/symphony status` is the detailed inspection surface.
 
+### Internal Projection Is Not Product Chat
+
+Symphony may wrap a user message with runtime-only control instructions before
+sending it to a backend model. Examples include Secretary-facing routing text,
+worker-selection constraints, xpod tool-use guidance, and authorization checks.
+Those wrappers are runtime input projections, not product messages.
+
+Hard rules:
+
+- The visible Secretary Thread stores the user's actual message, Secretary's
+  visible answer, and visible state transitions. It must not store or render the
+  internal wrapper text.
+- The assistant response must not echo headings such as
+  `AI Secretary Symphony request`, internal routing instructions, xpod auth
+  guardrails, or model-facing policy text unless the user explicitly asks to
+  inspect debug/projection internals.
+- Backend model input may include internal instructions, but Pod `Message`
+  records should point to the product-visible content and control resources,
+  not to the full projected prompt.
+- If internal projection text appears in the TUI transcript, Pod message
+  content, or normal assistant answer, treat it as a projection/rendering
+  boundary bug rather than as a Secretary style issue.
+
+When Symphony needs to inspect or mutate Pod control resources from the AI side,
+the direct tool surface is `xpod` running under the same Solid authority as the
+LinX session. Modeled resources such as Idea, Issue, Task, Delivery, Run,
+RunStep, Report, Evidence, ApprovalRequest, InputRequest, and InboxNotification
+should go through modeled `xpod obj`/shared-model surfaces. Raw `xpod get`,
+`put`, or RDF file operations are for explicit file-primary resources or
+diagnostics, not for hand-patching modeled product records.
+
 `auto` and `symphony` are orthogonal:
 
 - `auto on + symphony off`: Secretary owns the input lane, but the current chat
