@@ -41,6 +41,19 @@ export interface SessionControlRuntimeRef {
   model?: string
 }
 
+type SessionControlContext = {
+  interactive?: any
+  runtime?: any
+  sessionCwd?: string
+}
+
+type SessionControlArchiveRef = {
+  id?: string
+  file?: string
+  dir?: string
+  cwd?: string
+}
+
 export interface SessionControlBlockedEvent {
   id: string
   type: 'approval.required' | 'input.required'
@@ -84,11 +97,7 @@ export class SessionControlManager {
   private controlSessionManager: SessionManager | null = null
   private snapshot: SessionControlSnapshot | null = null
 
-  constructor(private readonly context: {
-    interactive?: any
-    runtime?: any
-    sessionCwd?: string
-  }) {}
+  constructor(private readonly context: SessionControlContext) {}
 
   getSnapshot(): SessionControlSnapshot | null {
     return this.snapshot ? cloneSnapshot(this.snapshot) : null
@@ -566,11 +575,7 @@ function mapRecommendationToInteractionResponse(
   }
 }
 
-function createControlSessionManager(context: {
-  interactive?: any
-  runtime?: any
-  sessionCwd?: string
-}, cwd: string): SessionManager {
+function createControlSessionManager(context: SessionControlContext, cwd: string): SessionManager {
   const explicitFactory = context.runtime?.sessionControl?.createControlSession
   if (typeof explicitFactory === 'function') {
     const created = explicitFactory({ cwd, businessSession: resolveBusinessSessionRef(context) })
@@ -599,50 +604,59 @@ function bootstrapControlSession(
   })
 }
 
-function resolveBusinessSessionManager(context: {
-  interactive?: any
-  runtime?: any
-}): any {
+function resolveBusinessSessionManager(context: Pick<SessionControlContext, 'interactive' | 'runtime'>): any {
   return context.interactive?.sessionManager
     ?? context.interactive?.session?.sessionManager
     ?? context.runtime?.session?.sessionManager
     ?? context.runtime?.sessionManager
 }
 
-function resolveCurrentAutoEnabled(context: {
-  interactive?: any
-  runtime?: any
-}): boolean {
+function resolveCurrentAutoEnabled(context: Pick<SessionControlContext, 'interactive' | 'runtime'>): boolean {
   return isLinxInteractiveAutoModeEnabled(context.interactive, context.runtime)
 }
 
-function resolveBusinessSessionRef(context: {
-  interactive?: any
-  runtime?: any
-  sessionCwd?: string
-}): SessionControlBusinessRef {
-  const manager = resolveBusinessSessionManager(context)
+function resolveBusinessSessionRef(context: SessionControlContext): SessionControlBusinessRef {
+  const archive = resolveBusinessSessionArchiveRef(context)
   return {
-    id: normalizeString(manager?.getSessionId?.())
+    id: archive.id
       ?? normalizeString(context.interactive?.session?.sessionId)
       ?? normalizeString(context.runtime?.sessionId),
-    file: normalizeString(manager?.getSessionFile?.())
+    file: archive.file
       ?? normalizeString(context.interactive?.session?.sessionFile)
       ?? normalizeString(context.runtime?.sessionFile),
     cwd: normalizeString(context.interactive?.session?.cwd)
-      ?? normalizeString(manager?.getCwd?.())
+      ?? archive.cwd
       ?? normalizeString(context.runtime?.cwd)
       ?? normalizeString(context.sessionCwd)
       ?? process.cwd(),
   }
 }
 
+function resolveBusinessSessionArchiveRef(context: Pick<SessionControlContext, 'interactive' | 'runtime'>): SessionControlArchiveRef {
+  const manager = resolveBusinessSessionManager(context)
+  return {
+    id: normalizeString(manager?.getSessionId?.()),
+    file: normalizeString(manager?.getSessionFile?.()),
+    cwd: normalizeString(manager?.getCwd?.()),
+  }
+}
+
 function resolveControlSessionRef(manager: SessionManager, fallbackCwd: string): SessionControlSessionRef {
+  const archive = resolveControlSessionArchiveRef(manager)
+  return {
+    id: archive.id ?? '',
+    file: archive.file,
+    dir: archive.dir,
+    cwd: archive.cwd ?? fallbackCwd,
+  }
+}
+
+function resolveControlSessionArchiveRef(manager: SessionManager): SessionControlArchiveRef {
   return {
     id: manager.getSessionId(),
     file: normalizeString(manager.getSessionFile?.()),
     dir: normalizeString(manager.getSessionDir?.()),
-    cwd: normalizeString(manager.getCwd?.()) ?? fallbackCwd,
+    cwd: normalizeString(manager.getCwd?.()),
   }
 }
 

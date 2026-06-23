@@ -883,7 +883,12 @@ entry bundles in the same process can resolve the same manager, but callers must
 access it through `getSessionControlManager()` and
 `installSessionControlRuntimeEventBridge()`. This keeps control-session state
 observable through an explicit shell module rather than turning the Pi
-interactive object into a service locator.
+interactive object into a service locator. Because session-control bridges a
+business session and a local control archive, Pi archive getters such as
+`getSessionId`, `getSessionFile`, `getSessionDir`, and `getCwd` must be isolated
+inside named archive-ref helpers before product-facing `businessSession` or
+`controlSession` refs are assembled. Callers consume those refs as data; they do
+not derive product identity from Pi manager objects.
 
 The current remaining design debt is shared shell state. Some modules still use
 `__linx*` properties on the interactive, editor, runtime, or session object.
