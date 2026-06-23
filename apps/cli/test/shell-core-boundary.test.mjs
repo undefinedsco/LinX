@@ -754,6 +754,13 @@ test('startup control hydration consumes archive identity instead of Pi SessionM
 })
 
 
+test('Pod mirror runtime host receives checkpoint archive id as data', () => {
+  const source = readFileSync(join(libRoot, 'linx-pod-mirror-runtime-host.ts'), 'utf8')
+
+  assert.doesNotMatch(source, /sessionManager\.getSessionId\b/)
+})
+
+
 test('direct sessionManager access stays in documented shell archive bridge modules', () => {
   const allowed = new Set([
     'linx-pi-runtime-execution.ts',

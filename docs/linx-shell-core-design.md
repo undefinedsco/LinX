@@ -793,9 +793,12 @@ metadata code. Only the snapshot/helper functions should call Pi archive getters
 such as `getSessionId`, `getSessionFile`, `getSessionName`, `getEntries`,
 `getLeafId`, or `getBranch`. Pod projection mapping helpers are not archive
 bridge owners: they must consume explicit archive DTOs instead of accepting a Pi
-`SessionManager`. Feature/rendering modules that only need a session id, cwd,
-name, recent messages, or branch operation should request a named seam helper
-instead of widening this exception.
+`SessionManager`. The Pod mirror runtime host may own the mirror lifecycle, but
+its sync checkpoint location must receive archive identity as explicit data from
+runtime execution/startup archive bridge code; it must not call Pi getters just
+to derive local checkpoint paths. Feature/rendering modules that only need a
+session id, cwd, name, recent messages, or branch operation should request a
+named seam helper instead of widening this exception.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router
