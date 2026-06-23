@@ -126,11 +126,13 @@ Hard rules:
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
   ordered title handlers instead of replacing the Pi method directly.
-- Custom editor component rebinding is shell editor lifecycle, not feature-local
-  wrapper territory. `interactive.setCustomEditorComponent` is patched only by
+- Custom editor component rebinding and temporary component mounting are shell
+  editor lifecycle, not feature-local wrapper territory. `interactive.setCustomEditorComponent` is patched only by
   `apps/cli/src/lib/linx-editor-component-router.ts`; modules that need to
   re-wrap the active editor after Pi swaps components register ordered rebind
-  handlers.
+  handlers. Feature modules that temporarily replace the editor with a dialog
+  must also use the editor-component seam for mount, restore, focus, and render
+  invalidation; they must not mutate `interactive.editorContainer` directly.
 - Extension UI context creation is shell UI-context lifecycle, not a Pod feature
   patch point. `interactive.createExtensionUIContext` is patched only by
   `apps/cli/src/lib/linx-extension-ui-context-router.ts`; modules that need to
@@ -885,7 +887,12 @@ Pi may replace the active editor component at runtime; LinX features such as
 final-submit command routing and auto editor rendering need to re-apply their
 editor-level decorators after that replacement. They must register ordered
 rebind handlers with the editor-component router rather than each wrapping
-`interactive.setCustomEditorComponent` independently.
+`interactive.setCustomEditorComponent` independently. Temporary editor
+component swaps, such as credential/login dialogs replacing the editor and then
+restoring it, also belong to this seam: feature modules may decide which dialog
+to show, but `editorContainer.clear/addChild`, focus handoff, restore-to-editor,
+and render invalidation must be done through editor-component seam helpers
+instead of feature-local Pi/TUI container mutation.
 
 Extension UI context augmentation belongs behind
 `linx-extension-ui-context-router.ts`. Pi creates an extension UI context for

@@ -21,6 +21,10 @@ import {
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import {
+  canMountLinxEditorComponent,
+  mountLinxEditorComponent,
+} from './linx-editor-component-router.js'
+import {
   captureLinxSessionRetryTurn,
   restoreLinxSessionHistoryBranch,
   type LinxSessionRetryTurn,
@@ -597,12 +601,7 @@ async function runLinxCloudBrowserLogin(
 }
 
 function canRenderLinxLoginDialog(interactive: any): boolean {
-  return Boolean(
-    interactive.ui
-      && typeof interactive.editorContainer?.clear === 'function'
-      && typeof interactive.editorContainer?.addChild === 'function'
-      && interactive.editor,
-  )
+  return canMountLinxEditorComponent(interactive)
 }
 
 async function runLinxCloudLoginDialog(
@@ -611,17 +610,7 @@ async function runLinxCloudLoginDialog(
   reason: LinxAuthReason,
 ): Promise<void> {
   const dialog = new LoginDialogComponent(interactive.ui, LINX_PROVIDER_ID, () => undefined)
-  const restoreEditor = (): void => {
-    interactive.editorContainer.clear()
-    interactive.editorContainer.addChild(interactive.editor)
-    interactive.ui?.setFocus?.(interactive.editor)
-    interactive.ui?.requestRender?.()
-  }
-
-  interactive.editorContainer.clear()
-  interactive.editorContainer.addChild(dialog)
-  interactive.ui?.setFocus?.(dialog)
-  interactive.ui?.requestRender?.()
+  const restoreEditor = mountLinxEditorComponent(interactive, dialog)
 
   let manualRedirectResolve: ((value: string) => void) | undefined
   let manualRedirectReject: ((error: unknown) => void) | undefined

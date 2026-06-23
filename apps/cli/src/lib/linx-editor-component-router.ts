@@ -76,3 +76,30 @@ function installLinxEditorComponentRouter(
   }
   state.installed = true
 }
+
+export function canMountLinxEditorComponent(interactive: any): boolean {
+  return Boolean(
+    interactive?.ui
+      && interactive?.editor
+      && typeof interactive?.editorContainer?.clear === 'function'
+      && typeof interactive?.editorContainer?.addChild === 'function'
+      && typeof interactive?.ui?.setFocus === 'function'
+      && typeof interactive?.ui?.requestRender === 'function',
+  )
+}
+
+export function mountLinxEditorComponent(interactive: any, component: unknown): () => void {
+  interactive.editorContainer.clear()
+  interactive.editorContainer.addChild(component)
+  interactive.ui?.setFocus?.(component)
+  interactive.ui?.requestRender?.()
+
+  return () => restoreLinxEditorComponent(interactive)
+}
+
+function restoreLinxEditorComponent(interactive: any): void {
+  interactive.editorContainer.clear()
+  interactive.editorContainer.addChild(interactive.editor)
+  interactive.ui?.setFocus?.(interactive.editor)
+  interactive.ui?.requestRender?.()
+}
