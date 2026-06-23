@@ -660,6 +660,15 @@ test('Pod-backed extension UI reads session id through the shell session metadat
 
 
 
+test('Symphony command reads source session id through the shell session metadata seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-symphony-interactive-command.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-session-metadata\.js['"]/)
+  assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.getSessionId\b/)
+})
+
+
+
 test('concrete shell command execution lives in a dedicated executor module', () => {
   const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
 

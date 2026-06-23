@@ -13,6 +13,7 @@ import {
 import { persistSymphonyIdeaToPod } from './symphony/pod-projection.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import { getInteractiveRuntimePodSession, setInteractiveRuntimePodSession } from './linx-interactive-runtime-host.js'
+import { resolveLinxSessionId } from './linx-session-metadata.js'
 import {
   getLinxInteractiveListSymphonyIssues,
   getLinxInteractiveListSymphonySessions,
@@ -587,9 +588,7 @@ interface SymphonySourceContext {
 }
 
 async function resolveSymphonySourceContext(interactive: any): Promise<SymphonySourceContext | undefined> {
-  const sessionId = interactive?.sessionManager?.getSessionId?.()
-    ?? interactive?.session?.sessionManager?.getSessionId?.()
-    ?? interactive?.session?.sessionId
+  const sessionId = resolveLinxSessionId({ interactive, runtime: interactive?.runtime, session: interactive?.session })
   const webId = await resolveSymphonyWebId(interactive)
   if (typeof sessionId !== 'string' || !sessionId.trim() || !webId) {
     return undefined
