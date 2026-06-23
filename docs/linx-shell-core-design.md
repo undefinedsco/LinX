@@ -785,7 +785,11 @@ planning, `linx-session-metadata.ts`, `linx-session-history.ts`, runtime
 archive diagnostics, and Pod-mirror/session-control bridge code that translates
 Pi archive entries into shared model resources. Even in those bridge modules,
 the output must be typed shell metadata or shared-model rows; callers should not
-receive Pi manager objects as a convenience.
+receive Pi manager objects as a convenience. `linx-session-manager.ts` may open,
+create, list, and repair Pi archives, but any `SessionInfo` it returns must be
+assembled from an explicit archive snapshot DTO rather than directly scattering
+`getSessionId`, `getCwd`, `getSessionName`, or `getEntries` calls through list or
+resolve branches.
 
 Pod mirror is an archive bridge, but its projection logic still should not
 scatter raw Pi getter calls through business operations. The bridge must first

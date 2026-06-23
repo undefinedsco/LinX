@@ -788,6 +788,20 @@ test('session metadata reads Pi archive fields only through a metadata snapshot 
 })
 
 
+test('session manager builds session info from archive snapshots', () => {
+  const source = readFileSync(join(libRoot, 'linx-session-manager.ts'), 'utf8')
+  const allowedRanges = findFunctionRanges(source, [
+    'getLinxPiSessionArchiveSnapshot',
+    'buildSessionInfoFromArchiveSnapshot',
+  ])
+  const violations = [...source.matchAll(/\bmanager\.(?:getSessionId|getCwd|getSessionName|getEntries)\s*\(/g)]
+    .filter((match) => !isOffsetInAnyRange(match.index ?? 0, allowedRanges))
+    .map((match) => `${lineNumberAt(source, match.index ?? 0)}:${match[0]}`)
+
+  assert.deepEqual(violations, [])
+})
+
+
 test('direct sessionManager access stays in documented shell archive bridge modules', () => {
   const allowed = new Set([
     'linx-pi-runtime-execution.ts',
