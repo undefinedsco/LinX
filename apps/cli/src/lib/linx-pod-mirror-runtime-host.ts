@@ -7,6 +7,9 @@ export interface LinxPodMirrorRuntimeHostOptions {
   runtime: AgentSessionRuntime
   cwd: string
   agentDir: string
+  archive: {
+    sessionId: string
+  }
   sessionManager: SessionManager
   autoEnabled: boolean
   symphonyEnabled: boolean
@@ -43,7 +46,7 @@ export function createLinxPodMirrorRuntimeHost(options: LinxPodMirrorRuntimeHost
     autoEnabled: options.autoEnabled,
     symphonyEnabled: options.symphonyEnabled,
     checkpointStore: createFileSyncCheckpointStore({
-      dir: join(options.agentDir, 'sync', 'pi-pod-mirror', options.sessionManager.getSessionId()),
+      dir: join(options.agentDir, 'sync', 'pi-pod-mirror', options.archive.sessionId),
     }),
     onError(error) {
       if (process.env.LINX_DEBUG === '1') {

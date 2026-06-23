@@ -73,6 +73,9 @@ export async function runLinxPiRuntime(options: RunLinxPiRuntimeOptions): Promis
       runtime,
       cwd: adapter.cwd,
       agentDir: options.agentDir,
+      archive: {
+        sessionId: options.sessionManager.getSessionId(),
+      },
       sessionManager: options.sessionManager,
       autoEnabled: options.autoEnabled,
       symphonyEnabled: options.symphonyEnabled,
