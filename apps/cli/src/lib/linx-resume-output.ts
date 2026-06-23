@@ -4,6 +4,7 @@ import {
   LINX_TUI_NO_EXIT_MESSAGE_ENV,
 } from './shell-lifecycle.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
+import { resolveLinxSessionId } from './linx-session-metadata.js'
 
 let linxResumeOutputStyleRestore: (() => void) | null = null
 
@@ -58,9 +59,7 @@ function getLinxExitMessageState(interactive: any): LinxExitMessageState {
 }
 
 export function buildLinxExitMessage(interactive: any): string {
-  const sessionId = interactive?.session?.sessionId
-    ?? interactive?.sessionManager?.getSessionId?.()
-    ?? interactive?.session?.sessionManager?.getSessionId?.()
+  const sessionId = resolveLinxSessionId({ interactive, session: interactive?.session })
   const usage = calculateSessionUsage(interactive?.session)
   const lines = ['LinX session closed.']
 
