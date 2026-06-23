@@ -705,6 +705,11 @@ Current shell-state rules:
   Shell modules may register and read those hooks through explicit host helpers,
   but must not use runtime hidden fields such as before-invalidate or rebind
   callback slots.
+- Runtime Pod session cache belongs in `linx-interactive-runtime-host.ts`.
+  Shell modules that discover or reuse `runtime.podSession` must use explicit
+  host helpers; feature modules such as Symphony may read/write the cached Pod
+  session for source-context discovery only through that seam, not by mutating
+  `interactive.runtime.podSession` directly.
 - Direct `interactive.__linx*` fields may be added only when they are local
   install sentinels or upstream original-method references that cannot be held
   anywhere else. New exceptions need a boundary test in

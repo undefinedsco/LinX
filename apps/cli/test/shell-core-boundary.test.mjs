@@ -323,6 +323,27 @@ test('runtime host hooks do not use runtime hidden fields', () => {
   assert.deepEqual(violations, [])
 })
 
+test('interactive runtime Pod session mutation is centralized in the runtime host', () => {
+  const allowed = new Set([
+    'linx-interactive-runtime-host.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/interactive\.runtime\.podSession\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 
 test('session-control runtime state does not use interactive hidden fields', () => {
   const violations = []
