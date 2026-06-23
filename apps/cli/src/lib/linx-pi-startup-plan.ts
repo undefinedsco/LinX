@@ -47,11 +47,12 @@ export async function createLinxPiStartupPlan(argv: LinxPiStartupPlanArgs): Prom
     last: Boolean(argv.continue || argv.last),
   })
   const restoreAutoFromHydration = Boolean(argv.session || argv['session-id'] || argv.continue || argv.last)
+  const archive = getLinxPiStartupArchiveIdentity(sessionManager)
   const controlState = await resolveLinxPiStartupControlState({
     requestedAuto: typeof argv.auto === 'boolean' ? argv.auto : undefined,
     hydrateFromPod: !argv.print && !startupLoginPrompt.shouldPrompt,
     restoreAutoFromHydration,
-    archive: getLinxPiStartupArchiveIdentity(sessionManager),
+    archive,
   })
   const autoEnabled = controlState.autoEnabled
   const symphonyEnabled = controlState.symphonyEnabled
@@ -72,6 +73,9 @@ export async function createLinxPiStartupPlan(argv: LinxPiStartupPlanArgs): Prom
     },
     runtimeOptions: {
       agentDir: LINX_AGENT_DIR,
+      archive: {
+        sessionId: archive.sessionId,
+      },
       autoEnabled,
       print: argv.print,
       prompt: argv.prompt,

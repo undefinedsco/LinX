@@ -37,6 +37,9 @@ export type CreateLinxRuntimeAdapterForPiCommand = (
 
 export interface RunLinxPiRuntimeOptions {
   adapter: LinxPiCliRuntimeAdapter
+  archive: {
+    sessionId: string
+  }
   agentDir: string
   autoEnabled: boolean
   print?: boolean
@@ -73,9 +76,7 @@ export async function runLinxPiRuntime(options: RunLinxPiRuntimeOptions): Promis
       runtime,
       cwd: adapter.cwd,
       agentDir: options.agentDir,
-      archive: {
-        sessionId: options.sessionManager.getSessionId(),
-      },
+      archive: options.archive,
       sessionManager: options.sessionManager,
       autoEnabled: options.autoEnabled,
       symphonyEnabled: options.symphonyEnabled,

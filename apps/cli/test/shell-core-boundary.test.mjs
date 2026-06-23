@@ -761,6 +761,13 @@ test('Pod mirror runtime host receives checkpoint archive id as data', () => {
 })
 
 
+test('runtime execution receives archive identity as startup data', () => {
+  const source = readFileSync(join(libRoot, 'linx-pi-runtime-execution.ts'), 'utf8')
+
+  assert.doesNotMatch(source, /sessionManager\.getSessionId\b/)
+})
+
+
 test('session-control reads Pi archive identity only through archive ref helpers', () => {
   const source = readFileSync(join(libRoot, 'session-control.ts'), 'utf8')
   const allowedRanges = findFunctionRanges(source, [
