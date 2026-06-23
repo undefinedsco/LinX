@@ -20,6 +20,28 @@
 - 当前 `packages/models` 若存在，只能视为迁移期的本地开发检出；它不再是推荐长期形态，也不应作为 LinX 内部 submodule 维护入口。
 - 本地开发如果需要改共享模型，优先在独立 models 仓库完成提交、版本和发布，再让 LinX 消费对应版本。开发期 workspace/link 只是便捷接线，不改变权威归属。
 
+## 多包边界
+
+一个仓库可以发布多个 npm 包，但包的 ownership、版本、tag、CI/CD 入口要
+分清。不要因为代码在同一个 monorepo 里，就把 LinX、xpod、models 的发布
+责任混成一个包。
+
+当前边界：
+
+- `@undefineds.co/linx`：CLI/TUI shell、Symphony/Secretary runtime projection、
+  LinX package/update lifecycle、Pi/backend adapter。
+- `@undefineds.co/xpod` / xpod CLI：Solid auth status、Pod raw file/RDF/obj
+  command surface、xpod command UX。
+- `@undefineds.co/models`：shared schemas, vocab, id defaults, resource helpers,
+  repositories, and cross-app business semantics。
+- `@undefineds.co/drizzle-solid`：database/resource machinery and low-level ORM
+  behavior.
+
+发版时按包定位修复 owner：LinX 修自己的 prompt/projection/TUI/adapter；xpod
+修自己的 auth/get/put/rdf/obj；models/drizzle-solid 修共享模型和 ORM 能力。
+LinX 需要消费 xpod/models 的修复时，先发布 owner 包，再升级 LinX 的精确
+npm 依赖版本。
+
 ## 发布口径
 
 这里的“发布”默认指 git release path：提交、推送、打版本 tag，让 CI/CD
@@ -30,6 +52,8 @@ publish”自动理解为在本机执行 `npm publish`。
 - 正常 release 入口：push git commit + push release tag。
 - npm registry publish：由 GitHub Actions 等发布流水线执行；只有用户明确要求
   “手工 npm publish / registry publish” 时，本地才考虑执行。
+- 多包仓库的 release tag / workflow 必须能明确指向目标包；不要用一个含糊
+  的 tag 让 CI 猜测该发布 LinX 还是 xpod。
 - 发布前发现本机 npm token 失效，不是标准 release blocker；标准 blocker 是
   git 状态、版本号、tag、CI 发布权限或 release workflow 配置错误。
 
