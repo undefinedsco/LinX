@@ -678,6 +678,23 @@ test('status line reads session name and cwd through the shell session metadata 
 
 
 
+test('status line reads session usage entries through the shell session-history seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-status-line.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-session-history\.js['"]/)
+  assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.getEntries\b/)
+})
+
+
+test('Secretary auto input reads recent history through the shell session-history seam', () => {
+  const source = readFileSync(join(libRoot, 'secretary-auto-input-controller.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-session-history\.js['"]/)
+  assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.getEntries\b/)
+})
+
+
+
 test('concrete shell command execution lives in a dedicated executor module', () => {
   const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
 

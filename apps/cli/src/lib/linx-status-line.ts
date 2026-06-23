@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
 import { getSolidLinxAppDir } from './solid-local-store.js'
 import { resolveLinxSessionCwd, resolveLinxSessionName } from './linx-session-metadata.js'
+import { getLinxActiveSessionHistoryEntries } from './linx-session-history.js'
 
 export type LinxStatusLineToken =
   | 'total-input-tokens'
@@ -301,8 +302,8 @@ export function calculateSessionUsage(session: any): {
   cacheWrite: number
   cacheRate: number | null
 } {
-  const entries = session?.sessionManager?.getEntries?.()
-  if (!Array.isArray(entries)) {
+  const entries = getLinxActiveSessionHistoryEntries({ session })
+  if (entries.length === 0) {
     return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheRate: null }
   }
 
