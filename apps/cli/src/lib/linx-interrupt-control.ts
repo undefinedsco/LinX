@@ -1,5 +1,6 @@
 import { handleInteractiveRewindSelector } from './linx-rewind-command.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
 import { stopLinxInteractiveSessionWorkNow } from './linx-session-work-control.js'
 import {
@@ -50,8 +51,7 @@ export function installLinxEscapeInterrupt(
         void openInteractiveRewindFromEscape(interactive)
       } else {
         lastIdleEscapeTime = now
-        interactive?.showStatus?.('Press Escape again to rewind this session.')
-        interactive?.ui?.requestRender?.()
+        showLinxInteractiveStatus(interactive, 'Press Escape again to rewind this session.')
       }
       return
     }
