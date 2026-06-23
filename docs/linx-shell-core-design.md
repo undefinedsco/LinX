@@ -768,9 +768,15 @@ practice this means:
 
 - auth recovery captures only a high-level pending retry descriptor
   (`continueFromId`, user prompt text, and prompt parent/branch identity) and
-  delegates history traversal to the seam;
+  delegates history traversal to the seam; the exported retry-capture entrypoint
+  should remain a thin feature-facing adapter, while Pi `getLeafId`, `getEntry`,
+  `getBranch`, and `getEntries` calls stay inside named internal history
+  helpers;
 - retry cancellation or completion asks the seam to restore the captured branch
-  before resubmitting or returning control;
+  before resubmitting or returning control; the exported restore entrypoint
+  should delegate branch/reset/context rebuild details to an internal helper
+  instead of directly calling `sessionManager.branch`, `resetLeaf`, or
+  `buildSessionContext`;
 - rewind UI asks the seam for selectable user-message items and high-level
   rewind results. The seam owns selected-user validation, active branch
   traversal, target leaf calculation, clean session materialization, abandoned
