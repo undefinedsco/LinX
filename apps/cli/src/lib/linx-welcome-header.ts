@@ -8,6 +8,7 @@ import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_CLI_VERSION } from './linx-self-update.js'
 import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
 import { registerLinxTerminalTitleHandler } from './linx-terminal-title-router.js'
+import { replaceLinxInteractiveHeader } from './linx-interactive-header-host.js'
 
 export function installLinxWelcomeHeader(interactive: any): void {
   registerLinxTerminalTitleHandler(interactive, {
@@ -34,13 +35,7 @@ export function renderLinxWelcomeHeaderAfterInit(interactive: any): void {
 
   let profileDisplayName: string | null = null
   const replacement = new LinxWelcomeCard(() => buildLinxWelcomeCardState(interactive, profileDisplayName))
-  const currentHeader = interactive?.customHeader ?? interactive?.builtInHeader
-  const index = interactive?.headerContainer?.children?.indexOf?.(currentHeader) ?? -1
-  if (index >= 0) {
-    interactive.headerContainer.children[index] = replacement
-  }
-  interactive.customHeader = replacement
-  interactive.ui?.requestRender?.()
+  replaceLinxInteractiveHeader(interactive, replacement)
   interactive.updateTerminalTitle?.()
 
   void suppressPodStatusOutput(() => resolveProfileDisplayName())

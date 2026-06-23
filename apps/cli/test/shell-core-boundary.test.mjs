@@ -757,6 +757,27 @@ test('terminal title patching is centralized in the shell rendering router', () 
   assert.deepEqual(violations, [])
 })
 
+test('interactive custom header mutation is centralized in the shell header host', () => {
+  const allowed = new Set([
+    'linx-interactive-header-host.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/interactive\.customHeader\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 test('interrupt control patch state is kept behind the shell interrupt host', () => {
   const allowed = new Set([
     'linx-interrupt-control-host.ts',
