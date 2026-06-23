@@ -51,7 +51,7 @@ export async function createLinxPiStartupPlan(argv: LinxPiStartupPlanArgs): Prom
     requestedAuto: typeof argv.auto === 'boolean' ? argv.auto : undefined,
     hydrateFromPod: !argv.print && !startupLoginPrompt.shouldPrompt,
     restoreAutoFromHydration,
-    sessionManager,
+    archive: getLinxPiStartupArchiveIdentity(sessionManager),
   })
   const autoEnabled = controlState.autoEnabled
   const symphonyEnabled = controlState.symphonyEnabled
@@ -95,4 +95,42 @@ export function assertLinxPiStartupSessionSelectorCompatibility(argv: {
     sessionId: argv['session-id'],
     last: Boolean(argv.continue || argv.resume || argv.last),
   })
+}
+
+function getLinxPiStartupArchiveIdentity(sessionManager: {
+  getSessionId(): string
+  getEntries(): Array<{ timestamp?: unknown }>
+}): { sessionId: string; createdAt: Date } {
+  const sessionId = sessionManager.getSessionId()
+  const entryDate = sessionManager.getEntries()
+    .map((entry) => toDate(entry.timestamp))
+    .find((date): date is Date => date instanceof Date)
+  return {
+    sessionId,
+    createdAt: entryDate ?? parseTimestampFromUuidLikeId(sessionId) ?? new Date(),
+  }
+}
+
+function parseTimestampFromUuidLikeId(id: string): Date | null {
+  const prefix = id.replace(/-/g, '').slice(0, 12)
+  if (!/^[\da-f]{12}$/i.test(prefix)) {
+    return null
+  }
+  const millis = Number.parseInt(prefix, 16)
+  if (!Number.isFinite(millis) || millis <= 0) {
+    return null
+  }
+  const date = new Date(millis)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function toDate(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value
+  }
+  if (typeof value === 'number' || typeof value === 'string') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+  return null
 }
