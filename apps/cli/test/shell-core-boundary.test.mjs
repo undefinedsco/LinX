@@ -722,6 +722,23 @@ test('rewind command delegates active session work control to the shell session 
   assert.doesNotMatch(source, /\babort\s*\(/)
 })
 
+test('rewind command delegates session history access to the shell session-history seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-rewind-command.ts'), 'utf8')
+  const forbiddenSessionManagerCalls = /sessionManager(?:\?\.)?\.(?:getLeafId|getEntry|getBranch|getEntries|getHeader|getSessionId|getSessionFile|branch|resetLeaf|createBranchedSession|newSession|buildSessionContext)\b/
+  const forbiddenLocalHelpers = [
+    'rewindSessionManagerBeforeUserEntry',
+    'rewindSessionManagerByTurns',
+    'resolveSessionManagerLeafId',
+    'getActiveSessionBranch',
+    'moveSessionManagerLeaf',
+    'materializeCleanRewindSession',
+    'syncAgentStateFromSessionManager',
+  ]
+
+  assert.doesNotMatch(source, forbiddenSessionManagerCalls)
+  assert.deepEqual(forbiddenLocalHelpers.filter((helper) => source.includes(helper)), [])
+})
+
 test('interrupt control delegates active session work control to the shell session seam', () => {
   const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
 
