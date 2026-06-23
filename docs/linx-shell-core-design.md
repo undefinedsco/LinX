@@ -769,9 +769,12 @@ planning, `linx-session-metadata.ts`, `linx-session-history.ts`, runtime
 archive diagnostics, and Pod-mirror/session-control bridge code that translates
 Pi archive entries into shared model resources. Even in those bridge modules,
 the output must be typed shell metadata or shared-model rows; callers should not
-receive Pi manager objects as a convenience. Feature/rendering modules that only
-need a session id, cwd, name, recent messages, or branch operation should request
-a named seam helper instead of widening this exception.
+receive Pi manager objects as a convenience. Pod projection mapping helpers are
+not archive bridge owners: they must consume explicit archive DTOs such as
+session id, optional session name, and active entries, instead of accepting a Pi
+`SessionManager`. Feature/rendering modules that only need a session id, cwd,
+name, recent messages, or branch operation should request a named seam helper
+instead of widening this exception.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router

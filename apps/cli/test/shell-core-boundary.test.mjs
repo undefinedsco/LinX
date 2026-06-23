@@ -695,6 +695,16 @@ test('Secretary auto input reads recent history through the shell session-histor
 
 
 
+
+test('Pod mirror mapping consumes archive DTOs instead of Pi SessionManager', () => {
+  const source = readFileSync(join(libRoot, 'pod-mirror-mapping.ts'), 'utf8')
+
+  assert.doesNotMatch(source, /SessionManager/)
+  assert.doesNotMatch(source, /sessionManager/)
+})
+
+
+
 test('direct sessionManager access stays in documented shell archive bridge modules', () => {
   const allowed = new Set([
     'linx-pi-runtime-execution.ts',
@@ -707,7 +717,6 @@ test('direct sessionManager access stays in documented shell archive bridge modu
     'linx-runtime-agent-session.ts',
     'linx-session-history.ts',
     'linx-session-metadata.ts',
-    'pod-mirror-mapping.ts',
     'session-control.ts',
   ])
   const violations = []

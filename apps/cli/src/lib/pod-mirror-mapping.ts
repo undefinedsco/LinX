@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
 import {
   agentResource,
   chatResource,
@@ -21,6 +20,20 @@ export const PI_AGENT_ID = DEFAULT_SECRETARY_AGENT_ID
 
 type PersistedRole = 'user' | 'assistant' | 'system'
 
+export interface PodMirrorArchiveEntry {
+  type: string
+  id: string
+  parentId?: string | null
+  timestamp: string
+  message?: unknown
+}
+
+export interface PodMirrorArchiveContext {
+  sessionId: string
+  sessionName?: string | null
+  entries?: PodMirrorArchiveEntry[]
+}
+
 export interface PodMirrorMessageRow {
   id: string
   parent: string
@@ -37,8 +50,8 @@ export interface PodMirrorMessageRow {
 
 export function buildPodMessageRow(
   webId: string,
-  options: Pick<{ sessionManager: SessionManager }, 'sessionManager'>,
-  entry: SessionEntry,
+  archive: PodMirrorArchiveContext,
+  entry: PodMirrorArchiveEntry,
 ): PodMirrorMessageRow | null {
   if (entry.type !== 'message') {
     return null
@@ -57,10 +70,10 @@ export function buildPodMessageRow(
 
   const createdAt = messageTimestampToDate(message, entry.timestamp)
   return {
-    id: `${options.sessionManager.getSessionId()}-${entry.id}`,
+    id: `${archive.sessionId}-${entry.id}`,
     parent: secretaryChatUri(webId),
     chat: secretaryChatUri(webId),
-    thread: secretaryThreadUri(webId, options.sessionManager.getSessionId()),
+    thread: secretaryThreadUri(webId, archive.sessionId),
     maker: role === 'user' ? webId : secretaryAgentUri(webId),
     role,
     content,
@@ -130,7 +143,7 @@ export function pathToWorkspaceUri(path: string): string | undefined {
   return `file://${path}`
 }
 
-export function calculateTokenUsage(entries: SessionEntry[]): number {
+export function calculateTokenUsage(entries: PodMirrorArchiveEntry[]): number {
   let total = 0
   for (const entry of entries) {
     if (entry.type !== 'message') {
@@ -144,29 +157,18 @@ export function calculateTokenUsage(entries: SessionEntry[]): number {
   return total
 }
 
-export function getActiveSessionEntries(sessionManager: SessionManager): SessionEntry[] {
-  if (typeof sessionManager.getLeafId === 'function' && sessionManager.getLeafId() === null) {
-    return []
-  }
-  if (typeof sessionManager.getBranch === 'function') {
-    const branch = sessionManager.getBranch()
-    return Array.isArray(branch) ? branch : []
-  }
-  return sessionManager.getEntries()
-}
-
-export function buildThreadTitle(sessionManager: SessionManager): string {
-  const name = sessionManager.getSessionName()
+export function buildThreadTitle(archive: PodMirrorArchiveContext): string {
+  const name = typeof archive.sessionName === 'string' ? archive.sessionName.trim() : ''
   if (name) {
     return name
   }
 
-  const firstUser = getActiveSessionEntries(sessionManager).find((entry) => (
+  const firstUser = (archive.entries ?? []).find((entry) => (
     entry.type === 'message'
     && (entry.message as { role?: unknown }).role === 'user'
   ))
   if (firstUser?.type === 'message') {
-    const title = extractMessageText(firstUser.message).replace(/\s+/g, ' ').trim()
+    const title = extractMessageText(firstUser.message as AgentMessage).replace(/\s+/g, ' ').trim()
     if (title) {
       return title.slice(0, 72)
     }
