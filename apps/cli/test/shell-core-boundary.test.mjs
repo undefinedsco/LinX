@@ -779,6 +779,27 @@ test('interrupt control patch state is kept behind the shell interrupt host', ()
   assert.deepEqual(violations, [])
 })
 
+test('interactive streaming message cleanup is centralized in the shell streaming host', () => {
+  const allowed = new Set([
+    'linx-interactive-streaming-message-host.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/interactive\.(?:streamingComponent|streamingMessage)\b/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 test('remaining interactive install sentinels stay out of hidden fields', () => {
   const violations = []
   const directRemainingInstallSentinelPattern = /__linx(?:CommandAutocompleteInstalled|SymphonyAutocompleteInstalled|PodBackedExtensionUiInstalled|InteractivePostInitHooksInstalled|SymphonyCommandInstalled|RestoredAutoStartupInstalled)\b/

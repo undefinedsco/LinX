@@ -18,6 +18,7 @@ import {
   registerLinxInteractiveErrorHandler,
   registerLinxInteractiveEventHandler,
 } from './linx-interactive-event-router.js'
+import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 
 const LINX_AUTH_LOGIN_IN_PROGRESS = Symbol.for('linx.tui.authLoginInProgress')
 const LINX_AUTH_LOGIN_ON_INIT = Symbol.for('linx.tui.authLoginOnInit')
@@ -472,15 +473,7 @@ function prepareLinxAuthExpiredRetry(interactive: any): void {
 }
 
 function suppressLinxAuthExpiredAssistantError(interactive: any): void {
-  const streamingComponent = interactive.streamingComponent
-  if (streamingComponent) {
-    interactive.chatContainer?.removeChild?.(streamingComponent)
-  }
-
-  interactive.streamingComponent = undefined
-  interactive.streamingMessage = undefined
-  interactive.footer?.invalidate?.()
-  interactive.ui?.requestRender?.()
+  clearLinxInteractiveStreamingMessage(interactive)
 }
 
 async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason): Promise<boolean> {
