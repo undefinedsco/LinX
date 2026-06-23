@@ -19,6 +19,11 @@ import {
   registerLinxInteractiveEventHandler,
 } from './linx-interactive-event-router.js'
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
+import {
+  captureLinxSessionRetryTurn,
+  restoreLinxSessionHistoryBranch,
+  type LinxSessionRetryTurn,
+} from './linx-session-history.js'
 
 const LINX_AUTH_LOGIN_IN_PROGRESS = Symbol.for('linx.tui.authLoginInProgress')
 const LINX_AUTH_LOGIN_ON_INIT = Symbol.for('linx.tui.authLoginOnInit')
@@ -33,11 +38,7 @@ const AUTH_OPTION_EXIT = 'Exit'
 
 type LinxAuthReason = 'startup' | 'expired' | 'manual'
 
-type LinxAuthPendingRetry = {
-  continueFromId?: string | null
-  promptText?: string
-  promptParentId?: string | null
-}
+type LinxAuthPendingRetry = LinxSessionRetryTurn
 
 export type LinxLoginFlowOptions = {
   onLoginSettled?: (interactive: any) => void
@@ -441,25 +442,7 @@ function prepareLinxAuthExpiredRetry(interactive: any): void {
     return
   }
 
-  const session = interactive.session
-  const sessionManager = session?.sessionManager
-  const leafId = typeof sessionManager?.getLeafId === 'function'
-    ? sessionManager.getLeafId()
-    : undefined
-  const leafEntry = leafId && typeof sessionManager?.getEntry === 'function'
-    ? sessionManager.getEntry(leafId)
-    : undefined
-  const leafMessage = leafEntry?.type === 'message' ? leafEntry.message : undefined
-  const userEntry = findLastUserMessageEntry(sessionManager, leafId)
-  const promptText = extractUserMessageText(userEntry?.message)
-    ?? extractUserMessageText(leafMessage)
-    ?? findLastUserMessageText(session?.state?.messages)
-
-  const pending = {
-    continueFromId: userEntry?.id ?? (leafMessage?.role === 'user' ? leafId : undefined),
-    promptText,
-    promptParentId: userEntry?.parentId ?? (leafMessage?.role === 'user' ? leafEntry.parentId : undefined),
-  } satisfies LinxAuthPendingRetry
+  const pending = captureLinxSessionRetryTurn(interactive.session)
   interactive[LINX_AUTH_PENDING_RETRY] = pending
 
   // AgentSession persists the assistant error after TUI subscribers run. Restore
@@ -467,7 +450,7 @@ function prepareLinxAuthExpiredRetry(interactive: any): void {
   // failed auth assistant message if the user cancels or login fails.
   setTimeout(() => {
     if (interactive[LINX_AUTH_PENDING_RETRY] === pending) {
-      restoreLinxRetryBranch(interactive.session, pending.continueFromId)
+      restoreLinxSessionHistoryBranch(interactive.session, pending.continueFromId)
     }
   }, 0)
 }
@@ -488,15 +471,14 @@ async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason
   interactive[LINX_AUTH_PENDING_RETRY] = undefined
 
   const session = interactive.session
-  const sessionManager = session?.sessionManager
-  if (!session || !sessionManager) {
+  if (!session) {
     return false
   }
 
   await session.agent?.waitForIdle?.()
 
   try {
-    restoreLinxRetryBranch(session, pending.continueFromId)
+    restoreLinxSessionHistoryBranch(session, pending.continueFromId)
     if (typeof session.agent?.continue === 'function') {
       startLinxContinuation(interactive, session, pending)
       return true
@@ -511,7 +493,7 @@ async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason
     return false
   }
 
-  restoreLinxRetryBranch(session, pending.promptParentId)
+  restoreLinxSessionHistoryBranch(session, pending.promptParentId)
   const promptResult = session.prompt(pending.promptText)
   if (isPromiseLike(promptResult)) {
     promptResult.catch((error) => {
@@ -548,114 +530,12 @@ async function retryLinxPromptFallback(
   }
 
   try {
-    restoreLinxRetryBranch(session, pending.promptParentId)
+    restoreLinxSessionHistoryBranch(session, pending.promptParentId)
     await session.prompt(pending.promptText)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     interactive.showError?.(`LinX Cloud retry failed: ${message}`)
   }
-}
-
-function restoreLinxRetryBranch(session: any, leafId: string | null | undefined): void {
-  const sessionManager = session?.sessionManager
-  if (!sessionManager) {
-    return
-  }
-
-  if (typeof leafId === 'string' && leafId) {
-    sessionManager.branch?.(leafId)
-  } else if (leafId === null) {
-    sessionManager.resetLeaf?.()
-  }
-
-  const context = sessionManager.buildSessionContext?.()
-  if (context?.messages && session.agent?.state) {
-    session.agent.state.messages = context.messages
-  }
-}
-
-function findLastUserMessageText(messages: unknown): string | undefined {
-  if (!Array.isArray(messages)) {
-    return undefined
-  }
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const text = extractUserMessageText(messages[index])
-    if (text) {
-      return text
-    }
-  }
-  return undefined
-}
-
-function findLastUserMessageEntry(
-  sessionManager: any,
-  leafId: unknown,
-): { id: string; parentId?: string | null; message: unknown } | undefined {
-  const branch = typeof sessionManager?.getBranch === 'function' && typeof leafId === 'string'
-    ? sessionManager.getBranch(leafId)
-    : undefined
-  const entries = Array.isArray(branch) && branch.length > 0
-    ? branch
-    : typeof sessionManager?.getEntries === 'function'
-      ? sessionManager.getEntries()
-      : []
-
-  if (!Array.isArray(entries)) {
-    return undefined
-  }
-
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index]
-    if (
-      isRecord(entry)
-      && entry.type === 'message'
-      && typeof entry.id === 'string'
-      && isRecord(entry.message)
-      && entry.message.role === 'user'
-    ) {
-      return {
-        id: entry.id,
-        parentId: normalizeParentId(entry.parentId),
-        message: entry.message,
-      }
-    }
-  }
-
-  return undefined
-}
-
-function normalizeParentId(parentId: unknown): string | null | undefined {
-  if (typeof parentId === 'string') {
-    return parentId
-  }
-  if (parentId === null) {
-    return null
-  }
-  return undefined
-}
-
-function extractUserMessageText(message: unknown): string | undefined {
-  if (!isRecord(message) || message.role !== 'user') {
-    return undefined
-  }
-
-  const content = message.content
-  if (typeof content === 'string') {
-    return content.trim() || undefined
-  }
-  if (!Array.isArray(content)) {
-    return undefined
-  }
-
-  const text = content
-    .filter((entry): entry is { type: string; text: string } => (
-      isRecord(entry) && entry.type === 'text' && typeof entry.text === 'string'
-    ))
-    .map((entry) => entry.text)
-    .join('')
-    .trim()
-  return text || undefined
 }
 
 export async function refreshLinxAuthState(interactive: any): Promise<void> {
