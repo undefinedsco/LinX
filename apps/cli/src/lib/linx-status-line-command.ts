@@ -1,5 +1,6 @@
 import { Container, getKeybindings, Spacer, Text, truncateToWidth } from '@earendil-works/pi-tui'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import {
   DEFAULT_STATUS_LINE_TOKENS,
   LINX_STATUS_LINE_TOKEN_NAMES,
@@ -61,8 +62,7 @@ export async function handleInteractiveStatusLineCommand(
     return
   }
 
-  interactive.showStatus?.(`${summary} · Use /statusline set <tokens...>, /statusline tokens, /statusline colors <on|off>, or /statusline reset.`)
-  interactive.ui?.requestRender?.()
+  showLinxInteractiveStatus(interactive, `${summary} · Use /statusline set <tokens...>, /statusline tokens, /statusline colors <on|off>, or /statusline reset.`)
 }
 
 async function showInteractiveStatusLineFallbackSelector(interactive: InteractiveStatusLineShell): Promise<void> {
@@ -139,7 +139,7 @@ async function showInteractiveStatusLineMultiSelect(interactive: InteractiveStat
           },
           () => {
             close()
-            interactive.ui?.requestRender?.()
+            showLinxInteractiveStatus(interactive, null)
           },
         )
         return { component: selector, focus: selector.getList() }
@@ -246,13 +246,11 @@ function writeInteractiveStatusLineConfig(
 
 function finishInteractiveStatusLineUpdate(interactive: InteractiveStatusLineShell, message: string): void {
   interactive.footer?.invalidate?.()
-  interactive.showStatus?.(message)
-  interactive.ui?.requestRender?.()
+  showLinxInteractiveStatus(interactive, message)
 }
 
 function showInteractiveStatusLineTokens(interactive: InteractiveStatusLineShell): void {
-  interactive.showStatus?.(`Status line tokens: ${LINX_STATUS_LINE_TOKEN_NAMES.join(', ')}`)
-  interactive.ui?.requestRender?.()
+  showLinxInteractiveStatus(interactive, `Status line tokens: ${LINX_STATUS_LINE_TOKEN_NAMES.join(', ')}`)
 }
 
 function formatInteractiveStatusLineSummary(): string {
