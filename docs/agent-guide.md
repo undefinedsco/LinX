@@ -29,6 +29,7 @@
 - 新增或调整 shell/core 边界时，同一变更必须更新 `docs/linx-shell-core-design.md`；功能文档只记录用户可见契约，不重新定义 shell/core 权责。
 - Symphony/Secretary 的内部 prompt wrapper、worker routing 指令、xpod auth/tool-use guardrail 是 runtime projection，不是产品 Message；泄漏到 TUI 正文、Pod message content 或普通回复时，按 projection/rendering 边界 bug 处理。
 - AI 侧读写 Symphony/Secretary Pod 资源时，默认通过同一 Solid authority 下的 `xpod` 工具面；Idea/Issue/Task/Delivery/Run/Evidence/Approval/Input/Inbox 等 modeled resources 走 `xpod obj`/shared models，raw `xpod get/put/rdf` 只用于 file-primary 资源或诊断，不手写 TTL 代替模型层。
+- LinX、xpod CLI、AI agent runtime 的本地 Solid 登录态只有一套：`${SOLID_HOME:-~/.solid}/auth`。不要引入 `xpodWebId`、`xpodPodRoot`、`linxWebId` 这类 app-specific 身份字段；需要身份时读取统一 `webId` / `podRoot` / `server`，需要 app runtime/cache 时才进入 `${SOLID_HOME}/apps/<app>` 或 `LINX_HOME`。
 
 ## Skill Routing
 
@@ -55,6 +56,7 @@ Skill source of truth:
 - 依赖、升级、版本、发版、打包、workspace、npm、yarn lock、`xpod`、`models`、`drizzle-solid` → 先读 `docs/dependency-guide.md`。
 - Solid/RDF/Pod 数据建模、URI/id、schema、vocab、repository、collection → 先读 `docs/cli-app-shared-core.md`，必要时再用 `solid-modeling` skill。
 - Pod 交互分层、collection / use-case / models / ORM / service 边界 → 先读 `docs/pod-interaction-layering.md`。
+- AI/CLI 直接访问 Pod 的 xpod 命令面、统一 Solid auth、modeled resource 与 file-primary resource 边界 → 先读 `docs/xpod-cli-spec.md`。
 - UI 视觉、组件分层、样式规范 → 先读 `docs/ui-style-guide.md` 和 `docs/ui-component-architecture.md`。
 
 ## Doc Map
@@ -65,6 +67,7 @@ Modeling principles:
 - `docs/local-first-pod-sync.md` — local-first runtime 接入共享 core 的 source/target/authority/plane 同步模型，不承载资源细节
 - `docs/cli-app-shared-core.md` — `@undefineds.co/models` 共享数据面、client/auto-mode helper 与 CLI/App 边界
 - `docs/pod-interaction-layering.md` — Pod 交互分层 spec，定义 collection、shared use-case、models、drizzle-solid、service 的职责边界
+- `docs/xpod-cli-spec.md` — xpod CLI 作为直接 Pod 工具面的使用边界、统一 Solid auth 和 modeled/file-primary 资源读写规则
 
 Feature contracts:
 

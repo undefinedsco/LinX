@@ -20,8 +20,9 @@ Pod 交互的 collection / use-case / models / ORM / service 具体分层见 `do
 
 - Pod schema
 - RDF namespace / predicate / subject 规则
-- 本地 auth/runtime 配置结构：Solid auth 走 `${SOLID_HOME:-~/.solid}/auth`，
-  LinX runtime/cache/archive 走 `LINX_HOME`
+- 本地 auth/runtime 配置结构：Solid auth 走 `${SOLID_HOME:-~/.solid}/auth`；
+  app runtime/cache/archive 才进入 app-local root，例如 `LINX_HOME` 或
+  `${SOLID_HOME}/apps/<app>/...`
 - auto-mode session archive 格式
 - sidecar / approval / tool-call 事件格式
 
@@ -57,6 +58,9 @@ Pod 交互的 collection / use-case / models / ORM / service 具体分层见 `do
 - `Agent` 是目录型资源：`row.id` 必须是 `agentResourceId(key)` 产生的 `{agentKey}/`，full IRI 形如 `https://.../agents/{agentKey}/`，Agent Home 是同目录 `/agents/{agentKey}/`。CLI/App 创建 Agent 时可以接收短 key，但写入 resource、调用 `findById/updateById`、初始化 Agent Home 时必须先转换成 `row.id`；不要恢复旧的 `/.data/agents/{agentKey}.ttl#this` 或 `/.data/agents/{agentKey}/`。
 - UI collection/cache 层只能用 `row.id` 作为选中态、Map key、乐观更新合并 key。ORM 返回的 row subject/full IRI 可以用于 RDF 关系或 `ByIri`，不能替代 `row.id`。
 - Inrupt-compatible session 可以是真实 Inrupt `Session`，也可以是由已认证 `fetch` 适配出来的 inline session：至少包含 `info.isLoggedIn=true`、`info.webId` 和 `fetch`。client credentials 与 OIDC/browser consent 只影响这个 session 如何获得，不能影响后续 shared model 查询路径。
+- LinX、xpod CLI、agent runtime、后续 Solid app 的本地登录 authority 是同一份
+  `${SOLID_HOME:-~/.solid}/auth`。旧 `~/.xpod`、`~/.linx` 下的应用私有凭据不再构成“已登录”判断；这些目录只能保留 runtime/cache/archive 或迁移诊断用途。跨 app 身份字段统一命名为 `webId`、`podRoot`、`server`，不要新增 `xpodWebId`、`xpodPodRoot`、`linxWebId` 这类 app-specific 同义字段。
+- AI/CLI 需要操作 Pod 时，应复用同一 Solid authority 派生出的 session/fetch，而不是要求用户在 LinX 与 xpod CLI 中分别登录。若命令面发现 `xpod auth status` 与当前 LinX session 的 `webId` / `podRoot` 不一致，应停止并报告身份不匹配；不要用第二套 secret 或 token 猜测修复。
 - 允许留在 CLI / App 的逻辑只有壳层适配：TTY/GUI 渲染、快捷键、命令参数、Pi/Codex/Claude 协议事件到 shared insert/update DTO 的映射、本地缓存策略、错误展示。它不能决定 shared Pod resource 的存储路径、predicate、subject 或跨端状态机。
 - remote approval 的审批颗粒度必须跟原生运行时对齐：只有 Pi/Codex/Claude 等上游原生流程请求审批时，LinX 才写 `approval`/`inbox` 控制面；LinX CLI 不得用自己的工具名 allowlist/blocklist 额外发明一套审批策略。
 - remote approval 的读取分两类：等待/处理一个已知 approval 时，优先使用持久化的 `approvalUri` 做精确 subject lookup；App/Inbox 这类列表界面可以做最近日期分桶的有界发现，但不得对 `/.data/approvals/` 做无界递归扫描，也不得把列表优化理解成改变 approval URI 存储语义。

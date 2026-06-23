@@ -87,6 +87,23 @@ linx --print "..."
 
 - `${SOLID_HOME:-~/.solid}/auth/oidc-storage/`
 
+这是 LinX、xpod CLI、AI agent runtime 和其他本机 Solid app 共享的登录
+authority。判断“是否已登录”只看这个统一 auth root；旧 `~/.xpod` 或
+`~/.linx` 下的历史凭据不能单独证明当前 Solid session 可用。应用自己的
+runtime/cache/archive 可以继续放在 `LINX_HOME` 或 `${SOLID_HOME}/apps/<app>`
+下面，但那里不是 Solid 登录态真相。
+
+本地账号上下文字段统一使用：
+
+- `webId`
+- `podRoot`
+- `server`
+
+不要在共享 auth 或 agent runtime 中新增 `xpodWebId`、`xpodPodRoot`、
+`linxWebId` 这类 app-specific 同义字段。xpod CLI 和 LinX 看到的身份应该
+是同一组字段；如果不同，应该报告身份不匹配，而不是要求用户再输入一套
+Solid secret。
+
 ## 当前本地凭据结构
 
 `credentials.json` 是统一 envelope，包含账号配置和 secrets：
@@ -108,6 +125,12 @@ linx --print "..."
 Solid client credentials 使用同一个文件，`authType` 为
 `client_credentials`，`secrets` 中保存 `clientId` 和 `clientSecret`。这是
 第二种 Solid 登录方式，不是 OpenAI/Anthropic/CodeBuddy provider API key。
+
+OIDC/browser consent 与 `clientId:clientSecret` 都只是获取 Solid session 的
+方式。登录模块负责获取、refresh、持久化 session；CLI/TUI runtime 只消费
+session/fetch。后续 Pod 读写、Cloud API 调用、xpod CLI 命令不应该重新解释
+“浏览器登录是不是 secret”，也不应该把 Solid client credentials 当成
+provider API key。
 
 ## 复用策略
 
