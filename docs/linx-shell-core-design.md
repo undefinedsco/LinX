@@ -138,10 +138,12 @@ Hard rules:
   `session.getAvailableThinkingLevels` are patched only by
   `apps/cli/src/lib/linx-session-thinking-capability-router.ts`; provider
   modules register capability handlers.
-- Session/runtime cwd mutation is shell session state, not workspace command
-  internals. Writes to Pi session cwd and runtime cwd belong behind
-  `apps/cli/src/lib/linx-session-cwd-router.ts`; commands may request a cwd
-  change but must not know the mutable Pi/runtime field layout.
+- Session/runtime cwd reads and mutation are shell session state, not workspace
+  command internals. Reads from Pi session-manager cwd plus writes to Pi session
+  cwd and runtime cwd belong behind
+  `apps/cli/src/lib/linx-session-cwd-router.ts`; commands may resolve or request
+  a cwd change but must not know the mutable Pi/runtime/session-manager field
+  layout.
 - Active session work control is shell session lifecycle, not feature command
   logic. Checks for Pi session streaming/bash state, follow-up delivery option
   selection, and abort calls belong
@@ -638,11 +640,13 @@ Feature modules may contribute title handlers, but they must not replace
 refresh, LinX branding, and future peer/backend-specific title fragments ordered
 through one rendering seam.
 
-Session/runtime cwd mutation belongs behind `linx-session-cwd-router.ts`.
-`/cd` and workspace startup notices may resolve paths and decide user-facing
-copy, but applying the cwd to Pi session state and LinX runtime state is a shell
-session-state operation. Feature commands must call the cwd seam instead of
-writing `interactive.session.cwd` or `runtime.cwd` directly.
+Session/runtime cwd reads and mutation belong behind
+`linx-session-cwd-router.ts`. `/cd` and workspace startup notices may resolve
+paths and decide user-facing copy, but reading Pi session-manager cwd or applying
+the cwd to Pi session state and LinX runtime state is a shell session-state
+operation. Feature commands must call the cwd seam instead of reading
+`interactive.sessionManager.getCwd()` / `session.sessionManager.getCwd()` or
+writing `interactive.session.cwd` / `runtime.cwd` directly.
 
 Active session work control belongs behind `linx-session-work-control.ts`.
 Feature commands that need a quiet local branch repair, such as `/rewind`, may

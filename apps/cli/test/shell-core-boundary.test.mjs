@@ -624,6 +624,13 @@ test('interactive session cwd mutation is centralized in the shell session cwd r
   assert.deepEqual(violations, [])
 })
 
+test('workspace command reads session cwd through the shell session metadata seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-workspace-command.ts'), 'utf8')
+
+  assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.getCwd\b/)
+  assert.doesNotMatch(source, /sessionManager\b/)
+})
+
 
 
 test('concrete shell command execution lives in a dedicated executor module', () => {
