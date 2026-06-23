@@ -1026,6 +1026,25 @@ test('auth retry session history access lives behind a shell session-history sea
   assert.doesNotMatch(source, /\brestoreLinxRetryBranch\b/)
 })
 
+test('session-history retry exports delegate Pi history operations to internal helpers', () => {
+  const source = readFileSync(join(libRoot, 'linx-session-history.ts'), 'utf8')
+  const allowedRanges = findFunctionRanges(source, [
+    'captureLinxRetryTurnFromSessionManager',
+    'restoreSessionHistoryBranchWithManager',
+  ])
+  const exportedRanges = findFunctionRanges(source, [
+    'captureLinxSessionRetryTurn',
+    'restoreLinxSessionHistoryBranch',
+  ])
+  const forbiddenCalls = /sessionManager(?:\?\.)?\.(?:getLeafId|getEntry|getBranch|getEntries|branch|resetLeaf|buildSessionContext)\b/g
+  const violations = [...source.matchAll(forbiddenCalls)]
+    .filter((match) => isOffsetInAnyRange(match.index ?? 0, exportedRanges))
+    .filter((match) => !isOffsetInAnyRange(match.index ?? 0, allowedRanges))
+    .map((match) => `${lineNumberAt(source, match.index ?? 0)}:${match[0]}`)
+
+  assert.deepEqual(violations, [])
+})
+
 test('interactive command routing patch state is kept behind the shell command routing host', () => {
   const allowed = new Set([
     'linx-interactive-command-routing-host.ts',

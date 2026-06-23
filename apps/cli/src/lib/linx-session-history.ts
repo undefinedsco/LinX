@@ -11,7 +11,17 @@ type SessionHistoryEntry = {
 }
 
 export function captureLinxSessionRetryTurn(session: any): LinxSessionRetryTurn {
-  const sessionManager = session?.sessionManager
+  return captureLinxRetryTurnFromSessionManager(session?.sessionManager, session?.state?.messages)
+}
+
+export function restoreLinxSessionHistoryBranch(session: any, leafId: string | null | undefined): void {
+  restoreSessionHistoryBranchWithManager(session?.sessionManager, leafId, session)
+}
+
+function captureLinxRetryTurnFromSessionManager(
+  sessionManager: any,
+  fallbackMessages: unknown,
+): LinxSessionRetryTurn {
   const leafId = typeof sessionManager?.getLeafId === 'function'
     ? sessionManager.getLeafId()
     : undefined
@@ -22,7 +32,7 @@ export function captureLinxSessionRetryTurn(session: any): LinxSessionRetryTurn 
   const userEntry = findLastUserMessageEntry(sessionManager, leafId)
   const promptText = extractUserMessageText(userEntry?.message)
     ?? extractUserMessageText(leafMessage)
-    ?? findLastUserMessageText(session?.state?.messages)
+    ?? findLastUserMessageText(fallbackMessages)
 
   return {
     continueFromId: userEntry?.id ?? (leafMessage?.role === 'user' ? leafId : undefined),
@@ -31,8 +41,11 @@ export function captureLinxSessionRetryTurn(session: any): LinxSessionRetryTurn 
   }
 }
 
-export function restoreLinxSessionHistoryBranch(session: any, leafId: string | null | undefined): void {
-  const sessionManager = session?.sessionManager
+function restoreSessionHistoryBranchWithManager(
+  sessionManager: any,
+  leafId: string | null | undefined,
+  session: any,
+): void {
   if (!sessionManager) {
     return
   }
@@ -44,7 +57,7 @@ export function restoreLinxSessionHistoryBranch(session: any, leafId: string | n
   }
 
   const context = sessionManager.buildSessionContext?.()
-  if (context?.messages && session.agent?.state) {
+  if (context?.messages && session?.agent?.state) {
     session.agent.state.messages = context.messages
   }
 }
