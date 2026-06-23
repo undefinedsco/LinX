@@ -71,6 +71,13 @@ export interface LinxPiPodMessageSnapshot {
 
 type PodSessionFetch = (url: string, init?: RequestInit) => Promise<Response>
 
+type LinxPiSessionArchiveSnapshot = {
+  id: string
+  cwd: string
+  name?: string
+  entries: SessionEntry[]
+}
+
 export function createNativeLinxPiPodSessionSource(context: {
   webId: string
   db: SolidDatabase
@@ -154,16 +161,13 @@ export async function resolveLinxPiSession(
   if (existsSync(directPath) && statSync(directPath).isFile()) {
     const manager = SessionManager.open(directPath)
     const header = manager.getHeader()
-    return {
-      path: directPath,
-      id: manager.getSessionId(),
-      cwd: manager.getCwd(),
-      created: header?.timestamp ? new Date(header.timestamp) : new Date(0),
-      modified: statSync(directPath).mtime,
-      messageCount: manager.getEntries().filter((entry) => entry.type === 'message').length,
-      firstMessage: '(session file)',
-      allMessagesText: '',
-    }
+    return buildSessionInfoFromArchiveSnapshot(
+      getLinxPiSessionArchiveSnapshot(manager),
+      directPath,
+      header?.timestamp ? new Date(header.timestamp) : new Date(0),
+      statSync(directPath).mtime,
+      { firstMessage: '(session file)', allMessagesText: '' },
+    )
   }
 
   const localSessions = sessionDir
@@ -660,8 +664,31 @@ function buildSessionInfoFromManager(
   created: Date,
   modified: Date,
 ): SessionInfo {
-  const entries = manager.getEntries()
-  const messages = entries.filter((entry) => entry.type === 'message')
+  return buildSessionInfoFromArchiveSnapshot(
+    getLinxPiSessionArchiveSnapshot(manager),
+    path,
+    created,
+    modified,
+  )
+}
+
+function getLinxPiSessionArchiveSnapshot(manager: SessionManager): LinxPiSessionArchiveSnapshot {
+  return {
+    id: manager.getSessionId(),
+    cwd: manager.getCwd(),
+    name: manager.getSessionName(),
+    entries: manager.getEntries(),
+  }
+}
+
+function buildSessionInfoFromArchiveSnapshot(
+  snapshot: LinxPiSessionArchiveSnapshot,
+  path: string,
+  created: Date,
+  modified: Date,
+  overrides: Partial<Pick<SessionInfo, 'firstMessage' | 'allMessagesText'>> = {},
+): SessionInfo {
+  const messages = snapshot.entries.filter((entry) => entry.type === 'message')
   const allMessages = messages
     .map((entry) => extractMessageText((entry as { message?: unknown }).message))
     .filter(Boolean)
@@ -671,16 +698,16 @@ function buildSessionInfoFromManager(
   })
   return {
     path,
-    id: manager.getSessionId(),
-    cwd: manager.getCwd(),
-    name: manager.getSessionName(),
+    id: snapshot.id,
+    cwd: snapshot.cwd,
+    name: snapshot.name,
     created,
     modified,
     messageCount: messages.length,
-    firstMessage: firstUserMessage
+    firstMessage: overrides.firstMessage ?? (firstUserMessage
       ? extractMessageText((firstUserMessage as { message?: unknown }).message) || '(no messages)'
-      : '(no messages)',
-    allMessagesText: allMessages.join(' '),
+      : '(no messages)'),
+    allMessagesText: overrides.allMessagesText ?? allMessages.join(' '),
   }
 }
 
