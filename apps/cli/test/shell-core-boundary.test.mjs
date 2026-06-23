@@ -669,6 +669,15 @@ test('Symphony command reads source session id through the shell session metadat
 
 
 
+test('status line reads session name and cwd through the shell session metadata seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-status-line.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-session-metadata\.js['"]/)
+  assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.(?:getSessionName|getCwd)\b/)
+})
+
+
+
 test('concrete shell command execution lives in a dedicated executor module', () => {
   const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
 
