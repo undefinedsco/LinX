@@ -1,6 +1,7 @@
 import { LoginDialogComponent } from '@earendil-works/pi-coding-agent'
 import { connectAiProviderCredential } from './ai-command.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import {
   canMountLinxEditorComponent,
   mountLinxEditorComponent,
@@ -19,7 +20,8 @@ export async function promptForBackendCredential(
 ): Promise<BackendCredentialEntry | null | undefined> {
   const reason = details.reason ?? 'missing'
   const repairLabel = formatBackendCredentialRepairReason(reason)
-  interactive.showStatus?.(
+  showLinxInteractiveStatus(
+    interactive,
     `AI Secretary detected ${repairLabel} ${details.providerLabel} credentials before this backend can answer. `
       + 'Enter them here; LinX will save them to your Pod AI settings and retry the message.',
   )
@@ -50,8 +52,7 @@ export async function handleInteractiveAiConnectCommand(
 ): Promise<void> {
   const providerId = command.provider?.trim()
   if (!providerId) {
-    interactive.showStatus?.('Usage: /ai connect <provider> [--base-url <url>] [--model <model>] - connect an AI provider key to LinX Pod AI settings.')
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, 'Usage: /ai connect <provider> [--base-url <url>] [--model <model>] - connect an AI provider key to LinX Pod AI settings.')
     return
   }
 
@@ -81,8 +82,7 @@ export async function handleInteractiveAiConnectCommand(
 
   const apiKey = credential?.apiKey?.trim()
   if (!apiKey) {
-    interactive.showStatus?.(`${providerLabel} AI connect cancelled.`)
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, `${providerLabel} AI connect cancelled.`)
     return
   }
 
@@ -97,14 +97,14 @@ export async function handleInteractiveAiConnectCommand(
       ...(credentialBaseUrl ? { baseUrl: credentialBaseUrl } : {}),
       ...(model ? { model } : {}),
     })
-    interactive.showStatus?.(`Connected AI provider ${result.providerId} to LinX Pod AI settings. api-key: ${result.maskedApiKey}`)
+    showLinxInteractiveStatus(interactive, `Connected AI provider ${result.providerId} to LinX Pod AI settings. api-key: ${result.maskedApiKey}`, { render: false })
     interactive.session?.modelRegistry?.refresh?.()
     await interactive.updateAvailableProviderCount?.()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     showLinxInteractiveError(interactive, `LinX AI connect failed: ${message}`)
   } finally {
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, undefined)
   }
 }
 
