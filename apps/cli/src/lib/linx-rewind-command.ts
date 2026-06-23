@@ -4,6 +4,7 @@ import {
   isLinxInteractiveAutoModeEnabled,
   setLinxInteractiveAutoModeEnabled,
 } from './linx-interactive-shell-state.js'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { getLinxPodMirrorForRuntime } from './linx-pod-mirror-runtime-host.js'
 import {
   assertLinxRewindUserEntryTarget,
@@ -20,7 +21,7 @@ import { stopLinxActiveSessionWork } from './linx-session-work-control.js'
 export async function handleInteractiveRewindSelector(interactive: any, runtime: any): Promise<void> {
   const session = resolveInteractiveSession(interactive, runtime)
   if (!hasLinxSessionHistory({ interactive, runtime })) {
-    interactive.showError?.('Cannot rewind: no active LinX session history.')
+    showLinxInteractiveError(interactive, 'Cannot rewind: no active LinX session history.')
     interactive.ui?.requestRender?.()
     return
   }
@@ -59,7 +60,7 @@ export async function handleInteractiveRewindSelector(interactive: any, runtime:
           done()
         } catch (error) {
           done()
-          interactive.showError?.(error instanceof Error ? error.message : String(error))
+          showLinxInteractiveError(interactive, error instanceof Error ? error.message : String(error))
         }
       },
       () => {
@@ -85,7 +86,7 @@ export async function handleInteractiveRewindTurnsCommand(
 
   const session = resolveInteractiveSession(interactive, runtime)
   if (!hasLinxSessionHistory({ interactive, runtime })) {
-    interactive.showError?.('Cannot rewind: no active LinX session history.')
+    showLinxInteractiveError(interactive, 'Cannot rewind: no active LinX session history.')
     interactive.ui?.requestRender?.()
     return
   }

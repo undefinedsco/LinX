@@ -1,4 +1,5 @@
 import { Container, getKeybindings, Spacer, Text, truncateToWidth } from '@earendil-works/pi-tui'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import {
   DEFAULT_STATUS_LINE_TOKENS,
   LINX_STATUS_LINE_TOKEN_NAMES,
@@ -178,7 +179,7 @@ function toggleInteractiveStatusLineToken(interactive: InteractiveStatusLineShel
   const current = readLinxStatusLineConfig().tokens
   const exists = current.includes(token)
   if (exists && current.length <= 1) {
-    interactive.showError?.('Status line needs at least one item.')
+    showLinxInteractiveError(interactive, 'Status line needs at least one item.')
     return
   }
 
@@ -205,7 +206,7 @@ function handleInteractiveStatusLineArgs(interactive: InteractiveStatusLineShell
   if (action === 'colors' || action === 'color') {
     const value = parseLinxStatusLineColorArg(args[1])
     if (value === undefined) {
-      interactive.showError?.('Usage: /statusline colors <on|off>')
+      showLinxInteractiveError(interactive, 'Usage: /statusline colors <on|off>')
       return
     }
     writeInteractiveStatusLineConfig(interactive, {
@@ -224,7 +225,7 @@ function handleInteractiveStatusLineArgs(interactive: InteractiveStatusLineShell
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    interactive.showError?.(`${message}. Use /statusline tokens to list valid tokens.`)
+    showLinxInteractiveError(interactive, `${message}. Use /statusline tokens to list valid tokens.`)
   }
 }
 

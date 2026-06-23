@@ -3,6 +3,7 @@ import type { AutoModeCredentialSource, AutoModeWorkerBackend } from './auto-mod
 import { runSymphony } from './symphony/run.js'
 import { createSymphonyRuntimeForPodProjection } from './symphony/runtime.js'
 import { formatSymphonyStatus } from './symphony/status.js'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { DEFAULT_SECRETARY_CHAT_ID, secretaryChatUri, secretaryThreadUri } from './pod-mirror-mapping.js'
 import { getSessionControlManager } from './session-control.js'
 import { resolveInteractiveCwd } from './linx-workspace-command.js'
@@ -240,7 +241,7 @@ async function dispatchSymphonyWorkerFromInteractive(
         return
       }
       const message = error instanceof Error ? error.message : String(error)
-      interactive.showError?.(`Symphony dispatch failed: ${message}`)
+      showLinxInteractiveError(interactive, `Symphony dispatch failed: ${message}`)
     })
     .finally(() => {
       controllers.delete(controller)

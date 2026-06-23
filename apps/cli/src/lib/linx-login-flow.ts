@@ -18,6 +18,7 @@ import {
   registerLinxInteractiveErrorHandler,
   registerLinxInteractiveEventHandler,
 } from './linx-interactive-event-router.js'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import {
   captureLinxSessionRetryTurn,
@@ -321,11 +322,7 @@ function reportLinxLoginError(interactive: any, message: string): void {
 
   interactive[LINX_AUTH_REPORTING_ERROR] = true
   try {
-    if (typeof interactive.showError === 'function') {
-      interactive.showError(rendered)
-    } else {
-      interactive.showStatus?.(rendered)
-    }
+    showLinxInteractiveError(interactive, rendered)
   } finally {
     interactive[LINX_AUTH_REPORTING_ERROR] = false
   }
@@ -389,7 +386,7 @@ function showLinxAuthFallback(interactive: any, title: string, options: string[]
 
 async function promptForLinxClientCredentials(interactive: any, reason: LinxAuthReason, options: LinxLoginFlowOptions): Promise<void> {
   if (typeof interactive.showExtensionInput !== 'function') {
-    interactive.showError?.('This terminal build cannot collect Solid client credentials inside the TUI.')
+    showLinxInteractiveError(interactive, 'This terminal build cannot collect Solid client credentials inside the TUI.')
     return
   }
 
@@ -498,7 +495,7 @@ async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason
   if (isPromiseLike(promptResult)) {
     promptResult.catch((error) => {
       const message = error instanceof Error ? error.message : String(error)
-      interactive.showError?.(`LinX Cloud retry failed: ${message}`)
+      showLinxInteractiveError(interactive, `LinX Cloud retry failed: ${message}`)
     })
   }
   return true
@@ -525,7 +522,7 @@ async function retryLinxPromptFallback(
 ): Promise<void> {
   if (!pending.promptText || typeof session?.prompt !== 'function') {
     const message = cause instanceof Error ? cause.message : String(cause)
-    interactive.showError?.(`LinX Cloud retry failed: ${message}`)
+    showLinxInteractiveError(interactive, `LinX Cloud retry failed: ${message}`)
     return
   }
 
@@ -534,7 +531,7 @@ async function retryLinxPromptFallback(
     await session.prompt(pending.promptText)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    interactive.showError?.(`LinX Cloud retry failed: ${message}`)
+    showLinxInteractiveError(interactive, `LinX Cloud retry failed: ${message}`)
   }
 }
 

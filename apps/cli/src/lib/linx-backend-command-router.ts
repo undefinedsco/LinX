@@ -1,4 +1,5 @@
 import type { BackendCommandRouter } from './backend-command-router-contract.js'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { installProjectedCommandRouter } from './linx-interactive-command-routing.js'
 import { configureLinxInteractiveShellState } from './linx-interactive-shell-state.js'
 import { shouldRouteToBackendCommand } from './linx-shell-command-router.js'
@@ -29,7 +30,7 @@ export function installBackendCommandRouter(
         routed = await router.execute(command)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        interactive.showError?.(`${router.backend} command failed: ${message}`)
+        showLinxInteractiveError(interactive, `${router.backend} command failed: ${message}`)
         return true
       }
 
@@ -61,7 +62,7 @@ export function installBackendCommandRouter(
         routed = await router.execute(command)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        target.showError?.(`${router.backend} command failed: ${message}`)
+        showLinxInteractiveError(target, `${router.backend} command failed: ${message}`)
         return true
       }
 

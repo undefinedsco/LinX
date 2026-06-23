@@ -1,5 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { setLinxShellRuntimeCwd } from './linx-session-cwd-router.js'
 import { resolveLinxSessionCwd } from './linx-session-metadata.js'
 
@@ -12,12 +13,12 @@ export async function changeInteractiveCwd(interactive: any, runtime: any, targe
 
   const nextCwd = resolve(resolveInteractiveCwd(interactive, runtime), target)
   if (!existsSync(nextCwd)) {
-    interactive.showError?.(`Workspace not found: ${nextCwd}`)
+    showLinxInteractiveError(interactive, `Workspace not found: ${nextCwd}`)
     interactive.ui?.requestRender?.()
     return
   }
   if (!statSync(nextCwd).isDirectory()) {
-    interactive.showError?.(`Workspace is not a directory: ${nextCwd}`)
+    showLinxInteractiveError(interactive, `Workspace is not a directory: ${nextCwd}`)
     interactive.ui?.requestRender?.()
     return
   }

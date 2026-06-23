@@ -1,5 +1,6 @@
 import { LoginDialogComponent } from '@earendil-works/pi-coding-agent'
 import { connectAiProviderCredential } from './ai-command.js'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { getAIConfigProviderMetadata } from './models.js'
 import type { LinxShellCommand } from './linx-shell-command-router.js'
 import type {
@@ -97,7 +98,7 @@ export async function handleInteractiveAiConnectCommand(
     await interactive.updateAvailableProviderCount?.()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    interactive.showError?.(`LinX AI connect failed: ${message}`)
+    showLinxInteractiveError(interactive, `LinX AI connect failed: ${message}`)
   } finally {
     interactive.ui?.requestRender?.()
   }
@@ -184,7 +185,7 @@ async function promptForApiCredentialWithPiDialog(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (message !== 'Login cancelled') {
-      interactive.showError?.(`${details.errorPrefix}: ${message}`)
+      showLinxInteractiveError(interactive, `${details.errorPrefix}: ${message}`)
     }
     return null
   } finally {
@@ -238,7 +239,7 @@ async function promptForApiCredentialWithExtensionInput(
   ].join('\n')
 
   if (typeof interactive.showExtensionInput !== 'function') {
-    interactive.showError?.(`This terminal cannot collect ${details.providerLabel} credentials inside the TUI. Run \`linx ai connect ${details.providerId}\` first.`)
+    showLinxInteractiveError(interactive, `This terminal cannot collect ${details.providerLabel} credentials inside the TUI. Run \`linx ai connect ${details.providerId}\` first.`)
     return null
   }
 

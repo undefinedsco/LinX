@@ -108,7 +108,9 @@ Hard rules:
   `interactive.showError` are patched only by
   `apps/cli/src/lib/linx-interactive-event-router.ts`; modules that normalize
   events, intercept recoverable errors, or format visible errors register
-  ordered handlers.
+  ordered handlers. Feature modules that only need to display an error call
+  `apps/cli/src/lib/linx-interactive-error-display.ts`; they must not directly
+  call `interactive.showError` or depend on Pi's visible-error field shape.
 - Streaming message state is shell rendering state, not auth recovery state.
   Reads/writes of `interactive.streamingComponent` and
   `interactive.streamingMessage` belong behind
@@ -688,6 +690,9 @@ Interactive event/error interception belongs behind
 mutable interactive methods. Features may normalize event payloads, intercept a
 recoverable error, or format visible error copy, but they must register ordered
 handlers with the event router instead of replacing the Pi methods directly.
+Feature modules that only display an error use `linx-interactive-error-display.ts`;
+that helper owns the visible error fallback to status text when Pi does not
+provide an error renderer.
 `linx-login-flow.ts` owns LinX Cloud auth-expired recovery semantics; the event
 router owns method patching, handler ordering, payload handoff, and fallback to
 the original Pi methods.

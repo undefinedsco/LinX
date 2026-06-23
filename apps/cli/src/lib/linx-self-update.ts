@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { restartInteractiveShellProcess, type InteractiveShellLifecycle } from './shell-lifecycle.js'
 
 export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
@@ -64,7 +65,7 @@ export async function installLinxSelfUpdateAndRestart(
     await runNpmInstallLatest(runtime)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    interactive.showError?.(`LinX update failed: ${message}`)
+    showLinxInteractiveError(interactive, `LinX update failed: ${message}`)
     return
   }
 
