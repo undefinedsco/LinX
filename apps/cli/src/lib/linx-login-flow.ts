@@ -10,6 +10,10 @@ import { normalizeSelectorChoice } from './linx-selector-choice.js'
 import { openExternalUrl } from './linx-external-url.js'
 import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
+import {
+  registerLinxInteractiveLoginDialogHandler,
+  registerLinxInteractiveOAuthSelectorHandler,
+} from './linx-interactive-login-ui-router.js'
 
 const LINX_AUTH_LOGIN_IN_PROGRESS = Symbol.for('linx.tui.authLoginInProgress')
 const LINX_AUTH_LOGIN_ON_INIT = Symbol.for('linx.tui.authLoginOnInit')
@@ -104,31 +108,41 @@ function patchLoginCommand(interactive: any, options: LinxLoginFlowOptions): voi
 }
 
 function patchNativeOAuthSelectors(interactive: any, options: LinxLoginFlowOptions): void {
-  interactive.showOAuthSelector = async function patchedLinxOAuthSelector(mode: 'login' | 'logout' = 'login'): Promise<void> {
-    if (mode === 'logout') {
-      const authStorage = this.session?.modelRegistry?.authStorage
-      authStorage?.logout?.(LINX_PROVIDER_ID)
-      authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, '')
-      clearAccountSession()
-      clearCredentials()
-      clearOidcSessionStorage()
-      await refreshLinxAuthState(this)
-      this.showStatus?.('Logged out of LinX Cloud.')
-      return
-    }
+  registerLinxInteractiveOAuthSelectorHandler(interactive, {
+    name: 'linx-login-flow:oauth-selector',
+    priority: 0,
+    async handler({ interactive: target, mode }) {
+      if (mode === 'logout') {
+        const authStorage = target.session?.modelRegistry?.authStorage
+        authStorage?.logout?.(LINX_PROVIDER_ID)
+        authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, '')
+        clearAccountSession()
+        clearCredentials()
+        clearOidcSessionStorage()
+        await refreshLinxAuthState(target)
+        target.showStatus?.('Logged out of LinX Cloud.')
+        return { handled: true }
+      }
 
-    await startLinxCloudLogin(this, { reason: 'manual' }, options)
-  }
+      await startLinxCloudLogin(target, { reason: 'manual' }, options)
+      return { handled: true }
+    },
+  })
 
-  interactive.showLoginDialog = async function patchedLinxLoginDialog(providerId?: string): Promise<void> {
-    if (!providerId || providerId === LINX_PROVIDER_ID) {
-      await startLinxCloudLogin(this, { reason: 'manual' }, options)
-      return
-    }
+  registerLinxInteractiveLoginDialogHandler(interactive, {
+    name: 'linx-login-flow:login-dialog',
+    priority: 0,
+    async handler({ interactive: target, providerId }) {
+      if (!providerId || providerId === LINX_PROVIDER_ID) {
+        await startLinxCloudLogin(target, { reason: 'manual' }, options)
+        return { handled: true }
+      }
 
-    this.showStatus?.('LinX only supports LinX Cloud authentication in this TUI.')
-    await startLinxCloudLogin(this, { reason: 'manual' }, options)
-  }
+      target.showStatus?.('LinX only supports LinX Cloud authentication in this TUI.')
+      await startLinxCloudLogin(target, { reason: 'manual' }, options)
+      return { handled: true }
+    },
+  })
 }
 
 function patchAuthExpiredSessionEvents(interactive: any, options: LinxLoginFlowOptions): void {

@@ -152,6 +152,27 @@ test('interactive update version methods are centralized in the shell update rou
   assert.deepEqual(violations, [])
 })
 
+test('interactive login UI methods are centralized in the shell login UI router', () => {
+  const allowed = new Set([
+    'linx-interactive-login-ui-router.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/interactive\.(?:showOAuthSelector|showLoginDialog)\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 test('interactive mode state is centralized in the shell state module', () => {
   const allowed = new Set([
     'linx-interactive-shell-state.ts',
