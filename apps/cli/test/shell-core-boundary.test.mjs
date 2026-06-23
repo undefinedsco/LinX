@@ -565,6 +565,21 @@ test('input and final-submit command routing patches live in a dedicated input m
   assert.deepEqual(violations, [])
 })
 
+
+test('feature credential dialogs delegate editor container swaps to the shell editor component seam', () => {
+  const featureFiles = [
+    'linx-login-flow.ts',
+    'linx-ai-connect-command.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-editor-component-router\.js['"]/, target)
+    assert.doesNotMatch(source, /editorContainer(?:\?\.)?\.clear\s*\(/, target)
+    assert.doesNotMatch(source, /editorContainer(?:\?\.)?\.addChild\s*\(/, target)
+  }
+})
+
 test('custom editor component rebinding is centralized in the shell editor component router', () => {
   const allowed = new Set([
     'linx-editor-component-router.ts',
