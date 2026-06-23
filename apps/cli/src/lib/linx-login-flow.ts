@@ -20,6 +20,7 @@ import {
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
+import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import {
   canMountLinxEditorComponent,
   mountLinxEditorComponent,
@@ -111,7 +112,7 @@ function patchLoginCommand(interactive: any, options: LinxLoginFlowOptions): voi
       if (input !== '/login') {
         return false
       }
-      target.editor?.setText?.('')
+      setLinxInteractiveEditorText(target, '')
       await startLinxCloudLogin(target, {}, options)
       return true
     },
@@ -745,9 +746,7 @@ function openLoginUrl(url: string, interactive: any): void {
 }
 
 function prefillLoginCommand(interactive: any): void {
-  interactive.editor?.setText?.('/login')
-  interactive.ui?.setFocus?.(interactive.editor)
-  interactive.ui?.requestRender?.()
+  setLinxInteractiveEditorText(interactive, '/login', { focus: true, render: true })
 }
 
 function resolveProviderLabel(interactive: any, options: LinxLoginFlowOptions): string {
