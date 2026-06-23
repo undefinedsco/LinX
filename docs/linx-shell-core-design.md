@@ -109,6 +109,12 @@ Hard rules:
   `apps/cli/src/lib/linx-interactive-event-router.ts`; modules that normalize
   events, intercept recoverable errors, or format visible errors register
   ordered handlers.
+- Streaming message state is shell rendering state, not auth recovery state.
+  Reads/writes of `interactive.streamingComponent` and
+  `interactive.streamingMessage` belong behind
+  `apps/cli/src/lib/linx-interactive-streaming-message-host.ts`; features may
+  request streaming cleanup but must not know Pi's mutable streaming field
+  layout.
 - Terminal-title patching is shell rendering lifecycle, not welcome-card
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
@@ -553,6 +559,14 @@ handlers with the event router instead of replacing the Pi methods directly.
 `linx-login-flow.ts` owns LinX Cloud auth-expired recovery semantics; the event
 router owns method patching, handler ordering, payload handoff, and fallback to
 the original Pi methods.
+
+Streaming assistant-message cleanup belongs behind
+`linx-interactive-streaming-message-host.ts`. Auth recovery, rewind, interrupt,
+or future shell features may need to remove a transient assistant streaming
+message from the visible TUI, but they should call the host helper rather than
+reading or writing Pi's `streamingComponent` / `streamingMessage` fields
+directly. The host owns removing the component, clearing the fields, invalidating
+the footer, and requesting a render.
 
 Terminal-title rendering belongs behind `linx-terminal-title-router.ts`.
 Feature modules may contribute title handlers, but they must not replace
