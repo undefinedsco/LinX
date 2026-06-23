@@ -1,6 +1,7 @@
 import { getSecretaryAutoInputController } from './secretary-auto-input-controller.js'
 import { getSessionControlManager } from './session-control.js'
 import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 
 const restoredAutoStartupInstalled = new WeakSet<object>()
 
@@ -21,9 +22,8 @@ export function startLinxRestoredAutoAfterInit(
 
   const controller = getSecretaryAutoInputController(interactive, runtime, sessionControl)
   controller.start({ scheduleImmediately: true })
-  interactive.showStatus?.([
+  showLinxInteractiveStatus(interactive, [
     'Auto restored from the previous session.',
     'auto · Ctrl+C or /auto off to hand control back',
   ].join('\n'))
-  interactive.ui?.requestRender?.()
 }
