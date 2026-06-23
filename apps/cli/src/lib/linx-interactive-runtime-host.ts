@@ -68,3 +68,14 @@ function getRuntimeHostHooks(runtime: unknown): InteractiveRuntimeHostHooks {
     ? runtimeHostHooks.get(runtime) ?? {}
     : {}
 }
+
+export function setInteractiveRuntimePodSession(interactive: any, podSession: unknown): void {
+  const runtime = interactive?.runtime
+  if (runtime && typeof runtime === 'object') {
+    runtime.podSession = podSession
+  }
+}
+
+export function getInteractiveRuntimePodSession(interactive: any): any {
+  return interactive?.runtime?.podSession
+}
