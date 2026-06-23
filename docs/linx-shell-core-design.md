@@ -103,6 +103,12 @@ Hard rules:
   `apps/cli/src/lib/linx-interactive-login-ui-router.ts`; login/auth modules
   register ordered selector/dialog handlers instead of replacing Pi methods
   directly.
+- Interactive event/error methods are shell event-normalization lifecycle, not
+  auth-feature-owned Pi method replacements. `interactive.handleEvent` and
+  `interactive.showError` are patched only by
+  `apps/cli/src/lib/linx-interactive-event-router.ts`; modules that normalize
+  events, intercept recoverable errors, or format visible errors register
+  ordered handlers.
 - Terminal-title patching is shell rendering lifecycle, not welcome-card
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
@@ -538,6 +544,15 @@ LinX Cloud login/logout semantics, selector copy, and provider restrictions; it
 registers handlers with the login UI router instead of replacing those Pi
 methods directly. The router owns the Pi method patch and the fallback decision
 to the original Pi login UI methods.
+
+Interactive event/error interception belongs behind
+`linx-interactive-event-router.ts`. Pi exposes `handleEvent` and `showError` as
+mutable interactive methods. Features may normalize event payloads, intercept a
+recoverable error, or format visible error copy, but they must register ordered
+handlers with the event router instead of replacing the Pi methods directly.
+`linx-login-flow.ts` owns LinX Cloud auth-expired recovery semantics; the event
+router owns method patching, handler ordering, payload handoff, and fallback to
+the original Pi methods.
 
 Terminal-title rendering belongs behind `linx-terminal-title-router.ts`.
 Feature modules may contribute title handlers, but they must not replace
