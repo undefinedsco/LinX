@@ -9,6 +9,7 @@ import { LINX_CLI_VERSION } from './linx-self-update.js'
 import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
 import { registerLinxTerminalTitleHandler } from './linx-terminal-title-router.js'
 import { replaceLinxInteractiveHeader } from './linx-interactive-header-host.js'
+import { resolveLinxSessionCwd, resolveLinxSessionId, resolveLinxSessionName } from './linx-session-metadata.js'
 
 export function installLinxWelcomeHeader(interactive: any): void {
   registerLinxTerminalTitleHandler(interactive, {
@@ -21,8 +22,8 @@ export function installLinxWelcomeHeader(interactive: any): void {
 }
 
 function setLinxWelcomeTerminalTitle(interactive: any): void {
-  const cwd = interactive.sessionManager?.getCwd?.() || process.cwd()
-  const sessionName = interactive.sessionManager?.getSessionName?.()
+  const cwd = resolveLinxSessionCwd({ interactive }, process.cwd())
+  const sessionName = resolveLinxSessionName({ interactive })
   const suffix = sessionName ? `${sessionName} - ${basename(cwd)}` : basename(cwd)
   interactive.ui?.terminal?.setTitle?.(`LinX - ${suffix}`)
 }
@@ -100,9 +101,9 @@ class LinxWelcomeCard {
 export function buildLinxWelcomeCardState(interactive: any, profileDisplayName: string | null = null): HeaderState {
   const credentials = loadCredentials()
   const webId = credentials?.webId ?? 'not logged in'
-  const workspace = interactive?.sessionManager?.getCwd?.() || process.cwd()
-  const sessionId = interactive?.sessionManager?.getSessionId?.()
-  const sessionName = interactive?.sessionManager?.getSessionName?.()
+  const workspace = resolveLinxSessionCwd({ interactive }, process.cwd())
+  const sessionId = resolveLinxSessionId({ interactive })
+  const sessionName = resolveLinxSessionName({ interactive })
   const session = sessionName && sessionId ? `${sessionName} (${formatSessionId(sessionId)})` : formatSessionId(sessionId)
   const model = interactive?.session?.model?.id ?? 'unknown-model'
 

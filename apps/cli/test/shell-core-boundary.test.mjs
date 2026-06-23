@@ -631,6 +631,13 @@ test('workspace command reads session cwd through the shell session metadata sea
   assert.doesNotMatch(source, /sessionManager\b/)
 })
 
+test('welcome header reads session metadata through the shell session metadata seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-welcome-header.ts'), 'utf8')
+
+  assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.(?:getCwd|getSessionId|getSessionName)\b/)
+  assert.doesNotMatch(source, /sessionManager\b/)
+})
+
 
 
 test('concrete shell command execution lives in a dedicated executor module', () => {

@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { resolveLinxShellRuntimeCwd, setLinxShellRuntimeCwd } from './linx-session-cwd-router.js'
+import { setLinxShellRuntimeCwd } from './linx-session-cwd-router.js'
+import { resolveLinxSessionCwd } from './linx-session-metadata.js'
 
 export async function changeInteractiveCwd(interactive: any, runtime: any, target: string | undefined): Promise<void> {
   if (!target) {
@@ -29,7 +30,7 @@ export async function changeInteractiveCwd(interactive: any, runtime: any, targe
 }
 
 export function resolveInteractiveCwd(interactive: any, runtime: any): string {
-  return resolveLinxShellRuntimeCwd(interactive, runtime, process.cwd())
+  return resolveLinxSessionCwd({ interactive, runtime }, process.cwd())
 }
 
 export function setRuntimeCwd(interactive: any, runtime: any, cwd: string): void {
