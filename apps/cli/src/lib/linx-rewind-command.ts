@@ -5,6 +5,7 @@ import {
   setLinxInteractiveAutoModeEnabled,
 } from './linx-interactive-shell-state.js'
 import { getLinxPodMirrorForRuntime } from './linx-pod-mirror-runtime-host.js'
+import { stopLinxActiveSessionWork } from './linx-session-work-control.js'
 
 export async function handleInteractiveRewindSelector(interactive: any, runtime: any): Promise<void> {
   const session = resolveInteractiveSession(interactive, runtime)
@@ -69,7 +70,7 @@ export async function handleInteractiveRewindTurnsCommand(
     return
   }
 
-  await stopActiveSessionWorkForRewind(session)
+  await stopLinxActiveSessionWork(session)
   resetPendingAutoInputForRewind(interactive, runtime)
 
   const previousState = captureRewindSessionState(sessionManager)
@@ -115,7 +116,7 @@ async function rewindSessionManagerBeforeUserEntry(
   const previousState = captureRewindSessionState(sessionManager)
   const previousBranch = getActiveSessionBranch(sessionManager)
 
-  await stopActiveSessionWorkForRewind(session)
+  await stopLinxActiveSessionWork(session)
   resetPendingAutoInputForRewind(interactive, runtime)
 
   const targetLeafId = typeof entry.parentId === 'string' && entry.parentId ? entry.parentId : null
@@ -146,32 +147,6 @@ function resolveInteractiveSessionManager(interactive: any, runtime: any): any {
     ?? interactive?.sessionManager
     ?? runtime?.session?.sessionManager
     ?? runtime?.sessionManager
-}
-
-async function stopActiveSessionWorkForRewind(session: any): Promise<void> {
-  if (!session) {
-    return
-  }
-
-  const shouldWait = session.isStreaming === true || session.isBashRunning === true
-  try {
-    if (session.isBashRunning === true && typeof session.abortBash === 'function') {
-      session.abortBash()
-    }
-    if (session.isStreaming === true && typeof session.abort === 'function') {
-      session.abort()
-    }
-  } catch {
-    // Rewind should still repair the active branch even if abort reporting fails.
-  }
-
-  if (!shouldWait || typeof session.agent?.waitForIdle !== 'function') {
-    return
-  }
-  await Promise.race([
-    Promise.resolve(session.agent.waitForIdle()).catch(() => undefined),
-    new Promise((resolve) => setTimeout(resolve, 1_500)),
-  ])
 }
 
 function resetPendingAutoInputForRewind(interactive: any, runtime: any): void {
