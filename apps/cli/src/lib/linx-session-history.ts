@@ -219,10 +219,26 @@ export function rewindLinxSessionHistoryByTurns(
   turns: number,
 ): LinxSessionHistoryRewindResult | undefined {
   const sessionManager = resolveLinxSessionHistoryManager(source)
-  if (!sessionManager) {
-    return undefined
-  }
+  return sessionManager
+    ? rewindSessionHistoryByTurnsWithManager(sessionManager, turns, resolveLinxSessionHistorySession(source))
+    : undefined
+}
 
+export function rewindLinxSessionHistoryBeforeUserEntry(
+  source: LinxSessionHistorySource,
+  entryId: string,
+): LinxSessionHistoryRewindResult | undefined {
+  const sessionManager = resolveLinxSessionHistoryManager(source)
+  return sessionManager
+    ? rewindSessionHistoryBeforeUserEntryWithManager(sessionManager, entryId, resolveLinxSessionHistorySession(source))
+    : undefined
+}
+
+function rewindSessionHistoryByTurnsWithManager(
+  sessionManager: any,
+  turns: number,
+  session: any,
+): LinxSessionHistoryRewindResult | undefined {
   const previousState = captureLinxRewindSessionState(sessionManager)
   const previousBranch = getActiveSessionBranch(sessionManager)
   const result = rewindSessionHistoryByTurns(sessionManager, turns)
@@ -231,26 +247,22 @@ export function rewindLinxSessionHistoryByTurns(
   }
 
   const cleanResult = materializeCleanRewindSession(sessionManager, result.targetLeafId, previousState)
-  syncAgentStateFromSessionManager(resolveLinxSessionHistorySession(source), sessionManager)
+  syncAgentStateFromSessionManager(session, sessionManager)
   return {
     rewound: result.rewound,
     targetLeafId: result.targetLeafId,
     previousState,
     cleanResult,
     abandonedEntries: collectAbandonedRewindEntries(previousBranch, result.targetLeafId),
-    remainingMessages: countActiveAgentMessages(resolveLinxSessionHistorySession(source)),
+    remainingMessages: countActiveAgentMessages(session),
   }
 }
 
-export function rewindLinxSessionHistoryBeforeUserEntry(
-  source: LinxSessionHistorySource,
+function rewindSessionHistoryBeforeUserEntryWithManager(
+  sessionManager: any,
   entryId: string,
+  session: any,
 ): LinxSessionHistoryRewindResult | undefined {
-  const sessionManager = resolveLinxSessionHistoryManager(source)
-  if (!sessionManager) {
-    return undefined
-  }
-
   const entry = resolveRewindUserEntry(sessionManager, entryId)
   if (!entry) {
     throw new Error('Cannot rewind: selected message is not a user turn in the active branch.')
@@ -261,14 +273,14 @@ export function rewindLinxSessionHistoryBeforeUserEntry(
   const targetLeafId = typeof entry.parentId === 'string' && entry.parentId ? entry.parentId : null
   moveSessionManagerLeaf(sessionManager, targetLeafId)
   const cleanResult = materializeCleanRewindSession(sessionManager, targetLeafId, previousState)
-  syncAgentStateFromSessionManager(resolveLinxSessionHistorySession(source), sessionManager)
+  syncAgentStateFromSessionManager(session, sessionManager)
   return {
     rewound: 1,
     targetLeafId,
     previousState,
     cleanResult,
     abandonedEntries: collectAbandonedRewindEntries(previousBranch, targetLeafId),
-    remainingMessages: countActiveAgentMessages(resolveLinxSessionHistorySession(source)),
+    remainingMessages: countActiveAgentMessages(session),
   }
 }
 
