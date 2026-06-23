@@ -14,6 +14,10 @@ import {
   registerLinxInteractiveLoginDialogHandler,
   registerLinxInteractiveOAuthSelectorHandler,
 } from './linx-interactive-login-ui-router.js'
+import {
+  registerLinxInteractiveErrorHandler,
+  registerLinxInteractiveEventHandler,
+} from './linx-interactive-event-router.js'
 
 const LINX_AUTH_LOGIN_IN_PROGRESS = Symbol.for('linx.tui.authLoginInProgress')
 const LINX_AUTH_LOGIN_ON_INIT = Symbol.for('linx.tui.authLoginOnInit')
@@ -146,43 +150,40 @@ function patchNativeOAuthSelectors(interactive: any, options: LinxLoginFlowOptio
 }
 
 function patchAuthExpiredSessionEvents(interactive: any, options: LinxLoginFlowOptions): void {
-  const originalHandleEvent = interactive.handleEvent?.bind(interactive)
-  if (typeof originalHandleEvent !== 'function') {
-    return
-  }
+  registerLinxInteractiveEventHandler(interactive, {
+    name: 'linx-login-flow:auth-expired-event',
+    priority: 0,
+    handler({ interactive: target, event }) {
+      const normalizedEvent = normalizeLinxCliErrorEvent(event)
+      if (eventHasLinxAuthExpiredError(normalizedEvent)) {
+        showLinxAuthExpiredRecoveryNotice(target)
+        prepareLinxAuthExpiredRetry(target)
+        suppressLinxAuthExpiredAssistantError(target)
+        scheduleLinxCloudLogin(target, 'expired', options)
+        return { handled: true }
+      }
 
-  interactive.handleEvent = async function patchedHandleEvent(event: unknown): Promise<unknown> {
-    const normalizedEvent = normalizeLinxCliErrorEvent(event)
-    if (eventHasLinxAuthExpiredError(normalizedEvent)) {
-      showLinxAuthExpiredRecoveryNotice(this)
-      prepareLinxAuthExpiredRetry(this)
-      suppressLinxAuthExpiredAssistantError(this)
-      scheduleLinxCloudLogin(this, 'expired', options)
-      return undefined
-    }
-
-    const result = await originalHandleEvent(normalizedEvent)
-    return result
-  }
+      return { handled: false, event: normalizedEvent }
+    },
+  })
 }
 
 function patchAuthExpiredLoginPrompt(interactive: any, options: LinxLoginFlowOptions): void {
-  const originalShowError = interactive.showError?.bind(interactive)
-  if (typeof originalShowError !== 'function') {
-    return
-  }
+  registerLinxInteractiveErrorHandler(interactive, {
+    name: 'linx-login-flow:auth-expired-error',
+    priority: 0,
+    handler({ interactive: target, errorMessage }) {
+      const text = typeof errorMessage === 'string' ? errorMessage : String(errorMessage)
+      if (target[LINX_AUTH_REPORTING_ERROR] || !isLinxAuthExpiredError(text)) {
+        return { handled: false, errorMessage: formatLinxCliErrorMessage(errorMessage) }
+      }
 
-  interactive.showError = function patchedShowError(errorMessage: unknown): unknown {
-    const text = typeof errorMessage === 'string' ? errorMessage : String(errorMessage)
-    if (this[LINX_AUTH_REPORTING_ERROR] || !isLinxAuthExpiredError(text)) {
-      return originalShowError(formatLinxCliErrorMessage(errorMessage))
-    }
-
-    showLinxAuthExpiredRecoveryNotice(this)
-    prepareLinxAuthExpiredRetry(this)
-    scheduleLinxCloudLogin(this, 'expired', options)
-    return undefined
-  }
+      showLinxAuthExpiredRecoveryNotice(target)
+      prepareLinxAuthExpiredRetry(target)
+      scheduleLinxCloudLogin(target, 'expired', options)
+      return { handled: true }
+    },
+  })
 }
 
 function isLinxAuthExpiredError(text: string): boolean {
