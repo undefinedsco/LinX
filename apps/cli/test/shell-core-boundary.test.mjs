@@ -629,6 +629,13 @@ test('input command routers clear consumed input through the shell editor text s
   assert.doesNotMatch(source, /(?:this|interactive)\.editor(?:\?\.)?\.setText(?:\?\.)?\s*\(/)
 })
 
+test('Symphony command clears consumed input through the shell editor text seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-symphony-interactive-command.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-editor-text-host\.js['"]/)
+  assert.doesNotMatch(source, /\.editor(?:\?\.)?\.setText(?:\?\.)?\s*\(/)
+})
+
 test('custom editor component rebinding is centralized in the shell editor component router', () => {
   const allowed = new Set([
     'linx-editor-component-router.ts',
