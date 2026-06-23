@@ -16,6 +16,7 @@ import { getDefaultPodDataSession, type PodDataSession } from './pod-data-sessio
 import { resolveRuntimeTarget } from './runtime-target.js'
 import type { SessionControlManager, SessionControlSnapshot } from './session-control.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
+import { canSubmitLinxSessionUserInputNow, submitLinxSessionUserInput } from './linx-session-work-control.js'
 import {
   getLinxInteractiveAutoInputController,
   getLinxInteractiveGoalModeSupervisorLastAt,
@@ -260,8 +261,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
         return
       }
 
-      const session = this.interactive?.session
-      if (!session || session.isStreaming === true) {
+      if (!canSubmitLinxSessionUserInputNow(this.interactive?.session)) {
         return
       }
 
@@ -311,7 +311,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
     }
 
     const session = this.interactive?.session
-    if (!session || session.isStreaming === true) {
+    if (!canSubmitLinxSessionUserInputNow(session)) {
       return
     }
 
@@ -994,17 +994,9 @@ function extractTextContent(content: unknown): string {
 }
 
 async function deliverAsUserInput(session: any, text: string): Promise<void> {
-  if (typeof session?.sendUserMessage === 'function') {
-    await session.sendUserMessage(text, session.isStreaming ? { deliverAs: 'followUp' } : undefined)
-    return
-  }
-
-  if (typeof session?.prompt === 'function') {
-    await session.prompt(text, session.isStreaming ? { streamingBehavior: 'followUp' } : undefined)
-    return
-  }
-
-  throw new Error('Active LinX session cannot accept user input projection')
+  await submitLinxSessionUserInput(session, text, {
+    unavailableMessage: 'Active LinX session cannot accept user input projection',
+  })
 }
 
 type ProjectedInputDelivery = 'control-command' | 'peer-command' | 'backend'

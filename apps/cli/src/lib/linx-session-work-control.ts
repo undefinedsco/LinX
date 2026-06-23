@@ -25,6 +25,32 @@ export async function stopLinxActiveSessionWork(session: any, options: { waitTim
   ])
 }
 
+export async function submitLinxSessionUserInput(session: any, text: string, options: {
+  sendUserMessage?: (text: unknown, ...args: unknown[]) => Promise<unknown> | unknown
+  prompt?: (text: unknown, ...args: unknown[]) => Promise<unknown> | unknown
+  unavailableMessage?: string
+} = {}): Promise<void> {
+  const sendUserMessage = options.sendUserMessage ?? session?.sendUserMessage
+  if (typeof sendUserMessage === 'function') {
+    const deliveryOptions = isLinxSessionStreaming(session) ? { deliverAs: 'followUp' } : undefined
+    await sendUserMessage.call(session, text, deliveryOptions)
+    return
+  }
+
+  const prompt = options.prompt ?? session?.prompt
+  if (typeof prompt === 'function') {
+    const deliveryOptions = isLinxSessionStreaming(session) ? { streamingBehavior: 'followUp' } : undefined
+    await prompt.call(session, text, deliveryOptions)
+    return
+  }
+
+  throw new Error(options.unavailableMessage ?? 'Active LinX session cannot accept user input')
+}
+
+export function canSubmitLinxSessionUserInputNow(session: any): boolean {
+  return Boolean(session) && !isLinxSessionStreaming(session)
+}
+
 export function stopLinxInteractiveSessionWorkNow(interactive: any): boolean {
   const session = interactive?.session
   if (session?.isBashRunning === true && typeof session.abortBash === 'function') {
@@ -40,8 +66,12 @@ export function stopLinxInteractiveSessionWorkNow(interactive: any): boolean {
   return false
 }
 
+function isLinxSessionStreaming(session: any): boolean {
+  return session?.isStreaming === true
+}
+
 function isLinxInteractiveSessionWorkActive(interactive: any): boolean {
-  return interactive?.session?.isStreaming === true
+  return isLinxSessionStreaming(interactive?.session)
     || Boolean(interactive?.loadingAnimation)
     || Boolean(interactive?.autoCompactionEscapeHandler)
     || Boolean(interactive?.retryEscapeHandler)

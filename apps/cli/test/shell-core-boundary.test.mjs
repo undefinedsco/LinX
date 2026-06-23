@@ -731,6 +731,20 @@ test('interrupt control delegates active session work control to the shell sessi
   assert.doesNotMatch(source, /\babort\s*\(/)
 })
 
+test('peer and Secretary input delivery delegate streaming state to the shell session seam', () => {
+  const targets = [
+    'linx-peer-command-routing.ts',
+    'secretary-auto-input-controller.ts',
+  ]
+
+  for (const target of targets) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.doesNotMatch(source, /\bisStreaming\b/, target)
+    assert.doesNotMatch(source, /\bdeliverAs:\s*['"]followUp['"]/, target)
+    assert.doesNotMatch(source, /\bstreamingBehavior:\s*['"]followUp['"]/, target)
+  }
+})
+
 test('interactive command routing patch state is kept behind the shell command routing host', () => {
   const allowed = new Set([
     'linx-interactive-command-routing-host.ts',

@@ -143,11 +143,13 @@ Hard rules:
   `apps/cli/src/lib/linx-session-cwd-router.ts`; commands may request a cwd
   change but must not know the mutable Pi/runtime field layout.
 - Active session work control is shell session lifecycle, not feature command
-  logic. Checks for Pi session streaming/bash state and abort calls belong
+  logic. Checks for Pi session streaming/bash state, follow-up delivery option
+  selection, and abort calls belong
   behind `apps/cli/src/lib/linx-session-work-control.ts`; commands such as
   `/rewind`, Escape interrupt, and auto handback may request active work to stop
-  but must not know Pi's `isStreaming`, `isBashRunning`, `abort`, or
-  `abortBash` field layout.
+  or projected input to be delivered, but must not know Pi's `isStreaming`,
+  `isBashRunning`, `abort`, `abortBash`, `deliverAs: followUp`, or
+  `streamingBehavior: followUp` field/option layout.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -637,9 +639,13 @@ Active session work control belongs behind `linx-session-work-control.ts`.
 Feature commands that need a quiet local branch repair, such as `/rewind`, may
 ask the seam to stop active work and wait briefly for idle. Interactive
 interrupt paths such as Escape and auto handback may ask the seam for immediate
-best-effort cancellation before continuing shell-local control flow. They must
-not directly inspect Pi session running fields or call Pi abort methods; the
-seam owns those upstream field names and the fail-soft abort behavior.
+best-effort cancellation before continuing shell-local control flow. Projected
+input paths such as peer command routing and Secretary auto input may ask the
+seam whether local submission is currently safe and may ask it to deliver input
+using Pi's current follow-up semantics. They must not directly inspect Pi
+session running fields, construct Pi follow-up options, or call Pi abort
+methods; the seam owns those upstream field names/options and the fail-soft
+abort behavior.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router

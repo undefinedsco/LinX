@@ -4,6 +4,7 @@ import {
   getSessionCommandRouterOriginalPrompt,
   getSessionCommandRouterOriginalSendUserMessage,
 } from './linx-session-command-routing-host.js'
+import { submitLinxSessionUserInput } from './linx-session-work-control.js'
 
 export async function routeLinxPeerCommand(
   interactive: any,
@@ -23,17 +24,9 @@ export async function routeLinxPeerCommand(
 
 async function submitPeerCommandToBackend(interactive: any, text: string): Promise<void> {
   const session = interactive?.session
-  const sendUserMessage = getSessionCommandRouterOriginalSendUserMessage(session) ?? session?.sendUserMessage
-  if (typeof sendUserMessage === 'function') {
-    await sendUserMessage(text, session.isStreaming ? { deliverAs: 'followUp' } : undefined)
-    return
-  }
-
-  const prompt = getSessionCommandRouterOriginalPrompt(session) ?? session?.prompt
-  if (typeof prompt === 'function') {
-    await prompt(text, session.isStreaming ? { streamingBehavior: 'followUp' } : undefined)
-    return
-  }
-
-  throw new Error('Active LinX session cannot accept peer goal input')
+  await submitLinxSessionUserInput(session, text, {
+    sendUserMessage: getSessionCommandRouterOriginalSendUserMessage(session),
+    prompt: getSessionCommandRouterOriginalPrompt(session),
+    unavailableMessage: 'Active LinX session cannot accept peer goal input',
+  })
 }
