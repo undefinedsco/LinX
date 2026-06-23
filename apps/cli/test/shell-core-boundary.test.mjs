@@ -608,6 +608,13 @@ test('backend command router clears consumed input through the shell editor text
   assert.doesNotMatch(source, /\.editor(?:\?\.)?\.setText\s*\(/)
 })
 
+test('global shell command router clears consumed input through the shell editor text seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-editor-text-host\.js['"]/)
+  assert.doesNotMatch(source, /\.editor(?:\?\.)?\.setText\s*\(/)
+})
+
 test('custom editor component rebinding is centralized in the shell editor component router', () => {
   const allowed = new Set([
     'linx-editor-component-router.ts',

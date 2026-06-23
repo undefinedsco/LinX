@@ -1,6 +1,7 @@
 import { parseLinxShellCommand, type LinxShellCommand } from './linx-shell-command-router.js'
 import { installLinxAutoEditorIndicator } from './linx-auto-editor-indicator.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
+import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import {
   configureLinxInteractiveShellState,
 } from './linx-interactive-shell-state.js'
@@ -65,7 +66,7 @@ function installLinxShellCommandHandler(interactive: any, runtime: any): void {
         return false
       }
 
-      target.editor?.setText?.('')
+      setLinxInteractiveEditorText(target, '')
       await executeLinxShellCommand(target, runtime, command)
       return true
     },
