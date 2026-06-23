@@ -436,6 +436,42 @@ This boundary keeps the CLI shell thin: it adds LinX-owned lifecycle,
 configuration, and rendering seams around Pi/backend behavior, but it does not
 become a second command language for the same runtime.
 
+### Boundary synchronization protocol
+
+When Pi/backend design changes, or when the LinX shell/core design is updated,
+the CLI must synchronize to the current ownership boundary instead of preserving
+stale commands as compatibility shortcuts.
+
+Use this protocol before changing command behavior:
+
+1. **Refresh the current executable surface.** Check what the active Pi/backend
+   already exposes now, including startup flags, TUI slash commands, selectors,
+   and active help. Do not rely on older LinX aliases as evidence that LinX owns
+   the capability.
+2. **Name the owner before naming the command.** If the capability is runtime
+   session navigation, worker conversation control, backend model switching, or
+   backend-native help, the owner is Pi/backend even if the bug is visible in
+   the LinX shell.
+3. **Delete stale LinX duplicates instead of repairing them.** Removing a
+   top-level LinX entry is correct when the current Pi/backend surface already
+   owns the behavior. The fix is active-surface forwarding, help, selector
+   compatibility, or lifecycle handoff, not a second LinX command.
+4. **Keep help scoped to where the command runs.** Top-level help lists
+   LinX-owned lifecycle/package/scriptable surfaces. TUI help lists interactive
+   shell commands plus backend-native commands that are actually executable in
+   the active runtime. Do not make top-level help a global command catalog.
+5. **Guard admission before side effects.** Retired, TUI-only, or backend-native
+   command-shaped top-level input must fail before login, Pod lookup, auto
+   hydration, package update checks, or interactive bootstrap.
+6. **Update docs and tests in the same slice.** A boundary change must update
+   this design doc or the relevant feature contract, remove stale help/docs, and
+   add or update boundary tests proving both discoverability and pre-side-effect
+   admission.
+
+The important question is not "can LinX implement this command?" but "which
+surface owns the state being changed?" If the answer is Pi/backend, LinX adapts
+the shell around that surface and does not create a second product contract.
+
 ### Top-level command boundary checklist
 
 Use this checklist before adding or keeping any `linx <command>` entry:
