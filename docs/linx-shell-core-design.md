@@ -807,6 +807,13 @@ practice this means:
   should delegate branch/reset/context rebuild details to an internal helper
   instead of directly calling `sessionManager.branch`, `resetLeaf`, or
   `buildSessionContext`;
+- session-history query exports such as
+  `getLinxActiveSessionHistoryEntries`, `collectLinxRewindUserMessages`, and
+  `assertLinxRewindUserEntryTarget` are still feature-facing adapters, not
+  Pi-history utilities. They may resolve the shell history source and choose
+  user-facing empty/error behavior, but active-branch traversal, user-message
+  filtering, message text extraction, and selected-user validation must stay in
+  named internal history helpers;
 - rewind UI asks the seam for selectable user-message items and high-level
   rewind results. The seam owns selected-user validation, active branch
   traversal, target leaf calculation, clean session materialization, abandoned
