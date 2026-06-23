@@ -13,6 +13,7 @@ import {
 } from './symphony/archive.js'
 import { persistSymphonyIdeaToPod } from './symphony/pod-projection.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
+import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import { getInteractiveRuntimePodSession, setInteractiveRuntimePodSession } from './linx-interactive-runtime-host.js'
 import { resolveLinxSessionId } from './linx-session-metadata.js'
 import {
@@ -50,7 +51,7 @@ export function installSymphonyCommand(interactive: any): void {
     async handler({ interactive: target, input, originalSubmit }) {
       const command = parseSymphonyCommand(input)
       if (command) {
-        target.editor?.setText?.('')
+        setLinxInteractiveEditorText(target, '')
         await handleSymphonyCommand(target, command)
         return true
       }
