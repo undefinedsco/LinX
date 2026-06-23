@@ -62,6 +62,15 @@ function createSessionManager() {
   }
 }
 
+
+function createArchiveContext(sessionManager = createSessionManager()) {
+  return {
+    sessionId: sessionManager.getSessionId(),
+    sessionName: sessionManager.getSessionName(),
+    entries: sessionManager.getBranch(),
+  }
+}
+
 function createFakePodRuntime() {
   const rows = new Map()
   const writes = []
@@ -237,7 +246,7 @@ test('buildPodMessageRow maps Pi user and assistant messages into standard Pod m
 
   const userRow = module.buildPodMessageRow(
     'https://id.undefineds.co/alice/profile/card#me',
-    { sessionManager: createSessionManager() },
+    createArchiveContext(),
     {
       type: 'message',
       id: 'u1',
@@ -261,7 +270,7 @@ test('buildPodMessageRow maps Pi user and assistant messages into standard Pod m
 
   const assistantRow = module.buildPodMessageRow(
     'https://id.undefineds.co/alice/profile/card#me',
-    { sessionManager: createSessionManager() },
+    createArchiveContext(),
     {
       type: 'message',
       id: 'a1',
@@ -303,7 +312,7 @@ test('buildPodMessageRow keeps tool results as system messages linked to the sam
 
   const row = module.buildPodMessageRow(
     'https://id.undefineds.co/alice/profile/card#me',
-    { sessionManager: createSessionManager() },
+    createArchiveContext(),
     {
       type: 'message',
       id: 't1',
@@ -333,7 +342,7 @@ test('buildPodMessageRow sanitizes invalid Pod literal text before RDF projectio
   const invalidText = `bad ${String.fromCharCode(0xD83C)}${String.fromCharCode(0x1B)} text`
   const row = module.buildPodMessageRow(
     'https://id.undefineds.co/alice/profile/card#me',
-    { sessionManager: createSessionManager() },
+    createArchiveContext(),
     {
       type: 'message',
       id: 't1',
@@ -366,7 +375,7 @@ test('buildPodMessageRow skips operational assistant cloud/auth errors from dura
   ]) {
     const row = module.buildPodMessageRow(
       'https://id.undefineds.co/alice/profile/card#me',
-      { sessionManager: createSessionManager() },
+      createArchiveContext(),
       {
         type: 'message',
         id: `a-${errorMessage}`,

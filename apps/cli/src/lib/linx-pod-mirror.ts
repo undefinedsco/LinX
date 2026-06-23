@@ -50,7 +50,6 @@ import {
   buildThreadTitle,
   buildToolAuditId,
   calculateTokenUsage,
-  getActiveSessionEntries,
   pathToWorkspaceUri,
   sanitizePodLiteralText,
   secretaryThreadResourceId,
@@ -384,7 +383,7 @@ export class LinxPiPodMirror {
   }
 
   private nextTaskId(): string {
-    const sessionId = this.options.sessionManager.getSessionId()
+    const sessionId = getPodMirrorArchiveContext(this.options).sessionId
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     return `pi-pod-mirror:${sessionId}:${timestamp}:${++this.taskSeq}`
   }
@@ -394,7 +393,7 @@ export class LinxPiPodMirror {
       return null
     }
 
-    const entries = [...getActiveSessionEntries(this.options.sessionManager)].reverse()
+    const entries = [...getActivePiSessionEntries(this.options.sessionManager)].reverse()
     const timestamp = typeof (message as { timestamp?: unknown }).timestamp === 'number'
       ? (message as { timestamp: number }).timestamp
       : null
@@ -432,7 +431,7 @@ export class LinxPiPodMirror {
       await ensurePiConversationRoot(context, this.options, refs)
     }
 
-    const row = buildPodMessageRowFromMapping(context.webId, this.options, entry)
+    const row = buildPodMessageRowFromMapping(context.webId, getPodMirrorArchiveContext(this.options), entry)
     if (!row) {
       return true
     }
@@ -447,7 +446,7 @@ export class LinxPiPodMirror {
   }
 
   private async persistUnseenMessageEntries(): Promise<void> {
-    for (const entry of getActiveSessionEntries(this.options.sessionManager)) {
+    for (const entry of getActivePiSessionEntries(this.options.sessionManager)) {
       if (entry.type !== 'message' || this.seenMessageIds.has(entry.id)) {
         continue
       }
@@ -522,7 +521,8 @@ async function ensurePiConversationRoot(
   refs: PiResourceRefs,
 ): Promise<void> {
   const now = new Date()
-  const threadId = options.sessionManager.getSessionId()
+  const archive = getPodMirrorArchiveContext(options)
+  const threadId = archive.sessionId
 
   await upsertExactRecord(context.db, chatResource, { id: DEFAULT_SECRETARY_CHAT_ID }, {
     id: DEFAULT_SECRETARY_CHAT_ID,
@@ -553,13 +553,13 @@ async function ensurePiConversationRoot(
     id: threadResourceId,
     scope: refs.chatUri,
     chat: refs.chatUri,
-    title: buildThreadTitle(options.sessionManager),
+    title: buildThreadTitle(archive),
     workspace: pathToWorkspaceUri(options.cwd),
     metadata: buildThreadMetadata(options),
     createdAt: getSessionCreatedAt(options.sessionManager),
     updatedAt: now,
   } satisfies ThreadInsert, {
-    title: buildThreadTitle(options.sessionManager),
+    title: buildThreadTitle(archive),
     workspace: pathToWorkspaceUri(options.cwd),
     metadata: buildThreadMetadata(options),
     updatedAt: now,
@@ -684,8 +684,8 @@ async function persistRuntimeSession(
   _messageResourceRefs: Set<string> = new Set(),
 ): Promise<void> {
   const now = new Date()
-  const threadId = options.sessionManager.getSessionId()
-  const runtimeSessionId = threadId
+  const archive = getPodMirrorArchiveContext(options)
+  const runtimeSessionId = archive.sessionId
   const createdAt = getSessionCreatedAt(options.sessionManager)
   const activeMessageResourceRefs = resolveActiveMessageResourceRefs(context, options, refs)
   const metadata = {
@@ -714,7 +714,7 @@ async function persistRuntimeSession(
     sessionType: 'direct',
     status,
     tool: 'linx',
-    tokenUsage: calculateTokenUsage(getActiveSessionEntries(options.sessionManager)),
+    tokenUsage: calculateTokenUsage(archive.entries ?? []),
     messages: [...activeMessageResourceRefs],
     policyVersion: PI_POLICY_VERSION,
     metadata: sessionMetadata,
@@ -790,16 +790,13 @@ async function markAbandonedPreviousMessages(
     ?? parseTimestampFromUuidLikeId(previousSessionId)
     ?? new Date()
   const previousRefs = resolvePiResourceRefsForSession(context, options, previousSessionId, previousCreatedAt)
-  const previousSessionManager = {
-    getSessionId: () => previousSessionId,
-  } as unknown as SessionManager
   const now = new Date()
 
   for (const entry of abandonedEntries) {
     if (entry.type !== 'message') {
       continue
     }
-    const row = buildPodMessageRowFromMapping(context.webId, { sessionManager: previousSessionManager }, entry)
+    const row = buildPodMessageRowFromMapping(context.webId, { sessionId: previousSessionId }, entry)
     if (!row) {
       continue
     }
@@ -838,11 +835,12 @@ function resolveActiveMessageResourceRefs(
   refs: PiResourceRefs,
 ): Set<string> {
   const activeRefs = new Set<string>()
-  for (const entry of getActiveSessionEntries(options.sessionManager)) {
+  const archive = getPodMirrorArchiveContext(options)
+  for (const entry of archive.entries ?? []) {
     if (entry.type !== 'message') {
       continue
     }
-    const row = buildPodMessageRowFromMapping(context.webId, options, entry)
+    const row = buildPodMessageRowFromMapping(context.webId, archive, entry)
     if (!row) {
       continue
     }
@@ -931,14 +929,14 @@ async function touchPiConversation(
   preview: string,
 ): Promise<void> {
   const now = new Date()
-  const threadId = options.sessionManager.getSessionId()
+  const archive = getPodMirrorArchiveContext(options)
   await context.db.updateById(chatResource, DEFAULT_SECRETARY_CHAT_ID, {
     lastMessagePreview: sanitizePodLiteralText(preview).slice(0, 100),
     lastActiveAt: now,
     updatedAt: now,
   })
   await context.db.updateByIri(threadResource, refs.threadUri, {
-    title: buildThreadTitle(options.sessionManager),
+    title: buildThreadTitle(archive),
     workspace: pathToWorkspaceUri(options.cwd),
     metadata: buildThreadMetadata(options),
     updatedAt: now,
@@ -965,7 +963,8 @@ function createPodMirrorDb(session: PodDataSession): SolidDatabase {
 }
 
 function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPiPodMirrorOptions): PiResourceRefs {
-  const sessionId = options.sessionManager.getSessionId()
+  const archive = getPodMirrorArchiveContext(options)
+  const sessionId = archive.sessionId
   const createdAt = getSessionCreatedAt(options.sessionManager)
   return resolvePiResourceRefsForSession(context, options, sessionId, createdAt)
 }
@@ -1101,6 +1100,30 @@ async function insertResource(
   insert: Record<string, unknown>,
 ): Promise<void> {
   await db.insert(resource).values(insert).execute()
+}
+
+
+function getPodMirrorArchiveContext(options: LinxPiPodMirrorOptions): {
+  sessionId: string
+  sessionName?: string | null
+  entries: SessionEntry[]
+} {
+  return {
+    sessionId: options.sessionManager.getSessionId(),
+    sessionName: options.sessionManager.getSessionName(),
+    entries: getActivePiSessionEntries(options.sessionManager),
+  }
+}
+
+function getActivePiSessionEntries(sessionManager: SessionManager): SessionEntry[] {
+  if (typeof sessionManager.getLeafId === 'function' && sessionManager.getLeafId() === null) {
+    return []
+  }
+  if (typeof sessionManager.getBranch === 'function') {
+    const branch = sessionManager.getBranch()
+    return Array.isArray(branch) ? branch : []
+  }
+  return sessionManager.getEntries()
 }
 
 function getSessionCreatedAt(sessionManager: SessionManager): Date {
