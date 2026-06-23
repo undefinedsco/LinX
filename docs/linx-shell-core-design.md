@@ -535,6 +535,14 @@ module must not call Pi `sessionManager` getters or accept a manager-like
 object. If hydration needs more archive facts later, add fields to the DTO in
 the startup plan instead of widening startup control back to Pi internals.
 
+Runtime execution also consumes archive identity as startup data. It may pass
+the Pi `sessionManager` into the runtime adapter or Pod mirror host because
+those are archive bridge boundaries, but it must not re-derive checkpoint ids by
+calling Pi getters itself. Startup planning is the single place that translates
+selected Pi archive state into the DTO used by control hydration and runtime
+checkpoint wiring. This keeps local runtime archive identity from drifting into
+Pod Chat/Thread/Contact, backend credential, or shared model identity.
+
 The command module may sequence these boundaries, but it should stay thin. When
 new startup behavior needs login state, Pod session state, account base URLs,
 session archive selectors, restore-auto state, or agent directory details, put
