@@ -1064,6 +1064,27 @@ test('session-history rewind exports delegate Pi history operations to internal 
   assert.deepEqual(violations, [])
 })
 
+test('session-history query exports delegate Pi branch operations to internal helpers', () => {
+  const source = readFileSync(join(libRoot, 'linx-session-history.ts'), 'utf8')
+  const allowedRanges = findFunctionRanges(source, [
+    'getActiveSessionHistoryEntriesWithManager',
+    'collectRewindUserMessagesWithManager',
+    'assertRewindUserEntryTargetWithManager',
+  ])
+  const exportedRanges = findFunctionRanges(source, [
+    'getLinxActiveSessionHistoryEntries',
+    'collectLinxRewindUserMessages',
+    'assertLinxRewindUserEntryTarget',
+  ])
+  const forbiddenCalls = /\b(?:getActiveSessionBranch|resolveRewindUserEntry|extractRewindMessageText)\b/g
+  const violations = [...source.matchAll(forbiddenCalls)]
+    .filter((match) => isOffsetInAnyRange(match.index ?? 0, exportedRanges))
+    .filter((match) => !isOffsetInAnyRange(match.index ?? 0, allowedRanges))
+    .map((match) => `${lineNumberAt(source, match.index ?? 0)}:${match[0]}`)
+
+  assert.deepEqual(violations, [])
+})
+
 test('interactive command routing patch state is kept behind the shell command routing host', () => {
   const allowed = new Set([
     'linx-interactive-command-routing-host.ts',

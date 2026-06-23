@@ -190,15 +190,28 @@ export function hasLinxSessionHistory(source: LinxSessionHistorySource): boolean
 
 export function getLinxActiveSessionHistoryEntries(source: LinxSessionHistorySource): any[] {
   const sessionManager = resolveLinxSessionHistoryManager(source)
-  return sessionManager ? getActiveSessionBranch(sessionManager) : []
+  return sessionManager ? getActiveSessionHistoryEntriesWithManager(sessionManager) : []
 }
 
 export function collectLinxRewindUserMessages(source: LinxSessionHistorySource): LinxRewindMessageItem[] {
   const sessionManager = resolveLinxSessionHistoryManager(source)
+  return sessionManager ? collectRewindUserMessagesWithManager(sessionManager) : []
+}
+
+export function assertLinxRewindUserEntryTarget(source: LinxSessionHistorySource, entryId: string): void {
+  const sessionManager = resolveLinxSessionHistoryManager(source)
   if (!sessionManager) {
-    return []
+    throw new Error('Cannot rewind: selected message is not a user turn in the active branch.')
   }
+  assertRewindUserEntryTargetWithManager(sessionManager, entryId)
+}
+
+function getActiveSessionHistoryEntriesWithManager(sessionManager: any): any[] {
   return getActiveSessionBranch(sessionManager)
+}
+
+function collectRewindUserMessagesWithManager(sessionManager: any): LinxRewindMessageItem[] {
+  return getActiveSessionHistoryEntriesWithManager(sessionManager)
     .filter((entry) => entry?.type === 'message' && entry.message?.role === 'user')
     .map((entry) => ({
       id: String(entry.id),
@@ -206,9 +219,8 @@ export function collectLinxRewindUserMessages(source: LinxSessionHistorySource):
     }))
 }
 
-export function assertLinxRewindUserEntryTarget(source: LinxSessionHistorySource, entryId: string): void {
-  const sessionManager = resolveLinxSessionHistoryManager(source)
-  const entry = sessionManager ? resolveRewindUserEntry(sessionManager, entryId) : undefined
+function assertRewindUserEntryTargetWithManager(sessionManager: any, entryId: string): void {
+  const entry = resolveRewindUserEntry(sessionManager, entryId)
   if (!entry) {
     throw new Error('Cannot rewind: selected message is not a user turn in the active branch.')
   }
