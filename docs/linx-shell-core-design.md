@@ -138,12 +138,15 @@ Hard rules:
   `session.getAvailableThinkingLevels` are patched only by
   `apps/cli/src/lib/linx-session-thinking-capability-router.ts`; provider
   modules register capability handlers.
-- Session metadata reads are shell session state, not rendering or workspace
-  command internals. Reads from Pi session-manager cwd/name/id belong behind
+- Session metadata reads are shell session state, not rendering, resume-output,
+  status-line, Symphony, or workspace command internals. Reads from Pi
+  session-manager cwd/name/id belong behind
   `apps/cli/src/lib/linx-session-metadata.ts`. Session/runtime cwd mutation
   belongs behind `apps/cli/src/lib/linx-session-cwd-router.ts`; commands may
   resolve or request a cwd change but must not know the mutable
-  Pi/runtime/session-manager field layout.
+  Pi/runtime/session-manager field layout. Resume/exit copy, welcome/header
+  rendering, status-line tokens, extension context, and Symphony status may use
+  session metadata, but they must obtain it through the seam.
 - Active session work control is shell session lifecycle, not feature command
   logic. Checks for Pi session streaming/bash state, follow-up delivery option
   selection, and abort calls belong
@@ -257,7 +260,9 @@ Pi-aligned command boundaries:
   behavior.
 - `--session-dir` and `--session-id` are local runtime archive selectors. They
   must not become Pod chat/thread identity, backend credential identity, or
-  product data-model fields.
+  product data-model fields. Runtime archive identity may be displayed in shell
+  resume/debug copy, but product conversations must still be addressed through
+  Pod Chat/Thread resources and shared model repositories.
 - Session selector conflicts must be rejected before login, Pod session lookup,
   auto hydration, or interactive bootstrap side effects. In particular, an exact
   `--session-id` target is mutually exclusive with `--session` and with
@@ -514,6 +519,26 @@ The status line/footer decision is the canonical example:
   top-level shortcuts; they create a second command vocabulary for the same
   shell setting.
 
+### Resume and exit-output boundary
+
+Normal exit copy is shell rendering, not Pi product copy.
+`linx-resume-output.ts` owns visible session-closed/token/resume text, but it
+only formats data supplied by shell seams. It must not read Pi session-manager
+fields directly, and it must not print upstream `pi ...` resume commands from a
+LinX process. The visible resume command should use the current LinX executable
+surface, for example `linx --session <id>` when the selector target is a runtime
+session id.
+
+Exit output has lifecycle constraints:
+
+- normal user exit may print session/token/resume copy;
+- in-TUI self-update restart must suppress normal exit copy for the abandoned
+  shell instance;
+- restart failures may print a lifecycle error, but must not also print stale
+  resume instructions from the old process;
+- session id/name/cwd values used by exit copy are read-only runtime metadata,
+  not Pod conversation identity.
+
 ### Package/update command boundary
 
 LinX has two update meanings and they must stay separate:
@@ -642,12 +667,13 @@ through one rendering seam.
 
 Session metadata reads belong behind `linx-session-metadata.ts`, while
 session/runtime cwd mutation belongs behind `linx-session-cwd-router.ts`.
-`/cd`, welcome header, terminal-title rendering, and workspace startup notices
-may decide user-facing copy, but reading Pi session-manager cwd/name/id or
-applying cwd to Pi session state and LinX runtime state is a shell session-state
-operation. Feature modules must call those seams instead of reading
-`interactive.sessionManager.getCwd()`, `getSessionName()`, `getSessionId()`, or
-writing `interactive.session.cwd` / `runtime.cwd` directly.
+`/cd`, welcome header, terminal-title rendering, resume output, extension UI
+context, Symphony status, and workspace startup notices may decide user-facing
+copy, but reading Pi session-manager cwd/name/id or applying cwd to Pi session
+state and LinX runtime state is a shell session-state operation. Feature modules
+must call those seams instead of reading `interactive.sessionManager.getCwd()`,
+`getSessionName()`, `getSessionId()`, or writing `interactive.session.cwd` /
+`runtime.cwd` directly.
 
 Active session work control belongs behind `linx-session-work-control.ts`.
 Feature commands that need a quiet local branch repair, such as `/rewind`, may
@@ -689,6 +715,16 @@ When a new feature needs session history, add the missing operation to the
 session-history seam and cover the boundary in
 `apps/cli/test/shell-core-boundary.test.mjs` instead of reaching through Pi's
 mutable session internals.
+
+Raw `sessionManager` access is allowed only in modules whose declared job is to
+adapt or mirror the Pi runtime archive: session-manager construction/startup
+planning, `linx-session-metadata.ts`, `linx-session-history.ts`, runtime
+archive diagnostics, and Pod-mirror/session-control bridge code that translates
+Pi archive entries into shared model resources. Even in those bridge modules,
+the output must be typed shell metadata or shared-model rows; callers should not
+receive Pi manager objects as a convenience. Feature/rendering modules that only
+need a session id, cwd, name, recent messages, or branch operation should request
+a named seam helper instead of widening this exception.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router
