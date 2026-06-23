@@ -83,6 +83,13 @@ When xpod CLI is invoked from a LinX agent runtime, it should work without an
 extra xpod login. If `xpod auth status` reports a different `webId` or `podRoot`
 from the active LinX session, stop and report the mismatch.
 
+Machine-readable auth checks must keep stdout and stderr separate. Agents should
+parse JSON from stdout and capture warnings/errors separately; do not pipe
+`2>&1` into a JSON parser and then treat Node warnings as an auth failure. If
+`xpod auth status --json` writes non-JSON to stdout, that is an xpod CLI bug. If
+warnings appear on stderr but stdout contains valid JSON, auth status is still
+determined by the JSON payload.
+
 ## Resource access modes
 
 Choose the xpod command surface by resource shape.
@@ -171,6 +178,8 @@ Rules:
   the visible chat transcript.
 - Report command, path, HTTP status, and timeout/error text when diagnostics
   fail; do not silently fallback to a guessed path or hand-written TTL.
+- For JSON diagnostics, keep stderr warnings separate from stdout JSON before
+  parsing; a warning banner is not itself proof of missing login.
 
 ## Environment variables
 
