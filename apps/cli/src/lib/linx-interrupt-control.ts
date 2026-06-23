@@ -1,4 +1,5 @@
 import { handleInteractiveRewindSelector } from './linx-rewind-command.js'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
 import { stopLinxInteractiveSessionWorkNow } from './linx-session-work-control.js'
 import {
@@ -89,7 +90,7 @@ async function openInteractiveRewindFromEscape(interactive: any): Promise<void> 
   try {
     await handleInteractiveRewindSelector(interactive, interactive?.runtime)
   } catch (error) {
-    interactive?.showError?.(error instanceof Error ? error.message : String(error))
+    showLinxInteractiveError(interactive, error instanceof Error ? error.message : String(error))
   }
 }
 

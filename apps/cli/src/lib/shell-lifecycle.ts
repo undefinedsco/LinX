@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 
 export const LINX_TUI_NO_EXIT_MESSAGE_ENV = 'LINX_TUI_NO_EXIT_MESSAGE'
@@ -71,14 +72,14 @@ export function restartInteractiveShellProcess(
           } catch (error) {
             suppression.restore()
             const message = error instanceof Error ? error.message : String(error)
-            interactive.showError?.(`LinX restart failed: ${message}`)
+            showLinxInteractiveError(interactive, `LinX restart failed: ${message}`)
             finishWithExit(1)
           }
         }, options.delayMs ?? DEFAULT_RESTART_DELAY_MS)
       } catch (error) {
         suppression.restore()
         const message = error instanceof Error ? error.message : String(error)
-        interactive.showError?.(`LinX restart failed: ${message}`)
+        showLinxInteractiveError(interactive, `LinX restart failed: ${message}`)
         finishWithExit(1)
       }
     }
@@ -89,7 +90,7 @@ export function restartInteractiveShellProcess(
       } catch (error) {
         suppression.restore()
         const message = error instanceof Error ? error.message : String(error)
-        interactive.showError?.(`LinX restart failed: ${message}`)
+        showLinxInteractiveError(interactive, `LinX restart failed: ${message}`)
         finishWithExit(1)
       }
     }
@@ -103,7 +104,7 @@ export function restartInteractiveShellProcess(
     drained.then(stopAndSpawnReplacement, (error: unknown) => {
       suppression.restore()
       const message = error instanceof Error ? error.message : String(error)
-      interactive.showError?.(`LinX restart failed: ${message}`)
+      showLinxInteractiveError(interactive, `LinX restart failed: ${message}`)
       finishWithExit(1)
     })
   })
@@ -196,7 +197,7 @@ function waitForRestartedProcess(
     }
     settled = true
     restoreEnv()
-    interactive.showError?.(`LinX restart failed: ${error.message}`)
+    showLinxInteractiveError(interactive, `LinX restart failed: ${error.message}`)
     finishWithExit(1)
   })
 
