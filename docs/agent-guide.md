@@ -16,8 +16,10 @@
 - 应用层 Pod 语义统一说 `Resource`，不再把 shared model 叫 `Table`。`*Table` 只允许出现在 drizzle-solid / models 的历史兼容边界、上游兼容测试，或 HTML/SQLite 这类非 Pod 语义场景；Web/CLI/Service 的业务代码和新文档不得消费或示例化 `*Table` alias。
 - 命名只在跨包公共 API、外部冲突边界、LinX Cloud 产品语义和品牌展示上使用 `Linx` 前缀；CLI/TUI 内部通用概念、helper、状态和 adapter 局部类型不要因为位于 LinX 仓库里重复加 `Linx` / `LinxPi` 前缀。
 - 添加、恢复或保留顶层 `linx <command>` 前必须按 `docs/linx-shell-core-design.md` 的 top-level admission checklist 判断；不要把 Pi/backend 已有的 session、thread、model、help 等原生命令克隆成 LinX 顶层产品面。
+- 当问题本质是 Pi/backend 原生命令的发现、转发或适配时，先修 active surface 的 help、forwarding 或 adapter；不要新增 LinX 顶层别名。session 列表/选择固定走 Pi surface：启动时 `linx -r` / `linx --resume`，TUI 内 `/resume`；不保留 `linx sessions` 或 `linx --sessions`。
 - 移除已降级为 Pi/backend 原生面的顶层入口时，要一起移除 help/docs/command registration，并加 admission 测试证明不会触发 login、Pod lookup 或 interactive bootstrap；不要用 hidden alias 维持第二套人类可用入口。
 - 新增 CLI/TUI lifecycle patch 前必须先走 `docs/linx-shell-core-design.md` 的 shell seam：`interactive.init` 后置行为进 `linx-interactive-post-init.ts`，`interactive.run` 启动期行为进 `linx-interactive-run-router.ts`，update version check/notification 方法进 `linx-interactive-update-router.ts`，login UI selector/dialog 方法进 `linx-interactive-login-ui-router.ts`，interactive event/error 方法进 `linx-interactive-event-router.ts`，runtime Pod session mutation 进 `linx-interactive-runtime-host.ts`，custom header mutation 进 `linx-interactive-header-host.ts`，streaming message cleanup 进 `linx-interactive-streaming-message-host.ts`，terminal-title/rendering patch 进 shell rendering seam，editor component rebinding 进 `linx-editor-component-router.ts`，extension UI context augmentation 进 `linx-extension-ui-context-router.ts`，session work control 进 `linx-session-work-control.ts`，session thinking capability 进 `linx-session-thinking-capability-router.ts`，session/runtime cwd mutation 进 `linx-session-cwd-router.ts`，stop/submit/input/session patch 进各自 router；feature 模块不要直接包 Pi 方法。
+- 新增或调整 shell/core 边界时，同一变更必须更新 `docs/linx-shell-core-design.md`；功能文档只记录用户可见契约，不重新定义 shell/core 权责。
 
 ## Skill Routing
 

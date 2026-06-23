@@ -722,6 +722,15 @@ test('rewind command delegates active session work control to the shell session 
   assert.doesNotMatch(source, /\babort\s*\(/)
 })
 
+test('interrupt control delegates active session work control to the shell session seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
+
+  assert.doesNotMatch(source, /\bisStreaming\b/)
+  assert.doesNotMatch(source, /\bisBashRunning\b/)
+  assert.doesNotMatch(source, /\babortBash\b/)
+  assert.doesNotMatch(source, /\babort\s*\(/)
+})
+
 test('interactive command routing patch state is kept behind the shell command routing host', () => {
   const allowed = new Set([
     'linx-interactive-command-routing-host.ts',
