@@ -13,6 +13,7 @@ import {
   registerLinxInteractiveVersionCheckHandler,
 } from './linx-interactive-update-router.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 
 const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
 const LINX_UPDATE_CHECK_SCHEDULED = Symbol.for('linx.tui.updateCheckScheduled')
@@ -41,8 +42,7 @@ export async function checkAndShowLinxUpdate(
   const latest = await checkForNewLinxVersion()
   if (!latest) {
     if (options.manual) {
-      interactive.showStatus?.(`LinX ${LINX_CLI_VERSION} is up to date.`)
-      interactive.ui?.requestRender?.()
+      showLinxInteractiveStatus(interactive, `LinX ${LINX_CLI_VERSION} is up to date.`)
     }
     return
   }
@@ -154,7 +154,7 @@ async function showLinxUpdateSelector(interactive: any, newVersion: string): Pro
 
     if (selected === UPDATE_OPTION_CHANGELOG) {
       openExternalUrl(LINX_CHANGELOG_URL, interactive)
-      interactive.showStatus?.(`Opened LinX changelog for ${newVersion}.`)
+      showLinxInteractiveStatus(interactive, `Opened LinX changelog for ${newVersion}.`, { render: false })
       return
     }
 
@@ -163,7 +163,7 @@ async function showLinxUpdateSelector(interactive: any, newVersion: string): Pro
       return
     }
 
-    interactive.showStatus?.(`Skipped LinX ${newVersion} for now.`)
+    showLinxInteractiveStatus(interactive, `Skipped LinX ${newVersion} for now.`, { render: false })
   } finally {
     interactive[LINX_UPDATE_IN_PROGRESS] = false
   }
