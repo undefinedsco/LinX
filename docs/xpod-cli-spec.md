@@ -46,6 +46,27 @@ Canonical identity fields are:
 Do not introduce app-specific synonyms such as `xpodWebId`, `xpodPodRoot`, or
 `linxWebId` in shared auth, runtime projections, or agent prompts.
 
+## Tool ownership vs app ownership
+
+`xpod` is the neutral Solid/Pod command surface. LinX may invoke it from
+Secretary, Symphony, diagnostics, or tests, but LinX does not own xpod's command
+language, RDF parser, auth store, or package lifecycle. Conversely, xpod must not
+define LinX/Symphony product state machines just because it can read and write
+the same Pod.
+
+Package fixes follow the owning boundary:
+
+- a broken LinX prompt/projection, Symphony routing rule, TUI copy, or lifecycle
+  integration is a LinX release;
+- a broken `xpod auth`, `xpod get/put`, `xpod rdf`, or `xpod obj` behavior is an
+  xpod release;
+- a missing shared resource shape, id helper, repository query, or model-backed
+  command contract belongs in `@undefineds.co/models` and then xpod/LinX consume
+  the released version.
+
+Do not compensate for an xpod/model gap by teaching LinX or Secretary to hand
+craft Turtle for modeled resources. Fix the owner and upgrade the dependency.
+
 ## Session reuse
 
 LinX, xpod CLI, and AI agent runtimes should all consume the same authenticated
@@ -117,6 +138,21 @@ Do not make `xpod rdf get` the default verification path for a file-primary
 resource. A file may be readable with `xpod get` while RDF parsing or query
 transport is slow or broken. In that case the permission check has passed; the
 remaining problem belongs to xpod/RDF transport, parsing, or server behavior.
+
+## Modeled vs file-primary verification
+
+A successful `xpod put` followed by a successful `xpod get` proves byte-level Pod
+read/write for a file-primary resource. It does not prove RDF parsing, model
+query, SPARQL, or object mapping health. Keep diagnostics explicit about which
+layer was exercised:
+
+- `xpod get/put` verifies raw resource I/O;
+- `xpod rdf ...` verifies RDF parsing/query behavior;
+- `xpod obj ...` verifies shared model descriptors, repositories, and object
+  command mapping.
+
+A timeout or parse failure in the RDF/object layer must be reported as that
+layer's failure, not reclassified as missing Pod permission when raw `get` works.
 
 ## Secretary and Symphony usage
 

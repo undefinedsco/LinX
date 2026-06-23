@@ -127,6 +127,12 @@ Hard rules:
   but `Text` component creation, `interactive.chatContainer` mutation, and render
   invalidation belong behind
   `apps/cli/src/lib/linx-interactive-chat-text-host.ts`.
+- Visible status copy and render invalidation are shell rendering state, not
+  feature business logic. Feature modules may decide the semantic outcome they
+  need to surface, but they must not call Pi `interactive.showStatus` or
+  `interactive.ui.requestRender` directly. Add or use a named status/rendering
+  seam so status text, footer invalidation, raw-mode timing, and render requests
+  stay ordered with the rest of the shell lifecycle.
 - Editor text mutation, focus restoration, and render invalidation are shell
   input/rendering state, not login or feature business logic. Feature modules
   may decide the desired text, but `interactive.editor.setText`,
@@ -558,6 +564,11 @@ Boundary smells:
   or statusline code spawns processes, restores raw mode, patches Pi lifecycle
   methods, or decides exit copy visibility by itself. Move that behavior to the
   relevant lifecycle router/host.
+- **Rendering mixed with feature logic:** auto, login, Symphony, update, or
+  backend command code calls Pi status/render methods directly, appends raw
+  components, or assumes footer/status layout. Move visible status text,
+  transcript append, render invalidation, and focus handoff behind shell
+  rendering seams.
 - **Hidden diagnostics as UX:** a hidden flag or command becomes the practical way
   to list, choose, resume, or repair normal user sessions. Either make a real
   product surface with a contract, or keep the diagnostic narrow and
@@ -681,6 +692,21 @@ Exit output has lifecycle constraints:
   resume instructions from the old process;
 - session id/name/cwd values used by exit copy are read-only runtime metadata,
   not Pod conversation identity.
+
+### Shell rendering boundary
+
+Rendering is an output adapter, not the place where feature state is decided.
+Feature modules may compute user-facing copy, but the mechanics of showing that
+copy in Pi's TUI belong to shell rendering seams. This includes status text,
+error text, footer/status-line invalidation, chat-transcript append, temporary
+dialog/editor mounting, focus restoration, terminal title changes, and explicit
+render requests.
+
+Do not scatter calls to Pi fields such as `showStatus`, `showError`,
+`chatContainer`, `editorContainer`, `ui.setFocus`, or `ui.requestRender` through
+feature modules. If a feature needs a new rendering operation, first add a
+narrow shell host/router and a boundary test, then call that seam from the
+feature.
 
 ### Package/update command boundary
 

@@ -6,6 +6,7 @@ import {
   notifyLinxInteractiveAutoControlChange,
   setLinxInteractiveAutoModeEnabled,
 } from './linx-interactive-shell-state.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 
 export async function routeLinxAutoCommand(
   interactive: any,
@@ -36,8 +37,7 @@ export async function handleInteractiveAutoCommand(
 ): Promise<void> {
   if (enabled === undefined) {
     const active = isLinxInteractiveAutoModeEnabled(interactive, runtime)
-    interactive.showStatus?.(formatAutoModeChangeStatus(active))
-    interactive.ui?.requestRender?.()
+    showLinxInteractiveStatus(interactive, formatAutoModeChangeStatus(active))
     return
   }
 
@@ -50,8 +50,7 @@ export async function handleInteractiveAutoCommand(
   } else {
     controller.stop()
   }
-  interactive.showStatus?.(formatAutoModeChangeStatus(enabled))
-  interactive.ui?.requestRender?.()
+  showLinxInteractiveStatus(interactive, formatAutoModeChangeStatus(enabled))
   await notifyLinxInteractiveAutoControlChange(interactive, enabled)
 }
 
