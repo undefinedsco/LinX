@@ -206,6 +206,25 @@ should go through modeled `xpod obj`/shared-model surfaces. Raw `xpod get`,
 `put`, or RDF file operations are for explicit file-primary resources or
 diagnostics, not for hand-patching modeled product records.
 
+Before mutating Pod state, Secretary should verify `xpod auth status` / `whoami`
+matches the active LinX session's `webId` and `podRoot`. This is an identity
+guard, not a second login flow: xpod CLI and LinX must share
+`${SOLID_HOME:-~/.solid}/auth`, and Secretary must not ask the user for Solid
+tokens or client secrets while it is already running inside an authenticated
+LinX runtime. A mismatch is a blocker to surface, not a reason to invent
+app-specific credentials.
+
+For diagnostics, choose the command by resource shape:
+
+- `xpod obj ...` for modeled product/control resources;
+- `xpod get` / `xpod put` for file-primary resources and raw byte verification;
+- `xpod rdf ...` only when an RDF parsed/triple view is specifically required.
+
+A small file that writes successfully but times out under `xpod rdf get` is an
+xpod/RDF parsing or transport problem, not evidence that Symphony lacks Pod
+permission. Report the exact path, command, status, and timeout rather than
+rewriting the resource by hand.
+
 `auto` and `symphony` are orthogonal:
 
 - `auto on + symphony off`: Secretary owns the input lane, but the current chat
