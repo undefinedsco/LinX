@@ -2,6 +2,7 @@ import type { BackendCommandRouter } from './backend-command-router-contract.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { installProjectedCommandRouter } from './linx-interactive-command-routing.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { configureLinxInteractiveShellState } from './linx-interactive-shell-state.js'
 import { shouldRouteToBackendCommand } from './linx-shell-command-router.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
@@ -39,10 +40,7 @@ export function installBackendCommandRouter(
         return false
       }
 
-      if (routed.message) {
-        interactive.showStatus?.(routed.message)
-      }
-      interactive.ui?.requestRender?.()
+      showLinxInteractiveStatus(interactive, routed.message)
       return true
     },
   })
@@ -74,10 +72,7 @@ export function installBackendCommandRouter(
       if (routed.clearInput !== false) {
         setLinxInteractiveEditorText(target, '')
       }
-      if (routed.message) {
-        target.showStatus?.(routed.message)
-      }
-      target.ui?.requestRender?.()
+      showLinxInteractiveStatus(target, routed.message)
       return true
     },
   })

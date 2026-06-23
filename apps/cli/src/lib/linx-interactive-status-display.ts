@@ -11,10 +11,12 @@ export type LinxInteractiveStatusDisplayOptions = {
 
 export function showLinxInteractiveStatus(
   target: LinxInteractiveStatusDisplayTarget | null | undefined,
-  message: string,
+  message: string | null | undefined,
   options: LinxInteractiveStatusDisplayOptions = {},
 ): void {
-  target?.showStatus?.(message)
+  if (message !== undefined && message !== null) {
+    target?.showStatus?.(message)
+  }
   if (options.render !== false) {
     target?.ui?.requestRender?.()
   }
