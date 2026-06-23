@@ -394,6 +394,36 @@ Concrete command ownership examples:
 | Interactive TUI shell | LinX shell controls such as `/update`, `/statusline`, `/rewind`, `/ai connect`, `/cd`, plus routing/forwarding | durable Pod semantics, duplicated backend-native command languages |
 | Active backend/worker | Native commands such as `/new`, `/fork`, `/session`, `/model`, `/help` when supported by that backend | LinX package lifecycle, global credential storage, Pod resource identity |
 
+### Active-surface parity boundary
+
+LinX should match Pi/backend capability by preserving the surface where that
+capability is executable, not by cloning every capability into every shell.
+Parity means "the user can reach the upstream capability through the active
+surface with LinX-specific lifecycle/auth/rendering adapted", not "there is a
+top-level `linx <name>` for every TUI or backend command".
+
+Use these rules when deciding where a capability lives:
+
+- If the capability controls the active conversation runtime, keep the
+  Pi/backend command name and expose it in the active TUI/backend help or
+  selector. Examples: `/resume`, `/session`, `/model`, `/fork`, `/new`, and
+  backend-native `/help`.
+- If the capability configures local LinX shell rendering and is mainly
+  interactive, keep the primary surface in the TUI. Add `linx config <section>`
+  only when a scriptable local preference contract is useful. Do not add a
+  top-level shortcut just because the command exists in the TUI.
+- If the capability manages LinX package lifecycle, installation, or
+  non-interactive startup selection, it may be top-level. The command name must
+  describe the LinX-owned lifecycle contract rather than shadowing an upstream
+  runtime command.
+- If a bug appears as "the command line is weird", first identify whether the
+  broken piece is admission, forwarding, active help, lifecycle handoff, or
+  shell rendering. Fix that owning seam before considering a new command.
+
+This boundary keeps the CLI shell thin: it adds LinX-owned lifecycle,
+configuration, and rendering seams around Pi/backend behavior, but it does not
+become a second command language for the same runtime.
+
 ### Top-level command boundary checklist
 
 Use this checklist before adding or keeping any `linx <command>` entry:
@@ -780,9 +810,12 @@ practice this means:
 - rewind UI asks the seam for selectable user-message items and high-level
   rewind results. The seam owns selected-user validation, active branch
   traversal, target leaf calculation, clean session materialization, abandoned
-  entry calculation, and agent context rebuilds. The rewind command may still
-  own TUI selector rendering, active-work cancellation, auto-mode reset,
-  transcript repaint, and Pod projection delivery;
+  entry calculation, and agent context rebuilds. The exported rewind entrypoints
+  should remain thin feature-facing adapters; Pi selected-user checks,
+  branch/leaf traversal, clean-session materialization, abandoned-entry
+  collection, and context rebuilds stay in named internal history helpers. The
+  rewind command may still own TUI selector rendering, active-work cancellation,
+  auto-mode reset, transcript repaint, and Pod projection delivery;
 - no feature module should contain local helpers that search Pi branch entries,
   normalize Pi parent ids, call `sessionManager.branch/resetLeaf`, materialize
   clean sessions, derive abandoned history entries, or rebuild
