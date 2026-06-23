@@ -580,6 +580,19 @@ test('feature credential dialogs delegate editor container swaps to the shell ed
   }
 })
 
+test('feature fallback notices append chat text through the shell rendering seam', () => {
+  const featureFiles = [
+    'linx-login-flow.ts',
+    'linx-update-notification.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-interactive-chat-text-host\.js['"]/, target)
+    assert.doesNotMatch(source, /chatContainer(?:\?\.)?\.addChild\s*\(/, target)
+  }
+})
+
 test('custom editor component rebinding is centralized in the shell editor component router', () => {
   const allowed = new Set([
     'linx-editor-component-router.ts',

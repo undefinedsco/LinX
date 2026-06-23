@@ -1,4 +1,3 @@
-import { Text } from '@earendil-works/pi-tui'
 import {
   checkForNewLinxVersion,
   installLinxSelfUpdateAndRestart,
@@ -13,6 +12,7 @@ import {
   registerLinxInteractiveUpdateNotificationHandler,
   registerLinxInteractiveVersionCheckHandler,
 } from './linx-interactive-update-router.js'
+import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 
 const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
 const LINX_UPDATE_CHECK_SCHEDULED = Symbol.for('linx.tui.updateCheckScheduled')
@@ -214,8 +214,7 @@ function showLinxUpdateFallback(interactive: any, newVersion: string): void {
     `\x1b[2mRun \x1b[22m\x1b[36mnpm install -g ${LINX_UPDATE_PACKAGE_NAME}@latest\x1b[39m\x1b[2m if this terminal cannot show the update selector.\x1b[22m`,
     `\x1b[2mChangelog: \x1b[22m\x1b[36m${LINX_CHANGELOG_URL}\x1b[39m`,
   ]
-  interactive.chatContainer?.addChild?.(new Text(lines.join('\n'), 1, 0))
-  interactive.ui?.requestRender?.()
+  appendLinxInteractiveChatText(interactive, lines.join('\n'))
 }
 
 function normalizeNonEmptyString(value: unknown): string | undefined {
