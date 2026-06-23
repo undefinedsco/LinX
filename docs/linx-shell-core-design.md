@@ -669,8 +669,15 @@ practice this means:
   delegates history traversal to the seam;
 - retry cancellation or completion asks the seam to restore the captured branch
   before resubmitting or returning control;
+- rewind UI asks the seam for selectable user-message items and high-level
+  rewind results. The seam owns selected-user validation, active branch
+  traversal, target leaf calculation, clean session materialization, abandoned
+  entry calculation, and agent context rebuilds. The rewind command may still
+  own TUI selector rendering, active-work cancellation, auto-mode reset,
+  transcript repaint, and Pod projection delivery;
 - no feature module should contain local helpers that search Pi branch entries,
-  normalize Pi parent ids, call `sessionManager.branch/resetLeaf`, or rebuild
+  normalize Pi parent ids, call `sessionManager.branch/resetLeaf`, materialize
+  clean sessions, derive abandoned history entries, or rebuild
   `session.agent.state.messages` directly.
 
 When a new feature needs session history, add the missing operation to the
