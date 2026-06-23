@@ -142,6 +142,11 @@ Hard rules:
   internals. Writes to Pi session cwd and runtime cwd belong behind
   `apps/cli/src/lib/linx-session-cwd-router.ts`; commands may request a cwd
   change but must not know the mutable Pi/runtime field layout.
+- Active session work control is shell session lifecycle, not feature command
+  logic. Checks for Pi session streaming/bash state and abort calls belong
+  behind `apps/cli/src/lib/linx-session-work-control.ts`; commands such as
+  `/rewind` may request active work to stop but must not know Pi's
+  `isStreaming`, `isBashRunning`, `abort`, or `abortBash` field layout.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -590,6 +595,12 @@ Session/runtime cwd mutation belongs behind `linx-session-cwd-router.ts`.
 copy, but applying the cwd to Pi session state and LinX runtime state is a shell
 session-state operation. Feature commands must call the cwd seam instead of
 writing `interactive.session.cwd` or `runtime.cwd` directly.
+
+Active session work control belongs behind `linx-session-work-control.ts`.
+Feature commands that need a quiet local branch repair, such as `/rewind`, may
+ask the seam to stop active work and wait briefly for idle. They must not
+directly inspect Pi session running fields or call Pi abort methods; the seam
+owns those upstream field names and the fail-soft abort behavior.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router
