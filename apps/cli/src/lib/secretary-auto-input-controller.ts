@@ -18,6 +18,7 @@ import type { SessionControlManager, SessionControlSnapshot } from './session-co
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 import { canSubmitLinxSessionUserInputNow, submitLinxSessionUserInput } from './linx-session-work-control.js'
 import { getLinxActiveSessionHistoryEntries } from './linx-session-history.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import {
   getLinxInteractiveAutoInputController,
   getLinxInteractiveGoalModeSupervisorLastAt,
@@ -603,8 +604,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
     const delayMs = recoveryDelaysMs[this.recoveryAttempts]
     this.recoveryAttempts = attempt
     this.clearRecoveryTimer()
-    this.interactive?.showStatus?.(`Auto recovering: restarting Secretary (${attempt}/${recoveryDelaysMs.length}).`)
-    this.interactive?.ui?.requestRender?.()
+    showLinxInteractiveStatus(this.interactive, `Auto recovering: restarting Secretary (${attempt}/${recoveryDelaysMs.length}).`)
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = null
       if (!this.active || generation !== this.generation || !isLinxInteractiveAutoModeEnabled(this.interactive, this.runtime)) {
@@ -624,8 +624,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
     const delayMs = resolveTransientRemoteRecoveryDelayMs()
     this.recoveryAttempts = attempt
     this.clearRecoveryTimer()
-    this.interactive?.showStatus?.(`Auto waiting for LinX Cloud: temporarily unavailable. Secretary will retry in ${formatDelay(delayMs)}. ${message}`)
-    this.interactive?.ui?.requestRender?.()
+    showLinxInteractiveStatus(this.interactive, `Auto waiting for LinX Cloud: temporarily unavailable. Secretary will retry in ${formatDelay(delayMs)}. ${message}`)
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = null
       if (!this.active || generation !== this.generation || !isLinxInteractiveAutoModeEnabled(this.interactive, this.runtime)) {
@@ -639,8 +638,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
   private pauseOnAssistant(context: SecretaryAutoInputContext | null, message: string): void {
     this.pausedAssistantSignature = context ? resolveAssistantSignature(context) : null
     this.clearRecoveryTimer()
-    this.interactive?.showStatus?.(message)
-    this.interactive?.ui?.requestRender?.()
+    showLinxInteractiveStatus(this.interactive, message)
   }
 
   private clearRecoveryTimer(): void {
