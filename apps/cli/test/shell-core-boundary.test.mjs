@@ -652,6 +652,14 @@ test('backend command status rendering goes through the shell status seam', () =
   assert.doesNotMatch(source, /\.ui(?:\?\.)?\.requestRender(?:\?\.)?\s*\(/)
 })
 
+test('workspace command status rendering goes through the shell status seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-workspace-command.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-status-display\.js['"]/)
+  assert.doesNotMatch(source, /\.showStatus(?:\?\.)?\s*\(/)
+  assert.doesNotMatch(source, /\.ui(?:\?\.)?\.requestRender(?:\?\.)?\s*\(/)
+})
+
 test('custom editor component rebinding is centralized in the shell editor component router', () => {
   const allowed = new Set([
     'linx-editor-component-router.ts',
