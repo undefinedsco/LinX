@@ -150,6 +150,15 @@ Hard rules:
   or projected input to be delivered, but must not know Pi's `isStreaming`,
   `isBashRunning`, `abort`, `abortBash`, `deliverAs: followUp`, or
   `streamingBehavior: followUp` field/option layout.
+- Session history and branch repair are shell session-history lifecycle, not
+  feature-local retry logic. Reads of Pi `sessionManager` history, leaf/branch
+  selection, parent-id normalization, branch restore, leaf reset, and
+  `agent.state.messages` rebuilds from `buildSessionContext()` belong behind a
+  named session-history seam. Auth-expired retry, `/rewind`, auto recovery, or
+  future command replay features may ask that seam to capture a retryable user
+  turn or restore a clean branch, but must not directly call Pi
+  `sessionManager.getLeafId()`, `getEntry()`, `getBranch()`, `getEntries()`,
+  `branch()`, `resetLeaf()`, or `buildSessionContext()`.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -646,6 +655,28 @@ using Pi's current follow-up semantics. They must not directly inspect Pi
 session running fields, construct Pi follow-up options, or call Pi abort
 methods; the seam owns those upstream field names/options and the fail-soft
 abort behavior.
+
+Session history access belongs behind a dedicated shell session-history seam.
+Pi's session manager is an upstream archive/context implementation detail: leaf
+ids, branch entries, parent ids, branch resets, and context rebuild output are
+not feature contracts. Features may define product semantics such as
+"retry the pending auth-expired user turn" or "rewind before this user
+message", but the seam owns how that request maps onto Pi history APIs. In
+practice this means:
+
+- auth recovery captures only a high-level pending retry descriptor
+  (`continueFromId`, user prompt text, and prompt parent/branch identity) and
+  delegates history traversal to the seam;
+- retry cancellation or completion asks the seam to restore the captured branch
+  before resubmitting or returning control;
+- no feature module should contain local helpers that search Pi branch entries,
+  normalize Pi parent ids, call `sessionManager.branch/resetLeaf`, or rebuild
+  `session.agent.state.messages` directly.
+
+When a new feature needs session history, add the missing operation to the
+session-history seam and cover the boundary in
+`apps/cli/test/shell-core-boundary.test.mjs` instead of reaching through Pi's
+mutable session internals.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router

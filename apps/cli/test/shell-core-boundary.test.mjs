@@ -745,6 +745,16 @@ test('peer and Secretary input delivery delegate streaming state to the shell se
   }
 })
 
+
+test('auth retry session history access lives behind a shell session-history seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
+  const forbiddenSessionManagerCalls = /sessionManager(?:\?\.)?\.(?:getLeafId|getEntry|getBranch|getEntries|branch|resetLeaf|buildSessionContext)\b/
+
+  assert.doesNotMatch(source, forbiddenSessionManagerCalls)
+  assert.doesNotMatch(source, /\bfindLastUserMessageEntry\b/)
+  assert.doesNotMatch(source, /\brestoreLinxRetryBranch\b/)
+})
+
 test('interactive command routing patch state is kept behind the shell command routing host', () => {
   const allowed = new Set([
     'linx-interactive-command-routing-host.ts',
