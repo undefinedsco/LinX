@@ -1,4 +1,5 @@
 import { parseLinxShellCommand, type LinxShellCommand } from './linx-shell-command-router.js'
+import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import {
   isSessionCommandRouterAfterRebindInstalled,
   markSessionCommandRouterAfterRebindInstalled,
@@ -99,7 +100,7 @@ async function maybeHandleLinxSessionCommand(
     return false
   }
 
-  interactive.editor?.setText?.('')
+  setLinxInteractiveEditorText(interactive, '')
   await handleCommand(interactive, runtime, command)
   return true
 }
