@@ -22,6 +22,7 @@
 - Pi session history / branch / clean-session materialization / context rebuild 是 shell session-history seam，不是 login、rewind、auth recovery 等 feature 模块的私有逻辑。需要重试、回滚、列出可回滚用户消息、恢复 active branch、创建 clean rewind session、计算 abandoned entries、重建 `agent.state.messages` 时，feature 模块只能调用命名 seam helper，不能直接访问 `session.sessionManager`、`getBranch`、`resetLeaf`、`createBranchedSession`、`buildSessionContext` 等 Pi 内部形状。
 - session id/name/cwd 读取也是 shell metadata seam：resume/exit copy、welcome/header、statusline、extension context、Symphony status 等只展示 shell 元数据的模块必须走 `linx-session-metadata.ts`；Pi session id 只代表本地 runtime archive，不是 Pod Chat/Thread 身份。
 - 只有 session-manager 构造/启动规划、`linx-session-metadata.ts`、`linx-session-history.ts`、runtime archive 诊断、Pod mirror / session-control 这类明确桥接 Pi archive 的模块可以直接接触 `sessionManager`；其他 feature/rendering 模块需要新能力时先补 seam 和 boundary test。
+- shell/core 边界坏味道要按 `docs/linx-shell-core-design.md` 的 checklist 处理：不要新增第二套 Pi/backend 命令词汇；command-shaped 顶层输入必须在 login/Pod/interactive 副作用前 admission；feature/rendering 模块不得直接读写 Pi mutable internals 或 `__linx*` 隐藏字段；runtime archive identity 不得上升为 Pod Chat/Thread/Contact/backend credential 身份；隐藏诊断入口不能成为普通用户工作流。
 - 新增或调整 shell/core 边界时，同一变更必须更新 `docs/linx-shell-core-design.md`；功能文档只记录用户可见契约，不重新定义 shell/core 权责。
 
 ## Skill Routing
