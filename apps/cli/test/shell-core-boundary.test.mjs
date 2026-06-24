@@ -756,6 +756,20 @@ test('feature modules display interactive warnings through the shell warning sea
   }
 })
 
+test('feature modules refresh interactive provider count through the shell provider count seam', () => {
+  const featureFiles = [
+    'linx-ai-connect-command.ts',
+    'linx-login-flow.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-interactive-provider-count-host\.js['"]/, target)
+    assert.match(source, /\brefreshLinxInteractiveProviderCount\b/, target)
+    assert.doesNotMatch(source, /\.updateAvailableProviderCount(?:\?\.)?\s*\(/, target)
+  }
+})
+
 test('interrupt control status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
 
