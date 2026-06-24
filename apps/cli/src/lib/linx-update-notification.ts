@@ -18,11 +18,8 @@ import {
 } from './linx-interactive-update-router.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
+import { getLinxInteractiveUpdateState } from './linx-interactive-update-state-host.js'
 
-const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
-const LINX_UPDATE_CHECK_SCHEDULED = Symbol.for('linx.tui.updateCheckScheduled')
-const LINX_DEFERRED_UPDATE_VERSION = Symbol.for('linx.tui.deferredUpdateVersion')
-const LINX_SUPPRESS_UPSTREAM_PI_UPDATE = Symbol.for('linx.tui.suppressUpstreamPiUpdate')
 const UPDATE_OPTION_INSTALL = 'Install update and restart'
 const UPDATE_OPTION_CHANGELOG = 'Open changelog'
 const UPDATE_OPTION_LATER = 'Later'
@@ -61,12 +58,13 @@ export function replayDeferredLinxUpdateNotification(
   interactive: any,
   options: LinxUpdateNotificationOptions = {},
 ): void {
-  const version = normalizeLinxUpdateVersion(interactive[LINX_DEFERRED_UPDATE_VERSION])
+  const updateState = getLinxInteractiveUpdateState(interactive)
+  const version = normalizeLinxUpdateVersion(updateState.deferredUpdateVersion)
   if (!version || shouldDeferLinxUpdateNotification(options)) {
     return
   }
 
-  interactive[LINX_DEFERRED_UPDATE_VERSION] = undefined
+  updateState.deferredUpdateVersion = undefined
   void showLinxUpdateSelector(interactive, version)
 }
 
@@ -88,7 +86,7 @@ function installLinxUpstreamPiUpdateSuppression(interactive: any): void {
     name: 'linx-update-notification:suppress-upstream-pi-update',
     priority: 0,
     handler({ interactive: runInteractive }) {
-      runInteractive[LINX_SUPPRESS_UPSTREAM_PI_UPDATE] = true
+      getLinxInteractiveUpdateState(runInteractive).suppressUpstreamPiUpdate = true
     },
   })
 }
@@ -98,7 +96,7 @@ function patchUpdateNotification(interactive: any, options: LinxUpdateNotificati
     name: 'linx-update-notification:show-linx-update',
     priority: 0,
     handler({ interactive: target, newVersion }) {
-      if (target[LINX_SUPPRESS_UPSTREAM_PI_UPDATE]) {
+      if (getLinxInteractiveUpdateState(target).suppressUpstreamPiUpdate) {
         return true
       }
 
@@ -117,11 +115,12 @@ export function scheduleLinxVersionCheckAfterInit(
   interactive: any,
   options: LinxUpdateNotificationOptions = {},
 ): void {
-  if (interactive[LINX_UPDATE_CHECK_SCHEDULED]) {
+  const updateState = getLinxInteractiveUpdateState(interactive)
+  if (updateState.updateCheckScheduled) {
     return
   }
 
-  interactive[LINX_UPDATE_CHECK_SCHEDULED] = true
+  updateState.updateCheckScheduled = true
   queueMicrotask(() => {
     void checkForNewLinxVersion()
       .then((latest) => {
@@ -135,10 +134,11 @@ export function scheduleLinxVersionCheckAfterInit(
 }
 
 async function showLinxUpdateSelector(interactive: any, newVersion: string): Promise<void> {
-  if (interactive[LINX_UPDATE_IN_PROGRESS]) {
+  const updateState = getLinxInteractiveUpdateState(interactive)
+  if (updateState.updateInProgress) {
     return
   }
-  interactive[LINX_UPDATE_IN_PROGRESS] = true
+  updateState.updateInProgress = true
   try {
     const title = [
       'LinX update available',
@@ -169,7 +169,7 @@ async function showLinxUpdateSelector(interactive: any, newVersion: string): Pro
 
     showLinxInteractiveStatus(interactive, `Skipped LinX ${newVersion} for now.`, { render: false })
   } finally {
-    interactive[LINX_UPDATE_IN_PROGRESS] = false
+    updateState.updateInProgress = false
   }
 }
 
@@ -178,12 +178,13 @@ function requestLinxUpdateNotification(
   newVersion: string,
   options: LinxUpdateNotificationOptions & { force?: boolean } = {},
 ): void {
+  const updateState = getLinxInteractiveUpdateState(interactive)
   if (!options.force && shouldDeferLinxUpdateNotification(options)) {
-    interactive[LINX_DEFERRED_UPDATE_VERSION] = newVersion
+    updateState.deferredUpdateVersion = newVersion
     return
   }
 
-  interactive[LINX_DEFERRED_UPDATE_VERSION] = undefined
+  updateState.deferredUpdateVersion = undefined
   void showLinxUpdateSelector(interactive, newVersion)
 }
 

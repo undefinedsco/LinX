@@ -98,6 +98,14 @@ Hard rules:
   that chooses to replace Pi's upstream check must return an explicit handled
   result even when no LinX update exists, so the router does not accidentally
   fall back to Pi's package/version surface.
+- Update prompt/suppression bookkeeping is shell-local interaction state, not
+  update-notification business state. LinX update code may decide package
+  versions, selector copy, changelog opening, deferral policy, and restart
+  requests, but hidden flags for "update in progress", "version check already
+  scheduled", "deferred update version", and "suppress upstream Pi update"
+  belong behind `apps/cli/src/lib/linx-interactive-update-state-host.ts`.
+  Feature modules must not define `linx.tui.update*` symbols or index those
+  fields directly on the Pi interactive object.
 - Login UI methods are shell authentication UI lifecycle, not login-flow-owned
   Pi method replacements. `interactive.showOAuthSelector` and
   `interactive.showLoginDialog` are patched only by
@@ -925,6 +933,16 @@ must not replace them directly. `linx-update-notification.ts` owns LinX package
 version semantics and selector rendering; it registers handlers with the update
 router. The router owns the Pi method patch and the fallback decision to the
 original Pi methods.
+
+Update notification state belongs behind
+`linx-interactive-update-state-host.ts`. `linx-update-notification.ts` owns the
+semantic update behavior: whether a LinX package update exists, whether the user
+chooses install/changelog/later, when a notification should be deferred, and when
+the self-update lifecycle supervisor should restart the process. It must not
+also own the hidden storage shape on Pi's interactive instance. The update-state
+host owns process-local prompt and suppression flags for update-in-progress,
+post-init version-check scheduling, deferred update version, and suppressing
+Pi's upstream package prompt while the LinX update surface is active.
 
 Login UI selector/dialog methods belong behind
 `linx-interactive-login-ui-router.ts`. Pi exposes `showOAuthSelector` and
