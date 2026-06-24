@@ -6,7 +6,7 @@ import {
   markFinalSubmitWrappedHandler,
   markInputCommandRouterInstalled,
 } from './linx-interactive-command-routing-host.js'
-import { registerLinxEditorComponentRebindHandler } from './linx-editor-component-router.js'
+import { forEachLinxInteractiveEditorComponent, registerLinxEditorComponentRebindHandler } from './linx-editor-component-router.js'
 
 export type LinxInputShellCommandHandler = (
   interactive: any,
@@ -78,19 +78,16 @@ export function installLinxFinalSubmitCommandRouter(
     editor.onSubmit = wrappedSubmit
   }
 
-  wrapEditor(interactive.defaultEditor)
-  if (interactive.editor !== interactive.defaultEditor) {
-    wrapEditor(interactive.editor)
-  }
+  wrapLinxFinalSubmitEditors(interactive, wrapEditor)
 
   registerLinxEditorComponentRebindHandler(interactive, {
     name: 'linx-final-submit-command-router:wrap-editor-submit',
     priority: 0,
     handler({ interactive: reboundInteractive }) {
-      wrapEditor(reboundInteractive.defaultEditor)
-      if (reboundInteractive.editor !== reboundInteractive.defaultEditor) {
-        wrapEditor(reboundInteractive.editor)
-      }
+      wrapLinxFinalSubmitEditors(reboundInteractive, wrapEditor)
     },
   })
+}
+function wrapLinxFinalSubmitEditors(interactive: any, wrapEditor: (editor: any) => void): void {
+  forEachLinxInteractiveEditorComponent(interactive, wrapEditor)
 }

@@ -1034,7 +1034,11 @@ prevents slash-command routing, projected command routing, and session method
 interception from depending on wrapper nesting or import order. When final
 submit routing needs to re-wrap a newly rebound editor, it must register a
 handler with `linx-editor-component-router.ts` instead of replacing
-`interactive.setCustomEditorComponent`.
+`interactive.setCustomEditorComponent`. Final-submit routing also must not
+discover editors by reading Pi's `interactive.defaultEditor` /
+`interactive.editor` fields itself; initial wrapping and rebind wrapping must
+enumerate editors through the editor-component seam so Pi editor shape knowledge
+has one owner.
 
 Editor component rebinding belongs behind `linx-editor-component-router.ts`.
 Pi may replace the active editor component at runtime; LinX features such as
@@ -1046,7 +1050,10 @@ component swaps, such as credential/login dialogs replacing the editor and then
 restoring it, also belong to this seam: feature modules may decide which dialog
 to show, but `editorContainer.clear/addChild`, focus handoff, restore-to-editor,
 and render invalidation must be done through editor-component seam helpers
-instead of feature-local Pi/TUI container mutation.
+instead of feature-local Pi/TUI container mutation. The same seam owns editor
+enumeration for decorators: callers ask the seam to visit LinX-interactive editor
+components instead of duplicating `defaultEditor` / current-editor fallback
+logic in feature or command-routing modules.
 
 Extension UI context augmentation belongs behind
 `linx-extension-ui-context-router.ts`. Pi creates an extension UI context for
