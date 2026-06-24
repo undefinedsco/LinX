@@ -700,6 +700,16 @@ test('rewind command status rendering goes through the shell status seam', () =>
   assert.doesNotMatch(source, /\.ui(?:\?\.)?\.requestRender(?:\?\.)?\s*\(/)
 })
 
+test('rewind transcript refresh goes through the shell chat rendering seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-rewind-command.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-chat-text-host\.js['"]/)
+  assert.match(source, /\brefreshLinxInteractiveChatTranscript\b/)
+  assert.doesNotMatch(source, /chatContainer(?:\?\.)?\.clear(?:\?\.)?\s*\(/)
+  assert.doesNotMatch(source, /\.renderInitialMessages(?:\?\.)?\s*\(/)
+  assert.doesNotMatch(source, /\.rebuildChatFromMessages(?:\?\.)?\s*\(/)
+})
+
 test('interrupt control status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
 
