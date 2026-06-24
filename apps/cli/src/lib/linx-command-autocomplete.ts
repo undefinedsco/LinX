@@ -1,43 +1,16 @@
 import { getAIConfigProviderCatalog } from './models.js'
-
-const linxCommandAutocompleteInstalled = new WeakSet<object>()
+import { installLinxInteractiveAutocompleteCommands } from './linx-interactive-autocomplete-host.js'
 
 export function installSymphonyAutocomplete(interactive: any): void {
   installLinxCommandAutocomplete(interactive)
 }
 
 export function installLinxCommandAutocomplete(interactive: any): void {
-  if (!interactive || linxCommandAutocompleteInstalled.has(interactive)) {
-    return
-  }
-
-  const setupName = typeof interactive.setupAutocompleteProvider === 'function'
-    ? 'setupAutocompleteProvider'
-    : 'setupAutocomplete'
-  const originalSetup = interactive[setupName]?.bind(interactive)
-  if (typeof originalSetup !== 'function') {
-    return
-  }
-
-  interactive[setupName] = function patchedLinxSetupAutocompleteProvider(...args: unknown[]): unknown {
-    const result = originalSetup(...args)
-    installLinxAutocompleteCommands(this.autocompleteProvider)
-    return result
-  }
-
-  linxCommandAutocompleteInstalled.add(interactive)
-}
-
-function installLinxAutocompleteCommands(provider: { commands?: unknown[] } | undefined): void {
-  if (!Array.isArray(provider?.commands)) {
-    return
-  }
-
-  for (const command of LINX_INTERACTIVE_SLASH_COMMANDS) {
-    if (!provider.commands.some((existing) => getAutocompleteCommandName(existing) === command.name)) {
-      provider.commands.push(command)
-    }
-  }
+  installLinxInteractiveAutocompleteCommands(
+    interactive,
+    LINX_INTERACTIVE_SLASH_COMMANDS,
+    getAutocompleteCommandName,
+  )
 }
 
 const LINX_INTERACTIVE_SLASH_COMMANDS = [
