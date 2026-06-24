@@ -748,6 +748,16 @@ test('welcome header render invalidation goes through the shell header host', ()
   assert.doesNotMatch(source, /\.ui(?:\?\.)?\.requestRender(?:\?\.)?\s*\(/)
 })
 
+test('welcome header terminal title rendering goes through the shell title router', () => {
+  const source = readFileSync(join(libRoot, 'linx-welcome-header.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-terminal-title-router\.js['"]/)
+  assert.match(source, /\bsetLinxTerminalTitle\b/)
+  assert.match(source, /\brequestLinxTerminalTitleRefresh\b/)
+  assert.doesNotMatch(source, /\.ui(?:\?\.)?\.terminal(?:\?\.)?\.setTitle(?:\?\.)?\s*\(/)
+  assert.doesNotMatch(source, /\.updateTerminalTitle(?:\?\.)?\s*\(/)
+})
+
 test('login flow status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
 

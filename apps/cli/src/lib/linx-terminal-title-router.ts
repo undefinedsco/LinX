@@ -34,6 +34,14 @@ export function registerLinxTerminalTitleHandler(
   installLinxTerminalTitleRouter(interactive, state)
 }
 
+export function setLinxTerminalTitle(interactive: any, title: string): void {
+  interactive?.ui?.terminal?.setTitle?.(title)
+}
+
+export function requestLinxTerminalTitleRefresh(interactive: any): void {
+  interactive?.updateTerminalTitle?.()
+}
+
 function getLinxTerminalTitleRouterState(interactive: any): LinxTerminalTitleRouterState {
   if (!interactive || typeof interactive !== 'object') {
     return { installed: true, handlers: [] }
