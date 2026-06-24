@@ -158,6 +158,11 @@ Hard rules:
   labels, but Pi `interactive.showExtensionSelector` belongs behind
   `apps/cli/src/lib/linx-interactive-extension-selector-host.ts`; feature
   modules normalize selected values after the shell returns the raw choice.
+- Custom selector mounting is shell UI state, not rewind or statusline feature
+  plumbing. Feature modules may build selector components, but Pi
+  `interactive.showSelector` belongs behind
+  `apps/cli/src/lib/linx-interactive-selector-host.ts`; callback lifecycle and
+  focus handoff must stay on the shell side.
 - Editor text mutation, focus restoration, and render invalidation are shell
   input/rendering state, not login or feature business logic. Feature modules
   may decide the desired text, but `interactive.editor.setText`,

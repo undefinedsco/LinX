@@ -8,6 +8,7 @@ import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { showLinxInteractiveWarning } from './linx-interactive-warning-display.js'
 import { refreshLinxInteractiveChatTranscript } from './linx-interactive-chat-text-host.js'
+import { canShowLinxInteractiveSelector, showLinxInteractiveSelector } from './linx-interactive-selector-host.js'
 import { getLinxPodMirrorForRuntime } from './linx-pod-mirror-runtime-host.js'
 import {
   assertLinxRewindUserEntryTarget,
@@ -29,7 +30,7 @@ export async function handleInteractiveRewindSelector(interactive: any, runtime:
     return
   }
 
-  if (typeof interactive.showSelector !== 'function') {
+  if (!canShowLinxInteractiveSelector(interactive)) {
     await handleInteractiveRewindTurnsCommand(interactive, runtime, 1)
     return
   }
@@ -41,7 +42,7 @@ export async function handleInteractiveRewindSelector(interactive: any, runtime:
   }
 
   const initialSelectedId = userMessages[userMessages.length - 1]?.id
-  interactive.showSelector((done: () => void) => {
+  showLinxInteractiveSelector(interactive, (done: () => void) => {
     const selector = new LinxRewindMessageSelectorComponent(
       userMessages,
       async (entryId) => {

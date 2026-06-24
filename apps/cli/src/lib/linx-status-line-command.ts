@@ -5,6 +5,7 @@ import {
   canChooseLinxInteractiveExtensionSelectorOption,
   chooseLinxInteractiveExtensionSelectorOption,
 } from './linx-interactive-extension-selector-host.js'
+import { canShowLinxInteractiveSelector, showLinxInteractiveSelector } from './linx-interactive-selector-host.js'
 import {
   DEFAULT_STATUS_LINE_TOKENS,
   LINX_STATUS_LINE_TOKEN_NAMES,
@@ -38,7 +39,6 @@ const STATUS_LINE_RESET_OPTION = 'Reset to default'
 const STATUS_LINE_DONE_OPTION = 'Done'
 
 type InteractiveStatusLineShell = {
-  showSelector?: (create: (done: () => void) => { component: unknown; focus: unknown }) => void
   showStatus?: (message: string) => void
   showError?: (message: string) => void
   footer?: { invalidate?: () => void }
@@ -55,7 +55,7 @@ export async function handleInteractiveStatusLineCommand(
   }
 
   const summary = formatInteractiveStatusLineSummary()
-  if (typeof interactive.showSelector === 'function') {
+  if (canShowLinxInteractiveSelector(interactive)) {
     await showInteractiveStatusLineMultiSelect(interactive)
     return
   }
@@ -125,7 +125,7 @@ async function showInteractiveStatusLineMultiSelect(interactive: InteractiveStat
     }
 
     try {
-      interactive.showSelector?.((done: () => void) => {
+      showLinxInteractiveSelector(interactive, (done: () => void) => {
         const close = () => {
           done()
           resolveOnce()
