@@ -23,6 +23,10 @@ import {
   canCollectLinxInteractiveExtensionInput,
   collectLinxInteractiveExtensionInput,
 } from './linx-interactive-extension-input-host.js'
+import {
+  canChooseLinxInteractiveExtensionSelectorOption,
+  chooseLinxInteractiveExtensionSelectorOption,
+} from './linx-interactive-extension-selector-host.js'
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
@@ -352,8 +356,9 @@ function normalizeLinxLoginError(message: string): string {
 async function selectLinxAuthMethod(interactive: any, reason: LinxAuthReason, flowOptions: LinxLoginFlowOptions): Promise<string | undefined> {
   const title = buildLinxAuthPromptTitle(reason, resolveProviderLabel(interactive, flowOptions))
   const options = [AUTH_OPTION_BROWSER, AUTH_OPTION_CLIENT_CREDENTIALS, AUTH_OPTION_EXIT]
-  if (typeof interactive.showExtensionSelector === 'function') {
-    return normalizeSelectorChoice(await interactive.showExtensionSelector(title, options), options)
+  if (canChooseLinxInteractiveExtensionSelectorOption(interactive)) {
+    const choice = await chooseLinxInteractiveExtensionSelectorOption(interactive, title, options)
+    return normalizeSelectorChoice(choice, options)
   }
 
   showLinxAuthFallback(interactive, title, options)
