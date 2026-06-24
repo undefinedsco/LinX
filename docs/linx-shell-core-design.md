@@ -135,6 +135,12 @@ Hard rules:
   `interactive.ui.requestRender` directly. Add or use a named status/rendering
   seam so status text, footer invalidation, raw-mode timing, and render requests
   stay ordered with the rest of the shell lifecycle.
+- Visible warning copy is shell rendering state, not feature business logic.
+  Feature modules may classify recoverable warning conditions and provide the
+  warning text, but Pi `interactive.showWarning` belongs behind
+  `apps/cli/src/lib/linx-interactive-warning-display.ts`. Rewind, auto,
+  submitted-message recording, and future recovery flows must route visible
+  warnings through that seam instead of depending on Pi's warning method shape.
 - Editor text mutation, focus restoration, and render invalidation are shell
   input/rendering state, not login or feature business logic. Feature modules
   may decide the desired text, but `interactive.editor.setText`,

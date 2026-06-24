@@ -6,6 +6,7 @@ import {
 } from './linx-interactive-shell-state.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
+import { showLinxInteractiveWarning } from './linx-interactive-warning-display.js'
 import { refreshLinxInteractiveChatTranscript } from './linx-interactive-chat-text-host.js'
 import { getLinxPodMirrorForRuntime } from './linx-pod-mirror-runtime-host.js'
 import {
@@ -121,7 +122,7 @@ function resetPendingAutoInputForRewind(interactive: any, runtime: any): void {
     controller.start({ scheduleImmediately: false })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    interactive.showWarning?.(`Auto input reset after rewind failed: ${message}`)
+    showLinxInteractiveWarning(interactive, `Auto input reset after rewind failed: ${message}`)
   }
 
   setLinxInteractiveAutoModeEnabled(interactive, runtime, true)
@@ -133,7 +134,7 @@ async function syncRewindProjection(
   input: LinxSessionHistoryRewindResult,
 ): Promise<void> {
   if (input.cleanResult.warning) {
-    interactive.showWarning?.(`Clean rewind history materialization skipped: ${input.cleanResult.warning}`)
+    showLinxInteractiveWarning(interactive, `Clean rewind history materialization skipped: ${input.cleanResult.warning}`)
   }
 
   const mirror = getLinxPodMirrorForRuntime(runtime) ?? getLinxPodMirrorForRuntime(interactive?.runtime)
@@ -152,7 +153,7 @@ async function syncRewindProjection(
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    interactive.showWarning?.(`Pod rewind projection unavailable: ${message}`)
+    showLinxInteractiveWarning(interactive, `Pod rewind projection unavailable: ${message}`)
   }
 }
 
@@ -161,7 +162,7 @@ function refreshInteractiveTranscriptAfterRewind(interactive: any): void {
     refreshLinxInteractiveChatTranscript(interactive)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    interactive?.showWarning?.(`Rewind transcript refresh failed: ${message}`)
+    showLinxInteractiveWarning(interactive, `Rewind transcript refresh failed: ${message}`)
   }
 }
 

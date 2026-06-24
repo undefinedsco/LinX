@@ -742,6 +742,20 @@ test('rewind transcript refresh goes through the shell chat rendering seam', () 
   assert.doesNotMatch(source, /\.rebuildChatFromMessages(?:\?\.)?\s*\(/)
 })
 
+test('feature modules display interactive warnings through the shell warning seam', () => {
+  const featureFiles = [
+    'linx-rewind-command.ts',
+    'linx-submitted-user-message-recording.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-interactive-warning-display\.js['"]/, target)
+    assert.match(source, /\bshowLinxInteractiveWarning\b/, target)
+    assert.doesNotMatch(source, /\.showWarning(?:\?\.)?\s*\(/, target)
+  }
+})
+
 test('interrupt control status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
 
