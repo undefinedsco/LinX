@@ -18,3 +18,10 @@ export function setLinxInteractiveEditorText(
     interactive.ui?.requestRender?.()
   }
 }
+
+export function getLinxInteractiveEditorText(interactive: any): string | undefined {
+  if (typeof interactive?.editor?.getText !== 'function') {
+    return undefined
+  }
+  return String(interactive.editor.getText() ?? '')
+}
