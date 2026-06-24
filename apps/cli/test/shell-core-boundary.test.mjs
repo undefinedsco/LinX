@@ -1348,6 +1348,15 @@ test('auto editor indicator patch state is kept behind the shell rendering host'
   assert.deepEqual(violations, [])
 })
 
+test('auto editor indicator enumerates editors through the shell editor component seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-auto-editor-indicator.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-editor-component-router\.js['"]/)
+  assert.match(source, /\bforEachLinxInteractiveEditorComponent\b/)
+  assert.doesNotMatch(source, /\.defaultEditor\b/)
+  assert.doesNotMatch(source, /\.editor\b/)
+})
+
 test('terminal title patching is centralized in the shell rendering router', () => {
   const allowed = new Set([
     'linx-terminal-title-router.ts',

@@ -97,6 +97,21 @@ export function mountLinxEditorComponent(interactive: any, component: unknown): 
   return () => restoreLinxEditorComponent(interactive)
 }
 
+export function forEachLinxInteractiveEditorComponent(
+  interactive: any,
+  callback: (editor: any) => void,
+): void {
+  const editors = [interactive?.defaultEditor, interactive?.editor]
+  const seen = new Set<unknown>()
+  for (const editor of editors) {
+    if (!editor || seen.has(editor)) {
+      continue
+    }
+    seen.add(editor)
+    callback(editor)
+  }
+}
+
 function restoreLinxEditorComponent(interactive: any): void {
   interactive.editorContainer.clear()
   interactive.editorContainer.addChild(interactive.editor)
