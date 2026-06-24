@@ -445,6 +445,15 @@ test('login flow does not patch interactive init directly', () => {
   assert.doesNotMatch(source, /interactive\.init\s*=/)
 })
 
+test('login flow keeps interactive auth state behind the shell auth state seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-auth-state-host\.js['"]/)
+  assert.match(source, /\bgetLinxInteractiveAuthState\b/)
+  assert.doesNotMatch(source, /Symbol\.for\(['"]linx\.tui\.auth/)
+  assert.doesNotMatch(source, /(?:interactive|target)\s*\[\s*LINX_AUTH_/)
+})
+
 test('interactive lifecycle completion state is kept out of interactive hidden fields', () => {
   const violations = []
   const directLifecycleStatePattern = /__linxInteractiveInitCompleted\b/

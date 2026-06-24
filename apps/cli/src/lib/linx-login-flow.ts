@@ -30,6 +30,7 @@ import {
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
+import { getLinxInteractiveAuthState } from './linx-interactive-auth-state-host.js'
 import {
   canMountLinxEditorComponent,
   createLinxLoginDialogComponent,
@@ -41,11 +42,6 @@ import {
   type LinxSessionRetryTurn,
 } from './linx-session-history.js'
 
-const LINX_AUTH_LOGIN_IN_PROGRESS = Symbol.for('linx.tui.authLoginInProgress')
-const LINX_AUTH_LOGIN_ON_INIT = Symbol.for('linx.tui.authLoginOnInit')
-const LINX_AUTH_PENDING_RETRY = Symbol.for('linx.tui.authPendingRetry')
-const LINX_AUTH_LOGIN_SCHEDULED = Symbol.for('linx.tui.authLoginScheduled')
-const LINX_AUTH_REPORTING_ERROR = Symbol.for('linx.tui.authReportingError')
 const LINX_PROVIDER_ID = 'undefineds'
 const linxLoginFlowOptions = new WeakMap<object, LinxLoginFlowOptions>()
 const AUTH_OPTION_BROWSER = 'Authorize in browser'
@@ -71,32 +67,34 @@ export function installLinxLoginFlow(interactive: any, options: LinxLoginFlowOpt
 }
 
 export function shouldDeferLinxCloudLogin(interactive: any): boolean {
+  const authState = getLinxInteractiveAuthState<LinxAuthReason, LinxAuthPendingRetry>(interactive)
   return Boolean(
-    interactive[LINX_AUTH_LOGIN_IN_PROGRESS]
-      || interactive[LINX_AUTH_LOGIN_ON_INIT]
-      || interactive[LINX_AUTH_PENDING_RETRY]
-      || interactive[LINX_AUTH_LOGIN_SCHEDULED],
+    authState.loginInProgress
+      || authState.loginOnInit
+      || authState.pendingRetry
+      || authState.loginScheduled,
   )
 }
 
 export function requestLinxCloudLogin(interactive: any, reason: LinxAuthReason = 'manual', options: LinxLoginFlowOptions = {}): void {
   rememberLinxLoginFlowOptions(interactive, options)
   if (!interactive.isInitialized) {
-    interactive[LINX_AUTH_LOGIN_ON_INIT] = reason
+    getLinxInteractiveAuthState<LinxAuthReason>(interactive).loginOnInit = reason
     return
   }
   void startLinxCloudLogin(interactive, { reason }, options)
 }
 
 export function startPendingLinxCloudLoginAfterInit(interactive: any): void {
-  if (!interactive?.[LINX_AUTH_LOGIN_ON_INIT]) {
+  const authState = getLinxInteractiveAuthState<LinxAuthReason>(interactive)
+  if (!authState.loginOnInit) {
     return
   }
 
-  const reason = typeof interactive[LINX_AUTH_LOGIN_ON_INIT] === 'string'
-    ? interactive[LINX_AUTH_LOGIN_ON_INIT] as LinxAuthReason
+  const reason = typeof authState.loginOnInit === 'string'
+    ? authState.loginOnInit
     : 'startup'
-  interactive[LINX_AUTH_LOGIN_ON_INIT] = false
+  authState.loginOnInit = false
   const options = getLinxLoginFlowOptions(interactive)
   queueMicrotask(() => startLinxCloudLogin(interactive, { reason }, options))
 }
@@ -192,7 +190,7 @@ function patchAuthExpiredLoginPrompt(interactive: any, options: LinxLoginFlowOpt
     priority: 0,
     handler({ interactive: target, errorMessage }) {
       const text = typeof errorMessage === 'string' ? errorMessage : String(errorMessage)
-      if (target[LINX_AUTH_REPORTING_ERROR] || !isLinxAuthExpiredError(text)) {
+      if (getLinxInteractiveAuthState(target).reportingError || !isLinxAuthExpiredError(text)) {
         return { handled: false, errorMessage: formatLinxCliErrorMessage(errorMessage) }
       }
 
@@ -264,10 +262,11 @@ function showLinxAuthExpiredRecoveryNotice(interactive: any): void {
 }
 
 async function startLinxCloudLogin(interactive: any, loginOptions: { reason?: LinxAuthReason } = {}, options: LinxLoginFlowOptions = {}): Promise<void> {
-  if (interactive[LINX_AUTH_LOGIN_IN_PROGRESS]) {
+  const authState = getLinxInteractiveAuthState<LinxAuthReason, LinxAuthPendingRetry>(interactive)
+  if (authState.loginInProgress) {
     return
   }
-  interactive[LINX_AUTH_LOGIN_IN_PROGRESS] = true
+  authState.loginInProgress = true
 
   try {
     const authStorage = interactive.session?.modelRegistry?.authStorage
@@ -310,35 +309,37 @@ async function startLinxCloudLogin(interactive: any, loginOptions: { reason?: Li
     const message = error instanceof Error ? error.message : String(error)
     reportLinxLoginError(interactive, message)
   } finally {
-    interactive[LINX_AUTH_LOGIN_IN_PROGRESS] = false
+    authState.loginInProgress = false
     options.onLoginSettled?.(interactive)
   }
 }
 
 function scheduleLinxCloudLogin(interactive: any, reason: LinxAuthReason, options: LinxLoginFlowOptions): void {
-  if (interactive[LINX_AUTH_LOGIN_IN_PROGRESS] || interactive[LINX_AUTH_LOGIN_SCHEDULED]) {
+  const authState = getLinxInteractiveAuthState<LinxAuthReason, LinxAuthPendingRetry>(interactive)
+  if (authState.loginInProgress || authState.loginScheduled) {
     return
   }
 
-  interactive[LINX_AUTH_LOGIN_SCHEDULED] = true
+  authState.loginScheduled = true
   setTimeout(() => {
-    interactive[LINX_AUTH_LOGIN_SCHEDULED] = false
+    getLinxInteractiveAuthState<LinxAuthReason, LinxAuthPendingRetry>(interactive).loginScheduled = false
     void startLinxCloudLogin(interactive, { reason }, options)
   }, 0)
 }
 
 function reportLinxLoginError(interactive: any, message: string): void {
+  const authState = getLinxInteractiveAuthState(interactive)
   const rendered = normalizeLinxLoginError(message)
-  if (interactive[LINX_AUTH_REPORTING_ERROR]) {
+  if (authState.reportingError) {
     showLinxInteractiveStatus(interactive, rendered)
     return
   }
 
-  interactive[LINX_AUTH_REPORTING_ERROR] = true
+  authState.reportingError = true
   try {
     showLinxInteractiveError(interactive, rendered)
   } finally {
-    interactive[LINX_AUTH_REPORTING_ERROR] = false
+    authState.reportingError = false
   }
 }
 
@@ -450,18 +451,19 @@ async function finishLinxAuthSuccess(interactive: any, reason: LinxAuthReason, d
 }
 
 function prepareLinxAuthExpiredRetry(interactive: any): void {
-  if (interactive[LINX_AUTH_PENDING_RETRY]) {
+  const authState = getLinxInteractiveAuthState<LinxAuthReason, LinxAuthPendingRetry>(interactive)
+  if (authState.pendingRetry) {
     return
   }
 
   const pending = captureLinxSessionRetryTurn(interactive.session)
-  interactive[LINX_AUTH_PENDING_RETRY] = pending
+  authState.pendingRetry = pending
 
   // AgentSession persists the assistant error after TUI subscribers run. Restore
   // the active branch on the next tick so "continue" never resumes from the
   // failed auth assistant message if the user cancels or login fails.
   setTimeout(() => {
-    if (interactive[LINX_AUTH_PENDING_RETRY] === pending) {
+    if (getLinxInteractiveAuthState<LinxAuthReason, LinxAuthPendingRetry>(interactive).pendingRetry === pending) {
       restoreLinxSessionHistoryBranch(interactive.session, pending.continueFromId)
     }
   }, 0)
@@ -476,11 +478,12 @@ async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason
     return false
   }
 
-  const pending = interactive[LINX_AUTH_PENDING_RETRY] as LinxAuthPendingRetry | undefined
+  const authState = getLinxInteractiveAuthState<LinxAuthReason, LinxAuthPendingRetry>(interactive)
+  const pending = authState.pendingRetry
   if (!pending) {
     return false
   }
-  interactive[LINX_AUTH_PENDING_RETRY] = undefined
+  authState.pendingRetry = undefined
 
   const session = interactive.session
   if (!session) {

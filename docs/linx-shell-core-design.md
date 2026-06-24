@@ -104,6 +104,14 @@ Hard rules:
   `apps/cli/src/lib/linx-interactive-login-ui-router.ts`; login/auth modules
   register ordered selector/dialog handlers instead of replacing Pi methods
   directly.
+- Auth prompt/retry bookkeeping is shell-local interaction state, not
+  login-flow business state. Login flow may decide when LinX/Solid auth is
+  required, expired, cancelled, or refreshed, but hidden flags for "login in
+  progress", "start login after init", "pending auth retry", "login scheduled",
+  and "currently reporting auth error" belong behind
+  `apps/cli/src/lib/linx-interactive-auth-state-host.ts`. Feature modules must
+  not define `linx.tui.auth*` symbols or index those fields directly on the Pi
+  interactive object.
 - Interactive event/error methods are shell event-normalization lifecycle, not
   auth-feature-owned Pi method replacements. `interactive.handleEvent` and
   `interactive.showError` are patched only by
@@ -925,6 +933,16 @@ LinX Cloud login/logout semantics, selector copy, and provider restrictions; it
 registers handlers with the login UI router instead of replacing those Pi
 methods directly. The router owns the Pi method patch and the fallback decision
 to the original Pi login UI methods.
+
+Login auth state belongs behind `linx-interactive-auth-state-host.ts`.
+`linx-login-flow.ts` owns the semantic auth decisions: startup login prompt,
+manual `/login`, expired-session recovery, retry-after-login, and error copy.
+It must not also own the hidden storage shape on Pi's interactive instance. The
+auth-state host owns the process-local interaction flags for login progress,
+post-init login, scheduled login, pending retry descriptors, and recursive error
+report suppression. Auth recovery may consume session-history retry descriptors,
+but the mutable `interactive[...]` fields that coordinate the TUI prompt
+lifecycle must stay behind this host.
 
 Interactive event/error interception belongs behind
 `linx-interactive-event-router.ts`. Pi exposes `handleEvent` and `showError` as
