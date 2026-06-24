@@ -144,6 +144,12 @@ Hard rules:
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
   ordered title handlers instead of replacing the Pi method directly.
+- Opening an external URL is shell/host integration, not login or update feature
+  logic. Feature helpers may request that a URL be opened, but Pi's
+  `interactive.openExternal` method belongs behind
+  `apps/cli/src/lib/linx-external-open-host.ts`; fallback OS process launching
+  must stay in the shell URL helper rather than leaking terminal/process details
+  into feature modules.
 - Custom editor component rebinding and temporary component mounting are shell
   editor lifecycle, not feature-local wrapper territory. `interactive.setCustomEditorComponent` is patched only by
   `apps/cli/src/lib/linx-editor-component-router.ts`; modules that need to

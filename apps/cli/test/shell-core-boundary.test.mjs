@@ -595,6 +595,14 @@ test('feature credential dialogs construct Pi login dialogs through the shell ed
   }
 })
 
+test('external URL opening delegates interactive openExternal through the shell host', () => {
+  const source = readFileSync(join(libRoot, 'linx-external-url.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-external-open-host\.js['"]/, 'external URL helper should import the shell external-open host')
+  assert.match(source, /\bopenLinxInteractiveExternalUrl\b/)
+  assert.doesNotMatch(source, /interactive(?:\?\.)?\.openExternal\b/)
+})
+
 test('feature fallback notices append chat text through the shell rendering seam', () => {
   const featureFiles = [
     'linx-login-flow.ts',

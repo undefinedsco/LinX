@@ -1,8 +1,8 @@
+import { openLinxInteractiveExternalUrl } from './linx-external-open-host.js'
 import { spawn } from 'node:child_process'
 
 export function openExternalUrl(url: string, interactive: any): void {
-  if (typeof interactive?.openExternal === 'function') {
-    interactive.openExternal(url)
+  if (openLinxInteractiveExternalUrl(interactive, url)) {
     return
   }
 
