@@ -19,6 +19,10 @@ import {
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { refreshLinxInteractiveProviderCount } from './linx-interactive-provider-count-host.js'
+import {
+  canCollectLinxInteractiveExtensionInput,
+  collectLinxInteractiveExtensionInput,
+} from './linx-interactive-extension-input-host.js'
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
@@ -390,12 +394,13 @@ function showLinxAuthFallback(interactive: any, title: string, options: string[]
 }
 
 async function promptForLinxClientCredentials(interactive: any, reason: LinxAuthReason, options: LinxLoginFlowOptions): Promise<void> {
-  if (typeof interactive.showExtensionInput !== 'function') {
+  if (!canCollectLinxInteractiveExtensionInput(interactive)) {
     showLinxInteractiveError(interactive, 'This terminal build cannot collect Solid client credentials inside the TUI.')
     return
   }
 
-  const credentials = await interactive.showExtensionInput(
+  const credentials = await collectLinxInteractiveExtensionInput(
+    interactive,
     [
       reason === 'expired' ? 'Enter Solid client credentials' : 'Use Solid client credentials',
       'This is only for Solid/LinX identity. AI provider keys belong in `linx ai connect`.',
@@ -689,11 +694,12 @@ async function promptForLinxManualRedirectUrl(
   interactive: any,
   signal?: AbortSignal,
 ): Promise<string> {
-  if (typeof interactive.showExtensionInput !== 'function') {
+  if (!canCollectLinxInteractiveExtensionInput(interactive)) {
     throw new Error('Manual redirect paste is not available in this terminal. Run `linx login` in another shell if the browser callback is blocked.')
   }
 
-  const redirect = await interactive.showExtensionInput(
+  const redirect = await collectLinxInteractiveExtensionInput(
+    interactive,
     [
       'Paste final redirect URL',
       'If the browser cannot return to this terminal, paste the full callback URL below.',
