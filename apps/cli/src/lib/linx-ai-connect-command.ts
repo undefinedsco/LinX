@@ -1,6 +1,7 @@
 import { connectAiProviderCredential } from './ai-command.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
+import { refreshLinxInteractiveProviderCount } from './linx-interactive-provider-count-host.js'
 import {
   canMountLinxEditorComponent,
   createLinxLoginDialogComponent,
@@ -99,7 +100,7 @@ export async function handleInteractiveAiConnectCommand(
     })
     showLinxInteractiveStatus(interactive, `Connected AI provider ${result.providerId} to LinX Pod AI settings. api-key: ${result.maskedApiKey}`, { render: false })
     interactive.session?.modelRegistry?.refresh?.()
-    await interactive.updateAvailableProviderCount?.()
+    await refreshLinxInteractiveProviderCount(interactive)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     showLinxInteractiveError(interactive, `LinX AI connect failed: ${message}`)

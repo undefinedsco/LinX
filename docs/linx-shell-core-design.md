@@ -141,6 +141,12 @@ Hard rules:
   `apps/cli/src/lib/linx-interactive-warning-display.ts`. Rewind, auto,
   submitted-message recording, and future recovery flows must route visible
   warnings through that seam instead of depending on Pi's warning method shape.
+- Provider-count refresh is shell/provider rendering state, not login or
+  AI-connect business logic. Login and provider credential flows may refresh the
+  model registry or save credentials through shared runtime contracts, but Pi
+  `interactive.updateAvailableProviderCount` belongs behind
+  `apps/cli/src/lib/linx-interactive-provider-count-host.ts` so provider
+  availability display stays a shell concern.
 - Editor text mutation, focus restoration, and render invalidation are shell
   input/rendering state, not login or feature business logic. Feature modules
   may decide the desired text, but `interactive.editor.setText`,

@@ -18,6 +18,7 @@ import {
 } from './linx-interactive-event-router.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
+import { refreshLinxInteractiveProviderCount } from './linx-interactive-provider-count-host.js'
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
@@ -543,7 +544,7 @@ export async function refreshLinxAuthState(interactive: any): Promise<void> {
   clearLinxAuthPromptOnStart(interactive)
   syncRuntimeCredential(interactive)
   interactive.session?.modelRegistry?.refresh?.()
-  await interactive.updateAvailableProviderCount?.()
+  await refreshLinxInteractiveProviderCount(interactive)
   showLinxInteractiveStatus(interactive, null)
 }
 
