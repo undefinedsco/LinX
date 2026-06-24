@@ -153,6 +153,11 @@ Hard rules:
   `apps/cli/src/lib/linx-interactive-extension-input-host.ts`; the seam must
   preserve Pi's input options such as abort signals while hiding the mutable
   interactive method shape from feature code.
+- Extension selector collection is shell UI state, not login, update, or
+  statusline feature plumbing. Feature modules may provide titles and option
+  labels, but Pi `interactive.showExtensionSelector` belongs behind
+  `apps/cli/src/lib/linx-interactive-extension-selector-host.ts`; feature
+  modules normalize selected values after the shell returns the raw choice.
 - Editor text mutation, focus restoration, and render invalidation are shell
   input/rendering state, not login or feature business logic. Feature modules
   may decide the desired text, but `interactive.editor.setText`,

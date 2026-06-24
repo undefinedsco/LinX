@@ -785,6 +785,22 @@ test('feature modules collect extension input through the shell extension input 
   }
 })
 
+test('feature modules choose extension selector options through the shell extension selector seam', () => {
+  const featureFiles = [
+    'linx-login-flow.ts',
+    'linx-status-line-command.ts',
+    'linx-update-notification.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-interactive-extension-selector-host\.js['"]/, target)
+    assert.match(source, /\bchooseLinxInteractiveExtensionSelectorOption\b/, target)
+    assert.match(source, /\bcanChooseLinxInteractiveExtensionSelectorOption\b/, target)
+    assert.doesNotMatch(source, /\.showExtensionSelector(?:\?\.)?\s*\(/, target)
+  }
+})
+
 test('interrupt control status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
 

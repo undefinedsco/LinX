@@ -6,6 +6,10 @@ import {
   LINX_UPDATE_PACKAGE_NAME,
 } from './linx-self-update.js'
 import { openExternalUrl } from './linx-external-url.js'
+import {
+  canChooseLinxInteractiveExtensionSelectorOption,
+  chooseLinxInteractiveExtensionSelectorOption,
+} from './linx-interactive-extension-selector-host.js'
 import { normalizeSelectorChoice } from './linx-selector-choice.js'
 import { registerLinxInteractiveRunHandler } from './linx-interactive-run-router.js'
 import {
@@ -142,8 +146,8 @@ async function showLinxUpdateSelector(interactive: any, newVersion: string): Pro
       'Choose how to handle this update.',
     ].join('\n')
     const options = [UPDATE_OPTION_LATER, UPDATE_OPTION_INSTALL, UPDATE_OPTION_CHANGELOG]
-    const rawSelected = typeof interactive.showExtensionSelector === 'function'
-      ? await interactive.showExtensionSelector(title, options)
+    const rawSelected = canChooseLinxInteractiveExtensionSelectorOption(interactive)
+      ? await chooseLinxInteractiveExtensionSelectorOption(interactive, title, options)
       : undefined
     const selected = normalizeSelectorChoice(rawSelected, options)
 

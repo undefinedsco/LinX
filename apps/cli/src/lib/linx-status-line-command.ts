@@ -2,6 +2,10 @@ import { Container, getKeybindings, Spacer, Text, truncateToWidth } from '@earen
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import {
+  canChooseLinxInteractiveExtensionSelectorOption,
+  chooseLinxInteractiveExtensionSelectorOption,
+} from './linx-interactive-extension-selector-host.js'
+import {
   DEFAULT_STATUS_LINE_TOKENS,
   LINX_STATUS_LINE_TOKEN_NAMES,
   parseLinxStatusLineColorArg,
@@ -35,7 +39,6 @@ const STATUS_LINE_DONE_OPTION = 'Done'
 
 type InteractiveStatusLineShell = {
   showSelector?: (create: (done: () => void) => { component: unknown; focus: unknown }) => void
-  showExtensionSelector?: (title: string, options: string[]) => Promise<unknown>
   showStatus?: (message: string) => void
   showError?: (message: string) => void
   footer?: { invalidate?: () => void }
@@ -57,7 +60,7 @@ export async function handleInteractiveStatusLineCommand(
     return
   }
 
-  if (typeof interactive.showExtensionSelector === 'function') {
+  if (canChooseLinxInteractiveExtensionSelectorOption(interactive)) {
     await showInteractiveStatusLineFallbackSelector(interactive)
     return
   }
@@ -70,7 +73,7 @@ async function showInteractiveStatusLineFallbackSelector(interactive: Interactiv
     const currentSummary = formatInteractiveStatusLineSummary()
     const config = readLinxStatusLineConfig()
     const options = buildInteractiveStatusLineOptions(config)
-    const choice = await interactive.showExtensionSelector?.(`Status line\n${currentSummary}`, options)
+    const choice = await chooseLinxInteractiveExtensionSelectorOption(interactive, `Status line\n${currentSummary}`, options)
 
     if (!choice || choice === STATUS_LINE_DONE_OPTION) {
       return
