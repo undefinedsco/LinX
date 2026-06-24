@@ -580,6 +580,21 @@ test('feature credential dialogs delegate editor container swaps to the shell ed
   }
 })
 
+test('feature credential dialogs construct Pi login dialogs through the shell editor component seam', () => {
+  const featureFiles = [
+    'linx-login-flow.ts',
+    'linx-ai-connect-command.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-editor-component-router\.js['"]/, target)
+    assert.match(source, /\bcreateLinxLoginDialogComponent\b/, target)
+    assert.doesNotMatch(source, /new\s+LoginDialogComponent\s*\(/, target)
+    assert.doesNotMatch(source, /interactive(?:\?\.)?\.ui\b/, target)
+  }
+})
+
 test('feature fallback notices append chat text through the shell rendering seam', () => {
   const featureFiles = [
     'linx-login-flow.ts',

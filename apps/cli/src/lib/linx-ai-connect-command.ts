@@ -1,9 +1,9 @@
-import { LoginDialogComponent } from '@earendil-works/pi-coding-agent'
 import { connectAiProviderCredential } from './ai-command.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import {
   canMountLinxEditorComponent,
+  createLinxLoginDialogComponent,
   mountLinxEditorComponent,
 } from './linx-editor-component-router.js'
 import { getAIConfigProviderMetadata } from './models.js'
@@ -134,10 +134,9 @@ async function promptForApiCredentialWithPiDialog(
     errorPrefix: string
   },
 ): Promise<BackendCredentialEntry | null | undefined> {
-  const dialog = new LoginDialogComponent(
-    interactive.ui,
+  const dialog = createLinxLoginDialogComponent(
+    interactive,
     details.providerId,
-    () => undefined,
     details.providerLabel,
     details.title,
   )

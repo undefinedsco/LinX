@@ -1050,13 +1050,16 @@ component swaps, such as credential/login dialogs replacing the editor and then
 restoring it, also belong to this seam: feature modules may decide which dialog
 to show, but `editorContainer.clear/addChild`, focus handoff, restore-to-editor,
 and render invalidation must be done through editor-component seam helpers
-instead of feature-local Pi/TUI container mutation. The same seam owns editor
-enumeration for decorators: callers ask the seam to visit LinX-interactive editor
-components instead of duplicating `defaultEditor` / current-editor fallback
-logic in feature or command-routing modules. Features that truly need Pi's
-default editor component, such as Escape interrupt installation, must request it
-through this seam as well; direct `interactive.defaultEditor` reads outside the
-editor-component router are a shell/core boundary violation.
+instead of feature-local Pi/TUI container mutation. Dialog construction that
+requires Pi's UI object also belongs to this seam: feature modules call a named
+dialog factory instead of constructing `LoginDialogComponent` with
+`interactive.ui` directly. The same seam owns editor enumeration for decorators:
+callers ask the seam to visit LinX-interactive editor components instead of
+duplicating `defaultEditor` / current-editor fallback logic in feature or
+command-routing modules. Features that truly need Pi's default editor component,
+such as Escape interrupt installation, must request it through this seam as
+well; direct `interactive.defaultEditor` reads outside the editor-component
+router are a shell/core boundary violation.
 
 Extension UI context augmentation belongs behind
 `linx-extension-ui-context-router.ts`. Pi creates an extension UI context for
