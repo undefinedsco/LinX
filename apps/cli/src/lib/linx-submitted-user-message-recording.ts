@@ -1,3 +1,4 @@
+import { showLinxInteractiveWarning } from './linx-interactive-warning-display.js'
 import { getSessionControlManager } from './session-control.js'
 
 export function recordInteractiveSubmittedUserMessage(interactive: any, runtime: any, text: string): void {
@@ -9,6 +10,6 @@ export function recordInteractiveSubmittedUserMessage(interactive: any, runtime:
     getSessionControlManager(interactive, runtime).recordUserMessage({ text: input })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    interactive.showWarning?.(`Thread reconciliation unavailable: ${message}`)
+    showLinxInteractiveWarning(interactive, `Thread reconciliation unavailable: ${message}`)
   }
 }
