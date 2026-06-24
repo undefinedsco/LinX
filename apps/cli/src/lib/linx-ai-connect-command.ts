@@ -3,6 +3,10 @@ import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { refreshLinxInteractiveProviderCount } from './linx-interactive-provider-count-host.js'
 import {
+  canCollectLinxInteractiveExtensionInput,
+  collectLinxInteractiveExtensionInput,
+} from './linx-interactive-extension-input-host.js'
+import {
   canMountLinxEditorComponent,
   createLinxLoginDialogComponent,
   mountLinxEditorComponent,
@@ -224,7 +228,7 @@ async function promptForApiCredentialWithExtensionInput(
     'Press Escape to cancel.',
   ].join('\n')
 
-  if (typeof interactive.showExtensionInput !== 'function') {
+  if (!canCollectLinxInteractiveExtensionInput(interactive)) {
     showLinxInteractiveError(interactive, `This terminal cannot collect ${details.providerLabel} credentials inside the TUI. Run \`linx ai connect ${details.providerId}\` first.`)
     return null
   }
@@ -237,13 +241,21 @@ async function promptForApiCredentialWithExtensionInput(
       `Default: ${details.providerId}`,
       'Press Escape to cancel.',
     ].join('\n')
-    const providerIdValue = await interactive.showExtensionInput(providerIdTitle, details.providerIdPrompt)
+    const providerIdValue = await collectLinxInteractiveExtensionInput(
+      interactive,
+      providerIdTitle,
+      details.providerIdPrompt,
+    )
     providerId = typeof providerIdValue === 'string' && providerIdValue.trim()
       ? providerIdValue.trim()
       : details.providerId
   }
 
-  const apiKeyValue = await interactive.showExtensionInput(apiKeyTitle, details.apiKeyPrompt)
+  const apiKeyValue = await collectLinxInteractiveExtensionInput(
+    interactive,
+    apiKeyTitle,
+    details.apiKeyPrompt,
+  )
   const apiKey = typeof apiKeyValue === 'string' ? apiKeyValue.trim() : ''
   if (!apiKey) {
     return null
@@ -256,7 +268,11 @@ async function promptForApiCredentialWithExtensionInput(
       'Optional. Leave empty to use the shared provider default.',
       'Press Escape to cancel.',
     ].join('\n')
-    const baseUrlValue = await interactive.showExtensionInput(baseUrlTitle, details.baseUrlPrompt)
+    const baseUrlValue = await collectLinxInteractiveExtensionInput(
+      interactive,
+      baseUrlTitle,
+      details.baseUrlPrompt,
+    )
     baseUrl = typeof baseUrlValue === 'string' && baseUrlValue.trim()
       ? baseUrlValue.trim()
       : undefined

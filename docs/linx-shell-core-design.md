@@ -147,6 +147,12 @@ Hard rules:
   `interactive.updateAvailableProviderCount` belongs behind
   `apps/cli/src/lib/linx-interactive-provider-count-host.ts` so provider
   availability display stays a shell concern.
+- Extension input collection is shell UI state, not login or credential feature
+  plumbing. Feature modules may decide what prompt text is needed, but Pi
+  `interactive.showExtensionInput` belongs behind
+  `apps/cli/src/lib/linx-interactive-extension-input-host.ts`; the seam must
+  preserve Pi's input options such as abort signals while hiding the mutable
+  interactive method shape from feature code.
 - Editor text mutation, focus restoration, and render invalidation are shell
   input/rendering state, not login or feature business logic. Feature modules
   may decide the desired text, but `interactive.editor.setText`,

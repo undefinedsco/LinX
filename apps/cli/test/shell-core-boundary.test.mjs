@@ -770,6 +770,21 @@ test('feature modules refresh interactive provider count through the shell provi
   }
 })
 
+test('feature modules collect extension input through the shell extension input seam', () => {
+  const featureFiles = [
+    'linx-ai-connect-command.ts',
+    'linx-login-flow.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-interactive-extension-input-host\.js['"]/, target)
+    assert.match(source, /\bcollectLinxInteractiveExtensionInput\b/, target)
+    assert.match(source, /\bcanCollectLinxInteractiveExtensionInput\b/, target)
+    assert.doesNotMatch(source, /\.showExtensionInput(?:\?\.)?\s*\(/, target)
+  }
+})
+
 test('interrupt control status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
 
