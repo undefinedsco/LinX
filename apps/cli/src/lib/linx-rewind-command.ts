@@ -6,6 +6,7 @@ import {
 } from './linx-interactive-shell-state.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
+import { refreshLinxInteractiveChatTranscript } from './linx-interactive-chat-text-host.js'
 import { getLinxPodMirrorForRuntime } from './linx-pod-mirror-runtime-host.js'
 import {
   assertLinxRewindUserEntryTarget,
@@ -157,14 +158,7 @@ async function syncRewindProjection(
 
 function refreshInteractiveTranscriptAfterRewind(interactive: any): void {
   try {
-    if (typeof interactive?.rebuildChatFromMessages === 'function') {
-      interactive.rebuildChatFromMessages()
-      return
-    }
-    if (typeof interactive?.renderInitialMessages === 'function') {
-      interactive.chatContainer?.clear?.()
-      interactive.renderInitialMessages()
-    }
+    refreshLinxInteractiveChatTranscript(interactive)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     interactive?.showWarning?.(`Rewind transcript refresh failed: ${message}`)

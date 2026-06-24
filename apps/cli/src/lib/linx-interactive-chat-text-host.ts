@@ -4,3 +4,15 @@ export function appendLinxInteractiveChatText(interactive: any, text: string): v
   interactive.chatContainer?.addChild?.(new Text(text, 1, 0))
   interactive.ui?.requestRender?.()
 }
+
+export function refreshLinxInteractiveChatTranscript(interactive: any): void {
+  if (typeof interactive?.rebuildChatFromMessages === 'function') {
+    interactive.rebuildChatFromMessages()
+    return
+  }
+
+  if (typeof interactive?.renderInitialMessages === 'function') {
+    interactive.chatContainer?.clear?.()
+    interactive.renderInitialMessages()
+  }
+}
