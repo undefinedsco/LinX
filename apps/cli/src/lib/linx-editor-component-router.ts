@@ -1,3 +1,4 @@
+import { LoginDialogComponent } from '@earendil-works/pi-coding-agent'
 export type LinxEditorComponentRebindContext = {
   interactive: any
   args: unknown[]
@@ -95,6 +96,21 @@ export function mountLinxEditorComponent(interactive: any, component: unknown): 
   interactive.ui?.requestRender?.()
 
   return () => restoreLinxEditorComponent(interactive)
+}
+
+export function createLinxLoginDialogComponent(
+  interactive: any,
+  providerId: string,
+  providerLabel?: string,
+  title?: string,
+): LoginDialogComponent {
+  return new LoginDialogComponent(
+    interactive.ui,
+    providerId,
+    () => undefined,
+    providerLabel,
+    title,
+  )
 }
 
 export function forEachLinxInteractiveEditorComponent(

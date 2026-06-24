@@ -1,4 +1,3 @@
-import { LoginDialogComponent } from '@earendil-works/pi-coding-agent'
 import { clearAccountSession } from './account-session.js'
 import { clearCredentials } from './credentials-store.js'
 import { clearOidcSessionStorage } from './oidc-session-storage.js'
@@ -24,6 +23,7 @@ import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import {
   canMountLinxEditorComponent,
+  createLinxLoginDialogComponent,
   mountLinxEditorComponent,
 } from './linx-editor-component-router.js'
 import {
@@ -608,7 +608,7 @@ async function runLinxCloudLoginDialog(
   authStorage: { login(providerId: string, callbacks: unknown): Promise<unknown> },
   reason: LinxAuthReason,
 ): Promise<void> {
-  const dialog = new LoginDialogComponent(interactive.ui, LINX_PROVIDER_ID, () => undefined)
+  const dialog = createLinxLoginDialogComponent(interactive, LINX_PROVIDER_ID)
   const restoreEditor = mountLinxEditorComponent(interactive, dialog)
 
   let manualRedirectResolve: ((value: string) => void) | undefined
