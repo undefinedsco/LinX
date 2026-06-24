@@ -439,6 +439,15 @@ test('update notification does not patch interactive init directly', () => {
   assert.doesNotMatch(source, /interactive\.init\s*=/)
 })
 
+test('update notification keeps interactive update state behind the shell update state seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-update-notification.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-update-state-host\.js['"]/)
+  assert.match(source, /\bgetLinxInteractiveUpdateState\b/)
+  assert.doesNotMatch(source, /Symbol\.for\(['"]linx\.tui\.(?:update|deferredUpdate|suppressUpstreamPiUpdate)/)
+  assert.doesNotMatch(source, /(?:interactive|target|runInteractive)\s*\[\s*LINX_(?:UPDATE|DEFERRED_UPDATE|SUPPRESS_UPSTREAM_PI_UPDATE)/)
+})
+
 test('login flow does not patch interactive init directly', () => {
   const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
 
