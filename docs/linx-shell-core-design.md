@@ -253,6 +253,13 @@ Pi-native slash commands, and ordinary messages must fall through to the next
 handler or Pi's original submit path. A handler must not call the original submit
 and then also report `false`; that creates duplicate turns.
 
+LinX-owned TUI slash commands are never model chat. Commands such as `/update`,
+`/statusline`, `/rewind`, `/ai connect`, and `/cd` must be consumed by the shell
+command surface before the backend/model submit path. If the user types one of
+these commands and receives a normal assistant explanation of what the command
+would do, command routing failed: fix submit-router ordering, command
+registration, or active-surface discovery instead of improving the prompt.
+
 Projected command routing is also shell-owned. Auto/Secretary projected input may
 contain slash commands, but feature modules must not exchange those projected
 handlers through ad hoc `interactive.__linxHandle*` fields. LinX shell modules
@@ -789,6 +796,11 @@ LinX has two update meanings and they must stay separate:
   They install or upgrade the current `@undefineds.co/linx` CLI package and then
   hand off to the shell lifecycle supervisor for restart.
 
+`/update` must be registered and consumed in the interactive shell command
+surface. It must not fall through to a backend/model chat turn, and it must not
+call the top-level plugin/package update path. Conversely, `linx update` must not
+try to manage the active TUI raw-mode handoff or session exit copy.
+
 Package commands must stay in a shell package module. The CLI entrypoint may
 register package command descriptors, but it must not construct package manager
 objects, implement install/update/remove/list behavior inline, or mix package
@@ -1167,7 +1179,9 @@ The lifecycle supervisor must own the full handoff:
 
 Feature code such as `/update` may ask the lifecycle supervisor to restart, but
 must not call `process.spawn`, restore raw mode, or decide whether exit copy is
-visible on its own.
+visible on its own. The replacement process must launch the LinX executable
+surface, not expose an upstream `pi` banner or resume command; seeing upstream Pi
+startup copy after a LinX self-update is a shell lifecycle handoff bug.
 
 ## Documentation placement
 
