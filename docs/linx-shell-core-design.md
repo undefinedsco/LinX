@@ -163,6 +163,11 @@ Hard rules:
   `interactive.showSelector` belongs behind
   `apps/cli/src/lib/linx-interactive-selector-host.ts`; callback lifecycle and
   focus handoff must stay on the shell side.
+- Autocomplete provider patching is shell input lifecycle, not command catalog
+  business logic. Command catalog modules may provide completion command
+  descriptors and name extraction, but Pi `setupAutocompleteProvider`,
+  `setupAutocomplete`, and `autocompleteProvider` mutation belong behind
+  `apps/cli/src/lib/linx-interactive-autocomplete-host.ts`.
 - Editor text mutation, focus restoration, and render invalidation are shell
   input/rendering state, not login or feature business logic. Feature modules
   may decide the desired text, but `interactive.editor.setText`,

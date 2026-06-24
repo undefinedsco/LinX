@@ -816,6 +816,16 @@ test('feature modules mount custom selectors through the shell selector seam', (
   }
 })
 
+test('command autocomplete installs through the shell autocomplete seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-command-autocomplete.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-autocomplete-host\.js['"]/)
+  assert.match(source, /\binstallLinxInteractiveAutocompleteCommands\b/)
+  assert.doesNotMatch(source, /\.setupAutocompleteProvider(?:\?\.)?\s*\(/)
+  assert.doesNotMatch(source, /\.setupAutocomplete(?:\?\.)?\s*\(/)
+  assert.doesNotMatch(source, /\.autocompleteProvider\b/)
+})
+
 test('interrupt control status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
 
