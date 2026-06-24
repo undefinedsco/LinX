@@ -718,6 +718,14 @@ test('interrupt control status rendering goes through the shell status seam', ()
   assert.doesNotMatch(source, /\.ui(?:\?\.)?\.requestRender(?:\?\.)?\s*\(/)
 })
 
+test('interrupt control reads editor text through the shell editor text seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-editor-text-host\.js['"]/)
+  assert.match(source, /\bgetLinxInteractiveEditorText\b/)
+  assert.doesNotMatch(source, /\.editor(?:\?\.)?\.getText(?:\?\.)?\s*\(/)
+})
+
 test('self-update status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-self-update.ts'), 'utf8')
 
