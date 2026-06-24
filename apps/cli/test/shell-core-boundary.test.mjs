@@ -801,6 +801,21 @@ test('feature modules choose extension selector options through the shell extens
   }
 })
 
+test('feature modules mount custom selectors through the shell selector seam', () => {
+  const featureFiles = [
+    'linx-rewind-command.ts',
+    'linx-status-line-command.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-interactive-selector-host\.js['"]/, target)
+    assert.match(source, /\bshowLinxInteractiveSelector\b/, target)
+    assert.match(source, /\bcanShowLinxInteractiveSelector\b/, target)
+    assert.doesNotMatch(source, /\.showSelector(?:\?\.)?\s*\(/, target)
+  }
+})
+
 test('interrupt control status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
 
