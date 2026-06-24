@@ -2,6 +2,7 @@ import { handleInteractiveRewindSelector } from './linx-rewind-command.js'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { getLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
+import { getLinxInteractiveDefaultEditorComponent } from './linx-editor-component-router.js'
 import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
 import { stopLinxInteractiveSessionWorkNow } from './linx-session-work-control.js'
 import {
@@ -21,7 +22,7 @@ export function installLinxEscapeInterrupt(
   interactive: any,
   options: LinxInterruptControlOptions = {},
 ): void {
-  const editor = interactive?.defaultEditor
+  const editor = getLinxInteractiveDefaultEditorComponent(interactive)
   if (!editor || isEscapeInterruptInstalled(editor)) {
     return
   }

@@ -101,7 +101,7 @@ export function forEachLinxInteractiveEditorComponent(
   interactive: any,
   callback: (editor: any) => void,
 ): void {
-  const editors = [interactive?.defaultEditor, interactive?.editor]
+  const editors = [getLinxInteractiveDefaultEditorComponent(interactive), interactive?.editor]
   const seen = new Set<unknown>()
   for (const editor of editors) {
     if (!editor || seen.has(editor)) {
@@ -110,6 +110,10 @@ export function forEachLinxInteractiveEditorComponent(
     seen.add(editor)
     callback(editor)
   }
+}
+
+export function getLinxInteractiveDefaultEditorComponent(interactive: any): any | undefined {
+  return interactive?.defaultEditor
 }
 
 function restoreLinxEditorComponent(interactive: any): void {

@@ -1430,6 +1430,14 @@ test('interrupt control patch state is kept behind the shell interrupt host', ()
   assert.deepEqual(violations, [])
 })
 
+test('interrupt control reads default editor through the shell editor component seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-interrupt-control.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-editor-component-router\.js['"]/, 'interrupt control should import the editor component seam')
+  assert.match(source, /\bgetLinxInteractiveDefaultEditorComponent\b/, 'interrupt control should request the default editor through the seam')
+  assert.doesNotMatch(source, /\.defaultEditor\b/)
+})
+
 test('interactive streaming message cleanup is centralized in the shell streaming host', () => {
   const allowed = new Set([
     'linx-interactive-streaming-message-host.ts',
