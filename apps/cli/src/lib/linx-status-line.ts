@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
 import { getSolidLinxAppDir } from './solid-local-store.js'
 import { resolveLinxSessionCwd, resolveLinxSessionName } from './linx-session-metadata.js'
-import { getLinxActiveSessionHistoryEntries } from './linx-session-history.js'
+import { getLinxActiveSessionHistoryEntries, type LinxSessionHistorySource } from './linx-session-history.js'
 
 export type LinxStatusLineToken =
   | 'total-input-tokens'
@@ -295,14 +295,24 @@ function parseBoolean(value: unknown): boolean | undefined {
   return undefined
 }
 
-export function calculateSessionUsage(session: any): {
+type LinxSessionUsage = {
   input: number
   output: number
   cacheRead: number
   cacheWrite: number
   cacheRate: number | null
-} {
-  const entries = getLinxActiveSessionHistoryEntries({ session })
+}
+
+export function calculateSessionUsage(session: any): LinxSessionUsage {
+  return calculateSessionUsageFromHistorySource({ session })
+}
+
+export function calculateInteractiveSessionUsage(interactive: any): LinxSessionUsage {
+  return calculateSessionUsageFromHistorySource({ interactive })
+}
+
+function calculateSessionUsageFromHistorySource(source: LinxSessionHistorySource): LinxSessionUsage {
+  const entries = getLinxActiveSessionHistoryEntries(source)
   if (entries.length === 0) {
     return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheRate: null }
   }

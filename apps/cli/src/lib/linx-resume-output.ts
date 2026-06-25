@@ -1,4 +1,4 @@
-import { calculateSessionUsage, formatTokenCount } from './linx-status-line.js'
+import { calculateInteractiveSessionUsage, formatTokenCount } from './linx-status-line.js'
 import {
   isInteractiveShellExitMessageSuppressed,
   LINX_TUI_NO_EXIT_MESSAGE_ENV,
@@ -60,7 +60,7 @@ function getLinxExitMessageState(interactive: any): LinxExitMessageState {
 
 export function buildLinxExitMessage(interactive: any): string {
   const sessionId = resolveLinxSessionId({ interactive })
-  const usage = calculateSessionUsage(interactive?.session)
+  const usage = calculateInteractiveSessionUsage(interactive)
   const lines = ['LinX session closed.']
 
   if (usage.input > 0 || usage.output > 0 || usage.cacheRead > 0 || usage.cacheWrite > 0) {
