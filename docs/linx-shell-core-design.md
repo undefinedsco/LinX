@@ -238,9 +238,11 @@ Hard rules:
   behind `apps/cli/src/lib/linx-session-work-control.ts`; commands such as
   `/rewind`, Escape interrupt, and auto handback may request active work to stop
   or projected input to be delivered, and controllers such as Secretary auto
-  input may subscribe to active-session events, but they must not know Pi's
-  `isStreaming`, `isBashRunning`, `abort`, `abortBash`, `subscribe`,
-  `deliverAs: followUp`, or `streamingBehavior: followUp` field/option layout.
+  input may subscribe to active-session events. Feature modules should prefer
+  interactive-level seam helpers when acting on the active session; they must
+  not know Pi's `isStreaming`, `isBashRunning`, `abort`, `abortBash`,
+  `subscribe`, `deliverAs: followUp`, or `streamingBehavior: followUp`
+  field/option layout.
 - Session history and branch repair are shell session-history lifecycle, not
   feature-local retry logic. Reads of Pi `sessionManager` history, leaf/branch
   selection, parent-id normalization, branch restore, leaf reset, and

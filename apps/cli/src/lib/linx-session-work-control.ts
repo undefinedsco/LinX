@@ -47,6 +47,14 @@ export async function submitLinxSessionUserInput(session: any, text: string, opt
   throw new Error(options.unavailableMessage ?? 'Active LinX session cannot accept user input')
 }
 
+export async function submitLinxInteractiveSessionUserInput(interactive: any, text: string, options: {
+  sendUserMessage?: (text: unknown, ...args: unknown[]) => Promise<unknown> | unknown
+  prompt?: (text: unknown, ...args: unknown[]) => Promise<unknown> | unknown
+  unavailableMessage?: string
+} = {}): Promise<void> {
+  await submitLinxSessionUserInput(interactive?.session, text, options)
+}
+
 export type LinxRuntimeProjectionMessage = {
   customType: string
   content: string
@@ -93,6 +101,10 @@ export function subscribeLinxInteractiveSessionEvents(
 
 export function canSubmitLinxSessionUserInputNow(session: any): boolean {
   return Boolean(session) && !isLinxSessionStreaming(session)
+}
+
+export function canSubmitLinxInteractiveSessionUserInputNow(interactive: any): boolean {
+  return canSubmitLinxSessionUserInputNow(interactive?.session)
 }
 
 export function stopLinxInteractiveSessionWorkNow(interactive: any): boolean {

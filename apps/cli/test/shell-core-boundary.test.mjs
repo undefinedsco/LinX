@@ -1435,6 +1435,16 @@ test('Secretary auto input subscribes to session events through the shell sessio
   assert.doesNotMatch(source, /\.session\?\.subscribe|\.session\.subscribe/)
 })
 
+test('Secretary auto input delivers active-session input through the shell session seam', () => {
+  const source = readFileSync(join(libRoot, 'secretary-auto-input-controller.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-session-work-control\.js['"]/)
+  assert.match(source, /\bcanSubmitLinxInteractiveSessionUserInputNow\b/)
+  assert.match(source, /\bsubmitLinxInteractiveSessionUserInput\b/)
+  assert.doesNotMatch(source, /\bcanSubmitLinxSessionUserInputNow\(this\.interactive\?\.session\)/)
+  assert.doesNotMatch(source, /\bconst session = this\.interactive\?\.session\b/)
+})
+
 
 test('auth retry session history access lives behind a shell session-history seam', () => {
   const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
