@@ -116,7 +116,8 @@ Hard rules:
   login-flow business state. Login flow may decide when LinX/Solid auth is
   required, expired, cancelled, or refreshed, but hidden flags for "login in
   progress", "start login after init", "pending auth retry", "login scheduled",
-  and "currently reporting auth error" belong behind
+  "currently reporting auth error", and runtime startup re-prompt bridge cleanup
+  belong behind
   `apps/cli/src/lib/linx-interactive-auth-state-host.ts`. Feature modules must
   not define `linx.tui.auth*` symbols or index those fields directly on the Pi
   interactive object.
