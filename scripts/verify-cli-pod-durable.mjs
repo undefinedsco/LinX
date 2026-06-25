@@ -2,7 +2,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LinxPiPodMirror } from '../apps/cli/dist/lib/linx-pod-mirror.js'
+import { LinxPodMirror } from '../apps/cli/dist/lib/linx-pod-mirror.js'
 import {
   DEFAULT_SECRETARY_CHAT_ID,
   buildToolAuditId,
@@ -193,7 +193,7 @@ async function main() {
     message: userMessage,
   })
 
-  const mirror = new LinxPiPodMirror({
+  const mirror = new LinxPodMirror({
     cwd,
     sessionManager,
     runtime: {

@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import type { AgentSessionRuntime, SessionManager } from '@earendil-works/pi-coding-agent'
-import { LinxPiPodMirror } from './linx-pod-mirror.js'
+import { LinxPodMirror } from './linx-pod-mirror.js'
 import { createFileSyncCheckpointStore } from './sync-checkpoint-store.js'
 import { getLinxInteractiveRuntime } from './linx-interactive-runtime-host.js'
 
@@ -32,9 +32,9 @@ export interface LinxPodMirrorRuntimeHost {
   close(): Promise<void>
 }
 
-const runtimePodMirrors = new WeakMap<object, LinxPiPodMirror>()
+const runtimePodMirrors = new WeakMap<object, LinxPodMirror>()
 
-export function getLinxPodMirrorForRuntime(runtime: unknown): LinxPiPodMirror | undefined {
+export function getLinxPodMirrorForRuntime(runtime: unknown): LinxPodMirror | undefined {
   return runtime && typeof runtime === 'object'
     ? runtimePodMirrors.get(runtime)
     : undefined
@@ -43,12 +43,12 @@ export function getLinxPodMirrorForRuntime(runtime: unknown): LinxPiPodMirror | 
 export function getLinxPodMirrorForInteractiveRuntime(
   interactive: any,
   runtime?: unknown,
-): LinxPiPodMirror | undefined {
+): LinxPodMirror | undefined {
   return getLinxPodMirrorForRuntime(runtime) ?? getLinxPodMirrorForRuntime(getLinxInteractiveRuntime(interactive))
 }
 
 export function createLinxPodMirrorRuntimeHost(options: LinxPodMirrorRuntimeHostOptions): LinxPodMirrorRuntimeHost {
-  const podMirror = new LinxPiPodMirror({
+  const podMirror = new LinxPodMirror({
     cwd: options.cwd,
     sessionManager: options.sessionManager,
     autoEnabled: options.autoEnabled,
