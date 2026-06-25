@@ -76,7 +76,6 @@ test('pi interactive bootstrap can instantiate with the LinX runtime adapter', a
   assert.equal(typeof runtimeModule.createLinxRuntimeAdapter, 'function')
   assert.equal(typeof interactiveModule.bootstrapLinxInteractiveMode, 'function')
   assert.equal(typeof interactiveModule.withLinxResumeOutputStyle, 'function')
-  assert.equal(typeof interactiveModule.withSuppressedPiResumeOutput, 'function')
 
   const adapter = runtimeModule.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
@@ -2444,7 +2443,7 @@ test('linx interactive run suppresses Pi resume command output while preserving 
   t.after(() => cleanup())
   const writes = captureProcessStreamWrites(t, process.stdout)
 
-  await module.withSuppressedPiResumeOutput(async () => {
+  await module.withLinxResumeOutputStyle(async () => {
     process.stdout.write('\x1b[2mTo resume this session:\x1b[22m pi --session-dir /Users/ganlu/.solid/apps/linx/agent/sessions --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
     process.stdout.write('Resume: linx --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
   })

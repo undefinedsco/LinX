@@ -8,7 +8,6 @@ import {
   installLinxExitMessage,
   installLinxResumeOutputStyle,
   withLinxResumeOutputStyle,
-  withSuppressedPiResumeOutput,
 } from './linx-resume-output.js'
 import { installInteractiveStopCleanup, stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from './linx-footer-patch.js'
@@ -20,7 +19,7 @@ import { ensureInteractiveRuntimeHost, setLinxInteractiveRuntime } from './linx-
 import { installPodBackedExtensionUi } from './linx-pod-backed-extension-ui.js'
 import { configureLinxInteractiveShellState } from './linx-interactive-shell-state.js'
 
-export { buildLinxExitMessage, installLinxResumeOutputStyle, withLinxResumeOutputStyle, withSuppressedPiResumeOutput }
+export { buildLinxExitMessage, installLinxResumeOutputStyle, withLinxResumeOutputStyle }
 
 export interface LinxInteractiveBootstrap {
   init(): Promise<void>

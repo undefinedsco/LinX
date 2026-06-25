@@ -155,8 +155,6 @@ export async function withLinxResumeOutputStyle<T>(run: () => Promise<T>): Promi
   }
 }
 
-/** @deprecated Use withLinxResumeOutputStyle. */
-export const withSuppressedPiResumeOutput = withLinxResumeOutputStyle
 
 interface PiResumeOutputFilter {
   pending: string

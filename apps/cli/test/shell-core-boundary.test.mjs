@@ -384,6 +384,13 @@ test('interactive bootstrap public surface does not keep deprecated Pi aliases',
   assert.doesNotMatch(source, /\bPiInteractiveBootstrapOptions\b/)
 })
 
+test('resume output public surface does not keep deprecated Pi aliases', () => {
+  const source = readFileSync(join(libRoot, 'linx-resume-output.ts'), 'utf8')
+
+  assert.match(source, /\bwithLinxResumeOutputStyle\b/)
+  assert.doesNotMatch(source, /\bwithSuppressedPiResumeOutput\b/)
+})
+
 test('interactive runtime Pod session mutation is centralized in the runtime host', () => {
   const allowed = new Set([
     'linx-interactive-runtime-host.ts',
