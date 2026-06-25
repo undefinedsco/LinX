@@ -1323,6 +1323,13 @@ test('concrete shell command execution lives in a dedicated executor module', ()
   assert.deepEqual(violations, [])
 })
 
+test('CLI README does not advertise removed top-level session-list commands', () => {
+  const source = readFileSync(join(repoRoot, 'apps/cli/README.md'), 'utf8')
+
+  assert.doesNotMatch(source, /(?:^|\s)--sessions(?:\s|$)/)
+  assert.doesNotMatch(source, /(?:^|\s)--show(?:\s|$)/)
+})
+
 test('submitted user message recording lives in a dedicated session-control module', () => {
   const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
 
