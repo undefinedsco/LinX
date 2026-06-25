@@ -7018,7 +7018,8 @@ test('interactive theme installation lives in a shell rendering module', async (
   const { module, cleanup } = await loadAutoModeModule('lib/linx-theme.ts')
   t.after(() => cleanup())
 
-  assert.equal(typeof module.ensureLinxPiTheme, 'function')
+  assert.equal(typeof module.ensureLinxTheme, 'function')
+  assert.equal(module.ensureLinxPiTheme, undefined)
 })
 
 test('backend command router patch lives in a shell command module', async (t) => {

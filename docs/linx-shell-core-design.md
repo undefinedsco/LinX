@@ -724,6 +724,13 @@ runtime/Pod vocabulary (`createLinxRuntimeSessionManager`,
 `createNativeLinxPodSessionSource`). Pi naming is reserved for the upstream
 `SessionManager` type and private archive facts that genuinely describe the Pi
 runtime implementation.
+Shell/runtime helper exports follow the same rule. Theme installation,
+runtime coding tools, Solid app-local config paths, and runtime archive repair
+helpers should use LinX/runtime names (`ensureLinxTheme`,
+`createLinxRuntimeCodingTools`, `getSolidLinxWebAccessConfigPath`,
+`repairDanglingLinxRuntimeToolCalls`). Do not keep `LinxPi*` names merely
+because the helper is later consumed by a Pi adapter or by the `pi-web-access`
+package.
 Startup control-state helpers are LinX control-plane surfaces. Their exported
 hydration, derivation, and resolver names should not carry Pi naming just because
 the restored state is applied to the local Pi runtime session.

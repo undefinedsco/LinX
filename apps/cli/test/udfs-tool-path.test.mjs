@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { MessageVocab, SIOC, ThreadVocab, WF } from '@undefineds.co/models'
-import { createLinxPiCodingTools } from '../dist/lib/linx-runtime-coding-tools.js'
+import { createLinxRuntimeCodingTools } from '../dist/lib/linx-runtime-coding-tools.js'
 
 const CREDENTIAL_SCHEMA_URI = 'https://undefineds.co/ns#Credential'
 const API_KEY_PREDICATE_URI = 'https://undefineds.co/ns#apiKey'
@@ -13,7 +13,7 @@ test('LinX consumed models keep Solid Chat compatibility predicates', () => {
 })
 
 test('LinX bash tool can query injected udfs schema without shelling back into linx', async () => {
-  const tools = createLinxPiCodingTools(process.cwd())
+  const tools = createLinxRuntimeCodingTools(process.cwd())
   const bashTool = tools.find((tool) => tool.name === 'bash')
   assert.ok(bashTool)
 
@@ -28,7 +28,7 @@ test('LinX bash tool can query injected udfs schema without shelling back into l
 })
 
 test('LinX bash tool can query injected udfs predicates', async () => {
-  const tools = createLinxPiCodingTools(process.cwd())
+  const tools = createLinxRuntimeCodingTools(process.cwd())
   const bashTool = tools.find((tool) => tool.name === 'bash')
   assert.ok(bashTool)
 
@@ -43,7 +43,7 @@ test('LinX bash tool can query injected udfs predicates', async () => {
 })
 
 test('LinX bash tool can pass JSON input to injected udfs consensus', async () => {
-  const tools = createLinxPiCodingTools(process.cwd())
+  const tools = createLinxRuntimeCodingTools(process.cwd())
   const bashTool = tools.find((tool) => tool.name === 'bash')
   assert.ok(bashTool)
 

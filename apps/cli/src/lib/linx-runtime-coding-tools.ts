@@ -7,7 +7,7 @@ import {
   createLocalBashOperations,
 } from '@earendil-works/pi-coding-agent'
 
-export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
+export const DEFAULT_LINX_BASH_TIMEOUT_SECONDS = 15
 
 function resolvePackageRoot(): string {
   return fileURLToPath(new URL('../..', import.meta.url))
@@ -47,7 +47,7 @@ function withLinxToolPath(env: NodeJS.ProcessEnv | undefined, packageRoot?: stri
   return nextEnv
 }
 
-export function createLinxPiCodingTools(cwd: string, options: {
+export function createLinxRuntimeCodingTools(cwd: string, options: {
   bashTimeoutSeconds?: number
   bashOperations?: BashOperations
 } = {}): Array<{
@@ -55,7 +55,7 @@ export function createLinxPiCodingTools(cwd: string, options: {
   execute(callId: string, input: Record<string, unknown>): Promise<unknown>
 }> {
   const localBashOperations = options.bashOperations ?? createLocalBashOperations()
-  const bashTimeoutSeconds = options.bashTimeoutSeconds ?? DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS
+  const bashTimeoutSeconds = options.bashTimeoutSeconds ?? DEFAULT_LINX_BASH_TIMEOUT_SECONDS
   return createCodingTools(cwd, {
     bash: {
       operations: {

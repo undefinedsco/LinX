@@ -27,7 +27,7 @@ import {
 } from './linx-runtime-resources.js'
 import { overrideLinxSystemPrompt } from './linx-runtime-system-prompt.js'
 import { enableLinxXhighThinking } from './linx-runtime-thinking.js'
-import { ensureLinxPiTheme } from './linx-theme.js'
+import { ensureLinxTheme } from './linx-theme.js'
 import type { PodDataSession } from './pod-data-session.js'
 
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
@@ -101,7 +101,7 @@ export async function createLinxAgentSessionRuntime(options: {
 
   const context = options.context
   const settingsManager = SettingsManager.create(context.cwd, context.agentDir)
-  ensureLinxPiTheme(context.agentDir)
+  ensureLinxTheme(context.agentDir)
   ensurePiWebAccessConfig()
   settingsManager.setTheme('linx')
   const { defaultModelId } = createLinxRuntimeProviderRegistration({
