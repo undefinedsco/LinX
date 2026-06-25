@@ -3,7 +3,7 @@ import type { AutoModeCommandArgs } from './auto-mode-command.js'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
 import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
-import type { CreateLinxRuntimeAdapterForPiCommandOptions, RunLinxPiRuntimeOptions } from './linx-pi-runtime-execution.js'
+import type { CreateLinxCliRuntimeAdapterOptions, RunLinxCliRuntimeOptions } from './linx-pi-runtime-execution.js'
 import { resolveLinxStartupLoginPromptDecision } from './linx-startup-login-policy.js'
 import { assertLinxPiSessionSelectorCompatibility, createLinxPiSessionManager } from './linx-session-manager.js'
 import { getDefaultPodDataSession } from './pod-data-session.js'
@@ -24,8 +24,8 @@ export interface LinxPiStartupPlanArgs extends AutoModeCommandArgs {
 }
 
 export interface LinxPiStartupPlan {
-  adapterOptions: CreateLinxRuntimeAdapterForPiCommandOptions
-  runtimeOptions: Omit<RunLinxPiRuntimeOptions, 'adapter'>
+  adapterOptions: CreateLinxCliRuntimeAdapterOptions
+  runtimeOptions: Omit<RunLinxCliRuntimeOptions, 'adapter'>
 }
 
 export async function createLinxPiStartupPlan(argv: LinxPiStartupPlanArgs): Promise<LinxPiStartupPlan> {

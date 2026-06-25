@@ -7,6 +7,10 @@ const cliAppSource = readFileSync(new URL('../src/linx-cli-app.ts', import.meta.
 
 const piCliCommandSource = readFileSync(new URL('../src/lib/linx-pi-cli-command.ts', import.meta.url), 'utf8')
 
+const piRuntimeExecutionSource = readFileSync(new URL('../src/lib/linx-pi-runtime-execution.ts', import.meta.url), 'utf8')
+
+const cliRuntimeAdapterFactorySource = readFileSync(new URL('../src/linx-cli-runtime-adapter-factory.ts', import.meta.url), 'utf8')
+
 test('CLI entry delegates yargs command registration to a CLI app module', () => {
   assert.match(indexSource, /from ['"]\.\/linx-cli-app\.js['"]/, 'entry should import the CLI app runner')
   assert.doesNotMatch(indexSource, /from ['"]yargs['"]/, 'entry should not construct yargs directly')
@@ -74,6 +78,21 @@ test('default Pi/TUI command module delegates runtime execution', () => {
   assert.doesNotMatch(piCliCommandSource, /\bcreateLinxPodMirrorRuntimeHost\b/, 'Pod mirror host creation should live in the runtime execution module')
   assert.doesNotMatch(piCliCommandSource, /\bbootstrapLinxInteractiveMode\b/, 'interactive bootstrap should live in the runtime execution module')
   assert.doesNotMatch(piCliCommandSource, /\bstopInteractiveShellUnlessRestarting\b/, 'interactive stop lifecycle should live in the runtime execution module')
+})
+
+test('runtime execution public surface uses LinX CLI names', () => {
+  assert.match(piRuntimeExecutionSource, /\bLinxCliRuntimeAdapter\b/)
+  assert.match(piRuntimeExecutionSource, /\bCreateLinxCliRuntimeAdapterOptions\b/)
+  assert.match(piRuntimeExecutionSource, /\bCreateLinxCliRuntimeAdapter\b/)
+  assert.match(piRuntimeExecutionSource, /\bRunLinxCliRuntimeOptions\b/)
+  assert.match(piRuntimeExecutionSource, /\brunLinxCliRuntime\b/)
+  assert.doesNotMatch(piRuntimeExecutionSource, /\bLinxPiCliRuntimeAdapter\b/)
+  assert.doesNotMatch(piRuntimeExecutionSource, /\bCreateLinxRuntimeAdapterForPiCommandOptions\b/)
+  assert.doesNotMatch(piRuntimeExecutionSource, /\bCreateLinxRuntimeAdapterForPiCommand\b/)
+  assert.doesNotMatch(piRuntimeExecutionSource, /\bRunLinxPiRuntimeOptions\b/)
+  assert.doesNotMatch(piRuntimeExecutionSource, /\brunLinxPiRuntime\b/)
+  assert.match(cliRuntimeAdapterFactorySource, /\bcreateDefaultLinxCliRuntimeAdapter\b/)
+  assert.doesNotMatch(cliRuntimeAdapterFactorySource, /\bcreateDefaultLinxRuntimeAdapterForPiCommand\b/)
 })
 
 test('default Pi/TUI command module delegates startup planning', () => {

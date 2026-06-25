@@ -54,7 +54,7 @@ test('shell lifecycle exposes restart-aware interactive cleanup stop', async (t)
   assert.deepEqual(events, ['stop', 'exit:0', 'stop'])
 })
 
-test('runLinxPiRuntime cleanup delegates interactive stop to restart-aware shell lifecycle', () => {
+test('runLinxCliRuntime cleanup delegates interactive stop to restart-aware shell lifecycle', () => {
   const source = readFileSync(`${cliRoot}/src/lib/linx-pi-runtime-execution.ts`, 'utf8')
 
   assert.match(source, /stopInteractiveShellUnlessRestarting\(interactive\)/)
