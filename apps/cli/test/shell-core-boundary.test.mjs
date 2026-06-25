@@ -1103,6 +1103,7 @@ test('Symphony command reads source session id through the shell session metadat
 
   assert.match(source, /from ['"]\.\/linx-session-metadata\.js['"]/)
   assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.getSessionId\b/)
+  assert.doesNotMatch(source, /resolveLinxSessionId\(\{[^}]*session:\s*interactive\?\.session/)
 })
 
 
