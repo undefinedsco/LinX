@@ -505,6 +505,15 @@ test('interactive lifecycle completion state is kept out of interactive hidden f
   assert.deepEqual(violations, [])
 })
 
+test('interactive post-init resolves active runtime through the runtime host', () => {
+  const source = readFileSync(join(libRoot, 'linx-interactive-post-init.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-runtime-host\.js['"]/)
+  assert.match(source, /\bgetLinxInteractiveRuntime\b/)
+  assert.doesNotMatch(source, /target\?\.runtime(?![A-Za-z0-9_])/)
+  assert.doesNotMatch(source, /target\.runtime(?![A-Za-z0-9_])/)
+})
+
 test('session original methods are kept behind shell-owned accessors', () => {
   const violations = []
   const directSessionOriginalMethodPattern = /__linx(?:PromptWithoutCommandRouting|SendUserMessageWithoutCommandRouting)\b/

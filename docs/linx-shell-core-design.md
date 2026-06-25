@@ -1320,6 +1320,8 @@ Current shell-state rules:
   hooks, such as the `/ai connect` credential saver, follow the same rule.
   Symphony dispatch code also resolves worker/runtime fallbacks through this
   seam before reading runtime-owned backend, model, credential, or session data.
+  Lifecycle callbacks that receive only a target interactive object, such as the
+  post-init interrupt auto handback hook, must use the same runtime host lookup.
 - Runtime Pod session cache belongs in `linx-interactive-runtime-host.ts`.
   Shell modules that discover or reuse `runtime.podSession` must use explicit
   host helpers; feature modules such as Symphony may read/write the cached Pod
