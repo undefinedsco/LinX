@@ -702,6 +702,10 @@ startup path split by responsibility:
 | Runtime execution module | Runs print mode or interactive Pi runtime, hosts Pod mirror runtime, performs login-prompt handoff, and cleans up through restart-aware lifecycle hooks | Command admission policy, Cloud/account URL policy, shared Pod resource semantics |
 | Runtime adapter factory | Wires the active backend adapter from explicit startup options | CLI command parsing, user-facing help, session selector UI |
 
+The CLI app entry is product-facing composition code. It may import the default
+Pi/TUI command orchestration module, but the command descriptor it registers for
+`linx` itself must be named as the default LinX command, not as a Pi command.
+
 Startup side-effect ordering is part of the boundary:
 
 1. Reject conflicting or retired command shapes before login, Pod session lookup,
