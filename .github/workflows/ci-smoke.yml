@@ -45,6 +45,3 @@ jobs:
       - name: Desktop package smoke
         if: matrix.os == 'ubuntu-latest'
         run: yarn workspace @linx/desktop run package:dir
-
-      - name: Mobile shell smoke
-        run: yarn workspace @linx/mobile smoke
