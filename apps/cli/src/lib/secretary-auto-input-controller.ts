@@ -21,7 +21,7 @@ import {
   submitLinxInteractiveSessionUserInput,
   subscribeLinxInteractiveSessionEvents,
 } from './linx-session-work-control.js'
-import { getLinxActiveSessionHistoryEntries } from './linx-session-history.js'
+import { getLinxActiveSessionAgentMessages, getLinxActiveSessionHistoryEntries } from './linx-session-history.js'
 import { resolveLinxSessionCwd, resolveLinxSessionModelId } from './linx-session-metadata.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import {
@@ -936,12 +936,12 @@ function renderSecretaryAutoInputRetryContext(inputText: string): string {
 }
 
 function resolveRecentMessages(interactive: any): Array<{ role: string; text: string }> {
-  const fromEntries = resolveRecentMessagesFromEntries(getLinxActiveSessionHistoryEntries({ interactive, session: interactive?.session }))
+  const fromEntries = resolveRecentMessagesFromEntries(getLinxActiveSessionHistoryEntries({ interactive }))
   if (fromEntries.length > 0) {
     return fromEntries
   }
 
-  return resolveRecentMessagesFromAgentState(interactive?.session?.agent?.state?.messages)
+  return resolveRecentMessagesFromAgentState(getLinxActiveSessionAgentMessages({ interactive }))
 }
 
 function resolveRecentMessagesFromEntries(entries: unknown): Array<{ role: string; text: string }> {

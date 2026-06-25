@@ -1126,7 +1126,10 @@ test('Secretary auto input reads recent history through the shell session-histor
   const source = readFileSync(join(libRoot, 'secretary-auto-input-controller.ts'), 'utf8')
 
   assert.match(source, /from ['"]\.\/linx-session-history\.js['"]/)
+  assert.match(source, /\bgetLinxActiveSessionAgentMessages\b/)
   assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.getEntries\b/)
+  assert.doesNotMatch(source, /interactive\?\.session/)
+  assert.doesNotMatch(source, /agent\?\.state\?\.messages|agent\.state\.messages/)
 })
 
 

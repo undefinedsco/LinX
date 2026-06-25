@@ -246,12 +246,14 @@ Hard rules:
 - Session history and branch repair are shell session-history lifecycle, not
   feature-local retry logic. Reads of Pi `sessionManager` history, leaf/branch
   selection, parent-id normalization, branch restore, leaf reset, and
-  `agent.state.messages` rebuilds from `buildSessionContext()` belong behind a
-  named session-history seam. Auth-expired retry, `/rewind`, auto recovery, or
-  future command replay features may ask that seam to capture a retryable user
-  turn or restore a clean branch, but must not directly call Pi
+  active agent-message fallback reads or `agent.state.messages` rebuilds from
+  `buildSessionContext()` belong behind a named session-history seam.
+  Auth-expired retry, `/rewind`, auto recovery, or future command replay
+  features may ask that seam to capture a retryable user turn or restore a clean
+  branch, but must not directly call Pi
   `sessionManager.getLeafId()`, `getEntry()`, `getBranch()`, `getEntries()`,
-  `branch()`, `resetLeaf()`, or `buildSessionContext()`.
+  `branch()`, `resetLeaf()`, `buildSessionContext()`, or read
+  `agent.state.messages`.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
