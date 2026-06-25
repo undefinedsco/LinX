@@ -12,7 +12,7 @@ export interface LinxPiCliCommandDependencies {
 }
 
 export interface LinxPiCliCommands {
-  defaultPiCommand: CommandModule<object, LinxDefaultCommandArgs>
+  defaultCommand: CommandModule<object, LinxDefaultCommandArgs>
   execCommand: CommandModule<object, LinxDefaultCommandArgs>
 }
 
@@ -159,7 +159,7 @@ export function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandAr
 
 export function createLinxPiCliCommands(dependencies: LinxPiCliCommandDependencies): LinxPiCliCommands {
   return {
-    defaultPiCommand: {
+    defaultCommand: {
       command: '$0 [prompt..]',
       describe: 'Run LinX with the selected runtime backend',
       builder: buildPiCommand,

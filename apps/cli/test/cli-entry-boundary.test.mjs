@@ -19,6 +19,10 @@ test('CLI entry delegates yargs command registration to a CLI app module', () =>
 
 test('CLI app delegates Pi/TUI command orchestration to a shell command module', () => {
   assert.match(cliAppSource, /from ['"]\.\/lib\/linx-pi-cli-command\.js['"]/, 'CLI app should import Pi command descriptors from the shell command module')
+  assert.match(cliAppSource, /\bdefaultCommand\b/, 'CLI app should register the default LinX command through a LinX-named binding')
+  assert.doesNotMatch(cliAppSource, /\bdefaultPiCommand\b/, 'CLI app should not expose the default command through Pi naming')
+  assert.match(piCliCommandSource, /\bdefaultCommand\b/, 'shell command module should expose the default descriptor with a LinX-owned name')
+  assert.doesNotMatch(piCliCommandSource, /\bdefaultPiCommand\b/, 'default command descriptor should not keep Pi naming')
   assert.doesNotMatch(cliAppSource, /async function runPiCommand\b/)
   assert.doesNotMatch(cliAppSource, /function buildPiCommand\b/)
   assert.doesNotMatch(cliAppSource, /async function selectLinxSession\b/)
