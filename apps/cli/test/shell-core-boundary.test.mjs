@@ -1092,6 +1092,7 @@ test('Pod-backed extension UI reads session id through the shell session metadat
   assert.match(source, /from ['"]\.\/linx-session-metadata\.js['"]/)
   assert.doesNotMatch(source, /sessionManager(?:\?\.)?\.getSessionId\b/)
   assert.doesNotMatch(source, /sessionManager\b/)
+  assert.doesNotMatch(source, /contextInteractive\?\.session/)
 })
 
 

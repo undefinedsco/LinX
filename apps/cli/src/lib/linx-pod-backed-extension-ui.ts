@@ -24,7 +24,7 @@ export function installPodBackedExtensionUi(
 
       return createPodBackedExtensionUiContext(ui as ExtensionUIContext, {
         cwd: resolveLinxSessionCwd({ interactive: contextInteractive, runtime }, process.cwd()),
-        sessionId: () => resolveLinxSessionId({ interactive: contextInteractive, runtime, session: contextInteractive?.session }),
+        sessionId: () => resolveLinxSessionId({ interactive: contextInteractive, runtime }),
         sessionControl,
         onWarning(error) {
           const message = error instanceof Error ? error.message : String(error)

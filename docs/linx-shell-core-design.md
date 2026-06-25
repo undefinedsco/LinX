@@ -231,7 +231,9 @@ Hard rules:
   Pi/runtime/session-manager field layout. Resume/exit copy, welcome/header
   rendering, status-line tokens, Pod-backed extension context, Secretary auto
   input context, and Symphony status may use session metadata, but they must
-  obtain it through the seam.
+  obtain it through the seam. Feature modules pass the interactive/runtime host
+  or explicit DTOs to the metadata seam; they must not extract and pass raw
+  `interactive.session` as a convenience.
 - Active session work control is shell session lifecycle, not feature command
   logic. Checks for Pi session streaming/bash state, follow-up delivery option
   selection, session event subscriptions, and abort calls belong
@@ -1051,10 +1053,13 @@ applying cwd to Pi session state and LinX runtime state is a shell session-state
 operation. Feature modules must call those seams instead of reading
 `interactive.sessionManager.getCwd()`, `getSessionName()`, `getSessionId()`,
 `interactive.session.model`, or writing `interactive.session.cwd` /
-`runtime.cwd` directly. Inside the metadata seam, Pi session-manager getters must
-be isolated behind a single archive snapshot helper; exported metadata resolvers
-consume that plain snapshot plus explicit session/runtime fields so fallback
-ordering is visible without scattering Pi getter calls.
+`runtime.cwd` directly. They should pass the interactive/runtime host or
+explicit DTOs to the metadata seam, not extract and pass raw
+`interactive.session` from feature code. Inside the metadata seam, Pi
+session-manager getters must be isolated behind a single archive snapshot
+helper; exported metadata resolvers consume that plain snapshot plus explicit
+session/runtime fields so fallback ordering is visible without scattering Pi
+getter calls.
 
 Active session work control belongs behind `linx-session-work-control.ts`.
 Feature commands that need a quiet local branch repair, such as `/rewind`, may
