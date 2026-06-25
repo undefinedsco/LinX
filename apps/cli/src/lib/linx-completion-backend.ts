@@ -13,6 +13,3 @@ export interface LinxCompletionBackendResult {
     totalTokens: number
   }
 }
-
-/** @deprecated Use LinxCompletionBackendResult. */
-export type PiCompletionBackendResult = LinxCompletionBackendResult

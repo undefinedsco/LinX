@@ -949,6 +949,11 @@ LinX shell contract:
 Patch points should stay thin. If a patch grows stateful or reusable, extract it
 behind a named shell module before adding more behavior.
 
+Shared runtime/backend DTO contracts are LinX-owned even when a Pi adapter
+consumes them. Do not keep deprecated `Pi*` type aliases for shared completion,
+stream, or backend result shapes; adapter-specific mapping belongs in the Pi
+adapter, while the shared contract keeps LinX names.
+
 The interactive bootstrap composes shell surfaces; it should not know every
 feature-specific command installer. Interactive command-surface installation
 belongs behind `linx-interactive-command-surface.ts`, which owns the order for

@@ -2150,6 +2150,13 @@ test('Pi stream adapter does not re-export backend completion result contracts',
   assert.deepEqual(violations, [])
 })
 
+test('completion backend contract does not keep deprecated Pi aliases', () => {
+  const source = readFileSync(join(libRoot, 'linx-completion-backend.ts'), 'utf8')
+
+  assert.match(source, /\bLinxCompletionBackendResult\b/)
+  assert.doesNotMatch(source, /\bPiCompletionBackendResult\b/)
+})
+
 test('normalized backend event to Pi text stream mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [
