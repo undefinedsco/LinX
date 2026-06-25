@@ -1,3 +1,8 @@
+import {
+  getSessionCommandRouterOriginalPrompt,
+  getSessionCommandRouterOriginalSendUserMessage,
+} from './linx-session-command-routing-host.js'
+
 export async function stopLinxActiveSessionWork(session: any, options: { waitTimeoutMs?: number } = {}): Promise<void> {
   if (!session) {
     return
@@ -53,6 +58,19 @@ export async function submitLinxInteractiveSessionUserInput(interactive: any, te
   unavailableMessage?: string
 } = {}): Promise<void> {
   await submitLinxSessionUserInput(interactive?.session, text, options)
+}
+
+export async function submitLinxInteractiveSessionUserInputBypassingCommandRouter(
+  interactive: any,
+  text: string,
+  options: { unavailableMessage?: string } = {},
+): Promise<void> {
+  const session = interactive?.session
+  await submitLinxSessionUserInput(session, text, {
+    sendUserMessage: getSessionCommandRouterOriginalSendUserMessage(session),
+    prompt: getSessionCommandRouterOriginalPrompt(session),
+    unavailableMessage: options.unavailableMessage,
+  })
 }
 
 export type LinxRuntimeProjectionMessage = {

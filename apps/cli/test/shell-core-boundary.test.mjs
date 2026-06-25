@@ -1430,7 +1430,12 @@ test('peer and Secretary input delivery delegate streaming state to the shell se
     assert.doesNotMatch(source, /\bisStreaming\b/, target)
     assert.doesNotMatch(source, /\bdeliverAs:\s*['"]followUp['"]/, target)
     assert.doesNotMatch(source, /\bstreamingBehavior:\s*['"]followUp['"]/, target)
+    assert.doesNotMatch(source, /interactive\?\.session/, target)
   }
+
+  const peerSource = readFileSync(join(libRoot, 'linx-peer-command-routing.ts'), 'utf8')
+  assert.doesNotMatch(peerSource, /getSessionCommandRouterOriginal(?:Prompt|SendUserMessage)/)
+  assert.doesNotMatch(peerSource, /\bsubmitLinxSessionUserInput\(/)
 })
 
 test('Secretary auto input subscribes to session events through the shell session seam', () => {
