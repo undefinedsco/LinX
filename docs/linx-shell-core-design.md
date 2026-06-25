@@ -956,6 +956,9 @@ LinX shell commands, Symphony commands, backend command routing, session command
 routing, command autocomplete, and runtime event bridges. Bootstrap may pass the
 interactive, runtime, session cwd, and session-control manager into that module,
 but must not directly import or call each command router.
+Bootstrap's public API is LinX-owned. It may adapt upstream Pi internally, but it
+must not keep deprecated `Pi*` compatibility aliases when internal callers and
+tests can use the LinX names directly.
 
 Post-init lifecycle work belongs behind `linx-interactive-post-init.ts`. That
 module owns the `interactive.init` wrapping point and calls narrower shell seams

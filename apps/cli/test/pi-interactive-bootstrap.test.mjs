@@ -75,7 +75,6 @@ test('pi interactive bootstrap can instantiate with the LinX runtime adapter', a
   assert.equal(typeof runtimeModule.createLinxRuntimeAdapter, 'function')
   assert.equal(typeof runtimeModule.createLinxRuntimeAdapter, 'function')
   assert.equal(typeof interactiveModule.bootstrapLinxInteractiveMode, 'function')
-  assert.equal(typeof interactiveModule.bootstrapPiInteractiveMode, 'function')
   assert.equal(typeof interactiveModule.withLinxResumeOutputStyle, 'function')
   assert.equal(typeof interactiveModule.withSuppressedPiResumeOutput, 'function')
 
@@ -194,7 +193,7 @@ test('pi interactive bootstrap passes initial prompt options into Pi interactive
     sessionManager: SessionManager.inMemory(cwd),
   })
 
-  const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime, {
+  const interactive = interactiveModule.bootstrapLinxInteractiveMode(runtime, {
     initialMessage: 'ship the auto prompt',
   })
   t.after(() => interactive.stop())
@@ -253,7 +252,7 @@ test('pi interactive backend credential prompt uses the existing extension input
     agentDir,
     sessionManager: SessionManager.inMemory(cwd),
   })
-  const interactive = module.bootstrapPiInteractiveMode(runtime)
+  const interactive = module.bootstrapLinxInteractiveMode(runtime)
   t.after(() => interactive.stop())
   const raw = interactive.__unsafeInteractiveForTests
   const statuses = []
@@ -340,7 +339,7 @@ test('pi interactive backend credential prompt distinguishes invalid existing cr
     agentDir,
     sessionManager: SessionManager.inMemory(cwd),
   })
-  const interactive = module.bootstrapPiInteractiveMode(runtime)
+  const interactive = module.bootstrapLinxInteractiveMode(runtime)
   t.after(() => interactive.stop())
   const raw = interactive.__unsafeInteractiveForTests
   raw.showStatus = (message) => {
@@ -419,7 +418,7 @@ test('pi interactive backend credential prompt reuses Pi login dialog when TUI i
     agentDir,
     sessionManager: SessionManager.inMemory(cwd),
   })
-  const interactive = module.bootstrapPiInteractiveMode(runtime)
+  const interactive = module.bootstrapLinxInteractiveMode(runtime)
   t.after(() => interactive.stop())
   const raw = interactive.__unsafeInteractiveForTests
   const statuses = []
@@ -1290,7 +1289,7 @@ test('linx interactive branding stores agent state under .solid/apps/linx and pa
     diagnostics: [],
   }
 
-  const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
+  const interactive = interactiveModule.bootstrapLinxInteractiveMode(runtime)
   t.after(() => interactive.stop())
   assert.equal(typeof interactive.init, 'function')
   assert.equal(typeof interactive.run, 'function')
@@ -2244,7 +2243,7 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
     diagnostics: [],
   }
 
-  const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
+  const interactive = interactiveModule.bootstrapLinxInteractiveMode(runtime)
   t.after(() => interactive.stop())
   assert.equal(typeof interactive.init, 'function')
 
@@ -2358,7 +2357,7 @@ test('linx footer patch keeps cache rate line within terminal width', async (t) 
     diagnostics: [],
   }
 
-  const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
+  const interactive = interactiveModule.bootstrapLinxInteractiveMode(runtime)
   t.after(() => interactive.stop())
   assert.equal(typeof runtimeModule.createLinxRuntimeAdapter, 'function')
   assert.equal(typeof interactive.init, 'function')
@@ -5982,7 +5981,7 @@ test('linx interactive restores auto mode visibly on resume startup', async (t) 
   })
   runtime.autoEnabled = true
 
-  const bootstrap = module.bootstrapPiInteractiveMode(runtime, {
+  const bootstrap = module.bootstrapLinxInteractiveMode(runtime, {
     restoredAuto: true,
   })
   const interactive = bootstrap.__unsafeInteractiveForTests
@@ -7014,7 +7013,6 @@ test('interactive bootstrap composition lives in a shell module', async (t) => {
   t.after(() => cleanup())
 
   assert.equal(typeof module.bootstrapLinxInteractiveMode, 'function')
-  assert.equal(typeof module.bootstrapPiInteractiveMode, 'function')
 })
 
 test('interactive theme installation lives in a shell rendering module', async (t) => {

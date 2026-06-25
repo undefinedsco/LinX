@@ -31,8 +31,6 @@ export interface LinxInteractiveBootstrap {
   stop(): void
 }
 
-/** @deprecated Use LinxInteractiveBootstrap. */
-export type PiInteractiveBootstrap = LinxInteractiveBootstrap
 
 export type LinxLoginReason = 'startup' | 'expired' | 'manual'
 
@@ -44,8 +42,6 @@ export interface LinxInteractiveBootstrapOptions {
   onSymphonyControlChange?: (enabled: boolean) => void | Promise<void>
 }
 
-/** @deprecated Use LinxInteractiveBootstrapOptions. */
-export type PiInteractiveBootstrapOptions = LinxInteractiveBootstrapOptions
 
 export function bootstrapLinxInteractiveMode(
   runtime: any,
@@ -102,6 +98,3 @@ export function bootstrapLinxInteractiveMode(
   }
   return bootstrap
 }
-
-/** @deprecated Use bootstrapLinxInteractiveMode. */
-export const bootstrapPiInteractiveMode = bootstrapLinxInteractiveMode
