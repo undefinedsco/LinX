@@ -329,6 +329,15 @@ test('Pod mirror runtime handle is centralized in the Pod mirror host module', (
   assert.deepEqual(violations, [])
 })
 
+test('Pod mirror runtime host resolves active runtime through the runtime host seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-pod-mirror-runtime-host.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-runtime-host\.js['"]/)
+  assert.match(source, /\bgetLinxInteractiveRuntime\b/)
+  assert.doesNotMatch(source, /interactive\?\.runtime/)
+  assert.doesNotMatch(source, /interactive\.runtime/)
+})
+
 test('runtime host hooks do not use runtime hidden fields', () => {
   const violations = []
   const directRuntimeHostHookPattern = /__linx(?:BeforeSessionInvalidate|RebindSession)\b/
