@@ -116,11 +116,11 @@ Hard rules:
   login-flow business state. Login flow may decide when LinX/Solid auth is
   required, expired, cancelled, or refreshed, but hidden flags for "login in
   progress", "start login after init", "pending auth retry", "login scheduled",
-  "currently reporting auth error", and runtime startup re-prompt bridge cleanup
-  belong behind
-  `apps/cli/src/lib/linx-interactive-auth-state-host.ts`. Feature modules must
-  not define `linx.tui.auth*` symbols or index those fields directly on the Pi
-  interactive object.
+  and "currently reporting auth error" belong behind
+  `apps/cli/src/lib/linx-interactive-auth-state-host.ts`. Runtime auth bridge
+  prompt flags are runtime-host state, not auth-state hidden fields. Feature
+  modules must not define `linx.tui.auth*` symbols or index those fields
+  directly on the Pi interactive object.
 - Interactive event/error methods are shell event-normalization lifecycle, not
   auth-feature-owned Pi method replacements. `interactive.handleEvent` and
   `interactive.showError` are patched only by
@@ -171,12 +171,11 @@ Hard rules:
   mark the LinX runtime API key as managed, but Pi's
   `interactive.session.modelRegistry` / `authStorage` shape belongs behind
   `apps/cli/src/lib/linx-interactive-model-registry-host.ts`.
-- Runtime auth bridge reads are shell runtime state, not welcome/login feature
+- Runtime auth bridge reads/writes are shell runtime state, not welcome/login feature
   field knowledge. Feature modules may ask for the visible provider label or
   startup auth prompt state, but `linxAuthBridge` placement across
   `interactive`, `runtimeHost`, and runtime objects belongs behind
-  `apps/cli/src/lib/linx-interactive-runtime-host.ts` and
-  `apps/cli/src/lib/linx-interactive-auth-state-host.ts`.
+  `apps/cli/src/lib/linx-interactive-runtime-host.ts`.
 - Extension input collection is shell UI state, not login or credential feature
   plumbing. Feature modules may decide what prompt text is needed, but Pi
   `interactive.showExtensionInput` belongs behind

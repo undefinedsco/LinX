@@ -6,7 +6,10 @@ import { LINX_RUNTIME_MANAGED_AUTH_KEY } from './linx-runtime-auth.js'
 import { formatLinxCliErrorMessage } from './linx-cloud-errors.js'
 import { normalizeSelectorChoice } from './linx-selector-choice.js'
 import { openExternalUrl } from './linx-external-url.js'
-import { resolveLinxInteractiveRuntimeProviderLabel } from './linx-interactive-runtime-host.js'
+import {
+  clearLinxInteractiveRuntimeAuthPromptOnStart,
+  resolveLinxInteractiveRuntimeProviderLabel,
+} from './linx-interactive-runtime-host.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import {
   registerLinxInteractiveLoginDialogHandler,
@@ -36,10 +39,7 @@ import {
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
-import {
-  clearLinxInteractiveAuthPromptOnStart,
-  getLinxInteractiveAuthState,
-} from './linx-interactive-auth-state-host.js'
+import { getLinxInteractiveAuthState } from './linx-interactive-auth-state-host.js'
 import {
   canMountLinxEditorComponent,
   createLinxLoginDialogComponent,
@@ -505,7 +505,7 @@ async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason
 }
 
 export async function refreshLinxAuthState(interactive: any): Promise<void> {
-  clearLinxInteractiveAuthPromptOnStart(interactive)
+  clearLinxInteractiveRuntimeAuthPromptOnStart(interactive)
   syncRuntimeCredential(interactive)
   refreshLinxInteractiveModelRegistry(interactive)
   await refreshLinxInteractiveProviderCount(interactive)

@@ -53,24 +53,6 @@ export function getLinxInteractiveAuthState<LoginReason = unknown, PendingRetry 
   }
 }
 
-export function clearLinxInteractiveAuthPromptOnStart(interactive: any): void {
-  for (const candidate of getLinxInteractiveAuthBridgeCandidates(interactive)) {
-    const bridge = candidate?.linxAuthBridge
-    if (bridge && typeof bridge === 'object') {
-      bridge.shouldPromptLoginOnStart = false
-    }
-  }
-}
-
-function getLinxInteractiveAuthBridgeCandidates(interactive: any): any[] {
-  return [
-    interactive,
-    interactive?.runtimeHost,
-    interactive?.runtime,
-    interactive?.session,
-  ]
-}
-
 function isAuthStateTarget(value: unknown): value is AuthStateTarget {
   return Boolean(value && (typeof value === 'object' || typeof value === 'function'))
 }

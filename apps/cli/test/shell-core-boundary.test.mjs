@@ -369,9 +369,8 @@ test('interactive runtime Pod session mutation is centralized in the runtime hos
   assert.deepEqual(violations, [])
 })
 
-test('runtime auth bridge field access is centralized in shell runtime/auth hosts', () => {
+test('runtime auth bridge field access is centralized in the shell runtime host', () => {
   const allowed = new Set([
-    'linx-interactive-auth-state-host.ts',
     'linx-interactive-runtime-host.ts',
     'linx-pi-runtime-execution.ts',
     'linx-pod-mirror-runtime-host.ts',
@@ -1512,11 +1511,11 @@ test('auth retry delivery delegates active session work to the shell session sea
   assert.doesNotMatch(source, /session\.prompt/)
 })
 
-test('login flow clears startup auth prompt through the shell auth state seam', () => {
+test('login flow clears startup auth prompt through the shell runtime host seam', () => {
   const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
 
-  assert.match(source, /from ['"]\.\/linx-interactive-auth-state-host\.js['"]/)
-  assert.match(source, /\bclearLinxInteractiveAuthPromptOnStart\b/)
+  assert.match(source, /from ['"]\.\/linx-interactive-runtime-host\.js['"]/)
+  assert.match(source, /\bclearLinxInteractiveRuntimeAuthPromptOnStart\b/)
   assert.doesNotMatch(source, /\blinxAuthBridge\b/)
   assert.doesNotMatch(source, /interactive\?\.session/)
 })
