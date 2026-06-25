@@ -36,7 +36,10 @@ import {
 import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streaming-message-host.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
-import { getLinxInteractiveAuthState } from './linx-interactive-auth-state-host.js'
+import {
+  clearLinxInteractiveAuthPromptOnStart,
+  getLinxInteractiveAuthState,
+} from './linx-interactive-auth-state-host.js'
 import {
   canMountLinxEditorComponent,
   createLinxLoginDialogComponent,
@@ -502,7 +505,7 @@ async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason
 }
 
 export async function refreshLinxAuthState(interactive: any): Promise<void> {
-  clearLinxAuthPromptOnStart(interactive)
+  clearLinxInteractiveAuthPromptOnStart(interactive)
   syncRuntimeCredential(interactive)
   refreshLinxInteractiveModelRegistry(interactive)
   await refreshLinxInteractiveProviderCount(interactive)
@@ -673,21 +676,6 @@ async function promptForLinxManualRedirectUrl(
 function syncRuntimeCredential(interactive: any): void {
   const authStorage = getLinxInteractiveAuthStorage(interactive)
   authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
-}
-
-function clearLinxAuthPromptOnStart(interactive: any): void {
-  const candidates = [
-    interactive,
-    interactive?.runtimeHost,
-    interactive?.runtime,
-    interactive?.session,
-  ]
-  for (const candidate of candidates) {
-    const bridge = candidate?.linxAuthBridge
-    if (bridge && typeof bridge === 'object') {
-      bridge.shouldPromptLoginOnStart = false
-    }
-  }
 }
 
 function showLinxLoginUrl(interactive: any, info: { url: string; instructions?: string }): void {

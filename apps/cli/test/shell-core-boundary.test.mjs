@@ -1481,6 +1481,15 @@ test('auth retry delivery delegates active session work to the shell session sea
   assert.doesNotMatch(source, /session\.prompt/)
 })
 
+test('login flow clears startup auth prompt through the shell auth state seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-auth-state-host\.js['"]/)
+  assert.match(source, /\bclearLinxInteractiveAuthPromptOnStart\b/)
+  assert.doesNotMatch(source, /\blinxAuthBridge\b/)
+  assert.doesNotMatch(source, /interactive\?\.session/)
+})
+
 test('session-history retry exports delegate Pi history operations to internal helpers', () => {
   const source = readFileSync(join(libRoot, 'linx-session-history.ts'), 'utf8')
   const allowedRanges = findFunctionRanges(source, [
