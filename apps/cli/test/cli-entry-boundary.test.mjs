@@ -9,6 +9,8 @@ const piCliCommandSource = readFileSync(new URL('../src/lib/linx-pi-cli-command.
 
 const piRuntimeExecutionSource = readFileSync(new URL('../src/lib/linx-pi-runtime-execution.ts', import.meta.url), 'utf8')
 
+const piStartupPlanSource = readFileSync(new URL('../src/lib/linx-pi-startup-plan.ts', import.meta.url), 'utf8')
+
 const cliRuntimeAdapterFactorySource = readFileSync(new URL('../src/linx-cli-runtime-adapter-factory.ts', import.meta.url), 'utf8')
 
 test('CLI entry delegates yargs command registration to a CLI app module', () => {
@@ -104,6 +106,17 @@ test('default Pi/TUI command module delegates startup planning', () => {
   assert.doesNotMatch(piCliCommandSource, /\bgetDefaultPodDataSession\b/, 'runtime Pod data session source should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bresolveAccountBaseUrl\b/, 'Cloud provider URL resolution should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bLINX_AGENT_DIR\b/, 'agent-dir details should live below command admission')
+})
+
+test('startup plan public surface uses LinX CLI names', () => {
+  assert.match(piStartupPlanSource, /\bLinxCliStartupPlanArgs\b/)
+  assert.match(piStartupPlanSource, /\bLinxCliStartupPlan\b/)
+  assert.match(piStartupPlanSource, /\bcreateLinxCliStartupPlan\b/)
+  assert.match(piStartupPlanSource, /\bassertLinxCliStartupSessionSelectorCompatibility\b/)
+  assert.doesNotMatch(piStartupPlanSource, /\bLinxPiStartupPlanArgs\b/)
+  assert.doesNotMatch(piStartupPlanSource, /\bLinxPiStartupPlan\b/)
+  assert.doesNotMatch(piStartupPlanSource, /\bcreateLinxPiStartupPlan\b/)
+  assert.doesNotMatch(piStartupPlanSource, /\bassertLinxPiStartupSessionSelectorCompatibility\b/)
 })
 
 test('CLI app delegates Pi runtime adapter wiring to a CLI composition module', () => {

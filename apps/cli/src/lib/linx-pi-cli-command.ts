@@ -5,7 +5,7 @@ import { handleLinxPodMirrorSyncCliAdmission } from './linx-pod-mirror-sync-cli-
 import { handleLinxAutoModeCliAdmission } from './linx-auto-mode-cli-admission.js'
 import { handleLinxPiResumeCliAdmission } from './linx-pi-resume-cli-admission.js'
 import { runLinxCliRuntime, type CreateLinxCliRuntimeAdapter } from './linx-pi-runtime-execution.js'
-import { assertLinxPiStartupSessionSelectorCompatibility, createLinxPiStartupPlan } from './linx-pi-startup-plan.js'
+import { assertLinxCliStartupSessionSelectorCompatibility, createLinxCliStartupPlan } from './linx-pi-startup-plan.js'
 
 export interface LinxDefaultCliCommandDependencies {
   createRuntimeAdapter: CreateLinxCliRuntimeAdapter
@@ -56,7 +56,7 @@ export async function runLinxDefaultCommand(argv: {
     return
   }
 
-  const startupPlan = await createLinxPiStartupPlan(argv)
+  const startupPlan = await createLinxCliStartupPlan(argv)
   await runLinxCliRuntime({
     ...startupPlan.runtimeOptions,
     adapter: dependencies.createRuntimeAdapter(startupPlan.adapterOptions),
@@ -70,7 +70,7 @@ export function assertLinxDefaultCliSessionSelectorCompatibility(argv: {
   resume?: boolean
   last?: boolean
 }): void {
-  assertLinxPiStartupSessionSelectorCompatibility(argv)
+  assertLinxCliStartupSessionSelectorCompatibility(argv)
 }
 
 export interface LinxDefaultCommandBaseArgs {

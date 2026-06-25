@@ -8,7 +8,7 @@ import { resolveLinxStartupLoginPromptDecision } from './linx-startup-login-poli
 import { assertLinxPiSessionSelectorCompatibility, createLinxPiSessionManager } from './linx-session-manager.js'
 import { getDefaultPodDataSession } from './pod-data-session.js'
 
-export interface LinxPiStartupPlanArgs extends AutoModeCommandArgs {
+export interface LinxCliStartupPlanArgs extends AutoModeCommandArgs {
   cwd?: string
   model?: string
   port?: number
@@ -23,12 +23,12 @@ export interface LinxPiStartupPlanArgs extends AutoModeCommandArgs {
   prompt?: string[]
 }
 
-export interface LinxPiStartupPlan {
+export interface LinxCliStartupPlan {
   adapterOptions: CreateLinxCliRuntimeAdapterOptions
   runtimeOptions: Omit<RunLinxCliRuntimeOptions, 'adapter'>
 }
 
-export async function createLinxPiStartupPlan(argv: LinxPiStartupPlanArgs): Promise<LinxPiStartupPlan> {
+export async function createLinxCliStartupPlan(argv: LinxCliStartupPlanArgs): Promise<LinxCliStartupPlan> {
   const cwd = argv.cwd || process.cwd()
   const issuerUrl = resolveAccountBaseUrl()
   const startupLoginPrompt = await resolveLinxStartupLoginPromptDecision({
@@ -47,7 +47,7 @@ export async function createLinxPiStartupPlan(argv: LinxPiStartupPlanArgs): Prom
     last: Boolean(argv.continue || argv.last),
   })
   const restoreAutoFromHydration = Boolean(argv.session || argv['session-id'] || argv.continue || argv.last)
-  const archive = getLinxPiStartupArchiveIdentity(sessionManager)
+  const archive = getLinxCliStartupArchiveIdentity(sessionManager)
   const controlState = await resolveLinxPiStartupControlState({
     requestedAuto: typeof argv.auto === 'boolean' ? argv.auto : undefined,
     hydrateFromPod: !argv.print && !startupLoginPrompt.shouldPrompt,
@@ -87,7 +87,7 @@ export async function createLinxPiStartupPlan(argv: LinxPiStartupPlanArgs): Prom
   }
 }
 
-export function assertLinxPiStartupSessionSelectorCompatibility(argv: {
+export function assertLinxCliStartupSessionSelectorCompatibility(argv: {
   session?: string
   'session-id'?: string
   continue?: boolean
@@ -101,7 +101,7 @@ export function assertLinxPiStartupSessionSelectorCompatibility(argv: {
   })
 }
 
-function getLinxPiStartupArchiveIdentity(sessionManager: {
+function getLinxCliStartupArchiveIdentity(sessionManager: {
   getSessionId(): string
   getEntries(): Array<{ timestamp?: unknown }>
 }): { sessionId: string; createdAt: Date } {
