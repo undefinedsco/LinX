@@ -16,7 +16,7 @@ import { patchPiAssistantMessageRendering } from './linx-assistant-message-rende
 import { promptForBackendCredential } from './linx-ai-connect-command.js'
 import { installLinxInteractiveCommandSurface } from './linx-interactive-command-surface.js'
 import { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from './linx-interactive-post-init.js'
-import { ensureInteractiveRuntimeHost } from './linx-interactive-runtime-host.js'
+import { ensureInteractiveRuntimeHost, setLinxInteractiveRuntime } from './linx-interactive-runtime-host.js'
 import { installPodBackedExtensionUi } from './linx-pod-backed-extension-ui.js'
 import { configureLinxInteractiveShellState } from './linx-interactive-shell-state.js'
 
@@ -57,7 +57,7 @@ export function bootstrapLinxInteractiveMode(
   const sessionCwd = runtime?.cwd || process.cwd()
   ensureInteractiveRuntimeHost(runtime)
   const interactive = new InteractiveMode(runtime, options)
-  ;(interactive as any).runtime = runtime
+  setLinxInteractiveRuntime(interactive, runtime)
   configureLinxInteractiveShellState(interactive as any, {
     autoModeEnabled: runtime?.autoEnabled === true,
     symphonyModeEnabled: runtime?.symphonyEnabled === true,
