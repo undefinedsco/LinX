@@ -65,7 +65,7 @@ interface PodMirrorRuntime {
   createDb?: (session: PodDataSession) => SolidDatabase
 }
 
-export interface LinxPiPodMirrorOptions {
+export interface LinxPodMirrorOptions {
   cwd: string
   sessionManager: SessionManager
   runtime?: Partial<PodMirrorRuntime>
@@ -76,7 +76,7 @@ export interface LinxPiPodMirrorOptions {
   syncConversationRoot?: boolean
 }
 
-export interface LinxPiPodMirrorRewindProjectionInput {
+export interface LinxPodMirrorRewindProjectionInput {
   previousSessionId?: string
   previousSessionFile?: string
   previousCreatedAt?: Date | string | number
@@ -99,7 +99,7 @@ interface PiResourceRefs {
   threadUri: string
 }
 
-export class LinxPiPodMirror {
+export class LinxPodMirror {
   private contextPromise: Promise<PodMirrorContext | null> | null = null
   private readonly queue: LinxPodSyncQueue
   private readonly seenMessageIds = new Set<string>()
@@ -111,7 +111,7 @@ export class LinxPiPodMirror {
   private closed = false
   private taskSeq = 0
 
-  constructor(private readonly options: LinxPiPodMirrorOptions) {
+  constructor(private readonly options: LinxPodMirrorOptions) {
     this.runtimePromise = createDefaultRuntime(options.runtime)
     this.queue = createLinxPodSyncQueue({
       source: 'pi-runtime',
@@ -252,7 +252,7 @@ export class LinxPiPodMirror {
     })
   }
 
-  syncRewindProjection(input: LinxPiPodMirrorRewindProjectionInput): Promise<LinxSyncRunResult | null> {
+  syncRewindProjection(input: LinxPodMirrorRewindProjectionInput): Promise<LinxSyncRunResult | null> {
     if (this.projectionDisabledReason) {
       return Promise.resolve(null)
     }
@@ -518,7 +518,7 @@ export class LinxPiPodMirror {
 
 async function ensurePiConversationRoot(
   context: PodMirrorContext,
-  options: LinxPiPodMirrorOptions,
+  options: LinxPodMirrorOptions,
   refs: PiResourceRefs,
 ): Promise<void> {
   const now = new Date()
@@ -679,7 +679,7 @@ async function ensurePiConversationRoot(
 
 async function persistRuntimeSession(
   context: PodMirrorContext,
-  options: LinxPiPodMirrorOptions,
+  options: LinxPodMirrorOptions,
   refs: PiResourceRefs,
   status: 'active' | 'completed' = 'active',
   _messageResourceRefs: Set<string> = new Set(),
@@ -740,8 +740,8 @@ async function persistRuntimeSession(
 
 async function archivePreviousRuntimeSession(
   context: PodMirrorContext,
-  options: LinxPiPodMirrorOptions,
-  input: LinxPiPodMirrorRewindProjectionInput,
+  options: LinxPodMirrorOptions,
+  input: LinxPodMirrorRewindProjectionInput,
 ): Promise<void> {
   const previousSessionId = normalizeString(input.previousSessionId)
   const archive = getPodMirrorArchiveSnapshot(options)
@@ -779,8 +779,8 @@ async function archivePreviousRuntimeSession(
 
 async function markAbandonedPreviousMessages(
   context: PodMirrorContext,
-  options: LinxPiPodMirrorOptions,
-  input: LinxPiPodMirrorRewindProjectionInput,
+  options: LinxPodMirrorOptions,
+  input: LinxPodMirrorRewindProjectionInput,
 ): Promise<void> {
   const previousSessionId = normalizeString(input.previousSessionId)
   const abandonedEntries = Array.isArray(input.abandonedEntries) ? input.abandonedEntries : []
@@ -834,7 +834,7 @@ async function markAbandonedPreviousMessages(
 
 function resolveActiveMessageResourceRefs(
   context: PodMirrorContext,
-  options: LinxPiPodMirrorOptions,
+  options: LinxPodMirrorOptions,
   refs: PiResourceRefs,
 ): Set<string> {
   const activeRefs = new Set<string>()
@@ -861,7 +861,7 @@ function resolveActiveMessageResourceRefs(
 
 
 function buildPiMessageReconcilerMetadata(
-  options: LinxPiPodMirrorOptions,
+  options: LinxPodMirrorOptions,
   row: PodMirrorMessageRow,
   resourceRef: string,
 ): Record<string, unknown> {
@@ -892,7 +892,7 @@ function buildPiMessageReconcilerMetadata(
 
 async function persistMessage(
   context: PodMirrorContext,
-  options: LinxPiPodMirrorOptions,
+  options: LinxPodMirrorOptions,
   row: NonNullable<ReturnType<typeof buildPodMessageRowFromMapping>>,
 ): Promise<string> {
   const resourceRef = messageResource.buildIri(context.webId,  { id: row.id, parent: row.parent, chat: row.chat, thread: row.thread, createdAt: row.createdAt })
@@ -927,7 +927,7 @@ async function persistMessage(
 
 async function touchPiConversation(
   context: PodMirrorContext,
-  options: LinxPiPodMirrorOptions,
+  options: LinxPodMirrorOptions,
   refs: PiResourceRefs,
   preview: string,
 ): Promise<void> {
@@ -965,7 +965,7 @@ function createPodMirrorDb(session: PodDataSession): SolidDatabase {
   }) as unknown as SolidDatabase
 }
 
-function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPiPodMirrorOptions): PiResourceRefs {
+function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPodMirrorOptions): PiResourceRefs {
   const archive = getPodMirrorArchiveSnapshot(options)
   const sessionId = archive.sessionId
   const createdAt = archive.createdAt
@@ -974,7 +974,7 @@ function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPiPodMirr
 
 function resolvePiResourceRefsForSession(
   context: PodMirrorContext,
-  _options: LinxPiPodMirrorOptions,
+  _options: LinxPodMirrorOptions,
   sessionId: string,
   createdAt: Date,
 ): PiResourceRefs {
@@ -997,7 +997,7 @@ function resolvePiResourceRefsForSession(
 }
 
 function createPiPodMirrorSyncResourceBindings(
-  options: LinxPiPodMirrorOptions,
+  options: LinxPodMirrorOptions,
   refs?: PiResourceRefs,
 ): LinxPodSyncResourceBindings {
   const sessionId = getPodMirrorArchiveSnapshot(options).sessionId
@@ -1114,7 +1114,7 @@ interface PodMirrorArchiveSnapshot {
   entries: SessionEntry[]
 }
 
-function getPodMirrorArchiveSnapshot(options: LinxPiPodMirrorOptions): PodMirrorArchiveSnapshot {
+function getPodMirrorArchiveSnapshot(options: LinxPodMirrorOptions): PodMirrorArchiveSnapshot {
   return {
     sessionId: options.sessionManager.getSessionId(),
     sessionName: options.sessionManager.getSessionName(),
@@ -1188,7 +1188,7 @@ function isCompletePodMirrorRuntime(runtime: Partial<PodMirrorRuntime> | undefin
   )
 }
 
-function buildThreadMetadata(options: LinxPiPodMirrorOptions): Record<string, unknown> {
+function buildThreadMetadata(options: LinxPodMirrorOptions): Record<string, unknown> {
   const archive = getPodMirrorArchiveSnapshot(options)
   return {
     source: 'linx-cli',

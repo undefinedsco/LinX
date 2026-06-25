@@ -225,11 +225,12 @@ test('pod mirror mapping helpers live in a Pod projection core module', async (t
   assert.equal(typeof module.pathToWorkspaceUri, 'function')
 })
 
-test('Pod mirror projection lives outside the Pi adapter', async (t) => {
+test('Pod mirror projection exposes a LinX-owned public API outside the Pi adapter', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
-  assert.equal(typeof module.LinxPiPodMirror, 'function')
+  assert.equal(typeof module.LinxPodMirror, 'function')
+  assert.equal(module.LinxPiPodMirror, undefined)
 })
 
 test('Pod mirror sync recovery lives outside the Pi adapter', async (t) => {
@@ -395,7 +396,7 @@ test('buildPodMessageRow skips operational assistant cloud/auth errors from dura
   }
 })
 
-test('LinxPiPodMirror persists Pi session events into Pod resources', async (t) => {
+test('LinxPodMirror persists Pi session events into Pod resources', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
@@ -414,7 +415,7 @@ test('LinxPiPodMirror persists Pi session events into Pod resources', async (t) 
   })
 
   const { runtime, rows, writes } = createFakePodRuntime()
-  const mirror = new module.LinxPiPodMirror({
+  const mirror = new module.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     runtime,
@@ -453,7 +454,7 @@ test('LinxPiPodMirror persists Pi session events into Pod resources', async (t) 
   assert.deepEqual(runtimeSessionRow.metadata.runtimeSnapshot.skills.map((skill) => skill.name), ['symphony', 'xpod-cli'])
 })
 
-test('LinxPiPodMirror retries transient Pod projection failures before checkpointing', async (t) => {
+test('LinxPodMirror retries transient Pod projection failures before checkpointing', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
@@ -473,7 +474,7 @@ test('LinxPiPodMirror retries transient Pod projection failures before checkpoin
 
   let transientFailures = 2
   const { runtime, rows } = createFakePodRuntime()
-  const mirror = new module.LinxPiPodMirror({
+  const mirror = new module.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     runtime: {
@@ -502,7 +503,7 @@ test('LinxPiPodMirror retries transient Pod projection failures before checkpoin
   assert.equal([...rows.values()].some((row) => row.content === 'retry transient pod failure'), true)
 })
 
-test('LinxPiPodMirror disables same-session projection after Pod auth failures', async (t) => {
+test('LinxPodMirror disables same-session projection after Pod auth failures', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
@@ -534,7 +535,7 @@ test('LinxPiPodMirror disables same-session projection after Pod auth failures',
 
   const errors = []
   const { runtime, writes } = createFakePodRuntime()
-  const mirror = new module.LinxPiPodMirror({
+  const mirror = new module.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     runtime: {
@@ -566,13 +567,13 @@ test('LinxPiPodMirror disables same-session projection after Pod auth failures',
   assert.equal(writes.length, 0)
 })
 
-test('LinxPiPodMirror projects auto control-plane state into Pod session metadata', async (t) => {
+test('LinxPodMirror projects auto control-plane state into Pod session metadata', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
   const sessionManager = createSessionManager()
   const { runtime, rows, writes } = createFakePodRuntime()
-  const mirror = new module.LinxPiPodMirror({
+  const mirror = new module.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     runtime,
@@ -590,13 +591,13 @@ test('LinxPiPodMirror projects auto control-plane state into Pod session metadat
   assert.equal(mirror.getSyncResults().at(-1).plane, 'control-plane')
 })
 
-test('LinxPiPodMirror projects symphony control-plane state into Pod session metadata', async (t) => {
+test('LinxPodMirror projects symphony control-plane state into Pod session metadata', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
   const sessionManager = createSessionManager()
   const { runtime, rows } = createFakePodRuntime()
-  const mirror = new module.LinxPiPodMirror({
+  const mirror = new module.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     runtime,
@@ -614,7 +615,7 @@ test('LinxPiPodMirror projects symphony control-plane state into Pod session met
   assert.equal(mirror.getSyncResults().at(-1).plane, 'control-plane')
 })
 
-test('LinxPiPodMirror keeps auto control-plane state while updating runtime session projection', async (t) => {
+test('LinxPodMirror keeps auto control-plane state while updating runtime session projection', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
@@ -633,7 +634,7 @@ test('LinxPiPodMirror keeps auto control-plane state while updating runtime sess
   })
 
   const { runtime, rows } = createFakePodRuntime()
-  const mirror = new module.LinxPiPodMirror({
+  const mirror = new module.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     runtime,
@@ -648,7 +649,7 @@ test('LinxPiPodMirror keeps auto control-plane state while updating runtime sess
   assert.equal(sessionRow.metadata.controlPlane.linxSession.symphonyEnabled, false)
 })
 
-test('LinxPiPodMirror projects runtime session metadata from the active branch after rewind', async (t) => {
+test('LinxPodMirror projects runtime session metadata from the active branch after rewind', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
@@ -720,7 +721,7 @@ test('LinxPiPodMirror projects runtime session metadata from the active branch a
   }
 
   const { runtime, rows } = createFakePodRuntime()
-  const mirror = new module.LinxPiPodMirror({
+  const mirror = new module.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     runtime,
@@ -761,13 +762,13 @@ test('LinxPiPodMirror projects runtime session metadata from the active branch a
   assert.equal([...rows.values()].some((row) => row.content === 'dirty assistant turn' && row.status === 'abandoned'), true)
 })
 
-test('LinxPiPodMirror writes tool execution audits to Pod resources', async (t) => {
+test('LinxPodMirror writes tool execution audits to Pod resources', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
   const sessionManager = createSessionManager()
   const { runtime, rows } = createFakePodRuntime()
-  const mirror = new module.LinxPiPodMirror({
+  const mirror = new module.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     runtime,
@@ -803,7 +804,7 @@ test('LinxPiPodMirror writes tool execution audits to Pod resources', async (t) 
   assert.equal(auditRows.every(([, row]) => JSON.stringify(row).includes('pwd') === false), true)
 })
 
-test('LinxPiPodMirror records failed streaming projection checkpoints', async (t) => {
+test('LinxPodMirror records failed streaming projection checkpoints', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   t.after(() => cleanup())
 
@@ -822,7 +823,7 @@ test('LinxPiPodMirror records failed streaming projection checkpoints', async (t
   })
 
   const errors = []
-  const mirror = new module.LinxPiPodMirror({
+  const mirror = new module.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     runtime: {
@@ -917,7 +918,7 @@ test('file sync checkpoint store persists queryable checkpoints across instances
   ])
 })
 
-test('LinxPiPodMirror persists failed streaming projection checkpoints to disk', async (t) => {
+test('LinxPodMirror persists failed streaming projection checkpoints to disk', async (t) => {
   const { module: mirrorModule, cleanup: cleanupMirror } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   const { module: storeModule, cleanup: cleanupStore } = await loadAutoModeModule('lib/sync-checkpoint-store.ts')
   t.after(() => {
@@ -943,7 +944,7 @@ test('LinxPiPodMirror persists failed streaming projection checkpoints to disk',
   })
 
   const checkpointStore = storeModule.createFileSyncCheckpointStore({ dir })
-  const mirror = new mirrorModule.LinxPiPodMirror({
+  const mirror = new mirrorModule.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     checkpointStore,
@@ -996,7 +997,7 @@ test('LinxPiPodMirror persists failed streaming projection checkpoints to disk',
   assert.match(pending[0].failures[0].message, /pod write failed/)
 })
 
-test('LinxPiPodMirror replays pending failed projections from the local session archive', async (t) => {
+test('LinxPodMirror replays pending failed projections from the local session archive', async (t) => {
   const { module: mirrorModule, cleanup: cleanupMirror } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   const { module: storeModule, cleanup: cleanupStore } = await loadAutoModeModule('lib/sync-checkpoint-store.ts')
   t.after(() => {
@@ -1024,7 +1025,7 @@ test('LinxPiPodMirror replays pending failed projections from the local session 
   let failWrites = true
   const { runtime, rows, writes } = createFakePodRuntime()
   const checkpointStore = storeModule.createFileSyncCheckpointStore({ dir })
-  const mirror = new mirrorModule.LinxPiPodMirror({
+  const mirror = new mirrorModule.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     checkpointStore,
@@ -1071,7 +1072,7 @@ test('LinxPiPodMirror replays pending failed projections from the local session 
   assert.equal(writes.filter((write) => write.resource === 'chat_message' && write.op === 'insert').length, 1)
 })
 
-test('LinxPiPodMirror does not replay failed auth projection checkpoints', async (t) => {
+test('LinxPodMirror does not replay failed auth projection checkpoints', async (t) => {
   const { module: mirrorModule, cleanup: cleanupMirror } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   const { module: storeModule, cleanup: cleanupStore } = await loadAutoModeModule('lib/sync-checkpoint-store.ts')
   t.after(() => {
@@ -1111,7 +1112,7 @@ test('LinxPiPodMirror does not replay failed auth projection checkpoints', async
   })
 
   const { runtime, writes } = createFakePodRuntime()
-  const mirror = new mirrorModule.LinxPiPodMirror({
+  const mirror = new mirrorModule.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     checkpointStore,
@@ -1125,7 +1126,7 @@ test('LinxPiPodMirror does not replay failed auth projection checkpoints', async
   assert.equal(writes.length, 0)
 })
 
-test('LinxPiPodMirror does not clear non-replayable pending tool checkpoints during message replay', async (t) => {
+test('LinxPodMirror does not clear non-replayable pending tool checkpoints during message replay', async (t) => {
   const { module: mirrorModule, cleanup: cleanupMirror } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
   const { module: storeModule, cleanup: cleanupStore } = await loadAutoModeModule('lib/sync-checkpoint-store.ts')
   t.after(() => {
@@ -1165,7 +1166,7 @@ test('LinxPiPodMirror does not clear non-replayable pending tool checkpoints dur
   })
 
   const { runtime } = createFakePodRuntime()
-  const mirror = new mirrorModule.LinxPiPodMirror({
+  const mirror = new mirrorModule.LinxPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
     checkpointStore,

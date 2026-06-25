@@ -1188,6 +1188,11 @@ runtime execution/startup archive bridge code; it must not call Pi getters just
 to derive local checkpoint paths. Feature/rendering modules that only need a
 session id, cwd, name, recent messages, or branch operation should request a
 named seam helper instead of widening this exception.
+The mirror's public API is LinX-owned (`LinxPodMirror`,
+`LinxPodMirrorOptions`, `LinxPodMirrorRewindProjectionInput`) because it
+projects local runtime state into LinX/Pod resources. Pi naming is allowed only
+inside private archive-reference helpers, checkpoint/action ids, and sync
+metadata that explicitly identify the upstream source as `pi-runtime`.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router
