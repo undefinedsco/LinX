@@ -59,7 +59,7 @@ function getLinxExitMessageState(interactive: any): LinxExitMessageState {
 }
 
 export function buildLinxExitMessage(interactive: any): string {
-  const sessionId = resolveLinxSessionId({ interactive, session: interactive?.session })
+  const sessionId = resolveLinxSessionId({ interactive })
   const usage = calculateSessionUsage(interactive?.session)
   const lines = ['LinX session closed.']
 
