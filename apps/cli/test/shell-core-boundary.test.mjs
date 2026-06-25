@@ -863,6 +863,17 @@ test('Symphony source WebID resolution stays behind the interactive runtime host
   assert.doesNotMatch(source, /\.podSession\?\.webId|\.session\?\.podSession|\.session\?\.runtime\?\.podSession|\.session\?\.state\?\.webId|\.state\?\.webId/)
 })
 
+test('Symphony command resolves active runtime through the interactive runtime host', () => {
+  const source = readFileSync(join(libRoot, 'linx-symphony-interactive-command.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-runtime-host\.js['"]/)
+  assert.match(source, /\bgetLinxInteractiveRuntime\b/)
+  assert.doesNotMatch(source, /interactive\?\.runtime/)
+  assert.doesNotMatch(source, /interactive\.runtime/)
+  assert.doesNotMatch(source, /target\?\.runtime/)
+  assert.doesNotMatch(source, /target\.runtime/)
+})
+
 test('feature modules refresh interactive provider count through the shell provider count seam', () => {
   const featureFiles = [
     'linx-ai-connect-command.ts',

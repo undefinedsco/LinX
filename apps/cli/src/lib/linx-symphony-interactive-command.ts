@@ -15,7 +15,7 @@ import {
 import { persistSymphonyIdeaToPod } from './symphony/pod-projection.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
-import { resolveLinxInteractivePodWebId } from './linx-interactive-runtime-host.js'
+import { getLinxInteractiveRuntime, resolveLinxInteractivePodWebId } from './linx-interactive-runtime-host.js'
 import { resolveLinxSessionId, resolveLinxSessionModelId } from './linx-session-metadata.js'
 import { queueLinxInteractiveSessionRuntimeProjection } from './linx-session-work-control.js'
 import {
@@ -59,7 +59,7 @@ export function installSymphonyCommand(interactive: any): void {
       }
 
       if (isLinxInteractiveSymphonyModeEnabled(target) && shouldProjectSymphonyInput(input)) {
-        getSessionControlManager(target, target.runtime).recordUserMessage({ text: input })
+        getSessionControlManager(target, getLinxInteractiveRuntime(target)).recordUserMessage({ text: input })
         await queueSymphonySecretaryProjection(target, input)
         await originalSubmit(input)
         return true
@@ -101,14 +101,14 @@ function parseSymphonyCommand(input: string): SymphonyCommand | null {
 
 async function handleSymphonyCommand(interactive: any, command: SymphonyCommand): Promise<void> {
   if (command.action === 'enable') {
-    setLinxInteractiveSymphonyModeEnabled(interactive, interactive.runtime, true)
+    setLinxInteractiveSymphonyModeEnabled(interactive, getLinxInteractiveRuntime(interactive), true)
     showLinxInteractiveStatus(interactive, formatSymphonyModeChangeStatus(true))
     await notifyLinxInteractiveSymphonyControlChange(interactive, true)
     return
   }
 
   if (command.action === 'disable') {
-    setLinxInteractiveSymphonyModeEnabled(interactive, interactive.runtime, false)
+    setLinxInteractiveSymphonyModeEnabled(interactive, getLinxInteractiveRuntime(interactive), false)
     abortInteractiveSymphonyDispatches(interactive)
     showLinxInteractiveStatus(interactive, formatSymphonyModeChangeStatus(false))
     await notifyLinxInteractiveSymphonyControlChange(interactive, false)
@@ -189,13 +189,14 @@ async function dispatchSymphonyWorkerFromInteractive(
   objective: string,
   source: SymphonySourceContext | undefined,
 ): Promise<void> {
+  const activeRuntime = getLinxInteractiveRuntime(interactive)
   const backend = resolveSymphonyWorkerBackend(interactive, objective)
   const agentRuntime = resolveSymphonyControlAgentRuntime(interactive)
   const workerModel = resolveSymphonyWorkerModel(interactive, objective, backend)
   const workerCredentialSource = resolveSymphonyWorkerCredentialSource(interactive, backend)
-  const workerGoalMode = isLinxInteractiveAutoModeEnabled(interactive, interactive?.runtime)
+  const workerGoalMode = isLinxInteractiveAutoModeEnabled(interactive, activeRuntime)
   const workerSupervisorIntervalMs = workerGoalMode ? resolveSymphonyWorkerSupervisorIntervalMs(interactive) : undefined
-  const cwd = resolveInteractiveCwd(interactive, interactive.runtime)
+  const cwd = resolveInteractiveCwd(interactive, activeRuntime)
   const dispatchGeneration = getLinxInteractiveSymphonyModeGeneration(interactive)
   const dispatches = getLinxInteractiveSymphonyDispatches(interactive)
   const controller = new AbortController()
@@ -213,7 +214,7 @@ async function dispatchSymphonyWorkerFromInteractive(
   const dispatchArgs = {
     objective: [objective],
     backend,
-    auto: isLinxInteractiveAutoModeEnabled(interactive, interactive?.runtime),
+    auto: workerGoalMode,
     cwd,
     plain: true,
     print: false,
@@ -293,14 +294,15 @@ function createInteractiveSymphonyRuntime(interactive: any) {
 }
 
 function resolveSymphonyWorkerBackend(interactive: any, objective?: string): AutoModeWorkerBackend {
+  const activeRuntime = getLinxInteractiveRuntime(interactive)
   const candidates = [
     getLinxInteractiveSymphonyWorkerBackend(interactive),
-    interactive?.runtime?.symphonyWorkerBackend,
+    activeRuntime?.symphonyWorkerBackend,
     extractSymphonyWorkerBackendFromText(objective),
-    interactive?.runtime?.runtimeBackend,
-    interactive?.runtime?.workerBackend,
-    interactive?.runtime?.backendCommandRouter?.backend,
-    interactive?.runtime?.backendSessionRef?.backend,
+    activeRuntime?.runtimeBackend,
+    activeRuntime?.workerBackend,
+    activeRuntime?.backendCommandRouter?.backend,
+    activeRuntime?.backendSessionRef?.backend,
   ]
   for (const candidate of candidates) {
     if (candidate === 'cc') {
@@ -318,10 +320,11 @@ function isSymphonyWorkerBackend(value: unknown): value is AutoModeWorkerBackend
 }
 
 function resolveSymphonyWorkerCredentialSource(interactive: any, backend: AutoModeWorkerBackend): AutoModeCredentialSource {
+  const activeRuntime = getLinxInteractiveRuntime(interactive)
   const configured = normalizeSymphonyCredentialSource(
     getLinxInteractiveSymphonyWorkerCredentialSource(interactive),
-    interactive?.runtime?.symphonyWorkerCredentialSource,
-    interactive?.runtime?.workerCredentialSource,
+    activeRuntime?.symphonyWorkerCredentialSource,
+    activeRuntime?.workerCredentialSource,
   )
   if (configured) {
     return configured
@@ -379,14 +382,15 @@ function extractSymphonyWorkerBackendFromText(input: string | undefined): AutoMo
 }
 
 function resolveSymphonyControlAgentRuntime(interactive: any): AgentRuntimeBackendConfig | undefined {
+  const activeRuntime = getLinxInteractiveRuntime(interactive)
   const configured = normalizeSymphonyAgentRuntimeConfig(
     getLinxInteractiveSymphonyAgentRuntime(interactive),
     getLinxInteractiveSymphonyAgentRuntimeConfig(interactive),
-    interactive?.runtime?.agentRuntime,
-    interactive?.runtime?.agentRuntimeConfig,
+    activeRuntime?.agentRuntime,
+    activeRuntime?.agentRuntimeConfig,
   )
   const model = configured?.model ?? normalizeSymphonyConfigString(
-    resolveLinxSessionModelId({ interactive, runtime: interactive?.runtime }),
+    resolveLinxSessionModelId({ interactive, runtime: activeRuntime }),
   )
   if (!configured && !model) {
     return undefined
@@ -431,10 +435,11 @@ function formatSymphonyControlRuntime(runtime: AgentRuntimeBackendConfig): strin
 }
 
 function resolveSymphonyWorkerModel(interactive: any, objective: string, backend: AutoModeWorkerBackend): string | undefined {
+  const activeRuntime = getLinxInteractiveRuntime(interactive)
   const configured = normalizeSymphonyConfigString(
     getLinxInteractiveSymphonyWorkerModel(interactive),
-    interactive?.runtime?.symphonyWorkerModel,
-    interactive?.runtime?.workerModel,
+    activeRuntime?.symphonyWorkerModel,
+    activeRuntime?.workerModel,
     extractSymphonyWorkerModelFromText(objective),
   )
   if (backend === 'claude' && configured && isProviderRoutedModel(configured)) {
@@ -444,9 +449,10 @@ function resolveSymphonyWorkerModel(interactive: any, objective: string, backend
 }
 
 function resolveSymphonyWorkerSupervisorIntervalMs(interactive: any): number {
+  const activeRuntime = getLinxInteractiveRuntime(interactive)
   const value = Number(
     getLinxInteractiveSymphonyWorkerSupervisorIntervalMs(interactive)
-    ?? interactive?.runtime?.symphonyWorkerSupervisorIntervalMs
+    ?? activeRuntime?.symphonyWorkerSupervisorIntervalMs
     ?? DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS,
   )
   if (!Number.isFinite(value) || value <= 0) {
@@ -600,7 +606,7 @@ interface SymphonySourceContext {
 }
 
 async function resolveSymphonySourceContext(interactive: any): Promise<SymphonySourceContext | undefined> {
-  const sessionId = resolveLinxSessionId({ interactive, runtime: interactive?.runtime })
+  const sessionId = resolveLinxSessionId({ interactive, runtime: getLinxInteractiveRuntime(interactive) })
   const webId = await resolveLinxInteractivePodWebId(interactive)
   if (typeof sessionId !== 'string' || !sessionId.trim() || !webId) {
     return undefined
