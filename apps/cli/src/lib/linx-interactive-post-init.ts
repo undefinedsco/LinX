@@ -6,6 +6,7 @@ import { renderLinxWelcomeHeaderAfterInit } from './linx-welcome-header.js'
 import { scheduleLinxCwdStartupNotice } from './linx-workspace-command.js'
 import { scheduleLinxVersionCheckAfterInit } from './linx-update-notification.js'
 import { installLinxEscapeInterrupt as installLinxInterruptControl } from './linx-interrupt-control.js'
+import { getLinxInteractiveRuntime } from './linx-interactive-runtime-host.js'
 import {
   installLinxFinalSubmitCommandRouter,
   installLinxInputCommandRouter,
@@ -78,7 +79,7 @@ function installPostInitInteractiveControls(
 export function installLinxEscapeInterrupt(interactive: any): void {
   installLinxInterruptControl(interactive, {
     disableAutoMode(target) {
-      void handleInteractiveAutoCommand(target, target?.runtime, false)
+      void handleInteractiveAutoCommand(target, getLinxInteractiveRuntime(target), false)
     },
   })
 }
