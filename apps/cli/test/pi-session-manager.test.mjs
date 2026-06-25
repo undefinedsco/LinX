@@ -16,10 +16,12 @@ test('LinX session manager lives outside the Pi adapter', async (t) => {
   assert.equal(typeof module.listLinxRuntimeSessions, 'function')
   assert.equal(typeof module.resolveLinxRuntimeSession, 'function')
   assert.equal(typeof module.createNativeLinxPodSessionSource, 'function')
+  assert.equal(typeof module.repairDanglingLinxRuntimeToolCalls, 'function')
   assert.equal(module.createLinxPiSessionManager, undefined)
   assert.equal(module.listLinxPiSessions, undefined)
   assert.equal(module.resolveLinxPiSession, undefined)
   assert.equal(module.createNativeLinxPiPodSessionSource, undefined)
+  assert.equal(module.repairDanglingLinxPiToolCalls, undefined)
 })
 
 test('createLinxRuntimeSessionManager creates persisted sessions by default', async (t) => {

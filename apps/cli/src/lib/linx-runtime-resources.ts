@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { getSolidLinxAppDir, getSolidLinxPiWebAccessConfigPath } from './solid-local-store.js'
+import { getSolidLinxAppDir, getSolidLinxWebAccessConfigPath } from './solid-local-store.js'
 
 export const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
 export const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
@@ -33,7 +33,7 @@ export function resolveBundledLinxSkillsDir(importMetaUrl = import.meta.url): st
 
 export function ensurePiWebAccessConfig(): void {
   const config = JSON.stringify({ workflow: 'none' }, null, 2) + '\n'
-  const linxPath = getSolidLinxPiWebAccessConfigPath()
+  const linxPath = getSolidLinxWebAccessConfigPath()
   const linxDir = getSolidLinxAppDir()
   if (!existsSync(linxDir)) {
     mkdirSync(linxDir, { recursive: true })

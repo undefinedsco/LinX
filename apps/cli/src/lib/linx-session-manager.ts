@@ -366,11 +366,11 @@ function materializePodSessionSnapshot(
 
 function openAndRepairLinxRuntimeSession(path: string, sessionDir?: string): SessionManager {
   const manager = SessionManager.open(path, sessionDir)
-  repairDanglingLinxPiToolCalls(manager)
+  repairDanglingLinxRuntimeToolCalls(manager)
   return manager
 }
 
-export function repairDanglingLinxPiToolCalls(manager: SessionManager): number {
+export function repairDanglingLinxRuntimeToolCalls(manager: SessionManager): number {
   let repaired = 0
   const maxRepairs = 10
 

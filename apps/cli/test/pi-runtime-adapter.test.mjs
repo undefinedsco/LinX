@@ -72,6 +72,16 @@ test('LinX runtime resource helper lives outside the Pi adapter', async (t) => {
   assert.equal(typeof module.withLinxSkillSourceInfo, 'function')
 })
 
+test('LinX Solid local store exposes web access config through LinX names', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/solid-local-store.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.getSolidLinxWebAccessConfigPath, 'function')
+  assert.equal(module.getSolidLinxPiWebAccessConfigPath, undefined)
+  assert.equal(module.SOLID_LINX_WEB_ACCESS_CONFIG_FILE_NAME, 'pi-web-access.json')
+  assert.equal(module.SOLID_LINX_PI_WEB_ACCESS_CONFIG_FILE_NAME, undefined)
+})
+
 test('LinX startup login policy helper lives outside the Pi adapter', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-login-policy.ts')
   t.after(() => cleanup())
@@ -100,8 +110,10 @@ test('LinX runtime coding tools helper lives outside the Pi adapter', async (t) 
   const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-coding-tools.ts')
   t.after(() => cleanup())
 
-  assert.equal(module.DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS, 15)
-  assert.equal(typeof module.createLinxPiCodingTools, 'function')
+  assert.equal(module.DEFAULT_LINX_BASH_TIMEOUT_SECONDS, 15)
+  assert.equal(typeof module.createLinxRuntimeCodingTools, 'function')
+  assert.equal(module.DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS, undefined)
+  assert.equal(module.createLinxPiCodingTools, undefined)
 })
 
 test('LinX runtime OAuth provider helper lives outside the Pi adapter', async (t) => {
@@ -1831,7 +1843,7 @@ test('LinX runtime coding tools apply a default timeout to bash when the model o
   })
 
   const execCalls = []
-  const tools = module.createLinxPiCodingTools(cwd, {
+  const tools = module.createLinxRuntimeCodingTools(cwd, {
     bashOperations: {
       async exec(command, workingDirectory, options) {
         execCalls.push({ command, workingDirectory, options })
@@ -1845,7 +1857,7 @@ test('LinX runtime coding tools apply a default timeout to bash when the model o
   await bash.execute('call_timeout_1', { command: 'pwd' })
   await bash.execute('call_timeout_2', { command: 'pwd', timeout: 7 })
 
-  assert.equal(execCalls[0].options.timeout, module.DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS)
+  assert.equal(execCalls[0].options.timeout, module.DEFAULT_LINX_BASH_TIMEOUT_SECONDS)
   assert.equal(execCalls[1].options.timeout, 7)
 })
 

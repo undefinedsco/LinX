@@ -76,7 +76,7 @@ const LINX_THEME = {
   },
 }
 
-export function ensureLinxPiTheme(agentDir: string): string {
+export function ensureLinxTheme(agentDir: string): string {
   const themesDir = join(agentDir, 'themes')
   mkdirSync(themesDir, { recursive: true })
   const themePath = join(themesDir, 'linx.json')
