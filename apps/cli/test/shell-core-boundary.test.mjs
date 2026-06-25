@@ -762,6 +762,7 @@ test('rewind transcript refresh goes through the shell chat rendering seam', () 
 
 test('feature modules display interactive warnings through the shell warning seam', () => {
   const featureFiles = [
+    'linx-pod-backed-extension-ui.ts',
     'linx-rewind-command.ts',
     'linx-submitted-user-message-recording.ts',
   ]

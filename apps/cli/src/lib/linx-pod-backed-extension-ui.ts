@@ -3,6 +3,7 @@ import { createPodBackedExtensionUiContext } from './pod-backed-extension-ui-con
 import { getSessionControlManager } from './session-control.js'
 import { registerLinxExtensionUiContextHandler } from './linx-extension-ui-context-router.js'
 import { resolveLinxSessionCwd, resolveLinxSessionId } from './linx-session-metadata.js'
+import { showLinxInteractiveWarning } from './linx-interactive-warning-display.js'
 
 export function installPodBackedExtensionUi(
   interactive: any,
@@ -27,7 +28,7 @@ export function installPodBackedExtensionUi(
         sessionControl,
         onWarning(error) {
           const message = error instanceof Error ? error.message : String(error)
-          contextInteractive.showWarning?.(`Pod approval sync unavailable: ${message}`)
+          showLinxInteractiveWarning(contextInteractive, `Pod approval sync unavailable: ${message}`)
         },
       })
     },

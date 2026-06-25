@@ -155,8 +155,9 @@ Hard rules:
   Feature modules may classify recoverable warning conditions and provide the
   warning text, but Pi `interactive.showWarning` belongs behind
   `apps/cli/src/lib/linx-interactive-warning-display.ts`. Rewind, auto,
-  submitted-message recording, and future recovery flows must route visible
-  warnings through that seam instead of depending on Pi's warning method shape.
+  Pod-backed extension context, submitted-message recording, and future
+  recovery flows must route visible warnings through that seam instead of
+  depending on Pi's warning method shape.
 - Provider-count refresh is shell/provider rendering state, not login or
   AI-connect business logic. Login and provider credential flows may refresh the
   model registry or save credentials through shared runtime contracts, but Pi
