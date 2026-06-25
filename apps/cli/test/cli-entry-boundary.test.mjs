@@ -11,6 +11,8 @@ const piRuntimeExecutionSource = readFileSync(new URL('../src/lib/linx-pi-runtim
 
 const piStartupPlanSource = readFileSync(new URL('../src/lib/linx-pi-startup-plan.ts', import.meta.url), 'utf8')
 
+const piResumeCliAdmissionSource = readFileSync(new URL('../src/lib/linx-pi-resume-cli-admission.ts', import.meta.url), 'utf8')
+
 const cliRuntimeAdapterFactorySource = readFileSync(new URL('../src/linx-cli-runtime-adapter-factory.ts', import.meta.url), 'utf8')
 
 test('CLI entry delegates yargs command registration to a CLI app module', () => {
@@ -68,9 +70,20 @@ test('default Pi/TUI command module delegates auto-mode and backend admission po
 
 test('default Pi/TUI command module delegates resume selector admission policy', () => {
   assert.match(piCliCommandSource, /from ['"]\.\/linx-pi-resume-cli-admission\.js['"]/, 'Pi command orchestration should import resume selector admission policy')
+  assert.match(piCliCommandSource, /\bhandleLinxResumeCliAdmission\b/, 'default command module should call the resume admission helper through a LinX name')
+  assert.doesNotMatch(piCliCommandSource, /\bhandleLinxPiResumeCliAdmission\b/, 'default command module should not call the resume admission helper through Pi naming')
   assert.doesNotMatch(piCliCommandSource, /from ['"]\.\/linx-session-selector-ui\.js['"]/, 'Pi command orchestration should not import selector rendering directly')
   assert.doesNotMatch(piCliCommandSource, /\bselectLinxPiSession\b/, 'resume selector UI call should live in the resume admission policy module')
   assert.doesNotMatch(piCliCommandSource, /No session selected/, 'resume selector user copy should live in the resume admission policy module')
+})
+
+test('resume CLI admission public surface uses LinX names', () => {
+  assert.match(piResumeCliAdmissionSource, /\bLinxResumeCliAdmissionArgs\b/)
+  assert.match(piResumeCliAdmissionSource, /\bLinxResumeCliAdmissionOptions\b/)
+  assert.match(piResumeCliAdmissionSource, /\bhandleLinxResumeCliAdmission\b/)
+  assert.doesNotMatch(piResumeCliAdmissionSource, /\bLinxPiResumeCliAdmissionArgs\b/)
+  assert.doesNotMatch(piResumeCliAdmissionSource, /\bLinxPiResumeCliAdmissionOptions\b/)
+  assert.doesNotMatch(piResumeCliAdmissionSource, /\bhandleLinxPiResumeCliAdmission\b/)
 })
 
 test('default Pi/TUI command module delegates runtime execution', () => {
