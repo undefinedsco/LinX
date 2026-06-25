@@ -514,6 +514,20 @@ test('interactive lifecycle completion state is kept out of interactive hidden f
   assert.deepEqual(violations, [])
 })
 
+test('feature modules read interactive init state through the lifecycle host', () => {
+  const featureFiles = [
+    'linx-ai-connect-command.ts',
+    'linx-login-flow.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-interactive-lifecycle-host\.js['"]/, target)
+    assert.match(source, /\bisLinxInteractiveInitialized\b/, target)
+    assert.doesNotMatch(source, /\.isInitialized\b/, target)
+  }
+})
+
 test('interactive post-init resolves active runtime through the runtime host', () => {
   const source = readFileSync(join(libRoot, 'linx-interactive-post-init.ts'), 'utf8')
 
