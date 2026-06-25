@@ -16,9 +16,9 @@ export interface LinxDefaultCliCommands {
   execCommand: CommandModule<object, LinxDefaultCommandArgs>
 }
 
-export type RunPiCommandOptions = LinxTopLevelCommandAdmissionOptions
+export type RunLinxDefaultCommandOptions = LinxTopLevelCommandAdmissionOptions
 
-export async function runPiCommand(argv: {
+export async function runLinxDefaultCommand(argv: {
   cwd?: string
   model?: string
   port?: number
@@ -33,12 +33,12 @@ export async function runPiCommand(argv: {
   'pi-sync-status'?: boolean
   'pi-sync-retry'?: string
   prompt?: string[]
-} & AutoModeCommandArgs, dependencies: LinxDefaultCliCommandDependencies, options: RunPiCommandOptions = {}): Promise<void> {
-  assertLinxPiCliSessionSelectorCompatibility(argv)
+} & AutoModeCommandArgs, dependencies: LinxDefaultCliCommandDependencies, options: RunLinxDefaultCommandOptions = {}): Promise<void> {
+  assertLinxDefaultCliSessionSelectorCompatibility(argv)
   assertDefaultStartupPromptTokenIsAllowed(argv, options)
   if (await handleLinxPiResumeCliAdmission(argv, {
     runWithSelectedSession(selectedArgv) {
-      return runPiCommand(selectedArgv, dependencies, options)
+      return runLinxDefaultCommand(selectedArgv, dependencies, options)
     },
   })) {
     return
@@ -63,7 +63,7 @@ export async function runPiCommand(argv: {
   })
 }
 
-export function assertLinxPiCliSessionSelectorCompatibility(argv: {
+export function assertLinxDefaultCliSessionSelectorCompatibility(argv: {
   session?: string
   'session-id'?: string
   continue?: boolean
@@ -73,7 +73,7 @@ export function assertLinxPiCliSessionSelectorCompatibility(argv: {
   assertLinxPiStartupSessionSelectorCompatibility(argv)
 }
 
-export interface PiCommandArgs {
+export interface LinxDefaultCommandBaseArgs {
   cwd?: string
   model?: string
   port?: number
@@ -90,9 +90,9 @@ export interface PiCommandArgs {
   prompt?: string[]
 }
 
-export type LinxDefaultCommandArgs = PiCommandArgs & AutoModeCommandArgs
+export type LinxDefaultCommandArgs = LinxDefaultCommandBaseArgs & AutoModeCommandArgs
 
-export function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandArgs> {
+export function buildLinxDefaultCommand(command: Argv<object>): Argv<LinxDefaultCommandArgs> {
   const configured = buildAutoModeOptions(command)
     .option('cwd', {
       type: 'string',
@@ -162,18 +162,18 @@ export function createLinxDefaultCliCommands(dependencies: LinxDefaultCliCommand
     defaultCommand: {
       command: '$0 [prompt..]',
       describe: 'Run LinX with the selected runtime backend',
-      builder: buildPiCommand,
+      builder: buildLinxDefaultCommand,
       handler(argv): Promise<void> {
-        return runPiCommand(argv, dependencies, { rejectReservedPromptCommands: true })
+        return runLinxDefaultCommand(argv, dependencies, { rejectReservedPromptCommands: true })
       },
     },
     execCommand: {
       command: 'exec [prompt..]',
       aliases: ['e'],
       describe: 'Run LinX non-interactively',
-      builder: buildPiCommand,
+      builder: buildLinxDefaultCommand,
       async handler(argv): Promise<void> {
-        await runPiCommand({ ...argv, print: true }, dependencies)
+        await runLinxDefaultCommand({ ...argv, print: true }, dependencies)
       },
     },
   }
