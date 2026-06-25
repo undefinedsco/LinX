@@ -38,7 +38,7 @@ export function setRuntimeCwd(interactive: any, runtime: any, cwd: string): void
 }
 
 export function scheduleLinxCwdStartupNotice(interactive: any, sessionCwd: string): void {
-  const storedCwd = interactive?.session?.cwd ?? sessionCwd
+  const storedCwd = resolveLinxSessionCwd({ interactive }, sessionCwd)
   const currentCwd = process.cwd()
 
   if (currentCwd === storedCwd) {

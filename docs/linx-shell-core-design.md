@@ -228,8 +228,9 @@ Hard rules:
   belongs behind `apps/cli/src/lib/linx-session-cwd-router.ts`; commands may
   resolve or request a cwd change but must not know the mutable
   Pi/runtime/session-manager field layout. Resume/exit copy, welcome/header
-  rendering, status-line tokens, extension context, and Symphony status may use
-  session metadata, but they must obtain it through the seam.
+  rendering, status-line tokens, Pod-backed extension context, Secretary auto
+  input context, and Symphony status may use session metadata, but they must
+  obtain it through the seam.
 - Active session work control is shell session lifecycle, not feature command
   logic. Checks for Pi session streaming/bash state, follow-up delivery option
   selection, and abort calls belong
