@@ -749,6 +749,14 @@ test('ai connect command status rendering goes through the shell status seam', (
   assert.doesNotMatch(source, /\.ui(?:\?\.)?\.requestRender(?:\?\.)?\s*\(/)
 })
 
+test('ai connect command resolves runtime credential saving through the runtime host', () => {
+  const source = readFileSync(join(libRoot, 'linx-ai-connect-command.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-runtime-host\.js['"]/)
+  assert.doesNotMatch(source, /interactive\?\.runtime/)
+  assert.doesNotMatch(source, /interactive\.runtime/)
+})
+
 test('restored auto startup status rendering goes through the shell status seam', () => {
   const source = readFileSync(join(libRoot, 'linx-restored-auto-startup.ts'), 'utf8')
 

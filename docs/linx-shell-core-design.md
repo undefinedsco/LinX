@@ -1316,7 +1316,8 @@ Current shell-state rules:
   but must not use runtime hidden fields such as before-invalidate or rebind
   callback slots. The active runtime object itself is also a runtime-host lookup:
   feature modules that only need the current runtime must request it through the
-  host helper instead of reading `interactive.runtime`.
+  host helper instead of reading `interactive.runtime`. Runtime-owned feature
+  hooks, such as the `/ai connect` credential saver, follow the same rule.
 - Runtime Pod session cache belongs in `linx-interactive-runtime-host.ts`.
   Shell modules that discover or reuse `runtime.podSession` must use explicit
   host helpers; feature modules such as Symphony may read/write the cached Pod
