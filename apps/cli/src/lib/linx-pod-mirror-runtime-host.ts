@@ -39,6 +39,13 @@ export function getLinxPodMirrorForRuntime(runtime: unknown): LinxPiPodMirror | 
     : undefined
 }
 
+export function getLinxPodMirrorForInteractiveRuntime(
+  interactive: any,
+  runtime?: unknown,
+): LinxPiPodMirror | undefined {
+  return getLinxPodMirrorForRuntime(runtime) ?? getLinxPodMirrorForRuntime(interactive?.runtime)
+}
+
 export function createLinxPodMirrorRuntimeHost(options: LinxPodMirrorRuntimeHostOptions): LinxPodMirrorRuntimeHost {
   const podMirror = new LinxPiPodMirror({
     cwd: options.cwd,
