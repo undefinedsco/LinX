@@ -704,8 +704,9 @@ startup path split by responsibility:
 
 The CLI app entry is product-facing composition code. It may import the default
 Pi/TUI command orchestration module, but the command descriptor it registers for
-`linx` itself, plus the factory/types that return that descriptor, must be named
-as default LinX command surfaces, not as Pi command surfaces.
+`linx` itself, plus the factory, runner, builder, guard, and argv types that
+compose that default descriptor, must be named as default LinX command surfaces,
+not as Pi command surfaces.
 
 Startup side-effect ordering is part of the boundary:
 
