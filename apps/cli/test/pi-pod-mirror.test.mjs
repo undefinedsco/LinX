@@ -236,8 +236,8 @@ test('Pod mirror sync recovery lives outside the Pi adapter', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror-sync-recovery.ts')
   t.after(() => cleanup())
 
-  assert.equal(typeof module.listPendingPiPodMirrorSync, 'function')
-  assert.equal(typeof module.retryPendingPiPodMirrorSync, 'function')
+  assert.equal(typeof module.listPendingLinxPodMirrorSync, 'function')
+  assert.equal(typeof module.retryPendingLinxPodMirrorSync, 'function')
 })
 
 test('buildPodMessageRow maps Pi user and assistant messages into standard Pod message rows', async (t) => {
