@@ -710,6 +710,10 @@ Pi/TUI command orchestration module, but the command descriptor it registers for
 `linx` itself, plus the factory, runner, builder, guard, and argv types that
 compose that default descriptor, must be named as default LinX command surfaces,
 not as Pi command surfaces.
+The runtime execution module may call Pi runtime primitives such as print mode,
+but its public adapter contract and CLI runtime runner/factory names are LinX CLI
+surfaces. Do not name those exported contracts as "for Pi command" when the CLI
+app consumes them as the default LinX runtime path.
 
 Startup side-effect ordering is part of the boundary:
 

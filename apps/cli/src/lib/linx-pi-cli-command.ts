@@ -4,11 +4,11 @@ import { assertDefaultStartupPromptTokenIsAllowed, type LinxTopLevelCommandAdmis
 import { handleLinxPodMirrorSyncCliAdmission } from './linx-pod-mirror-sync-cli-admission.js'
 import { handleLinxAutoModeCliAdmission } from './linx-auto-mode-cli-admission.js'
 import { handleLinxPiResumeCliAdmission } from './linx-pi-resume-cli-admission.js'
-import { runLinxPiRuntime, type CreateLinxRuntimeAdapterForPiCommand } from './linx-pi-runtime-execution.js'
+import { runLinxCliRuntime, type CreateLinxCliRuntimeAdapter } from './linx-pi-runtime-execution.js'
 import { assertLinxPiStartupSessionSelectorCompatibility, createLinxPiStartupPlan } from './linx-pi-startup-plan.js'
 
 export interface LinxDefaultCliCommandDependencies {
-  createRuntimeAdapter: CreateLinxRuntimeAdapterForPiCommand
+  createRuntimeAdapter: CreateLinxCliRuntimeAdapter
 }
 
 export interface LinxDefaultCliCommands {
@@ -57,7 +57,7 @@ export async function runLinxDefaultCommand(argv: {
   }
 
   const startupPlan = await createLinxPiStartupPlan(argv)
-  await runLinxPiRuntime({
+  await runLinxCliRuntime({
     ...startupPlan.runtimeOptions,
     adapter: dependencies.createRuntimeAdapter(startupPlan.adapterOptions),
   })

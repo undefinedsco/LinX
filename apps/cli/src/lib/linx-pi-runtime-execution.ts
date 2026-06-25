@@ -6,7 +6,7 @@ import { clearDefaultPodDataSession, getDefaultPodDataSession } from './pod-data
 import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.js'
 import { stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 
-export interface LinxPiCliRuntimeAdapter {
+export interface LinxCliRuntimeAdapter {
   readonly cwd: string
   start(): Promise<void>
   close(): Promise<void>
@@ -17,7 +17,7 @@ export interface LinxPiCliRuntimeAdapter {
   }): Promise<AgentSessionRuntime>
 }
 
-export interface CreateLinxRuntimeAdapterForPiCommandOptions {
+export interface CreateLinxCliRuntimeAdapterOptions {
   cwd: string
   model?: string
   backend: 'cloud'
@@ -31,12 +31,12 @@ export interface CreateLinxRuntimeAdapterForPiCommandOptions {
   }
 }
 
-export type CreateLinxRuntimeAdapterForPiCommand = (
-  options: CreateLinxRuntimeAdapterForPiCommandOptions,
-) => LinxPiCliRuntimeAdapter
+export type CreateLinxCliRuntimeAdapter = (
+  options: CreateLinxCliRuntimeAdapterOptions,
+) => LinxCliRuntimeAdapter
 
-export interface RunLinxPiRuntimeOptions {
-  adapter: LinxPiCliRuntimeAdapter
+export interface RunLinxCliRuntimeOptions {
+  adapter: LinxCliRuntimeAdapter
   archive: {
     sessionId: string
   }
@@ -50,7 +50,7 @@ export interface RunLinxPiRuntimeOptions {
   symphonyEnabled: boolean
 }
 
-export async function runLinxPiRuntime(options: RunLinxPiRuntimeOptions): Promise<void> {
+export async function runLinxCliRuntime(options: RunLinxCliRuntimeOptions): Promise<void> {
   const { adapter } = options
   await adapter.start()
 

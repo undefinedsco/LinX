@@ -1,7 +1,7 @@
 import { createLinxRuntimeAdapter } from './lib/pi-adapter/runtime.js'
-import type { CreateLinxRuntimeAdapterForPiCommand } from './lib/linx-pi-runtime-execution.js'
+import type { CreateLinxCliRuntimeAdapter } from './lib/linx-pi-runtime-execution.js'
 
-export const createDefaultLinxRuntimeAdapterForPiCommand: CreateLinxRuntimeAdapterForPiCommand = (options) => createLinxRuntimeAdapter({
+export const createDefaultLinxCliRuntimeAdapter: CreateLinxCliRuntimeAdapter = (options) => createLinxRuntimeAdapter({
   async createRemoteCompletion(completionOptions) {
     const chatApi = await import('./lib/chat-api.js')
     return chatApi.createRemoteCompletionResult(completionOptions)

@@ -7,7 +7,7 @@ import { configCommand } from './lib/linx-config-command.js'
 import { codexNativeProxyCommand, symphonyCodexMcpCommand } from './lib/linx-codex-plugin-command.js'
 import { registerRetiredCommands } from './lib/linx-retired-command.js'
 import { createLinxDefaultCliCommands } from './lib/linx-pi-cli-command.js'
-import { createDefaultLinxRuntimeAdapterForPiCommand } from './linx-cli-runtime-adapter-factory.js'
+import { createDefaultLinxCliRuntimeAdapter } from './linx-cli-runtime-adapter-factory.js'
 import { linxInstallPackageCommand, linxListPackageCommand, linxRemovePackageCommand, linxUpdatePackageCommand } from './lib/linx-package-command.js'
 import { modelsCommand } from './lib/linx-models-command.js'
 import { formatLinxCliErrorMessage } from './lib/linx-cloud-errors.js'
@@ -24,7 +24,7 @@ function readPackageVersion(): string {
 
 export function runLinxCli(argv = process.argv): void {
   const { defaultCommand, execCommand } = createLinxDefaultCliCommands({
-    createRuntimeAdapter: createDefaultLinxRuntimeAdapterForPiCommand,
+    createRuntimeAdapter: createDefaultLinxCliRuntimeAdapter,
   })
 
   const cli = registerRetiredCommands(yargs(hideBin(argv))
