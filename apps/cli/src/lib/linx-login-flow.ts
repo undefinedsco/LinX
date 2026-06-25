@@ -41,6 +41,7 @@ import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import { getLinxInteractiveAuthState } from './linx-interactive-auth-state-host.js'
 import { isLinxInteractiveInitialized } from './linx-interactive-lifecycle-host.js'
+import { stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 import {
   canMountLinxEditorComponent,
   createLinxLoginDialogComponent,
@@ -312,7 +313,7 @@ async function startLinxCloudLogin(interactive: any, loginOptions: { reason?: Li
 
     if (selected === AUTH_OPTION_EXIT) {
       if (reason === 'startup') {
-        interactive.stop?.()
+        stopInteractiveShellUnlessRestarting(interactive)
       } else {
         showLinxInteractiveStatus(interactive, 'LinX Cloud authorization cancelled.')
       }
