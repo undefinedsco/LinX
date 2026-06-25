@@ -2,7 +2,7 @@ import { resolveAccountBaseUrl } from './account-api.js'
 import type { AutoModeCommandArgs } from './auto-mode-command.js'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
-import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
+import { resolveLinxStartupControlState } from './linx-pi-startup-control.js'
 import type { CreateLinxCliRuntimeAdapterOptions, RunLinxCliRuntimeOptions } from './linx-pi-runtime-execution.js'
 import { resolveLinxStartupLoginPromptDecision } from './linx-startup-login-policy.js'
 import { assertLinxPiSessionSelectorCompatibility, createLinxPiSessionManager } from './linx-session-manager.js'
@@ -48,7 +48,7 @@ export async function createLinxCliStartupPlan(argv: LinxCliStartupPlanArgs): Pr
   })
   const restoreAutoFromHydration = Boolean(argv.session || argv['session-id'] || argv.continue || argv.last)
   const archive = getLinxCliStartupArchiveIdentity(sessionManager)
-  const controlState = await resolveLinxPiStartupControlState({
+  const controlState = await resolveLinxStartupControlState({
     requestedAuto: typeof argv.auto === 'boolean' ? argv.auto : undefined,
     hydrateFromPod: !argv.print && !startupLoginPrompt.shouldPrompt,
     restoreAutoFromHydration,

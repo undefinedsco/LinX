@@ -1,27 +1,27 @@
 import { createLinxPodDataSession } from './linx-pod-data-session-factory.js'
-import { deriveLinxPiStartupControlState, hydrateLinxPiControlState } from './linx-startup-control-state.js'
+import { deriveLinxStartupControlState, hydrateLinxControlState } from './linx-startup-control-state.js'
 import { drizzle, solidResources, type SolidDatabase } from './models.js'
 
-export interface LinxPiStartupArchiveIdentity {
+export interface LinxStartupArchiveIdentity {
   sessionId: string
   createdAt: Date
 }
 
-export interface ResolveLinxPiStartupControlStateOptions {
+export interface ResolveLinxStartupControlStateOptions {
   requestedAuto?: boolean
   hydrateFromPod: boolean
   restoreAutoFromHydration?: boolean
-  archive: LinxPiStartupArchiveIdentity
+  archive: LinxStartupArchiveIdentity
 }
 
-export interface LinxPiStartupControlState {
+export interface LinxStartupControlState {
   autoEnabled: boolean
   symphonyEnabled: boolean
 }
 
-export async function resolveLinxPiStartupControlState(
-  options: ResolveLinxPiStartupControlStateOptions,
-): Promise<LinxPiStartupControlState> {
+export async function resolveLinxStartupControlState(
+  options: ResolveLinxStartupControlStateOptions,
+): Promise<LinxStartupControlState> {
   if (!options.hydrateFromPod) {
     return {
       autoEnabled: options.requestedAuto === true,
@@ -45,7 +45,7 @@ export async function resolveLinxPiStartupControlState(
       resourcePreparation: 'off' as never,
       schema: solidResources,
     }) as unknown as SolidDatabase
-    const hydration = await hydrateLinxPiControlState({
+    const hydration = await hydrateLinxControlState({
       db,
       sessionId: options.archive.sessionId,
       createdAt: options.archive.createdAt,
@@ -57,7 +57,7 @@ export async function resolveLinxPiStartupControlState(
       },
     })
     return {
-      ...deriveLinxPiStartupControlState({
+      ...deriveLinxStartupControlState({
         requestedAuto: options.requestedAuto,
         hydration,
         restoreAutoFromHydration: options.restoreAutoFromHydration,

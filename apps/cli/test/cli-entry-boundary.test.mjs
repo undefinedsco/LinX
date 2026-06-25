@@ -102,7 +102,7 @@ test('default Pi/TUI command module delegates startup planning', () => {
   assert.doesNotMatch(piCliCommandSource, /\bresolveLinxStartupLoginPromptDecision\b/, 'startup login prompt decision should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bresolveStartupLinxPodDataSession\b/, 'startup Pod session lookup should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bcreateLinxPiSessionManager\b/, 'Pi session manager construction should live in the startup plan module')
-  assert.doesNotMatch(piCliCommandSource, /\bresolveLinxPiStartupControlState\b/, 'auto/Symphony startup control state should live in the startup plan module')
+  assert.doesNotMatch(piCliCommandSource, /\bresolveLinxStartupControlState\b/, 'auto/Symphony startup control state should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bgetDefaultPodDataSession\b/, 'runtime Pod data session source should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bresolveAccountBaseUrl\b/, 'Cloud provider URL resolution should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bLINX_AGENT_DIR\b/, 'agent-dir details should live below command admission')

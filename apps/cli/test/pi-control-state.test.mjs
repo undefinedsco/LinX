@@ -28,11 +28,21 @@ test('startup control state lives outside the Pi adapter', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
   t.after(() => cleanup())
 
-  assert.equal(typeof module.deriveLinxPiStartupControlState, 'function')
-  assert.equal(typeof module.hydrateLinxPiControlState, 'function')
+  assert.equal(typeof module.deriveLinxStartupControlState, 'function')
+  assert.equal(typeof module.hydrateLinxControlState, 'function')
+  assert.equal(module.deriveLinxPiStartupControlState, undefined)
+  assert.equal(module.hydrateLinxPiControlState, undefined)
 })
 
-test('hydrateLinxPiControlState reads auto control state from Pod session metadata', async (t) => {
+test('startup control resolver exposes LinX control-plane names', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-pi-startup-control.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.resolveLinxStartupControlState, 'function')
+  assert.equal(module.resolveLinxPiStartupControlState, undefined)
+})
+
+test('hydrateLinxControlState reads auto control state from Pod session metadata', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
   t.after(() => cleanup())
 
@@ -50,7 +60,7 @@ test('hydrateLinxPiControlState reads auto control state from Pod session metada
     },
   })
 
-  const hydration = await module.hydrateLinxPiControlState({
+  const hydration = await module.hydrateLinxControlState({
     db,
     sessionId: 'session-1',
     createdAt: '2026-05-21T00:00:00.000Z',
@@ -62,11 +72,11 @@ test('hydrateLinxPiControlState reads auto control state from Pod session metada
   assert.equal(hydration.result.authority, 'core')
 })
 
-test('hydrateLinxPiControlState returns null state when session metadata is absent', async (t) => {
+test('hydrateLinxControlState returns null state when session metadata is absent', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
   t.after(() => cleanup())
 
-  const hydration = await module.hydrateLinxPiControlState({
+  const hydration = await module.hydrateLinxControlState({
     db: createDb(null),
     sessionId: 'session-2',
     createdAt: '2026-05-21T00:00:00.000Z',
@@ -76,12 +86,12 @@ test('hydrateLinxPiControlState returns null state when session metadata is abse
   assert.equal(hydration.result.status, 'completed')
 })
 
-test('hydrateLinxPiControlState reports failed control-plane sync without throwing', async (t) => {
+test('hydrateLinxControlState reports failed control-plane sync without throwing', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
   t.after(() => cleanup())
 
   const errors = []
-  const hydration = await module.hydrateLinxPiControlState({
+  const hydration = await module.hydrateLinxControlState({
     db: createDb(null, { failById: true }),
     sessionId: 'session-3',
     createdAt: '2026-05-21T00:00:00.000Z',
@@ -94,7 +104,7 @@ test('hydrateLinxPiControlState reports failed control-plane sync without throwi
   assert.equal(errors.length, 1)
 })
 
-test('deriveLinxPiStartupControlState restores auto only for resume/last startup', async (t) => {
+test('deriveLinxStartupControlState restores auto only for resume/last startup', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
   t.after(() => cleanup())
 
@@ -108,14 +118,14 @@ test('deriveLinxPiStartupControlState restores auto only for resume/last startup
     },
   }
 
-  assert.deepEqual(module.deriveLinxPiStartupControlState({
+  assert.deepEqual(module.deriveLinxStartupControlState({
     hydration: hydrated,
   }), {
     autoEnabled: false,
     symphonyEnabled: true,
   })
 
-  assert.deepEqual(module.deriveLinxPiStartupControlState({
+  assert.deepEqual(module.deriveLinxStartupControlState({
     hydration: hydrated,
     restoreAutoFromHydration: true,
   }), {
@@ -123,7 +133,7 @@ test('deriveLinxPiStartupControlState restores auto only for resume/last startup
     symphonyEnabled: true,
   })
 
-  assert.deepEqual(module.deriveLinxPiStartupControlState({
+  assert.deepEqual(module.deriveLinxStartupControlState({
     requestedAuto: true,
     hydration: hydrated,
     restoreAutoFromHydration: false,
@@ -132,7 +142,7 @@ test('deriveLinxPiStartupControlState restores auto only for resume/last startup
     symphonyEnabled: true,
   })
 
-  assert.deepEqual(module.deriveLinxPiStartupControlState({
+  assert.deepEqual(module.deriveLinxStartupControlState({
     requestedAuto: false,
     hydration: hydrated,
     restoreAutoFromHydration: true,
