@@ -85,6 +85,13 @@ export function resolveLinxInteractiveRuntimeProviderLabel(interactive: any): st
   return normalizeRuntimeHostString(bridge?.providerLabel) ?? 'LinX Cloud'
 }
 
+export function clearLinxInteractiveRuntimeAuthPromptOnStart(interactive: any): void {
+  const bridge = getLinxInteractiveRuntimeAuthBridge(interactive)
+  if (bridge && typeof bridge === 'object') {
+    bridge.shouldPromptLoginOnStart = false
+  }
+}
+
 function getLinxInteractiveRuntimeAuthBridge(interactive: any): any {
   return interactive?.runtimeHost?.linxAuthBridge
     ?? interactive?.runtime?.linxAuthBridge
