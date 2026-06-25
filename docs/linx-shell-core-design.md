@@ -1328,6 +1328,10 @@ Current shell-state rules:
   `linx-interactive-lifecycle-host.ts`. Feature modules that need to decide
   whether TUI-only UI can be shown must use a named lifecycle helper instead of
   reading `interactive.isInitialized`.
+- Interactive stop/exit requests from feature modules must go through the shell
+  lifecycle seam, such as `stopInteractiveShellUnlessRestarting`, instead of
+  calling `interactive.stop()` directly. Feature code does not own restart-aware
+  terminal shutdown.
 - Runtime Pod session cache belongs in `linx-interactive-runtime-host.ts`.
   Shell modules that discover or reuse `runtime.podSession` must use explicit
   host helpers; feature modules such as Symphony may read/write the cached Pod

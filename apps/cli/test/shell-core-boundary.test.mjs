@@ -495,6 +495,14 @@ test('login flow keeps interactive auth state behind the shell auth state seam',
   assert.doesNotMatch(source, /(?:interactive|target)\s*\[\s*LINX_AUTH_/)
 })
 
+test('login flow stops startup cancellation through the shell lifecycle seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/shell-lifecycle\.js['"]/)
+  assert.match(source, /\bstopInteractiveShellUnlessRestarting\b/)
+  assert.doesNotMatch(source, /\.stop(?:\?\.)?\s*\(/)
+})
+
 test('interactive lifecycle completion state is kept out of interactive hidden fields', () => {
   const violations = []
   const directLifecycleStatePattern = /__linxInteractiveInitCompleted\b/
