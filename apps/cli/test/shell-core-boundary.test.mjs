@@ -1427,6 +1427,14 @@ test('peer and Secretary input delivery delegate streaming state to the shell se
   }
 })
 
+test('Secretary auto input subscribes to session events through the shell session seam', () => {
+  const source = readFileSync(join(libRoot, 'secretary-auto-input-controller.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-session-work-control\.js['"]/)
+  assert.match(source, /\bsubscribeLinxInteractiveSessionEvents\b/)
+  assert.doesNotMatch(source, /\.session\?\.subscribe|\.session\.subscribe/)
+})
+
 
 test('auth retry session history access lives behind a shell session-history seam', () => {
   const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')

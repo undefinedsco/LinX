@@ -234,12 +234,13 @@ Hard rules:
   obtain it through the seam.
 - Active session work control is shell session lifecycle, not feature command
   logic. Checks for Pi session streaming/bash state, follow-up delivery option
-  selection, and abort calls belong
+  selection, session event subscriptions, and abort calls belong
   behind `apps/cli/src/lib/linx-session-work-control.ts`; commands such as
   `/rewind`, Escape interrupt, and auto handback may request active work to stop
-  or projected input to be delivered, but must not know Pi's `isStreaming`,
-  `isBashRunning`, `abort`, `abortBash`, `deliverAs: followUp`, or
-  `streamingBehavior: followUp` field/option layout.
+  or projected input to be delivered, and controllers such as Secretary auto
+  input may subscribe to active-session events, but they must not know Pi's
+  `isStreaming`, `isBashRunning`, `abort`, `abortBash`, `subscribe`,
+  `deliverAs: followUp`, or `streamingBehavior: followUp` field/option layout.
 - Session history and branch repair are shell session-history lifecycle, not
   feature-local retry logic. Reads of Pi `sessionManager` history, leaf/branch
   selection, parent-id normalization, branch restore, leaf reset, and
