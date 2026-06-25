@@ -76,6 +76,12 @@ export function setInteractiveRuntimePodSession(interactive: any, podSession: un
   }
 }
 
+export function setLinxInteractiveRuntime(interactive: any, runtime: unknown): void {
+  if (interactive && typeof interactive === 'object') {
+    interactive.runtime = runtime
+  }
+}
+
 export function getInteractiveRuntimePodSession(interactive: any): any {
   return interactive?.runtime?.podSession
 }

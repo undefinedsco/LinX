@@ -1318,8 +1318,11 @@ Current shell-state rules:
   but must not use runtime hidden fields such as before-invalidate or rebind
   callback slots. The active runtime object itself is also a runtime-host lookup:
   feature modules that only need the current runtime must request it through the
-  host helper instead of reading `interactive.runtime`. Runtime-owned feature
-  hooks, such as the `/ai connect` credential saver, follow the same rule.
+  host helper instead of reading `interactive.runtime`. Installing that active
+  runtime on the Pi interactive instance also goes through the same runtime host;
+  bootstrap composition should not write `interactive.runtime` directly.
+  Runtime-owned feature hooks, such as the `/ai connect` credential saver, follow
+  the same rule.
   Symphony dispatch code also resolves worker/runtime fallbacks through this
   seam before reading runtime-owned backend, model, credential, or session data.
   Lifecycle callbacks that receive only a target interactive object, such as the

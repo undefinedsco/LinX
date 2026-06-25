@@ -357,6 +357,15 @@ test('runtime host hooks do not use runtime hidden fields', () => {
   assert.deepEqual(violations, [])
 })
 
+test('interactive bootstrap installs active runtime through the runtime host', () => {
+  const source = readFileSync(join(libRoot, 'linx-interactive-bootstrap.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-interactive-runtime-host\.js['"]/)
+  assert.match(source, /\bsetLinxInteractiveRuntime\b/)
+  assert.doesNotMatch(source, /\(interactive as any\)\.runtime\s*=/)
+  assert.doesNotMatch(source, /interactive\.runtime\s*=/)
+})
+
 test('interactive runtime Pod session mutation is centralized in the runtime host', () => {
   const allowed = new Set([
     'linx-interactive-runtime-host.ts',
