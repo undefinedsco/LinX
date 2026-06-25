@@ -3,6 +3,7 @@ import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { refreshLinxInteractiveProviderCount } from './linx-interactive-provider-count-host.js'
 import { refreshLinxInteractiveModelRegistry } from './linx-interactive-model-registry-host.js'
+import { getLinxInteractiveRuntime } from './linx-interactive-runtime-host.js'
 import {
   canCollectLinxInteractiveExtensionInput,
   collectLinxInteractiveExtensionInput,
@@ -115,9 +116,10 @@ export async function handleInteractiveAiConnectCommand(
 }
 
 function resolveInteractiveAiConnectCredentialSaver(interactive: any, runtime: any): typeof connectAiProviderCredential {
+  const activeRuntime = getLinxInteractiveRuntime(interactive)
   const candidates = [
     runtime?.connectAiProviderCredential,
-    interactive?.runtime?.connectAiProviderCredential,
+    activeRuntime?.connectAiProviderCredential,
   ]
   for (const candidate of candidates) {
     if (typeof candidate === 'function') {
