@@ -1074,14 +1074,14 @@ practice this means:
 - auth recovery captures only a high-level pending retry descriptor
   (`continueFromId`, user prompt text, and prompt parent/branch identity) and
   delegates history traversal to the seam; the exported retry-capture entrypoint
-  should remain a thin feature-facing adapter, while Pi `getLeafId`, `getEntry`,
-  `getBranch`, and `getEntries` calls stay inside named internal history
-  helpers;
+  should remain a thin feature-facing adapter over a session-history source DTO,
+  while Pi `getLeafId`, `getEntry`, `getBranch`, and `getEntries` calls stay
+  inside named internal history helpers;
 - retry cancellation or completion asks the seam to restore the captured branch
   before resubmitting or returning control; the exported restore entrypoint
-  should delegate branch/reset/context rebuild details to an internal helper
-  instead of directly calling `sessionManager.branch`, `resetLeaf`, or
-  `buildSessionContext`;
+  should accept a session-history source DTO and delegate branch/reset/context
+  rebuild details to an internal helper instead of directly calling
+  `sessionManager.branch`, `resetLeaf`, or `buildSessionContext`;
 - session-history query exports such as
   `getLinxActiveSessionHistoryEntries`, `collectLinxRewindUserMessages`, and
   `assertLinxRewindUserEntryTarget` are still feature-facing adapters, not

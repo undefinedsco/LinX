@@ -1433,6 +1433,9 @@ test('auth retry session history access lives behind a shell session-history sea
   const forbiddenSessionManagerCalls = /sessionManager(?:\?\.)?\.(?:getLeafId|getEntry|getBranch|getEntries|branch|resetLeaf|buildSessionContext)\b/
 
   assert.doesNotMatch(source, forbiddenSessionManagerCalls)
+  assert.doesNotMatch(source, /captureLinxSessionRetryTurn\(interactive\.session\)/)
+  assert.doesNotMatch(source, /restoreLinxSessionHistoryBranch\(interactive\.session/)
+  assert.doesNotMatch(source, /restoreLinxSessionHistoryBranch\(session,/)
   assert.doesNotMatch(source, /\bfindLastUserMessageEntry\b/)
   assert.doesNotMatch(source, /\brestoreLinxRetryBranch\b/)
 })
