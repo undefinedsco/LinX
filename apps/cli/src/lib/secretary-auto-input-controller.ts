@@ -16,7 +16,11 @@ import { getDefaultPodDataSession, type PodDataSession } from './pod-data-sessio
 import { resolveRuntimeTarget } from './runtime-target.js'
 import type { SessionControlManager, SessionControlSnapshot } from './session-control.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
-import { canSubmitLinxSessionUserInputNow, submitLinxSessionUserInput, subscribeLinxInteractiveSessionEvents } from './linx-session-work-control.js'
+import {
+  canSubmitLinxInteractiveSessionUserInputNow,
+  submitLinxInteractiveSessionUserInput,
+  subscribeLinxInteractiveSessionEvents,
+} from './linx-session-work-control.js'
 import { getLinxActiveSessionHistoryEntries } from './linx-session-history.js'
 import { resolveLinxSessionCwd, resolveLinxSessionModelId } from './linx-session-metadata.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
@@ -191,7 +195,6 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
       this.start({ scheduleImmediately: false })
     }
 
-    const session = this.interactive?.session
     const reason = options.reason ?? 'auto-on'
     const snapshot = this.sessionControl.ensureControlSession('auto')
     const backend = normalizeString(this.runtime?.backendCommandRouter?.backend)
@@ -203,7 +206,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
         text: trimmed,
         reason,
       })
-      const delivery = await deliverProjectedInput(this.interactive, session, trimmed)
+      const delivery = await deliverProjectedInput(this.interactive, trimmed)
       this.sessionControl.recordAutoInputEvent('delivered', {
         reason,
         runtimeProjection: {
@@ -269,7 +272,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
         return
       }
 
-      if (!canSubmitLinxSessionUserInputNow(this.interactive?.session)) {
+      if (!canSubmitLinxInteractiveSessionUserInputNow(this.interactive)) {
         return
       }
 
@@ -318,8 +321,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
       return
     }
 
-    const session = this.interactive?.session
-    if (!canSubmitLinxSessionUserInputNow(session)) {
+    if (!canSubmitLinxInteractiveSessionUserInputNow(this.interactive)) {
       return
     }
 
@@ -401,7 +403,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
         text,
         reason,
       })
-      const delivery = await deliverProjectedInput(this.interactive, session, text)
+      const delivery = await deliverProjectedInput(this.interactive, text)
       this.resetRecoveryState()
       this.sessionControl.recordAutoInputEvent('delivered', {
         reason,
@@ -994,15 +996,15 @@ function extractTextContent(content: unknown): string {
     .join('\n')
 }
 
-async function deliverAsUserInput(session: any, text: string): Promise<void> {
-  await submitLinxSessionUserInput(session, text, {
+async function deliverAsUserInput(interactive: any, text: string): Promise<void> {
+  await submitLinxInteractiveSessionUserInput(interactive, text, {
     unavailableMessage: 'Active LinX session cannot accept user input projection',
   })
 }
 
 type ProjectedInputDelivery = 'control-command' | 'peer-command' | 'backend'
 
-async function deliverProjectedInput(interactive: any, session: any, text: string): Promise<ProjectedInputDelivery> {
+async function deliverProjectedInput(interactive: any, text: string): Promise<ProjectedInputDelivery> {
   if (text.trim().startsWith('/')) {
     const handled = await handleLinxInteractiveProjectedCommand(interactive, text)
     if (handled === 'peer-command') {
@@ -1013,7 +1015,7 @@ async function deliverProjectedInput(interactive: any, session: any, text: strin
     }
   }
 
-  await deliverAsUserInput(session, text)
+  await deliverAsUserInput(interactive, text)
   return 'backend'
 }
 
