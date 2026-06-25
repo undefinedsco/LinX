@@ -774,6 +774,26 @@ test('feature modules display interactive warnings through the shell warning sea
   }
 })
 
+test('feature modules access interactive model registry through the shell model-registry host', () => {
+  const featureFiles = [
+    'linx-ai-connect-command.ts',
+    'linx-login-flow.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"]\.\/linx-interactive-model-registry-host\.js['"]/, target)
+    assert.doesNotMatch(source, /\.session\?\.modelRegistry|\.session\.modelRegistry/, target)
+  }
+})
+
+test('Symphony runtime projection queues custom context through the shell session seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-symphony-interactive-command.ts'), 'utf8')
+  assert.match(source, /from ['"]\.\/linx-session-work-control\.js['"]/, 'Symphony command should use the session work-control seam')
+  assert.match(source, /\bqueueLinxInteractiveSessionRuntimeProjection\b/, 'Symphony command should queue hidden projection through a named seam')
+  assert.doesNotMatch(source, /\.session\?\.sendCustomMessage|\.session\.sendCustomMessage|sendCustomMessage\.call/, 'feature code must not call Pi sendCustomMessage directly')
+})
+
 test('feature modules refresh interactive provider count through the shell provider count seam', () => {
   const featureFiles = [
     'linx-ai-connect-command.ts',

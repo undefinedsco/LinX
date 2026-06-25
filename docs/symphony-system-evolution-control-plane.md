@@ -86,6 +86,28 @@ Every mutable state field needs one primary writer.
 recommend changes to another resource; it should not silently rewrite that
 resource's lifecycle state.
 
+Symphony product state is Pod-first when it is LinX-owned. Local archives are
+runtime recovery/debug material or portable fallback, not the product authority
+for Issue, Task, Delivery, Run, RunStep, Report, Evidence, ApprovalRequest,
+InputRequest, InboxNotification, Contact, Chat, Thread, Message, or Agent state.
+If the Pod write/read path is unhealthy, surface that as a product persistence
+blocker instead of silently treating a local JSONL/archive as the shared truth.
+
+Use the resource's natural shape:
+
+- control-primary resources such as Issue, Task, Delivery, Run, RunStep,
+  ApprovalRequest, InputRequest, and InboxNotification are structured modeled
+  resources;
+- file-primary resources such as long Reports, logs, patches, screenshots, and
+  many Evidence artifacts are Pod files with modeled metadata;
+- raw runtime transcripts and hidden prompt projections are runtime evidence or
+  debug artifacts, not product Message content.
+
+Application code should not decide resource paths, subject templates, RDF
+predicates, or IRI resolution ad hoc. When a shared operation is missing, add it
+to `@undefineds.co/models` / drizzle-solid / the shared store boundary and
+consume it from LinX.
+
 ## Agent Runtime Config And Managed Resources
 
 AgentRuntimeConfig is part of the managed system, not a hidden prompt blob.
@@ -103,6 +125,22 @@ AgentRuntimeConfig is part of the managed system, not a hidden prompt blob.
 Resume should use the runtime session snapshot by default. A changed backend,
 model, credential source, or authority policy is a new runtime session or an
 explicit override record, not a silent mutation of an old run.
+
+Agent roots and chats are different resources. The system-reserved Secretary
+Agent lives at `/agents/__secretary__/` as a user-owned context/config folder.
+That folder may contain system-managed package/skill surfaces and user-managed
+overrides such as `AGENTS.md`, but runtime assembly is a projection of those
+inputs, not a rewritten merged truth. The default Secretary Chat may reuse the
+reserved key under the chat resource base, but it remains a Chat/Thread
+timeline, not the Agent identity.
+
+Worker identity should be discoverable through Contact/Agent resources, not
+only through backend runtime rows. A worker contact such as `codex` identifies
+the durable counterpart visible in chats and app UI. Backend, model, credential
+source, launch args, local archive id, and process lifecycle belong on Agent
+runtime config, Session, Run, and runtime metadata. Dispatch should choose from
+available contacts/agents and then start a runtime; it should not make local
+session ids stand in for participant identity.
 
 ## Decision Sufficiency And Escalation Necessity
 

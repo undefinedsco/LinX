@@ -54,6 +54,12 @@ language, RDF parser, auth store, or package lifecycle. Conversely, xpod must no
 define LinX/Symphony product state machines just because it can read and write
 the same Pod.
 
+xpod commands are a tool interface, not a product transcript. When an AI uses
+xpod inside LinX, command output is evidence for the acting agent. The visible
+chat should normally summarize the outcome, resource path, status, and blocker.
+Raw command transcripts are reserved for explicit diagnostics or when the raw
+output is the smallest actionable evidence.
+
 Package fixes follow the owning boundary:
 
 - a broken LinX prompt/projection, Symphony routing rule, TUI copy, or lifecycle
@@ -66,6 +72,13 @@ Package fixes follow the owning boundary:
 
 Do not compensate for an xpod/model gap by teaching LinX or Secretary to hand
 craft Turtle for modeled resources. Fix the owner and upgrade the dependency.
+
+LinX and xpod may live in the same repository or release train, but they still
+have separate package ownership. A LinX bug in Symphony prompt projection,
+command routing, TUI rendering, or lifecycle restart requires a LinX release.
+An xpod bug in auth status JSON, `get/put`, RDF parsing, object descriptors, or
+command UX requires an xpod release. If a LinX fix depends on an xpod fix,
+release xpod first, then upgrade LinX to the published xpod version.
 
 ## Session reuse
 
@@ -133,6 +146,19 @@ This applies to file-primary resources such as long reports, evidence documents,
 Markdown notes, logs, screenshots, or other assets where the file content is the
 primary artifact and metadata is secondary.
 
+If file-primary resources need queryable facts, attach metadata through the
+shared model/repository layer instead of inventing a second control record. The
+file body remains the primary artifact; RDF/object metadata should only contain
+facts needed for lookup, routing, audit, synchronization, or recovery.
+
+Typical split:
+
+- `xpod put reports/<...>.md --from <file>` stores the long report body;
+- modeled metadata links the report to Issue/Task/Run/Evidence and records
+  summary, status/outcome, maker, source, and timestamps as needed;
+- clients render or subscribe from the modeled metadata, then fetch the file
+  body when the user opens the artifact.
+
 ### RDF inspection
 
 Use RDF-specific commands only when a parsed RDF/triple view is required:
@@ -176,6 +202,9 @@ Rules:
 - Use raw `get`/`put` only for file-primary evidence or diagnostics.
 - Do not print internal xpod guardrails, prompt wrappers, or routing text into
   the visible chat transcript.
+- Do not paste routine xpod command transcripts as the normal answer. Summarize
+  the result unless the user requested debug detail or the raw output is the
+  evidence needed to explain a blocker.
 - Report command, path, HTTP status, and timeout/error text when diagnostics
   fail; do not silently fallback to a guessed path or hand-written TTL.
 - For JSON diagnostics, keep stderr warnings separate from stdout JSON before

@@ -17,6 +17,7 @@ import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import { getInteractiveRuntimePodSession, setInteractiveRuntimePodSession } from './linx-interactive-runtime-host.js'
 import { resolveLinxSessionId } from './linx-session-metadata.js'
+import { queueLinxInteractiveSessionRuntimeProjection } from './linx-session-work-control.js'
 import {
   getLinxInteractiveListSymphonyIssues,
   getLinxInteractiveListSymphonySessions,
@@ -59,7 +60,8 @@ export function installSymphonyCommand(interactive: any): void {
 
       if (isLinxInteractiveSymphonyModeEnabled(target) && shouldProjectSymphonyInput(input)) {
         getSessionControlManager(target, target.runtime).recordUserMessage({ text: input })
-        await originalSubmit(renderSymphonySecretaryProjection(input))
+        await queueSymphonySecretaryProjection(target, input)
+        await originalSubmit(input)
         return true
       }
 
@@ -146,6 +148,18 @@ function shouldProjectSymphonyInput(input: string): boolean {
   return Boolean(input)
     && !input.startsWith('/')
     && !input.startsWith('!')
+}
+
+async function queueSymphonySecretaryProjection(interactive: any, input: string): Promise<void> {
+  await queueLinxInteractiveSessionRuntimeProjection(interactive, {
+    customType: 'linx.symphony.secretary_projection',
+    content: renderSymphonySecretaryProjection(input),
+    display: false,
+    details: {
+      kind: 'runtime_projection',
+      visibleInput: input,
+    },
+  }, { deliverAs: 'nextTurn' })
 }
 
 function renderSymphonySecretaryProjection(input: string): string {

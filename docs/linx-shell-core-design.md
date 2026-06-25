@@ -163,6 +163,12 @@ Hard rules:
   `interactive.updateAvailableProviderCount` belongs behind
   `apps/cli/src/lib/linx-interactive-provider-count-host.ts` so provider
   availability display stays a shell concern.
+- Interactive model registry and auth storage access is shell runtime state, not
+  login or AI-connect feature field knowledge. Feature modules may decide when
+  to refresh providers, start LinX/Solid login, clear runtime credentials, or
+  mark the LinX runtime API key as managed, but Pi's
+  `interactive.session.modelRegistry` / `authStorage` shape belongs behind
+  `apps/cli/src/lib/linx-interactive-model-registry-host.ts`.
 - Extension input collection is shell UI state, not login or credential feature
   plumbing. Feature modules may decide what prompt text is needed, but Pi
   `interactive.showExtensionInput` belongs behind
@@ -831,6 +837,11 @@ Hard rules:
 - The TUI transcript must not render headings such as `AI Secretary Symphony
   request`, internal routing policy, xpod auth guardrails, or tool-use policy
   unless the user explicitly asks to inspect debug/projection internals.
+- In the Pi interactive bridge, Secretary-facing Symphony guidance is queued as
+  a hidden `sendCustomMessage(..., { deliverAs: 'nextTurn' })` runtime
+  projection through `linx-session-work-control.ts`, then the original user text
+  is submitted unchanged. The wrapper is model context, not the submitted user
+  message.
 - Worker steering uses control-resource deltas and pointers to updated records.
   Do not pass raw hidden conversation deltas as if they were user chat.
 - Tool diagnostics may be summarized visibly, but raw guardrail text and prompt
@@ -838,6 +849,36 @@ Hard rules:
 - If projection text leaks into the transcript, Pod message content, or ordinary
   assistant reply, fix the projection/rendering seam; do not treat it as a
   prompt-style problem.
+
+### Auth, tool, and runtime-provider boundary
+
+Solid auth, Pod tools, and provider/model availability are adjacent but separate
+surfaces:
+
+- **Solid auth authority** is the shared local login/session root. Browser OIDC
+  consent and Solid client credentials both produce a Solid session/fetch that
+  LinX, xpod CLI, and local agent runtimes consume. Login modules may acquire or
+  refresh that session, but feature modules should only consume the normalized
+  session/auth status.
+- **xpod CLI** is the direct Pod tool surface. It is appropriate for
+  Secretary/Symphony diagnostics and AI-side Pod access, but it does not become
+  a LinX shell command language or a hidden product state machine. Raw
+  `xpod get/put`, RDF inspection, and modeled `xpod obj` access must remain
+  distinct.
+- **Provider/model registry state** is runtime availability state. It may tell
+  the TUI which backend providers are usable now, and it may expose an upstream
+  auth-storage adapter, but it is not the durable credential source of truth.
+  Durable provider config, selected backend, credential source, and runtime
+  capability contracts belong in shared runtime/model resources or explicit
+  launch/session overrides.
+
+Do not repair auth bugs by crossing these surfaces. If xpod can `get` a Pod
+file but `rdf get` times out, the Solid session and raw file permission path are
+working; fix/report the RDF/xpod layer. If the provider count is stale after
+login, refresh the runtime model-registry seam; do not duplicate credential
+semantics in rendering code. If an app-specific field such as `xpodWebId` or
+`linxWebId` appears in runtime projection, replace it with the shared
+`webId`/`podRoot`/`server` identity contract.
 
 
 ### Package/update command boundary
@@ -1150,6 +1191,16 @@ must register handlers with that router. They must not replace
 `session.supportsXhighThinking` or `session.getAvailableThinkingLevels`
 directly, because multiple providers or runtime layers may need to contribute
 thinking-level capability rules.
+
+Interactive model registry access belongs behind
+`linx-interactive-model-registry-host.ts`. Login, logout, Solid client
+credentials, and `/ai connect` may decide semantic credential behavior, but they
+must not reach through `interactive.session.modelRegistry` or its `authStorage`
+field directly. The host owns Pi's session/model-registry field shape and
+exposes narrow operations such as auth-storage lookup and model-registry refresh.
+Provider-count rendering remains separate in
+`linx-interactive-provider-count-host.ts`; refreshing the model registry does not
+authorize feature code to mutate provider-count display internals.
 
 Concrete LinX shell command execution belongs behind
 `linx-shell-command-executor.ts`. The interactive command routing module may

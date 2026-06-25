@@ -20,6 +20,12 @@ import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { refreshLinxInteractiveProviderCount } from './linx-interactive-provider-count-host.js'
 import {
+  getLinxInteractiveAuthStorage,
+  getLinxInteractiveLoginAuthStorage,
+  refreshLinxInteractiveModelRegistry,
+  type LinxInteractiveLoginAuthStorage,
+} from './linx-interactive-model-registry-host.js'
+import {
   canCollectLinxInteractiveExtensionInput,
   collectLinxInteractiveExtensionInput,
 } from './linx-interactive-extension-input-host.js'
@@ -133,7 +139,7 @@ function patchNativeOAuthSelectors(interactive: any, options: LinxLoginFlowOptio
     priority: 0,
     async handler({ interactive: target, mode }) {
       if (mode === 'logout') {
-        const authStorage = target.session?.modelRegistry?.authStorage
+        const authStorage = getLinxInteractiveAuthStorage(target)
         authStorage?.logout?.(LINX_PROVIDER_ID)
         authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, '')
         clearAccountSession()
@@ -269,7 +275,7 @@ async function startLinxCloudLogin(interactive: any, loginOptions: { reason?: Li
   authState.loginInProgress = true
 
   try {
-    const authStorage = interactive.session?.modelRegistry?.authStorage
+    const authStorage = getLinxInteractiveAuthStorage(interactive)
     if (!authStorage) {
       prefillLoginCommand(interactive)
       return
@@ -283,11 +289,12 @@ async function startLinxCloudLogin(interactive: any, loginOptions: { reason?: Li
     }
 
     if (selected === AUTH_OPTION_BROWSER) {
-      if (typeof authStorage.login !== 'function') {
+      const loginAuthStorage = getLinxInteractiveLoginAuthStorage(interactive)
+      if (!loginAuthStorage) {
         prefillLoginCommand(interactive)
         return
       }
-      await runLinxCloudBrowserLogin(interactive, authStorage, reason)
+      await runLinxCloudBrowserLogin(interactive, loginAuthStorage, reason)
       await refreshLinxAuthState(interactive)
       await finishLinxAuthSuccess(interactive, reason, 'Browser authorization complete.')
       return
@@ -422,7 +429,7 @@ async function promptForLinxClientCredentials(interactive: any, reason: LinxAuth
   }
 
   const result = await resolveSolidClientCredentialsLogin(options)(trimmed)
-  const authStorage = interactive.session?.modelRegistry?.authStorage
+  const authStorage = getLinxInteractiveAuthStorage(interactive)
   authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
   authStorage?.set?.(LINX_PROVIDER_ID, {
     type: 'api_key',
@@ -556,7 +563,7 @@ async function retryLinxPromptFallback(
 export async function refreshLinxAuthState(interactive: any): Promise<void> {
   clearLinxAuthPromptOnStart(interactive)
   syncRuntimeCredential(interactive)
-  interactive.session?.modelRegistry?.refresh?.()
+  refreshLinxInteractiveModelRegistry(interactive)
   await refreshLinxInteractiveProviderCount(interactive)
   showLinxInteractiveStatus(interactive, null)
 }
@@ -574,7 +581,7 @@ function authStatusPrefix(reason: LinxAuthReason): string {
 
 async function runLinxCloudLogin(
   interactive: any,
-  authStorage: { login(providerId: string, callbacks: unknown): Promise<unknown> },
+  authStorage: LinxInteractiveLoginAuthStorage,
   reason: LinxAuthReason,
 ): Promise<void> {
   await authStorage.login(LINX_PROVIDER_ID, {
@@ -602,7 +609,7 @@ async function runLinxCloudLogin(
 
 async function runLinxCloudBrowserLogin(
   interactive: any,
-  authStorage: { login(providerId: string, callbacks: unknown): Promise<unknown> },
+  authStorage: LinxInteractiveLoginAuthStorage,
   reason: LinxAuthReason,
 ): Promise<void> {
   if (canRenderLinxLoginDialog(interactive)) {
@@ -619,7 +626,7 @@ function canRenderLinxLoginDialog(interactive: any): boolean {
 
 async function runLinxCloudLoginDialog(
   interactive: any,
-  authStorage: { login(providerId: string, callbacks: unknown): Promise<unknown> },
+  authStorage: LinxInteractiveLoginAuthStorage,
   reason: LinxAuthReason,
 ): Promise<void> {
   const dialog = createLinxLoginDialogComponent(interactive, LINX_PROVIDER_ID)
@@ -723,7 +730,7 @@ async function promptForLinxManualRedirectUrl(
 }
 
 function syncRuntimeCredential(interactive: any): void {
-  const authStorage = interactive.session?.modelRegistry?.authStorage
+  const authStorage = getLinxInteractiveAuthStorage(interactive)
   authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
 }
 
