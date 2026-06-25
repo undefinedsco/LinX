@@ -1424,6 +1424,7 @@ test('rewind command delegates active session work control to the shell session 
   assert.doesNotMatch(source, /\babort\s*\(/)
   assert.doesNotMatch(source, /resolveInteractiveSession/)
   assert.doesNotMatch(source, /interactive\?\.session/)
+  assert.doesNotMatch(source, /interactive\?\.runtime/)
 })
 
 test('rewind command delegates session history access to the shell session-history seam', () => {

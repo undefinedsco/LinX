@@ -9,7 +9,7 @@ import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { showLinxInteractiveWarning } from './linx-interactive-warning-display.js'
 import { refreshLinxInteractiveChatTranscript } from './linx-interactive-chat-text-host.js'
 import { canShowLinxInteractiveSelector, showLinxInteractiveSelector } from './linx-interactive-selector-host.js'
-import { getLinxPodMirrorForRuntime } from './linx-pod-mirror-runtime-host.js'
+import { getLinxPodMirrorForInteractiveRuntime } from './linx-pod-mirror-runtime-host.js'
 import {
   assertLinxRewindUserEntryTarget,
   collectLinxRewindUserMessages,
@@ -132,7 +132,7 @@ async function syncRewindProjection(
     showLinxInteractiveWarning(interactive, `Clean rewind history materialization skipped: ${input.cleanResult.warning}`)
   }
 
-  const mirror = getLinxPodMirrorForRuntime(runtime) ?? getLinxPodMirrorForRuntime(interactive?.runtime)
+  const mirror = getLinxPodMirrorForInteractiveRuntime(interactive, runtime)
   if (!mirror || typeof mirror.syncRewindProjection !== 'function') {
     return
   }
