@@ -8,9 +8,9 @@ import {
   buildToolAuditId,
 } from '../apps/cli/dist/lib/pod-mirror-mapping.js'
 import {
-  createNativeLinxPiPodSessionSource,
-  createLinxPiSessionManager,
-  listLinxPiSessions,
+  createNativeLinxPodSessionSource,
+  createLinxRuntimeSessionManager,
+  listLinxRuntimeSessions,
 } from '../apps/cli/dist/lib/linx-session-manager.js'
 import {
   aiProviderResource,
@@ -295,7 +295,7 @@ async function main() {
   }
 
   logStep('reading session/message directly from Pod source')
-  const source = createNativeLinxPiPodSessionSource({
+  const source = createNativeLinxPodSessionSource({
     webId: context.webId,
     db: context.db,
     fetch: context.fetch,
@@ -312,7 +312,7 @@ async function main() {
     throw new Error(`recovery cache should start empty: ${recoveryAgentDir}`)
   }
   logStep('listing from Pod into an empty local cache')
-  const recoveredList = await listLinxPiSessions(cwd, recoveryAgentDir, {
+  const recoveredList = await listLinxRuntimeSessions(cwd, recoveryAgentDir, {
     podSessionSource: source,
   })
   const recoveredListed = recoveredList.find((session) => session.id === sessionId)
@@ -324,7 +324,7 @@ async function main() {
   }
   rmSync(recoveredListed.path, { force: true })
   logStep('resuming from Pod after deleting the materialized cache file')
-  const recovered = await createLinxPiSessionManager({
+  const recovered = await createLinxRuntimeSessionManager({
     cwd,
     agentDir: recoveryAgentDir,
     session: sessionId.slice(0, 13),

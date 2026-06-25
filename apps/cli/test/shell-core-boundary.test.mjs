@@ -1332,7 +1332,7 @@ test('session metadata reads Pi archive fields only through a metadata snapshot 
 test('session manager builds session info from archive snapshots', () => {
   const source = readFileSync(join(libRoot, 'linx-session-manager.ts'), 'utf8')
   const allowedRanges = findFunctionRanges(source, [
-    'getLinxPiSessionArchiveSnapshot',
+    'getRuntimeSessionArchiveSnapshot',
     'buildSessionInfoFromArchiveSnapshot',
   ])
   const violations = [...source.matchAll(/\bmanager\.(?:getSessionId|getCwd|getSessionName|getEntries)\s*\(/g)]

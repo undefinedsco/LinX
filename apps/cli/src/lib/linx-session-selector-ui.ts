@@ -1,9 +1,9 @@
 import { SessionSelectorComponent, initTheme, SettingsManager } from '@earendil-works/pi-coding-agent'
 import { ProcessTerminal, TUI } from '@earendil-works/pi-tui'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
-import { listLinxPiSessions } from './linx-session-manager.js'
+import { listLinxRuntimeSessions } from './linx-session-manager.js'
 
-export async function selectLinxPiSession(cwd: string, sessionDir?: string): Promise<string | null> {
+export async function selectLinxRuntimeSession(cwd: string, sessionDir?: string): Promise<string | null> {
   const settingsManager = SettingsManager.create(cwd, LINX_AGENT_DIR)
   initTheme(settingsManager.getTheme())
 
@@ -18,7 +18,7 @@ export async function selectLinxPiSession(cwd: string, sessionDir?: string): Pro
       ui.stop()
       resolve(sessionPath)
     }
-    const loadSessions = () => listLinxPiSessions(cwd, LINX_AGENT_DIR, {
+    const loadSessions = () => listLinxRuntimeSessions(cwd, LINX_AGENT_DIR, {
       sessionDir,
       podSessionSource: null,
     })

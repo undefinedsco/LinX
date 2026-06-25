@@ -5,7 +5,7 @@ import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factor
 import { resolveLinxStartupControlState } from './linx-pi-startup-control.js'
 import type { CreateLinxCliRuntimeAdapterOptions, RunLinxCliRuntimeOptions } from './linx-pi-runtime-execution.js'
 import { resolveLinxStartupLoginPromptDecision } from './linx-startup-login-policy.js'
-import { assertLinxPiSessionSelectorCompatibility, createLinxPiSessionManager } from './linx-session-manager.js'
+import { assertLinxRuntimeSessionSelectorCompatibility, createLinxRuntimeSessionManager } from './linx-session-manager.js'
 import { getDefaultPodDataSession } from './pod-data-session.js'
 
 export interface LinxCliStartupPlanArgs extends AutoModeCommandArgs {
@@ -38,7 +38,7 @@ export async function createLinxCliStartupPlan(argv: LinxCliStartupPlanArgs): Pr
     resolveSession: resolveStartupLinxPodDataSession,
   })
 
-  const sessionManager = await createLinxPiSessionManager({
+  const sessionManager = await createLinxRuntimeSessionManager({
     cwd,
     agentDir: LINX_AGENT_DIR,
     session: argv.session,
@@ -94,7 +94,7 @@ export function assertLinxCliStartupSessionSelectorCompatibility(argv: {
   resume?: boolean
   last?: boolean
 }): void {
-  assertLinxPiSessionSelectorCompatibility({
+  assertLinxRuntimeSessionSelectorCompatibility({
     session: argv.session,
     sessionId: argv['session-id'],
     last: Boolean(argv.continue || argv.resume || argv.last),

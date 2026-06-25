@@ -68,7 +68,7 @@ test('CLI normal, auto, and symphony modes coexist under the same workspace with
     symphony,
   } = await withWorkspaceCompatModules(t)
 
-  const piSession = await pi.createLinxPiSessionManager({ cwd: workspace, agentDir })
+  const piSession = await pi.createLinxRuntimeSessionManager({ cwd: workspace, agentDir })
   piSession.appendMessage({
     role: 'user',
     content: [{ type: 'text', text: 'normal mode prompt' }],
@@ -94,12 +94,12 @@ test('CLI normal, auto, and symphony modes coexist under the same workspace with
     timestamp: Date.now(),
   })
 
-  const listedPiSessions = await pi.listLinxPiSessions(workspace, agentDir)
+  const listedPiSessions = await pi.listLinxRuntimeSessions(workspace, agentDir)
   assert.equal(listedPiSessions.length, 1)
   assert.equal(listedPiSessions[0].id, piSession.getSessionId())
   assert.equal(listedPiSessions[0].cwd, workspace)
 
-  const otherWorkspacePiSessions = await pi.listLinxPiSessions(otherWorkspace, agentDir)
+  const otherWorkspacePiSessions = await pi.listLinxRuntimeSessions(otherWorkspace, agentDir)
   assert.equal(otherWorkspacePiSessions.length, 0)
 
   const autoSession = autoArchive.createAutoModeSession({
@@ -153,7 +153,7 @@ test('CLI normal, auto, and symphony modes coexist under the same workspace with
   assert.ok(archivedAutoSessions.some((record) => record.id === autoSession.id && record.status === 'completed'))
   assert.ok(archivedAutoSessions.some((record) => record.id === plan.session.autoModeSessionId && record.goalMode === true))
 
-  const listedAfterAutoAndSymphony = await pi.listLinxPiSessions(workspace, agentDir)
+  const listedAfterAutoAndSymphony = await pi.listLinxRuntimeSessions(workspace, agentDir)
   assert.equal(listedAfterAutoAndSymphony.length, 1)
   assert.equal(listedAfterAutoAndSymphony[0].id, piSession.getSessionId())
 })

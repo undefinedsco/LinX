@@ -7,7 +7,7 @@ import {
 } from '@linx/agent-runtime/sync'
 import { createFileSyncCheckpointStore } from './sync-checkpoint-store.js'
 import { LinxPodMirror } from './linx-pod-mirror.js'
-import { createLinxPiSessionManager } from './linx-session-manager.js'
+import { createLinxRuntimeSessionManager } from './linx-session-manager.js'
 
 export interface LinxPodMirrorSyncStatus {
   sessionId: string
@@ -93,7 +93,7 @@ export async function retryPendingLinxPodMirrorSync(options: {
     }
   }
 
-  const sessionManager = await createLinxPiSessionManager({
+  const sessionManager = await createLinxRuntimeSessionManager({
     cwd: options.cwd,
     agentDir: options.agentDir,
     session: options.sessionId,
