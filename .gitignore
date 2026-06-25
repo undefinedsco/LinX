@@ -66,6 +66,7 @@ packages/**/.w3c-cache/
 *.swp
 
 # AI agent tools
+.codebase-memory/
 .codebuddy/
 .cursor/
 .mcp.json
