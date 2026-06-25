@@ -7,11 +7,11 @@ import { handleLinxPiResumeCliAdmission } from './linx-pi-resume-cli-admission.j
 import { runLinxPiRuntime, type CreateLinxRuntimeAdapterForPiCommand } from './linx-pi-runtime-execution.js'
 import { assertLinxPiStartupSessionSelectorCompatibility, createLinxPiStartupPlan } from './linx-pi-startup-plan.js'
 
-export interface LinxPiCliCommandDependencies {
+export interface LinxDefaultCliCommandDependencies {
   createRuntimeAdapter: CreateLinxRuntimeAdapterForPiCommand
 }
 
-export interface LinxPiCliCommands {
+export interface LinxDefaultCliCommands {
   defaultCommand: CommandModule<object, LinxDefaultCommandArgs>
   execCommand: CommandModule<object, LinxDefaultCommandArgs>
 }
@@ -33,7 +33,7 @@ export async function runPiCommand(argv: {
   'pi-sync-status'?: boolean
   'pi-sync-retry'?: string
   prompt?: string[]
-} & AutoModeCommandArgs, dependencies: LinxPiCliCommandDependencies, options: RunPiCommandOptions = {}): Promise<void> {
+} & AutoModeCommandArgs, dependencies: LinxDefaultCliCommandDependencies, options: RunPiCommandOptions = {}): Promise<void> {
   assertLinxPiCliSessionSelectorCompatibility(argv)
   assertDefaultStartupPromptTokenIsAllowed(argv, options)
   if (await handleLinxPiResumeCliAdmission(argv, {
@@ -157,7 +157,7 @@ export function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandAr
   return configured as Argv<LinxDefaultCommandArgs>
 }
 
-export function createLinxPiCliCommands(dependencies: LinxPiCliCommandDependencies): LinxPiCliCommands {
+export function createLinxDefaultCliCommands(dependencies: LinxDefaultCliCommandDependencies): LinxDefaultCliCommands {
   return {
     defaultCommand: {
       command: '$0 [prompt..]',
