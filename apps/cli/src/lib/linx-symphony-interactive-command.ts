@@ -600,7 +600,7 @@ interface SymphonySourceContext {
 }
 
 async function resolveSymphonySourceContext(interactive: any): Promise<SymphonySourceContext | undefined> {
-  const sessionId = resolveLinxSessionId({ interactive, runtime: interactive?.runtime, session: interactive?.session })
+  const sessionId = resolveLinxSessionId({ interactive, runtime: interactive?.runtime })
   const webId = await resolveLinxInteractivePodWebId(interactive)
   if (typeof sessionId !== 'string' || !sessionId.trim() || !webId) {
     return undefined
