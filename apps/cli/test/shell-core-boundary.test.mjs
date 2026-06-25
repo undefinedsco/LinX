@@ -374,6 +374,16 @@ test('interactive bootstrap public stop delegates to the shell lifecycle seam', 
   assert.doesNotMatch(source, /stop\(\): void \{[\s\S]*?interactive\.stop\(\)[\s\S]*?\}/)
 })
 
+test('interactive bootstrap public surface does not keep deprecated Pi aliases', () => {
+  const source = readFileSync(join(libRoot, 'linx-interactive-bootstrap.ts'), 'utf8')
+
+  assert.match(source, /\bbootstrapLinxInteractiveMode\b/)
+  assert.match(source, /\bLinxInteractiveBootstrap\b/)
+  assert.doesNotMatch(source, /\bbootstrapPiInteractiveMode\b/)
+  assert.doesNotMatch(source, /\bPiInteractiveBootstrap\b/)
+  assert.doesNotMatch(source, /\bPiInteractiveBootstrapOptions\b/)
+})
+
 test('interactive runtime Pod session mutation is centralized in the runtime host', () => {
   const allowed = new Set([
     'linx-interactive-runtime-host.ts',
