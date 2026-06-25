@@ -234,7 +234,8 @@ Hard rules:
   obtain it through the seam. Feature modules pass the interactive/runtime host
   or explicit DTOs to the metadata seam; they must not extract and pass raw
   `interactive.session` as a convenience; this includes exit/resume copy,
-  extension UI metadata lookups, and Symphony source-context resolution.
+  exit/resume token-usage reads, extension UI metadata lookups, and Symphony
+  source-context resolution.
 - Active session work control is shell session lifecycle, not feature command
   logic. Checks for Pi session streaming/bash state, follow-up delivery option
   selection, session event subscriptions, and abort calls belong
