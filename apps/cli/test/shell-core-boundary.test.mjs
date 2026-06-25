@@ -1451,6 +1451,8 @@ test('interrupt control delegates active session work control to the shell sessi
   assert.doesNotMatch(source, /\bisBashRunning\b/)
   assert.doesNotMatch(source, /\babortBash\b/)
   assert.doesNotMatch(source, /\babort\s*\(/)
+  assert.doesNotMatch(source, /interactive\?\.runtime/)
+  assert.doesNotMatch(source, /interactive\.runtime/)
 })
 
 test('peer and Secretary input delivery delegate streaming state to the shell session seam', () => {

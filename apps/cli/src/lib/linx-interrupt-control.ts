@@ -3,6 +3,7 @@ import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { getLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import { getLinxInteractiveDefaultEditorComponent } from './linx-editor-component-router.js'
+import { getLinxInteractiveRuntime } from './linx-interactive-runtime-host.js'
 import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
 import { stopLinxInteractiveSessionWorkNow } from './linx-session-work-control.js'
 import {
@@ -87,7 +88,7 @@ function shouldHandleLinxIdleDoubleEscape(interactive: any): boolean {
 
 async function openInteractiveRewindFromEscape(interactive: any): Promise<void> {
   try {
-    await handleInteractiveRewindSelector(interactive, interactive?.runtime)
+    await handleInteractiveRewindSelector(interactive, getLinxInteractiveRuntime(interactive))
   } catch (error) {
     showLinxInteractiveError(interactive, error instanceof Error ? error.message : String(error))
   }
@@ -110,7 +111,7 @@ function installLinxClearInterrupt(interactive: any, editor: any, options: LinxI
 }
 
 function handBackAutoControlOnInterrupt(interactive: any, options: LinxInterruptControlOptions): boolean {
-  if (!isLinxInteractiveAutoModeEnabled(interactive, interactive?.runtime)) {
+  if (!isLinxInteractiveAutoModeEnabled(interactive, getLinxInteractiveRuntime(interactive))) {
     return false
   }
 
