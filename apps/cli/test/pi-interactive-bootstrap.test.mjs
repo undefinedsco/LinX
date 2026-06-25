@@ -4235,6 +4235,131 @@ test('linx auth recovery preserves pending retry when auth expired reaches showE
   assert.equal(statuses.some((message) => String(message).includes('Retrying your message')), true)
 })
 
+test('linx interactive branding prompts login when runtime reports missing LinX cloud login during use', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-branding.ts')
+  t.after(() => cleanup())
+
+  const loginRequiredMessage = 'No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.'
+  const selectorCalls = []
+  const statuses = []
+  const branches = []
+  const activeMessages = []
+  const interactive = {
+    session: {
+      agent: {
+        state: {
+          messages: [
+            { role: 'user', content: [{ type: 'text', text: '继续' }] },
+            { role: 'assistant', content: [], stopReason: 'error', errorMessage: loginRequiredMessage },
+          ],
+        },
+        async waitForIdle() {},
+        continue() {},
+      },
+      sessionManager: {
+        getLeafId() {
+          return 'assistant-error'
+        },
+        getEntry(id) {
+          if (id === 'assistant-error') {
+            return {
+              id,
+              type: 'message',
+              parentId: 'user-1',
+              message: {
+                role: 'assistant',
+                content: [],
+                stopReason: 'error',
+                errorMessage: loginRequiredMessage,
+              },
+            }
+          }
+          if (id === 'user-1') {
+            return {
+              id,
+              type: 'message',
+              parentId: null,
+              message: { role: 'user', content: [{ type: 'text', text: '继续' }] },
+            }
+          }
+          return undefined
+        },
+        getBranch() {
+          return [
+            {
+              id: 'user-1',
+              type: 'message',
+              parentId: null,
+              message: { role: 'user', content: [{ type: 'text', text: '继续' }] },
+            },
+            {
+              id: 'assistant-error',
+              type: 'message',
+              parentId: 'user-1',
+              message: {
+                role: 'assistant',
+                content: [],
+                stopReason: 'error',
+                errorMessage: loginRequiredMessage,
+              },
+            },
+          ]
+        },
+        branch(id) {
+          branches.push(id)
+        },
+        buildSessionContext() {
+          activeMessages.push('rebuilt')
+          return { messages: [{ role: 'user', content: [{ type: 'text', text: '继续' }] }] }
+        },
+      },
+      modelRegistry: {
+        refresh() {},
+        authStorage: {
+          async login() {},
+          get() {
+            return undefined
+          },
+          setRuntimeApiKey() {},
+        },
+      },
+    },
+    chatContainer: {
+      addChild() {},
+      removeChild() {},
+    },
+    footer: {
+      invalidate() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    async showExtensionSelector(title, options) {
+      selectorCalls.push({ title, options })
+      return undefined
+    },
+    openExternal() {},
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+    async updateAvailableProviderCount() {},
+  }
+
+  module.applyLinxInteractiveBranding(interactive)
+  interactive.showError(loginRequiredMessage)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(selectorCalls.length, 1)
+  assert.match(selectorCalls[0].title, /LinX Cloud login expired/)
+  assert.equal(statuses.some((message) => String(message).includes('Choose a sign-in method below')), true)
+  assert.deepEqual(branches, ['user-1'])
+  assert.equal(activeMessages.length, 1)
+})
+
 test('linx interactive branding reacts to assistant stream auth-expired events', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-branding.ts')
   t.after(() => cleanup())
