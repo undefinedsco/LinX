@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import type { AgentSessionRuntime, SessionManager } from '@earendil-works/pi-coding-agent'
 import { LinxPiPodMirror } from './linx-pod-mirror.js'
 import { createFileSyncCheckpointStore } from './sync-checkpoint-store.js'
+import { getLinxInteractiveRuntime } from './linx-interactive-runtime-host.js'
 
 export interface LinxPodMirrorRuntimeHostOptions {
   runtime: AgentSessionRuntime
@@ -43,7 +44,7 @@ export function getLinxPodMirrorForInteractiveRuntime(
   interactive: any,
   runtime?: unknown,
 ): LinxPiPodMirror | undefined {
-  return getLinxPodMirrorForRuntime(runtime) ?? getLinxPodMirrorForRuntime(interactive?.runtime)
+  return getLinxPodMirrorForRuntime(runtime) ?? getLinxPodMirrorForRuntime(getLinxInteractiveRuntime(interactive))
 }
 
 export function createLinxPodMirrorRuntimeHost(options: LinxPodMirrorRuntimeHostOptions): LinxPodMirrorRuntimeHost {

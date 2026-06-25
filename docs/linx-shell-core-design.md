@@ -1310,7 +1310,9 @@ Current shell-state rules:
   Rewind and other shell modules may ask the host module for the active mirror,
   but must not read or write mirror handles through `runtime.__linx*` or
   `interactive.__linx*` fields, and must not know fallback lookup details such as
-  `interactive.runtime`.
+  `interactive.runtime`. The Pod mirror host itself must also resolve the active
+  runtime through `linx-interactive-runtime-host.ts` rather than duplicating the
+  interactive runtime fallback.
 - Runtime host callback hooks belong in `linx-interactive-runtime-host.ts`.
   Shell modules may register and read those hooks through explicit host helpers,
   but must not use runtime hidden fields such as before-invalidate or rebind
