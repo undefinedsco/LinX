@@ -10,11 +10,13 @@ type SessionHistoryEntry = {
   message: unknown
 }
 
-export function captureLinxSessionRetryTurn(session: any): LinxSessionRetryTurn {
+export function captureLinxSessionRetryTurn(source: LinxSessionHistorySource): LinxSessionRetryTurn {
+  const session = resolveLinxSessionHistorySession(source)
   return captureLinxRetryTurnFromSessionManager(session?.sessionManager, session?.state?.messages)
 }
 
-export function restoreLinxSessionHistoryBranch(session: any, leafId: string | null | undefined): void {
+export function restoreLinxSessionHistoryBranch(source: LinxSessionHistorySource, leafId: string | null | undefined): void {
+  const session = resolveLinxSessionHistorySession(source)
   restoreSessionHistoryBranchWithManager(session?.sessionManager, leafId, session)
 }
 

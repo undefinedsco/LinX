@@ -463,7 +463,7 @@ function prepareLinxAuthExpiredRetry(interactive: any): void {
     return
   }
 
-  const pending = captureLinxSessionRetryTurn(interactive.session)
+  const pending = captureLinxSessionRetryTurn({ interactive })
   authState.pendingRetry = pending
 
   // AgentSession persists the assistant error after TUI subscribers run. Restore
@@ -471,7 +471,7 @@ function prepareLinxAuthExpiredRetry(interactive: any): void {
   // failed auth assistant message if the user cancels or login fails.
   setTimeout(() => {
     if (getLinxInteractiveAuthState<LinxAuthReason, LinxAuthPendingRetry>(interactive).pendingRetry === pending) {
-      restoreLinxSessionHistoryBranch(interactive.session, pending.continueFromId)
+      restoreLinxSessionHistoryBranch({ interactive }, pending.continueFromId)
     }
   }, 0)
 }
@@ -500,7 +500,7 @@ async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason
   await session.agent?.waitForIdle?.()
 
   try {
-    restoreLinxSessionHistoryBranch(session, pending.continueFromId)
+    restoreLinxSessionHistoryBranch({ session }, pending.continueFromId)
     if (typeof session.agent?.continue === 'function') {
       startLinxContinuation(interactive, session, pending)
       return true
@@ -515,7 +515,7 @@ async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason
     return false
   }
 
-  restoreLinxSessionHistoryBranch(session, pending.promptParentId)
+  restoreLinxSessionHistoryBranch({ session }, pending.promptParentId)
   const promptResult = session.prompt(pending.promptText)
   if (isPromiseLike(promptResult)) {
     promptResult.catch((error) => {
@@ -552,7 +552,7 @@ async function retryLinxPromptFallback(
   }
 
   try {
-    restoreLinxSessionHistoryBranch(session, pending.promptParentId)
+    restoreLinxSessionHistoryBranch({ session }, pending.promptParentId)
     await session.prompt(pending.promptText)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
