@@ -20,10 +20,9 @@ import {
   type LinxRewindMessageItem,
   type LinxSessionHistoryRewindResult,
 } from './linx-session-history.js'
-import { stopLinxActiveSessionWork } from './linx-session-work-control.js'
+import { stopLinxInteractiveSessionWork } from './linx-session-work-control.js'
 
 export async function handleInteractiveRewindSelector(interactive: any, runtime: any): Promise<void> {
-  const session = resolveInteractiveSession(interactive, runtime)
   if (!hasLinxSessionHistory({ interactive, runtime })) {
     showLinxInteractiveError(interactive, 'Cannot rewind: no active LinX session history.')
     showLinxInteractiveStatus(interactive, null)
@@ -48,7 +47,7 @@ export async function handleInteractiveRewindSelector(interactive: any, runtime:
       async (entryId) => {
         try {
           assertLinxRewindUserEntryTarget({ interactive, runtime }, entryId)
-          await stopLinxActiveSessionWork(session)
+          await stopLinxInteractiveSessionWork(interactive, runtime)
           resetPendingAutoInputForRewind(interactive, runtime)
           const result = rewindLinxSessionHistoryBeforeUserEntry({ interactive, runtime }, entryId)
           if (!result) {
@@ -85,14 +84,13 @@ export async function handleInteractiveRewindTurnsCommand(
     return
   }
 
-  const session = resolveInteractiveSession(interactive, runtime)
   if (!hasLinxSessionHistory({ interactive, runtime })) {
     showLinxInteractiveError(interactive, 'Cannot rewind: no active LinX session history.')
     showLinxInteractiveStatus(interactive, null)
     return
   }
 
-  await stopLinxActiveSessionWork(session)
+  await stopLinxInteractiveSessionWork(interactive, runtime)
   resetPendingAutoInputForRewind(interactive, runtime)
 
   const result = rewindLinxSessionHistoryByTurns({ interactive, runtime }, turns)
@@ -106,10 +104,6 @@ export async function handleInteractiveRewindTurnsCommand(
   const target = describeLinxRewindTarget(result.targetLeafId, result.cleanResult)
   const suffix = formatRemainingMessageSuffix(result.remainingMessages)
   showLinxInteractiveStatus(interactive, `Rewound ${result.rewound} turn${result.rewound === 1 ? '' : 's'} to ${target}.${suffix}`)
-}
-
-function resolveInteractiveSession(interactive: any, runtime: any): any {
-  return interactive?.session ?? runtime?.session
 }
 
 function resetPendingAutoInputForRewind(interactive: any, runtime: any): void {

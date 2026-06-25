@@ -237,8 +237,9 @@ Hard rules:
   exit/resume token-usage reads, extension UI metadata lookups, and Symphony
   source-context resolution.
 - Active session work control is shell session lifecycle, not feature command
-  logic. Checks for Pi session streaming/bash state, follow-up delivery option
-  selection, session event subscriptions, and abort calls belong
+  logic. Active session selection across `interactive` / `runtime`, checks for
+  Pi session streaming/bash state, follow-up delivery option selection, session
+  event subscriptions, and abort calls belong
   behind `apps/cli/src/lib/linx-session-work-control.ts`; commands such as
   `/rewind`, Escape interrupt, and auto handback may request active work to stop
   or projected input to be delivered, and controllers such as Secretary auto
