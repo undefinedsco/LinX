@@ -18,6 +18,7 @@ import type { SessionControlManager, SessionControlSnapshot } from './session-co
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 import { canSubmitLinxSessionUserInputNow, submitLinxSessionUserInput } from './linx-session-work-control.js'
 import { getLinxActiveSessionHistoryEntries } from './linx-session-history.js'
+import { resolveLinxSessionModelId } from './linx-session-metadata.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import {
   getLinxInteractiveAutoInputController,
@@ -448,8 +449,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
       cwd: normalizeString(this.interactive?.session?.cwd)
         ?? normalizeString(this.runtime?.cwd)
         ?? snapshot.businessSession.cwd,
-      model: normalizeString(this.interactive?.session?.model?.id)
-        ?? normalizeString(this.runtime?.model),
+      model: resolveLinxSessionModelId({ interactive: this.interactive, runtime: this.runtime }),
       goalMode: isGoalModeActive(this.interactive, this.runtime),
       supervisorIntervalMs: resolveGoalModeSupervisorIntervalMs(this.interactive, this.runtime),
       recentMessages,

@@ -15,8 +15,8 @@ import {
 import { persistSymphonyIdeaToPod } from './symphony/pod-projection.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
-import { getInteractiveRuntimePodSession, setInteractiveRuntimePodSession } from './linx-interactive-runtime-host.js'
-import { resolveLinxSessionId } from './linx-session-metadata.js'
+import { resolveLinxInteractivePodWebId } from './linx-interactive-runtime-host.js'
+import { resolveLinxSessionId, resolveLinxSessionModelId } from './linx-session-metadata.js'
 import { queueLinxInteractiveSessionRuntimeProjection } from './linx-session-work-control.js'
 import {
   getLinxInteractiveListSymphonyIssues,
@@ -386,8 +386,7 @@ function resolveSymphonyControlAgentRuntime(interactive: any): AgentRuntimeBacke
     interactive?.runtime?.agentRuntimeConfig,
   )
   const model = configured?.model ?? normalizeSymphonyConfigString(
-    interactive?.session?.model?.id,
-    interactive?.runtime?.model,
+    resolveLinxSessionModelId({ interactive, runtime: interactive?.runtime }),
   )
   if (!configured && !model) {
     return undefined
@@ -602,7 +601,7 @@ interface SymphonySourceContext {
 
 async function resolveSymphonySourceContext(interactive: any): Promise<SymphonySourceContext | undefined> {
   const sessionId = resolveLinxSessionId({ interactive, runtime: interactive?.runtime, session: interactive?.session })
-  const webId = await resolveSymphonyWebId(interactive)
+  const webId = await resolveLinxInteractivePodWebId(interactive)
   if (typeof sessionId !== 'string' || !sessionId.trim() || !webId) {
     return undefined
   }
@@ -613,28 +612,6 @@ async function resolveSymphonySourceContext(interactive: any): Promise<SymphonyS
     thread: secretaryThreadUri(webId, trimmedSessionId, DEFAULT_SECRETARY_CHAT_ID),
     sessionId: trimmedSessionId,
   }
-}
-
-async function resolveSymphonyWebId(interactive: any): Promise<string | undefined> {
-  const candidates = [
-    interactive?.podSession?.webId,
-    getInteractiveRuntimePodSession(interactive)?.webId,
-    interactive?.session?.podSession?.webId,
-    interactive?.session?.runtime?.podSession?.webId,
-    interactive?.session?.state?.webId,
-    interactive?.state?.webId,
-  ]
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate.trim()
-    }
-  }
-  const podSession = await interactive?.runtime?.getPodDataSession?.().catch(() => null)
-  if (typeof podSession?.webId === 'string' && podSession.webId.trim()) {
-    setInteractiveRuntimePodSession(interactive, podSession)
-    return podSession.webId.trim()
-  }
-  return undefined
 }
 
 

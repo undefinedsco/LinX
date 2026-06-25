@@ -1039,10 +1039,11 @@ Session metadata reads belong behind `linx-session-metadata.ts`, while
 session/runtime cwd mutation belongs behind `linx-session-cwd-router.ts`.
 `/cd`, welcome header, terminal-title rendering, resume output, extension UI
 context, Symphony status, and workspace startup notices may decide user-facing
-copy, but reading Pi session-manager cwd/name/id or applying cwd to Pi session
-state and LinX runtime state is a shell session-state operation. Feature modules
-must call those seams instead of reading `interactive.sessionManager.getCwd()`,
-`getSessionName()`, `getSessionId()`, or writing `interactive.session.cwd` /
+copy, but reading Pi session-manager cwd/name/id, active model identity, or
+applying cwd to Pi session state and LinX runtime state is a shell session-state
+operation. Feature modules must call those seams instead of reading
+`interactive.sessionManager.getCwd()`, `getSessionName()`, `getSessionId()`,
+`interactive.session.model`, or writing `interactive.session.cwd` /
 `runtime.cwd` directly. Inside the metadata seam, Pi session-manager getters must
 be isolated behind a single archive snapshot helper; exported metadata resolvers
 consume that plain snapshot plus explicit session/runtime fields so fallback
@@ -1191,6 +1192,14 @@ must register handlers with that router. They must not replace
 `session.supportsXhighThinking` or `session.getAvailableThinkingLevels`
 directly, because multiple providers or runtime layers may need to contribute
 thinking-level capability rules.
+
+Interactive Pod authority lookup belongs behind
+`linx-interactive-runtime-host.ts`. Symphony, extension UI, auto mode, and other
+feature modules may require the active WebID/Pod session to route product
+resources, but they must not scan `interactive.podSession`,
+`interactive.session.podSession`, or `interactive.session.state.webId`
+themselves. The runtime host owns those compatibility fields and the lazy
+`runtime.getPodDataSession()` lookup/cache path.
 
 Interactive model registry access belongs behind
 `linx-interactive-model-registry-host.ts`. Login, logout, Solid client

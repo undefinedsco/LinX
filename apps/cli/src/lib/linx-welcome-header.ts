@@ -9,7 +9,7 @@ import { LINX_CLI_VERSION } from './linx-self-update.js'
 import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
 import { registerLinxTerminalTitleHandler, requestLinxTerminalTitleRefresh, setLinxTerminalTitle } from './linx-terminal-title-router.js'
 import { invalidateLinxInteractiveHeader, replaceLinxInteractiveHeader } from './linx-interactive-header-host.js'
-import { resolveLinxSessionCwd, resolveLinxSessionId, resolveLinxSessionName } from './linx-session-metadata.js'
+import { resolveLinxSessionCwd, resolveLinxSessionId, resolveLinxSessionModelId, resolveLinxSessionName } from './linx-session-metadata.js'
 
 export function installLinxWelcomeHeader(interactive: any): void {
   registerLinxTerminalTitleHandler(interactive, {
@@ -104,7 +104,7 @@ export function buildLinxWelcomeCardState(interactive: any, profileDisplayName: 
   const sessionId = resolveLinxSessionId({ interactive })
   const sessionName = resolveLinxSessionName({ interactive })
   const session = sessionName && sessionId ? `${sessionName} (${formatSessionId(sessionId)})` : formatSessionId(sessionId)
-  const model = interactive?.session?.model?.id ?? 'unknown-model'
+  const model = resolveLinxSessionModelId({ interactive }) ?? 'unknown-model'
 
   return {
     webId,
