@@ -3,7 +3,7 @@ import { buildAutoModeOptions, type AutoModeCommandArgs } from './auto-mode-comm
 import { assertDefaultStartupPromptTokenIsAllowed, type LinxTopLevelCommandAdmissionOptions } from './linx-top-level-command-admission.js'
 import { handleLinxPodMirrorSyncCliAdmission } from './linx-pod-mirror-sync-cli-admission.js'
 import { handleLinxAutoModeCliAdmission } from './linx-auto-mode-cli-admission.js'
-import { handleLinxPiResumeCliAdmission } from './linx-pi-resume-cli-admission.js'
+import { handleLinxResumeCliAdmission } from './linx-pi-resume-cli-admission.js'
 import { runLinxCliRuntime, type CreateLinxCliRuntimeAdapter } from './linx-pi-runtime-execution.js'
 import { assertLinxCliStartupSessionSelectorCompatibility, createLinxCliStartupPlan } from './linx-pi-startup-plan.js'
 
@@ -36,7 +36,7 @@ export async function runLinxDefaultCommand(argv: {
 } & AutoModeCommandArgs, dependencies: LinxDefaultCliCommandDependencies, options: RunLinxDefaultCommandOptions = {}): Promise<void> {
   assertLinxDefaultCliSessionSelectorCompatibility(argv)
   assertDefaultStartupPromptTokenIsAllowed(argv, options)
-  if (await handleLinxPiResumeCliAdmission(argv, {
+  if (await handleLinxResumeCliAdmission(argv, {
     runWithSelectedSession(selectedArgv) {
       return runLinxDefaultCommand(selectedArgv, dependencies, options)
     },

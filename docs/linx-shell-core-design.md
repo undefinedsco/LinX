@@ -720,6 +720,9 @@ still creates a Pi session manager underneath.
 Startup control-state helpers are LinX control-plane surfaces. Their exported
 hydration, derivation, and resolver names should not carry Pi naming just because
 the restored state is applied to the local Pi runtime session.
+Resume CLI admission is also a LinX CLI surface. It may invoke the Pi/TUI session
+selector UI underneath, but the admission helper/types used by the default
+command module should use LinX resume names.
 
 Startup side-effect ordering is part of the boundary:
 

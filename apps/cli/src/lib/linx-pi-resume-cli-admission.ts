@@ -1,19 +1,19 @@
 import { selectLinxPiSession } from './linx-session-selector-ui.js'
 
-export interface LinxPiResumeCliAdmissionArgs {
+export interface LinxResumeCliAdmissionArgs {
   cwd?: string
   resume?: boolean
   session?: string
   'session-dir'?: string
 }
 
-export interface LinxPiResumeCliAdmissionOptions<TArgs extends LinxPiResumeCliAdmissionArgs> {
+export interface LinxResumeCliAdmissionOptions<TArgs extends LinxResumeCliAdmissionArgs> {
   runWithSelectedSession(argv: TArgs): Promise<void>
 }
 
-export async function handleLinxPiResumeCliAdmission<TArgs extends LinxPiResumeCliAdmissionArgs>(
+export async function handleLinxResumeCliAdmission<TArgs extends LinxResumeCliAdmissionArgs>(
   argv: TArgs,
-  options: LinxPiResumeCliAdmissionOptions<TArgs>,
+  options: LinxResumeCliAdmissionOptions<TArgs>,
 ): Promise<boolean> {
   if (!argv.resume) {
     return false
