@@ -4,6 +4,7 @@ import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { refreshLinxInteractiveProviderCount } from './linx-interactive-provider-count-host.js'
 import { refreshLinxInteractiveModelRegistry } from './linx-interactive-model-registry-host.js'
 import { getLinxInteractiveRuntime } from './linx-interactive-runtime-host.js'
+import { isLinxInteractiveInitialized } from './linx-interactive-lifecycle-host.js'
 import {
   canCollectLinxInteractiveExtensionInput,
   collectLinxInteractiveExtensionInput,
@@ -195,7 +196,7 @@ async function promptForApiCredentialWithPiDialog(
 }
 
 function canRenderPiLoginDialog(interactive: any): boolean {
-  return Boolean(interactive?.isInitialized === true && canMountLinxEditorComponent(interactive))
+  return Boolean(isLinxInteractiveInitialized(interactive) && canMountLinxEditorComponent(interactive))
 }
 
 async function promptForBackendCredentialWithExtensionInput(

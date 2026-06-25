@@ -1324,6 +1324,10 @@ Current shell-state rules:
   seam before reading runtime-owned backend, model, credential, or session data.
   Lifecycle callbacks that receive only a target interactive object, such as the
   post-init interrupt auto handback hook, must use the same runtime host lookup.
+- Interactive init/lifecycle state reads belong in
+  `linx-interactive-lifecycle-host.ts`. Feature modules that need to decide
+  whether TUI-only UI can be shown must use a named lifecycle helper instead of
+  reading `interactive.isInitialized`.
 - Runtime Pod session cache belongs in `linx-interactive-runtime-host.ts`.
   Shell modules that discover or reuse `runtime.podSession` must use explicit
   host helpers; feature modules such as Symphony may read/write the cached Pod

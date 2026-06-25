@@ -40,6 +40,7 @@ import { clearLinxInteractiveStreamingMessage } from './linx-interactive-streami
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import { getLinxInteractiveAuthState } from './linx-interactive-auth-state-host.js'
+import { isLinxInteractiveInitialized } from './linx-interactive-lifecycle-host.js'
 import {
   canMountLinxEditorComponent,
   createLinxLoginDialogComponent,
@@ -88,7 +89,7 @@ export function shouldDeferLinxCloudLogin(interactive: any): boolean {
 
 export function requestLinxCloudLogin(interactive: any, reason: LinxAuthReason = 'manual', options: LinxLoginFlowOptions = {}): void {
   rememberLinxLoginFlowOptions(interactive, options)
-  if (!interactive.isInitialized) {
+  if (!isLinxInteractiveInitialized(interactive)) {
     getLinxInteractiveAuthState<LinxAuthReason>(interactive).loginOnInit = reason
     return
   }
