@@ -2,6 +2,7 @@ import {
   getSessionCommandRouterOriginalPrompt,
   getSessionCommandRouterOriginalSendUserMessage,
 } from './linx-session-command-routing-host.js'
+import { restoreLinxSessionHistoryBranch, type LinxSessionRetryTurn } from './linx-session-history.js'
 
 export async function stopLinxActiveSessionWork(session: any, options: { waitTimeoutMs?: number } = {}): Promise<void> {
   if (!session) {
@@ -81,6 +82,42 @@ export async function submitLinxInteractiveSessionUserInputBypassingCommandRoute
   })
 }
 
+export async function retryLinxInteractiveSessionTurn(
+  interactive: any,
+  pending: LinxSessionRetryTurn,
+  options: { onRetryFailed?: (error: unknown) => void } = {},
+): Promise<boolean> {
+  const session = interactive?.session
+  if (!session) {
+    return false
+  }
+
+  await session.agent?.waitForIdle?.()
+
+  try {
+    restoreLinxSessionHistoryBranch({ session }, pending.continueFromId)
+    if (typeof session.agent?.continue === 'function') {
+      startLinxSessionContinuation(session, pending, options)
+      return true
+    }
+  } catch (error) {
+    if (!pending.promptText) {
+      throw error
+    }
+  }
+
+  if (!pending.promptText || typeof session.prompt !== 'function') {
+    return false
+  }
+
+  restoreLinxSessionHistoryBranch({ session }, pending.promptParentId)
+  const promptResult = session.prompt(pending.promptText)
+  if (isPromiseLike(promptResult)) {
+    Promise.resolve(promptResult).catch((error: unknown) => options.onRetryFailed?.(error))
+  }
+  return true
+}
+
 export type LinxRuntimeProjectionMessage = {
   customType: string
   content: string
@@ -157,4 +194,44 @@ function isLinxInteractiveSessionWorkActive(interactive: any): boolean {
     || Boolean(interactive?.loadingAnimation)
     || Boolean(interactive?.autoCompactionEscapeHandler)
     || Boolean(interactive?.retryEscapeHandler)
+}
+
+function startLinxSessionContinuation(
+  session: any,
+  pending: LinxSessionRetryTurn,
+  options: { onRetryFailed?: (error: unknown) => void },
+): void {
+  try {
+    const result = session.agent.continue()
+    if (isPromiseLike(result)) {
+      Promise.resolve(result).catch((error: unknown) => {
+        void retryLinxSessionPromptFallback(session, pending, error, options)
+      })
+    }
+  } catch (error) {
+    void retryLinxSessionPromptFallback(session, pending, error, options)
+  }
+}
+
+async function retryLinxSessionPromptFallback(
+  session: any,
+  pending: LinxSessionRetryTurn,
+  cause: unknown,
+  options: { onRetryFailed?: (error: unknown) => void },
+): Promise<void> {
+  if (!pending.promptText || typeof session?.prompt !== 'function') {
+    options.onRetryFailed?.(cause)
+    return
+  }
+
+  try {
+    restoreLinxSessionHistoryBranch({ session }, pending.promptParentId)
+    await session.prompt(pending.promptText)
+  } catch (error) {
+    options.onRetryFailed?.(error)
+  }
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return Boolean(value && typeof (value as { then?: unknown }).then === 'function')
 }
