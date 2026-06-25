@@ -44,8 +44,9 @@ yarn workspace @undefineds.co/linx dev --backend claude "先总结这个目录�
 yarn workspace @undefineds.co/linx dev --backend codebuddy -- --tools Read,Edit
 yarn workspace @undefineds.co/linx dev --backend codex --auto
 yarn workspace @undefineds.co/linx dev --list-backends
-yarn workspace @undefineds.co/linx dev --sessions
-yarn workspace @undefineds.co/linx dev --show <sessionId>
+
+# 恢复/选择本地 TUI session 走 Pi-compatible resume surface
+yarn workspace @undefineds.co/linx dev --resume
 ```
 
 ## Slash Commands
@@ -137,7 +138,7 @@ LINX_SMOKE_TIMEOUT_MS=300000 yarn workspace @undefineds.co/linx test:live-acp
 - 当前是最小多轮版：本地 REPL、统一 ACP 会话、归档结构化事件
 - 在交互式 TTY 里，`--backend ...` 使用 auto-mode ACP 控制界面；默认无 `--backend` 才进入 LinX/Pi TUI
 - Slash command 只有一套截获入口；全局 LinX 命令由壳处理，其他命令交给当前 backend adapter，通用 TUI 层不写 Codex/Claude/CodeBuddy 专属逻辑
-- `linx --show <sessionId>` 现在会回放归档 timeline，而不是直接输出 `session.json`
+- 本地 TUI session 恢复/选择走 `linx --resume` / `linx -r`；LinX 不维护第二套顶层 session-list 命令
 - `codex` 走 `codex-acp`，`claude` 走 `claude-code-acp`，`codebuddy` 走内置 `--acp --acp-transport stdio`
 - 当前 `linx --backend codex` 只有 ACP 路径，前台是 auto-mode 控制界面，后端命令由 `codex-acp` 执行
 - Codex 原生壳相关集成不放在 backend 控制界面里维护；后台桥接能力位于 `apps/cli/src/lib/codex-plugin/*`，按 plugin/sidecar 语义组织
