@@ -47,6 +47,36 @@ export async function submitLinxSessionUserInput(session: any, text: string, opt
   throw new Error(options.unavailableMessage ?? 'Active LinX session cannot accept user input')
 }
 
+export type LinxRuntimeProjectionMessage = {
+  customType: string
+  content: string
+  display?: boolean
+  details?: unknown
+}
+
+export async function queueLinxSessionRuntimeProjection(session: any, message: LinxRuntimeProjectionMessage, options: {
+  deliverAs?: 'steer' | 'followUp' | 'nextTurn'
+  sendCustomMessage?: (message: LinxRuntimeProjectionMessage, options?: unknown) => Promise<unknown> | unknown
+} = {}): Promise<boolean> {
+  const sendCustomMessage = options.sendCustomMessage ?? session?.sendCustomMessage
+  if (typeof sendCustomMessage !== 'function') {
+    return false
+  }
+
+  await sendCustomMessage.call(session, {
+    ...message,
+    display: message.display ?? false,
+  }, { deliverAs: options.deliverAs ?? 'nextTurn' })
+  return true
+}
+
+export async function queueLinxInteractiveSessionRuntimeProjection(interactive: any, message: LinxRuntimeProjectionMessage, options: {
+  deliverAs?: 'steer' | 'followUp' | 'nextTurn'
+  sendCustomMessage?: (message: LinxRuntimeProjectionMessage, options?: unknown) => Promise<unknown> | unknown
+} = {}): Promise<boolean> {
+  return queueLinxSessionRuntimeProjection(interactive?.session, message, options)
+}
+
 export function canSubmitLinxSessionUserInputNow(session: any): boolean {
   return Boolean(session) && !isLinxSessionStreaming(session)
 }

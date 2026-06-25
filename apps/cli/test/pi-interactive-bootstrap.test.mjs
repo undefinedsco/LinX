@@ -3142,6 +3142,7 @@ test('interactive shell command modules share one submit patch point', async (t)
 
   let setupPatchCount = 0
   const submitted = []
+  const projectionMessages = []
   const statuses = []
   const selectors = []
   const interactive = {
@@ -3151,6 +3152,11 @@ test('interactive shell command modules share one submit patch point', async (t)
     },
     ui: {
       requestRender() {},
+    },
+    session: {
+      async sendCustomMessage(message, options) {
+        projectionMessages.push({ message, options })
+      },
     },
     runtime: {},
     setupEditorSubmitHandler() {
@@ -3206,8 +3212,13 @@ test('interactive shell command modules share one submit patch point', async (t)
   assert.equal(statuses.some((message) => String(message).includes('Symphony is off')), true)
   assert.equal(statuses.some((message) => String(message).includes('backend:/status')), true)
   assert.equal(submitted.length, 1)
-  assert.match(submitted[0], /AI Secretary Symphony request/)
-  assert.match(submitted[0], /User message:\nhello/)
+  assert.equal(submitted[0], 'hello')
+  assert.equal(projectionMessages.length, 1)
+  assert.equal(projectionMessages[0].options.deliverAs, 'nextTurn')
+  assert.equal(projectionMessages[0].message.display, false)
+  assert.equal(projectionMessages[0].message.customType, 'linx.symphony.secretary_projection')
+  assert.match(projectionMessages[0].message.content, /AI Secretary Symphony request/)
+  assert.match(projectionMessages[0].message.content, /User message:\nhello/)
 })
 
 test('linx /login command shows a LinX-only auth selector before browser login', async (t) => {
@@ -6187,6 +6198,7 @@ test('linx interactive /symphony switches current chat peer for following messag
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
   const submitted = []
+  const projectionMessages = []
   const statuses = []
   const editorTexts = []
   const controlManagers = []
@@ -6194,6 +6206,11 @@ test('linx interactive /symphony switches current chat peer for following messag
     defaultEditor: {},
     podSession: {
       webId: 'https://alice.example/profile/card#me',
+    },
+    session: {
+      async sendCustomMessage(message, options) {
+        projectionMessages.push({ message, options })
+      },
     },
     sessionManager: {
       getSessionId() {
@@ -6287,17 +6304,22 @@ test('linx interactive /symphony switches current chat peer for following messag
   assert.match(statuses[2], /Back to direct chat/)
   assert.match(statuses[2], /Active handoffs from this window were stopped/)
   assert.equal(submitted.length, 2)
-  assert.match(submitted[0], /AI Secretary Symphony request/)
-  assert.match(submitted[0], /Symphony is on: the user is chatting with Secretary/)
-  assert.match(submitted[0], /Default response style: reply like normal chat/)
-  assert.match(submitted[0], /do not explain that it was not delegated/)
-  assert.match(submitted[0], /use the xpod CLI as the direct Pod tool surface/i)
-  assert.match(submitted[0], /model-backed xpod obj commands/)
-  assert.match(submitted[0], /same Solid authority as LinX inside the Agent Runtime/)
-  assert.match(submitted[0], /verify xpod auth status\/whoami reports the same acting WebID\/Pod root/)
-  assert.match(submitted[0], /Do not hand-patch TTL or guess Pod paths/)
-  assert.match(submitted[0], /ship the login fix/)
+  assert.equal(submitted[0], 'ship the login fix')
   assert.equal(submitted[1], 'normal chat')
+  assert.equal(projectionMessages.length, 1)
+  assert.equal(projectionMessages[0].options.deliverAs, 'nextTurn')
+  assert.equal(projectionMessages[0].message.display, false)
+  assert.equal(projectionMessages[0].message.customType, 'linx.symphony.secretary_projection')
+  assert.match(projectionMessages[0].message.content, /AI Secretary Symphony request/)
+  assert.match(projectionMessages[0].message.content, /Symphony is on: the user is chatting with Secretary/)
+  assert.match(projectionMessages[0].message.content, /Default response style: reply like normal chat/)
+  assert.match(projectionMessages[0].message.content, /do not explain that it was not delegated/)
+  assert.match(projectionMessages[0].message.content, /use the xpod CLI as the direct Pod tool surface/i)
+  assert.match(projectionMessages[0].message.content, /model-backed xpod obj commands/)
+  assert.match(projectionMessages[0].message.content, /same Solid authority as LinX inside the Agent Runtime/)
+  assert.match(projectionMessages[0].message.content, /verify xpod auth status\/whoami reports the same acting WebID\/Pod root/)
+  assert.match(projectionMessages[0].message.content, /Do not hand-patch TTL or guess Pod paths/)
+  assert.match(projectionMessages[0].message.content, /ship the login fix/)
   assert.equal(controlManagers.length, 1)
   const messageEntry = controlManagers[0].getEntries().find((entry) => (
     entry.type === 'custom'
@@ -6315,6 +6337,7 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
   t.after(() => cleanup())
 
   const submitted = []
+  const projectionMessages = []
   const statuses = []
   const errors = []
   const runCalls = []
@@ -6327,6 +6350,9 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
     session: {
       model: {
         id: 'gpt-5.5',
+      },
+      async sendCustomMessage(message, options) {
+        projectionMessages.push({ message, options })
       },
     },
     sessionManager: {
@@ -6385,11 +6411,16 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
   assert.deepEqual(runCalls, [])
   assert.equal(submitted.length, messages.length)
   for (let i = 0; i < messages.length; i += 1) {
-    assert.match(submitted[i], /AI Secretary Symphony request/)
-    assert.match(submitted[i], /Symphony is on: the user is chatting with Secretary/)
-    assert.match(submitted[i], /xpod CLI as the direct Pod tool surface/i)
-    assert.match(submitted[i], new RegExp(messages[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    assert.equal(submitted[i], messages[i])
+    assert.equal(projectionMessages[i].options.deliverAs, 'nextTurn')
+    assert.equal(projectionMessages[i].message.display, false)
+    assert.equal(projectionMessages[i].message.customType, 'linx.symphony.secretary_projection')
+    assert.match(projectionMessages[i].message.content, /AI Secretary Symphony request/)
+    assert.match(projectionMessages[i].message.content, /Symphony is on: the user is chatting with Secretary/)
+    assert.match(projectionMessages[i].message.content, /xpod CLI as the direct Pod tool surface/i)
+    assert.match(projectionMessages[i].message.content, new RegExp(messages[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
+  assert.equal(projectionMessages.length, messages.length)
   assert.deepEqual(editorTexts, [''])
   assert.match(statuses[0], /Symphony is on/)
   assert.equal(statuses.length, 1)
@@ -6400,12 +6431,18 @@ test('linx interactive /symphony off restores worker backend chat without pendin
   t.after(() => cleanup())
 
   const submitted = []
+  const projectionMessages = []
   const statuses = []
   const errors = []
   const interactive = {
     defaultEditor: {},
     podSession: {
       webId: 'https://alice.example/profile/card#me',
+    },
+    session: {
+      async sendCustomMessage(message, options) {
+        projectionMessages.push({ message, options })
+      },
     },
     sessionManager: {
       getSessionId() {
@@ -6452,9 +6489,14 @@ test('linx interactive /symphony off restores worker backend chat without pendin
   assert.equal(errors.length, 0)
   assert.equal(module.isLinxInteractiveSymphonyModeEnabled(interactive), false)
   assert.equal(submitted.length, 2)
-  assert.match(submitted[0], /AI Secretary Symphony request/)
-  assert.match(submitted[0], /请派出一个任务，让 worker 回复 exactly symphony-ok/)
+  assert.equal(submitted[0], '请派出一个任务，让 worker 回复 exactly symphony-ok')
   assert.equal(submitted[1], 'normal chat after off')
+  assert.equal(projectionMessages.length, 1)
+  assert.equal(projectionMessages[0].options.deliverAs, 'nextTurn')
+  assert.equal(projectionMessages[0].message.display, false)
+  assert.equal(projectionMessages[0].message.customType, 'linx.symphony.secretary_projection')
+  assert.match(projectionMessages[0].message.content, /AI Secretary Symphony request/)
+  assert.match(projectionMessages[0].message.content, /请派出一个任务，让 worker 回复 exactly symphony-ok/)
   assert.match(statuses[0], /Symphony is on/)
   assert.match(statuses[1], /Symphony is off/)
   assert.match(statuses[1], /Back to direct chat/)

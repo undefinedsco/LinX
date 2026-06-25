@@ -154,6 +154,22 @@ Secretary messages invisible, or silently route normal text to a worker. If
 Secretary forwards a message to a worker, the UI should show a visible
 acknowledgement or status transition in the Secretary Thread.
 
+Worker activity is not a reason to stop answering Secretary-facing chat. When a
+worker reports progress, requests approval/input, fails, or completes, the event
+is delivered to the control plane/inbox and projected to any active Secretary
+client. The active Secretary may inspect the referenced resource and decide
+whether to summarize it, ask the user, steer the worker, or wait. The projected
+event should carry stable resource ids/pointers, not a full hidden transcript
+or prompt wrapper. The event itself is control-plane context for Secretary; the
+visible product message is whatever Secretary chooses to say in response.
+
+If multiple clients are open, active-client selection is a subscription/runtime
+concern, not a new Symphony state machine. Clients subscribe to the same Pod
+control resources and local runtime events, then wake their active Secretary
+lane when an InputRequest, ApprovalRequest, InboxNotification, Delivery, or Run
+status change is relevant to the current Chat/Thread. Polling may be a fallback
+transport, but it must not become a second source of truth.
+
 When `symphony on`, Secretary analyzes objectives this way:
 
 - treat ordinary chat as `Message`, not as an `Issue`;
