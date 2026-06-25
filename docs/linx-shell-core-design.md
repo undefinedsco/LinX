@@ -244,8 +244,8 @@ Hard rules:
   input may subscribe to active-session events. Feature modules should prefer
   interactive-level seam helpers when acting on the active session; they must
   not know Pi's `isStreaming`, `isBashRunning`, `abort`, `abortBash`,
-  `subscribe`, `deliverAs: followUp`, or `streamingBehavior: followUp`
-  field/option layout.
+  `subscribe`, command-router original `prompt` / `sendUserMessage` handlers,
+  `deliverAs: followUp`, or `streamingBehavior: followUp` field/option layout.
 - Session history and branch repair are shell session-history lifecycle, not
   feature-local retry logic. Reads of Pi `sessionManager` history, leaf/branch
   selection, parent-id normalization, branch restore, leaf reset, and
@@ -1070,9 +1070,10 @@ best-effort cancellation before continuing shell-local control flow. Projected
 input paths such as peer command routing and Secretary auto input may ask the
 seam whether local submission is currently safe and may ask it to deliver input
 using Pi's current follow-up semantics. They must not directly inspect Pi
-session running fields, construct Pi follow-up options, or call Pi abort
-methods; the seam owns those upstream field names/options and the fail-soft
-abort behavior.
+session running fields, select command-router original `prompt` /
+`sendUserMessage` handlers, construct Pi follow-up options, or call Pi abort
+methods; the seam owns those upstream field names/options, bypass-original
+delivery, and the fail-soft abort behavior.
 
 Session history access belongs behind a dedicated shell session-history seam.
 Pi's session manager is an upstream archive/context implementation detail: leaf

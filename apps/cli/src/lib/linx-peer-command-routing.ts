@@ -1,11 +1,7 @@
 import type { AutoModePeerCommandRoute } from '@linx/agent-runtime/auto-mode'
 import { setLinxInteractiveGoalModeEnabled } from './linx-interactive-shell-state.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
-import {
-  getSessionCommandRouterOriginalPrompt,
-  getSessionCommandRouterOriginalSendUserMessage,
-} from './linx-session-command-routing-host.js'
-import { submitLinxSessionUserInput } from './linx-session-work-control.js'
+import { submitLinxInteractiveSessionUserInputBypassingCommandRouter } from './linx-session-work-control.js'
 
 export async function routeLinxPeerCommand(
   interactive: any,
@@ -24,10 +20,7 @@ export async function routeLinxPeerCommand(
 }
 
 async function submitPeerCommandToBackend(interactive: any, text: string): Promise<void> {
-  const session = interactive?.session
-  await submitLinxSessionUserInput(session, text, {
-    sendUserMessage: getSessionCommandRouterOriginalSendUserMessage(session),
-    prompt: getSessionCommandRouterOriginalPrompt(session),
+  await submitLinxInteractiveSessionUserInputBypassingCommandRouter(interactive, text, {
     unavailableMessage: 'Active LinX session cannot accept peer goal input',
   })
 }
