@@ -1334,7 +1334,8 @@ Current shell-state rules:
 - Interactive stop/exit requests from feature modules must go through the shell
   lifecycle seam, such as `stopInteractiveShellUnlessRestarting`, instead of
   calling `interactive.stop()` directly. Feature code does not own restart-aware
-  terminal shutdown.
+  terminal shutdown. Public shell bootstrap stop APIs follow the same seam so
+  externally requested cleanup does not race TUI self-update restarts.
 - Runtime Pod session cache belongs in `linx-interactive-runtime-host.ts`.
   Shell modules that discover or reuse `runtime.podSession` must use explicit
   host helpers; feature modules such as Symphony may read/write the cached Pod
