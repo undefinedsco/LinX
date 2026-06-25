@@ -809,6 +809,21 @@ test('feature modules read active model identity through the session metadata se
   }
 })
 
+test('feature modules read active cwd through the session metadata seam', () => {
+  const featureFiles = [
+    'linx-pod-backed-extension-ui.ts',
+    'linx-workspace-command.ts',
+    'secretary-auto-input-controller.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"].*linx-session-metadata\.js['"]/, target)
+    assert.match(source, /\bresolveLinxSessionCwd\b/, target)
+    assert.doesNotMatch(source, /\.session\?\.cwd|\.session\.cwd/, target)
+  }
+})
+
 test('Symphony source WebID resolution stays behind the interactive runtime host', () => {
   const source = readFileSync(join(libRoot, 'linx-symphony-interactive-command.ts'), 'utf8')
   assert.match(source, /from ['"]\.\/linx-interactive-runtime-host\.js['"]/)

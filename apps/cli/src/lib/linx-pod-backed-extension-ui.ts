@@ -2,7 +2,7 @@ import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent'
 import { createPodBackedExtensionUiContext } from './pod-backed-extension-ui-context.js'
 import { getSessionControlManager } from './session-control.js'
 import { registerLinxExtensionUiContextHandler } from './linx-extension-ui-context-router.js'
-import { resolveLinxSessionId } from './linx-session-metadata.js'
+import { resolveLinxSessionCwd, resolveLinxSessionId } from './linx-session-metadata.js'
 
 export function installPodBackedExtensionUi(
   interactive: any,
@@ -22,7 +22,7 @@ export function installPodBackedExtensionUi(
       }
 
       return createPodBackedExtensionUiContext(ui as ExtensionUIContext, {
-        cwd: contextInteractive?.session?.cwd ?? runtime?.cwd ?? process.cwd(),
+        cwd: resolveLinxSessionCwd({ interactive: contextInteractive, runtime }, process.cwd()),
         sessionId: () => resolveLinxSessionId({ interactive: contextInteractive, runtime, session: contextInteractive?.session }),
         sessionControl,
         onWarning(error) {
