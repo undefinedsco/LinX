@@ -10,7 +10,7 @@ import {
   withLinxResumeOutputStyle,
   withSuppressedPiResumeOutput,
 } from './linx-resume-output.js'
-import { installInteractiveStopCleanup } from './shell-lifecycle.js'
+import { installInteractiveStopCleanup, stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from './linx-footer-patch.js'
 import { patchPiAssistantMessageRendering } from './linx-assistant-message-rendering.js'
 import { promptForBackendCredential } from './linx-ai-connect-command.js'
@@ -97,7 +97,7 @@ export function bootstrapLinxInteractiveMode(
     },
     __unsafeInteractiveForTests: interactive,
     stop(): void {
-      interactive.stop()
+      stopInteractiveShellUnlessRestarting(interactive as any)
     },
   }
   return bootstrap

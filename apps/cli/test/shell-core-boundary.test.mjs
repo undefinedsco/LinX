@@ -366,6 +366,14 @@ test('interactive bootstrap installs active runtime through the runtime host', (
   assert.doesNotMatch(source, /interactive\.runtime\s*=/)
 })
 
+test('interactive bootstrap public stop delegates to the shell lifecycle seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-interactive-bootstrap.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/shell-lifecycle\.js['"]/)
+  assert.match(source, /\bstopInteractiveShellUnlessRestarting\b/)
+  assert.doesNotMatch(source, /stop\(\): void \{[\s\S]*?interactive\.stop\(\)[\s\S]*?\}/)
+})
+
 test('interactive runtime Pod session mutation is centralized in the runtime host', () => {
   const allowed = new Set([
     'linx-interactive-runtime-host.ts',
