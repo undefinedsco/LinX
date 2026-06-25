@@ -9,36 +9,36 @@ import { createFileSyncCheckpointStore } from './sync-checkpoint-store.js'
 import { LinxPiPodMirror } from './linx-pod-mirror.js'
 import { createLinxPiSessionManager } from './linx-session-manager.js'
 
-export interface PiPodMirrorSyncStatus {
+export interface LinxPodMirrorSyncStatus {
   sessionId: string
   checkpoints: LinxSyncCheckpoint[]
 }
 
-export interface PiPodMirrorSyncRetryResult {
+export interface LinxPodMirrorSyncRetryResult {
   sessionId: string
   attempted: boolean
   results: LinxSyncRunResult[]
 }
 
-export function getPiPodMirrorSyncDir(agentDir: string, sessionId?: string): string {
+export function getLinxPodMirrorSyncDir(agentDir: string, sessionId?: string): string {
   const baseDir = join(agentDir, 'sync', 'pi-pod-mirror')
   return sessionId ? join(baseDir, sessionId) : baseDir
 }
 
-export async function listPendingPiPodMirrorSync(agentDir: string): Promise<PiPodMirrorSyncStatus[]> {
-  const baseDir = getPiPodMirrorSyncDir(agentDir)
+export async function listPendingLinxPodMirrorSync(agentDir: string): Promise<LinxPodMirrorSyncStatus[]> {
+  const baseDir = getLinxPodMirrorSyncDir(agentDir)
   if (!existsSync(baseDir)) {
     return []
   }
 
-  const statuses: PiPodMirrorSyncStatus[] = []
+  const statuses: LinxPodMirrorSyncStatus[] = []
   for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) {
       continue
     }
     const sessionId = entry.name
     const checkpoints = await listLinxSyncCheckpoints(createFileSyncCheckpointStore({
-      dir: getPiPodMirrorSyncDir(agentDir, sessionId),
+      dir: getLinxPodMirrorSyncDir(agentDir, sessionId),
     }), {
       source: 'pi-runtime',
       target: 'pod',
@@ -64,13 +64,13 @@ export async function listPendingPiPodMirrorSync(agentDir: string): Promise<PiPo
   })
 }
 
-export async function retryPendingPiPodMirrorSync(options: {
+export async function retryPendingLinxPodMirrorSync(options: {
   cwd: string
   agentDir: string
   sessionId: string
-}): Promise<PiPodMirrorSyncRetryResult> {
+}): Promise<LinxPodMirrorSyncRetryResult> {
   const checkpointStore = createFileSyncCheckpointStore({
-    dir: getPiPodMirrorSyncDir(options.agentDir, options.sessionId),
+    dir: getLinxPodMirrorSyncDir(options.agentDir, options.sessionId),
   })
   const pending = await listLinxSyncCheckpoints(checkpointStore, {
     source: 'pi-runtime',

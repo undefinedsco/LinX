@@ -620,6 +620,9 @@ Specific decisions currently in force:
   an operation becomes part of normal session navigation, it must move to the
   active Pi/TUI selector surface or a documented scriptable API; it must not be
   smuggled through a hidden flag.
+- Pod mirror sync recovery helpers expose LinX-named retry/status DTOs and
+  functions. They may match checkpoint records whose source is `pi-runtime`, but
+  their public helper names must describe the LinX Pod sync repair surface.
 - When a backend exposes richer native command help, expose it where the backend
   is active, not through top-level `linx --help`.
 

@@ -1,9 +1,9 @@
-import { listPendingPiPodMirrorSync, retryPendingPiPodMirrorSync } from './linx-pod-mirror-sync-recovery.js'
+import { listPendingLinxPodMirrorSync, retryPendingLinxPodMirrorSync } from './linx-pod-mirror-sync-recovery.js'
 
 export async function runLinxPodMirrorSyncStatusCommand(options: {
   agentDir: string
 }): Promise<void> {
-  const sessions = await listPendingPiPodMirrorSync(options.agentDir)
+  const sessions = await listPendingLinxPodMirrorSync(options.agentDir)
   if (sessions.length === 0) {
     process.stdout.write('No pending LinX Pod sync sessions.\n')
     return
@@ -22,7 +22,7 @@ export async function runLinxPodMirrorSyncRetryCommand(options: {
   agentDir: string
   sessionId: string
 }): Promise<void> {
-  const result = await retryPendingPiPodMirrorSync({
+  const result = await retryPendingLinxPodMirrorSync({
     cwd: options.cwd,
     agentDir: options.agentDir,
     sessionId: options.sessionId,
