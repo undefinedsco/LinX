@@ -794,6 +794,28 @@ test('Symphony runtime projection queues custom context through the shell sessio
   assert.doesNotMatch(source, /\.session\?\.sendCustomMessage|\.session\.sendCustomMessage|sendCustomMessage\.call/, 'feature code must not call Pi sendCustomMessage directly')
 })
 
+test('feature modules read active model identity through the session metadata seam', () => {
+  const featureFiles = [
+    'linx-symphony-interactive-command.ts',
+    'linx-welcome-header.ts',
+    'secretary-auto-input-controller.ts',
+  ]
+
+  for (const target of featureFiles) {
+    const source = readFileSync(join(libRoot, target), 'utf8')
+    assert.match(source, /from ['"].*linx-session-metadata\.js['"]/, target)
+    assert.match(source, /\bresolveLinxSessionModelId\b/, target)
+    assert.doesNotMatch(source, /\.session\?\.model|\.session\.model/, target)
+  }
+})
+
+test('Symphony source WebID resolution stays behind the interactive runtime host', () => {
+  const source = readFileSync(join(libRoot, 'linx-symphony-interactive-command.ts'), 'utf8')
+  assert.match(source, /from ['"]\.\/linx-interactive-runtime-host\.js['"]/)
+  assert.match(source, /\bresolveLinxInteractivePodWebId\b/)
+  assert.doesNotMatch(source, /\.podSession\?\.webId|\.session\?\.podSession|\.session\?\.runtime\?\.podSession|\.session\?\.state\?\.webId|\.state\?\.webId/)
+})
+
 test('feature modules refresh interactive provider count through the shell provider count seam', () => {
   const featureFiles = [
     'linx-ai-connect-command.ts',

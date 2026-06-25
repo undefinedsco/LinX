@@ -79,3 +79,32 @@ export function setInteractiveRuntimePodSession(interactive: any, podSession: un
 export function getInteractiveRuntimePodSession(interactive: any): any {
   return interactive?.runtime?.podSession
 }
+
+export async function resolveLinxInteractivePodWebId(interactive: any): Promise<string | undefined> {
+  const candidates = [
+    interactive?.podSession?.webId,
+    getInteractiveRuntimePodSession(interactive)?.webId,
+    interactive?.session?.podSession?.webId,
+    interactive?.session?.runtime?.podSession?.webId,
+    interactive?.session?.state?.webId,
+    interactive?.state?.webId,
+  ]
+  for (const candidate of candidates) {
+    const normalized = normalizeRuntimeHostString(candidate)
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  const podSession = await interactive?.runtime?.getPodDataSession?.().catch(() => null)
+  const webId = normalizeRuntimeHostString(podSession?.webId)
+  if (webId) {
+    setInteractiveRuntimePodSession(interactive, podSession)
+    return webId
+  }
+  return undefined
+}
+
+function normalizeRuntimeHostString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}

@@ -41,6 +41,15 @@ export function resolveLinxSessionId(source: LinxSessionMetadataSource): string 
   )
 }
 
+export function resolveLinxSessionModelId(source: LinxSessionMetadataSource): string | undefined {
+  return normalizeLinxSessionMetadataString(
+    source.session?.model?.id
+      ?? source.interactive?.session?.model?.id
+      ?? source.runtime?.session?.model?.id
+      ?? source.runtime?.model,
+  )
+}
+
 function resolveLinxSessionMetadataArchiveSnapshot(source: LinxSessionMetadataSource): LinxSessionMetadataArchiveSnapshot {
   return {
     cwd: normalizeLinxSessionMetadataString(
