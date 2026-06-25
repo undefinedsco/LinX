@@ -80,6 +80,17 @@ export function getInteractiveRuntimePodSession(interactive: any): any {
   return interactive?.runtime?.podSession
 }
 
+export function resolveLinxInteractiveRuntimeProviderLabel(interactive: any): string {
+  const bridge = getLinxInteractiveRuntimeAuthBridge(interactive)
+  return normalizeRuntimeHostString(bridge?.providerLabel) ?? 'LinX Cloud'
+}
+
+function getLinxInteractiveRuntimeAuthBridge(interactive: any): any {
+  return interactive?.runtimeHost?.linxAuthBridge
+    ?? interactive?.runtime?.linxAuthBridge
+    ?? interactive?.linxAuthBridge
+}
+
 export async function resolveLinxInteractivePodWebId(interactive: any): Promise<string | undefined> {
   const candidates = [
     interactive?.podSession?.webId,

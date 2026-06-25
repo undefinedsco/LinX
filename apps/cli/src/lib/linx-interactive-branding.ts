@@ -6,7 +6,7 @@ import {
   shouldDeferLinxCloudLogin,
   type LinxLoginFlowOptions,
 } from './linx-login-flow.js'
-import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
+import { resolveLinxInteractiveRuntimeProviderLabel } from './linx-interactive-runtime-host.js'
 import { installLinxWelcomeHeader } from './linx-welcome-header.js'
 
 export const LINX_AGENT_DIR = getSolidLinxAgentDir()
@@ -30,7 +30,7 @@ function buildLinxLoginFlowOptions(
 ): LinxLoginFlowOptions {
   return {
     ...options,
-    resolveProviderLabel: resolveRuntimeProviderLabel,
+    resolveProviderLabel: resolveLinxInteractiveRuntimeProviderLabel,
     onLoginSettled: () => replayDeferredLinxUpdateNotification(interactive, {
       shouldDefer: () => shouldDeferLinxCloudLogin(interactive),
     }),

@@ -369,6 +369,30 @@ test('interactive runtime Pod session mutation is centralized in the runtime hos
   assert.deepEqual(violations, [])
 })
 
+test('runtime auth bridge field access is centralized in shell runtime/auth hosts', () => {
+  const allowed = new Set([
+    'linx-interactive-auth-state-host.ts',
+    'linx-interactive-runtime-host.ts',
+    'linx-pi-runtime-execution.ts',
+    'linx-pod-mirror-runtime-host.ts',
+    'linx-runtime-agent-session.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/\blinxAuthBridge\b/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
 
 test('session-control runtime state does not use interactive hidden fields', () => {
   const violations = []

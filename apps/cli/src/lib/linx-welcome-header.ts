@@ -6,7 +6,7 @@ import { loadCredentials } from './credentials-store.js'
 import { extractUsernameFromWebId, resolveProfileDisplayName } from './profile-identity.js'
 import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_CLI_VERSION } from './linx-self-update.js'
-import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
+import { resolveLinxInteractiveRuntimeProviderLabel } from './linx-interactive-runtime-host.js'
 import { registerLinxTerminalTitleHandler, requestLinxTerminalTitleRefresh, setLinxTerminalTitle } from './linx-terminal-title-router.js'
 import { invalidateLinxInteractiveHeader, replaceLinxInteractiveHeader } from './linx-interactive-header-host.js'
 import { resolveLinxSessionCwd, resolveLinxSessionId, resolveLinxSessionModelId, resolveLinxSessionName } from './linx-session-metadata.js'
@@ -109,7 +109,7 @@ export function buildLinxWelcomeCardState(interactive: any, profileDisplayName: 
   return {
     webId,
     username: profileDisplayName ?? extractUsernameFromWebId(webId),
-    provider: resolveRuntimeProviderLabel(interactive),
+    provider: resolveLinxInteractiveRuntimeProviderLabel(interactive),
     model,
     workspace,
     session,

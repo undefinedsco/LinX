@@ -6,7 +6,7 @@ import { LINX_RUNTIME_MANAGED_AUTH_KEY } from './linx-runtime-auth.js'
 import { formatLinxCliErrorMessage } from './linx-cloud-errors.js'
 import { normalizeSelectorChoice } from './linx-selector-choice.js'
 import { openExternalUrl } from './linx-external-url.js'
-import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
+import { resolveLinxInteractiveRuntimeProviderLabel } from './linx-interactive-runtime-host.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import {
   registerLinxInteractiveLoginDialogHandler,
@@ -700,7 +700,7 @@ function prefillLoginCommand(interactive: any): void {
 }
 
 function resolveProviderLabel(interactive: any, options: LinxLoginFlowOptions): string {
-  return options.resolveProviderLabel?.(interactive) ?? resolveRuntimeProviderLabel(interactive)
+  return options.resolveProviderLabel?.(interactive) ?? resolveLinxInteractiveRuntimeProviderLabel(interactive)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
