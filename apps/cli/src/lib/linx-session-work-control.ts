@@ -30,6 +30,14 @@ export async function stopLinxActiveSessionWork(session: any, options: { waitTim
   ])
 }
 
+export async function stopLinxInteractiveSessionWork(
+  interactive: any,
+  runtime: any,
+  options: { waitTimeoutMs?: number } = {},
+): Promise<void> {
+  await stopLinxActiveSessionWork(interactive?.session ?? runtime?.session, options)
+}
+
 export async function submitLinxSessionUserInput(session: any, text: string, options: {
   sendUserMessage?: (text: unknown, ...args: unknown[]) => Promise<unknown> | unknown
   prompt?: (text: unknown, ...args: unknown[]) => Promise<unknown> | unknown
