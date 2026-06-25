@@ -195,6 +195,11 @@ export function getLinxActiveSessionHistoryEntries(source: LinxSessionHistorySou
   return sessionManager ? getActiveSessionHistoryEntriesWithManager(sessionManager) : []
 }
 
+export function getLinxActiveSessionAgentMessages(source: LinxSessionHistorySource): unknown[] {
+  const messages = resolveLinxSessionHistorySession(source)?.agent?.state?.messages
+  return Array.isArray(messages) ? messages : []
+}
+
 export function collectLinxRewindUserMessages(source: LinxSessionHistorySource): LinxRewindMessageItem[] {
   const sessionManager = resolveLinxSessionHistoryManager(source)
   return sessionManager ? collectRewindUserMessagesWithManager(sessionManager) : []
