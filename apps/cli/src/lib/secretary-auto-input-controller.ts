@@ -16,7 +16,7 @@ import { getDefaultPodDataSession, type PodDataSession } from './pod-data-sessio
 import { resolveRuntimeTarget } from './runtime-target.js'
 import type { SessionControlManager, SessionControlSnapshot } from './session-control.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
-import { canSubmitLinxSessionUserInputNow, submitLinxSessionUserInput } from './linx-session-work-control.js'
+import { canSubmitLinxSessionUserInputNow, submitLinxSessionUserInput, subscribeLinxInteractiveSessionEvents } from './linx-session-work-control.js'
 import { getLinxActiveSessionHistoryEntries } from './linx-session-history.js'
 import { resolveLinxSessionCwd, resolveLinxSessionModelId } from './linx-session-metadata.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
@@ -228,11 +228,11 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
   }
 
   private installRuntimeHooks(): void {
-    if (this.unsubscribe || typeof this.interactive?.session?.subscribe !== 'function') {
+    if (this.unsubscribe) {
       return
     }
 
-    this.unsubscribe = this.interactive.session.subscribe((event: unknown) => {
+    const unsubscribe = subscribeLinxInteractiveSessionEvents(this.interactive, (event: unknown) => {
       if (!isRecord(event) || event.type !== 'agent_end') {
         return
       }
@@ -241,6 +241,11 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
       }
       this.schedule('agent-end')
     })
+    if (!unsubscribe) {
+      return
+    }
+
+    this.unsubscribe = unsubscribe
 
     registerLinxInteractiveStopHandler(this.interactive, {
       name: 'linx-auto-input-controller',

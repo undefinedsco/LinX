@@ -77,6 +77,20 @@ export async function queueLinxInteractiveSessionRuntimeProjection(interactive: 
   return queueLinxSessionRuntimeProjection(interactive?.session, message, options)
 }
 
+export function subscribeLinxInteractiveSessionEvents(
+  interactive: any,
+  listener: (event: unknown) => void,
+): (() => void) | null {
+  const session = interactive?.session
+  const subscribe = session?.subscribe
+  if (typeof subscribe !== 'function') {
+    return null
+  }
+
+  const unsubscribe = subscribe.call(session, listener)
+  return typeof unsubscribe === 'function' ? unsubscribe : null
+}
+
 export function canSubmitLinxSessionUserInputNow(session: any): boolean {
   return Boolean(session) && !isLinxSessionStreaming(session)
 }
