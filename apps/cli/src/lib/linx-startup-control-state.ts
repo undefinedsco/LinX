@@ -9,19 +9,19 @@ import {
   type SolidDatabase,
 } from './models.js'
 
-export interface LinxPiControlState {
+export interface LinxControlState {
   autoEnabled?: boolean
   symphonyEnabled?: boolean
 }
 
-export interface LinxPiControlStateHydration {
-  state: LinxPiControlState | null
+export interface LinxControlStateHydration {
+  state: LinxControlState | null
   result: LinxSyncRunResult
 }
 
-export function deriveLinxPiStartupControlState(input: {
+export function deriveLinxStartupControlState(input: {
   requestedAuto?: boolean
-  hydration: LinxPiControlStateHydration | null
+  hydration: LinxControlStateHydration | null
   restoreAutoFromHydration?: boolean
 }): { autoEnabled: boolean; symphonyEnabled: boolean } {
   if (input.requestedAuto !== undefined) {
@@ -37,13 +37,13 @@ export function deriveLinxPiStartupControlState(input: {
   }
 }
 
-export async function hydrateLinxPiControlState(options: {
+export async function hydrateLinxControlState(options: {
   db: SolidDatabase
   sessionId: string
   createdAt: Date | string | number
   onError?: (error: unknown) => void
-}): Promise<LinxPiControlStateHydration | null> {
-  let state: LinxPiControlState | null = null
+}): Promise<LinxControlStateHydration | null> {
+  let state: LinxControlState | null = null
   const sessionUri = resolveSessionIri(options.db, options.sessionId, options.createdAt)
   const sync = createLinxPodSyncScope({
     source: 'pod',

@@ -717,6 +717,9 @@ app consumes them as the default LinX runtime path.
 The startup plan module has the same rule: exported plan args, plan DTO, factory,
 and selector guard names describe the LinX CLI startup path, even when the plan
 still creates a Pi session manager underneath.
+Startup control-state helpers are LinX control-plane surfaces. Their exported
+hydration, derivation, and resolver names should not carry Pi naming just because
+the restored state is applied to the local Pi runtime session.
 
 Startup side-effect ordering is part of the boundary:
 
