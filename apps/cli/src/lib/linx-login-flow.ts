@@ -3,7 +3,7 @@ import { clearCredentials } from './credentials-store.js'
 import { clearOidcSessionStorage } from './oidc-session-storage.js'
 import { persistSolidClientCredentialsLogin } from './solid-client-credentials-login.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from './linx-runtime-auth.js'
-import { formatLinxCliErrorMessage } from './linx-cloud-errors.js'
+import { formatLinxCliErrorMessage, isLinxCloudAuthExpiredMessage } from './linx-cloud-errors.js'
 import { normalizeSelectorChoice } from './linx-selector-choice.js'
 import { openExternalUrl } from './linx-external-url.js'
 import {
@@ -215,10 +215,7 @@ function patchAuthExpiredLoginPrompt(interactive: any, options: LinxLoginFlowOpt
 }
 
 function isLinxAuthExpiredError(text: string): boolean {
-  const normalized = stripAnsi(text).toLowerCase()
-  return normalized.includes('linx cloud login expired')
-    || normalized.includes('invalid solid token')
-    || (normalized.includes('chat request failed (401)') && normalized.includes('unauthorized'))
+  return isLinxCloudAuthExpiredMessage(text)
 }
 
 function eventHasLinxAuthExpiredError(event: unknown): boolean {

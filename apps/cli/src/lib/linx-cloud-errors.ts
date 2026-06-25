@@ -43,6 +43,7 @@ export function isLinxCloudTransientMessage(errorOrMessage: unknown): boolean {
 export function isLinxCloudAuthExpiredMessage(errorOrMessage: unknown): boolean {
   const normalized = stripAnsi(errorOrMessage instanceof Error ? errorOrMessage.message : String(errorOrMessage)).toLowerCase()
   return normalized.includes('linx cloud login expired')
+    || normalized.includes('no linx cloud login found')
     || normalized.includes('invalid solid token')
     || (normalized.includes('401') && normalized.includes('unauthorized'))
 }

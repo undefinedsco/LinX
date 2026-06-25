@@ -64,6 +64,7 @@ packages/**/.w3c-cache/
 # Temporary files
 *.tmp
 *.swp
+apps/cli/.tmp-*/
 
 # AI agent tools
 .codebase-memory/
