@@ -12,12 +12,17 @@ test('LinX session manager lives outside the Pi adapter', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
-  assert.equal(typeof module.createLinxPiSessionManager, 'function')
-  assert.equal(typeof module.listLinxPiSessions, 'function')
-  assert.equal(typeof module.resolveLinxPiSession, 'function')
+  assert.equal(typeof module.createLinxRuntimeSessionManager, 'function')
+  assert.equal(typeof module.listLinxRuntimeSessions, 'function')
+  assert.equal(typeof module.resolveLinxRuntimeSession, 'function')
+  assert.equal(typeof module.createNativeLinxPodSessionSource, 'function')
+  assert.equal(module.createLinxPiSessionManager, undefined)
+  assert.equal(module.listLinxPiSessions, undefined)
+  assert.equal(module.resolveLinxPiSession, undefined)
+  assert.equal(module.createNativeLinxPiPodSessionSource, undefined)
 })
 
-test('createLinxPiSessionManager creates persisted sessions by default', async (t) => {
+test('createLinxRuntimeSessionManager creates persisted sessions by default', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
@@ -28,14 +33,14 @@ test('createLinxPiSessionManager creates persisted sessions by default', async (
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const manager = await module.createLinxPiSessionManager({ cwd, agentDir })
+  const manager = await module.createLinxRuntimeSessionManager({ cwd, agentDir })
   assert.equal(manager.isPersisted(), true)
   assert.equal(manager.getCwd(), cwd)
   assert.match(manager.getSessionFile(), /\.jsonl$/)
   assert.match(manager.getSessionDir(), /sessions/)
 })
 
-test('createLinxPiSessionManager honors explicit Pi session directory', async (t) => {
+test('createLinxRuntimeSessionManager honors explicit Pi session directory', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
@@ -48,12 +53,12 @@ test('createLinxPiSessionManager honors explicit Pi session directory', async (t
     rmSync(sessionDir, { recursive: true, force: true })
   })
 
-  const manager = await module.createLinxPiSessionManager({ cwd, agentDir, sessionDir })
+  const manager = await module.createLinxRuntimeSessionManager({ cwd, agentDir, sessionDir })
 
   assert.equal(manager.getSessionDir(), sessionDir)
   assert.match(manager.getSessionFile(), new RegExp(`^${sessionDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`))
 
-  const listed = await module.listLinxPiSessions(cwd, agentDir, {
+  const listed = await module.listLinxRuntimeSessions(cwd, agentDir, {
     sessionDir,
     podSessionSource: null,
   })
@@ -77,7 +82,7 @@ test('createLinxPiSessionManager honors explicit Pi session directory', async (t
     timestamp: Date.now(),
   })
 
-  const listedAfterPersist = await module.listLinxPiSessions(cwd, agentDir, {
+  const listedAfterPersist = await module.listLinxRuntimeSessions(cwd, agentDir, {
     sessionDir,
     podSessionSource: null,
   })
@@ -85,7 +90,7 @@ test('createLinxPiSessionManager honors explicit Pi session directory', async (t
   assert.equal(listedAfterPersist[0].id, manager.getSessionId())
 })
 
-test('createLinxPiSessionManager supports Pi --session-id semantics', async (t) => {
+test('createLinxRuntimeSessionManager supports Pi --session-id semantics', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
@@ -99,7 +104,7 @@ test('createLinxPiSessionManager supports Pi --session-id semantics', async (t) 
     rmSync(sessionDir, { recursive: true, force: true })
   })
 
-  const manager = await module.createLinxPiSessionManager({ cwd, agentDir, sessionDir, sessionId })
+  const manager = await module.createLinxRuntimeSessionManager({ cwd, agentDir, sessionDir, sessionId })
   assert.equal(manager.getSessionId(), sessionId)
   manager.appendMessage({
     role: 'assistant',
@@ -119,13 +124,13 @@ test('createLinxPiSessionManager supports Pi --session-id semantics', async (t) 
     timestamp: Date.now(),
   })
 
-  const reopened = await module.createLinxPiSessionManager({ cwd, agentDir, sessionDir, sessionId })
+  const reopened = await module.createLinxRuntimeSessionManager({ cwd, agentDir, sessionDir, sessionId })
   assert.equal(reopened.getSessionId(), sessionId)
   assert.equal(reopened.getEntries().length, 1)
   assert.equal(reopened.getEntries()[0].message.content[0].text, 'stable id')
 })
 
-test('createLinxPiSessionManager rejects conflicting Pi session selectors', async (t) => {
+test('createLinxRuntimeSessionManager rejects conflicting Pi session selectors', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
@@ -137,7 +142,7 @@ test('createLinxPiSessionManager rejects conflicting Pi session selectors', asyn
   })
 
   await assert.rejects(
-    () => module.createLinxPiSessionManager({
+    () => module.createLinxRuntimeSessionManager({
       cwd,
       agentDir,
       session: 'existing-session',
@@ -147,7 +152,7 @@ test('createLinxPiSessionManager rejects conflicting Pi session selectors', asyn
   )
 
   await assert.rejects(
-    () => module.createLinxPiSessionManager({
+    () => module.createLinxRuntimeSessionManager({
       cwd,
       agentDir,
       last: true,
@@ -157,7 +162,7 @@ test('createLinxPiSessionManager rejects conflicting Pi session selectors', asyn
   )
 })
 
-test('resolveLinxPiSession accepts full and short session ids', async (t) => {
+test('resolveLinxRuntimeSession accepts full and short session ids', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
@@ -168,7 +173,7 @@ test('resolveLinxPiSession accepts full and short session ids', async (t) => {
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const manager = await module.createLinxPiSessionManager({ cwd, agentDir })
+  const manager = await module.createLinxRuntimeSessionManager({ cwd, agentDir })
   manager.appendMessage({
     role: 'assistant',
     content: [{ type: 'text', text: 'persist me' }],
@@ -187,13 +192,13 @@ test('resolveLinxPiSession accepts full and short session ids', async (t) => {
     timestamp: Date.now(),
   })
 
-  const resolved = await module.resolveLinxPiSession(manager.getSessionId(), cwd, manager.getSessionDir())
+  const resolved = await module.resolveLinxRuntimeSession(manager.getSessionId(), cwd, manager.getSessionDir())
   assert.equal(resolved.id, manager.getSessionId())
 
-  const shortResolved = await module.resolveLinxPiSession(manager.getSessionId().slice(0, 13), cwd, manager.getSessionDir())
+  const shortResolved = await module.resolveLinxRuntimeSession(manager.getSessionId().slice(0, 13), cwd, manager.getSessionDir())
   assert.equal(shortResolved.id, manager.getSessionId())
 
-  const reopened = await module.createLinxPiSessionManager({
+  const reopened = await module.createLinxRuntimeSessionManager({
     cwd,
     agentDir,
     session: manager.getSessionId().slice(0, 13),
@@ -213,7 +218,7 @@ test('resuming a session repairs dangling assistant tool calls before continuati
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const manager = await module.createLinxPiSessionManager({ cwd, agentDir })
+  const manager = await module.createLinxRuntimeSessionManager({ cwd, agentDir })
   manager.appendMessage({
     role: 'user',
     content: [{ type: 'text', text: 'find well-known files' }],
@@ -249,7 +254,7 @@ test('resuming a session repairs dangling assistant tool calls before continuati
     timestamp: Date.now(),
   })
 
-  const reopened = await module.createLinxPiSessionManager({
+  const reopened = await module.createLinxRuntimeSessionManager({
     cwd,
     agentDir,
     session: manager.getSessionId().slice(0, 13),
@@ -271,7 +276,7 @@ test('resuming a session repairs dangling assistant tool calls before continuati
   assert.equal(messages[toolResultIndex].isError, true)
   assert.match(messages[toolResultIndex].content[0].text, /interrupted/)
 
-  const reopenedAgain = await module.createLinxPiSessionManager({
+  const reopenedAgain = await module.createLinxRuntimeSessionManager({
     cwd,
     agentDir,
     session: manager.getSessionId().slice(0, 13),
@@ -329,7 +334,7 @@ test('list and resume recover from Pod when local JSONL cache is missing', async
     },
   }
 
-  const sessions = await module.listLinxPiSessions(cwd, agentDir, { podSessionSource })
+  const sessions = await module.listLinxRuntimeSessions(cwd, agentDir, { podSessionSource })
   assert.equal(sessions.length, 1)
   assert.equal(sessions[0].id, '019df111-pod-only-session')
   assert.match(sessions[0].path, /\.jsonl$/)
@@ -337,7 +342,7 @@ test('list and resume recover from Pod when local JSONL cache is missing', async
 
   rmSync(sessions[0].path, { force: true })
 
-  const resumed = await module.createLinxPiSessionManager({
+  const resumed = await module.createLinxRuntimeSessionManager({
     cwd,
     agentDir,
     session: '019df111',
@@ -460,7 +465,7 @@ test('native Pod session source reads session and messages through shared ORM re
     },
   }
 
-  const source = sessionModule.createNativeLinxPiPodSessionSource({
+  const source = sessionModule.createNativeLinxPodSessionSource({
     webId: WEB_ID,
     db,
   })
@@ -579,7 +584,7 @@ test('native Pod session source uses session message resource refs before broad 
     },
   }
 
-  const source = sessionModule.createNativeLinxPiPodSessionSource({
+  const source = sessionModule.createNativeLinxPodSessionSource({
     webId: WEB_ID,
     db,
   })
@@ -669,7 +674,7 @@ test('native Pod session source surfaces exact message resource read failures', 
     },
   }
 
-  const source = sessionModule.createNativeLinxPiPodSessionSource({
+  const source = sessionModule.createNativeLinxPodSessionSource({
     webId: WEB_ID,
     db,
   })
@@ -738,7 +743,7 @@ test('native Pod session list surfaces exact message resource read failures', as
     },
   }
 
-  const source = sessionModule.createNativeLinxPiPodSessionSource({
+  const source = sessionModule.createNativeLinxPodSessionSource({
     webId: WEB_ID,
     db,
   })
@@ -765,7 +770,7 @@ test('native Pod session list surfaces container read failures', async (t) => {
     },
   }
 
-  const source = sessionModule.createNativeLinxPiPodSessionSource({
+  const source = sessionModule.createNativeLinxPodSessionSource({
     webId: WEB_ID,
     db,
     fetch: async (url, init = {}) => {

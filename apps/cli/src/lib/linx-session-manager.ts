@@ -26,41 +26,41 @@ import {
 } from './models.js'
 import { PI_CHAT_ID } from './pod-mirror-mapping.js'
 
-export interface LinxPiSessionManagerOptions {
+export interface LinxRuntimeSessionManagerOptions {
   cwd: string
   agentDir: string
   session?: string
   sessionDir?: string
   sessionId?: string
   last?: boolean
-  podSessionSource?: LinxPiPodSessionSource | null
+  podSessionSource?: LinxPodSessionSource | null
 }
 
-export interface LinxPiListSessionsOptions {
+export interface LinxRuntimeListSessionsOptions {
   sessionDir?: string
-  podSessionSource?: LinxPiPodSessionSource | null
+  podSessionSource?: LinxPodSessionSource | null
 }
 
-export interface LinxPiResolveSessionOptions {
-  podSessionSource?: LinxPiPodSessionSource | null
+export interface LinxRuntimeResolveSessionOptions {
+  podSessionSource?: LinxPodSessionSource | null
 }
 
-export interface LinxPiPodSessionSource {
-  listSessions(cwd?: string): Promise<LinxPiPodSessionSnapshot[]>
-  findSession(input: string, cwd?: string): Promise<LinxPiPodSessionSnapshot | null>
+export interface LinxPodSessionSource {
+  listSessions(cwd?: string): Promise<LinxPodSessionSnapshot[]>
+  findSession(input: string, cwd?: string): Promise<LinxPodSessionSnapshot | null>
 }
 
-export interface LinxPiPodSessionSnapshot {
+export interface LinxPodSessionSnapshot {
   id: string
   cwd?: string
   name?: string
   createdAt?: Date | string | number
   updatedAt?: Date | string | number
   sessionFile?: string
-  messages?: LinxPiPodMessageSnapshot[]
+  messages?: LinxPodMessageSnapshot[]
 }
 
-export interface LinxPiPodMessageSnapshot {
+export interface LinxPodMessageSnapshot {
   id: string
   role?: string
   content?: string
@@ -71,29 +71,29 @@ export interface LinxPiPodMessageSnapshot {
 
 type PodSessionFetch = (url: string, init?: RequestInit) => Promise<Response>
 
-type LinxPiSessionArchiveSnapshot = {
+type RuntimeSessionArchiveSnapshot = {
   id: string
   cwd: string
   name?: string
   entries: SessionEntry[]
 }
 
-export function createNativeLinxPiPodSessionSource(context: {
+export function createNativeLinxPodSessionSource(context: {
   webId: string
   db: SolidDatabase
   fetch?: PodSessionFetch
-}): LinxPiPodSessionSource {
-  const source: LinxPiPodSessionSource = {
-    async listSessions(_cwd?: string): Promise<LinxPiPodSessionSnapshot[]> {
+}): LinxPodSessionSource {
+  const source: LinxPodSessionSource = {
+    async listSessions(_cwd?: string): Promise<LinxPodSessionSnapshot[]> {
       return listPodSessionSnapshots(context)
     },
-    async findSession(input: string, _cwd?: string): Promise<LinxPiPodSessionSnapshot | null> {
+    async findSession(input: string, _cwd?: string): Promise<LinxPodSessionSnapshot | null> {
       const exact = await findPodSessionSnapshot(context, input)
       if (exact) {
         return exact
       }
       const sessions = await source.listSessions()
-      const matches = sessions.filter((session: LinxPiPodSessionSnapshot) => session.id.startsWith(input))
+      const matches = sessions.filter((session: LinxPodSessionSnapshot) => session.id.startsWith(input))
       if (matches.length === 1) {
         return matches[0]
       }
@@ -103,45 +103,45 @@ export function createNativeLinxPiPodSessionSource(context: {
   return source
 }
 
-export async function createLinxPiSessionManager(options: LinxPiSessionManagerOptions): Promise<SessionManager> {
-  assertLinxPiSessionSelectorCompatibility(options)
-  const sessionDir = resolveLinxPiSessionDir(options.cwd, options.agentDir, options.sessionDir)
-  const sessionId = normalizeLinxPiSessionId(options.sessionId)
+export async function createLinxRuntimeSessionManager(options: LinxRuntimeSessionManagerOptions): Promise<SessionManager> {
+  assertLinxRuntimeSessionSelectorCompatibility(options)
+  const sessionDir = resolveLinxRuntimeSessionDir(options.cwd, options.agentDir, options.sessionDir)
+  const sessionId = normalizeLinxRuntimeSessionId(options.sessionId)
 
   if (options.session?.trim()) {
-    const session = await resolveLinxPiSession(options.session.trim(), options.cwd, sessionDir, {
+    const session = await resolveLinxRuntimeSession(options.session.trim(), options.cwd, sessionDir, {
       podSessionSource: options.podSessionSource,
     })
-    return openAndRepairLinxPiSession(session.path, sessionDir)
+    return openAndRepairLinxRuntimeSession(session.path, sessionDir)
   }
 
   if (options.last) {
-    const sessions = await listLinxPiSessions(options.cwd, options.agentDir, {
+    const sessions = await listLinxRuntimeSessions(options.cwd, options.agentDir, {
       sessionDir,
       podSessionSource: options.podSessionSource,
     })
     if (sessions[0]) {
-      return openAndRepairLinxPiSession(sessions[0].path, sessionDir)
+      return openAndRepairLinxRuntimeSession(sessions[0].path, sessionDir)
     }
     return SessionManager.create(options.cwd, sessionDir, sessionId ? { id: sessionId } : undefined)
   }
 
   if (sessionId) {
-    const existing = await findExactLinxPiSessionById(sessionId, options.cwd, sessionDir)
+    const existing = await findExactLinxRuntimeSessionById(sessionId, options.cwd, sessionDir)
     if (existing) {
-      return openAndRepairLinxPiSession(existing.path, sessionDir)
+      return openAndRepairLinxRuntimeSession(existing.path, sessionDir)
     }
   }
 
   return SessionManager.create(options.cwd, sessionDir, sessionId ? { id: sessionId } : undefined)
 }
 
-export async function listLinxPiSessions(
+export async function listLinxRuntimeSessions(
   cwd: string,
   agentDir: string,
-  options: LinxPiListSessionsOptions = {},
+  options: LinxRuntimeListSessionsOptions = {},
 ): Promise<SessionInfo[]> {
-  const sessionDir = resolveLinxPiSessionDir(cwd, agentDir, options.sessionDir)
+  const sessionDir = resolveLinxRuntimeSessionDir(cwd, agentDir, options.sessionDir)
   const localSessions = filterRuntimeSessionsForWorkspace(
     await SessionManager.list(cwd, sessionDir),
     cwd,
@@ -151,18 +151,18 @@ export async function listLinxPiSessions(
   return sortSessionsByModified(mergeSessions(localSessions, podSessions))
 }
 
-export async function resolveLinxPiSession(
+export async function resolveLinxRuntimeSession(
   input: string,
   cwd: string,
   sessionDir?: string,
-  options: LinxPiResolveSessionOptions = {},
+  options: LinxRuntimeResolveSessionOptions = {},
 ): Promise<SessionInfo> {
   const directPath = resolve(input)
   if (existsSync(directPath) && statSync(directPath).isFile()) {
     const manager = SessionManager.open(directPath)
     const header = manager.getHeader()
     return buildSessionInfoFromArchiveSnapshot(
-      getLinxPiSessionArchiveSnapshot(manager),
+      getRuntimeSessionArchiveSnapshot(manager),
       directPath,
       header?.timestamp ? new Date(header.timestamp) : new Date(0),
       statSync(directPath).mtime,
@@ -206,7 +206,7 @@ export async function resolveLinxPiSession(
   if (byPrefix.length > 1 || byFilePrefix.length > 1) {
     const matches = sortSessionsByModified([...new Map([...byPrefix, ...byFilePrefix].map((session) => [session.path, session])).values()])
       .slice(0, 8)
-      .map((session) => `- ${formatLinxPiSessionSummary(session)}`)
+      .map((session) => `- ${formatLinxRuntimeSessionSummary(session)}`)
       .join('\n')
     throw new Error(`Session id is ambiguous: ${input}\n${matches}`)
   }
@@ -214,7 +214,7 @@ export async function resolveLinxPiSession(
   throw new Error(`No LinX session found for: ${input}`)
 }
 
-export function formatLinxPiSessionSummary(session: SessionInfo): string {
+export function formatLinxRuntimeSessionSummary(session: SessionInfo): string {
   const label = session.name || session.firstMessage || '(no messages)'
   const cwd = session.cwd || '(unknown cwd)'
   return `${session.id.slice(0, 13)}  ${label}  ${cwd}`
@@ -235,7 +235,7 @@ function mergeSessions(localSessions: SessionInfo[], podSessions: SessionInfo[])
   return [...merged.values()]
 }
 
-export function assertLinxPiSessionSelectorCompatibility(options: Pick<LinxPiSessionManagerOptions, 'session' | 'sessionId' | 'last'>): void {
+export function assertLinxRuntimeSessionSelectorCompatibility(options: Pick<LinxRuntimeSessionManagerOptions, 'session' | 'sessionId' | 'last'>): void {
   if (!options.sessionId?.trim()) {
     return
   }
@@ -247,13 +247,13 @@ export function assertLinxPiSessionSelectorCompatibility(options: Pick<LinxPiSes
   }
 }
 
-function resolveLinxPiSessionDir(_cwd: string, agentDir: string, sessionDir?: string): string {
+function resolveLinxRuntimeSessionDir(_cwd: string, agentDir: string, sessionDir?: string): string {
   // Sessions are stored flat, not bound to workspace directory.
   // Workspace (cwd) is tracked as session metadata, so `cd` doesn't break the session.
   return sessionDir?.trim() ? resolve(expandHomePath(sessionDir.trim())) : join(agentDir, 'sessions')
 }
 
-async function findExactLinxPiSessionById(
+async function findExactLinxRuntimeSessionById(
   sessionId: string,
   cwd: string,
   sessionDir: string,
@@ -262,7 +262,7 @@ async function findExactLinxPiSessionById(
   return sessions.find((session) => session.id === sessionId) ?? null
 }
 
-function normalizeLinxPiSessionId(sessionId: string | undefined): string | undefined {
+function normalizeLinxRuntimeSessionId(sessionId: string | undefined): string | undefined {
   const normalized = sessionId?.trim()
   if (!normalized) {
     return undefined
@@ -290,7 +290,7 @@ function expandHomePath(path: string): string {
 async function hydratePodSessions(
   cwd: string,
   sessionDir: string,
-  source: LinxPiPodSessionSource | null | undefined,
+  source: LinxPodSessionSource | null | undefined,
   localSessions: SessionInfo[],
 ): Promise<SessionInfo[]> {
   const resolvedSource = await resolvePodSessionSource(source)
@@ -314,7 +314,7 @@ async function hydratePodSession(
   input: string,
   cwd: string,
   sessionDir: string,
-  source: LinxPiPodSessionSource | null | undefined,
+  source: LinxPodSessionSource | null | undefined,
 ): Promise<SessionInfo | null> {
   const resolvedSource = await resolvePodSessionSource(source)
   if (!resolvedSource) {
@@ -330,16 +330,16 @@ async function hydratePodSession(
 }
 
 async function resolvePodSessionSource(
-  source: LinxPiPodSessionSource | null | undefined,
-): Promise<LinxPiPodSessionSource | null> {
+  source: LinxPodSessionSource | null | undefined,
+): Promise<LinxPodSessionSource | null> {
   if (source !== undefined) {
     return source
   }
-  return createDefaultLinxPiPodSessionSource()
+  return createDefaultLinxPodSessionSource()
 }
 
 function materializePodSessionSnapshot(
-  snapshot: LinxPiPodSessionSnapshot,
+  snapshot: LinxPodSessionSnapshot,
   fallbackCwd: string,
   sessionDir: string,
 ): SessionInfo {
@@ -359,12 +359,12 @@ function materializePodSessionSnapshot(
   const lines = [header, ...entries].map((entry) => JSON.stringify(entry))
   writeFileSync(sessionFile, `${lines.join('\n')}\n`)
 
-  const manager = openAndRepairLinxPiSession(sessionFile, sessionDir)
+  const manager = openAndRepairLinxRuntimeSession(sessionFile, sessionDir)
   const info = buildSessionInfoFromManager(manager, sessionFile, created, modified)
   return snapshot.name ? { ...info, name: snapshot.name } : info
 }
 
-function openAndRepairLinxPiSession(path: string, sessionDir?: string): SessionManager {
+function openAndRepairLinxRuntimeSession(path: string, sessionDir?: string): SessionManager {
   const manager = SessionManager.open(path, sessionDir)
   repairDanglingLinxPiToolCalls(manager)
   return manager
@@ -532,7 +532,7 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function buildPodSessionEntries(snapshot: LinxPiPodSessionSnapshot): SessionEntry[] {
+function buildPodSessionEntries(snapshot: LinxPodSessionSnapshot): SessionEntry[] {
   const sortedMessages = [...(snapshot.messages ?? [])].sort((a, b) => {
     const aTime = toDate(a.createdAt)?.getTime() ?? 0
     const bTime = toDate(b.createdAt)?.getTime() ?? 0
@@ -599,7 +599,7 @@ function parsePodRichContent(richContent: string | undefined): {
   return {}
 }
 
-function synthesizeAgentMessage(row: LinxPiPodMessageSnapshot): unknown | null {
+function synthesizeAgentMessage(row: LinxPodMessageSnapshot): unknown | null {
   const role = row.role === 'assistant' || row.role === 'system' ? row.role : 'user'
   const timestamp = toDate(row.createdAt)?.getTime() ?? Date.now()
   const content = [{ type: 'text', text: row.content ?? '' }]
@@ -643,7 +643,7 @@ function extractEntryIdFromPodMessageId(sessionId: string, messageId: string): s
 }
 
 function getMaterializedSessionFile(
-  snapshot: LinxPiPodSessionSnapshot,
+  snapshot: LinxPodSessionSnapshot,
   sessionDir: string,
   created: Date,
 ): string {
@@ -665,14 +665,14 @@ function buildSessionInfoFromManager(
   modified: Date,
 ): SessionInfo {
   return buildSessionInfoFromArchiveSnapshot(
-    getLinxPiSessionArchiveSnapshot(manager),
+    getRuntimeSessionArchiveSnapshot(manager),
     path,
     created,
     modified,
   )
 }
 
-function getLinxPiSessionArchiveSnapshot(manager: SessionManager): LinxPiSessionArchiveSnapshot {
+function getRuntimeSessionArchiveSnapshot(manager: SessionManager): RuntimeSessionArchiveSnapshot {
   return {
     id: manager.getSessionId(),
     cwd: manager.getCwd(),
@@ -682,7 +682,7 @@ function getLinxPiSessionArchiveSnapshot(manager: SessionManager): LinxPiSession
 }
 
 function buildSessionInfoFromArchiveSnapshot(
-  snapshot: LinxPiSessionArchiveSnapshot,
+  snapshot: RuntimeSessionArchiveSnapshot,
   path: string,
   created: Date,
   modified: Date,
@@ -754,16 +754,16 @@ const POD_SESSION_LIST_LOOKBACK_DAYS = 90
 const POD_SESSION_LIST_LIMIT = 200
 const POD_CONTAINER_LIST_TIMEOUT_MS = 8_000
 
-async function createDefaultLinxPiPodSessionSource(): Promise<LinxPiPodSessionSource | null> {
+async function createDefaultLinxPodSessionSource(): Promise<LinxPodSessionSource | null> {
   const contextPromise = createDefaultPodSessionContext()
   return {
-    async listSessions(cwd?: string): Promise<LinxPiPodSessionSnapshot[]> {
+    async listSessions(cwd?: string): Promise<LinxPodSessionSnapshot[]> {
       const context = await contextPromise
-      return context ? createNativeLinxPiPodSessionSource(context).listSessions(cwd) : []
+      return context ? createNativeLinxPodSessionSource(context).listSessions(cwd) : []
     },
-    async findSession(input: string, cwd?: string): Promise<LinxPiPodSessionSnapshot | null> {
+    async findSession(input: string, cwd?: string): Promise<LinxPodSessionSnapshot | null> {
       const context = await contextPromise
-      return context ? createNativeLinxPiPodSessionSource(context).findSession(input, cwd) : null
+      return context ? createNativeLinxPodSessionSource(context).findSession(input, cwd) : null
     },
   }
 }
@@ -783,12 +783,12 @@ async function createDefaultPodSessionContext(): Promise<DefaultPodSessionContex
 
 async function listPodSessionSnapshots(
   context: DefaultPodSessionContext,
-): Promise<LinxPiPodSessionSnapshot[]> {
+): Promise<LinxPodSessionSnapshot[]> {
   const rows = await listPodSessionRows(context)
   const snapshots = (await Promise.all(rows.map((row) => (
     buildPodSessionSnapshot(context, row)
   ))))
-    .filter((snapshot): snapshot is LinxPiPodSessionSnapshot => snapshot !== null)
+    .filter((snapshot): snapshot is LinxPodSessionSnapshot => snapshot !== null)
 
   return snapshots.sort((a, b) => {
     const aTime = toDate(a.updatedAt)?.getTime() ?? 0
@@ -957,7 +957,7 @@ function isSecretaryChatRef(value: string, secretaryChat: string): boolean {
 async function findPodSessionSnapshot(
   context: DefaultPodSessionContext,
   input: string,
-): Promise<LinxPiPodSessionSnapshot | null> {
+): Promise<LinxPodSessionSnapshot | null> {
   const sessionId = input.trim()
   if (!sessionId) {
     return null
@@ -1042,7 +1042,7 @@ function parseTimestampFromUuidLikeId(id: string): Date | null {
 async function buildPodSessionSnapshot(
   context: DefaultPodSessionContext,
   row: SessionRow,
-): Promise<LinxPiPodSessionSnapshot | null> {
+): Promise<LinxPodSessionSnapshot | null> {
   if (!row.id || row.tool !== 'linx') {
     return null
   }
@@ -1070,7 +1070,7 @@ async function buildPodSessionSnapshot(
 async function listPodSessionMessages(
   context: DefaultPodSessionContext,
   session: SessionRow,
-): Promise<LinxPiPodMessageSnapshot[]> {
+): Promise<LinxPodMessageSnapshot[]> {
   if (!session.thread) {
     return []
   }
@@ -1110,7 +1110,7 @@ async function listPodSessionMessages(
         return !message.thread || message.thread === session.thread
       })
       .map(podMessageRowToSnapshot)
-      .filter((message: LinxPiPodMessageSnapshot) => message.id)
+      .filter((message: LinxPodMessageSnapshot) => message.id)
       .sort(compareMessageSnapshots)
     if (messages.length > 0) {
       return messages
@@ -1141,7 +1141,7 @@ async function listPodSessionMessages(
     .sort(compareMessageSnapshots)
 }
 
-function podMessageRowToSnapshot(message: MessageRow): LinxPiPodMessageSnapshot {
+function podMessageRowToSnapshot(message: MessageRow): LinxPodMessageSnapshot {
   return {
     id: extractResourceLocalId(message.id),
     role: message.role,
@@ -1153,8 +1153,8 @@ function podMessageRowToSnapshot(message: MessageRow): LinxPiPodMessageSnapshot 
 }
 
 function compareMessageSnapshots(
-  a: LinxPiPodMessageSnapshot,
-  b: LinxPiPodMessageSnapshot,
+  a: LinxPodMessageSnapshot,
+  b: LinxPodMessageSnapshot,
 ): number {
   const aTime = toDate(a.createdAt)?.getTime() ?? 0
   const bTime = toDate(b.createdAt)?.getTime() ?? 0

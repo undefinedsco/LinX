@@ -73,7 +73,7 @@ test('default Pi/TUI command module delegates resume selector admission policy',
   assert.match(piCliCommandSource, /\bhandleLinxResumeCliAdmission\b/, 'default command module should call the resume admission helper through a LinX name')
   assert.doesNotMatch(piCliCommandSource, /\bhandleLinxPiResumeCliAdmission\b/, 'default command module should not call the resume admission helper through Pi naming')
   assert.doesNotMatch(piCliCommandSource, /from ['"]\.\/linx-session-selector-ui\.js['"]/, 'Pi command orchestration should not import selector rendering directly')
-  assert.doesNotMatch(piCliCommandSource, /\bselectLinxPiSession\b/, 'resume selector UI call should live in the resume admission policy module')
+  assert.doesNotMatch(piCliCommandSource, /\bselectLinxRuntimeSession\b/, 'resume selector UI call should live in the resume admission policy module')
   assert.doesNotMatch(piCliCommandSource, /No session selected/, 'resume selector user copy should live in the resume admission policy module')
 })
 
@@ -114,7 +114,7 @@ test('default Pi/TUI command module delegates startup planning', () => {
   assert.match(piCliCommandSource, /from ['"]\.\/linx-pi-startup-plan\.js['"]/, 'Pi command orchestration should import startup planning from a dedicated module')
   assert.doesNotMatch(piCliCommandSource, /\bresolveLinxStartupLoginPromptDecision\b/, 'startup login prompt decision should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bresolveStartupLinxPodDataSession\b/, 'startup Pod session lookup should live in the startup plan module')
-  assert.doesNotMatch(piCliCommandSource, /\bcreateLinxPiSessionManager\b/, 'Pi session manager construction should live in the startup plan module')
+  assert.doesNotMatch(piCliCommandSource, /\bcreateLinxRuntimeSessionManager\b/, 'Pi session manager construction should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bresolveLinxStartupControlState\b/, 'auto/Symphony startup control state should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bgetDefaultPodDataSession\b/, 'runtime Pod data session source should live in the startup plan module')
   assert.doesNotMatch(piCliCommandSource, /\bresolveAccountBaseUrl\b/, 'Cloud provider URL resolution should live in the startup plan module')

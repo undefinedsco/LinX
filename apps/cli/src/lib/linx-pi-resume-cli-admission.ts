@@ -1,4 +1,4 @@
-import { selectLinxPiSession } from './linx-session-selector-ui.js'
+import { selectLinxRuntimeSession } from './linx-session-selector-ui.js'
 
 export interface LinxResumeCliAdmissionArgs {
   cwd?: string
@@ -19,7 +19,7 @@ export async function handleLinxResumeCliAdmission<TArgs extends LinxResumeCliAd
     return false
   }
 
-  const selectedSession = await selectLinxPiSession(cwdFromArg(argv.cwd), argv['session-dir'])
+  const selectedSession = await selectLinxRuntimeSession(cwdFromArg(argv.cwd), argv['session-dir'])
   if (!selectedSession) {
     process.stdout.write('No session selected\n')
     return true

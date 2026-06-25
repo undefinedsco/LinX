@@ -717,6 +717,13 @@ app consumes them as the default LinX runtime path.
 The startup plan module has the same rule: exported plan args, plan DTO, factory,
 and selector guard names describe the LinX CLI startup path, even when the plan
 still creates a Pi session manager underneath.
+The session-manager module is a runtime archive bridge. Its exported factory,
+list, resolve, selector-guard, and Pod recovery source names should use
+runtime/Pod vocabulary (`createLinxRuntimeSessionManager`,
+`listLinxRuntimeSessions`, `resolveLinxRuntimeSession`,
+`createNativeLinxPodSessionSource`). Pi naming is reserved for the upstream
+`SessionManager` type and private archive facts that genuinely describe the Pi
+runtime implementation.
 Startup control-state helpers are LinX control-plane surfaces. Their exported
 hydration, derivation, and resolver names should not carry Pi naming just because
 the restored state is applied to the local Pi runtime session.
