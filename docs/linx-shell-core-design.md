@@ -243,11 +243,13 @@ Hard rules:
   behind `apps/cli/src/lib/linx-session-work-control.ts`; commands such as
   `/rewind`, Escape interrupt, and auto handback may request active work to stop
   or projected input to be delivered, and controllers such as Secretary auto
-  input may subscribe to active-session events. Feature modules should prefer
-  interactive-level seam helpers when acting on the active session; they must
-  not know Pi's `isStreaming`, `isBashRunning`, `abort`, `abortBash`,
-  `subscribe`, command-router original `prompt` / `sendUserMessage` handlers,
-  `deliverAs: followUp`, or `streamingBehavior: followUp` field/option layout.
+  input may subscribe to active-session events. Auth recovery may ask it to
+  replay a captured retry turn through Pi continue/prompt fallback. Feature
+  modules should prefer interactive-level seam helpers when acting on the active
+  session; they must not know Pi's `isStreaming`, `isBashRunning`, `abort`,
+  `abortBash`, `subscribe`, `agent.continue`, `agent.waitForIdle`,
+  command-router original `prompt` / `sendUserMessage` handlers, `deliverAs:
+  followUp`, or `streamingBehavior: followUp` field/option layout.
 - Session history and branch repair are shell session-history lifecycle, not
   feature-local retry logic. Reads of Pi `sessionManager` history, leaf/branch
   selection, parent-id normalization, branch restore, leaf reset, and
@@ -1073,9 +1075,10 @@ input paths such as peer command routing and Secretary auto input may ask the
 seam whether local submission is currently safe and may ask it to deliver input
 using Pi's current follow-up semantics. They must not directly inspect Pi
 session running fields, select command-router original `prompt` /
-`sendUserMessage` handlers, construct Pi follow-up options, or call Pi abort
-methods; the seam owns those upstream field names/options, bypass-original
-delivery, and the fail-soft abort behavior.
+`sendUserMessage` handlers, invoke auth-retry `agent.continue` / prompt
+fallbacks, construct Pi follow-up options, or call Pi abort methods; the seam
+owns those upstream field names/options, bypass-original delivery, auth retry
+replay, and the fail-soft abort behavior.
 
 Session history access belongs behind a dedicated shell session-history seam.
 Pi's session manager is an upstream archive/context implementation detail: leaf

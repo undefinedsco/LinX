@@ -47,6 +47,7 @@ import {
   restoreLinxSessionHistoryBranch,
   type LinxSessionRetryTurn,
 } from './linx-session-history.js'
+import { retryLinxInteractiveSessionTurn } from './linx-session-work-control.js'
 
 const LINX_PROVIDER_ID = 'undefineds'
 const linxLoginFlowOptions = new WeakMap<object, LinxLoginFlowOptions>()
@@ -492,72 +493,12 @@ async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason
   }
   authState.pendingRetry = undefined
 
-  const session = interactive.session
-  if (!session) {
-    return false
-  }
-
-  await session.agent?.waitForIdle?.()
-
-  try {
-    restoreLinxSessionHistoryBranch({ session }, pending.continueFromId)
-    if (typeof session.agent?.continue === 'function') {
-      startLinxContinuation(interactive, session, pending)
-      return true
-    }
-  } catch (error) {
-    if (!pending.promptText) {
-      throw error
-    }
-  }
-
-  if (!pending.promptText || typeof session.prompt !== 'function') {
-    return false
-  }
-
-  restoreLinxSessionHistoryBranch({ session }, pending.promptParentId)
-  const promptResult = session.prompt(pending.promptText)
-  if (isPromiseLike(promptResult)) {
-    promptResult.catch((error) => {
+  return retryLinxInteractiveSessionTurn(interactive, pending, {
+    onRetryFailed(error) {
       const message = error instanceof Error ? error.message : String(error)
       showLinxInteractiveError(interactive, `LinX Cloud retry failed: ${message}`)
-    })
-  }
-  return true
-}
-
-function startLinxContinuation(interactive: any, session: any, pending: LinxAuthPendingRetry): void {
-  try {
-    const result = session.agent.continue()
-    if (isPromiseLike(result)) {
-      result.catch((error) => {
-        void retryLinxPromptFallback(interactive, session, pending, error)
-      })
-    }
-  } catch (error) {
-    void retryLinxPromptFallback(interactive, session, pending, error)
-  }
-}
-
-async function retryLinxPromptFallback(
-  interactive: any,
-  session: any,
-  pending: LinxAuthPendingRetry,
-  cause: unknown,
-): Promise<void> {
-  if (!pending.promptText || typeof session?.prompt !== 'function') {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    showLinxInteractiveError(interactive, `LinX Cloud retry failed: ${message}`)
-    return
-  }
-
-  try {
-    restoreLinxSessionHistoryBranch({ session }, pending.promptParentId)
-    await session.prompt(pending.promptText)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    showLinxInteractiveError(interactive, `LinX Cloud retry failed: ${message}`)
-  }
+    },
+  })
 }
 
 export async function refreshLinxAuthState(interactive: any): Promise<void> {
@@ -780,8 +721,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-}
-
-function isPromiseLike(value: unknown): value is Promise<unknown> {
-  return isRecord(value) && typeof value.then === 'function'
 }

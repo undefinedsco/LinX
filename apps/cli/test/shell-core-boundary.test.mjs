@@ -1472,6 +1472,15 @@ test('auth retry session history access lives behind a shell session-history sea
   assert.doesNotMatch(source, /\brestoreLinxRetryBranch\b/)
 })
 
+test('auth retry delivery delegates active session work to the shell session seam', () => {
+  const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
+
+  assert.match(source, /from ['"]\.\/linx-session-work-control\.js['"]/)
+  assert.doesNotMatch(source, /\bconst session = interactive\.session\b/)
+  assert.doesNotMatch(source, /session\.agent/)
+  assert.doesNotMatch(source, /session\.prompt/)
+})
+
 test('session-history retry exports delegate Pi history operations to internal helpers', () => {
   const source = readFileSync(join(libRoot, 'linx-session-history.ts'), 'utf8')
   const allowedRanges = findFunctionRanges(source, [
