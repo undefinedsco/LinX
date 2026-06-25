@@ -714,6 +714,9 @@ The runtime execution module may call Pi runtime primitives such as print mode,
 but its public adapter contract and CLI runtime runner/factory names are LinX CLI
 surfaces. Do not name those exported contracts as "for Pi command" when the CLI
 app consumes them as the default LinX runtime path.
+The startup plan module has the same rule: exported plan args, plan DTO, factory,
+and selector guard names describe the LinX CLI startup path, even when the plan
+still creates a Pi session manager underneath.
 
 Startup side-effect ordering is part of the boundary:
 
