@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { basename, dirname, join } from 'node:path'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 
@@ -62,7 +63,7 @@ export function restartInteractiveShellProcess(
       try {
         runtime.defer(() => {
           try {
-            const child = runtime.spawnProcess(runtime.execPath, runtime.argv.slice(1), {
+            const child = runtime.spawnProcess(runtime.execPath, buildRestartArgv(runtime.argv), {
               cwd: runtime.cwd(),
               env: buildRestartChildEnv(runtime.env, suppression.previousNoExitMessage),
               stdio: 'inherit',
@@ -180,6 +181,29 @@ function buildRestartChildEnv(
     childEnv[LINX_TUI_NO_EXIT_MESSAGE_ENV] = previousNoExitMessage
   }
   return childEnv
+}
+
+function buildRestartArgv(argv: string[]): string[] {
+  const args = argv.slice(1)
+  const entry = args[0]
+  if (!entry || !isUpstreamPiExecutable(entry)) {
+    return args
+  }
+
+  args[0] = replaceExecutableBasename(entry, basename(entry).replace(/^pi/i, 'linx'))
+  return args
+}
+
+function isUpstreamPiExecutable(value: string): boolean {
+  return /^pi(?:\.(?:js|cjs|mjs|cmd|ps1))?$/i.test(basename(value))
+}
+
+function replaceExecutableBasename(value: string, nextBaseName: string): string {
+  const directory = dirname(value)
+  if (directory === '.' || directory === '') {
+    return nextBaseName
+  }
+  return join(directory, nextBaseName)
 }
 
 function waitForRestartedProcess(

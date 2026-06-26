@@ -48,10 +48,13 @@ export async function checkAndShowLinxUpdate(
     return
   }
 
-  requestLinxUpdateNotification(interactive, latest, {
+  const notification = requestLinxUpdateNotification(interactive, latest, {
     ...options,
     force: options.manual === true,
   })
+  if (options.manual === true) {
+    await notification
+  }
 }
 
 export function replayDeferredLinxUpdateNotification(
@@ -177,7 +180,7 @@ function requestLinxUpdateNotification(
   interactive: any,
   newVersion: string,
   options: LinxUpdateNotificationOptions & { force?: boolean } = {},
-): void {
+): Promise<void> | void {
   const updateState = getLinxInteractiveUpdateState(interactive)
   if (!options.force && shouldDeferLinxUpdateNotification(options)) {
     updateState.deferredUpdateVersion = newVersion
@@ -185,7 +188,7 @@ function requestLinxUpdateNotification(
   }
 
   updateState.deferredUpdateVersion = undefined
-  void showLinxUpdateSelector(interactive, newVersion)
+  return showLinxUpdateSelector(interactive, newVersion)
 }
 
 function shouldDeferLinxUpdateNotification(options: LinxUpdateNotificationOptions): boolean {
