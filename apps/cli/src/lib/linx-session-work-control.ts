@@ -3,6 +3,7 @@ import {
   getSessionCommandRouterOriginalSendUserMessage,
 } from './linx-session-command-routing-host.js'
 import { restoreLinxSessionHistoryBranch, type LinxSessionRetryTurn } from './linx-session-history.js'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 
 export async function stopLinxActiveSessionWork(session: any, options: { waitTimeoutMs?: number } = {}): Promise<void> {
   if (!session) {
@@ -12,10 +13,10 @@ export async function stopLinxActiveSessionWork(session: any, options: { waitTim
   const shouldWait = session.isStreaming === true || session.isBashRunning === true
   try {
     if (session.isBashRunning === true && typeof session.abortBash === 'function') {
-      session.abortBash()
+      absorbLinxSessionAbortResult(session.abortBash())
     }
     if (session.isStreaming === true && typeof session.abort === 'function') {
-      session.abort()
+      absorbLinxSessionAbortResult(session.abort())
     }
   } catch {
     // Callers may still need to repair local shell/session state even if abort reporting fails.
@@ -37,6 +38,13 @@ export async function stopLinxInteractiveSessionWork(
   options: { waitTimeoutMs?: number } = {},
 ): Promise<void> {
   await stopLinxActiveSessionWork(interactive?.session ?? runtime?.session, options)
+}
+
+function absorbLinxSessionAbortResult(result: unknown): void {
+  if (!isPromiseLike(result)) {
+    return
+  }
+  void Promise.resolve(result).catch(() => undefined)
 }
 
 export async function submitLinxSessionUserInput(session: any, text: string, options: {
@@ -173,16 +181,34 @@ export function canSubmitLinxInteractiveSessionUserInputNow(interactive: any): b
 export function stopLinxInteractiveSessionWorkNow(interactive: any): boolean {
   const session = interactive?.session
   if (session?.isBashRunning === true && typeof session.abortBash === 'function') {
-    void session.abortBash()
+    runLinxSessionInterrupt(interactive, () => session.abortBash())
     return true
   }
 
   if (isLinxInteractiveSessionWorkActive(interactive) && typeof session?.abort === 'function') {
-    void session.abort()
+    runLinxSessionInterrupt(interactive, () => session.abort())
     return true
   }
 
   return false
+}
+
+function runLinxSessionInterrupt(interactive: any, interrupt: () => unknown): void {
+  try {
+    const result = interrupt()
+    if (isPromiseLike(result)) {
+      Promise.resolve(result).catch((error: unknown) => {
+        reportLinxSessionInterruptError(interactive, error)
+      })
+    }
+  } catch (error) {
+    reportLinxSessionInterruptError(interactive, error)
+  }
+}
+
+function reportLinxSessionInterruptError(interactive: any, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
+  showLinxInteractiveError(interactive, `LinX session interrupt failed: ${message}`)
 }
 
 function isLinxSessionStreaming(session: any): boolean {
