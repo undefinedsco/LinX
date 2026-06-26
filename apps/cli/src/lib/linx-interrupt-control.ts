@@ -116,6 +116,28 @@ function handBackAutoControlOnInterrupt(interactive: any, options: LinxInterrupt
   }
 
   stopLinxInteractiveSessionWorkNow(interactive)
-  void options.disableAutoMode?.(interactive)
+  disableAutoModeAfterInterrupt(interactive, options)
   return true
+}
+
+function disableAutoModeAfterInterrupt(interactive: any, options: LinxInterruptControlOptions): void {
+  if (typeof options.disableAutoMode !== 'function') {
+    return
+  }
+
+  try {
+    const result = options.disableAutoMode(interactive)
+    if (result && typeof result.catch === 'function') {
+      void result.catch((error: unknown) => {
+        reportAutoHandoffError(interactive, error)
+      })
+    }
+  } catch (error) {
+    reportAutoHandoffError(interactive, error)
+  }
+}
+
+function reportAutoHandoffError(interactive: any, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
+  showLinxInteractiveError(interactive, `Auto mode handoff failed: ${message}`)
 }

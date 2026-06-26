@@ -18,6 +18,7 @@ import {
 } from './linx-interactive-update-router.js'
 import { appendLinxInteractiveChatText } from './linx-interactive-chat-text-host.js'
 import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
+import { showLinxInteractiveError } from './linx-interactive-error-display.js'
 import { getLinxInteractiveUpdateState } from './linx-interactive-update-state-host.js'
 
 const UPDATE_OPTION_INSTALL = 'Install update and restart'
@@ -68,7 +69,7 @@ export function replayDeferredLinxUpdateNotification(
   }
 
   updateState.deferredUpdateVersion = undefined
-  void showLinxUpdateSelector(interactive, version)
+  startLinxUpdateSelectorInBackground(interactive, version)
 }
 
 function patchVersionCheck(interactive: any): void {
@@ -108,7 +109,7 @@ function patchUpdateNotification(interactive: any, options: LinxUpdateNotificati
         return true
       }
 
-      requestLinxUpdateNotification(target, normalizedVersion, options)
+      startLinxUpdateNotificationInBackground(target, normalizedVersion, options)
       return true
     },
   })
@@ -130,7 +131,7 @@ export function scheduleLinxVersionCheckAfterInit(
         if (!latest) {
           return
         }
-        requestLinxUpdateNotification(interactive, latest, options)
+        startLinxUpdateNotificationInBackground(interactive, latest, options)
       })
       .catch(() => undefined)
   })
@@ -189,6 +190,41 @@ function requestLinxUpdateNotification(
 
   updateState.deferredUpdateVersion = undefined
   return showLinxUpdateSelector(interactive, newVersion)
+}
+
+function startLinxUpdateNotificationInBackground(
+  interactive: any,
+  newVersion: string,
+  options: LinxUpdateNotificationOptions & { force?: boolean } = {},
+): void {
+  try {
+    const result = requestLinxUpdateNotification(interactive, newVersion, options)
+    catchLinxBackgroundUpdateError(interactive, result)
+  } catch (error) {
+    reportLinxBackgroundUpdateError(interactive, error)
+  }
+}
+
+function startLinxUpdateSelectorInBackground(interactive: any, newVersion: string): void {
+  try {
+    catchLinxBackgroundUpdateError(interactive, showLinxUpdateSelector(interactive, newVersion))
+  } catch (error) {
+    reportLinxBackgroundUpdateError(interactive, error)
+  }
+}
+
+function catchLinxBackgroundUpdateError(interactive: any, result: Promise<void> | void): void {
+  if (!result || typeof result.catch !== 'function') {
+    return
+  }
+  void result.catch((error: unknown) => {
+    reportLinxBackgroundUpdateError(interactive, error)
+  })
+}
+
+function reportLinxBackgroundUpdateError(interactive: any, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
+  showLinxInteractiveError(interactive, `LinX update failed: ${message}`)
 }
 
 function shouldDeferLinxUpdateNotification(options: LinxUpdateNotificationOptions): boolean {

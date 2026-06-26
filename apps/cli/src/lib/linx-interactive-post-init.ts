@@ -79,7 +79,7 @@ function installPostInitInteractiveControls(
 export function installLinxEscapeInterrupt(interactive: any): void {
   installLinxInterruptControl(interactive, {
     disableAutoMode(target) {
-      void handleInteractiveAutoCommand(target, getLinxInteractiveRuntime(target), false)
+      return handleInteractiveAutoCommand(target, getLinxInteractiveRuntime(target), false)
     },
   })
 }
