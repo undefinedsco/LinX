@@ -1956,6 +1956,7 @@ test('linx interactive /update checks npm and opens the TUI update selector', as
   const submitted = []
   const selectorCalls = []
   const statuses = []
+  let resolveSelector
   const interactive = {
     defaultEditor: {},
     editor: {
@@ -1969,9 +1970,11 @@ test('linx interactive /update checks npm and opens the TUI update selector', as
         submitted.push(text)
       }
     },
-    async showExtensionSelector(title, options) {
+    showExtensionSelector(title, options) {
       selectorCalls.push({ title, options })
-      return 'Later'
+      return new Promise((resolve) => {
+        resolveSelector = () => resolve('Later')
+      })
     },
     showStatus(message) {
       statuses.push(message)
@@ -1983,13 +1986,21 @@ test('linx interactive /update checks npm and opens the TUI update selector', as
 
   module.installLinxGlobalCommands(interactive, {}, process.cwd())
   interactive.setupEditorSubmitHandler()
-  await interactive.defaultEditor.onSubmit('/update')
+  let submitSettled = false
+  const submit = interactive.defaultEditor.onSubmit('/update')
+    .then(() => {
+      submitSettled = true
+    })
   await new Promise((resolve) => setImmediate(resolve))
 
   assert.deepEqual(submitted, [])
   assert.equal(selectorCalls.length, 1)
+  assert.equal(submitSettled, false)
   assert.match(selectorCalls[0].title, /LinX update available/)
   assert.deepEqual(selectorCalls[0].options, ['Later', 'Install update and restart', 'Open changelog'])
+  resolveSelector()
+  await submit
+  assert.equal(submitSettled, true)
   assert.equal(statuses.some((message) => String(message).includes('Skipped LinX 0.9.9 for now.')), true)
 })
 
@@ -2971,6 +2982,41 @@ test('shell lifecycle restart drains terminal input before handing the TTY to th
   assert.equal(module.isInteractiveShellRestarting(interactive), false)
   assert.equal(runtimeEnv[module.LINX_TUI_NO_EXIT_MESSAGE_ENV], undefined)
   assert.deepEqual(events.at(-1), { type: 'exit', code: 0 })
+})
+
+test('shell lifecycle restart relaunches the LinX executable surface even from an upstream Pi argv', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/shell-lifecycle.ts')
+  t.after(() => cleanup())
+
+  const events = []
+  const runtime = {
+    execPath: '/usr/local/bin/node',
+    argv: ['/usr/local/bin/node', '/usr/local/bin/pi', '--session', 'session_123'],
+    env: {},
+    cwd() {
+      return '/workspace/project'
+    },
+    spawnProcess(command, args) {
+      events.push({ type: 'spawn', command, args })
+      return {
+        on() {
+          return this
+        },
+      }
+    },
+    exitProcess(code) {
+      events.push({ type: 'exit', code })
+    },
+    defer(callback) {
+      callback()
+    },
+  }
+
+  module.restartInteractiveShellProcess({ stop() {} }, { runtime })
+
+  assert.equal(events[0]?.type, 'spawn')
+  assert.equal(events[0].command, runtime.execPath)
+  assert.deepEqual(events[0].args, ['/usr/local/bin/linx', '--session', 'session_123'])
 })
 
 test('interactive stop router keeps original stop and final cleanup when a before handler fails', async (t) => {

@@ -1416,6 +1416,9 @@ The lifecycle supervisor must own the full handoff:
   state;
 - suppress normal session-closed/resume copy for the whole abandoned shell
   instance, not only for the first `stop()` call;
+- keep manual `/update` command handling awaited through selector handling,
+  install, and restart; it must not fire-and-forget the selector or restart work
+  while the old TUI command handler returns;
 - drain terminal input when the upstream TUI exposes a drain hook, then stop the
   old TUI, then spawn the replacement process with inherited stdio;
 - keep the parent process alive until the replacement process closes, and mirror

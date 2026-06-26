@@ -36,6 +36,54 @@ test('update notification module owns selector rendering and changelog action', 
   assert.equal(statuses.some((message) => message.includes('Opened LinX changelog for 0.3.99')), true)
 })
 
+test('manual update check waits for selector handling before returning', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-update-notification.ts')
+  t.after(() => cleanup())
+
+  const previousOffline = process.env.PI_OFFLINE
+  const previousFetch = globalThis.fetch
+  delete process.env.PI_OFFLINE
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return { version: '0.3.99' }
+    },
+  })
+  t.after(() => {
+    if (previousOffline === undefined) {
+      delete process.env.PI_OFFLINE
+    } else {
+      process.env.PI_OFFLINE = previousOffline
+    }
+    globalThis.fetch = previousFetch
+  })
+
+  let resolveSelector
+  let updateSettled = false
+  const interactive = {
+    chatContainer: { addChild() {} },
+    ui: { requestRender() {} },
+    showExtensionSelector() {
+      return new Promise((resolve) => {
+        resolveSelector = () => resolve('Later')
+      })
+    },
+    showStatus() {},
+  }
+
+  const update = module.checkAndShowLinxUpdate(interactive, { manual: true })
+    .then(() => {
+      updateSettled = true
+    })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(updateSettled, false)
+
+  resolveSelector()
+  await update
+  assert.equal(updateSettled, true)
+})
+
 test('update notification module defers and replays while auth UI owns the selector', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-update-notification.ts')
   t.after(() => cleanup())
