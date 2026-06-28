@@ -1,3 +1,8 @@
+import {
+  clearLinxInteractiveTurnResponseWatchdog,
+  startLinxInteractiveTurnResponseWatchdog,
+} from './linx-interactive-turn-response-watchdog.js'
+
 export type LinxInteractiveSubmitContext = {
   interactive: any
   text: string
@@ -91,13 +96,23 @@ function wrapLinxInteractiveEditorSubmit(
 
   const wrappedSubmit = async (text: string): Promise<void> => {
     const input = String(text ?? '').trim()
+    const submitOriginal = async (submittedText: string): Promise<void> => {
+      const submittedInput = String(submittedText ?? '').trim()
+      startLinxInteractiveTurnResponseWatchdog(interactive, submittedInput)
+      try {
+        await originalSubmit(submittedText)
+      } catch (error) {
+        clearLinxInteractiveTurnResponseWatchdog(interactive)
+        throw error
+      }
+    }
     for (const entry of state.handlers) {
-      if (await entry.handler({ interactive, text, input, originalSubmit })) {
+      if (await entry.handler({ interactive, text, input, originalSubmit: submitOriginal })) {
         return
       }
     }
 
-    await originalSubmit(text)
+    await submitOriginal(text)
   }
   ;(wrappedSubmit as { [LINX_INTERACTIVE_SUBMIT_WRAPPED]?: boolean })[LINX_INTERACTIVE_SUBMIT_WRAPPED] = true
   editor.onSubmit = wrappedSubmit

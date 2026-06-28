@@ -158,7 +158,11 @@ long-lived grants, or final user-owned acceptance.
 
 ## Binding, Steering, And Change Control
 
-For each meaningful user message, Secretary should compare the message with the active record before creating work or steering workers.
+For each meaningful user message, Secretary should compare the message with the
+active record before creating work or steering workers. Capture is not gated by
+`/symphony on`: ordinary chat may first create a lightweight Idea in Pod, and
+Symphony only decides whether that captured Idea should be merged, promoted,
+steered, or left as context.
 
 Steering is the main place where "documentation-first" matters. A steering
 message is not a side-channel instruction to workers, because workers may already have read an earlier version of the record. Secretary updates the

@@ -2,6 +2,20 @@ type ShellControlChangeHandler = (enabled: boolean) => void | Promise<void>
 type ProjectedCommandResult = boolean | 'peer-command'
 type ProjectedCommandHandler = (text: string) => ProjectedCommandResult | Promise<ProjectedCommandResult>
 type AiConnectCommandHandler = (interactive: any, runtime: any, command: any) => void | Promise<void>
+type IdeaCaptureHandler = (input: string, source?: unknown) => unknown | Promise<unknown>
+
+export type LinxInteractiveIdeaCaptureProjection =
+  | {
+    kind: 'captured'
+    context: {
+      uri: string
+      summary: string
+      status: string
+      commitment: string
+    }
+  }
+  | { kind: 'pending'; message: string }
+  | { kind: 'failed'; error: Error }
 
 export type LinxInteractiveSymphonyState = {
   podProjectionRuntime?: any
@@ -32,6 +46,13 @@ export type LinxInteractiveShellState = {
   aiConnectCommand?: AiConnectCommandHandler
   projectedGlobalCommand?: ProjectedCommandHandler
   projectedBackendCommand?: ProjectedCommandHandler
+  captureIdea?: IdeaCaptureHandler
+  ideaCaptureForegroundTimeoutMs?: unknown
+  turnResponsePendingStatusTimeoutMs?: unknown
+  lastIdeaCapture?: {
+    input: string
+    projection: LinxInteractiveIdeaCaptureProjection
+  }
   symphony: LinxInteractiveSymphonyState
 }
 
@@ -65,6 +86,9 @@ export function configureLinxInteractiveShellState(
     aiConnectCommand?: AiConnectCommandHandler
     projectedGlobalCommand?: ProjectedCommandHandler
     projectedBackendCommand?: ProjectedCommandHandler
+    captureIdea?: IdeaCaptureHandler
+    ideaCaptureForegroundTimeoutMs?: unknown
+    turnResponsePendingStatusTimeoutMs?: unknown
     symphony?: Partial<LinxInteractiveSymphonyState>
   },
 ): LinxInteractiveShellState {
@@ -98,6 +122,15 @@ export function configureLinxInteractiveShellState(
   }
   if (options.projectedBackendCommand) {
     state.projectedBackendCommand = options.projectedBackendCommand
+  }
+  if (options.captureIdea) {
+    state.captureIdea = options.captureIdea
+  }
+  if (options.ideaCaptureForegroundTimeoutMs !== undefined) {
+    state.ideaCaptureForegroundTimeoutMs = options.ideaCaptureForegroundTimeoutMs
+  }
+  if (options.turnResponsePendingStatusTimeoutMs !== undefined) {
+    state.turnResponsePendingStatusTimeoutMs = options.turnResponsePendingStatusTimeoutMs
   }
   if (options.symphony) {
     Object.assign(state.symphony, options.symphony)
@@ -168,6 +201,46 @@ export function getLinxInteractiveSymphonyStatusPodTimeoutMs(interactive: any): 
 
 export function getLinxInteractiveRunSymphony(interactive: any): ((...args: any[]) => any) | undefined {
   return getLinxInteractiveSymphonyState(interactive).runSymphony
+}
+
+export function getLinxInteractiveCaptureIdea(interactive: any): IdeaCaptureHandler | undefined {
+  return getLinxInteractiveShellState(interactive).captureIdea
+}
+
+export function getLinxInteractiveIdeaCaptureForegroundTimeoutMs(interactive: any): unknown {
+  return getLinxInteractiveShellState(interactive).ideaCaptureForegroundTimeoutMs
+}
+
+export function getLinxInteractiveTurnResponsePendingStatusTimeoutMs(interactive: any): unknown {
+  return getLinxInteractiveShellState(interactive).turnResponsePendingStatusTimeoutMs
+}
+
+export function setLinxInteractiveLastIdeaCapture(
+  interactive: any,
+  input: string,
+  projection: LinxInteractiveIdeaCaptureProjection | undefined,
+): void {
+  const state = getLinxInteractiveShellState(interactive)
+  if (!projection) {
+    if (state.lastIdeaCapture?.input === input) {
+      delete state.lastIdeaCapture
+    }
+    return
+  }
+  state.lastIdeaCapture = { input, projection }
+}
+
+export function takeLinxInteractiveLastIdeaCapture(
+  interactive: any,
+  input: string,
+): LinxInteractiveIdeaCaptureProjection | undefined {
+  const state = getLinxInteractiveShellState(interactive)
+  if (state.lastIdeaCapture?.input !== input) {
+    return undefined
+  }
+  const projection = state.lastIdeaCapture.projection
+  delete state.lastIdeaCapture
+  return projection
 }
 
 export function getLinxInteractiveListSymphonyIssues(interactive: any): (() => any) | undefined {

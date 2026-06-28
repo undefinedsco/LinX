@@ -1697,35 +1697,16 @@ test('interactive command routing patch state is kept behind the shell command r
   assert.deepEqual(violations, [])
 })
 
-test('auto editor indicator patch state is kept behind the shell rendering host', () => {
-  const allowed = new Set([
-    'linx-auto-editor-indicator-host.ts',
-  ])
-  const violations = []
-  const directAutoIndicatorPatchPattern = /__linx(?:AutoEditorIndicatorInstalled|AutoEditorIndicatorRenderInstalled)\b/
 
-  for (const file of listSourceFiles(libRoot)) {
-    const relativePath = relative(libRoot, file)
-    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
-      continue
-    }
 
-    const source = readFileSync(file, 'utf8')
-    if (directAutoIndicatorPatchPattern.test(source)) {
-      violations.push(relativePath)
-    }
-  }
+test('auto and symphony mode visibility stays in footer rendering, not editor rendering', () => {
+  const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+  const footerSource = readFileSync(join(libRoot, 'linx-footer-patch.ts'), 'utf8')
 
-  assert.deepEqual(violations, [])
-})
-
-test('auto editor indicator enumerates editors through the shell editor component seam', () => {
-  const source = readFileSync(join(libRoot, 'linx-auto-editor-indicator.ts'), 'utf8')
-
-  assert.match(source, /from ['"]\.\/linx-editor-component-router\.js['"]/)
-  assert.match(source, /\bforEachLinxInteractiveEditorComponent\b/)
-  assert.doesNotMatch(source, /\.defaultEditor\b/)
-  assert.doesNotMatch(source, /\.editor\b/)
+  assert.doesNotMatch(commandRoutingSource, /auto-editor-indicator|installLinxAutoEditorIndicator/)
+  assert.match(footerSource, /buildLinxFooterModePrefix/)
+  assert.match(footerSource, /isLinxInteractiveAutoModeEnabled/)
+  assert.match(footerSource, /isLinxInteractiveSymphonyModeEnabled/)
 })
 
 test('terminal title patching is centralized in the shell rendering router', () => {

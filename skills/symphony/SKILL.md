@@ -313,10 +313,12 @@ lane updates Pod plus repo docs.
 Use Idea as the buffer between fragmented conversation and committed system
 work.
 
-When Symphony is active, capture meaningful but uncommitted fragments as Ideas
-when they describe a possible system direction, concern, product capability,
-modeling principle, or improvement area. Do not capture ordinary chat, games,
-or one-off explanations.
+Capture is a Secretary/runtime capability, not a Symphony mode switch. LinX may
+capture meaningful but uncommitted fragments from ordinary chat before the model
+turn, and Symphony consumes the resulting Idea when it is active. Capture as
+Ideas when the fragment describes a possible system direction, concern, product
+capability, modeling principle, or improvement area. Do not capture ordinary
+chat, games, or one-off explanations.
 
 An Idea record should stay small and explicit:
 

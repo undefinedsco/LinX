@@ -76,7 +76,11 @@ Hard rules:
 - `interactive.setupEditorSubmitHandler` is patched only by
   `apps/cli/src/lib/linx-interactive-submit-router.ts`.
   Feature modules register ordered submit handlers instead of wrapping
-  `defaultEditor.onSubmit` independently.
+  `defaultEditor.onSubmit` independently. The submit router also wraps the
+  original submit callback with shell-owned turn-response bookkeeping so normal
+  chat can surface a status when the queued turn or downstream model call has
+  not produced content yet; feature modules must not add duplicate "no reply"
+  timers.
 - `interactive.init` is a post-init lifecycle seam, not a feature-local hook.
   New post-init behavior belongs behind
   `apps/cli/src/lib/linx-interactive-post-init.ts`; feature modules expose
@@ -322,7 +326,7 @@ The submit router owns the first decision point for interactive user input. The
 current priority order is:
 
 ```text
-10 login
+10 login and non-consuming Idea capture preflight
 20 Symphony
 40 LinX-proxied backend slash commands
 50 LinX shell command fallback
@@ -333,6 +337,14 @@ Handlers return `true` only when they consumed the input. Unknown commands,
 Pi-native slash commands, and ordinary messages must fall through to the next
 handler or Pi's original submit path. A handler must not call the original submit
 and then also report `false`; that creates duplicate turns.
+
+Normal chat submission may continue after pre-submit side effects such as Idea
+capture. If the turn then stays silent,
+`linx-interactive-turn-response-watchdog.ts` is the shell-owned status seam: it
+distinguishes "message queued, no backend activity" from "backend/model call
+started, no visible content yet" by watching Pi session events. This status is
+local TUI feedback only; it is not persisted as chat content and does not replace
+stream/cloud timeout handling.
 
 LinX-owned TUI slash commands are never model chat. Commands such as `/update`,
 `/statusline`, `/rewind`, `/ai connect`, and `/cd` must be consumed by the shell
@@ -825,6 +837,9 @@ The status line/footer decision is the canonical example:
 - `linx statusline`, `linx status-line`, and `linx footer` must not be added as
   top-level shortcuts; they create a second command vocabulary for the same
   shell setting.
+- Auto/Symphony mode visibility belongs in the footer/status line. The LinX
+  interactive shell must not decorate or replace Pi's main editor frame to show
+  ownership state; Pi owns the composer/editor and LinX owns status rendering.
 
 ### Resume and exit-output boundary
 

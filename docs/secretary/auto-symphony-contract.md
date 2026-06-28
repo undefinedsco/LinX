@@ -57,6 +57,10 @@ the current chat peer.
 `/auto <input>` must therefore not create a user-authored business message. It
 turns auto on and passes `<input>` into the Secretary-owned input lane.
 
+In the interactive TUI, auto ownership is visible through the footer/status line,
+not by replacing or decorating Pi's main composer/editor frame. LinX may configure
+Pi's native editor settings, but Pi remains the owner of the message editor.
+
 ## Approval Policy Is Separate
 
 Backend-native approval policy stays in the backend configuration channel.
