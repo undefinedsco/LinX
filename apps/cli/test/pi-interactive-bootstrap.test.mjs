@@ -4958,77 +4958,6 @@ test('linx interactive handles /auto before backend fallback', async (t) => {
 })
 
 
-test('auto editor indicator shell module decorates the active input bar', async (t) => {
-  const [{ module, cleanup }, { module: stateModule, cleanup: stateCleanup }] = await Promise.all([
-    loadAutoModeModule('lib/linx-auto-editor-indicator.ts'),
-    loadAutoModeModule('lib/linx-interactive-shell-state.ts'),
-  ])
-  t.after(() => {
-    cleanup()
-    stateCleanup()
-  })
-
-  const { visibleWidth } = await import('@earendil-works/pi-tui')
-  const interactive = {
-    defaultEditor: {
-      render(width) {
-        return [
-          '─'.repeat(width),
-          ' '.repeat(width),
-        ]
-      },
-    },
-  }
-
-  stateModule.configureLinxInteractiveShellState(interactive, { autoModeEnabled: true })
-  module.installLinxAutoEditorIndicator(interactive)
-  const rendered = interactive.defaultEditor.render(40)
-
-  assert.match(rendered.join('\n'), /托管中/)
-  assert.equal(rendered.every((line) => visibleWidth(line) <= 40), true)
-})
-
-test('linx interactive shows delegated input bar while auto is on', async (t) => {
-  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-auto-editor-indicator.ts'])
-  t.after(() => cleanup())
-
-  const { visibleWidth } = await import('@earendil-works/pi-tui')
-
-  const renderCalls = []
-  const interactive = {
-    defaultEditor: {
-      render(width) {
-        renderCalls.push(width)
-        return [
-          '─'.repeat(width),
-          ' '.repeat(width),
-          '─'.repeat(width),
-        ]
-      },
-    },
-  }
-
-  module.installLinxAutoEditorIndicator(interactive)
-  module.installLinxAutoEditorIndicator(interactive)
-
-  const normal = interactive.defaultEditor.render(60)
-  assert.equal(normal[0], '─'.repeat(60))
-  assert.equal(renderCalls.length, 1)
-
-  module.configureLinxInteractiveShellState(interactive, { autoModeEnabled: true })
-  const delegated = interactive.defaultEditor.render(60)
-  const delegatedText = delegated.join('\n')
-  assert.match(delegatedText, /托管中/)
-  assert.match(delegatedText, /Secretary 自动输入/)
-  assert.match(delegatedText, /Ctrl\+C 接管/)
-  assert.match(delegatedText, /\/auto off/)
-  assert.equal(delegated.every((line) => visibleWidth(line) <= 60), true)
-
-  module.configureLinxInteractiveShellState(interactive, { autoModeEnabled: false })
-  const restored = interactive.defaultEditor.render(60)
-  assert.equal(restored[0], '─'.repeat(60))
-  assert.equal(renderCalls.length, 3)
-})
 
 test('linx interactive records normal user input through Thread Reconciler before Pi projection', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
@@ -5090,6 +5019,218 @@ test('linx interactive records normal user input through Thread Reconciler befor
   assert.equal(appended.data?.data?.reconciler?.policyKind, 'direct')
   assert.equal(appended.data?.data?.reconciler?.eventType, 'message.appended')
   assert.equal(appended.data?.data?.reconciler?.wakeJobs?.[0]?.targetRole, 'primary-agent')
+})
+
+
+test('linx interactive captures idea-like user input without Symphony mode', async (t) => {
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+  const submitted = []
+  const captureCalls = []
+  const statuses = []
+  const interactive = {
+    defaultEditor: {},
+    podSession: {
+      webId: 'https://alice.example/profile/card#me',
+    },
+    sessionManager: {
+      getSessionId() {
+        return 'session-capture-without-symphony'
+      },
+    },
+    editor: {
+      setText() {
+        throw new Error('normal user input should not be treated as a command')
+      },
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showWarning(message) {
+      throw new Error(message)
+    },
+  }
+  const runtime = {
+    cwd: '/tmp/demo',
+    sessionControl: {
+      createControlSession({ cwd }) {
+        return SessionManager.inMemory(cwd)
+      },
+    },
+  }
+
+  module.configureLinxInteractiveShellState(interactive, {
+    captureIdea: async (input, source) => {
+      captureCalls.push({ input, source })
+      return {
+        uri: 'https://alice.example/.data/ideas/2026/06/27.ttl#idea-no-symphony',
+        summary: 'capture should not require Symphony mode',
+        status: 'captured',
+        commitment: 'thought',
+      }
+    },
+  })
+  module.installLinxGlobalCommands(interactive, runtime, '/tmp/demo')
+  interactive.setupEditorSubmitHandler()
+
+  const input = '其实是不是就是我们的 capture 的能力？要求重要的事情都抓进 pod 里'
+  await interactive.defaultEditor.onSubmit(input)
+
+  assert.equal(module.isLinxInteractiveSymphonyModeEnabled(interactive), false)
+  assert.deepEqual(submitted, [input])
+  assert.equal(captureCalls.length, 1)
+  assert.equal(captureCalls[0].input, input)
+  assert.equal(captureCalls[0].source.chat, 'https://alice.example/.data/chat/__secretary__/index.ttl#this')
+  assert.equal(captureCalls[0].source.thread, 'https://alice.example/.data/chat/__secretary__/index.ttl#session-capture-without-symphony')
+  assert.match(statuses.at(-1), /Captured Idea: capture should not require Symphony mode/)
+})
+
+
+test('linx interactive continues chat and reports status when idea capture is still pending', async (t) => {
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+  const submitted = []
+  const captureCalls = []
+  const statuses = []
+  const interactive = {
+    defaultEditor: {},
+    podSession: {
+      webId: 'https://alice.example/profile/card#me',
+    },
+    sessionManager: {
+      getSessionId() {
+        return 'session-capture-pending'
+      },
+    },
+    editor: {
+      setText() {
+        throw new Error('normal user input should not be treated as a command')
+      },
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showWarning(message) {
+      throw new Error(message)
+    },
+  }
+  const runtime = {
+    cwd: '/tmp/demo',
+    sessionControl: {
+      createControlSession({ cwd }) {
+        return SessionManager.inMemory(cwd)
+      },
+    },
+  }
+
+  module.configureLinxInteractiveShellState(interactive, {
+    ideaCaptureForegroundTimeoutMs: 5,
+    captureIdea: async (input, source) => {
+      captureCalls.push({ input, source })
+      return new Promise(() => undefined)
+    },
+  })
+  module.installLinxGlobalCommands(interactive, runtime, '/tmp/demo')
+  interactive.setupEditorSubmitHandler()
+
+  const input = '是不是应该把重要结论自动抓进 pod 里面'
+  await interactive.defaultEditor.onSubmit(input)
+
+  assert.deepEqual(submitted, [input])
+  assert.equal(captureCalls.length, 1)
+  assert.match(statuses[0], /Capturing Idea/)
+  assert.match(statuses.at(-1), /Idea capture is still running/)
+})
+
+test('linx interactive reports status when a submitted turn has not produced a response yet', async (t) => {
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts'])
+  t.after(() => cleanup())
+
+  const submitted = []
+  const statuses = []
+  const handledEvents = []
+  const interactive = {
+    defaultEditor: {},
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    async handleEvent(event) {
+      handledEvents.push(event)
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+  }
+
+  module.installLinxGlobalCommands(interactive, {}, '/tmp/demo', {
+    turnResponsePendingStatusTimeoutMs: 5,
+  })
+  interactive.setupEditorSubmitHandler()
+
+  await interactive.defaultEditor.onSubmit('hello?')
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.deepEqual(submitted, ['hello?'])
+  assert.equal(handledEvents.length, 0)
+  assert.match(statuses.at(-1), /Still waiting for a response/)
+})
+
+test('linx interactive reports model-call status when backend starts but produces no content', async (t) => {
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts'])
+  t.after(() => cleanup())
+
+  const statuses = []
+  const handledEvents = []
+  const interactive = {
+    defaultEditor: {},
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async () => {}
+    },
+    async handleEvent(event) {
+      handledEvents.push(event)
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+  }
+
+  module.installLinxGlobalCommands(interactive, {}, '/tmp/demo', {
+    turnResponsePendingStatusTimeoutMs: 5,
+  })
+  interactive.setupEditorSubmitHandler()
+
+  await interactive.defaultEditor.onSubmit('hello?')
+  await interactive.handleEvent({ type: 'agent_start' })
+  await interactive.handleEvent({
+    type: 'message_start',
+    message: { role: 'assistant', content: [] },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.equal(handledEvents.length, 2)
+  assert.match(statuses.at(-1), /model call has not produced content yet/)
 })
 
 test('linx interactive /auto on creates a control session without projecting a business turn', async (t) => {
@@ -6499,6 +6640,250 @@ test('linx interactive /symphony switches current chat peer for following messag
   assert.equal(messageEntry.data?.data?.content, 'ship the login fix')
   assert.doesNotMatch(messageEntry.data?.data?.content ?? '', /AI Secretary Symphony request/)
   assert.equal(messageEntry.data?.data?.reconciler?.policyKind, 'direct')
+})
+
+
+test('linx interactive /symphony captures idea-like Secretary messages before projection', async (t) => {
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
+  t.after(() => cleanup())
+
+  const submitted = []
+  const projectionMessages = []
+  const statuses = []
+  const captureCalls = []
+  const interactive = {
+    defaultEditor: {},
+    podSession: {
+      webId: 'https://alice.example/profile/card#me',
+    },
+    session: {
+      async sendCustomMessage(message, options) {
+        projectionMessages.push({ message, options })
+      },
+    },
+    sessionManager: {
+      getSessionId() {
+        return 'session-capture-idea'
+      },
+    },
+    runtime: {
+      cwd: '/tmp/linx-capture-idea',
+    },
+    editor: {
+      setText() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+  }
+
+  module.configureLinxInteractiveShellState(interactive, {
+    captureIdea: async (input, source) => {
+      captureCalls.push({ input, source })
+      return {
+        uri: 'https://alice.example/.data/ideas/2026/06/27.ttl#idea-1',
+        summary: 'capture should persist important things into Pod',
+        status: 'captured',
+        commitment: 'thought',
+      }
+    },
+  })
+  module.installSymphonyCommand(interactive)
+  interactive.setupEditorSubmitHandler()
+
+  const input = '其实是不是就是我们的 capture 的能力？要求重要的事情都抓进 pod 里'
+  await interactive.defaultEditor.onSubmit('/symphony on')
+  await interactive.defaultEditor.onSubmit(input)
+
+  assert.equal(captureCalls.length, 1)
+  assert.equal(captureCalls[0].input, input)
+  assert.equal(captureCalls[0].source.chat, 'https://alice.example/.data/chat/__secretary__/index.ttl#this')
+  assert.equal(captureCalls[0].source.thread, 'https://alice.example/.data/chat/__secretary__/index.ttl#session-capture-idea')
+  assert.equal(submitted.length, 1)
+  assert.equal(submitted[0], input)
+  assert.equal(projectionMessages.length, 1)
+  assert.equal(projectionMessages[0].message.display, false)
+  assert.match(projectionMessages[0].message.content, /Idea already captured before this model turn/)
+  assert.match(projectionMessages[0].message.content, /capture should persist important things into Pod/)
+  assert.match(projectionMessages[0].message.content, /https:\/\/alice\.example\/\.data\/ideas\/2026\/06\/27\.ttl#idea-1/)
+  assert.match(statuses.at(-1), /Captured Idea: capture should persist important things into Pod/)
+})
+
+
+test('linx interactive /symphony captures ideas through the active Pod projection runtime', async (t) => {
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
+  t.after(() => cleanup())
+
+  isolateSolidHome(t, 'linx-symphony-active-runtime-')
+  const submitted = []
+  const projectionMessages = []
+  const statuses = []
+  const errors = []
+  const inserts = []
+  const resource = (name) => ({
+    name,
+    buildIri(webId, target) {
+      return `${webId.replace('/profile/card#me', '')}/.data/${name}s/${target.id}`
+    },
+  })
+  const activeRuntime = {
+    getPodDataSession: async () => ({
+      webId: 'https://alice.example/profile/card#me',
+    }),
+    createDb: () => ({
+      init: async () => undefined,
+      findByResource: async () => null,
+      updateByResource: async () => undefined,
+      insert(resourceRef) {
+        return {
+          values(value) {
+            inserts.push({ resource: resourceRef, value })
+            return {
+              execute: async () => value,
+            }
+          },
+        }
+      },
+    }),
+    ideaResource: resource('idea'),
+    chatResource: resource('chat'),
+    threadResource: resource('thread'),
+  }
+  const interactive = {
+    defaultEditor: {},
+    podSession: {
+      webId: 'https://alice.example/profile/card#me',
+    },
+    session: {
+      async sendCustomMessage(message, options) {
+        projectionMessages.push({ message, options })
+      },
+    },
+    sessionManager: {
+      getSessionId() {
+        return 'session-active-runtime-capture'
+      },
+    },
+    runtime: {
+      cwd: '/tmp/linx-active-runtime-capture',
+    },
+    editor: {
+      setText() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      errors.push(message)
+    },
+  }
+
+  module.configureLinxInteractiveSymphonyState(interactive, {
+    podProjectionRuntime: activeRuntime,
+  })
+  module.installSymphonyCommand(interactive)
+  interactive.setupEditorSubmitHandler()
+
+  const input = '是不是应该把重要结论自动抓进 pod 里面'
+  await interactive.defaultEditor.onSubmit('/symphony on')
+  await interactive.defaultEditor.onSubmit(input)
+
+  assert.equal(errors.length, 0)
+  assert.equal(submitted.length, 1)
+  assert.equal(submitted[0], input)
+  assert.equal(inserts.length, 1)
+  assert.equal(inserts[0].resource, activeRuntime.ideaResource)
+  assert.equal(inserts[0].value.input, input)
+  assert.equal(inserts[0].value.metadata?.surface, 'linx-capture')
+  assert.notEqual(inserts[0].value.metadata?.surface, 'symphony')
+  assert.equal(inserts[0].value.chat, 'https://alice.example/.data/chat/__secretary__/index.ttl#this')
+  assert.equal(inserts[0].value.thread, 'https://alice.example/.data/chat/__secretary__/index.ttl#session-active-runtime-capture')
+  assert.match(statuses.at(-1), /Captured Idea:/)
+  assert.match(projectionMessages[0].message.content, /Idea already captured before this model turn/)
+})
+
+test('linx interactive /symphony surfaces idea capture failures before projection', async (t) => {
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
+  t.after(() => cleanup())
+
+  const submitted = []
+  const projectionMessages = []
+  const errors = []
+  const warnings = []
+  const warningHandler = (warning) => warnings.push(warning)
+  process.on('warning', warningHandler)
+  t.after(() => process.off('warning', warningHandler))
+  const interactive = {
+    defaultEditor: {},
+    podSession: {
+      webId: 'https://alice.example/profile/card#me',
+    },
+    session: {
+      async sendCustomMessage(message, options) {
+        projectionMessages.push({ message, options })
+      },
+    },
+    sessionManager: {
+      getSessionId() {
+        return 'session-capture-failed'
+      },
+    },
+    runtime: {
+      cwd: '/tmp/linx-capture-failed',
+    },
+    editor: {
+      setText() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showError(message) {
+      errors.push(message)
+    },
+  }
+
+  module.configureLinxInteractiveShellState(interactive, {
+    captureIdea: async () => {
+      throw new Error('Pod write unavailable')
+    },
+  })
+  module.installSymphonyCommand(interactive)
+  interactive.setupEditorSubmitHandler()
+
+  const input = '是不是应该把重要结论自动抓进 pod 里面'
+  await interactive.defaultEditor.onSubmit('/symphony on')
+  await interactive.defaultEditor.onSubmit(input)
+
+  assert.equal(submitted.length, 1)
+  assert.equal(submitted[0], input)
+  assert.equal(projectionMessages.length, 1)
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /Capture failed: Pod write unavailable/)
+  assert.match(projectionMessages[0].message.content, /Idea capture was required but Pod write failed before this model turn/)
+  assert.match(projectionMessages[0].message.content, /Pod write unavailable/)
+  assert.match(projectionMessages[0].message.content, /Do not claim it was captured/)
+  assert.equal(warnings.length, 0)
 })
 
 test('linx interactive /symphony keeps worker-looking messages in the Secretary lane', async (t) => {

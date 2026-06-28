@@ -1,10 +1,11 @@
 import { parseLinxShellCommand, type LinxShellCommand } from './linx-shell-command-router.js'
-import { installLinxAutoEditorIndicator } from './linx-auto-editor-indicator.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import {
   configureLinxInteractiveShellState,
 } from './linx-interactive-shell-state.js'
+import { installLinxInteractiveIdeaCapture } from './linx-interactive-idea-capture.js'
+import { installLinxInteractiveTurnResponseWatchdog } from './linx-interactive-turn-response-watchdog.js'
 import {
   installLinxSessionCommandRouter as installOwnedLinxSessionCommandRouter,
   installLinxSessionCommandRouterAfterRebind as installOwnedLinxSessionCommandRouterAfterRebind,
@@ -22,6 +23,7 @@ import { executeLinxShellCommand } from './linx-shell-command-executor.js'
 
 type ShellCommandOptions = {
   onAutoControlChange?: (enabled: boolean) => void | Promise<void>
+  turnResponsePendingStatusTimeoutMs?: unknown
   handleAiConnectCommand?: (
     interactive: any,
     runtime: any,
@@ -35,10 +37,16 @@ export function installLinxShellCommands(
   sessionCwd: string,
   options: ShellCommandOptions = {},
 ): void {
-  installLinxAutoEditorIndicator(interactive)
+  installLinxInteractiveTurnResponseWatchdog(interactive)
+  installLinxInteractiveIdeaCapture(interactive, runtime)
   if (options.onAutoControlChange) {
     configureLinxInteractiveShellState(interactive, {
       autoControlChange: options.onAutoControlChange,
+    })
+  }
+  if (options.turnResponsePendingStatusTimeoutMs !== undefined) {
+    configureLinxInteractiveShellState(interactive, {
+      turnResponsePendingStatusTimeoutMs: options.turnResponsePendingStatusTimeoutMs,
     })
   }
   if (options.handleAiConnectCommand) {

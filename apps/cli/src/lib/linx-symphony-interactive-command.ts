@@ -8,12 +8,12 @@ import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { DEFAULT_SECRETARY_CHAT_ID, secretaryChatUri, secretaryThreadUri } from './pod-mirror-mapping.js'
 import { getSessionControlManager } from './session-control.js'
 import { resolveInteractiveCwd } from './linx-workspace-command.js'
-import {
-  createSymphonyIdeaRecord,
-  type CaptureSymphonyIdeaInput,
-} from './symphony/archive.js'
-import { persistSymphonyIdeaToPod } from './symphony/pod-projection.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
+import {
+  captureInteractiveIdeaForInput,
+  renderIdeaCaptureProjection,
+  serializeIdeaCaptureProjection,
+} from './linx-interactive-idea-capture.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import { getLinxInteractiveRuntime, resolveLinxInteractivePodWebId } from './linx-interactive-runtime-host.js'
 import { resolveLinxSessionId, resolveLinxSessionModelId } from './linx-session-metadata.js'
@@ -37,6 +37,8 @@ import {
   isLinxInteractiveSymphonyModeEnabled,
   notifyLinxInteractiveSymphonyControlChange,
   setLinxInteractiveSymphonyModeEnabled,
+  takeLinxInteractiveLastIdeaCapture,
+  type LinxInteractiveIdeaCaptureProjection,
 } from './linx-interactive-shell-state.js'
 
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
@@ -59,8 +61,13 @@ export function installSymphonyCommand(interactive: any): void {
       }
 
       if (isLinxInteractiveSymphonyModeEnabled(target) && shouldProjectSymphonyInput(input)) {
-        getSessionControlManager(target, getLinxInteractiveRuntime(target)).recordUserMessage({ text: input })
-        await queueSymphonySecretaryProjection(target, input)
+        const runtime = getLinxInteractiveRuntime(target)
+        getSessionControlManager(target, runtime).recordUserMessage({ text: input })
+        const ideaCapture = takeLinxInteractiveLastIdeaCapture(target, input)
+          ?? await captureInteractiveIdeaForInput(target, runtime, input, {
+            podRuntime: getLinxInteractiveSymphonyPodProjectionRuntime(target),
+          })
+        await queueSymphonySecretaryProjection(target, input, ideaCapture)
         await originalSubmit(input)
         return true
       }
@@ -150,19 +157,24 @@ function shouldProjectSymphonyInput(input: string): boolean {
     && !input.startsWith('!')
 }
 
-async function queueSymphonySecretaryProjection(interactive: any, input: string): Promise<void> {
+async function queueSymphonySecretaryProjection(
+  interactive: any,
+  input: string,
+  ideaCapture?: LinxInteractiveIdeaCaptureProjection,
+): Promise<void> {
   await queueLinxInteractiveSessionRuntimeProjection(interactive, {
     customType: 'linx.symphony.secretary_projection',
-    content: renderSymphonySecretaryProjection(input),
+    content: renderSymphonySecretaryProjection(input, ideaCapture),
     display: false,
     details: {
       kind: 'runtime_projection',
       visibleInput: input,
+      ...(ideaCapture ? { ideaCapture: serializeIdeaCaptureProjection(ideaCapture) } : {}),
     },
   }, { deliverAs: 'nextTurn' })
 }
 
-function renderSymphonySecretaryProjection(input: string): string {
+function renderSymphonySecretaryProjection(input: string, ideaCapture?: LinxInteractiveIdeaCaptureProjection): string {
   return [
     '# AI Secretary Symphony request',
     '',
@@ -178,6 +190,7 @@ function renderSymphonySecretaryProjection(input: string): string {
     'xpod uses the same Solid authority as LinX inside the Agent Runtime; do not ask the model to handle tokens or client secrets.',
     'Before mutating Pod resources from tools, verify xpod auth status/whoami reports the same acting WebID/Pod root as the LinX session; stop on mismatch.',
     'Do not hand-patch TTL or guess Pod paths for modeled product resources; use xpod/model descriptors or inspect existing links first.',
+    ...renderIdeaCaptureProjection(ideaCapture),
     '',
     'User message:',
     input,
@@ -528,74 +541,6 @@ function formatSymphonyDispatchResult(plan: Awaited<ReturnType<typeof runSymphon
     lines.push(`Error: ${session.error}`)
   }
   return lines.join('\n')
-}
-
-interface CapturedSymphonyIdeaContext {
-  uri: string
-  summary: string
-  status: string
-  commitment: string
-}
-
-async function captureSymphonyIdeaIfNeeded(
-  input: string,
-  source: SymphonySourceContext | undefined,
-): Promise<CapturedSymphonyIdeaContext | undefined> {
-  if (!shouldCaptureSymphonyIdeaInput(input)) {
-    return undefined
-  }
-
-  try {
-    const affectedArea = inferSymphonyIdeaAffectedArea(input)
-    const captureInput: CaptureSymphonyIdeaInput = {
-      input,
-      commitment: 'thought',
-      status: 'captured',
-      currentUnderstanding: input.trim(),
-      nextStep: 'Bind this Idea against existing control records before promoting it to work.',
-      ...(source?.chat ? { chat: source.chat } : {}),
-      ...(source?.thread ? { thread: source.thread } : {}),
-      ...(affectedArea ? { affectedArea } : {}),
-    }
-    const idea = createSymphonyIdeaRecord(captureInput)
-    const persisted = await persistSymphonyIdeaToPod(idea)
-    if (!persisted) {
-      throw new Error('No active Pod session; Symphony Idea records must be written to Pod in LinX runtime.')
-    }
-    return {
-      uri: idea.uri,
-      summary: idea.summary,
-      status: idea.status,
-      commitment: idea.commitment,
-    }
-  } catch (error) {
-    process.emitWarning(
-      error instanceof Error
-        ? new Error(`LinX Symphony Idea Pod write failed: ${error.message}`)
-        : new Error(`LinX Symphony Idea Pod write failed: ${String(error)}`),
-    )
-    return undefined
-  }
-}
-
-function shouldCaptureSymphonyIdeaInput(input: string): boolean {
-  const normalized = input.trim()
-  if (normalized.length < 12) {
-    return false
-  }
-  return /\b(idea|maybe|perhaps|could we|should we|what if|proposal|direction)\b/iu.test(normalized)
-    || /(我觉得|感觉|也许|可能|考虑|想法|方向|要不要|能不能|是不是|是否|应该)/u.test(normalized)
-}
-
-function inferSymphonyIdeaAffectedArea(input: string): string | undefined {
-  const normalized = input.toLowerCase()
-  if (/symphony|secretary|auto|approval|grant|pod|xpod|skill|worker|agent/u.test(normalized)) {
-    return normalized.match(/symphony|secretary|auto|approval|grant|pod|xpod|skill|worker|agent/u)?.[0]
-  }
-  if (/(建模|模型|数据|同步|权限|审批|托管|多端|工作流|指标|质检)/u.test(input)) {
-    return input.match(/建模|模型|数据|同步|权限|审批|托管|多端|工作流|指标|质检/u)?.[0]
-  }
-  return undefined
 }
 
 
