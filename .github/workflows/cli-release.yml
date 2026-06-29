@@ -28,6 +28,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout marketplace skills
+        uses: actions/checkout@v4
+        with:
+          repository: undefinedsco/marketplace
+          path: marketplace
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

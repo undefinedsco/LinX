@@ -8,7 +8,9 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const home = process.env.HOME ?? ''
 const marketplaceRoot = process.env.LINX_MARKETPLACE_ROOT
   ? process.env.LINX_MARKETPLACE_ROOT
-  : join(root, '..', 'marketplace')
+  : existsSync(join(root, 'marketplace', 'plugins'))
+    ? join(root, 'marketplace')
+    : join(root, '..', 'marketplace')
 const capturePluginRoot = join(marketplaceRoot, 'plugins', 'linx-capture')
 const symphonyPluginRoot = join(marketplaceRoot, 'plugins', 'linx-symphony')
 
