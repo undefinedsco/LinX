@@ -243,6 +243,8 @@ For diagnostics, choose the command by resource shape:
 - `xpod obj ...` for modeled product/control resources;
 - `xpod get` / `xpod put` for file-primary resources and raw byte verification;
 - `xpod rdf ...` only when an RDF parsed/triple view is specifically required.
+  For sidecar SPARQL, use `xpod rdf query --sparql '<SELECT ...>'`; a bare
+  positional query after `xpod rdf query` is invalid.
 
 A small file that writes successfully but times out under `xpod rdf get` is an
 xpod/RDF parsing or transport problem, not evidence that Symphony lacks Pod

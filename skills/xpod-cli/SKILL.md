@@ -32,6 +32,8 @@ and maintainer-facing skill in that repository.
   `xpod head` for raw Pod resources when the user is asking about files,
   containers, or exact URLs.
 - Use `xpod rdf ...` for graph, subject, and triple-level inspection.
+  `xpod rdf query` requires `--sparql`; do not pass the query as a positional
+  argument.
 - Use `xpod secret ...` for credentials. Never print secret values by default.
 - Use `xpod server ...` only when the user asks about the local/server xpod
   process.
@@ -60,6 +62,7 @@ xpod --help
 xpod list <pod-url-or-container> --json
 xpod get <resource-url> --json
 xpod rdf subject <resource-url> --json
+xpod rdf query --sparql 'SELECT * WHERE { ?s ?p ?o } LIMIT 10' --json
 xpod obj export <type-or-resource> --json
 xpod obj import <file-or-stdin> --json
 xpod obj link <source> <predicate> <target> --json

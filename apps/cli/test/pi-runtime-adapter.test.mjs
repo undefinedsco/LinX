@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -862,6 +862,13 @@ description: Xpod CLI Market Skill
   } finally {
     await runtime.dispose()
   }
+})
+
+test('bundled xpod-cli skill documents SPARQL query syntax', () => {
+  const skill = readFileSync(join(cliRoot, '../..', 'skills/xpod-cli/SKILL.md'), 'utf-8')
+
+  assert.match(skill, /xpod rdf query --sparql/)
+  assert.doesNotMatch(skill, /xpod rdf query <sparql>/)
 })
 
 test('pi runtime adapter prefers vendored pi-web-access packages when bundled', async (t) => {

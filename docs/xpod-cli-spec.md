@@ -165,7 +165,11 @@ Use RDF-specific commands only when a parsed RDF/triple view is required:
 
 ```text
 xpod rdf ...
+xpod rdf query --sparql '<SELECT ...>'
 ```
+
+`xpod rdf query` does not accept the SPARQL query as a positional argument. Use
+`--sparql` with either the query string or a local file path.
 
 Do not make `xpod rdf get` the default verification path for a file-primary
 resource. A file may be readable with `xpod get` while RDF parsing or query

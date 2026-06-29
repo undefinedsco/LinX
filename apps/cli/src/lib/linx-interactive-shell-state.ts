@@ -48,7 +48,6 @@ export type LinxInteractiveShellState = {
   projectedBackendCommand?: ProjectedCommandHandler
   captureIdea?: IdeaCaptureHandler
   ideaCaptureForegroundTimeoutMs?: unknown
-  turnResponsePendingStatusTimeoutMs?: unknown
   lastIdeaCapture?: {
     input: string
     projection: LinxInteractiveIdeaCaptureProjection
@@ -88,7 +87,6 @@ export function configureLinxInteractiveShellState(
     projectedBackendCommand?: ProjectedCommandHandler
     captureIdea?: IdeaCaptureHandler
     ideaCaptureForegroundTimeoutMs?: unknown
-    turnResponsePendingStatusTimeoutMs?: unknown
     symphony?: Partial<LinxInteractiveSymphonyState>
   },
 ): LinxInteractiveShellState {
@@ -128,9 +126,6 @@ export function configureLinxInteractiveShellState(
   }
   if (options.ideaCaptureForegroundTimeoutMs !== undefined) {
     state.ideaCaptureForegroundTimeoutMs = options.ideaCaptureForegroundTimeoutMs
-  }
-  if (options.turnResponsePendingStatusTimeoutMs !== undefined) {
-    state.turnResponsePendingStatusTimeoutMs = options.turnResponsePendingStatusTimeoutMs
   }
   if (options.symphony) {
     Object.assign(state.symphony, options.symphony)
@@ -209,10 +204,6 @@ export function getLinxInteractiveCaptureIdea(interactive: any): IdeaCaptureHand
 
 export function getLinxInteractiveIdeaCaptureForegroundTimeoutMs(interactive: any): unknown {
   return getLinxInteractiveShellState(interactive).ideaCaptureForegroundTimeoutMs
-}
-
-export function getLinxInteractiveTurnResponsePendingStatusTimeoutMs(interactive: any): unknown {
-  return getLinxInteractiveShellState(interactive).turnResponsePendingStatusTimeoutMs
 }
 
 export function setLinxInteractiveLastIdeaCapture(
