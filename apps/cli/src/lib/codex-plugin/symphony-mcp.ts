@@ -40,7 +40,7 @@ type ToolDefinition = {
 
 const PROTOCOL_VERSION = '2025-03-26'
 const SERVER_INFO = {
-  name: 'linx-symphony-codex',
+  name: 'linx-symphony',
   title: 'LinX Symphony',
   version: '0.1.0',
 }
@@ -110,7 +110,7 @@ export function createSymphonyCodexMcpServer(options: SymphonyCodexMcpServerOpti
             output.write(`${JSON.stringify(reply)}\n`)
           }
         } catch (error) {
-          err.write(`[linx-symphony-codex-mcp] ${error instanceof Error ? error.message : String(error)}\n`)
+          err.write(`[linx-symphony-mcp] ${error instanceof Error ? error.message : String(error)}\n`)
         }
       }
       return 0
@@ -408,7 +408,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       process.exitCode = code
     })
     .catch((error) => {
-      process.stderr.write(`[linx-symphony-codex-mcp] ${error instanceof Error ? error.message : String(error)}\n`)
+      process.stderr.write(`[linx-symphony-mcp] ${error instanceof Error ? error.message : String(error)}\n`)
       process.exitCode = 1
     })
 }

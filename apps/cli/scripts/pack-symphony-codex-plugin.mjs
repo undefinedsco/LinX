@@ -1,18 +1,20 @@
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveMarketplaceSkillDir } from './product-skills.mjs'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = resolve(cliRoot, '../..')
 const agentRuntimeRoot = join(repoRoot, 'packages', 'agent-runtime')
 const defaultTargetRoot = join(cliRoot, 'dist', 'plugins')
-const pluginName = 'linx-symphony-codex'
+const pluginName = 'linx-symphony'
 
 export function packSymphonyCodexPlugin(options = {}) {
   const targetRoot = resolve(options.targetRoot ?? defaultTargetRoot)
   const pluginRoot = join(targetRoot, pluginName)
   const packageJson = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf-8'))
-  const skillSource = join(repoRoot, 'skills', 'symphony', 'SKILL.md')
+  const marketplaceSkillsRoot = resolveMarketplaceSkillDir(repoRoot, 'symphony')
+  const skillSource = join(marketplaceSkillsRoot, 'symphony', 'SKILL.md')
   const skillTarget = join(pluginRoot, 'skills', 'symphony', 'SKILL.md')
   const manifestPath = join(pluginRoot, '.codex-plugin', 'plugin.json')
   const mcpPath = join(pluginRoot, '.mcp.json')
@@ -25,7 +27,7 @@ export function packSymphonyCodexPlugin(options = {}) {
   const agentRuntimeDistTarget = join(pluginRoot, 'node_modules', '@linx', 'agent-runtime', 'dist')
   const agentRuntimePackageJsonTarget = join(pluginRoot, 'node_modules', '@linx', 'agent-runtime', 'package.json')
 
-  assertFile(skillSource, 'canonical Symphony skill')
+  assertFile(skillSource, 'marketplace Symphony skill')
   assertFile(hookScriptSource, 'Symphony Codex hook recorder')
   assertFile(mcpScriptSource, 'compiled Symphony Codex MCP server; run yarn workspace @undefineds.co/linx build before packing')
   assertFile(join(agentRuntimeDistSource, 'symphony.js'), 'compiled @linx/agent-runtime Symphony core; run yarn workspace @linx/agent-runtime build before packing')
@@ -63,9 +65,10 @@ export function assertPackedPlugin(pluginRoot) {
     throw new Error('Symphony Codex plugin must not put hooks in plugin.json; Codex discovers root hooks.json')
   }
   const skill = readFileSync(join(pluginRoot, 'skills', 'symphony', 'SKILL.md'), 'utf-8')
-  const canonical = readFileSync(join(repoRoot, 'skills', 'symphony', 'SKILL.md'), 'utf-8')
+  const marketplaceSkillsRoot = resolveMarketplaceSkillDir(repoRoot, 'symphony')
+  const canonical = readFileSync(join(marketplaceSkillsRoot, 'symphony', 'SKILL.md'), 'utf-8')
   if (skill !== canonical) {
-    throw new Error('Packed Symphony Codex plugin skill diverged from canonical skills/symphony/SKILL.md')
+    throw new Error('Packed Symphony plugin skill diverged from marketplace plugins/linx-symphony/skills/symphony/SKILL.md')
   }
   const mcp = readJson(join(pluginRoot, '.mcp.json'), 'MCP config')
   const server = mcp.mcpServers?.['linx-symphony']
@@ -89,7 +92,7 @@ function buildManifest(version) {
   return {
     name: pluginName,
     version: normalizeVersion(version),
-    description: 'Portable LinX Symphony control-lane skill, reconciler runner, and Delivery writer for Codex.',
+    description: 'Portable LinX Symphony control-lane skill, reconciler runner, and Delivery writer.',
     author: {
       name: 'undefineds.co',
       url: 'https://undefineds.co',
@@ -97,20 +100,20 @@ function buildManifest(version) {
     homepage: 'https://undefineds.co',
     repository: 'https://github.com/undefineds/linx',
     license: 'UNLICENSED',
-    keywords: ['linx', 'symphony', 'codex', 'worker', 'delivery'],
+    keywords: ['linx', 'symphony', 'worker', 'delivery'],
     skills: './skills/',
     mcpServers: './.mcp.json',
     interface: {
-      displayName: 'LinX Symphony for Codex',
-      shortDescription: 'Adds the Symphony control-lane skill and Delivery tools to Codex.',
-      longDescription: 'Installs the storage-agnostic Symphony skill plus an MCP bridge. The MCP server runs the shared reconciler over Codex events and writes final worker Deliveries into the local .pod mirror for later Pod sync.',
+      displayName: 'LinX Symphony',
+      shortDescription: 'Adds the Symphony control-lane skill and Delivery tools.',
+      longDescription: 'Installs the storage-agnostic Symphony skill plus an MCP bridge. The MCP server runs the shared reconciler over coding-agent events and writes final worker Deliveries into the local .pod mirror for later Pod sync.',
       developerName: 'undefineds.co',
       category: 'Developer Tools',
       capabilities: ['Read', 'Write'],
       websiteURL: 'https://undefineds.co',
       defaultPrompt: [
         'Use Symphony to execute this worker task and submit the Delivery.',
-        'Validate the Symphony Delivery before ending this Codex session.',
+        'Validate the Symphony Delivery before ending this session.',
       ],
       brandColor: '#111827',
     },
@@ -169,11 +172,11 @@ function buildHooksConfig() {
 }
 
 function buildReadme() {
-  return `# LinX Symphony Codex Plugin
+  return `# LinX Symphony Plugin
 
-Generated plugin package for Codex.
+Generated plugin package for coding agents.
 
-- Canonical skill source: \`skills/symphony/SKILL.md\` in the LinX repo.
+- Marketplace skill source: \`plugins/linx-symphony/skills/symphony/SKILL.md\`.
 - MCP server command: \`node ./scripts/symphony-mcp.mjs\`.
 - The MCP server runs the storage-agnostic Symphony reconciler over Codex events and validates/submits Symphony Deliveries into the local .pod mirror.
 - Native Codex hooks write redacted JSONL lifecycle events only when \`LINX_SYMPHONY_HOOK_EVENTS\` is configured.

@@ -27,7 +27,7 @@ test('symphony Codex MCP server exposes delivery and reconciler tools', async (t
     method: 'initialize',
     params: { protocolVersion: '2025-03-26' },
   })
-  assert.equal(initialize.result.serverInfo.name, 'linx-symphony-codex')
+  assert.equal(initialize.result.serverInfo.name, 'linx-symphony')
   assert.equal(initialize.result.capabilities.tools.listChanged, false)
 
   const listed = await server.handleMessage({ jsonrpc: '2.0', id: 2, method: 'tools/list' })

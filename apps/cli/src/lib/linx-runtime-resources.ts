@@ -7,7 +7,7 @@ import { getSolidLinxAppDir, getSolidLinxWebAccessConfigPath } from './solid-loc
 
 export const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
 export const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
-export const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony', 'xpod-cli'])
+export const LINX_PRODUCT_SKILL_NAMES = new Set(['capture', 'symphony', 'xpod-cli'])
 export const MARKET_XPOD_CLI_SKILL_SOURCE = 'xpod-cli@undefineds'
 
 export function resolveBundledLinxSkillsDir(importMetaUrl = import.meta.url): string | null {

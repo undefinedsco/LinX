@@ -6,10 +6,16 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const home = process.env.HOME ?? ''
+const marketplaceRoot = process.env.LINX_MARKETPLACE_ROOT
+  ? process.env.LINX_MARKETPLACE_ROOT
+  : join(root, '..', 'marketplace')
+const capturePluginRoot = join(marketplaceRoot, 'plugins', 'linx-capture')
+const symphonyPluginRoot = join(marketplaceRoot, 'plugins', 'linx-symphony')
 
 const files = {
   concept: join(root, 'docs/symphony-system-evolution-control-plane.md'),
-  symphony: join(root, 'skills/symphony/SKILL.md'),
+  capture: join(capturePluginRoot, 'skills/capture/SKILL.md'),
+  symphony: join(symphonyPluginRoot, 'skills/symphony/SKILL.md'),
 }
 
 const failures = []
@@ -26,7 +32,10 @@ const sources = Object.fromEntries(
   }),
 )
 
-runSkillCreatorValidation('skills/symphony')
+runSkillCreatorValidation(join(capturePluginRoot, 'skills/capture'))
+runSkillCreatorValidation(join(symphonyPluginRoot, 'skills/symphony'))
+runMarketplacePluginValidation(capturePluginRoot, 'capture marketplace plugin')
+runMarketplacePluginValidation(symphonyPluginRoot, 'symphony marketplace plugin')
 runDualRoleEvaluation()
 runCodexPluginPackagingCheck()
 
@@ -90,6 +99,28 @@ const scenarios = [
     ],
   },
   {
+    name: 'capture and symphony document login and no-login behavior',
+    checks: [
+      ['capture', /Login And No-Login Behavior/],
+      ['capture', /Prefer LinX when the current host is LinX/],
+      ['capture', /Use the host application's normal\s+Solid\/LinX login flow/],
+      ['capture', /Keep `xpod` available for Codex/],
+      ['capture', /xpod auth login/],
+      ['capture', /\$SOLID_HOME\/auth/],
+      ['capture', /Do not ask the model to handle raw tokens/],
+      ['capture', /No-login use is still valid/],
+      ['capture', /local-first/],
+      ['capture', /pending Pod persistence/],
+      ['symphony', /xpod auth status --json/],
+      ['symphony', /\$SOLID_HOME\/auth\/credentials\.json/],
+      ['symphony', /unauthenticated/],
+      ['symphony', /Login And No-Login Behavior/],
+      ['symphony', /No-login use is still valid/],
+      ['symphony', /portable local mode/],
+      ['symphony', /not cross-device shared authority/],
+    ],
+  },
+  {
     name: 'ai can decide when sufficient and escalates only when necessary',
     checks: [
       ['concept', /Decision Sufficiency And Escalation Necessity/],
@@ -116,7 +147,7 @@ const scenarios = [
   {
     name: 'new requirement diffs active work before steering',
     checks: [
-      ['concept', /compare the message with the active record/],
+      ['concept', /compare the message with the\s+active record/],
       ['concept', /Steering is the main place where "documentation-first" matters/],
       ['concept', /A steering\s+message is not a side-channel instruction to workers/],
       ['concept', /workers may already have read an earlier version of the\s+record/],
@@ -322,6 +353,25 @@ function runSkillCreatorValidation(skillDir) {
   passes.push(`${skillDir}: quick_validate`)
 }
 
+function runMarketplacePluginValidation(pluginRoot, label) {
+  const validator = join(home, '.codex/skills/.system/plugin-creator/scripts/validate_plugin.py')
+  if (!existsSync(validator)) {
+    warnings.push(`plugin validator missing: ${validator}`)
+    return
+  }
+  const result = spawnSync('python3', [validator, pluginRoot], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 30_000,
+    maxBuffer: 2 * 1024 * 1024,
+  })
+  if (result.status !== 0) {
+    failures.push(`${label}: plugin validation failed\n${result.stdout}${result.stderr}`)
+    return
+  }
+  passes.push(`${label}: plugin validation`)
+}
+
 function runCodexPromptDiscovery() {
   const result = spawnSync('codex', [
     'debug',
@@ -344,8 +394,9 @@ function runCodexPromptDiscovery() {
   }
 
   const output = `${result.stdout}\n${result.stderr}`
-  if (!/- symphony: .*control-plane skill/.test(output) || !output.includes('/skills/symphony/SKILL.md')) {
-    failures.push('codex prompt discovery did not expose the symphony skill metadata')
+  if (!/- symphony: .*control-plane skill/.test(output)) {
+    warnings.push('codex prompt discovery did not expose the symphony skill metadata from the current repo; marketplace plugin packaging is the authoritative check')
+    return
   }
   if (output.includes('- symphony-orchestration:')) {
     failures.push('codex prompt discovery still exposes deprecated symphony-orchestration metadata')
@@ -370,7 +421,7 @@ function runDualRoleEvaluation() {
 }
 
 function runCodexPluginPackagingCheck() {
-  const targetRoot = mkdtempSync(join(tmpdir(), 'linx-symphony-codex-plugin-verify-'))
+  const targetRoot = mkdtempSync(join(tmpdir(), 'linx-symphony-plugin-verify-'))
   try {
     const result = spawnSync('node', [
       'apps/cli/scripts/pack-symphony-codex-plugin.mjs',

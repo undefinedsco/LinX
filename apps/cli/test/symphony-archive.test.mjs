@@ -1028,7 +1028,7 @@ test('symphony run preserves caller-provided delegation target chat and thread',
   assert.deepEqual(plan.session.target, target)
 })
 
-test('symphony product runtime fails Pod control writes instead of downgrading to local archive', async (t) => {
+test('symphony product runtime blocks on Pod write failure but keeps pending recovery', async (t) => {
   const originalHome = process.env.HOME
   const root = mkdtempSync(join(tmpdir(), 'linx-symphony-pod-required-home-'))
   process.env.HOME = root
@@ -1070,11 +1070,15 @@ test('symphony product runtime fails Pod control writes instead of downgrading t
   )
 
   assert.equal(runCalled, false)
-  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'issues')), false)
-  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'sessions')), false)
+  const pending = await module.listPendingSymphonyPodSync()
+  assert.equal(pending.length, 1)
+  assert.equal(pending[0].metadata?.kind, 'control-state')
+  assert.match(pending[0].failures[0].message, /pod unavailable/)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'issues')), true)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'sessions')), true)
 })
 
-test('symphony product runtime treats missing Pod session as blocked control state', async (t) => {
+test('symphony product runtime stores local pending control state when no Pod session exists', async (t) => {
   const originalHome = process.env.HOME
   const root = mkdtempSync(join(tmpdir(), 'linx-symphony-no-pod-session-home-'))
   process.env.HOME = root
@@ -1090,9 +1094,10 @@ test('symphony product runtime treats missing Pod session as blocked control sta
 
   const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
+  const { module: archiveModule, cleanup: cleanupArchive } = await loadAutoModeModule('lib/symphony/archive.ts')
+  t.after(() => cleanupArchive())
 
-  await assert.rejects(
-    module.runSymphony({
+  const plan = await module.runSymphony({
       objective: ['require', 'pod', 'session'],
       backend: 'codex',
       auto: true,
@@ -1109,11 +1114,122 @@ test('symphony product runtime treats missing Pod session as blocked control sta
       async persistSymphonyProjectionToPod() {
         return null
       },
-    }),
-    /No active Pod session; Symphony control-plane state must be written to Pod/,
-  )
+    })
 
-  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'issues')), false)
+  assert.equal(archiveModule.listSymphonyIssues().length, 1)
+  assert.equal(archiveModule.loadSymphonyIssue(plan.issue.uri)?.uri, plan.issue.uri)
+  const pending = await module.listPendingSymphonyPodSync()
+  assert.equal(pending.length, 1)
+  assert.equal(pending[0].metadata?.kind, 'control-state')
+  assert.equal(pending[0].metadata?.stage, 'planned')
+  assert.equal(pending[0].metadata?.plan?.issue?.uri, plan.issue.uri)
+  assert.match(pending[0].failures[0].message, /No active Pod session/)
+})
+
+test('symphony pending local control state replays to Pod after login', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-replay-pending-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
+  t.after(() => cleanup())
+
+  const plan = await module.runSymphony({
+    objective: ['replay', 'after', 'login'],
+    backend: 'codex',
+    auto: true,
+    dryRun: true,
+    cwd: root,
+    print: false,
+  }, {
+    async runAutoMode() {
+      throw new Error('dry-run must not launch auto-mode')
+    },
+    listAutoModeSessions() {
+      return []
+    },
+    async persistSymphonyProjectionToPod() {
+      return null
+    },
+  })
+
+  const writes = []
+  const results = await module.replayPendingSymphonyPodSync({
+    async persistSymphonyProjectionToPod(pendingPlan, options) {
+      writes.push({ plan: pendingPlan, stage: options?.stage })
+      return {
+        plan: pendingPlan,
+        chat: pendingPlan.issue.chat,
+        thread: pendingPlan.issue.thread,
+        resources: [],
+      }
+    },
+  })
+
+  assert.equal(results.length, 1)
+  assert.equal(results[0].status, 'completed')
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].plan.issue.uri, plan.issue.uri)
+  assert.equal(writes[0].stage, 'planned')
+  assert.equal((await module.listPendingSymphonyPodSync()).length, 0)
+})
+
+test('capture records local Idea pending Pod sync before login and replays it after login', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-capture-pending-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
+  t.after(() => cleanup())
+  const { module: archiveModule, cleanup: cleanupArchive } = await loadAutoModeModule('lib/symphony/archive.ts')
+  t.after(() => cleanupArchive())
+
+  const idea = await module.captureSymphonyIdeaForRuntime({
+    input: 'capture should survive before login',
+    summary: 'Capture before login',
+    now: new Date('2026-04-02T00:04:00.000Z'),
+    randomId: 'capture-login',
+  }, {
+    async persistSymphonyIdeaToPod() {
+      return null
+    },
+  })
+
+  assert.equal(archiveModule.listSymphonyIdeas().length, 1)
+  assert.equal(archiveModule.loadSymphonyIdea(idea.uri)?.summary, 'Capture before login')
+  assert.equal((await module.listPendingSymphonyPodSync()).filter((item) => item.metadata?.kind === 'idea').length, 1)
+
+  const writes = []
+  const results = await module.replayPendingSymphonyPodSync({
+    async persistSymphonyIdeaToPod(pendingIdea) {
+      writes.push(pendingIdea)
+      return pendingIdea
+    },
+  })
+
+  assert.equal(results.length, 1)
+  assert.equal(results[0].status, 'completed')
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].uri, idea.uri)
+  assert.equal((await module.listPendingSymphonyPodSync()).length, 0)
 })
 
 test('symphony non-dry-run dispatches through auto-mode ACP and archives completion', async (t) => {

@@ -4,7 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { copyProductSkills } from '../scripts/product-skills.mjs'
+import {
+  copyMarketplaceProductSkills,
+  copyProductSkills,
+} from '../scripts/product-skills.mjs'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const cliDistRoot = join(cliRoot, 'dist')
@@ -236,7 +239,8 @@ async function buildAutoModeBundle(entryRelative) {
     cwd: cliRoot,
     stdio: 'pipe',
   })
-  copyProductSkills(skillsRoot, join(outdir, 'skills'))
+  copyProductSkills(skillsRoot, join(outdir, 'skills'), { skillNames: ['xpod-cli'] })
+  copyMarketplaceProductSkills(repoRoot, join(outdir, 'skills'))
 
   mkdirSync(undefinedsNodeModulesDir, { recursive: true })
   mkdirSync(linxNodeModulesDir, { recursive: true })

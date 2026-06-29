@@ -757,15 +757,15 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
   try {
     const skills = runtime.session.resourceLoader.getSkills().skills
     const skillNames = skills.map((skill) => skill.name).sort()
-    for (const name of ['symphony', 'xpod-cli']) {
+    for (const name of ['capture', 'symphony', 'xpod-cli']) {
       assert.ok(skillNames.includes(name), `expected bundled LinX product skill ${name}`)
     }
     for (const name of ['drizzle-solid', 'solid-modeling', 'xpod-componentsjs']) {
       assert.equal(skillNames.includes(name), false, `developer skill ${name} should not be exposed to Secretary`)
     }
     assert.ok(skillNames.includes('librarian'), 'expected pi-web-access skill to be loaded from the bundled package')
-    const linxSkills = skills.filter((skill) => ['symphony', 'xpod-cli'].includes(skill.name))
-    assert.equal(linxSkills.length, 2)
+    const linxSkills = skills.filter((skill) => ['capture', 'symphony', 'xpod-cli'].includes(skill.name))
+    assert.equal(linxSkills.length, 3)
     assert.equal(
       linxSkills.every((skill) => skill.sourceInfo?.source === '@undefineds.co/linx'),
       true,
@@ -775,6 +775,7 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
       true,
     )
     assert.match(runtime.session.systemPrompt, /<skill>/)
+    assert.match(runtime.session.systemPrompt, /capture/)
     assert.match(runtime.session.systemPrompt, /symphony/)
     assert.match(runtime.session.systemPrompt, /xpod-cli/)
     assert.doesNotMatch(runtime.session.systemPrompt, /solid-modeling/)

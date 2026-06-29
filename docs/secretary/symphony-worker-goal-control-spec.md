@@ -457,12 +457,16 @@ The following current LinX code already implements part of this spec:
   worker through the Web Symphony service. It does not own Pod row construction
   or lifecycle semantics.
 - `packages/agent-runtime/src/reconciler.ts` and `thread-reconciler-controller.ts`: classify control events and schedule Secretary/worker wake jobs.
-- `skills/symphony/SKILL.md`: portable Symphony control-lane behavior for
+- `marketplace/plugins/linx-symphony/skills/symphony/SKILL.md`: portable Symphony control-lane behavior for
   Codex and other coding agents. It is intentionally storage-agnostic and
   points LinX product persistence back to shared models/use-cases.
+- `marketplace/plugins/linx-capture/skills/capture/SKILL.md`: portable Capture
+  behavior for deciding whether ordinary conversation contains durable context
+  worth saving. Capture is independent from Symphony; Symphony may consume
+  captured Ideas, but it does not own the Capture plugin.
 - `apps/cli/src/lib/codex-plugin/symphony-mcp.ts` and
-  `apps/cli/scripts/pack-symphony-codex-plugin.mjs`: package the canonical
-  Symphony skill as a Codex plugin with a `linx-symphony` MCP helper and root
+  `apps/cli/scripts/pack-symphony-codex-plugin.mjs`: package the marketplace-owned
+  Symphony skill as a coding-agent plugin with a `linx-symphony` MCP helper and root
   `hooks.json`. The helper exposes delivery status/validation/write tools only;
   the native hook recorder writes redacted JSONL lifecycle events only when
   `LINX_SYMPHONY_HOOK_EVENTS` is configured. Shared stores still own
@@ -669,17 +673,18 @@ boundaries:
   hook recorder writes redacted JSONL lifecycle events when explicitly
   configured and no-ops without configuration.
 - `apps/cli/test/symphony-codex-plugin-package.test.mjs` and
-  `yarn verify:symphony-skills` verify the generated Codex plugin packages the
-  canonical `skills/symphony` entry, `.mcp.json` bridge, root `hooks.json`, and
-  hook recorder script without creating a second skill source of truth or
-  putting unsupported hook fields in `plugin.json`.
+  `yarn verify:symphony-skills` verify the generated Codex plugin packages only
+  the marketplace-owned `linx-symphony` skill entry, `.mcp.json` bridge, root
+  `hooks.json`, and hook recorder script without creating a second skill source
+  of truth, bundling `linx-capture`, or putting unsupported hook fields in
+  `plugin.json`.
 - `apps/web/src/modules/symphony/collections.test.ts` verifies Web collections
   are read/subscribe adapters for Issue/Task/Delivery/Session/Run/RunStep plus
   Evidence/Report and do not encode lifecycle decisions.
 - `apps/web/src/modules/inbox/collections.test.ts` covers existing approval
   resolution behavior while Inbox now initializes and reads `InputRequest`
   resources as first-class pending input items.
-- `yarn verify:symphony-skills` verifies the repo-local `skills/symphony`
+- `yarn verify:symphony-skills` verifies the marketplace-owned `plugins/linx-symphony`
   metadata, the dual-role control-record scenarios, and Codex prompt discovery
   for the single Symphony skill entry point.
 - `yarn verify:symphony-dual-role` verifies the reusable dual-role fixture suite

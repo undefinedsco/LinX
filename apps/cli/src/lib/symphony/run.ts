@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   buildAutoModeTranscriptMessages,
   runThreadReconcilerCycle,
@@ -15,36 +15,50 @@ import {
   completeSymphonyWorkerRun,
   createRunPlan,
   finalizeSymphonyRunPlanAfterWorkers,
+  getSymphonyArchiveKey,
   recordSymphonyWorkerRuntimeEvent,
   renderSymphonyRuntimePrompt,
   startSymphonyWorkerRun,
   withSymphonyRunPlanPrimaryWorker,
   withSymphonyRunPlanWorker,
   type CreateSymphonyRunPlanInput,
+  type SymphonyIdeaRecord,
   type SymphonyDelegationTarget,
   type SymphonyRunPlan,
   type WorkerWorkspaceKind,
   type SymphonyWorkerPlan,
 } from '@linx/agent-runtime/symphony'
 import {
+  deleteLinxSyncCheckpoint,
+  listLinxSyncCheckpoints,
+  type LinxSyncCheckpoint,
+  type LinxSyncRunResult,
+} from '@linx/agent-runtime/sync'
+import {
   formatSymphonyRecordSummary,
   getSymphonyHome,
   attachSymphonyRunPlanToIssue,
+  createSymphonyIdeaRecord,
   createSymphonyRunPlanDraft,
   triageSymphonyIssue,
   withSymphonyIssueStatus,
   withSymphonyDeliveryStatus,
   withSymphonySessionStatus,
   withSymphonyTaskStatus,
+  writeSymphonyIdea,
   writeSymphonyRunPlan,
+  type CaptureSymphonyIdeaInput,
 } from './archive.js'
 import type {
   listOpenSymphonyIssuesFromPod,
   persistSymphonyControlStateToPod,
 } from './pod-projection.js'
 import { defaultSymphonyRuntime, type SymphonyRuntime } from './runtime.js'
+import { createFileSyncCheckpointStore } from '../sync-checkpoint-store.js'
 
 const DEFAULT_SYMPHONY_HEARTBEAT_INTERVAL_MS = 60_000
+const SYMPHONY_POD_SYNC_SOURCE = 'symphony-control-state'
+const SYMPHONY_POD_SYNC_TARGET = 'pod'
 
 interface SymphonyRunArgs {
   objective?: string[]
@@ -647,7 +661,14 @@ async function persistSymphonyControlState(
     const result = await withAbortSignal(persist(plan, { stage }), options.signal)
     throwIfAborted(options.signal)
     if (!result) {
-      throw new Error('No active Pod session; Symphony control-plane state must be written to Pod in LinX runtime.')
+      writeSymphonyRunPlan(plan)
+      await writePendingSymphonyPodSync({
+        kind: 'control-state',
+        plan,
+        stage,
+        reason: 'No active Pod session; Symphony control-plane state is pending Pod persistence.',
+      })
+      return plan
     }
     await mirrorSymphonyControlStateBestEffort(result, runtime, options)
     return result.plan
@@ -656,7 +677,189 @@ async function persistSymphonyControlState(
       throw error
     }
     const message = error instanceof Error ? error.message : String(error)
+    writeSymphonyRunPlan(plan)
+    await writePendingSymphonyPodSync({
+      kind: 'control-state',
+      plan,
+      stage,
+      reason: `Symphony Pod write failed during ${stage}: ${message}`,
+    })
     throw new Error(`Symphony Pod write failed during ${stage}: ${message}`)
+  }
+}
+
+export async function captureSymphonyIdeaForRuntime(
+  input: CaptureSymphonyIdeaInput,
+  runtime: Pick<SymphonyRuntime, 'persistSymphonyIdeaToPod'> = defaultSymphonyRuntime,
+): Promise<SymphonyIdeaRecord> {
+  const idea = createSymphonyIdeaRecord(input)
+  const persist = runtime.persistSymphonyIdeaToPod
+  if (!persist) {
+    writeSymphonyIdea(idea)
+    return idea
+  }
+
+  try {
+    const result = await persist(idea)
+    if (!result) {
+      writeSymphonyIdea(idea)
+      await writePendingSymphonyPodSync({
+        kind: 'idea',
+        idea,
+        reason: 'No active Pod session; Symphony Idea is pending Pod persistence.',
+      })
+      return idea
+    }
+    writeSymphonyIdea(result)
+    return result
+  } catch (error) {
+    writeSymphonyIdea(idea)
+    const message = error instanceof Error ? error.message : String(error)
+    await writePendingSymphonyPodSync({
+      kind: 'idea',
+      idea,
+      reason: `Symphony Idea Pod write failed: ${message}`,
+    })
+    throw error
+  }
+}
+
+type PendingSymphonyPodSyncMetadata =
+  | {
+    kind: 'control-state'
+    stage: 'planned' | 'running' | 'completed' | 'failed'
+    plan: SymphonyRunPlan
+    reason: string
+  }
+  | {
+    kind: 'idea'
+    idea: SymphonyIdeaRecord
+    reason: string
+  }
+
+export async function listPendingSymphonyPodSync(): Promise<LinxSyncCheckpoint[]> {
+  return listLinxSyncCheckpoints(createSymphonyPodSyncCheckpointStore(), {
+    source: SYMPHONY_POD_SYNC_SOURCE,
+    target: SYMPHONY_POD_SYNC_TARGET,
+    plane: 'control-plane',
+    status: ['failed', 'partial'],
+  })
+}
+
+export async function replayPendingSymphonyPodSync(
+  runtime: Pick<SymphonyRuntime, 'persistSymphonyControlStateToPod' | 'persistSymphonyProjectionToPod' | 'persistSymphonyIdeaToPod'> = defaultSymphonyRuntime,
+): Promise<LinxSyncRunResult[]> {
+  const store = createSymphonyPodSyncCheckpointStore()
+  const pending = await listLinxSyncCheckpoints(store, {
+    source: SYMPHONY_POD_SYNC_SOURCE,
+    target: SYMPHONY_POD_SYNC_TARGET,
+    plane: 'control-plane',
+    status: ['failed', 'partial'],
+  })
+  const results: LinxSyncRunResult[] = []
+
+  for (const checkpoint of pending) {
+    const metadata = checkpoint.metadata as Partial<PendingSymphonyPodSyncMetadata> | undefined
+    try {
+      if (metadata?.kind === 'control-state' && metadata.plan) {
+        const persist = runtime.persistSymphonyControlStateToPod ?? runtime.persistSymphonyProjectionToPod
+        const result = persist
+          ? await persist(metadata.plan, { stage: metadata.stage ?? 'planned' })
+          : null
+        if (!result) {
+          results.push(createReplayResult(checkpoint, 'failed'))
+          continue
+        }
+        await deleteLinxSyncCheckpoint(store, checkpoint.id)
+        results.push(createReplayResult(checkpoint, 'completed'))
+        continue
+      }
+
+      if (metadata?.kind === 'idea' && metadata.idea) {
+        const result = runtime.persistSymphonyIdeaToPod
+          ? await runtime.persistSymphonyIdeaToPod(metadata.idea)
+          : null
+        if (!result) {
+          results.push(createReplayResult(checkpoint, 'failed'))
+          continue
+        }
+        await deleteLinxSyncCheckpoint(store, checkpoint.id)
+        results.push(createReplayResult(checkpoint, 'completed'))
+        continue
+      }
+
+      results.push(createReplayResult(checkpoint, 'failed'))
+    } catch (error) {
+      results.push(createReplayResult(checkpoint, 'failed', error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  return results
+}
+
+async function writePendingSymphonyPodSync(metadata: PendingSymphonyPodSyncMetadata): Promise<void> {
+  const now = new Date().toISOString()
+  const store = createSymphonyPodSyncCheckpointStore()
+  const key = metadata.kind === 'control-state'
+    ? `${getSymphonyArchiveKey(metadata.plan.session.uri)}:${metadata.stage}`
+    : getSymphonyArchiveKey(metadata.idea.uri)
+  await store.writeCheckpoint({
+    id: `symphony-pod-sync:${metadata.kind}:${key}`,
+    source: SYMPHONY_POD_SYNC_SOURCE,
+    target: SYMPHONY_POD_SYNC_TARGET,
+    direction: 'local-to-core',
+    plane: 'control-plane',
+    authority: 'core',
+    status: 'failed',
+    attempted: 1,
+    applied: 0,
+    skipped: 0,
+    failed: 1,
+    failures: [{
+      operationId: `symphony.${metadata.kind}.pod-write`,
+      message: metadata.reason,
+      failedAt: now,
+    }],
+    startedAt: now,
+    completedAt: now,
+    metadata,
+  })
+}
+
+function createSymphonyPodSyncCheckpointStore() {
+  return createFileSyncCheckpointStore({
+    dir: join(getSymphonyHome(), 'sync-checkpoints'),
+  })
+}
+
+function createReplayResult(
+  checkpoint: LinxSyncCheckpoint,
+  status: LinxSyncRunResult['status'],
+  error?: string,
+): LinxSyncRunResult {
+  const completedAt = new Date().toISOString()
+  const failures = status === 'completed'
+    ? []
+    : [{
+      operationId: 'symphony.pod-sync.replay',
+      message: error ?? checkpoint.failures[0]?.message ?? 'Symphony Pod sync replay did not complete.',
+      failedAt: completedAt,
+    }]
+  return {
+    source: checkpoint.source,
+    target: checkpoint.target,
+    direction: checkpoint.direction,
+    plane: checkpoint.plane,
+    authority: checkpoint.authority,
+    attempted: 1,
+    applied: status === 'completed' ? 1 : 0,
+    skipped: 0,
+    failed: status === 'completed' ? 0 : 1,
+    failures,
+    startedAt: checkpoint.startedAt,
+    completedAt,
+    status,
+    metadata: checkpoint.metadata,
   }
 }
 

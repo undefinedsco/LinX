@@ -86,12 +86,17 @@ Every mutable state field needs one primary writer.
 recommend changes to another resource; it should not silently rewrite that
 resource's lifecycle state.
 
-Symphony product state is Pod-first when it is LinX-owned. Local archives are
-runtime recovery/debug material or portable fallback, not the product authority
-for Issue, Task, Delivery, Run, RunStep, Report, Evidence, ApprovalRequest,
-InputRequest, InboxNotification, Contact, Chat, Thread, Message, or Agent state.
-If the Pod write/read path is unhealthy, surface that as a product persistence
-blocker instead of silently treating a local JSONL/archive as the shared truth.
+Symphony product state is local-first before login and Pod-first after login
+when it is LinX-owned. A missing login must not discard a durable Issue, Task,
+Delivery, Run, RunStep, Report, Evidence, ApprovalRequest, InputRequest,
+InboxNotification, Contact, Chat, Thread, Message, Agent, or Idea record: write
+a durable local record/outbox entry, mark Pod persistence as pending, and replay
+it after login or auth recovery. Once an authenticated Pod session exists, write
+the modeled Pod resource as the shared authority first. Local files are then
+runtime cache, retry checkpoints, or recovery mirrors, not a second business
+truth. If a Pod write fails after login, surface the persistence blocker and
+keep only retryable pending recovery state; do not claim the record is already
+shared.
 
 Use the resource's natural shape:
 
@@ -160,9 +165,10 @@ long-lived grants, or final user-owned acceptance.
 
 For each meaningful user message, Secretary should compare the message with the
 active record before creating work or steering workers. Capture is not gated by
-`/symphony on`: ordinary chat may first create a lightweight Idea in Pod, and
-Symphony only decides whether that captured Idea should be merged, promoted,
-steered, or left as context.
+`/symphony on`, but it is still an AI/skill judgment: the active AI decides
+whether ordinary chat contains a lightweight Idea worth saving to Pod. Symphony
+then decides whether a captured Idea should be merged, promoted, steered, or
+left as context.
 
 Steering is the main place where "documentation-first" matters. A steering
 message is not a side-channel instruction to workers, because workers may already have read an earlier version of the record. Secretary updates the
@@ -284,7 +290,7 @@ requirement for the portable skill path. Open product work includes:
 
 ## Related Docs
 
-- `skills/symphony/SKILL.md` — portable Symphony control-lane behavior for
+- `marketplace/plugins/linx-symphony/skills/symphony/SKILL.md` — portable Symphony control-lane behavior for
   Codex and other coding agents.
 - `docs/secretary/symphony-worker-goal-control-spec.md` — product/runtime
   worker-goal implementation contract.

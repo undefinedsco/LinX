@@ -9,11 +9,6 @@ import { DEFAULT_SECRETARY_CHAT_ID, secretaryChatUri, secretaryThreadUri } from 
 import { getSessionControlManager } from './session-control.js'
 import { resolveInteractiveCwd } from './linx-workspace-command.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
-import {
-  captureInteractiveIdeaForInput,
-  renderIdeaCaptureProjection,
-  serializeIdeaCaptureProjection,
-} from './linx-interactive-idea-capture.js'
 import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-host.js'
 import { getLinxInteractiveRuntime, resolveLinxInteractivePodWebId } from './linx-interactive-runtime-host.js'
 import { resolveLinxSessionId, resolveLinxSessionModelId } from './linx-session-metadata.js'
@@ -37,8 +32,6 @@ import {
   isLinxInteractiveSymphonyModeEnabled,
   notifyLinxInteractiveSymphonyControlChange,
   setLinxInteractiveSymphonyModeEnabled,
-  takeLinxInteractiveLastIdeaCapture,
-  type LinxInteractiveIdeaCaptureProjection,
 } from './linx-interactive-shell-state.js'
 
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
@@ -63,11 +56,7 @@ export function installSymphonyCommand(interactive: any): void {
       if (isLinxInteractiveSymphonyModeEnabled(target) && shouldProjectSymphonyInput(input)) {
         const runtime = getLinxInteractiveRuntime(target)
         getSessionControlManager(target, runtime).recordUserMessage({ text: input })
-        const ideaCapture = takeLinxInteractiveLastIdeaCapture(target, input)
-          ?? await captureInteractiveIdeaForInput(target, runtime, input, {
-            podRuntime: getLinxInteractiveSymphonyPodProjectionRuntime(target),
-          })
-        await queueSymphonySecretaryProjection(target, input, ideaCapture)
+        await queueSymphonySecretaryProjection(target, input)
         await originalSubmit(input)
         return true
       }
@@ -160,21 +149,19 @@ function shouldProjectSymphonyInput(input: string): boolean {
 async function queueSymphonySecretaryProjection(
   interactive: any,
   input: string,
-  ideaCapture?: LinxInteractiveIdeaCaptureProjection,
 ): Promise<void> {
   await queueLinxInteractiveSessionRuntimeProjection(interactive, {
     customType: 'linx.symphony.secretary_projection',
-    content: renderSymphonySecretaryProjection(input, ideaCapture),
+    content: renderSymphonySecretaryProjection(input),
     display: false,
     details: {
       kind: 'runtime_projection',
       visibleInput: input,
-      ...(ideaCapture ? { ideaCapture: serializeIdeaCaptureProjection(ideaCapture) } : {}),
     },
   }, { deliverAs: 'nextTurn' })
 }
 
-function renderSymphonySecretaryProjection(input: string, ideaCapture?: LinxInteractiveIdeaCaptureProjection): string {
+function renderSymphonySecretaryProjection(input: string): string {
   return [
     '# AI Secretary Symphony request',
     '',
@@ -191,7 +178,7 @@ function renderSymphonySecretaryProjection(input: string, ideaCapture?: LinxInte
     'xpod uses the same Solid authority as LinX inside the Agent Runtime; do not ask the model to handle tokens or client secrets.',
     'Before mutating Pod resources from tools, verify xpod auth status/whoami reports the same acting WebID/Pod root as the LinX session; stop on mismatch.',
     'Do not hand-patch TTL or guess Pod paths for modeled product resources; use xpod/model descriptors or inspect existing links first.',
-    ...renderIdeaCaptureProjection(ideaCapture),
+    'If this message contains a durable idea, decision, preference, or memory-worthy fact, use the capture skill to decide and write it. Do not assume the shell already captured it.',
     '',
     'User message:',
     input,
