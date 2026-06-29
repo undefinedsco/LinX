@@ -187,6 +187,7 @@ function renderSymphonySecretaryProjection(input: string, ideaCapture?: LinxInte
     'If real delegation is needed, summarize the visible handoff result briefly after updating control state.',
     'When you need to inspect or mutate Symphony Pod resources from the AI side, use the xpod CLI as the direct Pod tool surface.',
     'Prefer model-backed xpod obj commands for Idea, Issue, Task, Delivery, Run, RunStep, Report, Evidence, ApprovalRequest, InputRequest, and InboxNotification resources.',
+    "For RDF sidecar queries, use `xpod rdf query --sparql '<SELECT ...>'`; `xpod rdf query '<SELECT ...>'` is invalid because SPARQL is not a positional argument.",
     'xpod uses the same Solid authority as LinX inside the Agent Runtime; do not ask the model to handle tokens or client secrets.',
     'Before mutating Pod resources from tools, verify xpod auth status/whoami reports the same acting WebID/Pod root as the LinX session; stop on mismatch.',
     'Do not hand-patch TTL or guess Pod paths for modeled product resources; use xpod/model descriptors or inspect existing links first.',

@@ -5162,7 +5162,7 @@ test('linx interactive continues chat and reports status when idea capture is st
   assert.match(statuses.at(-1), /Idea capture is still running/)
 })
 
-test('linx interactive reports status when a submitted turn has not produced a response yet', async (t) => {
+test('linx interactive keeps Pi native working status when a submitted turn has not produced a response yet', async (t) => {
   const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts'])
   t.after(() => cleanup())
 
@@ -5184,9 +5184,7 @@ test('linx interactive reports status when a submitted turn has not produced a r
     },
   }
 
-  module.installLinxGlobalCommands(interactive, {}, '/tmp/demo', {
-    turnResponsePendingStatusTimeoutMs: 5,
-  })
+  module.installLinxGlobalCommands(interactive, {}, '/tmp/demo')
   interactive.setupEditorSubmitHandler()
 
   await interactive.defaultEditor.onSubmit('hello?')
@@ -5194,10 +5192,10 @@ test('linx interactive reports status when a submitted turn has not produced a r
 
   assert.deepEqual(submitted, ['hello?'])
   assert.equal(handledEvents.length, 0)
-  assert.match(statuses.at(-1), /Still waiting for a response/)
+  assert.deepEqual(statuses, [])
 })
 
-test('linx interactive reports model-call status when backend starts but produces no content', async (t) => {
+test('linx interactive keeps Pi native working status when backend starts but produces no content', async (t) => {
   const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts'])
   t.after(() => cleanup())
 
@@ -5216,9 +5214,7 @@ test('linx interactive reports model-call status when backend starts but produce
     },
   }
 
-  module.installLinxGlobalCommands(interactive, {}, '/tmp/demo', {
-    turnResponsePendingStatusTimeoutMs: 5,
-  })
+  module.installLinxGlobalCommands(interactive, {}, '/tmp/demo')
   interactive.setupEditorSubmitHandler()
 
   await interactive.defaultEditor.onSubmit('hello?')
@@ -5230,7 +5226,7 @@ test('linx interactive reports model-call status when backend starts but produce
   await new Promise((resolve) => setTimeout(resolve, 20))
 
   assert.equal(handledEvents.length, 2)
-  assert.match(statuses.at(-1), /model call has not produced content yet/)
+  assert.deepEqual(statuses, [])
 })
 
 test('linx interactive /auto on creates a control session without projecting a business turn', async (t) => {
@@ -6625,6 +6621,7 @@ test('linx interactive /symphony switches current chat peer for following messag
   assert.match(projectionMessages[0].message.content, /Default response style: reply like normal chat/)
   assert.match(projectionMessages[0].message.content, /do not explain that it was not delegated/)
   assert.match(projectionMessages[0].message.content, /use the xpod CLI as the direct Pod tool surface/i)
+  assert.match(projectionMessages[0].message.content, /xpod rdf query --sparql/)
   assert.match(projectionMessages[0].message.content, /model-backed xpod obj commands/)
   assert.match(projectionMessages[0].message.content, /same Solid authority as LinX inside the Agent Runtime/)
   assert.match(projectionMessages[0].message.content, /verify xpod auth status\/whoami reports the same acting WebID\/Pod root/)

@@ -22,6 +22,39 @@ shell event / command / key
 
 The shell owns interaction and process lifecycle. The core owns durable semantics.
 
+## Interview frontend / runtime backend split
+
+LinX reuses Pi in two different roles, and those roles must stay separate:
+
+```text
+LinX CLI/TUI shell
+  -> Pi interview frontend for input, streaming, slash-command affordances,
+     interrupt hints, selectors, and terminal ownership
+  -> runtime/backend registry for the active agent execution engine
+       - linx: the default LinX runtime path, which may internally use Pi
+         runtime machinery plus LinX Cloud `/chat/completions`
+       - codex / claude / ACP / other backend adapters
+  -> LinX product core for Solid auth, Pod resources, Secretary, Symphony,
+     capture, approvals, and shared model semantics
+```
+
+Pi interview is the frontend surface. It owns ordinary assistant-turn working
+state such as `Working (...)`, streaming display, Escape interrupt hints,
+composer focus, and terminal raw-mode behavior. LinX must not replace those with
+parallel product status messages for normal chat/model-call lifecycle events.
+
+Pi runtime is a runtime/backend implementation detail. It may be used by the
+default `linx` backend path, but it is not the product core and it does not make
+Pi interview state durable LinX state. Codex, Claude/ACP, and future backends are
+peer runtime adapters at this layer.
+
+LinX-visible status is reserved for LinX-owned product or shell events: login,
+auth recovery, update/restart, Pod sync/capture/approval, Symphony handoff, and
+explicit shell commands. If a normal assistant turn is merely waiting for the
+backend/model, preserve the Pi interview frontend's native working display and
+fix the runtime timeout/error path instead of adding another visible status
+timer.
+
 ## Ownership
 
 | Layer | Owns | Must not own |
@@ -76,11 +109,10 @@ Hard rules:
 - `interactive.setupEditorSubmitHandler` is patched only by
   `apps/cli/src/lib/linx-interactive-submit-router.ts`.
   Feature modules register ordered submit handlers instead of wrapping
-  `defaultEditor.onSubmit` independently. The submit router also wraps the
-  original submit callback with shell-owned turn-response bookkeeping so normal
-  chat can surface a status when the queued turn or downstream model call has
-  not produced content yet; feature modules must not add duplicate "no reply"
-  timers.
+  `defaultEditor.onSubmit` independently. The submit router may consume
+  LinX-owned shell commands or forward ordinary chat to Pi's original submit
+  path, but it must not replace Pi interview's native ordinary-turn working
+  status with a LinX status timer.
 - `interactive.init` is a post-init lifecycle seam, not a feature-local hook.
   New post-init behavior belongs behind
   `apps/cli/src/lib/linx-interactive-post-init.ts`; feature modules expose
@@ -339,12 +371,11 @@ handler or Pi's original submit path. A handler must not call the original submi
 and then also report `false`; that creates duplicate turns.
 
 Normal chat submission may continue after pre-submit side effects such as Idea
-capture. If the turn then stays silent,
-`linx-interactive-turn-response-watchdog.ts` is the shell-owned status seam: it
-distinguishes "message queued, no backend activity" from "backend/model call
-started, no visible content yet" by watching Pi session events. This status is
-local TUI feedback only; it is not persisted as chat content and does not replace
-stream/cloud timeout handling.
+capture. Once the turn is forwarded to Pi's original submit path, ordinary
+backend/model pending feedback belongs to the Pi interview frontend. LinX must
+not run a second "no reply" status watchdog for normal chat. If the backend never
+returns content, handle it through runtime timeout/error semantics and keep the
+visible waiting state on Pi's native `Working (...)` surface.
 
 LinX-owned TUI slash commands are never model chat. Commands such as `/update`,
 `/statusline`, `/rewind`, `/ai connect`, and `/cd` must be consumed by the shell
