@@ -17,10 +17,14 @@ export const MARKETPLACE_PRODUCT_SKILL_NAMES = Object.freeze([
 ])
 
 export function resolveMarketplaceRoot(repoRoot) {
-  const marketplaceRoot = process.env.LINX_MARKETPLACE_ROOT
-    ? resolve(process.env.LINX_MARKETPLACE_ROOT)
-    : resolve(repoRoot, '..', 'marketplace')
-  return marketplaceRoot
+  if (process.env.LINX_MARKETPLACE_ROOT) {
+    return resolve(process.env.LINX_MARKETPLACE_ROOT)
+  }
+  const nestedMarketplaceRoot = resolve(repoRoot, 'marketplace')
+  if (existsSync(join(nestedMarketplaceRoot, 'plugins'))) {
+    return nestedMarketplaceRoot
+  }
+  return resolve(repoRoot, '..', 'marketplace')
 }
 
 export function resolveMarketplaceSkillDir(repoRoot, skillName) {
