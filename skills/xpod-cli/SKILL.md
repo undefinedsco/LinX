@@ -1,14 +1,14 @@
 ---
 name: xpod-cli
-description: Use when LinX or Secretary needs to inspect, import, export, or update Solid Pod resources through the xpod command line; especially user-owned files, RDF resources, descriptor-backed objects, JSON output, and secret-safe operations. This skill is for using xpod CLI in product workflows, not for maintaining the xpod CLI implementation.
+description: Use when an AI agent needs to inspect, import, export, or update Solid Pod resources through the xpod command line; especially user-owned files, RDF resources, descriptor-backed objects, JSON output, and secret-safe operations. This skill is for using xpod CLI in product workflows, not for maintaining the xpod CLI implementation.
 ---
 
 # Xpod CLI
 
-Use `xpod` as the default terminal surface for Solid Pod operations in LinX.
-This replaces ad-hoc `pod_read` / `pod_write` style tools: the product should
-prefer one shared CLI contract for Pod files, RDF resources, objects, and
-secrets.
+Use `xpod` as the default terminal surface for Solid Pod operations when the
+command is available. This replaces ad-hoc `pod_read` / `pod_write` style tools:
+the product should prefer one shared CLI contract for Pod files, RDF resources,
+objects, and secrets.
 
 ## When To Use
 

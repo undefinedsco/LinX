@@ -4,7 +4,6 @@ import { setLinxInteractiveEditorText } from './linx-interactive-editor-text-hos
 import {
   configureLinxInteractiveShellState,
 } from './linx-interactive-shell-state.js'
-import { installLinxInteractiveIdeaCapture } from './linx-interactive-idea-capture.js'
 import {
   installLinxSessionCommandRouter as installOwnedLinxSessionCommandRouter,
   installLinxSessionCommandRouterAfterRebind as installOwnedLinxSessionCommandRouterAfterRebind,
@@ -35,7 +34,6 @@ export function installLinxShellCommands(
   sessionCwd: string,
   options: ShellCommandOptions = {},
 ): void {
-  installLinxInteractiveIdeaCapture(interactive, runtime)
   if (options.onAutoControlChange) {
     configureLinxInteractiveShellState(interactive, {
       autoControlChange: options.onAutoControlChange,

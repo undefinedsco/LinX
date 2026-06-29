@@ -4,6 +4,7 @@ import {
   listOpenSymphonyIssuesFromPod,
   mirrorSymphonyProjectionJsonLdFromPod,
   persistSymphonyControlStateToPod,
+  persistSymphonyIdeaToPod,
   persistSymphonyProjectionToPod,
   type SymphonyPodProjectionRuntime,
 } from './pod-projection.js'
@@ -15,6 +16,7 @@ export interface SymphonyRuntime {
   persistSymphonyControlStateToPod?: typeof persistSymphonyControlStateToPod
   /** @deprecated Use persistSymphonyControlStateToPod for LinX-owned Symphony records. */
   persistSymphonyProjectionToPod?: typeof persistSymphonyProjectionToPod
+  persistSymphonyIdeaToPod?: typeof persistSymphonyIdeaToPod
   listOpenSymphonyIssuesFromPod?: typeof listOpenSymphonyIssuesFromPod
   mirrorSymphonyProjectionJsonLdFromPod?: typeof mirrorSymphonyProjectionJsonLdFromPod
 }
@@ -24,6 +26,7 @@ export const defaultSymphonyRuntime: SymphonyRuntime = {
   listAutoModeSessions: listArchivedAutoModeSessions,
   loadAutoModeEvents: loadArchivedAutoModeEvents,
   persistSymphonyControlStateToPod,
+  persistSymphonyIdeaToPod,
   listOpenSymphonyIssuesFromPod,
   mirrorSymphonyProjectionJsonLdFromPod,
 }
@@ -39,6 +42,11 @@ export function createSymphonyRuntimeForPodProjection(
     persistSymphonyControlStateToPod(plan, options) {
       return persistSymphonyControlStateToPod(plan, {
         ...options,
+        runtime: projectionRuntime,
+      })
+    },
+    persistSymphonyIdeaToPod(idea) {
+      return persistSymphonyIdeaToPod(idea, {
         runtime: projectionRuntime,
       })
     },

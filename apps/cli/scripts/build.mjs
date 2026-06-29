@@ -1,7 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { copyProductSkills } from './product-skills.mjs'
+import {
+  copyMarketplaceProductSkills,
+  copyProductSkills,
+} from './product-skills.mjs'
 import { packSymphonyCodexPlugin } from './pack-symphony-codex-plugin.mjs'
 
 const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -9,6 +12,7 @@ const agentRuntimeTsconfig = fileURLToPath(new URL('../../../packages/agent-runt
 const storesTsconfig = fileURLToPath(new URL('../../../packages/stores/tsconfig.json', import.meta.url))
 const distDir = fileURLToPath(new URL('../dist', import.meta.url))
 const skillsSourceDir = fileURLToPath(new URL('../../../skills', import.meta.url))
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const skillsDistDir = fileURLToPath(new URL('../dist/skills', import.meta.url))
 const compileArgs = [
   '-p',
@@ -74,7 +78,8 @@ if ((compile.status ?? 1) !== 0) {
 }
 
 if (existsSync(skillsSourceDir)) {
-  copyProductSkills(skillsSourceDir, skillsDistDir)
+  copyProductSkills(skillsSourceDir, skillsDistDir, { skillNames: ['xpod-cli'] })
 }
+copyMarketplaceProductSkills(repoRoot, skillsDistDir)
 
 packSymphonyCodexPlugin()

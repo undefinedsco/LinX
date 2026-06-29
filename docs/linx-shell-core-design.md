@@ -358,7 +358,7 @@ The submit router owns the first decision point for interactive user input. The
 current priority order is:
 
 ```text
-10 login and non-consuming Idea capture preflight
+10 login and other non-consuming shell preflight
 20 Symphony
 40 LinX-proxied backend slash commands
 50 LinX shell command fallback
@@ -370,12 +370,42 @@ Pi-native slash commands, and ordinary messages must fall through to the next
 handler or Pi's original submit path. A handler must not call the original submit
 and then also report `false`; that creates duplicate turns.
 
-Normal chat submission may continue after pre-submit side effects such as Idea
-capture. Once the turn is forwarded to Pi's original submit path, ordinary
-backend/model pending feedback belongs to the Pi interview frontend. LinX must
-not run a second "no reply" status watchdog for normal chat. If the backend never
-returns content, handle it through runtime timeout/error semantics and keep the
-visible waiting state on Pi's native `Working (...)` surface.
+Normal chat submission may continue after non-consuming shell preflight. Once
+the turn is forwarded to Pi's original submit path, ordinary backend/model
+pending feedback belongs to the Pi interview frontend. LinX must not run a
+second "no reply" status watchdog for normal chat. If the backend never returns
+content, handle it through runtime timeout/error semantics and keep the visible
+waiting state on Pi's native `Working (...)` surface.
+
+Capture is an AI/skill decision, not shell keyword classification. The shell
+must not infer durable Ideas from broad trigger words such as "是不是", "应该",
+"maybe", or "idea", and it must not write Pod Idea records before the current AI
+has judged the message. The shell may load a capture skill and provide Pod/xpod
+tooling; the active AI decides whether to use it and how to report the result.
+
+Product skills are shared AI assets, not LinX-only shell plugins. Keep the
+portability rule in architecture, acceptance, and release gates rather than
+duplicating platform matrices inside each `SKILL.md`. A product skill must be
+usable from LinX Agent Runtime, Claude Code, and Codex through ordinary skill
+loading plus available terminal/tools; the shell may bundle or route the skill,
+but the skill's required product behavior must not depend on LinX TUI hooks,
+hidden shell state, runtime projection wrappers, or a specific backend.
+
+Durable capture/control writes are login-state-specific:
+
+- **Before LinX/Solid login:** local-first. Missing login must not make the AI
+  lose the user's durable decision, Idea, or Symphony control record. Write a
+  durable local record/outbox entry, mark it as pending Pod persistence, and
+  replay it after login or auth recovery.
+- **After LinX/Solid login:** Pod-first. Write the modeled Pod resource as the
+  shared authority first. Local files may be runtime cache, retry checkpoints,
+  or recovery mirrors, but they must not become a second business truth. If the
+  Pod write fails, keep a retryable local checkpoint only as pending recovery and
+  surface the persistence blocker; do not claim the record is shared.
+
+Release acceptance for capture/Symphony changes must include at least one
+no-login scenario, one login-after-local-write replay scenario, and one
+cross-runtime smoke path for LinX plus a non-LinX agent shell.
 
 LinX-owned TUI slash commands are never model chat. Commands such as `/update`,
 `/statusline`, `/rewind`, `/ai connect`, and `/cd` must be consumed by the shell

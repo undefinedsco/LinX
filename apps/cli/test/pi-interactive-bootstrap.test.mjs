@@ -5022,7 +5022,7 @@ test('linx interactive records normal user input through Thread Reconciler befor
 })
 
 
-test('linx interactive captures idea-like user input without Symphony mode', async (t) => {
+test('linx interactive leaves capture judgment to the active AI skill without Symphony mode', async (t) => {
   const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
@@ -5088,15 +5088,12 @@ test('linx interactive captures idea-like user input without Symphony mode', asy
 
   assert.equal(module.isLinxInteractiveSymphonyModeEnabled(interactive), false)
   assert.deepEqual(submitted, [input])
-  assert.equal(captureCalls.length, 1)
-  assert.equal(captureCalls[0].input, input)
-  assert.equal(captureCalls[0].source.chat, 'https://alice.example/.data/chat/__secretary__/index.ttl#this')
-  assert.equal(captureCalls[0].source.thread, 'https://alice.example/.data/chat/__secretary__/index.ttl#session-capture-without-symphony')
-  assert.match(statuses.at(-1), /Captured Idea: capture should not require Symphony mode/)
+  assert.equal(captureCalls.length, 0)
+  assert.deepEqual(statuses, [])
 })
 
 
-test('linx interactive continues chat and reports status when idea capture is still pending', async (t) => {
+test('linx interactive does not show foreground capture status while AI decides capture', async (t) => {
   const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
@@ -5157,9 +5154,8 @@ test('linx interactive continues chat and reports status when idea capture is st
   await interactive.defaultEditor.onSubmit(input)
 
   assert.deepEqual(submitted, [input])
-  assert.equal(captureCalls.length, 1)
-  assert.match(statuses[0], /Capturing Idea/)
-  assert.match(statuses.at(-1), /Idea capture is still running/)
+  assert.equal(captureCalls.length, 0)
+  assert.deepEqual(statuses, [])
 })
 
 test('linx interactive keeps Pi native working status when a submitted turn has not produced a response yet', async (t) => {
@@ -6640,7 +6636,7 @@ test('linx interactive /symphony switches current chat peer for following messag
 })
 
 
-test('linx interactive /symphony captures idea-like Secretary messages before projection', async (t) => {
+test('linx interactive /symphony leaves idea-like Secretary messages for AI skill judgment', async (t) => {
   const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
   t.after(() => cleanup())
 
@@ -6700,22 +6696,18 @@ test('linx interactive /symphony captures idea-like Secretary messages before pr
   await interactive.defaultEditor.onSubmit('/symphony on')
   await interactive.defaultEditor.onSubmit(input)
 
-  assert.equal(captureCalls.length, 1)
-  assert.equal(captureCalls[0].input, input)
-  assert.equal(captureCalls[0].source.chat, 'https://alice.example/.data/chat/__secretary__/index.ttl#this')
-  assert.equal(captureCalls[0].source.thread, 'https://alice.example/.data/chat/__secretary__/index.ttl#session-capture-idea')
+  assert.equal(captureCalls.length, 0)
   assert.equal(submitted.length, 1)
   assert.equal(submitted[0], input)
   assert.equal(projectionMessages.length, 1)
   assert.equal(projectionMessages[0].message.display, false)
-  assert.match(projectionMessages[0].message.content, /Idea already captured before this model turn/)
-  assert.match(projectionMessages[0].message.content, /capture should persist important things into Pod/)
-  assert.match(projectionMessages[0].message.content, /https:\/\/alice\.example\/\.data\/ideas\/2026\/06\/27\.ttl#idea-1/)
-  assert.match(statuses.at(-1), /Captured Idea: capture should persist important things into Pod/)
+  assert.doesNotMatch(projectionMessages[0].message.content, /Idea already captured before this model turn/)
+  assert.match(projectionMessages[0].message.content, /use the capture skill/i)
+  assert.equal(statuses.some((status) => /Capturing Idea|Captured Idea|Idea capture is still running/.test(status)), false)
 })
 
 
-test('linx interactive /symphony captures ideas through the active Pod projection runtime', async (t) => {
+test('linx interactive /symphony does not persist ideas before AI skill judgment', async (t) => {
   const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
   t.after(() => cleanup())
 
@@ -6804,18 +6796,13 @@ test('linx interactive /symphony captures ideas through the active Pod projectio
   assert.equal(errors.length, 0)
   assert.equal(submitted.length, 1)
   assert.equal(submitted[0], input)
-  assert.equal(inserts.length, 1)
-  assert.equal(inserts[0].resource, activeRuntime.ideaResource)
-  assert.equal(inserts[0].value.input, input)
-  assert.equal(inserts[0].value.metadata?.surface, 'linx-capture')
-  assert.notEqual(inserts[0].value.metadata?.surface, 'symphony')
-  assert.equal(inserts[0].value.chat, 'https://alice.example/.data/chat/__secretary__/index.ttl#this')
-  assert.equal(inserts[0].value.thread, 'https://alice.example/.data/chat/__secretary__/index.ttl#session-active-runtime-capture')
-  assert.match(statuses.at(-1), /Captured Idea:/)
-  assert.match(projectionMessages[0].message.content, /Idea already captured before this model turn/)
+  assert.equal(inserts.length, 0)
+  assert.equal(statuses.some((status) => /Capturing Idea|Captured Idea|Idea capture is still running/.test(status)), false)
+  assert.doesNotMatch(projectionMessages[0].message.content, /Idea already captured before this model turn/)
+  assert.match(projectionMessages[0].message.content, /use the capture skill/i)
 })
 
-test('linx interactive /symphony surfaces idea capture failures before projection', async (t) => {
+test('linx interactive /symphony does not surface capture failures before AI skill judgment', async (t) => {
   const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
   t.after(() => cleanup())
 
@@ -6875,11 +6862,9 @@ test('linx interactive /symphony surfaces idea capture failures before projectio
   assert.equal(submitted.length, 1)
   assert.equal(submitted[0], input)
   assert.equal(projectionMessages.length, 1)
-  assert.equal(errors.length, 1)
-  assert.match(errors[0], /Capture failed: Pod write unavailable/)
-  assert.match(projectionMessages[0].message.content, /Idea capture was required but Pod write failed before this model turn/)
-  assert.match(projectionMessages[0].message.content, /Pod write unavailable/)
-  assert.match(projectionMessages[0].message.content, /Do not claim it was captured/)
+  assert.equal(errors.length, 0)
+  assert.doesNotMatch(projectionMessages[0].message.content, /Idea capture was required but Pod write failed before this model turn/)
+  assert.match(projectionMessages[0].message.content, /use the capture skill/i)
   assert.equal(warnings.length, 0)
 })
 

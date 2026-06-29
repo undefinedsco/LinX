@@ -849,7 +849,7 @@ test('cli build ships product skills for the Pi resource loader', async (t) => {
     .map((entry) => entry.name)
     .sort()
 
-  assert.deepEqual(distSkills, ['symphony', 'xpod-cli'])
+  assert.deepEqual(distSkills, ['capture', 'symphony', 'xpod-cli'])
   for (const skill of distSkills) {
     assert.ok(existsSync(join(cliRoot, 'dist', 'skills', skill, 'SKILL.md')), `${skill} should include SKILL.md`)
   }

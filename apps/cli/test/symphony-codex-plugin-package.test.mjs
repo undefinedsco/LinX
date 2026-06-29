@@ -7,9 +7,10 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
+const marketplaceRoot = process.env.LINX_MARKETPLACE_ROOT ?? join(repoRoot, '..', 'marketplace')
 
 test('symphony Codex plugin packager generates installable skill plus MCP bridge without duplicating skill truth', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-codex-plugin-'))
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-plugin-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
 
   const module = await import('../scripts/pack-symphony-codex-plugin.mjs')
@@ -17,11 +18,11 @@ test('symphony Codex plugin packager generates installable skill plus MCP bridge
   module.assertPackedPlugin(result.pluginRoot)
 
   const manifest = JSON.parse(readFileSync(result.manifestPath, 'utf-8'))
-  assert.equal(manifest.name, 'linx-symphony-codex')
+  assert.equal(manifest.name, 'linx-symphony')
   assert.equal(manifest.skills, './skills/')
   assert.equal(manifest.mcpServers, './.mcp.json')
   assert.equal('hooks' in manifest, false)
-  assert.equal(manifest.interface.displayName, 'LinX Symphony for Codex')
+  assert.equal(manifest.interface.displayName, 'LinX Symphony')
 
   const mcp = JSON.parse(readFileSync(result.mcpPath, 'utf-8'))
   assert.deepEqual(mcp.mcpServers['linx-symphony'], {
@@ -42,9 +43,12 @@ test('symphony Codex plugin packager generates installable skill plus MCP bridge
   }
   assert.equal(existsSync(result.hookScriptTarget), true)
 
-  const canonicalSkill = readFileSync(join(repoRoot, 'skills', 'symphony', 'SKILL.md'), 'utf-8')
+  const canonicalSkill = readFileSync(join(marketplaceRoot, 'plugins', 'linx-symphony', 'skills', 'symphony', 'SKILL.md'), 'utf-8')
   const packedSkill = readFileSync(result.skillTarget, 'utf-8')
   assert.equal(packedSkill, canonicalSkill)
+  const captureSkill = join(marketplaceRoot, 'plugins', 'linx-capture', 'skills', 'capture', 'SKILL.md')
+  assert.equal(existsSync(captureSkill), true)
+  assert.equal(existsSync(join(result.pluginRoot, 'skills', 'capture', 'SKILL.md')), false)
 
   const listed = spawnSync('node', ['./scripts/symphony-mcp.mjs'], {
     cwd: result.pluginRoot,
