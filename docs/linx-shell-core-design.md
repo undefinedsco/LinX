@@ -378,10 +378,12 @@ content, handle it through runtime timeout/error semantics and keep the visible
 waiting state on Pi's native `Working (...)` surface.
 
 Capture is an AI/skill decision, not shell keyword classification. The shell
-must not infer durable Ideas from broad trigger words such as "是不是", "应该",
-"maybe", or "idea", and it must not write Pod Idea records before the current AI
-has judged the message. The shell may load a capture skill and provide Pod/xpod
-tooling; the active AI decides whether to use it and how to report the result.
+must not infer durable records from broad trigger words such as "是不是", "应该",
+"maybe", or "idea", and it must not write modeled Pod records before the
+current AI has judged the message and discovered the applicable record type.
+The shell may load a capture skill and provide Pod/xpod tooling; the active AI
+decides whether to use it, which user/project/agent policy applies, and how to
+report the result.
 
 Product skills are shared AI assets, not LinX-only shell plugins. Keep the
 portability rule in architecture, acceptance, and release gates rather than
@@ -394,7 +396,7 @@ hidden shell state, runtime projection wrappers, or a specific backend.
 Durable capture/control writes are login-state-specific:
 
 - **Before LinX/Solid login:** local-first. Missing login must not make the AI
-  lose the user's durable decision, Idea, or Symphony control record. Write a
+  lose the user's durable decision, capture signal, or control record. Write a
   durable local record/outbox entry, mark it as pending Pod persistence, and
   replay it after login or auth recovery.
 - **After LinX/Solid login:** Pod-first. Write the modeled Pod resource as the

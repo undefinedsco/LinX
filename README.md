@@ -1,20 +1,27 @@
 # LinX
 
-Your AI secretary for user-owned memory.
+Your AI secretary for Personal Linked Context.
 
-LinX 是一个构建在 Solid Pod 之上的 AI-native 第二大脑。它给用户一个以聊天为中心的工作界面，让 AI 能理解、组织并操作共享记忆，同时把数据控制权留在用户自己手里。
+LinX builds **Personal Linked Context** on top of a Solid Pod. It gives users a
+chat-first work surface where AI can understand, organize, and act on connected
+files, conversations, tasks, decisions, evidence, preferences, and memories
+while keeping data authority with the user.
+
+架构上，LinX 把 Pod 当成 **model-defined semantic file system**：用户文件按人的语境组织，类型化资源负责可发现的 schema、关系、索引和策略化写入。
 
 LinX 的目标不是再做一个套了 LLM 的聊天框，而是把 AI 做成一个真正可长期协作的秘书。
 
 ## 关键设计文档
 
+- `docs/personal-linked-context.md`：Personal Linked Context 产品叙事、model-defined semantic file system 架构、capture policy、file-primary 文档和 typed resource 边界
 - `docs/desktop-product-strategy.md`：桌面端产品策略、信息架构、审批 / inbox / workspace 融合方式，以及渐进式发布纪律
 - `docs/scene-restoration-solid-modeling.md`：`favorites / inbox / audit / workspace` 的场景恢复要求与 Solid-first 建模约束
 
 ## 为什么是 LinX
 
 - **AI 秘书体验**：AI 不只是回答问题，而是长期记忆、协助整理、代表用户处理信息与任务。
-- **用户拥有记忆**：共享记忆保存在 Solid Pod，而不是困在 SaaS 平台数据库里。
+- **Personal Linked Context**：文件、聊天、任务、偏好、证据和决策被连接成 AI 可用、用户可控的上下文。
+- **用户拥有记忆**：共享上下文保存在 Solid Pod，而不是困在 SaaS 平台数据库里。
 - **聊天优先**：用户通过对话来管理知识、任务和上下文，而不是在一堆分散表单之间来回切换。
 - **多端一致**：同一套产品体验覆盖 Web、桌面和移动端。
 - **Pod-native 架构**：数据、身份、权限和 AI 工作流从一开始就围绕 Solid 设计。
@@ -30,16 +37,18 @@ LinX 的核心体验更接近“有一个 AI 秘书”：
 - 在授权前提下处理你的数据
 - 在你的边界之内行动
 
-### 2. 你和 AI 共享的一份记忆
+### 2. 你的 Personal Linked Context
 
-LinX 把 Pod 视为用户与 AI 的共享记忆层。AI 可以在这里理解和使用：
+LinX 把 Pod 视为用户与 AI 共享的 Personal Linked Context。AI 可以在这里理解和使用：
 
 - 个人资料与身份数据
 - 对话与消息
 - 联系人和关系
 - 文件与附件
-- 结构化记忆与检索数据
+- 结构化资源、文档、证据和检索数据
 - 后续接入的应用资源
+
+文件不是数据库附件；文档、报告、日志、截图、patch 和 transcript 都是用户可拥有、可编辑、可迁移的 first-class 文件。结构化资源负责索引、类型、关系、状态和授权。
 
 ### 3. 人、AI、数据在同一个界面里
 
@@ -54,7 +63,7 @@ AI 越了解用户，就越有价值；但这只有在用户持续掌控数据�
 LinX 处在整个栈的用户产品层：
 
 - **xpod**：提供 Pod runtime、Solid 凭证、身份与服务基础设施
-- **`@undefineds.co/models` / drizzle-solid**：提供共享数据面 SDK、类型化 Pod schema 与仓储合同；LinX 运行时适配由 `@linx/agent-runtime` 承载
+- **`@undefineds.co/models` / drizzle-solid**：提供共享数据面 SDK、类型化 Pod schema、语义文件系统写入工具与仓储合同；LinX 运行时适配由 `@linx/agent-runtime` 承载
 - **LinX**：提供最终面向用户的聊天、记忆、多端体验和工作流界面
 
 换句话说，LinX 是前门。它把 Pod-native 的身份、存储和 AI 服务，组织成用户每天真正能用的产品。
@@ -83,7 +92,7 @@ LinX 处在整个栈的用户产品层：
 
 ### Files and Data
 
-LinX 面向 Pod 中的文件和结构化数据工作，而不是把 Pod 当成一个原始文件浏览器暴露给用户。
+LinX 面向 Pod 中的文件和结构化数据工作，而不是把 Pod 当成一个原始文件浏览器暴露给用户。长文档和证据按项目/人的语境分散存放；可查询的 metadata、关系和状态通过类型化资源集中索引。
 
 ### Discover / Model Services
 

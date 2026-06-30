@@ -4,6 +4,9 @@ This document defines how LinX, Secretary/Symphony, and local AI agents use the
 `xpod` command line as a direct Pod tool surface. It is a boundary document, not
 a full xpod product spec.
 
+For the product/storage model behind these rules, see
+`docs/personal-linked-context.md`.
+
 ## Purpose
 
 `xpod` CLI is the local direct interface to Solid Pod resources:
@@ -107,6 +110,49 @@ determined by the JSON payload.
 
 Choose the xpod command surface by resource shape.
 
+### Model discovery before writes
+
+AI agents must not rely on prompt memory to know which product resource types
+exist. Before writing a modeled resource, the agent should discover the current
+Pod/project/agent policy and the available model descriptors, then validate the
+write with dry-run.
+
+The desired xpod object contract is:
+
+```text
+xpod obj schemas --json
+xpod obj schemas --domain <domain> --json
+xpod obj describe <schema-or-alias> --json
+xpod obj upsert --schema <schema-or-alias> --from <jsonl-or-stdin> --dry-run --json
+xpod obj upsert --schema <schema-or-alias> --from <jsonl-or-stdin> --commit --json
+```
+
+`describe` should expose at least:
+
+- schema URI and stable alias;
+- fields, required fields, and relation fields;
+- id semantics and whether an explicit id is exact;
+- default resource path and document/source path policy;
+- example input rows;
+- validation warnings and errors.
+
+`dry-run` must show the final resource URL, subject IRI, linked file paths, and
+planned mutations before a write is committed. It should reject common path
+composition mistakes such as passing a full project path where a slug/key was
+expected and producing duplicated paths like
+`projects/foo/ideas/projects/foo/ideas/bar`.
+
+If discovery/describe is unavailable for a modeled resource, LinX/Secretary
+should report the missing command/model surface or create a local pending draft.
+It should not hand-write Turtle or guess paths just because the AI recognizes a
+name such as `Idea`.
+
+Capture should use the user's Pod/project/agent record-type policy first. If no
+matching type exists, create a `CaptureDraft`/`ModelingProposal` or local
+pending record instead of forcing the content into a LinX-default type. Symphony
+may provide an additional default control-plane policy while it is on, but that
+policy only applies inside the system-evolution/control-work domain.
+
 ### Modeled product/control resources
 
 Use modeled commands backed by shared models:
@@ -117,17 +163,12 @@ xpod obj ...
 
 This applies to resources such as:
 
-- Idea
-- Issue
-- Task
-- Delivery
-- Run
-- RunStep
-- Report
-- Evidence when it is structured control data
-- ApprovalRequest
-- InputRequest
-- InboxNotification
+- discovered user/project record types such as Idea, Decision, Finding, or
+  project-specific capture types;
+- control/work resources such as Issue, Task, Delivery, Run, RunStep, Report,
+  ApprovalRequest, InputRequest, and InboxNotification;
+- Evidence when it is structured control data or metadata for a file-primary
+  evidence artifact.
 
 Do not hand-patch Turtle for these records from LinX or Secretary. If the model
 or command is missing a capability, fix `@undefineds.co/models`, drizzle-solid,

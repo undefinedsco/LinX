@@ -463,7 +463,8 @@ The following current LinX code already implements part of this spec:
 - `marketplace/plugins/linx-capture/skills/capture/SKILL.md`: portable Capture
   behavior for deciding whether ordinary conversation contains durable context
   worth saving. Capture is independent from Symphony; Symphony may consume
-  captured Ideas, but it does not own the Capture plugin.
+  captured records discovered from user/project/agent policy, but it does not
+  own the Capture plugin.
 - `apps/cli/src/lib/codex-plugin/symphony-mcp.ts` and
   `apps/cli/scripts/pack-symphony-codex-plugin.mjs`: package the marketplace-owned
   Symphony skill as a coding-agent plugin with a `linx-symphony` MCP helper and root
@@ -584,8 +585,8 @@ This spec is implemented when all of the following are true:
 8. Repeated failed attempts create RunStep/Evidence/Implementation Change
    Request records under the same Task instead of duplicate Tasks.
 9. Secretary acceptance records the reusable-module extraction decision for
-   non-trivial worker deliveries: same Issue task, new Issue, Idea, or
-   evidence-only with reason.
+   non-trivial worker deliveries: same Issue task, new Issue, discovered
+   capture record/modeling proposal, or evidence-only with reason.
 10. Web collections remain cache/optimistic adapters and contain no duplicated
    Symphony lifecycle decisions.
 11. Runtime adapter tests cover Codex ACP/app-server and at least one non-Codex

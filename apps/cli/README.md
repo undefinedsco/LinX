@@ -155,7 +155,7 @@ LINX_SMOKE_TIMEOUT_MS=300000 yarn workspace @undefineds.co/linx test:live-acp
 - Chat/Thread 是过程展示和回看载体，由 Secretary 在产品层创建或选择，并把对应 URI 写进 `Issue / Delivery / Session`；TUI 不要求用户填写这些 URI。
 - `symphony` 调整的是 Secretary 的行为：Secretary 自己不主要下场写代码，而是引用通用 Task，创建 `Issue / Delivery / Session` 编排记录，把工作投影给下面的 backend worker。
 - Objective 必须来自用户正常发送的聊天消息；`/symphony` 只切换能力，不把 slash 参数伪造成用户输入，也不直接创建一次性派活。
-- 归档固定写在本地 LinX home 下的 `$LINX_HOME/symphony/`。本地目录只认两个根：`SOLID_HOME` 和 `LINX_HOME`。
+- 本地 `$LINX_HOME/symphony/` 只保存 runtime archive、重试和 no-login recovery；登录后 shared control/resource truth 写入通用 `/.data/<resource-kind>/...` modeled resources，不写入 `/.data/symphony/` 这类产品能力命名空间。
 - 当前 MVP 不做 `linx symphony` / `linx-symphony` 独立产品入口、不做 daemon、不新增 Task/Delivery/Session Pod schema、不改 GUI/TUI 信息架构；新增 shared Pod resource 仍以 `@undefineds.co/models` 为权威。
 
 ## TODO

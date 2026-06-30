@@ -146,8 +146,9 @@ product or a third auto level.
 
 - `symphony off`: normal chat goes to the current worker/backend peer.
 - `symphony on`: normal chat goes to Secretary, which uses Symphony skills to
-  judge whether the message is ordinary chat, an Idea, a change to existing
-  work, or delegable work.
+  judge whether the message is ordinary chat, a durable capture signal under
+  the discovered Pod/project/agent policy, a change to existing work, or
+  delegable work.
 
 When `symphony on`, the visible input lane must remain Secretary-owned even
 while one or more workers are running. User input is appended to and rendered in
@@ -224,11 +225,13 @@ Hard rules:
 
 When Symphony needs to inspect or mutate Pod control resources from the AI side,
 the direct tool surface is `xpod` running under the same Solid authority as the
-LinX session. Modeled resources such as Idea, Issue, Task, Delivery, Run,
-RunStep, Report, Evidence, ApprovalRequest, InputRequest, and InboxNotification
-should go through modeled `xpod obj`/shared-model surfaces. Raw `xpod get`,
-`put`, or RDF file operations are for explicit file-primary resources or
-diagnostics, not for hand-patching modeled product records.
+LinX session. Secretary should first discover the active record types and
+descriptors, then write modeled resources through `xpod obj`/shared-model
+surfaces. This includes discovered capture types plus work/control resources
+such as Issue, Task, Delivery, Run, RunStep, Report, Evidence metadata,
+ApprovalRequest, InputRequest, and InboxNotification. Raw `xpod get`, `put`, or
+RDF file operations are for explicit file-primary resources or diagnostics, not
+for hand-patching modeled product records.
 
 Before mutating Pod state, Secretary should verify `xpod auth status` / `whoami`
 matches the active LinX session's `webId` and `podRoot`. This is an identity

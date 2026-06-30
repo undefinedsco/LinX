@@ -87,16 +87,14 @@ recommend changes to another resource; it should not silently rewrite that
 resource's lifecycle state.
 
 Symphony product state is local-first before login and Pod-first after login
-when it is LinX-owned. A missing login must not discard a durable Issue, Task,
-Delivery, Run, RunStep, Report, Evidence, ApprovalRequest, InputRequest,
-InboxNotification, Contact, Chat, Thread, Message, Agent, or Idea record: write
-a durable local record/outbox entry, mark Pod persistence as pending, and replay
-it after login or auth recovery. Once an authenticated Pod session exists, write
-the modeled Pod resource as the shared authority first. Local files are then
-runtime cache, retry checkpoints, or recovery mirrors, not a second business
-truth. If a Pod write fails after login, surface the persistence blocker and
-keep only retryable pending recovery state; do not claim the record is already
-shared.
+when it is LinX-owned. A missing login must not discard durable control work or
+capture signals: write a durable local record/outbox entry, mark Pod persistence
+as pending, and replay it after login or auth recovery. Once an authenticated
+Pod session exists, write the modeled Pod resource as the shared authority
+first. Local files are then runtime cache, retry checkpoints, or recovery
+mirrors, not a second business truth. If a Pod write fails after login, surface
+the persistence blocker and keep only retryable pending recovery state; do not
+claim the record is already shared.
 
 Use the resource's natural shape:
 
@@ -112,6 +110,21 @@ Application code should not decide resource paths, subject templates, RDF
 predicates, or IRI resolution ad hoc. When a shared operation is missing, add it
 to `@undefineds.co/models` / drizzle-solid / the shared store boundary and
 consume it from LinX.
+
+Symphony does not own the storage namespace for generic work resources. Shared
+control resources should live under generic modeled paths such as
+`/.data/issues/`, `/.data/tasks/`, `/.data/runs/`, `/.data/reports/`,
+`/.data/evidence/`, `/.data/approvals/`, or other resource-kind paths owned by
+`@undefineds.co/models`. Do not introduce `/.data/symphony/` as the canonical
+home for Idea/Issue/Task/Run/Report/Evidence. Symphony is a control policy that
+uses these resources, not a resource namespace.
+
+Long Symphony documents are file-primary. Store long issue briefs, reports,
+design notes, worker evidence, patches, transcripts, and benchmark output as
+ordinary Pod files placed by project/user policy. Store queryable facts and
+links in modeled metadata. The stable lookup path is from modeled resource to
+file via `document`, `source`, `about`, `project`, `thread`, `task`, or `run`
+relations, not by scanning scattered `.meta` files.
 
 ## Agent Runtime Config And Managed Resources
 
@@ -166,9 +179,30 @@ long-lived grants, or final user-owned acceptance.
 For each meaningful user message, Secretary should compare the message with the
 active record before creating work or steering workers. Capture is not gated by
 `/symphony on`, but it is still an AI/skill judgment: the active AI decides
-whether ordinary chat contains a lightweight Idea worth saving to Pod. Symphony
-then decides whether a captured Idea should be merged, promoted, steered, or
-left as context.
+whether ordinary chat contains a durable signal worth saving. The concrete
+record type is not hardcoded by the Symphony prompt. It comes from current
+Pod/project/agent capture policy and model discovery.
+
+When Symphony is on, the current thread also enables Symphony's default
+control-plane policy. Inside the system-evolution/work-control domain, Secretary
+may directly create or update matching modeled records such as work items,
+runs, reports, approvals, inputs, inbox notifications, evidence metadata, or
+candidate capture records. That default policy does not apply to unrelated
+personal memory or non-project knowledge; those still use the user's general
+capture policy or a modeling proposal.
+
+Symphony runtime context should therefore inject the domain and the discovery
+entry points, not a long fixed resource schema. The AI should be told:
+
+```text
+Symphony is on. You are operating in the Symphony control-plane domain.
+Discover current resource types and descriptors through the Pod/model tool
+surface before mutating modeled records. Use dry-run before commit.
+```
+
+If discovery finds no suitable record type, Secretary should create a pending
+local record, `CaptureDraft`, or `ModelingProposal` instead of forcing the
+signal into `Idea` or another LinX-default category.
 
 Steering is the main place where "documentation-first" matters. A steering
 message is not a side-channel instruction to workers, because workers may already have read an earlier version of the record. Secretary updates the
@@ -178,7 +212,8 @@ authority, or blocker policy must force a reread of the affected sections.
 Typical binding outcomes:
 
 - ordinary message: keep as chat, do not create an Issue;
-- new concern: capture as Idea or Issue candidate;
+- new concern: capture through the discovered record type or draft/modeling
+  proposal path;
 - update existing: patch the active record;
 - steering: update control state and send bounded delta;
 - conflict: record incompatibility instead of silently mixing semantics;

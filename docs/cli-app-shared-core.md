@@ -12,6 +12,24 @@ Pod 交互的 collection / use-case / models / ORM / service 具体分层见 `do
 - CLI 和 App 不共享命令行壳、React 壳、页面状态壳、展示元数据壳。
 - 如果某段逻辑同时被 CLI 和 App 需要，它不能继续留在 `apps/web` 或 `apps/cli` 内部。
 
+## Personal Linked Context
+
+LinX 的产品目标是把用户 Pod 组织成 **Personal Linked Context**：用户文件、聊天、任务、偏好、证据、决策和记忆被连接成 AI 可用、用户可控的上下文。
+
+实现上，Pod 被视为 **model-defined semantic file system**：
+
+- 用户可读写的文件按人的语境和项目目录组织，例如 markdown、report、log、screenshot、patch、transcript。
+- 类型化 resource 负责 schema、关系、索引、状态、权限、审计和跨端恢复。
+- `@undefineds.co/models` 定义 shared resource 语义、关系字段、可查询 metadata、默认 document/source path 策略和 repository/use-case contract。
+- `drizzle-solid` 提供通用 ORM 机制：id/IRI 解析、Pod base 解析、exact target mutation、resource 准备、以及 resource + file 组合写入/回滚/dry-run 这类与具体业务无关的工具。
+- CLI/App/LinX shell 只能消费这些模型和工具；不能因为 AI 当前“知道路径”就手写 TTL、predicate、subject template 或文档路径。
+
+结构化数据可以集中在 `/.data/<resource-kind>/...` 这类通用路径下，但不能把通用资源挂到产品能力命名空间里。例如 `Idea`、`Issue`、`Task`、`Run`、`Report`、`Evidence`、`ApprovalRequest`、`InputRequest`、`InboxNotification` 都是通用资源，不属于 `/.data/symphony/`。Symphony 是使用这些资源的一套 control policy，不是底层资源 namespace。
+
+长正文和证据是 file-primary：文档路径可以由 project/user policy 覆盖并分散到合适目录，但必须通过 typed resource 的 `document`、`source`、`about`、`project`、`thread`、`run` 等关系显式链接。`.meta` 只描述文件/container 自身，不作为业务主索引；Issue status、Task owner、Run state、Evidence outcome 这类业务事实必须进入 modeled resource。
+
+Capture 的类型发现以用户 Pod/project/agent 定义为准。AI 可以判断“这段内容值得持久化”，但不能凭 skill 内置枚举强行写成 `Idea`。若当前 Pod policy 没有匹配类型，应创建本地 pending record、`CaptureDraft` 或 `ModelingProposal`，再申请建模/归类，而不是散写正式资源。
+
 ## Shared Layers
 
 ### 1. Storage Contracts

@@ -2,6 +2,9 @@
 
 This document defines where LinX Pod interaction logic belongs. It exists to prevent Web, CLI, and Service from re-implementing the same Pod business rules in different shells.
 
+For the product/storage narrative behind this layering, see
+`docs/personal-linked-context.md`.
+
 ## Core Rule
 
 Pod-facing code is split by responsibility, not by product surface.
@@ -20,6 +23,46 @@ LinX product and application code uses **Resource** terminology for Pod data.
 - Do not import or document shared Pod semantics through `chatTable`, `messageTable`, or other `*Table` aliases in Web, CLI, or Service code.
 - `Table` is reserved for non-Pod meanings such as HTML tables, SQLite internals, or upstream drizzle-solid compatibility tests.
 - If an older `@undefineds.co/models` release still exposes `*Table` aliases, treat them as compatibility-only and do not use them in new LinX code.
+
+## Model-defined Semantic File System
+
+Pod data should be treated as a model-defined semantic file system, not as a
+choice between "database" and "files".
+
+- **Modeled resources** hold queryable business facts: type, status, owner,
+  project, thread, run, maker, tags, timestamps, document/source links, and
+  relations to other resources.
+- **File-primary artifacts** hold long bodies: Markdown docs, reports, logs,
+  patches, transcripts, screenshots, benchmark outputs, and other human-editable
+  or tool-generated artifacts.
+- **Relations connect both layers.** `Issue.document`, `Idea.document`,
+  `Report.document`, `Evidence.source`, and `schema:about`/domain-specific
+  relations are the durable bridge between structured state and file bodies.
+
+`@undefineds.co/models` should define which resources have document/source
+relations, what those relations mean, which metadata is queryable, and the
+default path policy for associated files. Product shells may let project/user
+policy override file placement, but they must not invent storage paths or RDF
+predicates ad hoc.
+
+`drizzle-solid` should provide the generic convenience machinery required to
+make this safe and ergonomic across products:
+
+```ts
+await db.dryRunResourceWithDocument(resource, input)
+await db.upsertResourceWithDocument(resource, input)
+await db.moveDocumentAndRelink(resource, input)
+await db.deleteResourceWithDocument(resource, input)
+```
+
+The exact API names are not fixed by this document, but the responsibility is:
+generic transactional/dry-run composition belongs in ORM/shared store tooling,
+not in each Web/CLI/Service feature.
+
+`.meta` is file/container-local metadata. It may record content type, checksum,
+title, revision, or local file description. It is not the primary index for
+business state. Do not require clients to discover Issues, Tasks, Runs, Reports,
+or Evidence by recursively scanning scattered `.meta` files.
 
 ## Layer Map
 

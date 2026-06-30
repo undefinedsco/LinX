@@ -30,7 +30,7 @@
 - shell/core 边界坏味道要按 `docs/linx-shell-core-design.md` 的 checklist 处理：不要新增第二套 Pi/backend 命令词汇；command-shaped 顶层输入必须在 login/Pod/interactive 副作用前 admission；feature/rendering 模块不得直接读写 Pi mutable internals 或 `__linx*` 隐藏字段；runtime archive identity 不得上升为 Pod Chat/Thread/Contact/backend credential 身份；隐藏诊断入口不能成为普通用户工作流。
 - 新增或调整 shell/core 边界时，同一变更必须更新 `docs/linx-shell-core-design.md`；功能文档只记录用户可见契约，不重新定义 shell/core 权责。
 - Symphony/Secretary 的内部 prompt wrapper、worker routing 指令、xpod auth/tool-use guardrail 是 runtime projection，不是产品 Message；泄漏到 TUI 正文、Pod message content 或普通回复时，按 projection/rendering 边界 bug 处理。
-- AI 侧读写 Symphony/Secretary Pod 资源时，默认通过同一 Solid authority 下的 `xpod` 工具面；Idea/Issue/Task/Delivery/Run/Evidence/Approval/Input/Inbox 等 modeled resources 走 `xpod obj`/shared models，raw `xpod get/put/rdf` 只用于 file-primary 资源或诊断，不手写 TTL 代替模型层。
+- AI 侧读写 Pod 资源时，默认通过同一 Solid authority 下的 `xpod` 工具面；先发现用户/项目/Agent 的 record types 与 model descriptor，再用 `xpod obj`/shared models 写 modeled resources。raw `xpod get/put/rdf` 只用于 file-primary 资源或诊断，不手写 TTL 代替模型层；通用 Idea/Issue/Task/Run/Report/Evidence/Approval/Input/Inbox 等资源不挂到 `/.data/symphony/` 这类产品能力命名空间。
 - LinX、xpod CLI、AI agent runtime 的本地 Solid 登录态只有一套：`${SOLID_HOME:-~/.solid}/auth`。不要引入 `xpodWebId`、`xpodPodRoot`、`linxWebId` 这类 app-specific 身份字段；需要身份时读取统一 `webId` / `podRoot` / `server`，需要 app runtime/cache 时才进入 `${SOLID_HOME}/apps/<app>` 或 `LINX_HOME`。
 
 ## Skill Routing
@@ -51,6 +51,7 @@ Skill source of truth:
 ## Guide Routing
 
 - LinX shell/core 建模、事实归属、壳层与共享 core 分工 → 先读 `docs/linx-shell-core-design.md`。这类原则文档只讲模型，不讲功能。
+- Personal Linked Context、model-defined semantic file system、file-primary 文档、capture policy、`.meta` 边界 → 先读 `docs/personal-linked-context.md`。
 - local-first runtime 接入共享 core、source/target/authority/plane 同步建模 → 先读 `docs/local-first-pod-sync.md`。这类原则文档只讲同步语言，不讲具体资源。
 - 具体产品功能、命令行为、状态机、验收和测试 → 写在该功能自己的文档，不回填到原则文档。
 - Symphony 系统演进控制平面、系统态势、演进判断、执行控制、证据回流 → 先读 `docs/symphony-system-evolution-control-plane.md`。这类文档只讲 Symphony 第一性原理，不替代具体功能契约。
@@ -66,6 +67,7 @@ Skill source of truth:
 Modeling principles:
 
 - `docs/linx-shell-core-design.md` — LinX shell/core 建模、事实归属和 local-first 边界原则，不承载功能契约
+- `docs/personal-linked-context.md` — Personal Linked Context 产品叙事与 model-defined semantic file system 架构边界
 - `docs/local-first-pod-sync.md` — local-first runtime 接入共享 core 的 source/target/authority/plane 同步模型，不承载资源细节
 - `docs/cli-app-shared-core.md` — `@undefineds.co/models` 共享数据面、client/auto-mode helper 与 CLI/App 边界
 - `docs/pod-interaction-layering.md` — Pod 交互分层 spec，定义 collection、shared use-case、models、drizzle-solid、service 的职责边界
