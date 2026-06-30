@@ -163,6 +163,7 @@ xpod obj schemas --domain symphony --json
 xpod obj describe <schema-or-alias> --json
 xpod obj upsert --schema <schema-or-alias> --from - --dry-run --json
 xpod obj upsert --schema <schema-or-alias> --from - --commit --json
+# when using --from -, send JSONL: one JSON object per line
 ```
 
 The AI should not hand-write Turtle for modeled resources. If discovery or

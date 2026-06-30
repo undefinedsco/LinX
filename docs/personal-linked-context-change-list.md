@@ -4,6 +4,24 @@ This is the single implementation checklist for turning Personal Linked Context
 into working product behavior. It consolidates the scattered specs into one
 ordered change list.
 
+## Operating Rule
+
+This file is the execution source of truth for the current Personal Linked
+Context work. When implementation discovers a new required change, add it here
+first under the owning package section before coding downstream behavior.
+
+Do not maintain parallel TODOs in prompts, ad-hoc notes, marketplace skills, or
+package-local scratch docs. Those surfaces can explain their local behavior, but
+the cross-repo modification list lives here.
+
+Each change below is intentionally expressed as:
+
+- owner package or repo;
+- product invariant being protected;
+- exact capability to add/remove;
+- tests that prove it;
+- done condition before downstream work can rely on it.
+
 ## Source Specs
 
 Read these in order when implementing:
@@ -49,6 +67,58 @@ upstream model/tool surface exists.
 5. marketplace skills
 6. release + integration verification
 ```
+
+## Modification Point Register
+
+This register is the single mutable checklist for the current implementation.
+When a new cross-repo change is discovered, add or update a row here first; do
+not create parallel TODO lists in prompts, marketplace skills, package-local
+scratch docs, or chat transcripts.
+
+### Current Snapshot
+
+Last refreshed: 2026-06-30.
+
+| Package / surface | Version or artifact | Current state | Evidence / next gate |
+| --- | --- | --- | --- |
+| `@undefineds.co/models` | `0.2.46` | Published upstream dependency for descriptor/resource semantics. | `npm view @undefineds.co/models@0.2.46 version` returned `0.2.46`. |
+| `@undefineds.co/drizzle-solid` | `0.3.18` | Published upstream dependency for ORM/resource-file helpers. | `npm view @undefineds.co/drizzle-solid@0.3.18 version` returned `0.3.18`. |
+| `@undefineds.co/xpod` | `0.3.57` | Published AI-facing object discovery/write CLI. | `npm view @undefineds.co/xpod@0.3.57 version` returned `0.3.57`. |
+| LinX CLI | source `0.3.32`; package artifact `preview/undefineds-co-linx-0.3.32.tgz` | Source consumes published upstream versions. Local release gates pass after the JSONL contract wording change; npm/git release still pending. | Verified: projection test 132/132 pass; `yarn build:cli`; `yarn typecheck:web`; `yarn pack:cli:release`; `node scripts/smoke-install-cli-release.mjs`. |
+| Marketplace skills | `linx-capture`; `linx-symphony` | Skills route AI through discovery-first xpod/model writes. Verification passed after the JSONL wording change; commit/publish gate remains. | Verified: `LINX_MARKETPLACE_ROOT=/Users/ganlu/develop/marketplace yarn verify:symphony-skills` (22 scenarios pass). |
+| Codex acceptance sample | `/tmp/plc-codex-accept-installed` | Passed against installed `xpod@0.3.57` and copied capture skill: Codex discovered schemas, described `CapturePolicy`, dry-ran, then committed unauthenticated state as `pending_local`. | Artifacts: `last-message.txt`, `events.jsonl`, `solid-home/apps/xpod/outbox/obj-mutations.jsonl`. |
+
+### Unified Change Points
+
+| ID | Status | Owner repo/package | Product invariant | Required change | Implementation files | Verification | Blocks / downstream dependency |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| PLC-1 | published: `@undefineds.co/models@0.2.46` | `@undefineds.co/models` | Shared models are the authority for resource semantics, ids, relations, aliases, capture fallback records, and document/source policies. | Describe all Personal Linked Context resources and expose descriptor metadata, exact-id semantics, relation fields, aliases, resource-owned file path helpers, and no duplicated storage-base expansion for exact base-relative ids. | `src/namespaces.ts`; `src/pod-storage-descriptor.ts`; `src/personal-linked-context-paths.ts`; `src/idea.schema.ts`; `src/issue.schema.ts`; `src/report.schema.ts`; `src/evidence.schema.ts`; `src/index.ts` | Upstream tests/build completed before publish; npm version verified from registry. | xpod discovery, LinX capture, marketplace skills |
+| PLC-2 | published: `@undefineds.co/drizzle-solid@0.3.18` | `drizzle-solid` | Product shells must not hand-coordinate metadata/file writes, exact-id resolution, rollback, relinking, or duplicate-path checks. | Provide generic resource-with-file dry-run, commit, move/relink, delete, exact-id planning, duplicate path rejection, and compensating cleanup. | `src/core/pod-database.ts`; `tests/unit/core/resource-with-document.test.ts` | Upstream tests/build completed before publish; npm version verified from registry. | xpod safe writes, LinX authenticated capture |
+| PLC-3 | published: `@undefineds.co/xpod@0.3.57` | `xpod` CLI | AI agents discover current record types from models/policy instead of prompt memory, and no-login capture still produces durable local pending state. | Expose `obj schemas`, `obj describe`, and descriptor-backed `obj upsert --dry-run/--commit` with parseable JSON; no-auth dry-run returns planning state, no-auth commit writes `$SOLID_HOME/apps/xpod/outbox/obj-mutations.jsonl` and returns `pending_local`. | `src/cli/commands/obj.ts`; root platform package pins | `tests/cli/obj.test.ts`; `tsc --noEmit`; `bun run build`; GitHub release run `28435617099`; npm version verified from registry. | AI-side capture and Symphony writes |
+| PLC-4 | local release gates pass; publish pending | LinX runtime | LinX shell injects domain/discovery context but does not own schemas, fields, path templates, or capture classification enums. | Remove shell-owned schema assumptions; keep Symphony/Capture projection discovery-first; keep no-login local-first and logged-in Pod-first behavior; mention JSONL stdin for xpod object writes. | `apps/cli/src/lib/linx-symphony-interactive-command.ts`; `apps/cli/src/lib/models.ts`; LinX/web callers updated for `@undefineds.co/models@0.2.46` API | Verified: Pi interactive bootstrap test file 132/132 pass; `yarn build:cli`; `yarn typecheck:web`; `yarn pack:cli:release`; smoke install. | product behavior |
+| PLC-5 | verification passed; publish gate pending | marketplace skills | Skills describe judgment workflow and portability, not storage schemas. | Update `linx-capture` and `linx-symphony` to route writes through discovered xpod/model descriptors, avoid fixed field/path/predicate definitions, require JSONL stdin for `--from -`, and report no-auth `pending_local` honestly. | `/Users/ganlu/develop/marketplace/plugins/linx-capture/skills/capture/SKILL.md`; `/Users/ganlu/develop/marketplace/plugins/linx-symphony/skills/symphony/SKILL.md` | Verified: `verify:symphony-skills` 22 scenarios pass. Remaining: marketplace commit/publish gate. | Codex/CC portability |
+| PLC-6 | local integration gates pass; release pending | release/integration | The feature is complete only when released packages are consumed and Codex can perform capture through discovery-first xpod/model writes. | Publish in dependency order, upgrade LinX dependencies, build/pack/smoke-install LinX, then run Codex capture acceptance against installed packages rather than local worktree wrappers. | LinX dependency versions; package release metadata; smoke install artifacts; local acceptance artifacts under `/tmp/plc-codex-accept-installed` | Acceptance sample ran `$capture`, `xpod obj schemas --json`, `xpod obj describe CapturePolicy --json`, dry-run, and no-auth commit returning `pending_local`; LinX build/pack/smoke gates pass locally. | feature completion |
+| PLC-7 | verified | xpod contract docs + runtime prompts + skills | `xpod obj upsert --from -` must be machine-safe and unambiguous for AI tools. | Document and project into prompts that stdin is JSONL: one JSON object per line, not pretty multi-line JSON. | `docs/personal-linked-context-change-list.md`; `docs/personal-linked-context.md`; `docs/xpod-cli-spec.md`; `apps/cli/src/lib/linx-symphony-interactive-command.ts`; marketplace skill files; `scripts/verify-symphony-skills.mjs` | Verified: skill verifier passes and LinX projection test file passes. | prevents repeat Codex acceptance failure on pretty JSON stdin |
+
+### Required Acceptance Slice
+
+The first complete vertical slice must prove this exact path:
+
+1. Codex has the LinX capture skill installed.
+2. User says something worth preserving.
+3. Skill tells Codex to discover available record types, not assume `Idea`.
+4. Codex runs `xpod obj schemas --json`.
+5. Codex runs `xpod obj describe <chosen-schema-or-alias> --json`.
+6. Codex runs `xpod obj upsert ... --dry-run --json` with JSONL stdin
+   (one JSON object per line).
+7. Codex either:
+   - commits the modeled metadata plus linked file body when authenticated; or
+   - writes a local pending/outbox record when unauthenticated.
+8. Final user-visible response reports the actual persistence status and final
+   resource/document paths.
+
+This slice is the minimum verification for claiming Personal Linked Context
+capture works. Unit tests alone are not enough.
 
 ## 1. `@undefineds.co/models`
 
@@ -197,6 +267,7 @@ xpod obj schemas --domain <domain> --json
 xpod obj describe <schema-or-alias> --json
 xpod obj upsert --schema <schema-or-alias> --from <jsonl-or-stdin> --dry-run --json
 xpod obj upsert --schema <schema-or-alias> --from <jsonl-or-stdin> --commit --json
+# stdin is JSONL: one JSON object per line, not pretty multi-line JSON
 ```
 
 ### Required Behavior
@@ -365,15 +436,15 @@ commands and record the package versions consumed by LinX.
 - Do not require AI to know `Idea` or any fixed record type from prompt memory.
 - Do not block local-first capture solely because the user is not logged in.
 
-## Open Design Checks Before Implementation
+## Remaining Gates
 
-These are the only unresolved naming/API details; resolve them in the owning
-repo before coding downstream behavior:
+These are the only current gates tracked by this change list. Add new gates here
+instead of creating side TODOs.
 
-1. Final names for ORM resource-with-document helpers.
-2. Final aliases for `CaptureDraft` and `ModelingProposal` if models already has
-   equivalent concepts.
-3. Final policy resource paths for user / project / agent / thread capture
-   policy.
-4. Exact xpod command names if `schemas` / `describe` need to match existing
-   xpod command style.
+1. Commit LinX and marketplace changes with the verification evidence recorded
+   in the commit message.
+2. Release LinX and publish marketplace skill changes if the final verification
+   gates pass.
+3. Run an authenticated Pod capture sample when an auth fixture/session is
+   available. The no-login acceptance sample already covers `pending_local`, but
+   authenticated write still needs its own evidence before claiming that branch.

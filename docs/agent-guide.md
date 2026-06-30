@@ -51,7 +51,7 @@ Skill source of truth:
 ## Guide Routing
 
 - LinX shell/core 建模、事实归属、壳层与共享 core 分工 → 先读 `docs/linx-shell-core-design.md`。这类原则文档只讲模型，不讲功能。
-- Personal Linked Context、model-defined semantic file system、file-primary 文档、capture policy、`.meta` 边界 → 先读 `docs/personal-linked-context.md`。
+- Personal Linked Context、model-defined semantic file system、file-primary 文档、capture policy、`.meta` 边界 → 先读 `docs/personal-linked-context.md`；涉及实施顺序、跨仓修改点、验收状态时，统一维护 `docs/personal-linked-context-change-list.md`，不要另起 checklist。
 - local-first runtime 接入共享 core、source/target/authority/plane 同步建模 → 先读 `docs/local-first-pod-sync.md`。这类原则文档只讲同步语言，不讲具体资源。
 - 具体产品功能、命令行为、状态机、验收和测试 → 写在该功能自己的文档，不回填到原则文档。
 - Symphony 系统演进控制平面、系统态势、演进判断、执行控制、证据回流 → 先读 `docs/symphony-system-evolution-control-plane.md`。这类文档只讲 Symphony 第一性原理，不替代具体功能契约。

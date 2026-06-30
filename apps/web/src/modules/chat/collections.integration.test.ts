@@ -9,7 +9,7 @@ import {
   solidSchema,
   extractChatIdFromChatRef,
   aiConfigProviderRef,
-  getDefaultAIConfigCredentialId,
+  createAIConfigCredentialId,
 } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 import { chatOps, initializeChatCollections, LINX_DEFAULT_SECRETARY } from './collections'
@@ -146,7 +146,7 @@ describe('chat collections integration', () => {
     const { db: database } = await getContext()
     const suffix = crypto.randomUUID()
     const providerId = `openai-${suffix}`
-    const credentialId = getDefaultAIConfigCredentialId(providerId)
+    const credentialId = createAIConfigCredentialId()
     const providerResourceId = aiProviderResource.buildId({ id: providerId })
     const credentialResourceId = credentialResource.buildId({ id: credentialId })
 

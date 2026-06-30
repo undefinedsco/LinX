@@ -29,7 +29,6 @@ import {
   contactResource,
   credentialResource,
   extractChatIdFromChatRef,
-  getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   selectAIConfigCredential,
@@ -71,12 +70,6 @@ function resolveContactIri(db: SolidDatabase, contact: Pick<ContactRow, 'id'>): 
 function contactMatchesRef(db: SolidDatabase, contact: ContactRow | null | undefined, ref: string): boolean {
   if (!contact || !ref) return false
   return contact.id === ref || resolveContactIri(db, contact) === ref
-}
-
-function isMissingExactReadError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
-  return /404|not found|missing/i.test(message)
 }
 
 function isUnsupportedCollectionReadError(error: unknown): boolean {
@@ -869,7 +862,7 @@ export class LocalChatKitService {
       ? (this.db as any).findById(aiProviderResource as any, aiProviderResource.buildId({ id: providerId }))
       : Promise.resolve(null)
     const [credentialRows, providerRow] = await Promise.all([
-      this.findAiCredentialRows(providerId),
+      this.findAiCredentialRows(),
       findProvider,
     ])
 
@@ -887,32 +880,12 @@ export class LocalChatKitService {
     }
   }
 
-  private async findAiCredentialRows(providerId: string): Promise<Array<Record<string, unknown>>> {
-    const exactRows: Array<Record<string, unknown>> = []
-    const findById = (this.db as any).findById
-    if (typeof findById === 'function') {
-      const defaultCredentialId = getDefaultAIConfigCredentialId(providerId)
-      const exact = await findById.call(
-        this.db,
-        credentialResource as any,
-        credentialResource.buildId({ id: defaultCredentialId }),
-      )
-        .catch((error: unknown) => {
-          if (isMissingExactReadError(error)) return null
-          throw error
-        })
-      if (exact) exactRows.push(exact as Record<string, unknown>)
-    }
-
-    if (exactRows.length > 0) {
-      return exactRows
-    }
-
+  private async findAiCredentialRows(): Promise<Array<Record<string, unknown>>> {
     try {
       return await this.db.select().from(credentialResource).execute() as Array<Record<string, unknown>>
     } catch (error) {
       if (isUnsupportedCollectionReadError(error)) {
-        return exactRows
+        return []
       }
       throw error
     }

@@ -125,6 +125,7 @@ xpod obj schemas --domain <domain> --json
 xpod obj describe <schema-or-alias> --json
 xpod obj upsert --schema <schema-or-alias> --from <jsonl-or-stdin> --dry-run --json
 xpod obj upsert --schema <schema-or-alias> --from <jsonl-or-stdin> --commit --json
+# stdin is JSONL: one JSON object per line, not pretty multi-line JSON
 ```
 
 `describe` should expose at least:
@@ -152,6 +153,12 @@ matching type exists, create a `CaptureDraft`/`ModelingProposal` or local
 pending record instead of forcing the content into a LinX-default type. Symphony
 may provide an additional default control-plane policy while it is on, but that
 policy only applies inside the system-evolution/control-work domain.
+
+When `xpod obj upsert --commit --json` runs without Solid credentials, xpod must
+not pretend the object was saved to the Pod. It may create a local-first pending
+entry under `$SOLID_HOME/apps/xpod/outbox/obj-mutations.jsonl` and return
+`pending_local`. Agents should report that as local pending/outbox state and
+retry or sync it only after Solid auth is available.
 
 ### Modeled product/control resources
 

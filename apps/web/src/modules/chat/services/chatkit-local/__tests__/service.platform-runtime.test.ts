@@ -38,7 +38,6 @@ vi.mock('@undefineds.co/models', () => ({
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
     return (tail ?? value).replace(/\.ttl$/, '').toLowerCase()
   },
-  getDefaultAIConfigCredentialId: (providerId: string) => `${providerId}-default`,
   normalizeAIConfigResourceId: (value?: string | null) => {
     if (!value) return ''
     if (value.startsWith('undefineds/')) return value

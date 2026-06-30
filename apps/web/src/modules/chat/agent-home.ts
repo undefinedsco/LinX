@@ -1,7 +1,6 @@
 import {
   aiConfigModelRef,
   aiConfigProviderRef,
-  getDefaultAIConfigCredentialId,
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
@@ -115,7 +114,6 @@ function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: st
   const modelId = input.model
   const providerRef = aiConfigProviderRef(providerId)
   const modelRef = aiConfigModelRef(providerId, modelId)
-  const credentialRef = `/settings/credentials.ttl#${getDefaultAIConfigCredentialId(providerId)}`
   const instructions = input.instructions?.trim()
   const subjectRef = metadataUrl.endsWith('.meta') ? metadataUrl.slice(0, -'.meta'.length) : metadataUrl
 
@@ -129,7 +127,6 @@ function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: st
     '  a udfs:AgentConfig ;',
     `  foaf:name ${toTurtleString(input.name)} ;`,
     `  udfs:provider <${providerRef}> ;`,
-    `  udfs:credential <${credentialRef}> ;`,
     `  udfs:model <${modelRef}> ;`,
     '  udfs:runtimeKind "codex" ;',
     '  udfs:enabled "true" ;',

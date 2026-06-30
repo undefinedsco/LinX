@@ -21,7 +21,6 @@ import {
   credentialResource,
   aiProviderResource,
   eq,
-  getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   extractThreadIdFromThreadRef,
@@ -150,31 +149,12 @@ function isExactReadTimeoutError(error: unknown): boolean {
   return error instanceof Error && error.name === 'ExactReadTimeoutError'
 }
 
-async function findAIConfigCredentialRows(db: SolidDatabase, providerId: string): Promise<Array<Record<string, unknown>>> {
-  const exactRows: Array<Record<string, unknown>> = []
-  const findById = (db as any).findById
-  if (typeof findById === 'function') {
-    const exact = await findById.call(
-      db,
-      credentialResource as any,
-      credentialResource.buildId({ id: getDefaultAIConfigCredentialId(providerId) }),
-    )
-      .catch((error: unknown) => {
-        if (isMissingExactReadError(error)) return null
-        throw error
-      })
-    if (exact) exactRows.push(exact as Record<string, unknown>)
-  }
-
-  if (exactRows.length > 0) {
-    return exactRows
-  }
-
+async function findAIConfigCredentialRows(db: SolidDatabase): Promise<Array<Record<string, unknown>>> {
   try {
     return await db.select().from(credentialResource).execute() as Array<Record<string, unknown>>
   } catch (error) {
     if (isRecoverableCollectionReadError(error)) {
-      return exactRows
+      return []
     }
     throw error
   }
@@ -1776,7 +1756,7 @@ export const chatOps = {
 
     const providerId = normalizeAIConfigProviderId(provider)
     const [credentialRows, providerRow] = await Promise.all([
-      findAIConfigCredentialRows(db, providerId),
+      findAIConfigCredentialRows(db),
       typeof (db as any).findById === 'function'
         ? (db as any).findById(aiProviderResource as any, aiProviderResource.buildId({ id: providerId }))
         : Promise.resolve(null),
