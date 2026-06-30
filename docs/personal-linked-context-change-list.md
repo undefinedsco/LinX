@@ -77,16 +77,17 @@ scratch docs, or chat transcripts.
 
 ### Current Snapshot
 
-Last refreshed: 2026-06-30.
+Last refreshed: 2026-07-01.
 
 | Package / surface | Version or artifact | Current state | Evidence / next gate |
 | --- | --- | --- | --- |
 | `@undefineds.co/models` | `0.2.46` | Published upstream dependency for descriptor/resource semantics. | `npm view @undefineds.co/models@0.2.46 version` returned `0.2.46`. |
 | `@undefineds.co/drizzle-solid` | `0.3.18` | Published upstream dependency for ORM/resource-file helpers. | `npm view @undefineds.co/drizzle-solid@0.3.18 version` returned `0.3.18`. |
-| `@undefineds.co/xpod` | `0.3.57` | Published AI-facing object discovery/write CLI. | `npm view @undefineds.co/xpod@0.3.57 version` returned `0.3.57`. |
+| `@undefineds.co/xpod` | `0.3.57` published; source fix branch `fix/plc-obj-cloud-upsert` at `e88f6a3` | Published AI-facing object discovery/write CLI. A source fix now proves authenticated Cloud `obj upsert --commit` plus exact-subject `obj get` read-back; npm release/consumption is still pending. | `npm view @undefineds.co/xpod@0.3.57 version` returned `0.3.57`; branch `fix/plc-obj-cloud-upsert` pushed to `undefinedsco/xpod`; live authenticated smoke wrote and read `https://id.undefineds.co/gcloud/.data/ideas/verification/obj-cloud-readback-20260630T180447Z.ttl#this`. |
 | LinX CLI | source `0.3.32`; package artifact `preview/undefineds-co-linx-0.3.32.tgz` | Source consumes published upstream versions. Released through GitHub Actions after the JSONL contract wording change; npm package and GitHub Release are published. | Verified: projection test 132/132 pass; `yarn build:cli`; `yarn typecheck:web`; `yarn pack:cli:release`; `node scripts/smoke-install-cli-release.mjs`; CLI Release run `28438200195`; `npm view @undefineds.co/linx@0.3.32 version`; GitHub Release `linx-v0.3.32`. |
-| Marketplace skills | `linx-capture`; `linx-symphony` | Skills route AI through discovery-first xpod/model writes. Verification passed after the JSONL wording change; marketplace `main` is pushed at `7770fa7`. | Verified: `LINX_MARKETPLACE_ROOT=/Users/ganlu/develop/marketplace yarn verify:symphony-skills` (22 scenarios pass); pushed `undefinedsco/marketplace` main to `7770fa7`. |
-| Codex acceptance sample | `/tmp/plc-codex-accept-final` | Passed against installed `xpod@0.3.57` and the current marketplace capture skill: Codex discovered schemas, described `CapturePolicy`, dry-ran with JSONL stdin, then committed unauthenticated state as `pending_local`. | Artifacts: `last-message.txt`, `events.jsonl`, `solid-home/apps/xpod/outbox/obj-mutations.jsonl`. |
+| Marketplace skills | `linx-capture`; `linx-symphony` | Skills route AI through discovery-first xpod/model writes. Verification passed after the JSONL wording and Symphony `pending_local` contract changes; marketplace `main` is pushed at `b0fdfb5`. | Verified: `LINX_MARKETPLACE_ROOT=/Users/ganlu/develop/marketplace yarn verify:symphony-skills` (22 scenarios pass); pushed `undefinedsco/marketplace` main to `b0fdfb5`; refreshed Codex marketplace snapshot and reinstalled `linx-symphony@undefineds`. |
+| Codex acceptance sample | scripted via `yarn benchmark:plc-agent-skills:codex-e2e` | Passed against installed Codex + `xpod`: Codex loaded the full plugin skill `$linx-capture:capture`, discovered schemas, described `CapturePolicy`, dry-ran with JSONL stdin, then committed unauthenticated state as `pending_local`. | Verified 2026-07-01: `PASS codex-e2e:no-login-local-first`; script checks final compact JSON and a non-empty temporary `$SOLID_HOME/apps/xpod/outbox/obj-mutations.jsonl`. |
+| PLC Agent Skill Benchmark | `yarn benchmark:plc-agent-skills`; `yarn benchmark:plc-agent-skills:codex-e2e`; `yarn verify:plc-agent-skills:codex` | Repository-local benchmark now gates portable Capture/Symphony skill contracts, xpod descriptor discovery/dry-run behavior, real Codex no-login local-first capture, and installed Codex skill-cache freshness. It intentionally does not claim authenticated Pod commit success. | Verified locally: static skill contract, `xpod obj schemas`, `xpod obj schemas --domain symphony`, `obj describe Idea/Task`, `obj upsert --dry-run` for Idea/Task, real Codex no-login `pending_local` outbox, and Codex installed-cache freshness for both `linx-capture` and `linx-symphony`. |
 
 ### Unified Change Points
 
@@ -94,17 +95,19 @@ Last refreshed: 2026-06-30.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | PLC-1 | published: `@undefineds.co/models@0.2.46` | `@undefineds.co/models` | Shared models are the authority for resource semantics, ids, relations, aliases, capture fallback records, and document/source policies. | Describe all Personal Linked Context resources and expose descriptor metadata, exact-id semantics, relation fields, aliases, resource-owned file path helpers, and no duplicated storage-base expansion for exact base-relative ids. | `src/namespaces.ts`; `src/pod-storage-descriptor.ts`; `src/personal-linked-context-paths.ts`; `src/idea.schema.ts`; `src/issue.schema.ts`; `src/report.schema.ts`; `src/evidence.schema.ts`; `src/index.ts` | Upstream tests/build completed before publish; npm version verified from registry. | xpod discovery, LinX capture, marketplace skills |
 | PLC-2 | published: `@undefineds.co/drizzle-solid@0.3.18` | `drizzle-solid` | Product shells must not hand-coordinate metadata/file writes, exact-id resolution, rollback, relinking, or duplicate-path checks. | Provide generic resource-with-file dry-run, commit, move/relink, delete, exact-id planning, duplicate path rejection, and compensating cleanup. | `src/core/pod-database.ts`; `tests/unit/core/resource-with-document.test.ts` | Upstream tests/build completed before publish; npm version verified from registry. | xpod safe writes, LinX authenticated capture |
-| PLC-3 | published: `@undefineds.co/xpod@0.3.57` | `xpod` CLI | AI agents discover current record types from models/policy instead of prompt memory, and no-login capture still produces durable local pending state. | Expose `obj schemas`, `obj describe`, and descriptor-backed `obj upsert --dry-run/--commit` with parseable JSON; no-auth dry-run returns planning state, no-auth commit writes `$SOLID_HOME/apps/xpod/outbox/obj-mutations.jsonl` and returns `pending_local`. | `src/cli/commands/obj.ts`; root platform package pins | `tests/cli/obj.test.ts`; `tsc --noEmit`; `bun run build`; GitHub release run `28435617099`; npm version verified from registry. | AI-side capture and Symphony writes |
+| PLC-3 | published: `@undefineds.co/xpod@0.3.57`; source fix pushed: `fix/plc-obj-cloud-upsert` `e88f6a3` | `xpod` CLI | AI agents discover current record types from models/policy instead of prompt memory; no-login capture produces durable local pending state; authenticated Cloud writes must be readable back without depending on the sidecar SPARQL query path. | Expose `obj schemas`, `obj describe`, descriptor-backed `obj upsert --dry-run/--commit`, Cloud-compatible per-field `DELETE WHERE` + `INSERT DATA`, and exact-subject direct Turtle read fallback when SPARQL query returns 400. | `src/cli/commands/obj.ts`; `tests/cli/obj.test.ts`; root platform package pins | Branch verified: `bun run test:run tests/cli/obj.test.ts`; `bun run test:run tests/cli/rdf.test.ts`; `bun run build:ts`; live authenticated `obj upsert --commit` + `obj get` read-back against `https://id.undefineds.co/gcloud/`. Release still pending. | AI-side capture and Symphony writes |
 | PLC-4 | released: `@undefineds.co/linx@0.3.32` | LinX runtime | LinX shell injects domain/discovery context but does not own schemas, fields, path templates, or capture classification enums. | Remove shell-owned schema assumptions; keep Symphony/Capture projection discovery-first; keep no-login local-first and logged-in Pod-first behavior; mention JSONL stdin for xpod object writes. | `apps/cli/src/lib/linx-symphony-interactive-command.ts`; `apps/cli/src/lib/models.ts`; LinX/web callers updated for `@undefineds.co/models@0.2.46` API | Verified: Pi interactive bootstrap test file 132/132 pass; `yarn build:cli`; `yarn typecheck:web`; `yarn pack:cli:release`; smoke install; CLI Release run `28438200195` passed and published npm/GitHub Release. | product behavior |
-| PLC-5 | published to marketplace main `7770fa7` | marketplace skills | Skills describe judgment workflow and portability, not storage schemas. | Update `linx-capture` and `linx-symphony` to route writes through discovered xpod/model descriptors, avoid fixed field/path/predicate definitions, require JSONL stdin for `--from -`, and report no-auth `pending_local` honestly. | `/Users/ganlu/develop/marketplace/plugins/linx-capture/skills/capture/SKILL.md`; `/Users/ganlu/develop/marketplace/plugins/linx-symphony/skills/symphony/SKILL.md` | Verified: `verify:symphony-skills` 22 scenarios pass; marketplace main pushed to `7770fa7`. | Codex/CC portability |
-| PLC-6 | release and no-login acceptance pass | release/integration | The feature is complete only when released packages are consumed and Codex can perform capture through discovery-first xpod/model writes. | Publish in dependency order, upgrade LinX dependencies, build/pack/smoke-install LinX, then run Codex capture acceptance against installed packages rather than local worktree wrappers. | LinX dependency versions; package release metadata; smoke install artifacts; local acceptance artifacts under `/tmp/plc-codex-accept-final` | Acceptance sample ran `$capture`, `xpod obj schemas --json`, `xpod obj describe CapturePolicy --json`, JSONL dry-run, and JSONL no-auth commit returning `pending_local`; LinX build/pack/smoke gates pass locally; `linx-v0.3.32` release published. | feature completion |
+| PLC-5 | published to marketplace main `b0fdfb5` | marketplace skills | Skills describe judgment workflow and portability, not storage schemas. | Update `linx-capture` and `linx-symphony` to route writes through discovered xpod/model descriptors, avoid fixed field/path/predicate definitions, require JSONL stdin for `--from -`, and report no-auth `pending_local` honestly. | `/Users/ganlu/develop/marketplace/plugins/linx-capture/skills/capture/SKILL.md`; `/Users/ganlu/develop/marketplace/plugins/linx-symphony/skills/symphony/SKILL.md` | Verified: `verify:symphony-skills` 22 scenarios pass; marketplace main pushed to `b0fdfb5`; Codex marketplace snapshot upgraded and installed cache freshness gate passes. | Codex/CC portability |
+| PLC-6 | release and no-login acceptance pass | release/integration | The feature is complete only when released packages are consumed and Codex can perform capture through discovery-first xpod/model writes. | Publish in dependency order, upgrade LinX dependencies, build/pack/smoke-install LinX, then run Codex capture acceptance against installed packages rather than local worktree wrappers. | LinX dependency versions; package release metadata; smoke install artifacts; `scripts/benchmark-plc-agent-skills.mjs`; `tests/plc-agent-skill-benchmark.test.mjs` | Scripted acceptance ran `$linx-capture:capture`, `xpod obj schemas --json`, `xpod obj describe CapturePolicy --json`, JSONL dry-run, and JSONL no-auth commit returning `pending_local`; LinX build/pack/smoke gates pass locally; `linx-v0.3.32` release published. | feature completion |
 | PLC-7 | verified | xpod contract docs + runtime prompts + skills | `xpod obj upsert --from -` must be machine-safe and unambiguous for AI tools. | Document and project into prompts that stdin is JSONL: one JSON object per line, not pretty multi-line JSON. | `docs/personal-linked-context-change-list.md`; `docs/personal-linked-context.md`; `docs/xpod-cli-spec.md`; `apps/cli/src/lib/linx-symphony-interactive-command.ts`; marketplace skill files; `scripts/verify-symphony-skills.mjs` | Verified: skill verifier passes and LinX projection test file passes. | prevents repeat Codex acceptance failure on pretty JSON stdin |
 
 ### Required Acceptance Slice
 
 The first complete vertical slice must prove this exact path:
 
-1. Codex has the LinX capture skill installed.
+1. Codex has the LinX capture skill installed and invokable by full plugin skill
+   name (`$linx-capture:capture`). Do not rely on the shorthand `$capture` as a
+   release gate until Codex aliases are explicitly supported and verified.
 2. User says something worth preserving.
 3. Skill tells Codex to discover available record types, not assume `Idea`.
 4. Codex runs `xpod obj schemas --json`.
@@ -119,6 +122,20 @@ The first complete vertical slice must prove this exact path:
 
 This slice is the minimum verification for claiming Personal Linked Context
 capture works. Unit tests alone are not enough.
+
+`yarn benchmark:plc-agent-skills` is the portable pre-commit benchmark for this
+slice. It proves the skill contract and descriptor dry-run path only.
+`yarn benchmark:plc-agent-skills:codex-e2e` is the real Codex no-login
+acceptance gate. It runs Codex in a temporary workspace and isolated
+`SOLID_HOME`, requires `pending_local`, and checks the local outbox file exists
+and is non-empty.
+`yarn verify:plc-agent-skills:codex` additionally checks the installed Codex
+plugin cache against the marketplace skill source so stale installed skills do
+not pass review by accident. This gate must pass after marketplace publication
+and plugin reinstall/refresh. A source-branch throwaway-Pod acceptance run
+has proved authenticated `xpod obj upsert --commit --json` writes and modeled read-back work end to end
+on `fix/plc-obj-cloud-upsert`; this is not a release claim until the xpod npm
+package is published and consumed by LinX/Codex installed packages.
 
 ## 1. `@undefineds.co/models`
 
@@ -441,7 +458,6 @@ commands and record the package versions consumed by LinX.
 These items are not blockers for the no-login Codex capture acceptance slice.
 Add new cross-repo gates to the register above instead of creating side TODOs.
 
-1. Run an authenticated Pod capture sample when an auth fixture/session is
-   available. The no-login acceptance sample already covers the allowed
-   `pending_local` branch; authenticated write still needs its own evidence
-   before claiming that branch specifically.
+1. Publish the xpod Cloud upsert/read-back fix as the next `@undefineds.co/xpod`
+   version and update LinX/Codex-installed acceptance to consume the published
+   package rather than the source worktree.
