@@ -11,10 +11,15 @@ const cache = process.env.LINX_RELEASE_SMOKE_CACHE || mkdtempSync(join(tmpdir(),
 const installTimeoutMs = Number(process.env.LINX_RELEASE_SMOKE_INSTALL_TIMEOUT_MS || 20 * 60 * 1000)
 const cliPackage = JSON.parse(readFileSync(join(repoRoot, 'apps', 'cli', 'package.json'), 'utf8'))
 const modelsVersion = cliPackage.dependencies?.['@undefineds.co/models']
+const xpodVersion = cliPackage.dependencies?.['@undefineds.co/xpod']
 const cliVersion = cliPackage.version
 
 if (!modelsVersion || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(modelsVersion)) {
   throw new Error(`apps/cli/package.json must pin @undefineds.co/models to an exact npm version, got ${modelsVersion ?? '<missing>'}`)
+}
+
+if (!xpodVersion || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(xpodVersion)) {
+  throw new Error(`apps/cli/package.json must pin @undefineds.co/xpod to an exact npm version, got ${xpodVersion ?? '<missing>'}`)
 }
 
 const cliTarball = findExactTarball(`undefineds-co-linx-${cliVersion}.tgz`, [previewRoot])
@@ -53,6 +58,7 @@ const smokeEnv = {
 run(linxBin, ['--help'], { env: smokeEnv })
 run(linxBin, ['--version'], { env: smokeEnv })
 assertInstalledModelsVersion(modelsVersion)
+assertInstalledXpodVersion(xpodVersion)
 assertInstalledDrizzleSolidPatch()
 assertInstalledPiWebAccessPatch()
 
@@ -120,6 +126,16 @@ function assertInstalledModelsVersion(expectedVersion) {
   }
 
   console.log(`verified @undefineds.co/models@${packageJson.version}`)
+}
+
+function assertInstalledXpodVersion(expectedVersion) {
+  const packageRoot = findInstalledPackageRoot('@undefineds.co/xpod')
+  const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
+  if (packageJson.version !== expectedVersion) {
+    throw new Error(`Installed @undefineds.co/xpod@${packageJson.version} does not match CLI dependency ${expectedVersion}`)
+  }
+
+  console.log(`verified @undefineds.co/xpod@${packageJson.version}`)
 }
 
 function assertInstalledPiWebAccessPatch() {
