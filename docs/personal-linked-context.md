@@ -15,6 +15,10 @@ Model-defined semantic FS      storage/model architecture
 Solid Pod                      user-owned authority
 ```
 
+## Implementation Change List
+
+The unified implementation checklist is `docs/personal-linked-context-change-list.md`. Use it as the entry point for development sequencing across `@undefineds.co/models`, `drizzle-solid`, xpod, LinX runtime, and marketplace skills.
+
 ## Core Idea
 
 The Pod is neither "a database with attachments" nor "a raw file browser".
