@@ -18,6 +18,15 @@ test('PLC agent skill benchmark is exposed as a repo script', () => {
   assert.equal(existsSync(benchmarkScript), true)
 })
 
+test('PLC agent skill benchmark fallback uses the pinned xpod dependency version', () => {
+  const script = readFileSync(benchmarkScript, 'utf8')
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  assert.match(script, /pinnedXpodVersion/)
+  assert.match(script, /@undefineds\.co\/xpod@\$\{pinnedXpodVersion\}/)
+  assert.match(pkg.dependencies?.['@undefineds.co/xpod'] ?? '', /^\d+\.\d+\.\d+/)
+  assert.doesNotMatch(script, /@undefineds\.co\/xpod@\d+\.\d+\.\d+/)
+})
+
 test('PLC agent skill benchmark verifies portable skill contract in static mode', () => {
   const result = spawnSync(process.execPath, [benchmarkScript, '--static-only'], {
     cwd: root,

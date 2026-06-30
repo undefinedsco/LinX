@@ -10152,10 +10152,10 @@
     n3 "^1.26.0"
     zod "^3.22.4"
 
-"@undefineds.co/xpod@0.3.57":
-  version "0.3.57"
-  resolved "https://registry.yarnpkg.com/@undefineds.co/xpod/-/xpod-0.3.57.tgz#32eb7ab5a63344f8961fe7f4276b5b068a5ad284"
-  integrity sha512-upOZi7NifEBp7h0P7PLm4kKRj9z+pTdIwUnKNrc3Ofv8QGJChHZhgEmu+7yjJiBVhkqUsuDgORr3kYVsGhdQtA==
+"@undefineds.co/xpod@0.3.58":
+  version "0.3.58"
+  resolved "https://registry.yarnpkg.com/@undefineds.co/xpod/-/xpod-0.3.58.tgz#6aaf393b86dbecd5054f7de56b5cf5b73e6e4243"
+  integrity sha512-gsxDKkmNo3gejCy8r2K6ItoNHH37ojhV8d/j+pAQ6j55Aoe79GR19WX9TX7AathgTSJcdZkYi4fcqgpoYm6nGQ==
   dependencies:
     "@agentclientprotocol/sdk" "^0.14.1"
     "@ai-sdk/openai" "^3.0.2"

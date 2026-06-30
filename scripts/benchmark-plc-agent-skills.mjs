@@ -14,6 +14,10 @@ import { homedir, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+const pinnedXpodVersion = packageJson.dependencies?.['@undefineds.co/xpod']
+  ?? packageJson.devDependencies?.['@undefineds.co/xpod']
+
 const marketplaceRoot = process.env.LINX_MARKETPLACE_ROOT
   ? process.env.LINX_MARKETPLACE_ROOT
   : existsSync(join(root, 'marketplace', 'plugins'))
@@ -418,8 +422,12 @@ function resolveXpodCommand() {
   if (existsSync(localBin)) {
     return { command: localBin, baseArgs: [] }
   }
-  warnings.push('local node_modules/.bin/xpod missing; falling back to npx @undefineds.co/xpod@0.3.57')
-  return { command: 'npx', baseArgs: ['-y', '@undefineds.co/xpod@0.3.57'] }
+  if (!pinnedXpodVersion) {
+    failures.push('local node_modules/.bin/xpod missing and package.json has no @undefineds.co/xpod version')
+    return { command: 'xpod', baseArgs: [] }
+  }
+  warnings.push(`local node_modules/.bin/xpod missing; falling back to npx @undefineds.co/xpod@${pinnedXpodVersion}`)
+  return { command: 'npx', baseArgs: ['-y', `@undefineds.co/xpod@${pinnedXpodVersion}`] }
 }
 
 function runXpodJson(xpod, label, args) {
