@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   Copy,
   Star,
@@ -7,12 +7,17 @@ import {
   Eye,
   Info,
   GitBranch,
+  Share2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { isLocalAccessHostname } from '@/lib/local-access-url'
 import { useFilesStore, type FileDetailTab } from '../store'
 import { useFavoriteList, favoriteHooks } from '@/modules/favorites/collections'
+import { SharePreview } from '@/modules/share/SharePreview'
+import { createSharePreview, type ShareStorage } from '@/modules/share/share-contract'
 import { useFileDetail } from '../queries'
 import type { FilesDetail } from '../browser'
 
@@ -121,6 +126,8 @@ function LineageTab({ file }: { file: FilesDetail }) {
 // ============================================================================
 
 export function FileDetailPane() {
+  const [shareOpen, setShareOpen] = useState(false)
+  const [qrPayload, setQrPayload] = useState<string | null>(null)
   const selectedFileId = useFilesStore((s) => s.selectedFileId)
   const selectedTreeNodeId = useFilesStore((s) => s.selectedTreeNodeId)
   const detailTab = useFilesStore((s) => s.detailTab)
@@ -129,20 +136,39 @@ export function FileDetailPane() {
   const { data: favorites = [] } = useFavoriteList({ sourceModule: 'files' })
 
   const isFavorite = !!file && favorites.some((favorite) => favorite.sourceId === file.uri)
-
-  if (!selectedFileId) return <EmptyState />
-  if (isLoading) return <EmptyState />
-  if (error || !file) return <EmptyState />
+  const sharePreview = useMemo(() => {
+    if (!file) return null
+    try {
+      return createSharePreview({
+        canonicalResourceUrl: file.uri,
+        storage: resolveShareStorageFromUri(file.uri),
+      })
+    } catch {
+      return null
+    }
+  }, [file])
 
   const handleCopyUri = useCallback(() => {
+    if (!file) return
     navigator.clipboard?.writeText(file.uri)
-  }, [file.uri])
+  }, [file])
 
   const handleOpenUri = useCallback(() => {
+    if (!file) return
     window.open(file.uri, '_blank', 'noopener,noreferrer')
-  }, [file.uri])
+  }, [file])
+
+  const handleShareOpenChange = useCallback((open: boolean) => {
+    setShareOpen(open)
+    if (!open) setQrPayload(null)
+  }, [])
+
+  const handleCopyShareUrl = useCallback((url: string) => {
+    navigator.clipboard?.writeText(url)
+  }, [])
 
   const handleToggleFavorite = useCallback(async () => {
+    if (!file) return
     await favoriteHooks.onStarredChange('files', file.uri, !isFavorite, {
       title: file.name,
       searchText: file.name,
@@ -152,7 +178,11 @@ export function FileDetailPane() {
         treeNodeId: selectedTreeNodeId,
       }),
     })
-  }, [file.name, file.previewText, file.uri, isFavorite, selectedTreeNodeId])
+  }, [file, isFavorite, selectedTreeNodeId])
+
+  if (!selectedFileId) return <EmptyState />
+  if (isLoading) return <EmptyState />
+  if (error || !file) return <EmptyState />
 
   return (
     <div className="flex flex-col h-full">
@@ -172,11 +202,43 @@ export function FileDetailPane() {
           <Copy className="w-3.5 h-3.5" />
           复制 URI
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs gap-1.5"
+          aria-label="分享"
+          onClick={() => setShareOpen(true)}
+          disabled={!sharePreview}
+        >
+          <Share2 className="w-3.5 h-3.5" />
+          分享
+        </Button>
         <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5" aria-label="收藏" onClick={handleToggleFavorite}>
           <Star className={cn('w-3.5 h-3.5', isFavorite && 'text-amber-500 fill-amber-500')} />
           {isFavorite ? '取消收藏' : '加入收藏'}
         </Button>
       </div>
+
+      {sharePreview ? (
+        <Dialog open={shareOpen} onOpenChange={handleShareOpenChange}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>分享 {file.name}</DialogTitle>
+            </DialogHeader>
+            <SharePreview
+              preview={sharePreview}
+              onCopy={handleCopyShareUrl}
+              onShowQr={setQrPayload}
+            />
+            {qrPayload ? (
+              <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                <p className="text-sm font-medium text-foreground">二维码内容</p>
+                <p className="mt-2 break-all font-mono text-xs leading-5 text-muted-foreground">{qrPayload}</p>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 px-3 py-2 border-b border-border/50 shrink-0">
@@ -212,3 +274,20 @@ export function FileDetailPane() {
 }
 
 export default FileDetailPane
+
+function resolveShareStorageFromUri(uri: string): ShareStorage {
+  try {
+    const hostname = new URL(uri).hostname
+    if (isManagedLocalHostname(hostname) || isLocalAccessHostname(hostname)) {
+      return { kind: 'local' }
+    }
+  } catch {
+    // createSharePreview will validate the canonical URL before rendering share UI.
+  }
+
+  return { kind: 'cloud' }
+}
+
+function isManagedLocalHostname(hostname: string): boolean {
+  return hostname.endsWith('.undefineds.co') && hostname.startsWith('node-')
+}

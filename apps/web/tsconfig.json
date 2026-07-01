@@ -10,6 +10,7 @@
     "src/modules/layout/**/*",
     "src/modules/credentials/**/*",
     "src/modules/login/**/*",
+    "src/modules/share/**/*",
     "src/types/**/*.d.ts",
     "src/vite-env.d.ts"
   ],

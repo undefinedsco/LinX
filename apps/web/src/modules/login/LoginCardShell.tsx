@@ -20,7 +20,9 @@ export function LoginCardShell({
       .filter(Boolean)
       .join(' ')}
     >
-      <div className={[baseCardClassName, cardClassName]
+      <div
+        data-login-card-size={cardSize}
+        className={[baseCardClassName, cardClassName]
         .filter(Boolean)
         .join(' ')}
       >

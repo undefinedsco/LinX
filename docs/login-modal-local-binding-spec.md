@@ -597,6 +597,21 @@ Validation rules:
 3. A mismatch is a blocking security error.
 4. Do not rewrite storage identity to localhost/LAN/tunnel access routes.
 
+### 7.4 Local access profile switching
+
+Local network settings may keep multiple access profiles, including public direct,
+LAN, localhost, Cloudflare Tunnel, Sakura/frp, ngrok, or P2P fallback. These
+profiles are operational routes, not storage identities. Only one profile can be
+active at a time.
+
+Switching the active profile must:
+
+1. preserve the canonical storage URL and WebID binding;
+2. stop the previously active tunnel client before starting the selected profile;
+3. update `activeTunnelId` / active access profile metadata;
+4. run or schedule same-node reachability validation;
+5. never silently switch to Cloud storage when the selected profile fails.
+
 ## 8. Share link and QR interaction contract
 
 This spec only defines the login-adjacent contract. The full share UI can live

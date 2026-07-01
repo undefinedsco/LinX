@@ -180,6 +180,7 @@ This file is the design contract for LinX user-facing product work. It supersede
 - Offline/slow network:
   - Local/LAN capability should remain available when public reachability is unavailable.
   - Public route failures belong in reachability diagnostics, not as login blockers unless the selected flow requires public access.
+  - Local network settings may record multiple access/tunnel profiles, but the runtime must show exactly one active profile; switching profiles is an explicit stop-old/start-new action followed by reachability validation.
 
 ## Content voice
 

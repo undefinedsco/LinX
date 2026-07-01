@@ -100,9 +100,13 @@ Local + Cloud-managed canonical domain 可以使用 Cloudflare Tunnel 或其他�
 
 规则：
 
-- LinX 可以保存 tunnel token 并随 xpod 启动 tunnel client。
+- LinX/xpod 可以保存多个 tunnel profile，但运行时只能有一个生效。
+- 生效入口由 `activeTunnelId` 指向；切换时必须先停止旧 tunnel client，再启动新 profile，并重新做可达性检测。
+- tunnel profile 至少包含 `id`、`provider`、`label`、出口域名/endpoint、secret 引用、状态和 last heartbeat；secret 明文不回显。
+- 旧的单 tunnel 配置（如 `tunnelProvider` + token）迁移为一个默认 profile，并把它设为 active。
 - tunnel token 不决定 WebID 或 storage；selected canonical SP URL 才决定 storage。
 - tunnel 可用性失败时，应展示 route 状态，不得 fallback 到 Cloud Pod 或 Standalone Pod。
+- P2P、ngrok、Cloudflare、Sakura/frp、有固定 IP / 自有反代都应落到同一类“访问渠道 profile”抽象；是否启用由 active profile 决定，不允许多个公网 tunnel 同时生效。
 
 ## 桌面交互
 
@@ -121,9 +125,11 @@ Local 登录路径必须无配置：
 Local 网络配置属于设置 / Local 管理路径，不出现在登录路径。设置里可以展示：
 
 - Cloud 分配的 Local 域名，例如 `https://node-0000.undefineds.co/`，并提供复制入口。
+- 访问渠道列表：公网直连 / 局域网 / 本机 / Cloudflare / Sakura/frp / ngrok / P2P 等 profile；列表可保存多个，但只能把一个设为“当前生效”。
+- 当前生效 profile 的配置表单：供应商、出口域名/endpoint、secret/token、Service URL；不同供应商字段可以折叠为相同三类输入（供应商、域名/入口、密钥）。
 - Cloudflare Tunnel 指引：Public Hostname 填 Local 域名，Service URL 指向
   `http://localhost:5737`，然后把 tunnel token 粘贴回 LinX。
-- 联通性测试：同时探测本机入口和公网 canonical URL，并用
+- 切换生效 profile 后立即触发一次联通性测试：同时探测本机入口和公网 canonical URL，并用
   `/api/linx/capabilities.baseUrl` 判断是否同一个 Local 节点。
 
 交互状态：
