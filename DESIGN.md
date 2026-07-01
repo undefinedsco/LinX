@@ -5,7 +5,7 @@
 - Status: Active
 - Last refreshed: 2026-06-21
 - Primary product surfaces: Desktop/Web shell, chat, contacts, files, favorites, inbox, settings, login/onboarding, Local/Standalone/Cloud runtime status, Secretary/Symphony control surfaces.
-- Evidence reviewed: `docs/ui-style-guide.md`, `docs/ui-component-architecture.md`, `docs/desktop-product-strategy.md`, `docs/local-sp-domain-and-tunnel.md`, `apps/web/src/modules/login/LoginModal.tsx`, `apps/web/src/modules/login/LocalOnboardingCard.tsx`, `apps/web/src/modules/settings/components/SetupView.tsx`, `apps/web/src/modules/chat/components/ChatListPane.tsx`, `/tmp/open-design-apple/DESIGN.md`.
+- Evidence reviewed: `docs/ui-style-guide.md`, `docs/ui-component-architecture.md`, `docs/desktop-product-strategy.md`, `docs/local-sp-domain-and-tunnel.md`, `docs/login-modal-local-binding-spec.md`, `apps/web/src/modules/login/LoginModal.tsx`, `apps/web/src/modules/login/LocalOnboardingCard.tsx`, `apps/web/src/modules/settings/components/SetupView.tsx`, `apps/web/src/modules/chat/components/ChatListPane.tsx`, `/tmp/open-design-apple/DESIGN.md`.
 
 This file is the design contract for LinX user-facing product work. It supersedes earlier local-only login guidance and earlier emotion-led brand language.
 
@@ -45,7 +45,7 @@ This file is the design contract for LinX user-facing product work. It supersede
   - Developer/operator using Local or Standalone storage and verifying where data lands.
   - Power user coordinating Symphony workers, approvals, and workspace outputs.
 - User jobs:
-  - Choose Cloud, Local, Standalone, or Custom storage with clear consequences.
+  - Sign in with minimal friction: remembered accounts continue directly; first-time undefineds users choose Cloud or Local data space; third-party account providers do not expose a storage picker.
   - Chat with Secretary and keep work grounded in a conversation/workspace.
   - Approve or reject risky actions inline.
   - Re-enter important context through contacts, files, favorites, inbox, and audit.
@@ -59,7 +59,7 @@ This file is the design contract for LinX user-facing product work. It supersede
   - Contacts, files, favorites, and settings are supporting surfaces.
   - Inbox is a right-side/global exception center, not a competing main app.
 - Core routes/screens:
-  - Provider/storage selection.
+  - Compact login modal, remembered-account continue, account-provider selection, and undefineds-only Cloud/Local data-space selection.
   - Conversation list and chat content pane.
   - Contact/agent/group detail.
   - File/workspace asset browser.
@@ -137,7 +137,7 @@ This file is the design contract for LinX user-facing product work. It supersede
 - Keyboard/focus behavior:
   - All navigation, dialogs, provider choices, chat controls, and approval cards must be keyboard reachable.
   - Focus states use a visible, restrained accent ring.
-  - Back/change-space actions must remain available after provider or Pod selection.
+  - Back/cancel/switch-account actions must remain available during provider selection, Local preparation, and auth handoff.
 - Contrast/readability:
   - Text and status indicators must meet contrast requirements in light and dark modes.
   - Status must not rely on color alone.
@@ -185,7 +185,7 @@ This file is the design contract for LinX user-facing product work. It supersede
 
 - Tone: Direct, concise, operational, calm.
 - Terminology:
-  - Use Cloud, Local, Standalone, Custom for provider surfaces.
+  - Use `undefineds 账号`, `云端空间`, and `本机空间` in the compact login modal. Reserve Standalone/Custom/provider terminology for settings, diagnostics, or non-primary flows.
   - Use storage, workspace, Pod, Secretary, approval, inbox, file, contact, runtime where those terms are product-relevant.
   - Reserve low-level terms like issuer/storage provider/canonical URL for settings, diagnostics, and technical docs.
 - Microcopy rules:
