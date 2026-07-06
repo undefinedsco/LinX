@@ -483,7 +483,7 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.equal(providerInsert.row.id, 'anthropic')
   assert.equal(providerInsert.row.baseUrl, 'https://api.anthropic.com/v1')
   assert.equal(providerInsert.row.hasModel, '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514')
-  assert.equal(credentialInsert.row.id, 'anthropic-default')
+  assert.match(credentialInsert.row.id, /^cred_[a-z0-9]+$/)
   assert.equal(credentialInsert.row.provider, '/settings/providers/anthropic.ttl')
   assert.equal(credentialInsert.row.service, 'ai')
   assert.equal(credentialInsert.row.apiKey, 'sk-ant-test-key')

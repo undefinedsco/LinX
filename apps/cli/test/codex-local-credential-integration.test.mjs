@@ -127,6 +127,11 @@ function createPodConfigHarness() {
     row(name, id) {
       return resourceStore(name).get(id)
     },
+    credentialForProvider(providerId) {
+      return Array.from(resourceStore('credential').values()).find((row) =>
+        row.provider === `/settings/providers/${providerId}.ttl`
+        && row.service === 'ai')
+    },
     dependencies: {
       async resolvePodWriteContext() {
         contexts.push(true)
@@ -310,7 +315,9 @@ test('local .codex credentials flow through standard LinX AI config into codex a
     assert.deepEqual(harness.contexts, [true])
     assert.match(harness.output.join(''), /Connected AI provider: openai/)
     assert.doesNotMatch(harness.output.join(''), new RegExp(localCodexKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
-    assert.ok(harness.row('credential', 'openai-default'))
+    const openaiCredential = harness.credentialForProvider('openai')
+    assert.ok(openaiCredential)
+    assert.match(openaiCredential.id, /^cred_[a-z0-9]+$/)
     assert.ok(harness.row('aiProvider', 'openai'))
 
     const podCredential = await podAiModule.loadPodBackendCredential('codex', {
@@ -371,7 +378,7 @@ test('local .codex credentials flow through standard LinX AI config into codex a
       ...harness.dependencies,
       write() {},
     })
-    assert.equal(harness.row('credential', 'openai-default'), undefined)
+    assert.equal(harness.credentialForProvider('openai'), undefined)
 
     credentialsModule.clearCredentials()
     credentialsCleared = true

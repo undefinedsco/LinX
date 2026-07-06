@@ -111,6 +111,11 @@ function createPodConfigHarness() {
     rows(name) {
       return Array.from(resourceStore(name).values())
     },
+    credentialForProvider(providerId) {
+      return Array.from(resourceStore('credential').values()).find((row) =>
+        row.provider === `/settings/providers/${providerId}.ttl`
+        && row.service === 'ai')
+    },
     dependencies: {
       async resolvePodWriteContext(urlOverride) {
         contexts.push(urlOverride)
@@ -177,7 +182,7 @@ test('linx ai connect smoke covers API-key provider shell-to-core writes', async
     assert.match(harness.output.join(''), new RegExp(`Connected AI provider: ${item.providerId}`))
 
     const provider = harness.row('aiProvider', item.providerId)
-    const credential = harness.row('credential', `${item.providerId}-default`)
+    const credential = harness.credentialForProvider(item.providerId)
     const model = harness.row('aiModel', `${item.providerId}.ttl#boundary-smoke-model`)
 
     assert.ok(provider, `provider row should be written for ${item.inputProvider}`)
@@ -236,7 +241,9 @@ test('Pod-backed OpenRouter credential can be marked as Codex-compatible and con
       CODEX_BASE_URL: 'https://openrouter.ai/api/v1',
     },
   })
-  assert.ok(harness.row('credential', 'openrouter-default').lastUsedAt instanceof Date)
+  const consumedCredential = harness.credentialForProvider('openrouter')
+  assert.ok(consumedCredential)
+  assert.ok(consumedCredential.lastUsedAt instanceof Date)
 })
 
 async function resolveOpenRouterSmokeModel(baseUrl, apiKey) {
