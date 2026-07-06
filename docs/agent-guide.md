@@ -55,7 +55,7 @@ Modeling principles:
 Feature contracts:
 
 - `docs/cli-login-and-key-principles.md` — CLI 登录、provider key 获取、Pod AI config 存储与 backend runtime 消费边界
-- `docs/login-modal-local-binding-spec.md` — 桌面/Web 紧凑登录弹窗、记住账号、undefineds Cloud/Local 绑定、Local provisionCode 分流与分享链接/二维码交互契约
+- `docs/login-modal-local-binding-spec.md` — 桌面/Web 紧凑登录弹窗、记住账号、undefineds Cloud/Local 绑定与 Local provisionCode 分流契约
 - `docs/cli-status-line.md` — CLI TUI footer/statusline 的可配置 token、配置优先级和默认显示契约
 - `docs/approval-grant-design.md` — approval/grant 统一流水线、grant scope、auto 与 Secretary 授权边界
 - `docs/symphony-system-evolution-control-plane.md` — Symphony 作为系统演进控制平面的第一性原理，覆盖系统态势、演进判断、执行控制和证据回流

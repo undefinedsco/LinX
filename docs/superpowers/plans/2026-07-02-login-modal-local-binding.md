@@ -739,5 +739,4 @@ Spec coverage:
 
 Known non-goals in this plan:
 
-- Share link/QR implementation is covered by `2026-07-02-share-link-qr.md`.
 - xpod service-side provision code changes are outside this LinX modal plan.

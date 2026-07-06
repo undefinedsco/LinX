@@ -29,9 +29,6 @@ The protocol goal is to keep identity and storage correct:
   the user to choose Cloud/Local again.
 - Local registration and first Pod creation are driven by a Cloud-signed
   `provisionCode`, not by a client-supplied SP URL.
-- Cloud and Local users can both share resources through links or QR codes.
-  The link identity is the canonical resource URL; Local availability depends
-  on the Local SP being reachable.
 
 ## 2. Terms
 
@@ -42,7 +39,6 @@ The protocol goal is to keep identity and storage correct:
 | Storage binding | The post-login binding between WebID and actual storage base. | Shown as a short label such as `undefineds · 本机空间`; not editable inline. |
 | Local SP | The local xpod storage provider. | Not named in login UI. Use `本机空间`. |
 | provisionCode | Cloud-signed proof that a Local SP is the intended Pod creation target. | Never shown in login UI. May appear only in diagnostics. |
-| Share link / QR | A canonical resource URL encoded as text or QR. | Shown in share UI after login, not in the login modal. |
 
 ## 3. Product rules
 
@@ -142,34 +138,6 @@ Rules:
 6. For relogin of an existing Local binding, redirect callback can be received
    by LinX runtime even if the Local data route is temporarily down, but entering
    the app still requires binding/reachability handling.
-
-### 3.5 Sharing by link or QR
-
-Sharing is available for both Cloud and Local storage users.
-
-Rules:
-
-1. Share targets are resources or containers, not a whole account or whole SP.
-2. The shared identifier is the canonical resource URL:
-   - Cloud example: `https://cloud.undefineds.co/alice/chat/x/`
-   - Local example: `https://node-0000.undefineds.co/alice/chat/x/`
-3. Link and QR encode the same canonical resource URL. Do not wrap it in a
-   LinX open URL for the MVP.
-4. Permissions are written to the owner storage using Solid authorization
-   semantics (WAC/ACP/access grant depending on the active storage mode).
-5. The recipient accesses with their own identity/session. They do not receive
-   the owner's token, `serviceToken`, or `provisionCode`.
-6. For Cloud shares, availability is Cloud availability.
-7. For Local shares, availability requires the owner Local SP route to be
-   reachable. If offline, recipients see `对方的本机空间暂时不可访问`.
-8. Cloud may store invitation/notification/control metadata, but must not
-   silently proxy Local data unless a separate relay product decision is made.
-9. QR and link generation must show a short availability hint for Local shares:
-   `本机空间需要保持在线，对方才能访问。`
-
-The login modal does not expose share controls, but the remembered binding label
-and post-login account/storage state must be precise enough that share UI can
-explain whether a resource is Cloud-backed or Local-backed.
 
 ## 4. Dialog size and visual constraints
 
@@ -612,76 +580,7 @@ Switching the active profile must:
 4. run or schedule same-node reachability validation;
 5. never silently switch to Cloud storage when the selected profile fails.
 
-## 8. Share link and QR interaction contract
-
-This spec only defines the login-adjacent contract. The full share UI can live
-in a separate share feature spec.
-
-### 8.1 Entry points after login
-
-Share entry points may appear on:
-
-- chat/thread/resource actions,
-- file/context menus,
-- contact/resource detail panes,
-- mobile or desktop share sheets.
-
-The login modal itself must not include share controls.
-
-### 8.2 Share preview copy
-
-Cloud-backed resource:
-
-```text
-分享链接
-拥有权限的人可通过链接访问。
-[复制链接] [二维码]
-```
-
-Local-backed resource:
-
-```text
-分享链接
-这是本机空间里的内容。你的本机空间在线时，对方才能访问。
-[复制链接] [二维码]
-```
-
-### 8.3 Local availability hint
-
-Local share generation must not require a live network probe. The owner may be
-on a laptop, behind a tunnel that is reconnecting, or sharing while offline.
-Blocking on a probe would make the share action feel unreliable.
-
-Use last heartbeat only as a weak display hint:
-
-- recent heartbeat: `本机空间最近在线。对方访问时仍需保持在线。`
-- stale or unknown heartbeat: `本机空间可能离线。链接仍可创建，对方打开时会再次检测。`
-
-Recipient-side access is the real check: opening the canonical URL either loads
-the resource, shows login/permission flow, or shows `对方的本机空间暂时不可访问`.
-
-### 8.4 QR requirements
-
-1. QR encodes the same canonical share URL as `复制链接`.
-2. QR modal must show the storage type label:
-   - `云端空间`
-   - `本机空间`
-3. Local QR modal must show a one-line availability hint.
-4. QR must not encode bearer tokens, provision codes, or session data.
-
-### 8.5 Permission requirements
-
-1. Share creation writes authorization state to the owner storage.
-2. The owner can choose at minimum:
-   - `仅查看`
-   - `可编辑` when supported by the resource type
-3. Recipient access uses recipient identity/session.
-4. If recipient is not authorized, show an access request or login prompt, not a
-   leaked resource preview.
-5. For Local shares, if the owner SP is offline, show offline state instead of
-   permission failure.
-
-## 9. Component boundaries
+## 8. Component boundaries
 
 Follow `docs/ui-component-architecture.md`.
 
@@ -699,7 +598,7 @@ Recommended split:
 Do not put xpod startup, collection writes, or Solid profile parsing inside pure
 UI components.
 
-## 10. Copy rules
+## 9. Copy rules
 
 Preferred terms:
 
@@ -716,7 +615,7 @@ The login modal may use `Local` only as a small technical label if the rest of
 the surrounding copy uses `本机空间`. Prefer Chinese product copy for primary
 text.
 
-## 11. Acceptance criteria
+## 10. Acceptance criteria
 
 ### UX and visual
 
@@ -742,15 +641,6 @@ text.
 - Remembered Local account continue does not ask the user to choose Cloud/Local.
 - Third-party provider continue does not display Cloud/Local selection.
 
-### Sharing
-
-- Cloud and Local resources can generate share links.
-- Cloud and Local resources can generate QR codes.
-- Local share UI uses last heartbeat only as a non-blocking hint; recipient-side open is the real availability check.
-- QR/link never include bearer tokens, service tokens, provision codes, or raw
-  session data.
-- Recipient access uses recipient identity and storage authorization checks.
-
 ### Tests
 
 - Unit/component tests for compact modal states and absence of technical terms.
@@ -759,17 +649,10 @@ text.
 - Integration tests for Local registration: provision code -> Cloud Pod create ->
   Local `/provision/pods` -> WebID `solid:storage`.
 - Integration tests for storage mismatch fail-closed.
-- Share tests verifying canonical URL generation for Cloud and Local and that
-  QR payload equals share URL.
 
-## 12. Resolved decisions
+## 11. Resolved decisions
 
 No blocking product issue remains for the login modal.
 
 1. Third-party provider catalog is intentionally not shipped in the compact
    modal; only existing configured providers and `添加供应商` appear.
-2. Share links are canonical resource URLs. QR encodes the same canonical URL
-   and must not contain credentials.
-3. Local share UI uses last heartbeat as a non-blocking hint and never blocks
-   link/QR generation on a live probe. Recipients still verify availability by
-   actually opening the canonical URL.

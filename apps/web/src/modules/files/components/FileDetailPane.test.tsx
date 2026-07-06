@@ -77,49 +77,6 @@ describe('FileDetailPane', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://pod.example/public/README.md')
   })
 
-  it('opens share preview with the canonical file uri', () => {
-    render(<FileDetailPane />)
-
-    fireEvent.click(screen.getByRole('button', { name: '分享' }))
-
-    expect(screen.getByText('分享链接')).toBeInTheDocument()
-    expect(screen.getByText('云端空间')).toBeInTheDocument()
-    expect(screen.getByText('https://pod.example/public/README.md')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '复制链接' }))
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://pod.example/public/README.md')
-  })
-
-  it('shows Local share hints for Local canonical file uri and QR payload', () => {
-    mockUseFileDetail.mockReturnValue({
-      data: {
-        id: 'https://node-0000.undefineds.co/alice/public/README.md',
-        uri: 'https://node-0000.undefineds.co/alice/public/README.md',
-        name: 'README.md',
-        kind: 'resource',
-        parentUri: 'https://node-0000.undefineds.co/alice/public/',
-        mimeType: 'text/markdown',
-        size: 1024,
-        modifiedAt: '2026-03-01T10:00:00Z',
-        headers: {},
-        previewText: '# Hello\nLinX',
-      },
-      isLoading: false,
-      error: null,
-    })
-
-    render(<FileDetailPane />)
-
-    fireEvent.click(screen.getByRole('button', { name: '分享' }))
-
-    expect(screen.getByText('本机空间')).toBeInTheDocument()
-    expect(screen.getByText('本机空间可能离线。链接仍可创建，对方打开时会再次检测。')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '二维码' }))
-    expect(screen.getByText('二维码内容')).toBeInTheDocument()
-    expect(screen.getAllByText('https://node-0000.undefineds.co/alice/public/README.md').length).toBeGreaterThan(0)
-  })
-
   it('opens original uri in new window', () => {
     render(<FileDetailPane />)
 
