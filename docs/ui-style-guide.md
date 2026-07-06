@@ -4,12 +4,12 @@
 
 LinX uses a **macOS-native visual discipline** on top of a **desktop messaging interaction structure**.
 
-The product should feel like a quiet, capable workspace: chat-first, low cognitive load, clear storage/runtime state, and restrained visual chrome. The interface borrows from familiar desktop chat products for structure, but the visual system should stay neutral, precise, and platform-native rather than decorative.
+The product should feel like a quiet, capable workspace: chat-first, low cognitive load, clear storage/runtime/AI work state, and restrained visual chrome. The interface borrows from familiar desktop chat products for structure, but the visual system should stay neutral, precise, and platform-native rather than decorative.
 
 ### Core principles
 
 1. **Neutral foundation** — app chrome, panels, cards, and lists are built from neutral surfaces and text hierarchy.
-2. **Sparse accent** — LinX purple is reserved for primary action, selection, focus, and key brand moments.
+2. **Sparse accent** — linked-data taro purple is reserved for primary action, selection, focus, source lineage, and rare brand moments.
 3. **Border-led structure** — use borders, dividers, spacing, and surface steps before shadows.
 4. **Purposeful radius** — radius follows component role; dense rows stay compact, cards/dialogs get moderate rounding, pills are used only where the shape has semantic value.
 5. **Native typography** — use system fonts and measured weight steps; avoid marketing-sized type inside workflow chrome.
@@ -19,9 +19,10 @@ The product should feel like a quiet, capable workspace: chat-first, low cogniti
 
 ### Brand accent
 
-- Primary accent: existing LinX purple token (`--primary`) for decisive actions, selected state, focus, and brand anchors.
+- Primary accent: linked-data taro purple (`#735FC4`, `hsl(252 46% 57%)`, exposed through `--primary` where possible) for decisive actions, selected state, focus, source lineage, and brand anchors.
 - Accent usage must be sparse. If many things are purple, nothing is primary.
 - Do not use colored glow or colored shadow as a default accent treatment.
+- Do not use amber/orange/cream as brand warmth. Those colors are semantic warning/pending states only.
 
 ### Neutral surfaces
 
@@ -72,6 +73,17 @@ Recommended desktop roles:
 - Desktop shell should prioritize scan speed: stable columns, predictable row heights, consistent gutters.
 - Chat/list layouts may be dense; onboarding, login, and destructive actions need more breathing room.
 - Advanced settings belong behind explicit settings surfaces, not in the primary login path.
+- Audit, keys, models, diagnostics, and recovery/configuration screens are low-frequency surfaces; keep them contextual or in settings rather than primary navigation.
+
+## Files interaction
+
+Files is a compact Pod resource browser with structured-resource tools, not a decorative card wall.
+
+- Folder/file rows use familiar desktop density, neutral selection, clear icons, and predictable secondary metadata.
+- Breadcrumbs, tree selection, file list selection, preview/detail, and `.meta` sidecar use restrained chrome and border-led separation.
+- Structured tables prioritize scan speed: compact headers, stable column widths, visible resize affordances, quiet focus, and semantic pending markers.
+- Subject peek, access control, Ingest state, pending proposals, locked vocab, and read-only state appear near the relevant row/cell/detail surface.
+- Card, Kanban, and Whiteboard projections may use larger surfaces only when the structured-resource workflow needs them.
 
 ## Shape and radius
 
@@ -178,6 +190,8 @@ Avoid:
 
 Use concise operational copy:
 
+AI wait/retry/timeout/interrupt state must be visible as UI state, not as an assistant message that looks like model content.
+
 | Avoid | Prefer |
 | --- | --- |
 | “出了点小问题” | “无法连接这个空间。” |
@@ -191,6 +205,7 @@ Rules:
 - Explain what is happening, where data goes, and what the next action is.
 - Do not soften technical failures so much that the user cannot act.
 - Keep advanced terms in settings/diagnostics unless the current flow requires them.
+- For AI/runtime failures, name the visible category when known: auth, gateway/platform, model request validation, timeout, retry exhaustion, no-content response, or local interrupt.
 
 ## Migration guidance
 
