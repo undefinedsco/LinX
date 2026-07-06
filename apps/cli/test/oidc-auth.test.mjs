@@ -85,7 +85,7 @@ test('isOidcLoginExpiredError recognizes refresh credential failures', async (t)
   assert.equal(module.isOidcTransientRemoteError(new Error('expected 200 OK, got: 502 Bad Gateway')), true)
 })
 
-test('existing browser consent reuse clears stale local OIDC state when storage cannot be refreshed', async (t) => {
+test('existing browser consent reuse preserves Solid auth files when storage cannot be refreshed', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())
 
@@ -125,8 +125,8 @@ test('existing browser consent reuse clears stale local OIDC state when storage 
   })
 
   assert.equal(reused, null)
-  assert.equal(existsSync(solidCredentialsPath(home)), false)
-  assert.equal(existsSync(solidAccountPath(home)), false)
+  assert.equal(existsSync(solidCredentialsPath(home)), true)
+  assert.equal(existsSync(solidAccountPath(home)), true)
 })
 
 test('transient OIDC refresh failures do not clear stored login state', async (t) => {
@@ -149,6 +149,13 @@ test('transient OIDC refresh failures do not clear stored login state', async (t
       oidcClientId: 'old-client',
     },
   })
+  writeFileSync(solidAccountPath(home), JSON.stringify({
+    url: 'https://id.undefineds.co/',
+    email: 'browser-consent',
+    token: 'oidc-session',
+    webId: 'https://id.undefineds.co/alice/profile/card#me',
+    createdAt: '2026-05-31T00:00:00.000Z',
+  }, null, 2))
   writeFileSync(join(storageDir, encodeURIComponent('solidClientAuthn:registeredSessions')), JSON.stringify([sessionId]))
   writeFileSync(
     join(storageDir, encodeURIComponent(`solidClientAuthenticationUser:${sessionId}`)),
@@ -174,10 +181,11 @@ test('transient OIDC refresh failures do not clear stored login state', async (t
   assert.equal(module.isOidcLoginExpiredError(error), false)
   assert.match(String(error), /temporarily unavailable/i)
   assert.equal(existsSync(solidCredentialsPath(home)), true)
+  assert.equal(existsSync(solidAccountPath(home)), true)
   assert.equal(existsSync(storageDir), true)
 })
 
-test('force restoring a DPoP OIDC session clears stale local OIDC state', async (t) => {
+test('force restoring a DPoP OIDC session clears session cache but preserves Solid auth files', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())
 
@@ -197,6 +205,13 @@ test('force restoring a DPoP OIDC session clears stale local OIDC state', async 
       oidcClientId: 'old-client',
     },
   })
+  writeFileSync(solidAccountPath(home), JSON.stringify({
+    url: 'https://id.undefineds.co/',
+    email: 'browser-consent',
+    token: 'oidc-session',
+    webId: 'https://id.undefineds.co/alice/profile/card#me',
+    createdAt: '2026-05-31T00:00:00.000Z',
+  }, null, 2))
   writeFileSync(join(storageDir, encodeURIComponent('solidClientAuthn:registeredSessions')), JSON.stringify([sessionId]))
   writeFileSync(
     join(storageDir, encodeURIComponent(`solidClientAuthenticationUser:${sessionId}`)),
@@ -231,7 +246,8 @@ test('force restoring a DPoP OIDC session clears stale local OIDC state', async 
     }, { forceRefresh: true }),
     /LinX Cloud login expired/,
   )
-  assert.equal(existsSync(solidCredentialsPath(home)), false)
+  assert.equal(existsSync(solidCredentialsPath(home)), true)
+  assert.equal(existsSync(solidAccountPath(home)), true)
   assert.equal(existsSync(storageDir), false)
 })
 

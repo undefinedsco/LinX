@@ -454,6 +454,11 @@ test('LinxPodMirror persists Pi session events into Pod resources', async (t) =>
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.runtime.backend, 'linx')
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.runtime.runtime, 'pi')
   assert.deepEqual(runtimeSessionRow.metadata.runtimeSnapshot.skills.map((skill) => skill.name), ['capture', 'symphony', 'xpod-cli'])
+  assert.deepEqual(runtimeSessionRow.metadata.runtimeSnapshot.skills.map((skill) => skill.source), [
+    'marketplace:linx-capture/skills/capture',
+    'marketplace:linx-symphony/skills/symphony',
+    'linx-cli:skills/xpod-cli',
+  ])
 })
 
 test('LinxPodMirror retries transient Pod projection failures before checkpointing', async (t) => {

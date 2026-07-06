@@ -619,7 +619,7 @@ async function ensurePiConversationRoot(
     name: PI_CAPTURE_SKILL_ID,
     displayName: 'Capture',
     enabled: true,
-    source: 'marketplace:linx-symphony/skills/capture',
+    source: 'marketplace:linx-capture/skills/capture',
     loadPolicy: 'file-backed',
     metadata: {
       file: 'SKILL.md',
@@ -633,7 +633,7 @@ async function ensurePiConversationRoot(
     name: PI_CAPTURE_SKILL_ID,
     displayName: 'Capture',
     enabled: true,
-    source: 'marketplace:linx-symphony/skills/capture',
+    source: 'marketplace:linx-capture/skills/capture',
     loadPolicy: 'file-backed',
     metadata: {
       file: 'SKILL.md',
@@ -1250,7 +1250,7 @@ function createPiRuntimeSnapshot(refs: PiResourceRefs, createdAt: Date): ReturnT
         agent: refs.agentUri,
       }),
       name: PI_CAPTURE_SKILL_ID,
-      source: 'marketplace:linx-symphony/skills/capture',
+      source: 'marketplace:linx-capture/skills/capture',
       loadPolicy: 'file-backed',
       enabled: true,
     },

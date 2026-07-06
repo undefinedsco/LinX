@@ -11,8 +11,8 @@ import {
 } from '@inrupt/solid-client-authn-node'
 import type { LinxStoredCredentials } from '@undefineds.co/models/client'
 import { isLinxOidcOAuthSecrets, resolveLinxCloudAccountBaseUrl, type LinxOidcOAuthSecrets } from '@undefineds.co/models/client'
-import { clearAccountSession, saveAccountSession } from './account-session.js'
-import { clearCredentials, loadCredentials, saveCredentials } from './credentials-store.js'
+import { saveAccountSession } from './account-session.js'
+import { loadCredentials, saveCredentials } from './credentials-store.js'
 import { clearOidcSessionStorage, createOidcSessionStorage } from './oidc-session-storage.js'
 
 const execFileAsync = promisify(execFile)
@@ -701,8 +701,10 @@ export class LinxOidcTransientRemoteError extends Error {
 }
 
 export function clearStoredOidcLoginState(): void {
-  clearAccountSession()
-  clearCredentials()
+  // Expired or stale OIDC runtime state should not make the CLI "forget" the
+  // Solid identity. Keep credentials/account files so status, whoami, and
+  // re-auth repair flows can still identify which account needs attention.
+  // Explicit logout is responsible for removing credentials/account metadata.
   clearOidcSessionStorage()
 }
 
