@@ -192,31 +192,35 @@ describe('LoginModal', () => {
     expect(screen.getByText('正在恢复登录状态...')).toBeTruthy()
   })
 
-  it('shows account view when idle with stored account', () => {
+  it('shows remembered account without offering a storage switch', () => {
     const props = createProps({
       state: 'idle',
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'https://cloud.example.com',
         issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://cloud.example.com',
+        storageProviderLabel: 'Cloud',
       },
     })
 
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('Ganlu')).toBeTruthy()
-    expect(screen.getByText('继续登录')).toBeTruthy()
-    expect(screen.queryByText('选择空间')).toBeNull()
-    expect(screen.queryByText('继续进入你上次使用的空间。如果需要换账号或换空间，再点下面的“切换账号”。')).toBeNull()
+    expect(screen.getByText('Cloud · 云端空间')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重新登录 Ganlu' })).toBeTruthy()
+    expect(screen.queryByText('数据保存位置')).toBeNull()
+    expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /本机/ })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: '继续登录' }))
+    fireEvent.click(screen.getByRole('button', { name: '重新登录 Ganlu' }))
     expect(props.onContinueStoredAccount).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: '切换账号' }))
     expect(props.onSwitchAccount).toHaveBeenCalledTimes(1)
   })
 
-  it('shows enter action only when a restorable session exists', () => {
+  it('shows continue action when a restorable remembered session exists', () => {
     const props = createProps({
       hasRestorableSession: true,
       state: 'idle',
@@ -224,12 +228,14 @@ describe('LoginModal', () => {
         displayName: 'Ganlu',
         issuerUrl: 'https://cloud.example.com',
         issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://cloud.example.com',
+        storageProviderLabel: 'Cloud',
       },
     })
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByRole('button', { name: '进入 LinX' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '继续使用 Ganlu' })).toBeTruthy()
   })
 
   it('does not expose raw internal login errors in the provider selection banner', () => {
@@ -258,45 +264,40 @@ describe('LoginModal', () => {
     expect(container.querySelector('.bg-violet-200\\/90')).toBeTruthy()
   })
 
-  it('shows provider selection when idle without stored account', () => {
+  it('shows compact first login with undefineds Cloud/Local data-space choice', () => {
     const props = createProps()
 
     const { container } = render(<LoginModal {...props} />)
 
-    expect(screen.getByText('选择空间')).toBeTruthy()
-    expect(screen.getByText('登录方式')).toBeTruthy()
-    expect(screen.getAllByText('云端空间').length).toBeGreaterThan(0)
-    expect(screen.queryByText('官方')).toBeNull()
-    expect(screen.queryByText('未配置')).toBeNull()
-    expect(screen.getAllByText('登录').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('云端空间').length).toBeGreaterThan(0)
-    expect(screen.getByText('本机空间')).toBeTruthy()
-    expect(screen.getByLabelText('使用云端账号登录，数据保存在云端。')).toBeTruthy()
-    expect(screen.getByLabelText('使用云端账号登录，数据写入这台电脑上的本地空间。')).toBeTruthy()
-    expect(screen.getByLabelText('账号和数据都留在这台电脑，不绑定云端账号。')).toBeTruthy()
-    expect(container.querySelector('[data-provider-source="cloud"] img')).toBeTruthy()
-    expect(container.querySelector('[data-provider-status-dot="primary"]')).toBeTruthy()
-    expect(container.querySelector('[data-provider-status-dot="neutral"]')).toBeTruthy()
-    expect(container.querySelector('[data-provider-source="local"] img')).toBeTruthy()
-    expect(container.querySelector('[data-provider-source="local"] [data-provider-local-marker]')).toBeTruthy()
-    expect(container.querySelector('[data-provider-source="standalone"] [data-provider-standalone-marker]')).toBeTruthy()
+    expect(screen.getByText('LinX')).toBeTruthy()
+    expect(screen.getByText('使用 undefineds 账号')).toBeTruthy()
+    expect(screen.getByText('数据保存位置')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /云端/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /本机/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '继续' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '其他账号供应商' })).toBeTruthy()
+    expect(container.querySelector('[data-login-card-size="compact"]')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: /云端空间/ }))
-    expect(props.onConnect).toHaveBeenCalledWith('cloud')
+    expect(screen.queryByText('选择空间')).toBeNull()
+    expect(screen.queryByText('登录方式')).toBeNull()
+    expect(screen.queryByText('独立空间')).toBeNull()
+    expect(screen.queryByText('IDP')).toBeNull()
+    expect(screen.queryByText('SP')).toBeNull()
+    expect(screen.queryByText('provisionCode')).toBeNull()
   })
 
-  it('exposes Standalone as its own product login entry', () => {
+  it('continues with selected undefineds data space only after clicking Continue', () => {
     const props = createProps()
+    render(<LoginModal {...props} />)
 
-    const { container } = render(<LoginModal {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /本机/ }))
+    expect(props.onConnect).not.toHaveBeenCalled()
 
-    expect(screen.getAllByText('云端空间').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('本地空间').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('独立空间').length).toBeGreaterThan(0)
-    expect(container.querySelector('[data-provider-source="standalone"] [data-provider-standalone-marker]')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '继续' }))
+    expect(props.onConnect).toHaveBeenCalledWith('local')
   })
 
-  it('shows Local startup status inline inside the same modal', () => {
+  it('shows Local startup status inline without leaving the compact login state', () => {
     const props = createProps({
       localLoginStatus: {
         active: true,
@@ -306,26 +307,27 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('正在启动本地空间…')).toBeTruthy()
-    expect(screen.getByText('选择空间')).toBeTruthy()
+    expect(screen.getByText('正在启动本机空间…')).toBeTruthy()
+    expect(screen.getByText('使用 undefineds 账号')).toBeTruthy()
   })
 
-  it('shows user-facing Local startup progress after selecting Local', () => {
+  it('shows compact Local preparation copy without raw progress detail', () => {
     const props = createProps({
       view: 'local',
+      localProviderSource: 'local',
       localOnboarding: {
         state: 'starting',
-        spaceKind: 'standalone',
+        spaceKind: 'local',
         localUrl: 'http://localhost:5737/',
-        baseUrl: 'http://localhost:5737/',
-        publicUrl: null,
+        baseUrl: 'https://node-0000.undefineds.co/',
+        publicUrl: 'https://node-0000.undefineds.co/',
         tunnel: null,
         connectivity: null,
         capabilities: null,
-        cloudIdentityUrl: null,
-        provisionCode: null,
-        provisionUrl: null,
-        nodeId: null,
+        cloudIdentityUrl: 'https://id.undefineds.co',
+        provisionCode: 'pc-123',
+        provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+        nodeId: 'node-123',
         message: '安装 xpod runtime 包与生产依赖',
         progress: {
           phase: 'install-bun',
@@ -333,18 +335,20 @@ describe('LoginModal', () => {
           detail: 'bun install · @undefineds.co/xpod@0.3.4',
         },
         errorCode: null,
-        canRetry: false,
-        canOpenSettings: false,
+        canRetry: true,
+        canOpenSettings: true,
       },
     })
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('安装 xpod runtime 包与生产依赖')).toBeTruthy()
-    expect(screen.getByText('bun install · @undefineds.co/xpod@0.3.4')).toBeTruthy()
+    expect(screen.getByText('正在准备本机空间')).toBeTruthy()
+    expect(screen.getByText('正在启动本机服务')).toBeTruthy()
+    expect(screen.queryByText('bun install · @undefineds.co/xpod@0.3.4')).toBeNull()
+    expect(screen.queryByText('安装 xpod runtime 包与生产依赖')).toBeNull()
   })
 
-  it('hides raw Local startup diagnostics in the Local view', () => {
+  it('shows compact Local unavailable recovery without Cloud fallback or raw diagnostics', () => {
     const props = createProps({
       view: 'local',
       localProviderSource: 'local',
@@ -360,8 +364,8 @@ describe('LoginModal', () => {
         cloudIdentityUrl: 'https://id.undefineds.co',
         provisionCode: null,
         provisionUrl: null,
-        nodeId: null,
-        message: "Cannot find module 'jsonld'\nRequire stack:\n- /Users/ganlu/Library/Application Support/@linx/desktop/xpod.js",
+        nodeId: 'node-123',
+        message: 'Cannot find module jsonld',
         errorCode: 'LOCAL_START_FAILED',
         canRetry: true,
         canOpenSettings: true,
@@ -370,26 +374,57 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')).toBeTruthy()
+    expect(screen.getByText('本机空间暂时不可用')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '打开设置' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '切换账号' })).toBeTruthy()
+    expect(screen.queryByText(/使用云端/)).toBeNull()
     expect(screen.queryByText(/Cannot find module/)).toBeNull()
-    expect(screen.queryByText(/Application Support/)).toBeNull()
   })
 
-  it('marks remembered Local accounts on the avatar', () => {
+  it('shows remembered Local account with avatar and binding label without storage switch', () => {
     const props = createProps({
       state: 'idle',
       storedAccount: {
-        displayName: 'Ganlu',
+        displayName: 'Alice',
         issuerUrl: 'https://id.undefineds.co',
-        issuerLabel: 'Cloud',
+        issuerLabel: 'undefineds',
         storageProviderUrl: 'https://node-0000.undefineds.co/',
         storageProviderLabel: 'Local',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
       },
     })
 
     const { container } = render(<LoginModal {...props} />)
 
+    expect(screen.getByText('Alice')).toBeTruthy()
+    expect(screen.getByText('undefineds · 本机空间')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重新登录 Alice' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '切换账号' })).toBeTruthy()
+    expect(screen.queryByText('数据保存位置')).toBeNull()
+    expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /本机/ })).toBeNull()
     expect(container.querySelector('[data-account-local-marker]')).toBeTruthy()
+  })
+
+  it('shows remembered Cloud account with cloud binding label', () => {
+    const props = createProps({
+      hasRestorableSession: true,
+      state: 'idle',
+      storedAccount: {
+        displayName: 'Bob',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'undefineds',
+        storageProviderUrl: 'https://cloud.undefineds.co/',
+        storageProviderLabel: 'Cloud',
+        webId: 'https://id.undefineds.co/bob/profile/card#me',
+      },
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('undefineds · 云端空间')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '继续使用 Bob' })).toBeTruthy()
   })
 
   it('marks remembered Standalone accounts with the standalone avatar badge', () => {
@@ -442,74 +477,51 @@ describe('LoginModal', () => {
     expect(container.querySelector('[data-account-local-marker]')).toBeNull()
   })
 
-  it('shows custom providers in a separate section', () => {
+  it('does not ship a default third-party provider catalog', () => {
+    render(<LoginModal {...createProps()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '其他账号供应商' }))
+
+    expect(screen.getByText('其他账号供应商')).toBeTruthy()
+    expect(screen.getByText('undefineds')).toBeTruthy()
+    expect(screen.getByText('支持云端空间和本机空间')).toBeTruthy()
+    expect(screen.getByText('+ 添加供应商')).toBeTruthy()
+    expect(screen.queryByText('Google')).toBeNull()
+    expect(screen.queryByText('GitHub')).toBeNull()
+    expect(screen.queryByText('企业 SSO')).toBeNull()
+  })
+
+  it('lists only configured third-party providers', () => {
     const props = createProps({
       providers: [
         ...createProps().providers,
         {
-          id: 'custom',
-          url: 'https://pod.example.com',
-          label: 'pod.example.com',
+          id: 'acme-sso',
+          url: 'https://sso.acme.example',
+          label: 'Acme SSO',
           source: 'custom',
           oidcProvider: {
             kind: 'custom',
-            url: 'https://pod.example.com',
-            label: 'pod.example.com',
+            url: 'https://sso.acme.example',
+            label: 'Acme SSO',
           },
           storageProvider: {
             kind: 'custom',
-            url: 'https://pod.example.com',
-            label: 'pod.example.com',
+            url: 'https://sso.acme.example',
+            label: 'Acme SSO',
           },
         },
       ],
     })
-
     render(<LoginModal {...props} />)
 
-    expect(screen.getAllByText('其他账号服务').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('pod.example.com')).toHaveLength(2)
-  })
+    fireEvent.click(screen.getByRole('button', { name: '其他账号供应商' }))
+    fireEvent.click(screen.getByRole('button', { name: /Acme SSO/ }))
 
-  it('shows Local provider subtitle from onboarding state', () => {
-    const props = createProps({
-      providers: [
-        {
-          id: 'local',
-          url: 'http://localhost:5737',
-          label: '本地空间',
-          source: 'local',
-          oidcProvider: {
-            kind: 'cloud',
-            url: 'https://id.undefineds.co',
-            label: 'Cloud',
-          },
-          storageProvider: {
-            kind: 'local',
-            url: 'http://localhost:5737',
-            label: 'Local',
-          },
-          runtime: {
-            kind: 'local-pod',
-            status: 'stopped',
-            canStart: true,
-            canCreate: false,
-            onboarding: {
-              state: 'repair_required',
-              spaceKind: 'local',
-              message: '要让其他设备接入 Local，首次启动前需要先准备固定公网地址。',
-            },
-          },
-        },
-      ],
-    })
-
-    render(<LoginModal {...props} />)
-
-    expect(screen.getAllByText('本地空间').length).toBeGreaterThan(0)
-    expect(screen.getByLabelText('使用云端账号登录，数据写入这台电脑上的本地空间。')).toBeTruthy()
-    expect(screen.queryByText('需设置')).toBeNull()
-    expect(screen.getByText('设置')).toBeTruthy()
+    expect(screen.getByText('使用 Acme SSO 登录')).toBeTruthy()
+    expect(screen.getByText('此供应商不支持本机空间选择')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /本机/ })).toBeNull()
   })
 
   it('waits for an explicit click before continuing from the ready Local view', () => {
@@ -597,7 +609,7 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('本地空间 已准备好')).toBeTruthy()
+    expect(screen.getByText('本机空间 已准备好')).toBeTruthy()
     expect(screen.getByRole('button', { name: '继续登录' })).toBeTruthy()
     expect(screen.getByText('本机可以访问')).toBeTruthy()
     expect(screen.getByText('公网可以访问')).toBeTruthy()
@@ -681,7 +693,7 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('正在连接')).toBeTruthy()
-    expect(screen.getByText('本地空间')).toBeTruthy()
+    expect(screen.getByText('本机空间')).toBeTruthy()
     expect(screen.getByText('node-0000.undefineds.co')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '换一个空间' }))

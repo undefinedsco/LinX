@@ -1,6 +1,6 @@
 # UI 组件分层架构
 
-LinX 采用 **纯 UI / 逻辑 UI 分层**设计，明确数据流向。
+LinX 采用 **纯 UI / 逻辑 UI 分层**设计，明确数据流向。组件层只定义最小边界；模块级 domain/query/adapter 分层由对应 feature 文档和 architecture tests 约束。
 
 ## 架构图
 
@@ -8,11 +8,11 @@ LinX 采用 **纯 UI / 逻辑 UI 分层**设计，明确数据流向。
 ┌─────────────────────────────────────────┐
 │  纯 UI 组件 (Presentational)            │
 │  - 只负责渲染                            │
-│  - 只和 Zustand 交互（读取 UI 状态）      │
 │  - 通过 props 接收数据和回调              │
+│  - 优先不读取模块 store                  │
 │  - 不知道 Collection 存在               │
 └─────────────────────────────────────────┘
-                    ↑ props / zustand store
+                    ↑ props / callbacks
 ┌─────────────────────────────────────────┐
 │  逻辑 UI 组件 (Container)               │
 │  - 操作 Collections（CRUD + 业务逻辑）   │
@@ -31,8 +31,10 @@ LinX 采用 **纯 UI / 逻辑 UI 分层**设计，明确数据流向。
 
 | 组件类型 | 职责 | 可以访问 | 示例 |
 |---------|------|---------|------|
-| **纯 UI** | 渲染、样式、动画 | props, zustand (只读) | ContactCard, MessageBubble, Avatar |
-| **逻辑 UI** | 数据获取、操作、状态同步 | collections, zustand, 组合纯 UI | ContactListPane, ChatDetailPane |
+| **纯 UI** | 渲染、样式、动画、局部开合状态 | props, callbacks, shared visual primitives | ContactCard, MessageBubble, Avatar |
+| **逻辑 UI** | 数据获取、操作、状态同步 | query hooks, collections, zustand UI 状态, domain 函数, 组合纯 UI | ContactListPane, ChatDetailPane |
+
+纯 UI 组件默认不得读取模块 store。确实需要跨组件 UI 状态时，应先判断它是否已经是 feature container；只有 app-shell 级视觉状态可以例外。
 
 ## 代码示例
 
@@ -115,3 +117,5 @@ function ContactListPane() {
 |---------|---------|
 | **纯 UI** | 快照测试、Storybook、视觉回归 |
 | **逻辑 UI** | 集成测试、Mock Collection |
+
+涉及业务模块时，还需要 architecture test 保护 import 边界：纯 UI 不 import query/store/data，domain 不 import React/data，feature 不直接 import Pod adapter。

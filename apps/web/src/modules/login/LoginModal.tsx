@@ -1,15 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Loader2, Plus, X, AlertCircle, ChevronRight, Cloud, HardDrive, Globe2, ArrowLeft, Link2, Info, type LucideIcon } from 'lucide-react'
+import { Loader2, Plus, X, AlertCircle, ChevronRight, HardDrive, Globe2, ArrowLeft, Link2 } from 'lucide-react'
 import { isLocalAccessHostname } from '@/lib/local-access-url'
 import { cn } from '@/lib/utils'
 import type { LoginModalProps, LoginProviderOption } from './types'
 import linxLogoUrl from '@/assets/linx-logo.png'
 import {
-  getProviderActionLabel,
   getProviderDisplayLabel,
-  getProviderInfoText,
-  getProviderStatusBadge,
-  getProviderSubtitle,
 } from './presentation'
 import { resolveLoginProviderSource } from './provider-model'
 import { LoginCardShell } from './LoginCardShell'
@@ -45,6 +41,7 @@ export function LoginModal(props: LoginModalProps) {
           error={props.error}
           onBack={props.onBackFromLocal}
           onContinue={props.onContinueLocalLogin}
+          onSwitchAccount={props.onSwitchAccount}
           onTestConnectivity={props.onTestLocalConnectivity}
           onClearError={props.onClearError}
         />
@@ -186,7 +183,10 @@ function AccountView({
           size="lg"
           spaceMarker={resolveStoredAccountSpaceMarker(storedAccount)}
         />
-        <p className="text-base font-semibold text-foreground">{storedAccount.displayName}</p>
+        <div className="space-y-1 text-center">
+          <p className="text-base font-semibold text-foreground">{storedAccount.displayName}</p>
+          <p className="text-xs text-muted-foreground">{getRememberedAccountBindingLabel(storedAccount)}</p>
+        </div>
       </div>
 
       <ErrorBanner error={error} onClearError={onClearError} />
@@ -196,7 +196,7 @@ function AccountView({
           onClick={onContinueStoredAccount}
           className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
         >
-          {hasRestorableSession ? '进入 LinX' : '继续登录'}
+          {hasRestorableSession ? `继续使用 ${storedAccount.displayName}` : `重新登录 ${storedAccount.displayName}`}
         </button>
         <button
           onClick={onSwitchAccount}
@@ -228,97 +228,219 @@ function ProviderSelectionView({
   onAddProvider: (url: string, label?: string) => void
   onClearError: () => void
 }) {
+  const [view, setView] = useState<'main' | 'providers'>('main')
+  const [selectedSpace, setSelectedSpace] = useState<'cloud' | 'local'>('cloud')
+  const cloudProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'cloud')
+  const localProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'local')
+  const selectedProvider = selectedSpace === 'local' ? (localProvider ?? cloudProvider) : cloudProvider
+
+  if (view === 'providers') {
+    return (
+      <ConfiguredProviderList
+        providers={providers}
+        onConnect={onConnect}
+        onAddProvider={onAddProvider}
+        onBack={() => setView('main')}
+      />
+    )
+  }
+
+  return (
+    <div className="flex-1 flex flex-col h-full px-7 py-7 text-center">
+      <div className="flex-1 flex flex-col items-center justify-center gap-5">
+        <div className="h-14 w-14 overflow-hidden rounded-[18%] border border-violet-400/90 bg-violet-200/90 p-0.5 shadow-sm">
+          <img src={linxLogoUrl} alt="LinX" className="h-full w-full scale-[1.24] object-cover" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-foreground">LinX</h2>
+          <p className="text-sm text-muted-foreground">使用 undefineds 账号</p>
+        </div>
+
+        <div className="w-full space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">数据保存位置</p>
+          <div className="grid grid-cols-2 rounded-xl border border-border/70 bg-muted/30 p-1">
+            <button
+              type="button"
+              onClick={() => setSelectedSpace('cloud')}
+              className={segmentClass(selectedSpace === 'cloud')}
+            >
+              云端
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSpace('local')}
+              className={segmentClass(selectedSpace === 'local')}
+            >
+              本机
+            </button>
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground">
+            {selectedSpace === 'local' ? '数据保存在这台电脑。' : '数据同步到云端。'}
+          </p>
+        </div>
+
+        {localLoginStatus.active ? (
+          <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            <p className="text-xs text-muted-foreground">正在启动本机空间…</p>
+          </div>
+        ) : null}
+      </div>
+
+      <ErrorBanner error={error} onClearError={onClearError} />
+
+      <div className="shrink-0 space-y-2">
+        <button
+          type="button"
+          disabled={!selectedProvider}
+          onClick={() => selectedProvider && onConnect(selectedProvider.id)}
+          className="w-full h-11 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          继续
+        </button>
+        <button
+          type="button"
+          onClick={() => setView('providers')}
+          className="w-full h-9 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+        >
+          其他账号供应商
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ConfiguredProviderList({
+  providers,
+  onConnect,
+  onAddProvider,
+  onBack,
+}: {
+  providers: LoginProviderOption[]
+  onConnect: (providerKey: string) => void
+  onAddProvider: (url: string, label?: string) => void
+  onBack: () => void
+}) {
+  const [selectedProvider, setSelectedProvider] = useState<LoginProviderOption | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [customUrl, setCustomUrl] = useState('')
-  const primaryProviders = providers.filter((provider) => resolveLoginProviderSource(provider) !== 'custom')
-  const customProviders = providers.filter((provider) => resolveLoginProviderSource(provider) === 'custom')
+  const configuredProviders = providers.filter((provider) => resolveLoginProviderSource(provider) === 'custom')
 
   const handleAdd = () => {
     if (!customUrl.trim()) return
     try {
-      new URL(customUrl.startsWith('http') ? customUrl : `https://${customUrl}`)
       const normalized = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`
+      new URL(normalized)
       onAddProvider(normalized)
       onConnect(normalized)
       setCustomUrl('')
       setIsAdding(false)
     } catch {
-      // invalid url
+      // Keep the compact modal quiet; validation UX belongs to the provider settings surface.
     }
   }
 
+  if (selectedProvider) {
+    return (
+      <div className="flex-1 flex flex-col h-full px-7 py-7 text-center">
+        <button
+          type="button"
+          onClick={() => setSelectedProvider(null)}
+          className="-ml-2 inline-flex h-8 w-fit items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          更换供应商
+        </button>
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/60 bg-muted/30">
+            <Globe2 className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold text-foreground">使用 {selectedProvider.label} 登录</h2>
+            <p className="text-sm text-muted-foreground">此供应商不支持本机空间选择</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onConnect(selectedProvider.id)}
+          className="w-full h-11 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+        >
+          继续
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex-1 flex flex-col h-full">
-      <div className="px-5 pt-7 pb-4 shrink-0">
-        <h2 className="text-lg font-semibold text-foreground text-center">选择空间</h2>
+    <div className="flex-1 flex flex-col h-full px-5 py-5">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="-ml-2 inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+          aria-label="返回 undefineds 登录"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          返回
+        </button>
       </div>
-
-      <ErrorBanner error={error} onClearError={onClearError} />
-
-      {localLoginStatus.active ? (
-        <div className="mx-4 mb-3 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-          <p className="text-xs text-muted-foreground">
-            {formatLocalStatusMessageForUser(localLoginStatus.message, '正在启动本地空间…')}
-          </p>
-        </div>
-      ) : null}
-
-      <div className="flex-1 px-4 min-h-0 overflow-y-auto">
-        <div className="space-y-4 pb-1">
-          <ProviderSection title="登录方式">
-            <div className="space-y-2">
-              {primaryProviders.map((provider) => (
-                <ProviderItem
-                  key={provider.id}
-                  provider={provider}
-                  variant="primary"
-                  onSelect={() => onConnect(provider.id)}
-                />
-              ))}
+      <h2 className="mt-3 text-base font-semibold text-foreground">其他账号供应商</h2>
+      <div className="mt-4 flex-1 space-y-2 overflow-y-auto">
+        <button
+          type="button"
+          onClick={onBack}
+          className="w-full rounded-xl border border-border/60 bg-muted/20 px-3 py-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">undefineds</p>
+              <p className="mt-1 text-xs text-muted-foreground">支持云端空间和本机空间</p>
             </div>
-          </ProviderSection>
-
-          {customProviders.length > 0 ? (
-            <ProviderSection title="其他账号服务">
-              <div className="bg-muted/40 rounded-xl overflow-hidden divide-y divide-border/40">
-                {customProviders.map((provider) => (
-                  <ProviderItem
-                    key={provider.id}
-                    provider={provider}
-                    variant="secondary"
-                    onSelect={() => onConnect(provider.id)}
-                  />
-                ))}
+            <ChevronRight className="h-4 w-4 text-muted-foreground/60" aria-hidden="true" />
+          </div>
+        </button>
+        {configuredProviders.map((provider) => (
+          <button
+            key={provider.id}
+            type="button"
+            onClick={() => setSelectedProvider(provider)}
+            className="w-full rounded-xl border border-border/60 bg-muted/20 px-3 py-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{getProviderDisplayLabel(provider)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">已配置</p>
               </div>
-            </ProviderSection>
-          ) : null}
-        </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/60" aria-hidden="true" />
+            </div>
+          </button>
+        ))}
       </div>
-
-      <div className="px-4 py-4 shrink-0 mt-auto">
+      <div className="mt-4 space-y-2">
         {isAdding ? (
-          <div className="flex flex-col gap-2">
+          <div className="space-y-2">
             <input
               autoFocus
               type="url"
               placeholder="https://pod.example.com"
               value={customUrl}
-              onChange={(e) => setCustomUrl(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+              onChange={(event) => setCustomUrl(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
               className="w-full h-9 px-3 text-sm border border-border/60 rounded-lg bg-background focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
             />
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
+                type="button"
                 onClick={handleAdd}
                 disabled={!customUrl.trim()}
-                className="flex-1 h-8 text-xs font-medium text-primary-foreground bg-primary rounded-lg disabled:opacity-50 cursor-pointer hover:bg-primary/90 transition-colors"
+                className="h-8 rounded-lg bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50"
               >
                 连接
               </button>
               <button
+                type="button"
                 onClick={() => { setIsAdding(false); setCustomUrl('') }}
-                className="px-3 h-8 text-xs text-muted-foreground hover:text-foreground cursor-pointer border border-border/50 rounded-lg"
+                className="h-8 rounded-lg border border-border/50 text-xs text-muted-foreground hover:text-foreground"
               >
                 取消
               </button>
@@ -326,36 +448,26 @@ function ProviderSelectionView({
           </div>
         ) : (
           <button
+            type="button"
             onClick={() => setIsAdding(true)}
             className="w-full h-9 flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            连接其他账号服务
+            + 添加供应商
           </button>
         )}
       </div>
-
-      <Footer />
     </div>
   )
 }
 
-function ProviderSection({
-  title,
-  children,
-}: {
-  title: string
-  children: ReactNode
-}) {
-  return (
-    <section className="space-y-2">
-      <p className="px-1 text-[11px] font-medium tracking-wide text-muted-foreground/70">
-        {title}
-      </p>
-      {children}
-    </section>
+function segmentClass(selected: boolean): string {
+  return cn(
+    'h-9 rounded-lg text-sm font-medium transition-colors cursor-pointer',
+    selected ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
   )
 }
+
 
 // ── ConnectingView ────────────────────────────────────────────────────
 
@@ -419,6 +531,7 @@ function LocalOnboardingView({
   error,
   onBack,
   onContinue,
+  onSwitchAccount,
   onTestConnectivity,
   onClearError,
 }: {
@@ -427,13 +540,14 @@ function LocalOnboardingView({
   error: string | null
   onBack: () => void
   onContinue: () => void
+  onSwitchAccount: () => void
   onTestConnectivity: () => Promise<void> | void
   onClearError: () => void
 }) {
   const snapshot = localOnboarding
   const autoProbeKeyRef = useRef<string | null>(null)
   const isStandalone = localProviderSource === 'standalone'
-  const productLabel = isStandalone ? '独立空间' : '本地空间'
+  const productLabel = isStandalone ? '独立空间' : '本机空间'
   const onboardingState = snapshot?.state ?? 'idle'
   const isReady = onboardingState === 'ready'
   const connectivity = !isStandalone ? snapshot?.connectivity : null
@@ -446,9 +560,7 @@ function LocalOnboardingView({
   const isRepair = onboardingState === 'repair_required'
   const isError = onboardingState === 'error'
   const isStarting = onboardingState === 'starting' || onboardingState === 'checking'
-  const progress = formatLocalStartupProgressForUser(snapshot?.progress, productLabel, snapshot?.message)
-  const progressLabel = progress.label
-  const progressDetail = progress.detail
+  const progressDetail = getLocalPreparationDetail(onboardingState, snapshot?.progress?.phase)
   const localUrl = snapshot?.localUrl ?? snapshot?.baseUrl ?? null
 
   useEffect(() => {
@@ -503,27 +615,21 @@ function LocalOnboardingView({
           {(isPendingStart || isStarting) && (
             <div className="flex flex-col items-center gap-3 text-center">
               <Loader2 className="w-6 h-6 text-primary animate-spin" />
-              <p className="text-sm font-medium text-foreground">
-                {isPendingStart ? `正在启动${productLabel}…` : progressLabel}
-              </p>
-              {!isPendingStart && progressDetail ? (
-                <p className="max-w-[18rem] break-all text-[11px] leading-5 text-muted-foreground">
-                  {progressDetail}
-                </p>
-              ) : null}
+              <p className="text-sm font-medium text-foreground">正在准备{productLabel}</p>
+              <p className="max-w-[18rem] text-xs leading-5 text-muted-foreground">{progressDetail}</p>
             </div>
           )}
 
           {isReady && (
             <div className="flex flex-col gap-3">
               <p className="text-sm font-medium text-foreground text-center">
-                {isLocalNetworkBlocked ? '本地空间入口异常' : `${productLabel} 已准备好`}
+                {isLocalNetworkBlocked ? '本机空间入口异常' : `${productLabel} 已准备好`}
               </p>
               {isLocalNetworkBlocked ? (
                 <p className="text-xs text-muted-foreground leading-relaxed text-center">
                   {formatLocalStatusMessageForUser(
                     connectivity?.message,
-                    '本机入口不可达。请确认本地空间已启动后重试。',
+                    '本机入口不可达。请确认本机空间已启动后重试。',
                   )}
                 </p>
               ) : null}
@@ -542,36 +648,17 @@ function LocalOnboardingView({
             </div>
           )}
 
-          {isRepair && (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm text-foreground leading-relaxed">
-                {isStandalone ? '独立空间启动失败' : '还差一步完成本地空间绑定'}
-              </p>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {formatLocalStatusMessageForUser(
-                  snapshot?.message,
-                  isStandalone ? '请检查独立空间启动状态。' : '需要完成额外设置才能从其他设备访问。',
-                )}
-              </p>
-              <button
-                onClick={() => {
-                  const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
-                  desktopApi?.app?.openConfigWindow?.()
-                }}
-                className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
-              >
-                {isStandalone ? '打开设置' : '去完成本地空间设置'}
-              </button>
-            </div>
-          )}
-
-          {isError && (
-            <div className="flex flex-col items-center gap-3 text-center">
-              <AlertCircle className="w-6 h-6 text-destructive" />
-              <p className="text-sm text-destructive">
-                {formatLocalStatusMessageForUser(snapshot?.message, `${productLabel} 启动失败`)}
-              </p>
-            </div>
+          {(isRepair || isError) && (
+            <LocalUnavailableRecovery
+              canOpenSettings={Boolean(snapshot?.canOpenSettings)}
+              canRetry={Boolean(snapshot?.canRetry)}
+              onRetry={onContinue}
+              onOpenSettings={() => {
+                const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
+                desktopApi?.app?.openConfigWindow?.()
+              }}
+              onSwitchAccount={onSwitchAccount}
+            />
           )}
         </div>
       </div>
@@ -601,6 +688,57 @@ function RouteInfoCard({
       <p className="mt-2 break-all font-mono text-[11px] leading-5 text-foreground">
         {value ?? '正在获取入口'}
       </p>
+    </div>
+  )
+}
+
+function LocalUnavailableRecovery({
+  canRetry,
+  canOpenSettings,
+  onRetry,
+  onOpenSettings,
+  onSwitchAccount,
+}: {
+  canRetry: boolean
+  canOpenSettings: boolean
+  onRetry: () => void
+  onOpenSettings: () => void
+  onSwitchAccount: () => void
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 text-center">
+      <AlertCircle className="w-6 h-6 text-destructive" />
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-foreground">本机空间暂时不可用</p>
+        <p className="max-w-[18rem] text-xs leading-5 text-muted-foreground">
+          请重试或打开设置检查本机服务。不会自动切换到云端空间。
+        </p>
+      </div>
+      <div className="w-full space-y-2">
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={!canRetry}
+          className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          重试
+        </button>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          disabled={!canOpenSettings}
+          className="w-full h-10 rounded-xl border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          打开设置
+        </button>
+        <button
+          type="button"
+          onClick={onSwitchAccount}
+          className="w-full h-9 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+        >
+          切换账号
+        </button>
+      </div>
     </div>
   )
 }
@@ -696,263 +834,22 @@ function SpaceMarker({ kind, size }: { kind: SpaceMarkerKind; size: 'md' | 'lg' 
   )
 }
 
-function ProviderItem({
-  provider,
-  variant,
-  onSelect,
-}: {
-  provider: LoginProviderOption
-  variant: 'primary' | 'secondary'
-  onSelect: () => void
-}) {
-  const [imgError, setImgError] = useState(false)
-  const label = getProviderDisplayLabel(provider)
-  const subtitle = getProviderSubtitle(provider, false)
-  const infoText = getProviderInfoText(provider, false)
-  const statusBadge = getProviderStatusBadge(provider)
-  const actionLabel = getProviderActionLabel(provider)
-  const isPrimary = variant === 'primary'
-  const logoUrl = resolveProviderLogoUrl(provider)
-  const isProductLogo = isLinxLogoUrl(logoUrl)
-  const productLogoInnerScale = 'scale-[1.24]'
-  const source = resolveLoginProviderSource(provider)
-  const spaceMarker = resolveProviderSpaceMarker(provider)
-
-  return (
-    <button
-      type="button"
-      className={cn(
-        'group flex w-full items-center gap-3 text-left transition-colors',
-        isPrimary
-          ? 'rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 hover:bg-muted/50'
-          : 'px-3 py-2.5 hover:bg-muted/80',
-      )}
-      onClick={onSelect}
-    >
-      <div
-        data-provider-source={source}
-        className={cn(
-          'relative rounded-[22%] flex items-center justify-center shrink-0 overflow-hidden border border-border/60',
-          isProductLogo && 'border-violet-400/90 bg-violet-200/90 p-0.5',
-          !isProductLogo && 'bg-background',
-          isPrimary ? 'h-11 w-11' : 'h-9 w-9',
-        )}
-      >
-        {logoUrl && !imgError ? (
-          <img
-            src={logoUrl}
-            alt=""
-            className={cn(
-              'w-full h-full',
-              isProductLogo ? `object-cover ${productLogoInnerScale}` : 'object-cover',
-            )}
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <ProviderIcon provider={provider} />
-        )}
-        {spaceMarker ? (
-          <span
-            data-provider-space-marker={spaceMarker.kind}
-            data-provider-local-marker={spaceMarker.kind === 'local' ? true : undefined}
-            data-provider-standalone-marker={spaceMarker.kind === 'standalone' ? true : undefined}
-            className={cn(
-              'absolute bottom-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-[6px] border border-white/80 text-white shadow-sm dark:border-zinc-900/80',
-              spaceMarker.kind === 'standalone' ? 'bg-emerald-500' : 'bg-sky-500',
-            )}
-          >
-            <spaceMarker.Icon className="h-2.5 w-2.5" aria-hidden="true" />
-          </span>
-        ) : null}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">{label}</p>
-        <div className={cn('mt-0.5 flex min-w-0 items-center gap-1.5 text-muted-foreground/80', isPrimary ? 'text-xs' : 'text-[11px]')}>
-          <span className="truncate">{subtitle}</span>
-          <span
-            aria-label={infoText}
-            title={infoText}
-            className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-muted-foreground/60"
-          >
-            <Info className="h-3 w-3" aria-hidden="true" />
-          </span>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {statusBadge ? <ProviderStatusBadge badge={statusBadge} /> : null}
-        <span className="text-[11px] font-medium text-muted-foreground/70">
-          {actionLabel}
-        </span>
-        <ChevronRight className="h-4 w-4 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
-      </div>
-    </button>
-  )
-}
-
-function ProviderIcon({ provider }: { provider: LoginProviderOption }) {
-  const source = resolveLoginProviderSource(provider)
-
-  if (source === 'cloud') {
-    return <Cloud className="h-4 w-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
-  }
-
-  if (source === 'local') {
-    return <Link2 className="h-4 w-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
-  }
-
-  if (source === 'standalone') {
-    return <HardDrive className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-  }
-
-  return <Globe2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-}
-
-function ProviderStatusBadge({
-  badge,
-}: {
-  badge: NonNullable<ReturnType<typeof getProviderStatusBadge>>
-}) {
-  return (
-    <span
-      aria-label={badge.label}
-      title={badge.label}
-      className={cn(
-        'inline-flex h-2.5 w-2.5 items-center justify-center rounded-full',
-        badge.tone === 'primary' && 'border-primary/20 bg-primary/10 text-primary',
-        badge.tone === 'success' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-        badge.tone === 'warning' && 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-        badge.tone === 'danger' && 'border-destructive/20 bg-destructive/10 text-destructive',
-        badge.tone === 'neutral' && 'bg-muted text-muted-foreground',
-      )}
-    >
-      <span
-        data-provider-status-dot={badge.tone}
-        aria-hidden="true"
-        className={cn(
-          'h-1.5 w-1.5 rounded-full',
-          badge.tone === 'primary' && 'bg-primary',
-          badge.tone === 'success' && 'bg-emerald-500',
-          badge.tone === 'warning' && 'bg-amber-500',
-          badge.tone === 'danger' && 'bg-destructive',
-          badge.tone === 'neutral' && 'bg-muted-foreground/60',
-        )}
-      />
-    </span>
-  )
-}
-
-function formatLocalStartupProgressForUser(
-  progress: NonNullable<LoginModalProps['localOnboarding']>['progress'] | null | undefined,
-  productLabel: string,
-  message: string | null | undefined,
-): { label: string; detail: string | null } {
-  switch (progress?.phase) {
-    case 'source':
-      return {
-        label: '定位 xpod runtime',
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-    case 'version':
-      return {
-        label: '确定 xpod runtime 版本',
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-    case 'check-bun':
-      return {
-        label: formatLocalProgressLabelForUser(progress.label, '检查 Bun 运行环境'),
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-    case 'check-node':
-      return {
-        label: formatLocalProgressLabelForUser(progress.label, '检查 Node/npm 运行环境'),
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-    case 'prepare-runtime-cache':
-      return {
-        label: formatLocalProgressLabelForUser(progress.label, '准备 xpod runtime 缓存目录'),
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-    case 'verify-runtime':
-      return {
-        label: formatLocalProgressLabelForUser(progress.label, '校验 xpod runtime'),
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-    case 'runtime-ready':
-      return {
-        label: formatLocalProgressLabelForUser(progress.label, 'xpod runtime 已就绪'),
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-    case 'embedded':
-      return {
-        label: formatLocalProgressLabelForUser(progress.label, '使用内置 xpod runtime'),
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-    case 'resolve-runtime':
-      return {
-        label: formatLocalProgressLabelForUser(progress.label, `检查 ${productLabel} 运行环境`),
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-    case 'install-bun':
-    case 'install-npm':
-      return {
-        label: formatLocalProgressLabelForUser(progress.label, '安装 xpod runtime'),
-        detail: progress.detail
-          ? formatLocalProgressDetailForUser(progress.detail)
-          : '首次启动需要安装 runtime 包与生产依赖，完成后会自动继续。',
-      }
-    case 'register-cloud':
-      return {
-        label: formatLocalProgressLabelForUser(progress.label, '准备账号绑定'),
-        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : '正在为当前设备准备本地登录入口。',
-      }
-    case 'prepare-data':
-    case 'write-env':
-      return { label: `准备 ${productLabel} 本地数据`, detail: null }
-    case 'spawn':
-      return { label: `正在启动 ${productLabel}`, detail: null }
-    case 'wait-ready':
-      return {
-        label: `等待 ${productLabel} 服务就绪`,
-        detail: '这一步可能需要几十秒。',
-      }
-    case 'ready':
-      return { label: `${productLabel} 已准备好`, detail: null }
-    default:
-      return {
-        label: formatLocalProgressLabelForUser(progress?.label ?? message, `正在启动 ${productLabel}…`),
-        detail: progress?.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
-      }
-  }
+function getLocalPreparationDetail(
+  state: NonNullable<LoginModalProps['localOnboarding']>['state'],
+  progressPhase: string | undefined,
+): string {
+  if (state === 'checking') return '正在验证本机空间'
+  if (progressPhase === 'register-cloud') return '正在准备登录授权'
+  return '正在启动本机服务'
 }
 
 function formatLocalStatusMessageForUser(value: string | null | undefined, fallback: string): string {
   return formatLoginErrorForUser(value, fallback)
 }
 
-function formatLocalProgressLabelForUser(value: string | null | undefined, fallback: string): string {
-  return formatLocalProgressDetailForUser(value) ?? fallback
-}
-
-function formatLocalProgressDetailForUser(value: string | null | undefined): string | null {
-  if (!value) return null
-  const message = value.trim()
-  if (!message) return null
-  if (message.length > 180) return null
-  if (/(?:\/Users\/|\\Users\\|Application Support|node_modules|\.tsx?:\d+|\.jsx?:\d+|Require stack|at\s+\w+[\w.]*\s*\()/i.test(message)) {
-    return null
-  }
-  if (/(?:https?:\/\/|file:\/\/|localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i.test(message)) {
-    return null
-  }
-  if (/\b(provisionCode|providerCode|client_secret|client_id|access_token|refresh_token|nodeToken|serviceToken)\b/i.test(message)) {
-    return null
-  }
-  return message
-}
-
 function formatProviderLabelForUser(value: string | undefined): string {
   if (value === 'Cloud') return '云端空间'
-  if (value === 'Local') return '本地空间'
+  if (value === 'Local') return '本机空间'
   if (value === 'Standalone') return '独立空间'
   return value ?? '所选空间'
 }
@@ -977,26 +874,6 @@ function ErrorBanner({ error, onClearError }: { error: string | null; onClearErr
 }
 
 function Footer() {
-  return null
-}
-
-function resolveProviderLogoUrl(provider: LoginProviderOption): string | undefined {
-  const source = resolveLoginProviderSource(provider)
-  if (source === 'cloud' || source === 'local' || source === 'standalone') {
-    return linxLogoUrl
-  }
-
-  return provider.logoUrl
-}
-
-function resolveProviderSpaceMarker(provider: LoginProviderOption): { kind: SpaceMarkerKind; Icon: LucideIcon } | null {
-  const source = resolveLoginProviderSource(provider)
-  if (source === 'local') {
-    return { kind: 'local', Icon: Link2 }
-  }
-  if (source === 'standalone') {
-    return { kind: 'standalone', Icon: HardDrive }
-  }
   return null
 }
 
@@ -1035,6 +912,30 @@ function resolveStoredAccountSpaceMarker(account: LoginModalProps['storedAccount
     || isManagedLocalAccountUrl(account.webId)
     ? 'local'
     : null
+}
+
+function getRememberedAccountBindingLabel(account: NonNullable<LoginModalProps['storedAccount']>): string {
+  const issuer = resolveRememberedIssuerLabel(account)
+  const marker = resolveStoredAccountSpaceMarker(account)
+
+  if (marker === 'local') return `${issuer} · 本机空间`
+  if (marker === 'standalone') return `${issuer} · 独立空间`
+
+  const storageLabel = account.storageProviderLabel?.toLowerCase()
+  const storageUrl = account.storageProviderUrl ?? ''
+  if (storageLabel === 'cloud' || /undefineds\.co/i.test(storageUrl)) {
+    return `${issuer} · 云端空间`
+  }
+
+  return account.storageProviderLabel ? `${issuer} · ${account.storageProviderLabel}` : issuer
+}
+
+function resolveRememberedIssuerLabel(account: NonNullable<LoginModalProps['storedAccount']>): string {
+  if (account.issuerLabel?.toLowerCase().includes('undefineds') || account.issuerUrl?.includes('id.undefineds.co')) {
+    return 'undefineds'
+  }
+
+  return account.issuerLabel || '账号'
 }
 
 function isStandaloneAccountUrl(url?: string): boolean {

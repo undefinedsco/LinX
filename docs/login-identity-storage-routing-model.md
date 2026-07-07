@@ -41,11 +41,16 @@ Rules:
 
 ## Supported Product Routes
 
-LinX currently exposes three product provider choices in the normal login
-card: Cloud, Local, and Standalone. Local has two canonical URL ownership
-strategies, but the login/storage semantics stay the same. Custom remains a
-secondary route for third-party Solid providers; no route should force the
-normal user through an IDP/SP two-step picker.
+The compact login modal is governed by `docs/login-modal-local-binding-spec.md`.
+For that primary surface, LinX presents account providers first: `undefineds` is
+the default provider, and only `undefineds` exposes the Cloud/Local data-space
+choice. Remembered accounts already carry their storage binding and must not ask
+the user to choose Cloud/Local again. Third-party account providers do not expose
+a Custom SP picker in the primary login modal.
+
+The route table below still defines the underlying identity/storage semantics
+for supported or advanced routes. Do not infer that every route is a visible
+primary login-card option.
 
 | Route | Account / WebID authority | OIDC entry / account surface | Storage Provider | Canonical SP URL |
 | --- | --- | --- | --- | --- |
@@ -56,10 +61,13 @@ normal user through an IDP/SP two-step picker.
 | Custom | User-entered Solid provider | Same user-entered Solid provider | Same user-entered Solid provider | Same user-entered URL |
 
 Rules:
-- The normal login UX is a one-step product choice: Cloud, Local, or
-  Standalone. Cloud means Cloud account + Cloud storage. Local means Cloud
-  account + the current Local xpod/SP storage. Standalone means local account +
-  local xpod storage.
+- The primary compact login UX is not a generic IDP/SP picker. It starts from
+  an account provider. For `undefineds` first login only, the user chooses Cloud
+  or Local data space. Remembered `undefineds` accounts display their existing
+  binding instead of showing a Cloud/Local switch.
+- Cloud means Cloud account + Cloud storage. Local means Cloud account + the
+  current Local xpod/SP storage. Standalone means local account + local xpod
+  storage when exposed through an advanced or standalone route.
 - Local is always Cloud account authority + Local storage. It is not the
   local-account route; the local-account route is Standalone.
 - In implementation terms, Local+Cloud starts from a selected Local SP/data
@@ -90,9 +98,10 @@ Rules:
 - Local localhost/LAN addresses are access channels for the same Local SP; they
   are not identity URLs and must not be written into Cloud WebID profiles.
 - `CSS_BASE_STORAGE_DOMAIN` is not a user-facing Local onboarding input.
-- Custom is a combined third-party Solid provider route. The product asks for
-  one URL only and internally mirrors that URL into issuer/storage fields for
-  route invariants.
+- Custom SP is not exposed in the primary compact login modal. If an advanced
+  Custom Solid provider route is reintroduced, it remains a combined
+  third-party Solid provider route where the product asks for one URL only and
+  internally mirrors that URL into issuer/storage fields for route invariants.
 - Standalone is a separate product entry, not an internal fallback for Local.
   Local canonical URL failures must not silently downgrade into Standalone.
 - If the Local canonical URL has no working external route yet, LinX may still

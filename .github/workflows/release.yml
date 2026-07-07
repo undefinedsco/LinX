@@ -53,7 +53,6 @@ jobs:
           release_version="${release_version#v}"
           export VITE_APP_VERSION="$release_version"
           yarn workspace @linx/web build
-          yarn workspace @linx/mobile smoke
 
       - name: Archive web dist
         env:

@@ -2,7 +2,7 @@
 
 ## 目标
 
-Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏览和 resource 管理，用户心智接近 Finder / 文件管理器。
+Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏览、resource 管理和 Personal Linked Context 的文件入口，用户心智接近 File Browser / Finder，但语义上是 Solid Pod resource browser。
 
 `聊天文件` 不是一级模块，它和微信一样在窄侧栏底部菜单中直接出现：
 
@@ -10,14 +10,31 @@ Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏�
 窄侧栏底部菜单 -> 聊天文件
 ```
 
+## 参考原则
+
+- 主实现参考 File Browser：左侧文件夹树、内容区文件/表格、右侧 `.meta` inspector drawer。
+- Finder 只作为用户心智参考：文件夹/文件图标、选择、重命名、移动、复制、预览和快捷键预期。Files 不暗示完整本地 Finder 能力。
+- Files 是 Pod / Solid resource 浏览器：文件、容器、RDF resource、sidecar、权限和来源关系都必须保留 resource 语义。
+- Heptabase / Notion 只作为结构化 resource 的 card/predicate/table/whiteboard 参考，不替代 Files 的文件浏览骨架。
+- Personal Linked Context 的原则是 file-primary + modeled metadata：长文档和产物仍是文件；结构化 RDF 记录负责类型、状态、关系、审批和检索。
+
+## Ingest 术语
+
+- `Ingest` 是用户可见和 product/domain 层的名字：把外部或 Pod source 进入 LinX Files，并转成可浏览、可编辑、可审批、可重新同步的 card、block、subject、predicate、vocab proposal 和 approval。
+- OCR、PDF/DOC/PPT 抽取、byte-range fetch、authenticated fetch、ETag/If-Match、MIME/size/mtime、ACL/ACR、local cache 和 background scheduling 是 xpod/runtime 的底层能力，不在 UI 或领域 API 里叫 parser/index。
+- `Ingest record` / `Ingest 记录` 是用户可见的来源进度与同步状态 artifact；底层 RDF 可以继续有 `SourceIngestManifest` / `manifest.ttl` 等实现词。
+- 新 UI、新文档和新写入不暴露 parser/index 作为产品概念；旧 `index*` / `parser*` / `parsed*` 词只作为 legacy compatibility。
+
 ## 范围
 
 - Pod 根目录和容器树浏览。
 - Pod resource 详情。
-- 最近文件。
-- 文件详情。
-- 资源权限、URI、大小、类型、修改时间。
-- 基于路径、类型、标签的浏览与过滤。
+- 最近文件；Recent 可以递归收集最近修改的真实 resource/container，但不得把 `All` 变成全 Pod 扫描列表。
+- 文件详情、预览、编辑入口。
+- 资源权限、URI、大小、类型、修改时间、source/provenance、workspace/repository/agent home 关联。
+- 基于路径、类型、标签、结构化 class/predicate 的浏览与过滤。
+- `.ttl` / `.jsonld` / RDF resource 的结构化浏览与受控编辑。
+- `.meta` / `.acl` / `.acr` sidecar 和 built-in capability 的展示入口。
 
 ## 不做
 
@@ -26,26 +43,101 @@ Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏�
 - 不把首屏做成只面向技术用户的裸目录树。
 - 不替代系统 Finder 或完整本地文件管理器。
 - 不把一级文件模块做成聊天来源列表。
+- 不新增平行 card/database authority；card 是 file/resource + RDF metadata 的 UI 投影。
+- 不从 assistant 文本、stdout、stderr、tool name 或本地路径正则猜文件。
 
 ## 信息架构
 
 | 区域 | 内容 |
 | --- | --- |
-| 左侧树 | 常用位置、Pod 容器、资源类型过滤 |
-| 顶部工具栏 | 后退/前进、路径面包屑、上传、新建容器 |
-| 中间列表 | 名称、类型、大小、修改时间、权限、Pod 路径 |
-| 右侧详情 | 预览/图标、路径、URI、权限、修改时间、操作 |
+| 左侧树 | 普通文件夹树和文件选择，不按 Containers / Structured / Files 分组 |
+| Head | 文件名、路径/状态、少量窗口级按钮，约 48px 高 |
+| 内容区第一条 | Table / 当前视图 / `+ View`，以及筛选、排序、搜索 |
+| 中间列表 | subject table、Finder-like 文件夹列表/轻量预览，或普通可编辑文件的单文件 sheet/modal |
+| 右侧详情 | 当前 folder/file/structured resource 的 `.meta` inspector drawer，从 head 下沿覆盖 content 区，默认收起 |
 
-## 底部菜单：聊天文件
+窄屏 / compact width 下，Files 必须优先保留当前 resource 内容可读性：进入 Files 后隐藏全局 rail，文件树通过 `Files` 抽屉按钮按需展开，选择 resource 后自动收起；不要同时常驻展示全局 rail、文件树和内容区。
+
+## 结构化数据视图
+
+打开 `.ttl`、`.jsonld` 或其他 RDF 结构化资源时，默认进入数据工作区，而不是白板。
+
+| 视图 | 默认性 | 用途 |
+| --- | --- | --- |
+| Table | 默认 | 一行一个 subject/resource；列是 predicate；`rdf:type` 作为 class scope |
+| `+ View` | 第一阶段 | Table 是默认视图；Kanban、Whiteboard、Raw 是同一 subject table 的轻量投影；Discover 是未来/实验视图 |
+| Card | 显式行详情 | 展示一个 subject/resource 的标题、正文/摘要、properties、tags、relations、backlinks |
+| Kanban | 第一阶段 | 把 subject cards 按 status/class/owner 或自定义 predicate 分栏；改列走 structured cell proposal |
+| Whiteboard | 第一阶段 | 把选中的 subject cards 放入空间布局；布局写入 view metadata，不写回源 `.ttl` |
+| Raw / Projection Raw | 第一阶段 | 查看当前 class scope、过滤、隐藏 predicate 和 pending proposal 后的结构化投影文本；不是 canonical 源 `.ttl` |
+
+Table 规则：
+
+- 一行对应一个 RDF subject，包括 document URI 和 fragment subject。
+- `rdf:type` 在 UI 中作为必选 class scope，由 Table 右上角 Class 控件选择；表格内不再重复展示 class 列。
+- 当前 class 的表头就是 schema，顺序是 `subject / predicate... / + Predicate`。
+- schema 列来自当前数据值、同 class 适用 vocab/shape-defined predicate 和 pending proposal；required predicate 即使当前为空也应显示为空列。
+- predicate header 默认隐藏 namespace，只显示 local name；`ns` toggle 可展示 prefix/namespace。
+- predicate 列宽按表头 divider 拖拽调整，不用全局宽度滑杆。
+- `+ Predicate` 属于表头区域，先展示当前 class 已有 predicate，再进入受控 predicate 创建/提议流程。
+- `+ Subject` 属于表格最后一行，因为它新增的是行。
+- 格子操作由 predicate 类型决定：text/code/date inline edit；select/multi-select 打开 tag-selector；relation/URL 提供 open/link；checkbox 原地切换。
+- Table/Kanban 的可写业务值提交先创建 structured cell proposal，再镜像 Inbox approval；批准前不改 canonical `.ttl`。
+- 重新打开表格时，应从 pending Inbox approval target + proposal TTL hydrate 回 proposed value 和 pending `*`，不得重复提交或写 canonical 数据。
+
+## Vocab 和 schema 行为
+
+- 用户 Pod vocab 默认 lives under `/.vocab/`，核心资源是 `terms.ttl`、`shapes.ttl`、`namespaces.ttl`。
+- `terms.ttl` 是 term registry。class、predicate、enum option 都是 vocab term，通过 kind / RDF type 区分；不要拆成 `class/`、`predicate/`、`term/` 三套文件夹。
+- predicate term 可以有本地 registry URI，例如 `/.vocab/terms.ttl#summary`，并通过字段指向实际 RDF predicate URI，例如 `https://schema.org/summary`。
+- Table columns、validation、sorting、cell proposals 和写入使用实际 predicate URI；本地 term 负责 label、描述、审批、状态、shape/provenance。
+- `shapes.ttl` 记录 required、range/cardinality、datatype、pattern、UI form 等 constraint metadata；完整 SHACL 可以后续下沉到 models/drizzle-solid。
+- `.vocab` rows 是受控 schema/term registry，registry columns/meta predicates 是 ecosystem-defined，不像普通 `.data` 业务 cell 一样自由编辑。
+- AI 或用户提出 class/predicate/enum/shape 变更时，先创建 vocab proposal，标记 pending，用户批准后才写 canonical vocab。
+
+## `.meta` / `.acl` / `.acr` 边界
+
+- 文件 metadata 是同名 sidecar，例如 `report.md.meta`；container metadata 是该 container 内的 `.meta`，例如 `folder/.meta`。
+- `.meta` 不是业务索引。它可保存 title、description、checksum、view metadata、source hints、workspace/repository 快照等本 resource/container 的上下文。
+- 跨客户端共享的 structured view metadata 不写入源 `.ttl`，而是写入资源级 `.meta` sidecar：view mode、class scope、搜索/排序、隐藏 predicate、Kanban grouping/order、列宽、Whiteboard selected subjects/position/relation 等。
+- `.acl` / `.acr` 是 file-level built-in capability，不是普通 `.meta` 行。File/folder/structured resource 详情只提供一个 Access 入口，点击后打开 ACL/ACR modal 或 access proposal 流程。
+- `.meta` / `.acl` / `.acr` sidecar 默认不进入普通文件浏览列表。
+
+## 普通文件与文件夹打开规则
+
+普通文件：
+
+- 可编辑文本/Markdown 文件打开单文件 sheet/modal，包含 rich editor / raw source switch 和尾部 `.meta`。
+- 图片等只读预览文件保持预览面，不因为点击预览而打开编辑详情弹窗。
+- 私有 Pod 图片必须通过 authenticated fetch 读取 blob 并生成 object URL，不能把私有 resource URI 直接放进 `<img src>`。
+- 普通文件仍然可以作为 file+meta card 被收藏、引用或加入后续 whiteboard，但不生成 subject table。
+
+文件夹：
+
+- 文件夹详情采用 Finder-like 浏览，而不是 card wall。
+- 单击子项只更新 folder-local selection 和轻量 preview；双击或 Enter 才打开子目录、文件详情或 structured table。
+- Folder-local preview 展示名称、类型、大小、修改时间、URI 和语义类型，不加载正文、不混入子文件 `.meta`。
+- 创建、上传、Copy、Move、Rename 都必须走真实 Pod resource 写入/复制/移动语义，并保留并发冲突保护。
+- Copy/Move/Rename UI 使用 Finder-style 目标路径心智，不暴露成“粘贴完整 URI”主流程；跨 Pod absolute URI 只能用于打开/复制 URI，不作为复制/移动目的地。
+
+Subject 到文件：
+
+- Table/Kanban/Whiteboard 中某个 subject 本身是 Pod 文件/resource 时，单击先打开 Subject Peek，保留当前结构化视图上下文。
+- Enter、双击或 Peek 中的显式 `打开资源` 才进入 Files resource opening flow。
+- Fragment subject 或 relation/term target 默认打开 term/card 定义或同表内 subject preview；用户显式选择 “Open resource file” 时再打开承载文件。
+- 从 subject 跳到文件详情时要保存返回上下文：Table、class scope、搜索、排序、隐藏 predicate、当前 view、subject、scrollTop/row index。
+- Subject 直接资源跳转不隐式创建 Ingest proposal； source-linked card 的刷新/Review Ingest 在文件详情里发起。
+
+## Chat files 边界
 
 `聊天文件` 是底部菜单里的二级入口，不出现在一级导航。
 
-默认展示所有聊天产生或引用的文件，支持按会话筛选：
+它消费当前 chat/thread 的 message `richContent` file blocks 和明确的 runtime artifact containers：
 
-- 聊天附件。
-- 链接卡片。
-- Runtime 产物。
-- 收藏或引用过的 Pod resource。
+```text
+richContent: { type: "file", fileUrl/resourceUri, name, size, mimeType }
+artifacts / files / generatedFiles / outputs / resources / attachments
+```
 
 排序优先级：
 
@@ -53,6 +145,13 @@ Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏�
 2. 最近聊天文件。
 3. 已收藏文件。
 4. 其他可关联到会话的 Pod resource。
+
+边界：
+
+- Runtime 真正生成文件后应写入结构化 file/artifact records。
+- Files 不从 stdout、stderr、runtime log、assistant 文本、tool name 或本地工作区路径里猜文件。
+- 当前 thread 没有 workspace URI 时，只展示已结构化引用的当前 Pod 文件，不递归扫描 Pod root。
+- `聊天引用` / `运行产物` 只作为 `sourceLabel` 展示，不能写入 `tags` 或进入 tag filter。
 
 ## 一级文件模块
 
@@ -64,21 +163,21 @@ Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏�
 - 资源 URI。
 - 资源权限/可访问状态。
 - 最近文件。
-- `agents/{agentId}/` Agent home 浏览。
-- `.data/workspaces/{workspaceId}/` Workspace 容器和 `.meta` 浏览。
-- `.data/repositories/{repositoryId}.ttl` Repository 元信息浏览。
+- `agents/{agentId}/` Agent home 浏览，例如 `/agents/__secretary__/`。
+- `/.data/workspaces/{workspaceId}/` Workspace 容器和 `.meta` 浏览。
+- `/.data/repositories/{repositoryId}.ttl` Repository 元信息浏览。
 
 Pod 浏览是真实能力，不是后续可选项。区别是 `聊天文件` 面向聊天来源组织，一级 `文件` 模块面向完整目录和 resource 浏览。
 
 ## Agent / Workspace / Repository 文件视角
 
-Files 是 Finder 视角，可以看到这些 Pod 资源，但不把它们变成单独管理产品：
+Files 是 File Browser / Pod 视角，可以看到这些 Pod 资源，但不把它们变成单独管理产品：
 
 | Pod 路径 | Files 中的展示 | 产品含义 |
 | --- | --- | --- |
-| `/agents/secretary/` | 容器 / Agent home | Agent 自己的规则、skills、MCP、backend、compaction、memory |
-| `/.data/workspaces/linx-prototype/` | 容器 / Workspace | 运行时真实 worktree/cwd；`.meta` 存 git/workspace 快照 |
-| `/.data/repositories/linx.ttl` | RDF resource | 仓库元信息，不是工作区 |
+| `/agents/{agentId}/` | 容器 / Agent home | Agent 自己的规则、skills、MCP、backend、compaction、memory |
+| `/.data/workspaces/{workspaceId}/` | 容器 / Workspace | 运行时真实 worktree/cwd；`.meta` 存 git/workspace 快照 |
+| `/.data/repositories/{repositoryId}.ttl` | RDF resource | 仓库元信息，不是工作区 |
 
 Repository 不用单独做管理页。用户从 Chat 或 Session 回到的是 Workspace；Repository 只作为 Workspace `.meta` 链接的来源元信息出现。
 
@@ -98,26 +197,18 @@ Workspace `.meta` 可展示：
 - 复制 URI。
 - 收藏。
 - 进入所在 Pod 容器。
-- 下载或在系统中打开：仅当能力真实存在时展示。
-
-## 与聊天文件的边界
-
-每个文件资产可以存在来源关系，但一级 `文件` 模块不以来源关系作为主结构。
-
-来源关系展示在：
-
-- 左下底部菜单的 `聊天文件`。
-- 收藏详情中的回跳目标。
-- 聊天消息里的文件卡片。
-
-如果来源缺失，相关入口显示 `来源未知`，不能编造来源。一级文件模块仍按路径、类型、大小、修改时间和权限展示。
+- 下载。
+- 系统打开：仅当桌面 shell 暴露 `openExternal` 能力时展示，并调用系统默认处理器；它不同于 `打开 URI` 的浏览器新窗口行为。
+- Access：打开 ACL/ACR 状态弹窗，展示有效来源、继承状态、public/authenticated/app/owner 权限，并提供 access proposal 草案入口。
 
 ## 数据边界
 
-- 文件对象来自现有 files/browser/query 能力。
+- 文件对象来自 files/browser/query 能力。
 - 收藏关系走 Favorites 模块已有结构。
-- 会话关联走 chat/thread/message URI 关系。
+- 会话关联走 chat/thread/message URI 关系；消息内文件关联以 `richContent` file block / artifact record 为准。
 - Pod 目录浏览走真实 Pod LDP/container listing 能力。
+- 结构化 Pod 数据读写优先走 `drizzle-solid` + `@undefineds.co/models` schema/repository/collection；壳层不手写 shared resource 的 Turtle parser。
+- Card 是 file/resource + RDF metadata 的 UI 投影，不新增平行 card authority。
 - Agent/Workspace/Repository 的 durable 语义由 `@undefineds.co/models` 负责，Files 只读取和展示。
 
 ## 验收
@@ -128,6 +219,16 @@ Workspace `.meta` 可展示：
 - 能浏览 Pod 根目录和容器树。
 - 能打开 Pod resource 详情。
 - 文件主列表没有 `来源` 列，也不按聊天来源分组。
+- `.ttl` / `.jsonld` 默认以 Table 打开，支持在右上角 Class scope 和 Filter/Sort/Search 工具中按 class / predicate 筛选。
+- 除内容详情弹窗外，folder/file/`.ttl` 的 `.meta` 都通过右侧 inspector drawer 展示，默认收起；`.ttl` 不默认把右栏占用为某个 subject card。
+- `+ Subject` 在 Table 最后一行；`+ Predicate` 在表头区域，并打开 predicate 类型选择/定义流程。
+- class 过滤默认收起在右上角 Class 控件下，Table 有明确筛选和排序按钮；class 不作为普通重复列。
+- predicate header 默认紧凑隐藏 namespace，并可用 `ns` switch 展开；predicate 列宽按 Excel 式表头分隔线拖拽调整。
+- 能打开至少一个非 `.ttl` 可编辑文件并直接进入富文本/源码编辑详情弹窗，`.meta` 位于弹窗尾部。主区域不内嵌可编辑文件正文 preview；只读预览文件不弹编辑详情。
+- 右侧 inspector 作为抽屉从 head 下沿覆盖 content 区，可折叠；folder/file/`.ttl` 共用该行为。
+- subject 行如果可解析为 Pod resource，单击先打开 Subject Peek，Enter、双击或显式打开进入对应 Files opening flow；fragment/card 走 term/card peek 和显式打开动作。
+- Whiteboard、Kanban、Raw 只作为显式 `+ View` projection 出现，不替代 Table 默认视图。
+- class tag、topic tag、predicate/meta 的 RDF 语义在 UI 中可区分。
 - 能看见 Agent home、Workspace `.meta`、Repository metadata 的文件视角。
 - Session 不在 Files 里复制仓库、分支和 commit 字段。
 - 收藏文件后 Favorites 可见。
