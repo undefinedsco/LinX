@@ -214,7 +214,14 @@ function parseStoredThreadItem(value: unknown, fallbackThreadId: string, fallbac
   }
 
   try {
-    const parsed = JSON.parse(value) as Partial<ThreadItem> | null
+    const parsedValue = JSON.parse(value) as unknown
+    const parsed = (
+      parsedValue
+      && typeof parsedValue === 'object'
+      && 'chatkitItem' in parsedValue
+      ? (parsedValue as { chatkitItem?: unknown }).chatkitItem
+      : parsedValue
+    ) as Partial<ThreadItem> | null
     if (!parsed || parsed.type !== 'client_tool_call' || typeof (parsed as any).call_id !== 'string') {
       return null
     }
@@ -227,6 +234,35 @@ function parseStoredThreadItem(value: unknown, fallbackThreadId: string, fallbac
   } catch {
     return null
   }
+}
+
+function parseToolOutputForRichContent(output: unknown): unknown {
+  if (typeof output !== 'string') return output
+  const trimmed = output.trim()
+  if (!trimmed) return output
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return output
+  }
+}
+
+function createClientToolCallRichContent(item: ThreadItem): string {
+  const toolItem = item as any
+  const toolBlock = {
+    type: 'tool',
+    toolCallId: toolItem.call_id,
+    toolName: toolItem.name ?? 'tool',
+    arguments: toolItem.arguments ?? {},
+    status: toolItem.status === 'completed' ? 'done' : toolItem.status ?? 'running',
+    result: parseToolOutputForRichContent(toolItem.output),
+    error: toolItem.error,
+  }
+
+  return JSON.stringify({
+    chatkitItem: item,
+    items: [toolBlock],
+  })
 }
 
 function threadItemToMessageRecord(item: ThreadItem): {
@@ -263,7 +299,9 @@ function threadItemToMessageRecord(item: ThreadItem): {
     content: item.type === 'client_tool_call' ? (item as any).name || item.type : JSON.stringify(item),
     role: MessageRole.SYSTEM,
     status: typeof (item as any).status === 'string' ? (item as any).status : null,
-    richContent: JSON.stringify(item),
+    richContent: item.type === 'client_tool_call'
+      ? createClientToolCallRichContent(item)
+      : JSON.stringify(item),
   }
 }
 

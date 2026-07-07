@@ -8,6 +8,8 @@ const onRedirectMock = vi.fn()
 const clearStoredSolidSessionMock = vi.fn()
 const hasStoredSolidSessionMock = vi.fn()
 const getStoredSolidSessionMock = vi.fn()
+const ensurePendingPostLoginMicroAppIdMock = vi.fn()
+const resolvePostLoginMicroAppIdMock = vi.fn()
 
 const sessionState = {
   info: {
@@ -32,6 +34,8 @@ vi.mock('../login-utils', () => ({
   hasStoredSolidSession: () => hasStoredSolidSessionMock(),
   getStoredSolidSession: () => getStoredSolidSessionMock(),
   getPendingLoginAttempt: () => null,
+  ensurePendingPostLoginMicroAppId: (microAppId: string) => ensurePendingPostLoginMicroAppIdMock(microAppId),
+  resolvePostLoginMicroAppId: () => resolvePostLoginMicroAppIdMock(),
 }))
 
 function TestComponent() {
@@ -60,6 +64,9 @@ describe('useSessionRestore', () => {
     })
     hasStoredSolidSessionMock.mockReturnValue(false)
     getStoredSolidSessionMock.mockReturnValue(null)
+    ensurePendingPostLoginMicroAppIdMock.mockReset()
+    resolvePostLoginMicroAppIdMock.mockReset()
+    resolvePostLoginMicroAppIdMock.mockReturnValue('chat')
     consumePendingRedirectMock
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce('http://127.0.0.1:43123/auth/callback?code=abc&state=xyz')
@@ -107,6 +114,45 @@ describe('useSessionRestore', () => {
     })
     expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
     expect(clearStoredSolidSessionMock).not.toHaveBeenCalled()
+  })
+
+  it('remembers the current micro app before web stored-session restore leaves the route', async () => {
+    delete window.xpodDesktop
+    window.history.replaceState({}, '', '/files')
+    getStoredSolidSessionMock.mockReturnValue({
+      sessionId: 'linx-session',
+      issuerUrl: 'http://localhost:5737',
+      redirectUrl: 'http://127.0.0.1:43123/auth/callback',
+      clientId: 'http://127.0.0.1:43123/client',
+      tokenType: 'Bearer',
+    })
+    resolvePostLoginMicroAppIdMock.mockReturnValue('files')
+
+    render(<TestComponent />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('restore-failed').textContent).toBe('false')
+    })
+    expect(ensurePendingPostLoginMicroAppIdMock).toHaveBeenCalledWith('files')
+  })
+
+  it('remembers the current micro app on already-authenticated stored-session app route loads', async () => {
+    delete window.xpodDesktop
+    window.history.replaceState({}, '', '/favorites')
+    getStoredSolidSessionMock.mockReturnValue({
+      sessionId: 'linx-session',
+      issuerUrl: 'http://localhost:5737',
+      redirectUrl: 'http://127.0.0.1:43123/auth/callback',
+      clientId: 'http://127.0.0.1:43123/client',
+      tokenType: 'Bearer',
+    })
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'https://alice.example/profile/card#me'
+    resolvePostLoginMicroAppIdMock.mockReturnValue('favorites')
+
+    render(<TestComponent />)
+
+    expect(ensurePendingPostLoginMicroAppIdMock).toHaveBeenCalledWith('favorites')
   })
 
   it('does not fail web callback restore while SolidSessionProvider is still in progress', async () => {

@@ -1,5 +1,11 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const baseURL = process.env.LINX_E2E_BASE_URL ?? 'http://localhost:5173'
+const devServerUrl = new URL(baseURL)
+const reuseExistingServer = process.env.LINX_E2E_REUSE_SERVER === undefined
+  ? true
+  : process.env.LINX_E2E_REUSE_SERVER === '1'
+
 /**
  * Playwright E2E Test Configuration
  * @see https://playwright.dev/docs/test-configuration
@@ -32,7 +38,7 @@ export default defineConfig({
   /* Shared settings for all the projects below */
   use: {
     /* Base URL to use in actions like `await page.goto('/')` */
-    baseURL: 'http://localhost:5173',
+    baseURL,
 
     /* Collect trace when retrying the failed test */
     trace: 'on-first-retry',
@@ -60,9 +66,9 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'cd ../../ && yarn dev:web',
-    url: 'http://localhost:5173',
-    reuseExistingServer: true,
+    command: `cd ../../ && yarn workspace @linx/web dev --host ${devServerUrl.hostname} --port ${devServerUrl.port || '5173'} --strictPort`,
+    url: baseURL,
+    reuseExistingServer,
     timeout: 120 * 1000,
     stdout: 'pipe',
     stderr: 'pipe',

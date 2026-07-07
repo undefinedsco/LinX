@@ -55,12 +55,17 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
 
   const handleResolve = async (decision: 'approved' | 'rejected') => {
     if (!selectedItem?.approval) return
-    await resolveApproval.mutateAsync({
-      approval: selectedItem.approval,
-      decision,
-      reason,
-    })
-    setReason('')
+    try {
+      await resolveApproval.mutateAsync({
+        approval: selectedItem.approval,
+        decision,
+        reason,
+      })
+      setReason('')
+    } catch {
+      // React Query owns the displayed error state; keep the event handler from
+      // surfacing expected approval failures as unhandled promise rejections.
+    }
   }
 
   const handleOpenConversation = () => {

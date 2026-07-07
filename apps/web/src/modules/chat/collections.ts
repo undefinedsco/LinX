@@ -809,10 +809,11 @@ function readCollectionRows<T extends Record<string, unknown> & { id: string }>(
     }
   } | null | undefined
 
-  if (target?.state instanceof Map) {
-    Array.from(target.state.values()).forEach(add)
-  } else if (Array.isArray(target?.state?.data)) {
-    target.state.data.forEach(add)
+  const collectionState = target?.state
+  if (collectionState instanceof Map) {
+    Array.from(collectionState.values()).forEach(add)
+  } else if (Array.isArray(collectionState?.data)) {
+    collectionState.data.forEach(add)
   }
   if (Array.isArray(target?.toArray)) {
     target.toArray.forEach(add)
@@ -1251,7 +1252,11 @@ export const chatOps = {
     }
 
     if (db) {
-      await updateExactRecord(db, chatResource as any, existing ?? { id }, {
+      const persistenceTarget = {
+        ...(existing ?? {}),
+        id: buildChatResourceId(id),
+      }
+      await updateExactRecord(db, chatResource as any, persistenceTarget, {
         ...data,
         updatedAt,
       } as Record<string, unknown>)

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import {
+  ensurePendingPostLoginMicroAppId,
   getStoredSolidSession,
+  resolvePostLoginMicroAppId,
 } from '../login-utils'
 import {
   getCurrentLocationCallbackRedirectUrl,
@@ -61,7 +63,13 @@ export function useSessionRestore() {
   // Auto-restore on mount
   useEffect(() => {
     if (attemptedRef.current) return
-    if (session.info.isLoggedIn) return
+    const isCallbackUrl = shouldAttemptCurrentLocationRestore()
+    if (session.info.isLoggedIn) {
+      if (hasStoredSession && !isCallbackUrl) {
+        ensurePendingPostLoginMicroAppId(resolvePostLoginMicroAppId())
+      }
+      return
+    }
     attemptedRef.current = true
 
     // Desktop cold starts cannot safely run Inrupt's silent restore: it may
@@ -87,9 +95,13 @@ export function useSessionRestore() {
     }
 
     // Web: SolidSessionProvider handles handleIncomingRedirect.
-    // We just need to wait for it to finish.
-    const isCallbackUrl = shouldAttemptCurrentLocationRestore()
+    // We just need to wait for it to finish. When a stored-session restore
+    // starts from a real app route, remember that route before the auth library
+    // can navigate through /auth/callback.
     if (isCallbackUrl || hasStoredSession) {
+      if (hasStoredSession && !isCallbackUrl) {
+        ensurePendingPostLoginMicroAppId(resolvePostLoginMicroAppId())
+      }
       setIsRestoring(true)
     } else {
       setRestoreFailed(true)

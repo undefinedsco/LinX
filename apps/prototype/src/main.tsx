@@ -1,11 +1,13 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   Archive,
+  ArrowUpDown,
   Bell,
   Bot,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Clock3,
   Contact,
@@ -19,6 +21,7 @@ import {
   Image,
   Link2,
   LockKeyhole,
+  List,
   Menu,
   MessageSquare,
   Mic,
@@ -38,12 +41,24 @@ import {
 } from 'lucide-react'
 import '../../web/src/index.css'
 import './prototype.css'
+import { FilesDetail, FilesList, FilesMain } from './files/FilesModule'
+import { FilesWorkspace } from './files/FilesWorkspace'
+import { readPrototypeStorage, writePrototypeStorage } from './files/prototypeStorage'
+import type { FilePropertyState } from './files/FileEditorSheet'
+import type {
+  ChatFileItem,
+  FileOpenSample,
+  FilesSelection,
+  IconType,
+  StoredFileContent,
+  StructuredView,
+} from './files/files-types'
 
 type ModuleId = 'chat' | 'contacts' | 'files' | 'favorites'
 type InboxItemStatus = 'pending' | 'approved' | 'denied'
 type RailSurface = 'chatFiles' | 'keys' | 'models' | 'settings'
-
-type IconType = typeof MessageSquare
+const FILE_CONTENTS_STORAGE_KEY = 'linx.prototype.files.fileContentsByPath'
+const FILE_PROPERTIES_STORAGE_KEY = 'linx.prototype.files.filePropertiesByPath'
 
 interface NavItem {
   id: ModuleId
@@ -59,28 +74,6 @@ interface ListItem {
   icon: IconType
   active?: boolean
   muted?: boolean
-}
-
-interface FileRow {
-  name: string
-  type: string
-  size: string
-  modified: string
-  permission: string
-  icon: IconType
-  active?: boolean
-}
-
-interface ChatFileItem {
-  id: string
-  name: string
-  kind: string
-  source: string
-  path: string
-  time: string
-  size: string
-  icon: IconType
-  active?: boolean
 }
 
 interface InboxItem {
@@ -202,24 +195,7 @@ const contacts: Array<{ group: string; items: ListItem[] }> = [
   },
 ]
 
-const fileLocations: Array<{ label: string; icon: IconType; active?: boolean }> = [
-  { label: 'Pod Home', icon: Home },
-  { label: '.data', icon: FolderOpen, active: true },
-  { label: 'Recent', icon: Clock3 },
-  { label: 'Favorites', icon: Star },
-  { label: 'Shared', icon: UsersRound },
-]
-
-const fileRows: FileRow[] = [
-  { name: 'agents/', type: 'Container', size: '3 agents', modified: 'Today 09:45', permission: 'Private', icon: Folder },
-  { name: 'agents/secretary/', type: 'Agent home', size: '8 items', modified: 'Today 09:44', permission: 'Private', icon: Bot, active: true },
-  { name: 'workspaces/linx-prototype/', type: 'Workspace', size: '.meta', modified: 'Today 09:42', permission: 'Private', icon: FolderOpen },
-  { name: 'repositories/linx.ttl', type: 'Repository', size: '4 KB', modified: 'Today 09:40', permission: 'Private', icon: FileText },
-  { name: 'chat/', type: 'Container', size: '12 items', modified: 'Today 09:36', permission: 'Private', icon: MessageSquare },
-  { name: 'files/', type: 'Container', size: '42 items', modified: 'Apr 21', permission: 'Private', icon: FileArchive },
-]
-
-const favorites: Array<{ group: string; items: ListItem[] }> = [
+const initialFavorites: Array<{ group: string; items: ListItem[] }> = [
   {
     group: 'Today',
     items: [
@@ -717,102 +693,9 @@ function ContactsDetail() {
   )
 }
 
-function FilesList() {
+function FavoritesList({ favoriteGroups }: { favoriteGroups: Array<{ group: string; items: ListItem[] }> }) {
   return (
-    <section className="list-pane tree-pane">
-      <div className="tree-title">Files</div>
-      <div className="tree-section">
-        <h3>Locations</h3>
-        {fileLocations.map((item) => {
-          const Icon = item.icon
-          return (
-            <button className={item.active ? 'active' : ''} key={item.label}>
-              <Icon size={15} />
-              <span>{item.label}</span>
-            </button>
-          )
-        })}
-      </div>
-      <div className="tree-section">
-        <h3>Containers</h3>
-        {['/', '.data/', 'agents/', 'secretary/', 'workspaces/', 'linx-prototype/', 'repositories/', 'chat/', 'files/'].map((label, index) => (
-          <button className={label === 'secretary/' ? 'active nested' : index > 1 ? 'nested' : ''} key={label}>
-            <Folder size={15} />
-            <span>{label}</span>
-          </button>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function FilesMain() {
-  return (
-    <main className="work-pane files-work">
-      <header className="work-header">
-        <div>
-          <h1>Files</h1>
-          <p>Pod / .data / agents / secretary</p>
-        </div>
-        <div className="file-actions">
-          <button><FolderOpen size={15} /></button>
-          <button className="primary"><Upload size={15} /> Upload</button>
-          <button><MoreHorizontal size={16} /></button>
-        </div>
-      </header>
-      <section className="file-table">
-        <div className="file-head">
-          <span>Name</span>
-          <span>Kind</span>
-          <span>Size</span>
-          <span>Modified</span>
-          <span>Permission</span>
-        </div>
-        {fileRows.map((row) => {
-          const Icon = row.icon
-          return (
-            <button className={row.active ? 'active' : ''} key={row.name}>
-              <span className="file-name"><Icon size={16} /> {row.name}</span>
-              <span>{row.type}</span>
-              <span>{row.size}</span>
-              <span>{row.modified}</span>
-              <span>{row.permission}</span>
-            </button>
-          )
-        })}
-      </section>
-      <footer className="table-status">6 items · Finder view · Repository 只是元数据，Workspace 才是工作区</footer>
-    </main>
-  )
-}
-
-function FilesDetail() {
-  return (
-    <aside className="detail-pane">
-      <section className="identity-card file-identity">
-        <AvatarMark icon={Bot} active />
-        <h2>secretary/</h2>
-        <p>Agent home container</p>
-      </section>
-      <section className="info-stack">
-        <InfoRow label="Path" value="/.data/agents/secretary/" />
-        <InfoRow label="Profile" value="/.data/agents/secretary/profile.ttl" />
-        <InfoRow label="Config" value="config / skills / mcp / backends" />
-        <InfoRow label="Modified" value="Today 09:44" />
-        <InfoRow label="Permission" value="Private" />
-        <InfoRow label="Type" value="Agent home" />
-      </section>
-      <div className="primary-actions vertical">
-        <button className="primary"><ExternalIcon /> 打开</button>
-        <button><Download size={15} /> 下载</button>
-      </div>
-    </aside>
-  )
-}
-
-function FavoritesList() {
-  return (
-    <section className="list-pane">
+    <section className="list-pane" data-favorites-surface="list">
       <SearchHeader placeholder="Search saved" />
       <div className="folder-tabs">
         {['All', 'Msg', 'File', 'Link', 'Contact'].map((tab, index) => (
@@ -820,11 +703,13 @@ function FavoritesList() {
         ))}
       </div>
       <div className="list-scroll grouped">
-        {favorites.map((group) => (
+        {favoriteGroups.map((group) => (
           <div className="row-group" key={group.group}>
             <h3>{group.group}</h3>
             {group.items.map((item) => (
-              <ListRow dense item={item} key={item.id} />
+              <span data-favorite-item={item.id} data-favorite-path={item.subtitle} key={item.id}>
+                <ListRow dense item={item} />
+              </span>
             ))}
           </div>
         ))}
@@ -833,7 +718,15 @@ function FavoritesList() {
   )
 }
 
-function FavoritesMain({ pendingCount, onOpenInbox }: { pendingCount: number; onOpenInbox: () => void }) {
+function FavoritesMain({
+  favoriteGroups,
+  pendingCount,
+  onOpenInbox,
+}: {
+  favoriteGroups: Array<{ group: string; items: ListItem[] }>
+  pendingCount: number
+  onOpenInbox: () => void
+}) {
   return (
     <main className="work-pane favorites-work">
       <header className="work-header">
@@ -843,14 +736,19 @@ function FavoritesMain({ pendingCount, onOpenInbox }: { pendingCount: number; on
         </div>
         <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
       </header>
-      <section className="saved-feed">
-        {favorites.map((group) => (
+      <section className="saved-feed" data-favorites-surface="feed">
+        {favoriteGroups.map((group) => (
           <div className="saved-group" key={group.group}>
             <h2>{group.group}</h2>
             {group.items.map((item) => {
               const Icon = item.icon
               return (
-                <button className={item.active ? 'active' : ''} key={item.id}>
+                <button
+                  className={item.active ? 'active' : ''}
+                  data-favorite-item={item.id}
+                  data-favorite-path={item.subtitle}
+                  key={item.id}
+                >
                   <AvatarMark icon={Icon} active={item.active} />
                   <span>
                     <strong>{item.title}</strong>
@@ -1359,10 +1257,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function ExternalIcon() {
-  return <ChevronRight size={15} />
-}
-
 function ModuleSurface({
   activeModule,
   pendingCount,
@@ -1370,6 +1264,20 @@ function ModuleSurface({
   onApprove,
   onDeny,
   onOpenInbox,
+  structuredView,
+  onChangeStructuredView,
+  filesDetailOpen,
+  onToggleFilesDetail,
+  onCloseFilesDetail,
+  filesSelection,
+  onSelectFile,
+  favoriteGroups,
+  fileContentsByPath,
+  filePropertiesByPath,
+  isFileFavorite,
+  onChangeFileContent,
+  onChangeFileProperties,
+  onToggleFileFavorite,
 }: {
   activeModule: ModuleId
   pendingCount: number
@@ -1377,7 +1285,27 @@ function ModuleSurface({
   onApprove: () => void
   onDeny: () => void
   onOpenInbox: () => void
+  structuredView: StructuredView
+  onChangeStructuredView: (view: StructuredView) => void
+  filesDetailOpen: boolean
+  onToggleFilesDetail: () => void
+  onCloseFilesDetail: () => void
+  filesSelection: FilesSelection
+  onSelectFile: (selection: FilesSelection) => void
+  favoriteGroups: Array<{ group: string; items: ListItem[] }>
+  fileContentsByPath: Record<string, StoredFileContent>
+  filePropertiesByPath: Record<string, FilePropertyState>
+  isFileFavorite: (path: string) => boolean
+  onChangeFileContent: (path: string, content: StoredFileContent) => void
+  onChangeFileProperties: (path: string, properties: FilePropertyState) => void
+  onToggleFileFavorite: (file: FileOpenSample) => void
 }) {
+  const [filesMobileTreeOpen, setFilesMobileTreeOpen] = useState(false)
+
+  useEffect(() => {
+    if (activeModule !== 'files') setFilesMobileTreeOpen(false)
+  }, [activeModule])
+
   if (activeModule === 'contacts') {
     return (
       <>
@@ -1389,18 +1317,44 @@ function ModuleSurface({
   }
   if (activeModule === 'files') {
     return (
-      <>
-        <FilesList />
-        <FilesMain />
-        <FilesDetail />
-      </>
+      <FilesWorkspace
+        mobileTreeOpen={filesMobileTreeOpen}
+        onCloseMobileTree={() => setFilesMobileTreeOpen(false)}
+        onOpenMobileTree={() => setFilesMobileTreeOpen(true)}
+        list={(
+          <FilesList
+            mobileOpen={filesMobileTreeOpen}
+            onMobileClose={() => setFilesMobileTreeOpen(false)}
+            selection={filesSelection}
+            onSelect={onSelectFile}
+          />
+        )}
+        main={
+          <FilesMain
+            selection={filesSelection}
+            structuredView={structuredView}
+            onChangeView={onChangeStructuredView}
+            detailOpen={filesDetailOpen}
+            fileContentsByPath={fileContentsByPath}
+            filePropertiesByPath={filePropertiesByPath}
+            onChangeFileContent={onChangeFileContent}
+            onChangeFileProperties={onChangeFileProperties}
+            onToggleDetail={onToggleFilesDetail}
+            onCloseDetail={onCloseFilesDetail}
+            onOpenSelection={onSelectFile}
+            isFileFavorite={isFileFavorite}
+            onToggleFileFavorite={onToggleFileFavorite}
+          />
+        }
+        detail={<FilesDetail open={filesDetailOpen} selection={filesSelection} />}
+      />
     )
   }
   if (activeModule === 'favorites') {
     return (
       <>
-        <FavoritesList />
-        <FavoritesMain pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
+        <FavoritesList favoriteGroups={favoriteGroups} />
+        <FavoritesMain favoriteGroups={favoriteGroups} pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
         <FavoritesDetail />
       </>
     )
@@ -1428,12 +1382,62 @@ function PrototypeApp() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [inboxOpen, setInboxOpen] = useState(false)
   const [approvalStatus, setApprovalStatus] = useState<InboxItemStatus>('pending')
+  const [structuredView, setStructuredView] = useState<StructuredView>('table')
+  const [filesDetailOpen, setFilesDetailOpen] = useState(false)
+  const [filesSelection, setFilesSelection] = useState<FilesSelection>('structuredVocab')
+  const [favoriteGroups, setFavoriteGroups] = useState(initialFavorites)
+  const [fileContentsByPath, setFileContentsByPath] = useState<Record<string, StoredFileContent>>(() => (
+    readPrototypeStorage<Record<string, StoredFileContent>>(FILE_CONTENTS_STORAGE_KEY, {})
+  ))
+  const [filePropertiesByPath, setFilePropertiesByPath] = useState<Record<string, FilePropertyState>>(() => (
+    readPrototypeStorage<Record<string, FilePropertyState>>(FILE_PROPERTIES_STORAGE_KEY, {})
+  ))
   const pendingCount = approvalStatus === 'pending' ? 2 : 1
+
+  useEffect(() => {
+    writePrototypeStorage(FILE_CONTENTS_STORAGE_KEY, fileContentsByPath)
+  }, [fileContentsByPath])
+
+  useEffect(() => {
+    writePrototypeStorage(FILE_PROPERTIES_STORAGE_KEY, filePropertiesByPath)
+  }, [filePropertiesByPath])
+
+  const changeFileContent = (path: string, content: StoredFileContent) => {
+    setFileContentsByPath((current) => ({ ...current, [path]: content }))
+  }
+  const changeFileProperties = (path: string, properties: FilePropertyState) => {
+    setFilePropertiesByPath((current) => ({ ...current, [path]: properties }))
+  }
+  const isFileFavorite = (path: string) => favoriteGroups.some((group) => group.items.some((item) => item.id === path || item.subtitle === path))
+  const toggleFileFavorite = (file: FileOpenSample) => {
+    setFavoriteGroups((current) => {
+      const exists = current.some((group) => group.items.some((item) => item.id === file.path || item.subtitle === file.path))
+      if (exists) {
+        return current.map((group) => ({
+          ...group,
+          items: group.items.filter((item) => item.id !== file.path && item.subtitle !== file.path),
+        }))
+      }
+      const fileFavorite: ListItem = {
+        id: file.path,
+        title: file.name,
+        subtitle: file.path,
+        meta: 'Now',
+        icon: file.icon,
+      }
+      return current.map((group, index) => (
+        index === 0 ? { ...group, items: [fileFavorite, ...group.items] } : group
+      ))
+    })
+  }
 
   return (
     <div className="prototype-page light">
       <div className="principle-badge">Mindset prototype · chat-first</div>
-      <div className="prototype-shell" data-module={activeModule}>
+      <div
+        className={`prototype-shell${activeModule === 'files' && !filesDetailOpen ? ' files-detail-collapsed' : ''}`}
+        data-module={activeModule}
+      >
         <Sidebar
           activeModule={activeModule}
           onChangeModule={setActiveModule}
@@ -1451,6 +1455,20 @@ function PrototypeApp() {
           onApprove={() => setApprovalStatus('approved')}
           onDeny={() => setApprovalStatus('denied')}
           onOpenInbox={() => setInboxOpen(true)}
+          structuredView={structuredView}
+          onChangeStructuredView={setStructuredView}
+          filesDetailOpen={filesDetailOpen}
+          onToggleFilesDetail={() => setFilesDetailOpen((open) => !open)}
+          onCloseFilesDetail={() => setFilesDetailOpen(false)}
+          filesSelection={filesSelection}
+          onSelectFile={setFilesSelection}
+          favoriteGroups={favoriteGroups}
+          fileContentsByPath={fileContentsByPath}
+          filePropertiesByPath={filePropertiesByPath}
+          isFileFavorite={isFileFavorite}
+          onChangeFileContent={changeFileContent}
+          onChangeFileProperties={changeFileProperties}
+          onToggleFileFavorite={toggleFileFavorite}
         />
         <InboxSheet
           open={inboxOpen}

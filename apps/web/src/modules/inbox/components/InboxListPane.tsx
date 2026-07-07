@@ -150,6 +150,11 @@ export function InboxListPane(_props: MicroAppPaneProps) {
                       )}
                     </div>
                     <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.description}</p>
+                    {item.approval?.target ? (
+                      <p className="mt-1 truncate text-[11px] leading-4 text-muted-foreground/70" title={item.approval.target}>
+                        {item.approval.target}
+                      </p>
+                    ) : null}
                   </div>
                   <span className="shrink-0 text-[11px] text-muted-foreground">{formatTimeLabel(item.timestamp)}</span>
                 </div>

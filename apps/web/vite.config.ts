@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, './package.json'), 'utf8')) as {
   version?: string
@@ -11,10 +11,19 @@ const releaseRepo = String(process.env.VITE_RELEASE_REPO ?? 'undefinedsco/LinX')
 const assetBase = process.env.LINX_VITE_BASE ?? '/'
 const outputDir = process.env.LINX_VITE_OUT_DIR ?? 'dist'
 const repoRoot = path.resolve(__dirname, '../..')
+const modelsRoot = path.resolve(repoRoot, 'packages/models/src')
+const modelsIndex = path.resolve(modelsRoot, 'index.ts')
+const modelsClientIndex = path.resolve(modelsRoot, 'client/index.ts')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
 )
+const modelAliases = existsSync(modelsIndex)
+  ? {
+    '@undefineds.co/models/client': modelsClientIndex,
+    '@undefineds.co/models': modelsIndex,
+  }
+  : {}
 
 function getPackageName(id: string): string | null {
   const marker = '/node_modules/'
@@ -106,6 +115,7 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@linx/agent-runtime': path.resolve(repoRoot, 'packages/agent-runtime/src'),
       '@linx/agent-runtime/pod-resource-identity': path.resolve(
         repoRoot,
         'packages/agent-runtime/src/pod-resource-identity.ts',
@@ -115,6 +125,7 @@ export default defineConfig({
       '@linx/stores/pod-db': path.resolve(repoRoot, 'packages/stores/src/pod-collection.ts'),
       '@linx/stores/pod-write-guard': path.resolve(repoRoot, 'packages/stores/src/pod-write-guard.ts'),
       '@linx/stores': path.resolve(__dirname, '../../packages/stores/src'),
+      ...modelAliases,
       '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.mts', '.jsx', '.json'],

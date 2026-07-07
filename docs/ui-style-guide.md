@@ -1,10 +1,14 @@
 # UI Style Guide
 
+`DESIGN.md` is the active source of truth for LinX product design. This guide turns that contract into compact visual and styling rules for implementation review.
+
 ## Design philosophy
 
 LinX uses a **macOS-native visual discipline** on top of a **desktop messaging interaction structure**.
 
 The product should feel like a quiet, capable workspace: chat-first, low cognitive load, clear storage/runtime/AI work state, and restrained visual chrome. The interface borrows from familiar desktop chat products for structure, but the visual system should stay neutral, precise, and platform-native rather than decorative.
+
+Do not revive the earlier emotion-led brand direction, decorative amber/orange palette, playful reassurance, oversized radius-as-brand, colored shadows, glow, or broad purple SaaS styling.
 
 ### Core principles
 
@@ -80,10 +84,14 @@ Recommended desktop roles:
 Files is a compact Pod resource browser with structured-resource tools, not a decorative card wall.
 
 - Folder/file rows use familiar desktop density, neutral selection, clear icons, and predictable secondary metadata.
+- The Files head stays narrow, roughly 48px. Search belongs in list/table headers. Primary view controls stay as compact icons, menus, segmented controls, or `+ View`, not large explanatory buttons.
 - Breadcrumbs, tree selection, file list selection, preview/detail, and `.meta` sidecar use restrained chrome and border-led separation.
+- Right `.meta` drawers are collapsed by default and cover content from below the head when opened. Editable file/card sheets put `.meta` in the bottom tail instead of opening a competing right inspector.
+- Folder detail is Finder-like list/column/icon browsing with local selection and lightweight preview; do not render folder contents as a wall of cards.
 - Structured tables prioritize scan speed: compact headers, stable column widths, visible resize affordances, quiet focus, and semantic pending markers.
+- Structured table cells should use type-specific whole-cell interactions: inline text/date/code edit, checkbox toggle, relation/URL open/link affordances, and enum/select popovers with selected chips, search, and create in one surface.
 - Subject peek, access control, Ingest state, pending proposals, locked vocab, and read-only state appear near the relevant row/cell/detail surface.
-- Card, Kanban, and Whiteboard projections may use larger surfaces only when the structured-resource workflow needs them.
+- Card, Kanban, and Whiteboard projections may use larger surfaces only when the structured-resource workflow needs them. Their controls should follow the same low-chrome scheme as the table, with advanced controls tucked into local menus.
 
 ## Shape and radius
 
@@ -92,9 +100,9 @@ Radius is tiered by function:
 | Component | Radius guidance |
 | --- | --- |
 | Dense list rows | 0-8px depending on selection treatment |
-| Buttons / inputs | 8-12px |
-| Cards / panels | 12-16px |
-| Dialogs / sheets | 16-20px |
+| Buttons / inputs | 6-8px |
+| Cards / panels | 8-12px |
+| Dialogs / sheets | 12-16px |
 | Chips / badges / compact status | Pill only when the compact capsule communicates grouping/status |
 
 Do not use a single large radius everywhere as a brand marker.
@@ -129,7 +137,7 @@ Avoid:
 
 ```css
 .surface-panel {
-  @apply bg-card text-card-foreground border border-border rounded-xl;
+  @apply bg-card text-card-foreground border border-border rounded-lg;
 }
 ```
 
@@ -137,7 +145,7 @@ Avoid:
 
 ```css
 .primary-action {
-  @apply bg-primary text-primary-foreground rounded-lg h-9 px-4 font-medium;
+  @apply bg-primary text-primary-foreground rounded-md h-9 px-3 font-medium;
   @apply transition-colors duration-150;
 }
 ```
@@ -146,7 +154,7 @@ Avoid:
 
 ```css
 .input-field {
-  @apply bg-background border border-input rounded-lg px-3 py-2;
+  @apply bg-background border border-input rounded-md px-3 py-2;
   @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35;
 }
 ```

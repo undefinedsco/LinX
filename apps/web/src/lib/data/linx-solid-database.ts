@@ -72,6 +72,9 @@ async function createLinxSolidDatabaseUncached(
   const runtimeSession = createTransportRewriteSession(session, options.transportUrlRewrite)
   const instance = drizzle(runtimeSession as any, {
     disableInteropDiscovery: true,
+    notifications: {
+      preferredChannels: ['websocket', 'streaming-http'],
+    },
     podUrl: normalizePodUrl(options.podUrl),
     resourcePreparation: 'best-effort',
     schema: solidSchema,

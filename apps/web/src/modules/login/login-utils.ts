@@ -151,6 +151,11 @@ export function ensurePendingPostLoginMicroAppId(microAppId: MicroAppId) {
   window.sessionStorage.setItem(POST_LOGIN_MICRO_APP_KEY, microAppId)
 }
 
+export function setPendingPostLoginMicroAppId(microAppId: MicroAppId) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(POST_LOGIN_MICRO_APP_KEY, microAppId)
+}
+
 export function consumePendingPostLoginMicroAppId(): MicroAppId {
   if (typeof window === 'undefined') return defaultMicroAppId
   const value = getPendingPostLoginMicroAppId()

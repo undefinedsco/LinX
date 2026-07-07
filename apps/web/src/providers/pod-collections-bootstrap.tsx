@@ -7,6 +7,7 @@ import { useChatStore } from '@/modules/chat/store'
 import { useToast } from '@/components/ui/use-toast'
 import { initializeContactCollections } from '@/modules/contacts/collections'
 import { initializeFavoriteCollections } from '@/modules/favorites/collections'
+import { filesOps, initializeFilesCollections } from '@/modules/files/collections'
 import { initializeInboxCollections } from '@/modules/inbox/collections'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { initializeModelCollections } from '@/modules/model-services/collections'
@@ -25,6 +26,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     initializeChatCollections(db)
     initializeContactCollections(db)
     initializeFavoriteCollections(db)
+    initializeFilesCollections(db)
     initializeInboxCollections(db)
     initializeModelCollections(db)
     initializeSymphonyControlCollections(db)
@@ -36,6 +38,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
 
     let cancelled = false
     let unsubscribe: (() => void) | null = null
+    let unsubscribeFiles: (() => void) | null = null
     let unsubscribeSymphony: (() => void) | null = null
     const started = lastStartedRef.current
     const force = !!started && started !== db
@@ -52,6 +55,18 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
       })
       .catch((error) => {
         console.warn('[PodCollectionsBootstrap] Failed to subscribe chat collections:', error)
+      })
+
+    void filesOps.subscribeToPod()
+      .then((nextUnsubscribe) => {
+        if (cancelled) {
+          nextUnsubscribe()
+          return
+        }
+        unsubscribeFiles = nextUnsubscribe
+      })
+      .catch((error) => {
+        console.warn('[PodCollectionsBootstrap] Failed to subscribe files collections:', error)
       })
 
     void symphonyControlOps.subscribeToPod()
@@ -106,6 +121,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     return () => {
       cancelled = true
       unsubscribe?.()
+      unsubscribeFiles?.()
       unsubscribeSymphony?.()
     }
   }, [db, toast])

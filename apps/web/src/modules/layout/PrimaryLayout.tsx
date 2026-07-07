@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import linxLogoUrl from '@/assets/linx-logo.png'
-import { Moon, Sun, Settings, Bot, Info, Activity, LogOut } from 'lucide-react'
+import { Moon, Sun, Settings, Bot, Info, Activity, LogOut, FolderOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   microAppRegistry,
@@ -14,13 +14,13 @@ import {
 } from './micro-app-registry'
 import { linxLayout } from '@/theme/spacing'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import {
   Popover,
@@ -36,10 +36,13 @@ import { AboutDialog } from './AboutDialog'
 import { useAppUpdateStatus } from './use-app-update-status'
 import { useThemeMode } from './use-theme-mode'
 import { OPEN_SERVICE_MANAGEMENT_EVENT } from '@/modules/settings/events'
+import { useFilesStore } from '@/modules/files/app/store'
+import type { FilesRouteBridge } from '@/modules/files/route-state'
 
 interface PrimaryLayoutProps {
   microAppId: MicroAppId
   onNavigate?: (id: MicroAppId) => void
+  filesRouteBridge?: FilesRouteBridge
 }
 
 /**
@@ -52,6 +55,7 @@ const primaryNavIds: MicroAppId[] = ['chat', 'contacts', 'files', 'favorites']
 const secondaryNavIds: MicroAppId[] = []
 
 const bottomUtilities = [
+  { id: 'chat-files', icon: FolderOpen, label: '聊天文件', action: 'chat-files' },
   { id: 'settings', icon: Settings, label: '设置', action: 'settings' },
 ] as const
 
@@ -59,21 +63,51 @@ function PaneFallback() {
   return <div className="h-full w-full animate-pulse bg-muted/10" />
 }
 
+const compactViewportQuery = '(max-width: 767px)'
+
+function readCompactViewport() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false
+  }
+  return window.matchMedia(compactViewportQuery).matches
+}
+
+function useCompactViewport() {
+  const [isCompactViewport, setIsCompactViewport] = useState(readCompactViewport)
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return undefined
+    }
+
+    const query = window.matchMedia(compactViewportQuery)
+    const updateViewport = () => setIsCompactViewport(query.matches)
+    updateViewport()
+    query.addEventListener('change', updateViewport)
+    return () => query.removeEventListener('change', updateViewport)
+  }, [])
+
+  return isCompactViewport
+}
+
 // Inner component that is safe to use varying hooks because it's keyed
-function MicroAppContentRenderer({ 
-  microAppId, 
-  theme, 
+function MicroAppContentRenderer({
+  microAppId,
+  theme,
   onToggleTheme,
-}: { 
+  filesRouteBridge,
+}: {
   microAppId: MicroAppId
   theme: ThemeMode
   onToggleTheme: () => void
+  filesRouteBridge?: FilesRouteBridge
 }) {
   const activeMicroApp = microAppRegistry[microAppId]
   const ListPane = activeMicroApp.ListPane
   const ContentPane = activeMicroApp.ContentPane
   const LayoutConfigBridge = activeMicroApp.LayoutConfigBridge
   const [layoutConfig, setLayoutConfig] = useState<MicroAppLayoutConfig | undefined>(undefined)
+  const isCompactViewport = useCompactViewport()
   const handleLayoutConfigChange = useCallback(
     (nextConfig: MicroAppLayoutConfig | undefined) => {
       setLayoutConfig(nextConfig)
@@ -94,39 +128,43 @@ function MicroAppContentRenderer({
         </Suspense>
       ) : null}
       <ResizablePanelGroup direction="horizontal" className="h-full w-full">
-        <ResizablePanel
-          defaultSize={20}
-          minSize={15}
-          maxSize={30}
-          className="shrink-0"
-          style={{
-            minWidth: listPanelMinWidth,
-            width: listPanelWidth,
-            maxWidth: listPanelMaxWidth,
-          }}
-        >
-          <section
-            className="flex h-full flex-col border-r border-border/40 bg-layout-list-item"
-            data-testid="micro-app-list-panel"
-            style={{
-              minWidth: listPanelMinWidth,
-              width: '100%',
-              maxWidth: listPanelMaxWidth,
-            }}
-          >
-            <Suspense fallback={<PaneFallback />}>
-              <ListPane theme={theme} />
-            </Suspense>
-          </section>
-        </ResizablePanel>
+        {!isCompactViewport ? (
+          <>
+            <ResizablePanel
+              defaultSize={listPanelWidth}
+              minSize={listPanelMinWidth}
+              maxSize={listPanelMaxWidth}
+              className="min-w-0 shrink-0 overflow-hidden"
+              style={{
+                minWidth: listPanelMinWidth,
+                width: listPanelWidth,
+                maxWidth: listPanelMaxWidth,
+              }}
+            >
+              <section
+                className="flex h-full min-w-0 flex-col overflow-hidden border-r border-border/40 bg-layout-list-item"
+                data-testid="micro-app-list-panel"
+                style={{
+                  minWidth: listPanelMinWidth,
+                  width: '100%',
+                  maxWidth: listPanelMaxWidth,
+                }}
+              >
+                <Suspense fallback={<PaneFallback />}>
+                  <ListPane theme={theme} filesRouteBridge={filesRouteBridge} />
+                </Suspense>
+              </section>
+            </ResizablePanel>
 
-        <ResizableHandle withHandle />
+            <ResizableHandle withHandle />
+          </>
+        ) : null}
 
-        <ResizablePanel defaultSize={80}>
+        <ResizablePanel defaultSize={isCompactViewport ? 100 : 80} className="min-w-0 overflow-hidden">
           <section className="h-full flex bg-layout-content">
             <div className="flex-1 flex flex-col min-h-0">
               {!layoutConfig?.hideHeader && (
-                <div className="h-16 flex items-center border-b border-border bg-layout-content">
+                <div data-testid="micro-app-content-head" className="h-12 flex items-center border-b border-border bg-layout-content">
                   {layoutConfig?.header ? (
                     <div className="flex-1 h-full">
                       {layoutConfig.header}
@@ -164,7 +202,7 @@ function MicroAppContentRenderer({
               )}
               <div className="flex-1 min-h-0 flex flex-col">
                 <Suspense fallback={<PaneFallback />}>
-                  <ContentPane theme={theme} />
+                  <ContentPane theme={theme} filesRouteBridge={filesRouteBridge} />
                 </Suspense>
               </div>
             </div>
@@ -240,13 +278,15 @@ function SettingsMenu({
   )
 }
 
-export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
+export function PrimaryLayout({ microAppId, onNavigate, filesRouteBridge }: PrimaryLayoutProps) {
   const navigate = useNavigate()
   const { session, sessionRequestInProgress } = useSession()
   const [theme, toggleTheme] = useThemeMode()
   const [isServiceMgmtOpen, setIsServiceMgmtOpen] = useState(false)
   const [isAboutOpen, setIsAboutOpen] = useState(false)
   const appUpdate = useAppUpdateStatus()
+  const openAllFilesScope = useFilesStore((state) => state.openAllFilesScope)
+  const openChatFilesScope = useFilesStore((state) => state.openChatFilesScope)
   const isWorkspaceReady = session.info.isLoggedIn && !sessionRequestInProgress
 
   const primaryApps = useMemo(() => primaryNavIds.map((id) => microAppRegistry[id]), [])
@@ -258,8 +298,17 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   }, [])
 
   const handleNavigate = (id: MicroAppId) => {
+    if (id === 'files') {
+      openAllFilesScope()
+    }
     navigate({ to: '/$microAppId', params: { microAppId: id } })
     onNavigate?.(id)
+  }
+
+  const handleOpenChatFiles = () => {
+    openChatFilesScope()
+    navigate({ to: '/$microAppId', params: { microAppId: 'files' } })
+    onNavigate?.('files')
   }
 
   const sidebarWidth = linxLayout.sidebar.defaultWidth // This is the leftmost App Nav width
@@ -280,7 +329,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   }
 
   return (
-    <div className="h-screen w-screen bg-background text-foreground overflow-hidden">
+    <div className="h-screen w-screen bg-background text-foreground overflow-hidden" data-micro-app-id={microAppId}>
       <div className="flex h-full w-full">
         {/* Leftmost Fixed Application Navigation Sidebar */}
         <aside
@@ -288,7 +337,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           style={{ width: sidebarWidth }}
         >
           {/* Sidebar avatar area - 56px from top to avatar's top edge */}
-          <div className="pt-[56px] flex flex-col items-center gap-3">
+          <div data-testid="primary-profile-avatar-slot" className="pt-[48px] flex flex-col items-center gap-3">
             <Popover>
               <PopoverTrigger asChild>
                 <button
@@ -321,17 +370,17 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                     size="icon"
                     className={cn(
                       "w-9 h-9 rounded-md transition-all duration-200",
-                      isActive 
-                        ? "text-primary hover:bg-transparent hover:text-primary" 
+                      isActive
+                        ? "text-primary hover:bg-transparent hover:text-primary"
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     )}
                     onClick={() => handleNavigate(app.id)}
                     aria-label={navLabel}
                     title={navLabel}
                   >
-                    <Icon 
-                      size={24} 
-                      strokeWidth={isActive ? 2 : 1.5} 
+                    <Icon
+                      size={24}
+                      strokeWidth={isActive ? 2 : 1.5}
                       fill={isActive ? "currentColor" : "none"}
                       className="transition-all"
                     />
@@ -352,23 +401,39 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                   size="icon"
                   className={cn(
                     "w-9 h-9 rounded-md hover:bg-transparent",
-                    isActive 
-                      ? "text-primary hover:text-primary" 
+                    isActive
+                      ? "text-primary hover:text-primary"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                   onClick={() => handleNavigate(app.id)}
                   aria-label={app.label}
                 >
-                  <Icon 
-                    size={24} 
+                  <Icon
+                    size={24}
                     strokeWidth={isActive ? 2 : 1.5}
-                    fill={isActive ? "currentColor" : "none"} 
+                    fill={isActive ? "currentColor" : "none"}
                   />
                 </Button>
               )
             })}
-            {/* Settings Popover and Utilities */} 
+            {/* Settings Popover and Utilities */}
             {bottomUtilities.map((utility) => {
+              if (utility.id === 'chat-files') {
+                const Icon = utility.icon
+                return (
+                  <Button
+                    key={utility.id}
+                    variant="ghost"
+                    size="icon"
+                    className="w-9 h-9 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                    aria-label={utility.label}
+                    title={utility.label}
+                    onClick={handleOpenChatFiles}
+                  >
+                    <Icon className="w-6 h-6" strokeWidth={1.5} />
+                  </Button>
+                )
+              }
               if (utility.id === 'settings') {
                 return (
                   <SettingsMenu
@@ -393,13 +458,14 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
             microAppId={microAppId}
             theme={theme}
             onToggleTheme={toggleTheme}
+            filesRouteBridge={filesRouteBridge}
           />
         </div>
       </div>
 
-      <ServiceManagementDialog 
-        open={isServiceMgmtOpen} 
-        onOpenChange={setIsServiceMgmtOpen} 
+      <ServiceManagementDialog
+        open={isServiceMgmtOpen}
+        onOpenChange={setIsServiceMgmtOpen}
       />
       <AboutDialog
         open={isAboutOpen}

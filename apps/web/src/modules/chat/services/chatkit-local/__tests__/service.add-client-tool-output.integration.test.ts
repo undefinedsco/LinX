@@ -202,6 +202,57 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
     ])
   })
 
+  it('preserves generated file artifacts on completed runtime tool output items', async () => {
+    const store = createMockStore()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+
+      if (url === '/api/runtime/threads?threadId=thread-1') {
+        return new Response(JSON.stringify({
+          items: [],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: {} as any,
+      webId: 'https://alice.example/profile/card#me',
+      authFetch: vi.fn() as any,
+    })
+    const output = JSON.stringify({
+      artifacts: [{
+        type: 'artifact',
+        name: 'summary.md',
+        resourceUri: 'https://pod.example/.data/workspaces/thread-1/summary.md',
+        contentType: 'text/markdown',
+      }],
+    })
+
+    const result = await service.process(JSON.stringify({
+      type: 'threads.add_client_tool_output',
+      params: {
+        thread_id: 'thread-1',
+        item_id: 'tool-item-1',
+        output,
+      },
+    }), {})
+
+    const events = await collectStreamEvents(result)
+
+    expect(store.saveItem).toHaveBeenCalledWith('thread-1', expect.objectContaining({
+      id: 'tool-item-1',
+      type: 'client_tool_call',
+      status: 'completed',
+      output,
+    }), {})
+    expect(events.map((event) => event.type)).toEqual(['thread.item.done'])
+  })
+
   it('re-enters inbox when runtime emits another tool_call', async () => {
     const store = createMockStore()
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

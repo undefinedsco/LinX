@@ -42,7 +42,7 @@ describe('LocalChatKitStore storage routing', () => {
     ))
     expect(messageInsert?.id).toBe('chat/default/1970/01/01/messages.ttl#msg-1')
     expect(messageInsert?.chat).toBe('https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this')
-    expect(messageInsert?.thread).toBe('https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#thread-1')
+    expect(messageInsert?.thread).toMatch(/^https:\/\/node-0000\.undefineds\.co\/alice\/\.data\/.*#thread-1$/)
     expect(messageInsert?.maker).toBe('https://id.undefineds.co/alice/profile/card#me')
     expect((messageInsert?.metadata as any)?.chatkitItemId).toBe('msg-1')
     expect((messageInsert?.metadata as any)?.reconciler?.latest?.eventType).toBe('message.appended')
@@ -173,5 +173,134 @@ describe('LocalChatKitStore storage routing', () => {
     expect(db.findByIri).toHaveBeenCalledWith(expect.anything(), contactIri)
     expect(db.findById).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('https://'))
     expect(inserts[0]?.maker).toBe(agentIri)
+  })
+
+  it('stores completed client tool calls as richContent with ChatKit replay data and file artifacts', async () => {
+    const inserts: Array<Record<string, unknown>> = []
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
+      }),
+      findById: vi.fn(async () => null),
+      insert: vi.fn(() => ({
+        values(values: Record<string, unknown>) {
+          inserts.push(values)
+          return { execute: vi.fn(async () => undefined) }
+        },
+      })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          execute: vi.fn(async () => []),
+        })),
+      })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      vi.fn() as any,
+    )
+
+    await store.addThreadItem('thread-1', {
+      id: 'tool-1',
+      thread_id: 'thread-1',
+      type: 'client_tool_call',
+      name: 'write_file',
+      arguments: { path: 'summary.md' },
+      call_id: 'call-1',
+      status: 'completed',
+      output: JSON.stringify({
+        artifacts: [{
+          type: 'artifact',
+          name: 'summary.md',
+          resourceUri: 'https://node-0000.undefineds.co/alice/.data/workspaces/thread-1/summary.md',
+          contentType: 'text/markdown',
+          size: 128,
+        }],
+      }),
+      created_at: 0,
+    } as any, {})
+
+    const messageInsert = inserts.find((entry) => entry.id === 'chat/default/1970/01/01/messages.ttl#tool-1')
+    expect(messageInsert?.content).toBe('write_file')
+    const richContent = JSON.parse(String(messageInsert?.richContent))
+    expect(richContent.chatkitItem).toMatchObject({
+      type: 'client_tool_call',
+      call_id: 'call-1',
+      output: expect.stringContaining('summary.md'),
+    })
+    expect(richContent.items).toEqual([
+      expect.objectContaining({
+        type: 'tool',
+        toolName: 'write_file',
+        toolCallId: 'call-1',
+        status: 'done',
+        result: {
+          artifacts: [expect.objectContaining({
+            resourceUri: 'https://node-0000.undefineds.co/alice/.data/workspaces/thread-1/summary.md',
+            contentType: 'text/markdown',
+          })],
+        },
+      }),
+    ])
+  })
+
+  it('replays client tool calls from richContent envelopes', async () => {
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
+      }),
+      findById: vi.fn(async () => null),
+      insert: vi.fn(() => ({
+        values() {
+          return { execute: vi.fn(async () => undefined) }
+        },
+      })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          execute: vi.fn(async () => [{
+            id: 'chat/default/1970/01/01/messages.ttl#tool-1',
+            chat: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this',
+            thread: 'https://node-0000.undefineds.co/alice/.data/index.ttl#thread-1',
+            role: 'system',
+            content: 'write_file',
+            richContent: JSON.stringify({
+              chatkitItem: {
+                id: 'tool-1',
+                thread_id: 'thread-1',
+                type: 'client_tool_call',
+                name: 'write_file',
+                arguments: { path: 'summary.md' },
+                call_id: 'call-1',
+                status: 'completed',
+                output: '{"artifacts":[]}',
+                created_at: 0,
+              },
+              items: [{
+                type: 'tool',
+                toolName: 'write_file',
+                result: { artifacts: [] },
+              }],
+            }),
+            createdAt: '1970-01-01T00:00:00.000Z',
+          }]),
+        })),
+      })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      vi.fn() as any,
+    )
+
+    const result = await store.loadThreadItems('thread-1', undefined, 20, 'asc', {})
+
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: 'tool-1',
+        type: 'client_tool_call',
+        call_id: 'call-1',
+        output: '{"artifacts":[]}',
+      }),
+    ])
   })
 })

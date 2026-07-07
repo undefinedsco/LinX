@@ -6,15 +6,25 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "verify:files": "node scripts/verify-files-phase1.mjs",
+    "verify:files:proposals": "node scripts/verify-files-proposals.mjs",
+    "verify:files:walkthrough": "node scripts/verify-files-template-walkthrough.mjs"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@tanstack/react-table": "^8.21.3",
+    "@tiptap/extension-placeholder": "^3.26.1",
+    "@tiptap/react": "^3.26.1",
+    "@tiptap/starter-kit": "^3.26.1",
     "@vitejs/plugin-react": "^6.0.2",
-    "typescript": "^6.0.3",
-    "vite": "^8.0.14",
+    "lucide-react": "^1.16.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "lucide-react": "^1.16.0"
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14"
   },
   "devDependencies": {}
 }

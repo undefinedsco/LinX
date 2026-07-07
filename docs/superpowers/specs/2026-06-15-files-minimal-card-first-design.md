@@ -1,12 +1,12 @@
 # Files Minimal Card-First Design
 
 Date: 2026-06-15
-Last updated: 2026-06-16
+Last updated: 2026-06-17
 Status: Draft for user review
 
 ## Purpose
 
-Redesign the Files module toward an Apple / WeChat minimalist interaction model while preserving the Solid/RDF power model. The Files surface should feel quiet by default, reveal structure progressively, and treat parsed knowledge cards as the primary editable object when source documents or URLs are imported.
+Redesign the Files module toward an Apple / WeChat minimalist interaction model while preserving the Solid/RDF power model. The Files surface should feel quiet by default, reveal structure progressively, and treat ingested knowledge cards as the primary editable object when source documents or URLs are imported.
 
 This spec covers Files only. It also records a small reusable visual direction for the rest of LinX.
 
@@ -19,7 +19,7 @@ Use the progressive-disclosure approach:
 - Folder browsing stays familiar, but does not become a full Finder clone.
 - `.ttl` resources behave like Heptabase-style typed card databases over RDF subjects.
 - Editable file/source content opens as a focused card/document editor rather than an embedded preview.
-- Source-linked documents are card-first: parsed blocks are the user-facing body; source files and URLs are provenance and sync inputs.
+- Source-linked documents are card-first: ingested blocks are the user-facing body; source files and URLs are provenance and sync inputs.
 
 ## Files Information Architecture
 
@@ -50,6 +50,7 @@ Pod Home
 
 `.meta` and `.acl/.acr` are resource-level sidecars.
 
+- Files-owned metadata must stay beside the owner resource: `report.md` uses `report.md.meta`, and `folder/` uses `folder/.meta`. Do not introduce a centralized `/.data/meta/` store for canonical resource metadata.
 - `.meta` opens through an Info / metadata semantic icon.
 - Access opens through a Shield icon.
 - Both pop from the same head action area and use the same placement model.
@@ -58,6 +59,17 @@ Pod Home
 - Access can offer `Open policy source` as an advanced action when the provider exposes raw ACL/ACR resources.
 
 Focused file/card editor modals do not use the page sidecar. Their metadata appears in the bottom tail, with Access and meta actions still available in the modal header.
+
+Placement rules:
+
+| Surface | Primary content | `.meta` | Access / ACL / ACR |
+| --- | --- | --- | --- |
+| Folder | Finder-like list, column, or icon view | Right drawer, collapsed by default | Shield action opens access policy modal |
+| Readonly file/media | Lightweight preview | Right drawer, collapsed by default | Shield action opens access policy modal |
+| Editable file/card | macOS sheet-style editor overlay | Bottom metadata tail inside the overlay | Shield action in overlay header opens access policy modal |
+| `.ttl` / RDF table | Embedded structured table workspace | Right drawer for the resource file, collapsed by default | Shield action opens access policy modal |
+| `.vocab/*.ttl` | Locked registry table | Right drawer for the vocab resource, collapsed by default | Shield action opens access policy modal |
+| Subject peek | Contextual subject preview | No page drawer; only compact facts and actions | Access is shown only when the subject resolves to a file/resource |
 
 ## Vocab Structure
 
@@ -92,6 +104,25 @@ The user's vocab is a Pod container:
 - Trust / ownership boundary.
 
 Official or ecosystem vocab is referenced by namespace URI. It should not be represented as a fake folder under the user's `.vocab`.
+
+Vocab editability:
+
+- `.vocab/terms.ttl` is a registry browser, not a normal business table.
+- `.vocab/shapes.ttl` and `.vocab/namespaces.ttl` are also locked registry browsers, not normal business tables.
+- Locked registry columns are resource-kind specific:
+  - `terms.ttl`: URI, label, definition, kind, range, status, shape.
+  - `shapes.ttl`: URI, label, term, class scope, constraint, status.
+  - `namespaces.ttl`: prefix, namespace, URI, status, definition.
+- Term metadata predicates such as URI, kind, label, description, range, enum options, deprecation, color, and shape link are governed by the vocab workflow.
+- `.data` tables may create or reference new class, predicate, or enum option terms, but they must do so through a proposal/approval flow before writing canonical vocab.
+- Business cells edit subject values only. They must not silently edit canonical term definitions.
+
+Publishing and discovery:
+
+- Personal vocab can remain private by default.
+- Public or ecosystem-facing vocab is made discoverable through namespace URI, WebID/profile links, and access policy, not by placing "official" folders inside the user's `.vocab`.
+- Solid Type Index is relevant for discoverability of data locations by RDF class. The Solid ecosystem distinguishes public/listed and private/unlisted type indexes: public/listed registrations are discoverable from the WebID profile and commonly point to `/settings/publicTypeIndex.ttl`; private/unlisted registrations are typically linked from preferences and commonly point to `/settings/privateTypeIndex.ttl`. References: <https://solid.github.io/type-indexes/>, <https://github.com/solid/solid/blob/main/proposals/data-discovery.md>.
+- LinX should use type indexes to discover where instances of a class live, not to replace vocab, shape, or namespace registries.
 
 ## Structured Table Interaction
 
@@ -129,6 +160,17 @@ Each predicate header has an info popover because each column maps to one predic
 - shape usage for the current class
 - status and proposal state
 - actions: view definition, view shape rule, open URI, review proposal
+
+### Table Toolbar
+
+The table toolbar stays compact:
+
+- Class is a required scope and appears as a single class icon/control in the upper-right table head.
+- Filter, sort, search, namespace display, and column visibility are first-class toolbar actions.
+- Type/class filtering lives in Filter when it is not the required class scope.
+- Namespace display is a small sliding switch. Off shows local names; on shows prefixed names.
+- Predicate columns can be hidden from column visibility. Hiding a column does not remove the predicate from vocab or shape.
+- Filter/sort/search state belongs to the view configuration, not to the RDF facts themselves.
 
 ### Cells
 
@@ -187,11 +229,18 @@ Value:
 Shape rule for current class:
 
 - class scope
-- required
-- cardinality
+- required / optional
+- datatype or node kind
+- class range for resource links
+- min count and max count
+- allowed or suggested enum values
 - default visible
-- validation
+- display order
+- editor type
+- validation severity
 - display rule
+- example value
+- migration note, when changing an existing predicate
 
 Review:
 
@@ -200,6 +249,8 @@ Review:
 - proposal details when needed
 
 Creating a predicate therefore creates or references a term and binds it to the current class shape rule.
+
+In a `.data` table, creating a new class, predicate, or enum option first creates a proposal when the term is not already confirmed. Confirmed writes update `.vocab/terms.ttl` and `.vocab/shapes.ttl`; pending proposals are shown with `*` in class scope, predicate headers, or enum chips. `.vocab` tables themselves do not expose business-table `+ Subject` / `+ Predicate` actions.
 
 ### Subject Opening
 
@@ -211,13 +262,23 @@ Subject Peek branches by type:
 - file resource: open focused file detail/editor for editable files, preview for readonly files, structured table for `.ttl`.
 - external IRI: show URI preview with open/copy actions.
 - vocab term: show term definition and shape usage.
-- source-linked card: show source, parsed card/body state, sync state, and open actions.
+- source-linked card: show source, ingested card/body state, sync state, and open actions.
 
 Double-click, Enter, or explicit `Open` performs navigation.
 
+Source-backed subject routing:
+
+- A subject that resolves to a local Pod file follows the Files resource opening flow.
+- A URL, PDF, DOC, PPT, or other imported source opens the ingested card when a card exists, with actions for original source, ingested blocks, source status, and sync review.
+- If local Ingest artifacts exist and the source has not changed, opening the subject must not force a new ingest.
+- File sources use hash/mtime to detect change. URL sources may refresh snapshots on schedule, but full ingest stays lazy.
+- Return context must preserve table, class scope, active view, row, filters, and scroll position.
+
 ## Card-First Source Model
 
-Card-first means the card is the user's note-taking object. Source/parser is a later capability layered onto that object, not the core note-taking model.
+Card-first means the card is the user's note-taking object. Ingest is a later capability layered onto that object, not the core note-taking model.
+
+A card can be an independent resource, but it is not required to live under one central `.data/cards/` directory. Cards may be colocated with the resource, workspace, imported source, or domain container that owns the user's workflow. The invariant is semantic, not path-based: the card is a durable Pod resource/RDF subject with blocks, cells, provenance, and access policy.
 
 ## Note Taking: Blocks And Cells
 
@@ -249,7 +310,7 @@ Opening a subject or editable file shows a card detail surface:
 Title
 
 Byline
-Class · source · updated · sync/parser state
+Class · source · updated · ingest state
 
 Blocks
 paragraph
@@ -280,7 +341,7 @@ Block editing is the primary note-taking flow:
 - Hover shows `+`, drag handle, comment, and more actions.
 - Blocks can be selected, moved, folded, linked, and copied.
 - Source-derived blocks can carry provenance.
-- User-edited blocks become user-owned content and are protected from parser overwrite.
+- User-edited blocks become user-owned content and are protected from Ingest overwrite.
 
 Supported block types for the design target:
 
@@ -295,6 +356,8 @@ Supported block types for the design target:
 - inline database/table embed
 
 Blocks are where users think and write. The UI must not force every idea into structured properties.
+
+Block storage can start from paragraph-like chunks split by two newlines for imported text. Larger or source-derived documents may use section/page chunks for progressive ingest and performance. The editor should not expose this chunking model as user-facing structure; users see blocks and headings, not storage shards.
 
 ### Cell Editing
 
@@ -353,7 +416,7 @@ Only the most important 3-5 properties appear by default. More metadata is avail
 
 ## Source-Linked Cards
 
-For URL/DOC/PPT/PDF imports, the parsed card/document is the user-facing primary object. Source files and URLs are provenance and sync inputs.
+For URL/DOC/PPT/PDF imports, the ingested card/document is the user-facing primary object. Source files and URLs are provenance and sync inputs.
 
 Conceptual model:
 
@@ -361,8 +424,8 @@ Conceptual model:
 card/document resource
   editable blocks
   source links
-  parser state
-  derived indexes
+  ingest state
+  Ingest record and derived artifacts
 ```
 
 The source is not overwritten by user edits. The card is the long-lived knowledge object.
@@ -370,21 +433,25 @@ The source is not overwritten by user edits. The card is the long-lived knowledg
 Suggested storage shape:
 
 ```text
-.data/cards/{cardId}/
+{owning-container}/{cardId-or-resource}/
   card.ttl
   blocks/
   assets/
   sources/
     source.ttl
-  parser/
+  ingest/
     manifest.ttl
-  indexes/
+  derived/
     search.ttl
     vector.ttl
     entities.ttl
 ```
 
-For pure file browsing, files remain under `/files/...`. Once a file or URL enters the knowledge system, it gets a card resource that references the source.
+`derived/` is for implementation-level search, vector, entity, or retrieval artifacts. It is not the Ingest record and should not reintroduce `index` as a Files product/domain concept.
+
+This is a shape, not a mandated global path. `owning-container` may be `.data/workspaces/...`, `.data/agents/...`, a project container, a source-import container, or a future card-specific container. The source-linked card path remains an open storage decision.
+
+For pure file browsing, files remain under `/files/...`. Once a file or URL enters the knowledge system, it can get a card resource that references the source and may live near the workflow that created it.
 
 ## Source Sync and User Edits
 
@@ -393,13 +460,13 @@ Imported blocks carry origin metadata:
 - `origin`: source, user, or ai.
 - source block id.
 - source hash.
-- parser version.
+- ingest version.
 - sync state: clean, source-updated, conflict, source-missing.
 
 Rules:
 
 - User edits always win by default.
-- Parser updates may auto-update only source-derived blocks that the user has not edited.
+- Ingest updates may auto-update only source-derived blocks that the user has not edited.
 - New source blocks can appear as pending updates.
 - Source-deleted blocks become source-missing; user content is not deleted automatically.
 - Conflicts enter review with keep mine, accept source, or merge actions.
@@ -417,11 +484,13 @@ Actions:
 - Review updates
 - Detach source
 
-## Lazy Progressive Parser
+## Lazy Progressive Ingest
 
-Parsing should be lazy and progressive.
+Ingest should be lazy and progressive.
 
-Import creates a card shell and parses only minimum useful content:
+Use `Ingest` as the canonical LinX Files product/domain name. Ingest is not the OCR, reader, parser, or format-transform action itself. xpod handles those lower-level extraction, OCR, byte/range fetch, and format transform capabilities: it produces bytes, text, markdown, chunks, assets, and provenance. LinX Files ingests that material into cards, blocks, structured data, vocab proposals, and approvals. Do not expose `parser`, `reader`, `index`, or `SourceIndex` as Files product concepts. `parser` and `SourceIndex` remain only legacy RDF/API aliases that production code must accept for existing Files-local data. Product/UI copy should call source progress state an `Ingest record` / `Ingest 记录`; the underlying RDF/storage type can remain `SourceIngestManifest` / `SourceIngest*`. Current default storage is `/.data/ingest/sources/{source-slug}-{source-uri-hash}/manifest.ttl`; `/.data/index/sources/...` is accepted only as a legacy compatibility location. New RDF writes use `udfs:SourceIngestManifest` plus Ingest-named predicates (`ingestVersion`, `ingestStatus`, `ingestedRange`, `lastIngestedAt`) and must not dual-type as `udfs:SourceIndexManifest` or write `parser*` / `parsed*` predicates. Existing Files-local RDF may still contain `ParserIndexManifest`, `SourceIndexManifest`, or `parser*` predicate names, so compatibility readers must accept those legacy aliases; new UI and specs should not expose parser/index as the concept.
+
+Ingest creates a card shell and processes only minimum useful content:
 
 - title
 - source type
@@ -429,39 +498,48 @@ Import creates a card shell and parses only minimum useful content:
 - thumbnail
 - basic metadata
 
-Then parse on demand:
+Then ingest on demand:
 
 - scroll to a page/section
 - open outline
 - search within document
 - ask AI about the document
 - open whiteboard/kanban summary
-- user explicitly chooses parse all
+- user explicitly chooses ingest all
 
-Parser manifest records:
+Ingest record stores:
 
 - source hash
-- parser version
+- ingest version
 - status: partial, complete, stale, failed
-- parsed ranges
+- ingested ranges
 - pending ranges
 - priority queue
-- last parsed time
+- last ingest time
 
-URL sources may refresh snapshots periodically, but full reparse remains lazy. File sources use hash/mtime to avoid reparse when unchanged.
+Ingest proposals are separate immutable approval instances. They reference the Ingest record and staged output, but each refresh/re-ingest creates a new `/.data/proposals/source/{subject-source}-{instance}.ttl` proposal resource instead of rewriting an older pending proposal. Access changes follow the same instance rule under `/.data/proposals/access/{audience-role-ref}-{instance}.ttl`; approval updates proposal status and canonical resources, not the identity of the pending proposal.
+
+URL sources may refresh snapshots periodically, but full ingest remains lazy. File sources use hash/mtime to avoid re-ingest when unchanged.
 
 UI should show lightweight state:
 
 ```text
-Parsed 3/40 pages · Parsing as you read
+Ingested 3/40 pages · Ingesting as you read
 ```
 
 Advanced actions:
 
-- Continue parsing
-- Parse all
-- Re-parse
+- Continue ingest
+- Ingest all
+- Re-ingest
 - Review source updates
+
+Proposals and approvals:
+
+- Vocab proposals, source update reviews, and AI-suggested structural changes use the unified approval/proposal model.
+- Solid provides resources, access control, reads/writes, and notifications; pending changes are LinX application resources.
+- A proposal records actor, target resource/term, operation, patch or diff, reason, createdAt, status, and approval outcome.
+- Approved proposals write to canonical resources; rejected proposals remain audit/history and do not modify canonical vocab or user content.
 
 ## File And Folder Opening
 
@@ -474,7 +552,7 @@ Folder:
 
 Editable file:
 
-- Opens directly into focused card/document editor.
+- Opens directly into a focused macOS sheet-style card/document editor overlay.
 - No embedded content preview in the main pane.
 - Modal/page body uses byline + blocks.
 - Meta is in the bottom tail.
@@ -489,7 +567,7 @@ Readonly media:
 Editable card/document surface should resemble Heptabase / Feishu / Tencent Docs:
 
 - title
-- byline with source/sync/parser state
+- byline with source/sync/ingest state
 - block body
 - lightweight block hover controls
 - bottom metadata tail
@@ -498,11 +576,23 @@ Byline can include:
 
 - source
 - sync state
-- parser progress
+- ingest progress
 - local edit count
 - access summary
 
 It should not turn into a technical status dashboard. Detailed state opens in source/status popover.
+
+## Implementation Direction
+
+First implementation phase:
+
+- Rich text editor: use Tiptap / ProseMirror, not another simulated editor surface.
+- Table state: use TanStack Table for headless row, column, filtering, sorting, sizing, visibility, and selection state.
+- Whiteboard: implement as a first-phase `+ View` with a stable projected board of subject cards and relation lines; evaluate tldraw as the preferred engine when freeform card canvas editing is specified.
+- Kanban: implement as a first-phase `+ View`, with dnd-kit as the preferred sortable card/column layer.
+- Editable file/card detail: use a macOS sheet-style overlay, not an embedded main-pane editor.
+
+BlockNote remains useful as an interaction reference or fast prototype comparison. Lexical remains the main editor fallback if ProseMirror constraints become a blocker. Milkdown / Crepe is only for a Markdown-first route.
 
 ## Reference Product Tracking
 
@@ -563,14 +653,14 @@ Files-specific tone:
 - Structured table: typed database.
 - Card/document editor: focused writing/reading surface.
 - Vocab: quiet registry.
-- Parser/source sync: subtle byline state, explicit review when needed.
+- Ingest/source sync: subtle byline state, explicit review when needed.
 
 ## Open Decisions
 
-- Whether source-linked card resources live under `.data/cards/` or a more domain-specific container.
-- Whether block storage is one TTL per block or chunked by section/page for performance.
-- Exact proposal resource shape for vocab and source update review.
-- Whether focused editor is modal, full-page overlay, or route-level page in production.
+- Source-linked card container strategy: cards can be independent and scattered, but the default storage locator still needs a concrete rule.
+- Exact relationship between LinX vocab publishing, public/private Type Index registrations, WebID profile links, preferences, and ACL/ACR defaults.
+- Exact shared approval resource schema for vocab proposals, source update reviews, and AI-suggested schema changes.
+- Exact block persistence format: two-newline import chunks are acceptable for the first implementation, but long/source-derived documents may require section/page chunks.
 
 These are implementation planning questions; the interaction model above does not depend on their final storage detail.
 
@@ -584,5 +674,7 @@ These are implementation planning questions; the interaction model above does no
 - Subject click opens a peek before navigation.
 - Vocab tree is `terms.ttl`, `shapes.ttl`, `namespaces.ttl`.
 - Imported URL/PDF/DOC/PPT content is card-first, with source as provenance.
-- Parser is lazy and progressive.
-- User edits are never overwritten by parser/source sync without review.
+- Ingest is lazy and progressive.
+- User edits are never overwritten by Ingest/source sync without review.
+- Editable file/card detail uses a macOS sheet-style overlay with metadata in the bottom tail. Metadata property approvals patch `.meta` with SPARQL, while editable body saves stay on the ETag-protected raw resource path.
+- First development phase uses Tiptap and dnd-kit where their interaction models are already clear. Whiteboard starts as a deterministic projection rather than a generic drawing canvas; tldraw remains a candidate for the later freeform canvas phase.

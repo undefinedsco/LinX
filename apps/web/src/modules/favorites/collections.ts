@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import {
   favoriteResource,
+  SCHEMA,
   type FavoriteRow,
   type FavoriteInsert,
   type SourceModule,
@@ -55,13 +56,24 @@ export const favoriteCollection = createPodCollection<
 // Favorite Operations
 // ============================================================================
 
+function normalizeFavoriteRow(row: FavoriteRow): FavoriteRow {
+  const target = (row as any).targetUri ?? (row as any).target ?? null
+  if (!target) return row
+
+  return {
+    ...row,
+    targetUri: target,
+    sourceId: row.sourceId ?? target,
+  } as FavoriteRow
+}
+
 export const favoriteOps = {
   getAll(): FavoriteRow[] {
-    return Array.from(favoriteCollection.state.values())
+    return Array.from(favoriteCollection.state.values()).map(normalizeFavoriteRow)
   },
 
   getById(id: string): FavoriteRow | null {
-    const items = Array.from(favoriteCollection.state.values())
+    const items = Array.from(favoriteCollection.state.values()).map(normalizeFavoriteRow)
     return items.find((f: FavoriteRow) => f.id === id) || null
   },
 
@@ -71,7 +83,7 @@ export const favoriteOps = {
   },
 
   async fetchFavorites(): Promise<FavoriteRow[]> {
-    return await favoriteCollection.fetch()
+    return (await favoriteCollection.fetch()).map(normalizeFavoriteRow)
   },
 }
 
@@ -87,6 +99,14 @@ export interface StarredChangeMetadata {
   snapshotMeta?: string
 }
 
+const FAVORITE_TARGET_TYPE_BY_SOURCE: Record<SourceModule, string> = {
+  chat: SCHEMA.CreativeWork,
+  contacts: SCHEMA.CreativeWork,
+  files: SCHEMA.CreativeWork,
+  messages: SCHEMA.CreativeWork,
+  thread: SCHEMA.CreativeWork,
+}
+
 /**
  * Called by other modules when an entity's starred status changes.
  * starred=true  → upsert into favoriteCollection
@@ -100,7 +120,7 @@ async function onStarredChange(
 ): Promise<void> {
   if (starred) {
     // Check if already exists (by sourceModule + sourceId)
-    const existing = Array.from(favoriteCollection.state.values()).find(
+    const existing = Array.from(favoriteCollection.state.values()).map(normalizeFavoriteRow).find(
       (f: FavoriteRow) => f.sourceModule === sourceModule && f.sourceId === sourceId,
     )
 
@@ -119,7 +139,8 @@ async function onStarredChange(
       // Insert new favorite
       const data: FavoriteInsert = {
         id: crypto.randomUUID(),
-        targetType: sourceModule,
+        targetType: FAVORITE_TARGET_TYPE_BY_SOURCE[sourceModule],
+        target: sourceId,
         targetUri: sourceId,
         title: metadata?.title ?? sourceId,
         sourceModule,
@@ -138,7 +159,7 @@ async function onStarredChange(
     queryClient.invalidateQueries({ queryKey: QUERY_KEYS.favorites })
   } else {
     // Find and delete by sourceModule + sourceId
-    const target = Array.from(favoriteCollection.state.values()).find(
+    const target = Array.from(favoriteCollection.state.values()).map(normalizeFavoriteRow).find(
       (f: FavoriteRow) => f.sourceModule === sourceModule && f.sourceId === sourceId,
     )
     if (target) {

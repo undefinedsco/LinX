@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockNavigate = vi.fn()
@@ -46,6 +46,25 @@ const authRequiredItem = {
     session: 'urn:linx:runtime-session:runtime-1',
     entry: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
     createdAt: '2026-03-10T12:00:00.000Z',
+  },
+}
+
+const approvalItem = {
+  id: 'approval:approval-1',
+  kind: 'approval' as const,
+  category: 'approval' as const,
+  title: 'files.access.proposal',
+  description: 'Access proposal requires review.',
+  timestamp: '2026-03-10T12:00:00.000Z',
+  status: 'pending' as const,
+  approval: {
+    id: 'approval-1',
+    status: 'pending',
+    risk: 'medium',
+    toolName: 'files.access.proposal',
+    target: 'https://pod.example/.data/proposals/access/authenticated-contributor.ttl#proposal',
+    createdAt: '2026-03-10T12:00:00.000Z',
+    resolvedAt: null,
   },
 }
 
@@ -112,5 +131,30 @@ describe('InboxContentPane', () => {
     expect(screen.queryByText('运行时等待额外认证')).not.toBeInTheDocument()
     expect(screen.getByText('运行时认证已完成')).toBeInTheDocument()
     expect(screen.getByText('打开会话')).toBeInTheDocument()
+  })
+
+  it('handles approval mutation failures through hook error state without surfacing the rejection', async () => {
+    mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedItemId: approvalItem.id,
+    }))
+    mockUseInboxItems.mockReturnValue({
+      data: [approvalItem],
+      isLoading: false,
+    })
+    mockMutateAsync.mockRejectedValueOnce(new Error('ACR access proposal cannot be approved automatically.'))
+
+    render(<InboxContentPane />)
+
+    fireEvent.change(screen.getByLabelText('处理备注'), { target: { value: 'Needs policy support.' } })
+    fireEvent.click(screen.getByText('批准'))
+
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        approval: approvalItem.approval,
+        decision: 'approved',
+        reason: 'Needs policy support.',
+      })
+    })
+    expect(screen.getByLabelText('处理备注')).toHaveValue('Needs policy support.')
   })
 })

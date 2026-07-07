@@ -6,6 +6,8 @@ const useSolidDatabaseMock = vi.fn()
 const initializeChatCollectionsMock = vi.fn()
 const initializeContactCollectionsMock = vi.fn()
 const initializeFavoriteCollectionsMock = vi.fn()
+const initializeFilesCollectionsMock = vi.fn()
+const subscribeFilesToPodMock = vi.fn()
 const initializeInboxCollectionsMock = vi.fn()
 const initializeModelCollectionsMock = vi.fn()
 const initializeSymphonyControlCollectionsMock = vi.fn()
@@ -64,6 +66,13 @@ vi.mock('@/modules/favorites/collections', () => ({
   initializeFavoriteCollections: (...args: unknown[]) => initializeFavoriteCollectionsMock(...args),
 }))
 
+vi.mock('@/modules/files/collections', () => ({
+  initializeFilesCollections: (...args: unknown[]) => initializeFilesCollectionsMock(...args),
+  filesOps: {
+    subscribeToPod: (...args: unknown[]) => subscribeFilesToPodMock(...args),
+  },
+}))
+
 vi.mock('@/modules/inbox/collections', () => ({
   initializeInboxCollections: (...args: unknown[]) => initializeInboxCollectionsMock(...args),
 }))
@@ -85,6 +94,7 @@ describe('PodCollectionsBootstrap', () => {
     useSolidDatabaseMock.mockReturnValue({ db: null })
     ensureLinxWelcomeMock.mockResolvedValue(null)
     subscribeToPodMock.mockResolvedValue(() => undefined)
+    subscribeFilesToPodMock.mockResolvedValue(() => undefined)
     subscribeSymphonyControlToPodMock.mockResolvedValue(() => undefined)
     invalidateQueriesMock.mockResolvedValue(undefined)
     chatStoreState = {
@@ -107,11 +117,13 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeChatCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeContactCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeFavoriteCollectionsMock).toHaveBeenCalledWith(null)
+    expect(initializeFilesCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(null)
     expect(ensureLinxWelcomeMock).not.toHaveBeenCalled()
     expect(subscribeToPodMock).not.toHaveBeenCalled()
+    expect(subscribeFilesToPodMock).not.toHaveBeenCalled()
     expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
   })
 
@@ -133,10 +145,12 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeChatCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeContactCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeFavoriteCollectionsMock).toHaveBeenCalledWith(db)
+    expect(initializeFilesCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(db)
     expect(subscribeToPodMock).toHaveBeenCalledTimes(1)
+    expect(subscribeFilesToPodMock).toHaveBeenCalledTimes(1)
     expect(subscribeSymphonyControlToPodMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })

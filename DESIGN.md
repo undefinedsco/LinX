@@ -13,6 +13,7 @@ Reference roles:
 
 - Apple / Premium: visual discipline, native-feeling restraint, typography, spacing, and surface hierarchy; do not copy brand identity or assets.
 - WeChat: desktop chat interaction skeleton only: low setup burden, object lists, current conversation, and familiar re-entry surfaces.
+- Heptabase: structured resource interactions only: card as file/resource + metadata, tag/class scope, predicate fields, subject notes, table/kanban/whiteboard projections, and low-chrome editing. Do not turn the whole Files module into a Heptabase clone.
 - Linear / Raycast: command clarity, state legibility, keyboardable operations, and fast work recovery.
 - Notion: linked context and document organization patterns, without turning LinX into a generic document editor.
 - GitHub: issue/review/audit trail discipline for approvals, evidence, and changes.
@@ -109,15 +110,20 @@ Reference roles:
 ## Files and Personal Linked Context
 
 - Files mental model: File Browser/Finder-like browsing for folders, files, selection, rename/move/copy, preview, keyboard expectations, and permission access; it remains a Pod/Solid resource browser, not a local Finder replacement.
+- Files visual pass: use Apple/macOS as a restraint lens, not as identity. Keep the head near 48px, search in list/tool headers, right drawers collapsed by default, and controls tucked into icon/menu affordances until the user invokes them.
 - Personal Linked Context: user-owned files, conversations, tasks, evidence, decisions, preferences, and memories become linked, AI-usable context. The Pod behaves like a model-defined semantic file system: human-readable files plus queryable RDF semantics.
 - Structured resources: `.ttl`, `.jsonld`, and RDF resources default to a subject table. One row represents one RDF subject/resource; `rdf:type` is surfaced as required class scope; predicates become compact columns.
+- Structured table contract: class scope is required and selected from the table head; different classes do not mix in one table. Header order is `subject`, predicate columns, then `+ Predicate`; `+ Subject` is the final row. Predicate headers hide namespace by default, expose it through one `ns` switch, and resize via header dividers.
+- Predicate interaction: predicate definitions drive cell rendering and operation. Text/code/date edit inline; enum/select and multi-select use a selected-chip + search/create popover; relation/URL cells expose open/link; booleans toggle in place. Cell clicks should enter the natural type-specific interaction without a separate confirm button.
 - Card model: a card is a file/resource plus queryable RDF metadata. Do not introduce a parallel card database when the Pod resource can be the durable subject.
 - `.meta` / `.acl` / `.acr`: these are sidecars and built-in resource capabilities, not normal business metadata rows. `.meta` can hold file/container view metadata, source hints, checksums, title, or UI view state; business truth such as Issue/Task/Run/Report/Evidence belongs in modeled resources.
-- Vocab: user Pod vocabulary lives under `/.vocab/` with term, shape, and namespace resources. Table columns, validation, sorting, enum/select controls, and cell proposals use actual predicate URIs; local term records support labels, approval, descriptions, shapes, and provenance.
+- Vocab: user Pod vocabulary lives under `/.vocab/` with sibling `terms.ttl`, `shapes.ttl`, and `namespaces.ttl` resources. Class, predicate, and enum option are term kinds; shape is constraint metadata. Table columns, validation, sorting, enum/select controls, and cell proposals use actual predicate URIs; local term records support labels, approval, descriptions, shapes, and provenance.
 - Structured editing: ordinary `.data` subject values may be edited from Files, but AI/user-suggested class, predicate, enum, shape, or cell changes stage proposals and Inbox approvals before canonical RDF is modified. Pending markers indicate unconfirmed definitions or values, not decoration.
 - Ingest: Ingest is the LinX product pipeline that turns source material into reviewable Files objects: cards, blocks, subjects, predicates, vocab proposals, approvals, and source-linked updates. Lower-level fetch/OCR/parser/extraction belongs to runtime/xpod; UI copy should not expose parser/index as the user-facing product concept.
 - Projections: Table is the default structured view. Kanban, Whiteboard, and Raw are projections over the same subject/resource data and view metadata, not separate durable authorities.
+- Projection implementation: structured tables should use TanStack Table for headless row/column/sort/filter/size/visibility state with LinX-owned UI primitives. Kanban may use dnd-kit for sortable/droppable lanes; Whiteboard starts as a subject-card/relation projection and can evaluate tldraw only when freeform canvas editing becomes a real requirement.
 - Subject opening: table/Kanban/Whiteboard subject clicks preview first; Enter, double-click, or explicit open enters the Files resource opening flow only when the subject resolves to a Pod resource path. Fragment subjects and term targets stay in definition/peek flows unless the user explicitly opens the containing resource.
+- Folder and file detail: folder details are Finder-like list/column/icon browsing with local selection and lightweight preview, not a card wall. Editable Markdown/text files open a focused sheet/modal with Tiptap/ProseMirror rich editing, raw source switch, and `.meta` in the bottom tail; folder/file/structured page context keeps `.meta` in the right drawer.
 - Chat files: the `聊天文件` scope consumes chat message `richContent` file blocks and explicit runtime artifact containers (`artifacts`, `files`, `generatedFiles`, `outputs`, `resources`, `attachments`). Files must not infer generated files by regexing stdout, assistant prose, tool names, or local workspace paths.
 
 ## Visual language

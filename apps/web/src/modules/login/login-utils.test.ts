@@ -16,6 +16,7 @@ import {
   hasStoredSolidSession,
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
+  setPendingPostLoginMicroAppId,
 } from './login-utils'
 import { getRememberedAccount } from '@linx/stores/login'
 
@@ -53,6 +54,13 @@ describe('login-utils post-login target helpers', () => {
     ensurePendingPostLoginMicroAppId('files')
 
     expect(consumePendingPostLoginMicroAppId()).toBe('favorites')
+  })
+
+  it('can replace the pending target with the current route target', () => {
+    ensurePendingPostLoginMicroAppId('chat')
+    setPendingPostLoginMicroAppId('files')
+
+    expect(consumePendingPostLoginMicroAppId()).toBe('files')
   })
 
   it('stores and consumes the pending login attempt', () => {

@@ -152,6 +152,48 @@ Playwright 同步断言：
 }
 ```
 
+## Files 专项验收
+
+Latest local verification: 2026-06-16 Asia/Shanghai.
+
+这些证据记录 Files 的结构化交互探索。当前 Files 产品规则以 `docs/prototype/module-files.md` 和 `DESIGN.md` 为准：`.ttl` 默认 Table；Kanban、Whiteboard、Raw 是第一阶段 `+ View` 投影；Discover 是历史/实验参考，不作为当前可选 `+ View`。
+
+专项截图：
+
+| 场景 | 截图 |
+| --- | --- |
+| Table baseline | `docs/prototype/assets/prototype-files-phase1-table-1440x900.png` |
+| Subject peek | `docs/prototype/assets/prototype-files-phase1-subject-peek-1440x900.png` |
+| Subject source routing | `docs/prototype/assets/prototype-files-phase1-subject-source-1440x900.png` |
+| Tiptap editor sheet | `docs/prototype/assets/prototype-files-phase1-tiptap-sheet-1440x900.png` |
+| dnd-kit Kanban | `docs/prototype/assets/prototype-files-phase1-kanban-1440x900.png` |
+| Projected Whiteboard | `docs/prototype/assets/prototype-files-phase1-whiteboard-1440x900.png` |
+| Mobile table | `docs/prototype/assets/prototype-files-phase1-mobile-table-390x844.png` |
+| Mobile Tiptap sheet | `docs/prototype/assets/prototype-files-phase1-mobile-tiptap-sheet-390x844.png` |
+
+专项通过标准：
+
+- Files shell 仍是 File Browser/Finder-like resource browser；聊天文件是二级入口。
+- `.ttl` / `.jsonld` 默认打开 Table，class 是 table head 的必选 scope；表格不重复 class 列。
+- 表头顺序是 `subject / predicate... / + Predicate`，`+ Subject` 是最后一行。
+- Predicate header 默认隐藏 namespace，可通过 `ns` switch 展开，并通过表头 divider 调整宽度。
+- Predicate cell 使用 type-specific whole-cell interaction：inline edit、enum selected-chip/search/create、multi-select add/remove、relation/URL open/link、date picker、checkbox toggle。
+- 除可编辑单文件 sheet 外，folder/file/`.ttl` metadata 都通过右侧 `.meta` drawer 展示；Access 通过 ACL/ACR modal，不作为 inline meta panel。
+- 非 `.ttl` 可编辑文件打开 Tiptap/ProseMirror rich editor sheet，`.meta` 位于底部；只读图片保持轻量 preview。
+- `/.vocab/terms.ttl`、`/.vocab/shapes.ttl`、`/.vocab/namespaces.ttl` 是 readonly registry/table 视图；普通 `.data` 表仍可编辑，pending `*` 表示未确认 term/proposal。
+- Kanban、Whiteboard、Raw 从同一 structured projection 派生，跟随 Table class/search/sort/visibility/cell override 状态。
+
+已记录的专项验证命令：
+
+```bash
+yarn workspace @linx/prototype build
+git diff --check
+yarn workspace @linx/prototype verify:files:proposals
+yarn workspace @linx/prototype verify:files
+```
+
+专项结论：97 / 100, pass. 已覆盖 Tiptap sheet、folder Finder-like local preview、Access modal、Favorite toggle、restricted no-access、subject route context、source-linked card Ingest review、proposal resource records、TanStack-backed structured table rendering、dnd-kit Kanban、projected Whiteboard、locked vocab registry 和 compact mobile Files drawer/table/editor 路径。剩余风险在生产层真实 Pod/model persistence、跨文件历史恢复、完整 SHACL payload、vocab 写权限/发布语义，以及真实 Ingest manifest 与 proposal resource 的端到端持久化。
+
 ## 不覆盖项
 
 - 未验证真实登录流程。

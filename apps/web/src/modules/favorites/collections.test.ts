@@ -89,6 +89,9 @@ describe('favoriteHooks.onStarredChange', () => {
       expect(mockInsert).toHaveBeenCalledTimes(1)
       const insertedData = mockInsert.mock.calls[0][0]
       expect(insertedData.id).toBe('fav-uuid-1')
+      expect(insertedData.targetType).toBe('http://schema.org/CreativeWork')
+      expect(insertedData.target).toBe('chat-1')
+      expect(insertedData.targetUri).toBe('chat-1')
       expect(insertedData.sourceModule).toBe('chat')
       expect(insertedData.sourceId).toBe('chat-1')
       expect(insertedData.title).toBe('Test Chat')
@@ -131,6 +134,7 @@ describe('favoriteHooks.onStarredChange', () => {
       const insertedData = mockInsert.mock.calls[0][0]
       expect(insertedData.title).toBe('contact-1')
       expect(insertedData.searchText).toBe('contact-1')
+      expect(insertedData.targetType).toBe('http://schema.org/CreativeWork')
     })
   })
 
@@ -187,10 +191,12 @@ describe('favoriteOps', () => {
 
   describe('getById', () => {
     it('should find favorite by id', () => {
-      mockCollectionState.set('f1', { id: 'f1', title: 'Found' })
+      mockCollectionState.set('f1', { id: 'f1', title: 'Found', target: 'https://pod.example/file.md' })
 
       const result = favoriteOps.getById('f1')
       expect(result?.title).toBe('Found')
+      expect(result?.targetUri).toBe('https://pod.example/file.md')
+      expect(result?.sourceId).toBe('https://pod.example/file.md')
     })
 
     it('should return null if not found', () => {

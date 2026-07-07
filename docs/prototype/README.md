@@ -47,7 +47,10 @@
 
 - 四个一级模块都有静态视觉状态：`聊天`、`联系人`、`文件`、`收藏`。
 - `联系人` 按通讯录分组和名片详情表达，不做 Agent 配置页。
-- `文件` 按 Pod/Finder 视角表达：位置/容器树、路径面包屑、文件表格、右侧 resource 详情；可看到 Agent home、Workspace `.meta`、Repository metadata。
+- `文件` 按 File Browser / Pod 视角表达：左侧文件夹树、内容区文件/表格；除内容详情弹窗外，folder/file/`.ttl` 的 `.meta` 统一放在右侧抽屉，默认收起；普通可编辑文件用富文本编辑详情弹窗，meta 放在弹窗尾部；Finder 只作为用户熟悉的文件心智参考。
+- `.ttl` / RDF resource 默认以 subject table 打开：class / `rdf:type` 是右上角 Class icon 里的必选 scope，不混排不同 class；当前 class 的表头就是 schema，业务数据表顺序是 `subject / predicate... / + Predicate`，不重复展示 class 列；predicate header 默认隐藏 namespace，可用滑动 `ns` switch 展开，列宽按 Excel 式表头分隔线拖拽调整；predicate cell 按类型整格点击操作，包括编辑、Heptabase-like tag selector 中选择/搜索/新增枚举值、multi-select 加减枚举值、打开 relation/URL、日期选择或 checkbox toggle；`.ttl` 右侧 `.meta` 抽屉默认收起；personal `.data` 表的已有 predicate 值可原地编辑，但先进入 structured cell proposal / Inbox approval，批准前不写回 canonical Pod resource；待确认字段定义用 `*` 标在表头/选项上；业务数据里的 `+ Predicate` 先展示当前 class 已有 predicates，第一行展开新增流程并填写 URI / 类型；本地 `/.vocab/terms.ttl#term` 是 term registry 记录，`udfs:predicate` 可以指向实际 RDF predicate URI（如 `https://schema.org/summary`），表格列和校验使用实际 predicate，审批记录仍落当前 Pod vocab；`+ Subject` 在末行；`/.vocab/terms.ttl` 默认只读浏览 term registry，`/.vocab/shapes.ttl` 存 shape/约束，`/.vocab/namespaces.ttl` 存 prefix/namespace 注册；额外视图通过 `+ View` 切换到 Kanban、Whiteboard、Raw，Discover 保留为未来/原型；ACL/ACR 作为文件级 Access 弹窗展示，不混入普通 `.meta` 行。
+- 生产实现选型记录：表格状态层首选 TanStack Table，LinX 自建表格 UI primitives；Whiteboard 优先评估 tldraw，关系图型视图评估 React Flow；Kanban 拖拽优先评估 dnd-kit，跨文件/跨窗口拖放能力再评估 Pragmatic Drag and Drop。
+- 非 `.ttl` 可编辑文件不进入 subject table，也不在主区域内嵌正文 preview；单击只做 Finder-like 选择/轻量预览，双击、Enter 或显式打开才进入富文本编辑详情弹窗，`.meta` 在弹窗尾部。只读文件可保留轻量预览面，页面级 `.meta` 仍进右侧抽屉。
 - `收藏` 按微信收藏式列表表达，每项保留回跳目标。
 - 消息中心铃铛在模块头部右上角，不放在左侧窄栏。
 - `聊天文件` 保持为左下底部菜单里的二级入口，点击后以弹窗打开按聊天来源组织的文件原型。

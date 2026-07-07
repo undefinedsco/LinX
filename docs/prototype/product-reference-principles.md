@@ -7,6 +7,8 @@ LinX 不应该像素级复制微信、Telegram 或 Signal。我们要拆开抄�
 - 产品心智更像微信：用户打开就是会话，不需要先理解 Pod、OIDC、RDF、runtime 或 provider。
 - 桌面交互更像 Telegram Desktop：三栏结构、会话列表、置顶、文件/链接/媒体聚合、Chat Folders 更适合桌面端。
 - 个人 Pod 入口更像 Telegram Saved Messages + Signal Note to Self：用户可以把自己、AI Secretary、联系人、任务、链接都理解成会话对象。
+- 文件浏览主骨架更像 File Browser，Finder 只提供用户熟悉的文件心智。
+- 结构化 resource 的 card/property/whiteboard 参考 Heptabase，但不复制它的数据模型。
 - 数据实现继续用 LinX 和 `@undefineds.co/models` 的 Pod schema，不抄外部产品的数据模型。
 
 ## 抄什么
@@ -63,6 +65,50 @@ LinX 对应落点：
 - Agent 的规则、skills、MCP、backend、compaction 属于 Agent home，不跟文件夹或 Session 走。
 - 文案只说“保存到你的 Pod”或“当前会话已同步”，不解释 RDF / SPARQL / Solid internal controls。
 
+### 文件浏览抄 File Browser，心智借 Finder
+
+File Browser 值得作为 Files 主参考，因为 LinX 浏览的是 Pod / Solid resource，不是本地 macOS 文件系统：
+
+- 左侧位置 / 容器树。
+- 顶部 breadcrumb。
+- 中间文件和容器列表。
+- 右侧 resource inspector。
+- URI、权限、类型、大小、修改时间等资源信息。
+
+Finder 只作为熟悉心智参考：
+
+- 文件夹和文件的图标隐喻。
+- 选择、重命名、复制、移动、拖拽、预览、右键菜单和快捷键预期。
+- 列表/图标/分栏这类浏览模式可以借鉴，但不能暗示 Web 壳无法提供的本地系统能力。
+
+LinX 对应落点：
+
+- Files 是 Finder-like 的 Pod file browser。
+- 主交互结构以 File Browser 为准。
+- `聊天文件` 仍然是会话来源聚合，不改成一级 Files 的主结构。
+
+### 结构化 resource 抄 Heptabase 的交互语言
+
+Heptabase 值得抄的是 card/property/tag/whiteboard 的认知语言，不是内部数据模型：
+
+- tag 对齐 class 时，对应 `rdf:type`。
+- property 对齐 RDF predicate / queryable metadata。
+- note/card 对齐 RDF subject / Pod resource card。
+- whiteboard 对齐 selected subject cards 的空间组织。
+
+LinX 对应落点：
+
+- 普通文件是一张 file+meta card。
+- `.ttl` / RDF 文件是一组 subject cards 的 document/deck。
+- `.ttl` 默认打开 Table：class 在表头必选筛选，一行一个当前 class 的 subject，表头就是 schema，顺序是 `subject / class / predicate... / + Predicate`。
+- `+ Subject` 在 Table 最后一行；`+ Predicate` 在表头区域并打开 predicate 类型选择下拉；筛选和排序保留在 Table 工具栏。
+- property 和 relation 都作为 predicate 类型/值形态处理，不在 UI 中拆成两块 schema 面板。
+- `.ttl` 的右侧 inspector 展示该文件 `.meta`，不是默认选中 subject card。
+- 非 `.ttl` 文件打开为文件预览 + 文件 `.meta` inspector。
+- Card 是某个 subject/resource 的详情编辑形态。
+- Whiteboard、Kibana/Discover、Raw 等额外视图通过 `+ View` 添加或切换，只承载对应的视图配置和布局 metadata。
+- topic tag 如“AI”“重要”“待整理”是 aboutness/tag metadata，不混成 class。
+
 ## 不抄什么
 
 ### 不抄微信品牌皮肤
@@ -103,7 +149,8 @@ LinX 的数据实现仍然以 `@undefineds.co/models` 为 authority。
 | 产品心智 | 微信 | 打开就是聊天，低解释成本，固定助手入口 |
 | 桌面结构 | Telegram Desktop | 三栏、会话列表、文件/链接/媒体聚合、folders |
 | 个人收纳入口 | Telegram Saved Messages + Signal Note to Self | `AI Secretary` / `我的空间` 固定会话 |
-| 文件管理 | Finder / File Browser | 一级 `文件` 模块是 Pod 文件浏览器 |
+| 文件管理 | File Browser + Finder 心智 | 一级 `文件` 模块是 Pod 文件浏览器 |
+| 结构化资源 | Heptabase card/property/whiteboard | `class / meta / subject` 的 Table、Card、Whiteboard 视图 |
 | 运行现场 | LinX Agent-centered model | Agent + Thread + Workspace，Session 只做运行绑定 |
 | 数据实现 | LinX + `@undefineds.co/models` | 继续使用现有 Pod schema |
 

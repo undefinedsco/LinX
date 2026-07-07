@@ -28,6 +28,7 @@ import { createPodCollection } from '@/lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { continueRuntimeToolCallFromInbox } from '@/modules/chat/services/chatkit-local/runtime-tool-response'
+import { filesProposalApplicationCollection } from '@/modules/files/data/proposal/proposal-application-collection'
 import { useInboxStore, type InboxFilter } from './store'
 import { buildAuditPresentation, createResolvedAuthTimestampsIndex } from './presentation'
 import { countActionableInboxItems, filterInboxItems } from './utils'
@@ -123,6 +124,26 @@ function findLinkedApproval(approvals: ApprovalRow[], audit: AuditRow): Approval
     : null
 }
 
+export function findLatestApprovalByTarget(approvals: ApprovalRow[], target: string | null | undefined): ApprovalRow | null {
+  const normalizedTarget = target?.trim()
+  if (!normalizedTarget) return null
+  return approvals
+    .filter((approval) => approval.target === normalizedTarget)
+    .sort((a, b) => formatTimestamp(b.resolvedAt ?? b.createdAt) - formatTimestamp(a.resolvedAt ?? a.createdAt))[0] ?? null
+}
+
+function findCachedApprovalByTarget(target: string | null | undefined): ApprovalRow | null {
+  const normalizedTarget = target?.trim()
+  if (!normalizedTarget) return null
+
+  const queryApprovals = queryClient.getQueryData<ApprovalRow[]>(['inbox', 'approvals'])
+  const queryMatch = findLatestApprovalByTarget(queryApprovals ?? [], normalizedTarget)
+  if (queryMatch) return queryMatch
+
+  if (!approvalCollection.isReady()) return null
+  return findLatestApprovalByTarget(approvalCollection.toArray as ApprovalRow[], normalizedTarget)
+}
+
 async function updateApprovalByIri(
   db: SolidDatabase,
   approval: ApprovalRow,
@@ -130,6 +151,24 @@ async function updateApprovalByIri(
 ): Promise<void> {
   assertUpdateValuesBelongToCurrentPod(db, approval)
   await updateExactRecord(db, approvalResource as any, resolveApprovalIri(db, approval), patch)
+}
+
+async function updateResolvedApproval(
+  db: SolidDatabase,
+  approval: ApprovalRow,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  if (!approval.id) {
+    throw new Error('Approval row is missing id.')
+  }
+  if (approvalCollection.state.has(approval.id)) {
+    const tx = approvalCollection.update(approval.id, (draft: ApprovalRow) => {
+      Object.assign(draft, patch)
+    })
+    await tx.isPersisted.promise
+    return
+  }
+  await updateApprovalByIri(db, approval, patch)
 }
 
 function makeAuditUri(db: SolidDatabase, auditId: string, createdAt: Date | string | number = new Date()): string {
@@ -405,7 +444,13 @@ export const inboxOps = {
     const auditId = crypto.randomUUID()
     const auditUri = makeAuditUri(db, auditId, now)
 
-    await updateApprovalByIri(db, input.approval, {
+    await filesProposalApplicationCollection.applyApprovalDecision({
+      db,
+      approval: input.approval,
+      decision: input.decision,
+    })
+
+    await updateResolvedApproval(db, input.approval, {
       status: input.decision,
       decisionBy: input.actorWebId,
       decisionRole: 'human',
@@ -469,6 +514,21 @@ export function useInboxItems(filterOverride?: InboxFilter, options?: { enabled?
 
       const allItems = buildInboxItems(notifications, approvals, inputRequests, audits)
       return filterInboxItems(allItems, filter)
+    },
+  })
+}
+
+export function useApprovalByTarget(target: string | null | undefined, options?: { enabled?: boolean }) {
+  const { db } = useSolidDatabase()
+  const normalizedTarget = target?.trim() || null
+
+  return useQuery({
+    queryKey: ['inbox', 'approvals', 'target', normalizedTarget],
+    enabled: !!db && !!normalizedTarget && (options?.enabled ?? true),
+    initialData: () => findCachedApprovalByTarget(normalizedTarget),
+    queryFn: async () => {
+      const approvals = await inboxOps.fetchApprovals()
+      return findLatestApprovalByTarget(approvals, normalizedTarget)
     },
   })
 }

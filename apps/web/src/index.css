@@ -2,11 +2,11 @@
 @config "../tailwind.config.ts";
 
 /**
- * LinX 颜色系统 - 基于 Shadcn 结构，主紫对齐 Solid Royal Lavender
+ * LinX 颜色系统 - 基于 Shadcn 结构，主色收敛到 Linked Data Taro Purple
  *
  * 核心色值：
- * - Primary / Lineage: Solid Royal Lavender (#7C4DFF)
- * - Gray: Zinc / Slate
+ * - Primary / Lineage: Linked Data Taro Purple (#735FC4)
+ * - Gray: Purple-tinted neutral
  * - Radius: 0.5rem (8px)
  */
 
@@ -14,43 +14,43 @@
   :root {
     /* ============================================== */
     /* Shadcn UI Standard Theme (Light)               */
-    /* Option A: Modern SaaS (Slate-based)            */
+    /* LinX Linked Data family palette                */
     /* ============================================== */
-    --background: 210 40% 98%; /* #f8fafc */
-    --foreground: 222.2 47.4% 11.2%; /* #0f172a */
+    --background: 260 30% 98%; /* #fbfaff */
+    --foreground: 252 22% 14%; /* #211c2b */
     
     --card: 0 0% 100%;
-    --card-foreground: 222.2 47.4% 11.2%;
+    --card-foreground: 252 22% 14%;
     
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
+    --popover-foreground: 252 22% 14%;
     
-    --primary: 255.8 100% 65.1%; /* #7c4dff */
-    --primary-foreground: 210 20% 98%;
+    --primary: 252 46% 57%; /* #735fc4 linked-data taro */
+    --primary-foreground: 0 0% 100%;
     
-    --secondary: 210 40% 96.1%; /* #f1f5f9 */
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 258 28% 96%; /* purple-tinted neutral */
+    --secondary-foreground: 252 22% 14%;
     
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%; /* #64748b */
+    --muted: 258 24% 96%;
+    --muted-foreground: 255 11% 43%;
     
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 258 28% 96%;
+    --accent-foreground: 252 22% 14%;
     
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 20% 98%;
+    --destructive: 352 43% 49%;
+    --destructive-foreground: 0 0% 100%;
     
-    --border: 214.3 31.8% 91.4%; /* #e2e8f0 */
-    --input: 214.3 31.8% 91.4%;
-    --ring: 255.8 100% 65.1%;
-    --lineage: 255.8 100% 65.1%;
-    --lineage-foreground: 210 20% 98%;
-    --boundary: 215 87% 25%; /* #083575 */
-    --boundary-foreground: 210 20% 98%;
-    --success: 142.1 76.2% 36.3%;
-    --success-foreground: 210 20% 98%;
-    --warning: 38 100% 33%; /* #a86a00 */
-    --warning-foreground: 210 20% 98%;
+    --border: 258 22% 88%;
+    --input: 258 22% 88%;
+    --ring: 252 46% 57%;
+    --lineage: 252 46% 57%;
+    --lineage-foreground: 0 0% 100%;
+    --boundary: 202 34% 37%;
+    --boundary-foreground: 0 0% 100%;
+    --success: 160 48% 30%;
+    --success-foreground: 0 0% 100%;
+    --warning: 44 72% 36%;
+    --warning-foreground: 0 0% 100%;
     
     /* 圆角系统 */
     --radius-xs: 2px;
@@ -71,64 +71,64 @@
     /* ============================================== */
     /* LinX Layout Mappings (Derived from Standard)   */
     /* ============================================== */
-    /* Sidebar: 使用 Muted/Secondary (浅灰) */
-    --layout-sidebar: 210 40% 96.1%;
+    /* Sidebar: 使用紫灰 neutral，保留 Solid app 家族感 */
+    --layout-sidebar: 258 28% 96%;
     
     /* List Pane: 使用 Background (纯白) */
     --layout-list-header: 0 0% 100%;
-    --layout-list-hover: 210 40% 96.1%;    /* hover 使用 muted */
+    --layout-list-hover: 258 28% 96%;    /* hover 使用 muted */
     --layout-list-item: 0 0% 100%;
-    --layout-list-selected: 214.3 31.8% 91.4%;     /* selected 使用 border 色 */
+    --layout-list-selected: 258 30% 92%;     /* selected 使用香芋紫灰 */
     
     /* Content Pane: 使用 Background (纯白) */
     --layout-content: 0 0% 100%;
 
     /* 兼容性变量 (Legacy) */
-    --purple-medium: 255.8 100% 65.1%;
-    --purple-deep: 255.8 82% 52%;
-    --purple-light: 255.8 100% 80%;
-    --warm-amber: 39.1 100% 50%;
+    --purple-medium: 252 46% 57%;
+    --purple-deep: 252 40% 46%;
+    --purple-light: 258 48% 84%;
+    --warm-amber: 44 72% 36%;
   }
 
   .dark {
     /* ============================================== */
     /* Shadcn UI Standard Theme (Dark)                */
     /* ============================================== */
-    --background: 224 71.4% 4.1%;
-    --foreground: 210 20% 98%;
+    --background: 258 22% 8%;
+    --foreground: 260 20% 96%;
     
-    --card: 224 71.4% 4.1%;
-    --card-foreground: 210 20% 98%;
+    --card: 258 20% 10%;
+    --card-foreground: 260 20% 96%;
     
-    --popover: 224 71.4% 4.1%;
-    --popover-foreground: 210 20% 98%;
+    --popover: 258 20% 10%;
+    --popover-foreground: 260 20% 96%;
     
-    --primary: 255.8 100% 65.1%;
-    --primary-foreground: 210 20% 98%;
+    --primary: 252 48% 65%;
+    --primary-foreground: 0 0% 100%;
     
-    --secondary: 215 27.9% 16.9%;
-    --secondary-foreground: 210 20% 98%;
+    --secondary: 255 16% 15%;
+    --secondary-foreground: 260 20% 96%;
     
-    --muted: 215 27.9% 16.9%;
-    --muted-foreground: 217.9 10.6% 64.9%;
+    --muted: 255 16% 15%;
+    --muted-foreground: 258 12% 68%;
     
-    --accent: 215 27.9% 16.9%;
-    --accent-foreground: 210 20% 98%;
+    --accent: 255 16% 15%;
+    --accent-foreground: 260 20% 96%;
     
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 20% 98%;
+    --destructive: 352 43% 49%;
+    --destructive-foreground: 0 0% 100%;
     
-    --border: 215 27.9% 16.9%;
-    --input: 215 27.9% 16.9%;
-    --ring: 255.8 100% 65.1%;
-    --lineage: 255.8 100% 65.1%;
-    --lineage-foreground: 210 20% 98%;
-    --boundary: 173 36% 44%;
-    --boundary-foreground: 210 20% 98%;
-    --success: 173 36% 44%;
-    --success-foreground: 210 20% 98%;
-    --warning: 17 49% 42%;
-    --warning-foreground: 210 20% 98%;
+    --border: 255 14% 21%;
+    --input: 255 14% 21%;
+    --ring: 252 48% 65%;
+    --lineage: 252 48% 65%;
+    --lineage-foreground: 0 0% 100%;
+    --boundary: 202 34% 48%;
+    --boundary-foreground: 0 0% 100%;
+    --success: 160 48% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 44 72% 48%;
+    --warning-foreground: 0 0% 100%;
     
     /* 圆角系统 */
     --radius-xs: 2px;
@@ -149,17 +149,17 @@
     /* ============================================== */
     /* LinX Layout Mappings (Derived from Standard)   */
     /* ============================================== */
-    /* Sidebar: 使用 Secondary (深灰) */
-    --layout-sidebar: 215 27.9% 16.9%;
+    /* Sidebar: 使用 Secondary (深紫灰) */
+    --layout-sidebar: 255 16% 15%;
     
     /* List Pane: 使用 Background (最深) */
-    --layout-list-header: 224 71.4% 4.1%;
-    --layout-list-hover: 215 27.9% 16.9%;    /* hover 使用 muted */
-    --layout-list-item: 224 71.4% 4.1%;
-    --layout-list-selected: 215 27.9% 16.9%; /* selected 使用 secondary */
+    --layout-list-header: 258 22% 8%;
+    --layout-list-hover: 255 16% 15%;    /* hover 使用 muted */
+    --layout-list-item: 258 22% 8%;
+    --layout-list-selected: 255 16% 18%; /* selected 使用 secondary */
     
     /* Content Pane: 使用 Background */
-    --layout-content: 224 71.4% 4.1%;
+    --layout-content: 258 22% 8%;
   }
 
   /* 
@@ -167,33 +167,33 @@
    * 内容与 :root 保持一致
    */
   .light {
-    --background: 0 0% 100%;
-    --foreground: 224 71.4% 4.1%;
+    --background: 260 30% 98%;
+    --foreground: 252 22% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 224 71.4% 4.1%;
+    --card-foreground: 252 22% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 224 71.4% 4.1%;
-    --primary: 255.8 100% 65.1%;
-    --primary-foreground: 210 20% 98%;
-    --secondary: 220 14.3% 95.9%;
-    --secondary-foreground: 220.9 39.3% 11%;
-    --muted: 220 14.3% 95.9%;
-    --muted-foreground: 220 8.9% 46.1%;
-    --accent: 220 14.3% 95.9%;
-    --accent-foreground: 220.9 39.3% 11%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 255.8 100% 65.1%;
-    --lineage: 255.8 100% 65.1%;
-    --lineage-foreground: 210 20% 98%;
-    --boundary: 173 30% 44%;
-    --boundary-foreground: 210 20% 98%;
-    --success: 173 30% 44%;
-    --success-foreground: 210 20% 98%;
-    --warning: 17 59% 54%;
-    --warning-foreground: 210 20% 98%;
+    --popover-foreground: 252 22% 14%;
+    --primary: 252 46% 57%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 258 28% 96%;
+    --secondary-foreground: 252 22% 14%;
+    --muted: 258 24% 96%;
+    --muted-foreground: 255 11% 43%;
+    --accent: 258 28% 96%;
+    --accent-foreground: 252 22% 14%;
+    --destructive: 352 43% 49%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 258 22% 88%;
+    --input: 258 22% 88%;
+    --ring: 252 46% 57%;
+    --lineage: 252 46% 57%;
+    --lineage-foreground: 0 0% 100%;
+    --boundary: 202 34% 37%;
+    --boundary-foreground: 0 0% 100%;
+    --success: 160 48% 30%;
+    --success-foreground: 0 0% 100%;
+    --warning: 44 72% 36%;
+    --warning-foreground: 0 0% 100%;
     
     /* 圆角系统 */
     --radius-xs: 2px;
@@ -206,11 +206,11 @@
     --radius: 0.5rem;
     
     /* Layout */
-    --layout-sidebar: 220 14.3% 95.9%;
+    --layout-sidebar: 258 28% 96%;
     --layout-list-header: 0 0% 100%;
-    --layout-list-hover: 220 14.3% 95.9%;
+    --layout-list-hover: 258 28% 96%;
     --layout-list-item: 0 0% 100%;
-    --layout-list-selected: 220 13% 91%;
+    --layout-list-selected: 258 30% 92%;
     --layout-content: 0 0% 100%;
   }
 }

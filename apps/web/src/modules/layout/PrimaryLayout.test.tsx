@@ -39,6 +39,7 @@ vi.mock('@/modules/inbox/components/InboxBellButton', () => ({
 }))
 
 import { PrimaryLayout } from './PrimaryLayout'
+import { useFilesStore } from '@/modules/files/app/store'
 
 describe('PrimaryLayout', () => {
   beforeAll(() => {
@@ -71,6 +72,7 @@ describe('PrimaryLayout', () => {
     vi.clearAllMocks()
     mockSessionState.isLoggedIn = true
     mockSessionState.sessionRequestInProgress = false
+    useFilesStore.setState({ entryScope: 'all' })
   })
 
   it('shows only stable first-slice modules in primary navigation', () => {
@@ -80,6 +82,35 @@ describe('PrimaryLayout', () => {
     expect(screen.getByLabelText('联系人')).toBeTruthy()
     expect(screen.getByLabelText('文件')).toBeTruthy()
     expect(screen.getByLabelText('收藏')).toBeTruthy()
+  })
+
+  it('exposes chat files only as a bottom secondary entry that opens Files in chat scope', () => {
+    render(<PrimaryLayout microAppId="chat" />)
+
+    const chatFiles = screen.getByRole('button', { name: '聊天文件' })
+    expect(chatFiles.closest('nav')).toBeNull()
+
+    chatFiles.click()
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'files' } })
+    expect(useFilesStore.getState().entryScope).toBe('chat-files')
+  })
+
+  it('opens the primary Files navigation in the full files scope', () => {
+    useFilesStore.setState({ entryScope: 'chat-files' })
+
+    render(<PrimaryLayout microAppId="chat" />)
+
+    screen.getByRole('button', { name: '文件' }).click()
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'files' } })
+    expect(useFilesStore.getState().entryScope).toBe('all')
+  })
+
+  it('marks the active micro app on the layout root for route smoke tests', () => {
+    const { container } = render(<PrimaryLayout microAppId="files" />)
+
+    expect(container.querySelector('[data-micro-app-id="files"]')).not.toBeNull()
   })
 
   it('hides unfinished modules from the primary navigation', () => {
@@ -108,6 +139,47 @@ describe('PrimaryLayout', () => {
     expect(listPanel.style.minWidth).toBe('180px')
     expect(listPanel.style.width).toBe('100%')
     expect(listPanel.style.maxWidth).toBe('400px')
+    expect(listPanel.className).toContain('overflow-hidden')
+  })
+
+  it('removes the module list pane from compact layout so app content remains reachable', () => {
+    const previousMatchMedia = window.matchMedia
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query.includes('max-width: 767px'),
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+
+    try {
+      render(<PrimaryLayout microAppId="files" />)
+      expect(screen.queryByTestId('micro-app-list-panel')).toBeNull()
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: previousMatchMedia,
+      })
+    }
+  })
+
+  it('keeps the main content head at the compact Files design height', () => {
+    render(<PrimaryLayout microAppId="chat" />)
+
+    expect(screen.getByTestId('micro-app-content-head').className).toContain('h-12')
+    expect(screen.getByTestId('micro-app-content-head').className).not.toContain('h-16')
+  })
+
+  it('aligns the profile avatar top with the compact head/body boundary', () => {
+    render(<PrimaryLayout microAppId="chat" />)
+
+    expect(screen.getByTestId('primary-profile-avatar-slot').className).toContain('pt-[48px]')
   })
 
   it('hides the application shell after sign out', () => {

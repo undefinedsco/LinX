@@ -1,5 +1,6 @@
-import { lazy, useEffect, type ComponentType, type ReactNode } from 'react'
+import { lazy, type ComponentType, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import type { FilesRouteBridge } from '@/modules/files/route-state'
 import {
   MessageSquare,
   Bell,
@@ -25,6 +26,7 @@ export type ThemeMode = 'light' | 'dark'
 
 export interface MicroAppPaneProps {
   theme: ThemeMode
+  filesRouteBridge?: FilesRouteBridge
 }
 
 export type MicroAppListPane = ComponentType<MicroAppPaneProps>
@@ -101,13 +103,10 @@ const FavoriteContentPane = lazyPane(() =>
   import('@/modules/favorites/components/FavoriteContentPane').then((mod) => ({ default: mod.FavoriteContentPane })),
 )
 const FilesTreePane = lazyPane(() =>
-  import('@/modules/files/components/FilesTreePane').then((mod) => ({ default: mod.FilesTreePane })),
+  import('@/modules/files/features/tree/FilesTreePane').then((mod) => ({ default: mod.FilesTreePane })),
 )
-const FilesListPane = lazyPane(() =>
-  import('@/modules/files/components/FilesListPane').then((mod) => ({ default: mod.FilesListPane })),
-)
-const FileDetailPane = lazyPane(() =>
-  import('@/modules/files/components/FileDetailPane').then((mod) => ({ default: mod.FileDetailPane })),
+const FilesWorkspacePane = lazyPane(() =>
+  import('@/modules/files/app/FilesWorkspacePane').then((mod) => ({ default: mod.FilesWorkspacePane })),
 )
 const ModelServicesListPane = lazyPane(() =>
   import('@/modules/model-services/ModelServicesListPane').then((mod) => ({ default: mod.ModelServicesListPane })),
@@ -127,19 +126,6 @@ const ChatLayoutConfigBridge = lazyBridge(() =>
 const ModelServicesLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/model-services/ModelServicesLayoutConfigBridge').then((mod) => ({ default: mod.ModelServicesLayoutConfigBridge })),
 )
-
-function FilesLayoutConfigBridge({
-  onConfigChange,
-}: MicroAppLayoutConfigBridgeProps) {
-  useEffect(() => {
-    onConfigChange({
-      rightSidebar: <FileDetailPane />,
-      rightSidebarWidth: 320,
-    })
-  }, [onConfigChange])
-
-  return null
-}
 
 export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
   chat: {
@@ -188,13 +174,12 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: FolderOpen,
     header: {
       moduleTitle: '文件',
-      moduleSubtitle: '当前话题资产与 Pod 容器',
+      moduleSubtitle: 'Pod 资源与文件夹',
       itemTitle: '文件预览',
       itemSubtitle: '打开、复制、收藏',
     },
     ListPane: FilesTreePane,
-    ContentPane: FilesListPane,
-    LayoutConfigBridge: FilesLayoutConfigBridge,
+    ContentPane: FilesWorkspacePane,
   },
   favorites: {
     id: 'favorites',

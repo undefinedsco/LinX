@@ -41,7 +41,7 @@ Skill source of truth:
 - 依赖、升级、版本、发版、打包、workspace、npm、yarn lock、`xpod`、`models`、`drizzle-solid` → 先读 `docs/dependency-guide.md`。
 - Solid/RDF/Pod 数据建模、URI/id、schema、vocab、repository、collection → 先读 `docs/cli-app-shared-core.md`，必要时再用 `solid-modeling` skill。
 - Pod 交互分层、collection / use-case / models / ORM / service 边界 → 先读 `docs/pod-interaction-layering.md`。
-- UI 视觉、组件分层、样式规范 → 先读 `docs/ui-style-guide.md` 和 `docs/ui-component-architecture.md`。
+- UI 视觉、组件分层、样式规范 → 先读 `docs/ui-style-guide.md`、`docs/ui-component-architecture.md` 和 `docs/frontend-module-abstraction.md`。
 
 ## Doc Map
 
@@ -70,6 +70,7 @@ Feature contracts:
 - `docs/scene-restoration-solid-modeling.md` — `favorites / inbox / audit / workspace` 的场景恢复与 Solid 建模约束
 - `docs/chat-module-alignment.md` — Chat 模块对齐状态与待修复项
 - `docs/ui-component-architecture.md` — 纯 UI / 逻辑 UI 分层
+- `docs/frontend-module-abstraction.md` — 前端模块 `ui / features / domain / data / app` 分层、Files 迁移目标和 architecture test 规则
 - `docs/service-layer-guide.md` — Collection 与 service 的职责边界
 - `docs/ui-style-guide.md` — 视觉与样式规范
 - `docs/architecture-comparison.md` — LinX 与外部参考产品的架构对比

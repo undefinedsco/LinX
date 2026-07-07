@@ -1,0 +1,123 @@
+import { useCallback, useEffect, useRef } from 'react'
+import { useToast } from '@/components/ui/use-toast'
+import { FilesSaveConflictError, type FilesDetail } from '../../domain/resource/resource-model'
+import { useSaveStructuredViewMetadata, useStructuredViewMetadata } from '../../data/queries'
+import type { StructuredViewMetadata } from '../../domain/structured/structured-view-metadata'
+import {
+  projectStructuredViewMetadataHydration,
+  structuredViewMetadataSignature,
+} from './structured-view-metadata-workflow-model'
+
+export function useStructuredViewMetadataController({
+  currentViewMetadata,
+  file,
+  hydrateStructuredViewMetadata,
+  whiteboardLayoutKey,
+}: {
+  currentViewMetadata: StructuredViewMetadata
+  file: Pick<FilesDetail, 'uri' | 'kind'>
+  hydrateStructuredViewMetadata: (metadata: Required<StructuredViewMetadata>, whiteboardLayoutKey: string) => void
+  whiteboardLayoutKey: string
+}) {
+  const structuredViewMetadataQuery = useStructuredViewMetadata(file)
+  const saveStructuredViewMetadata = useSaveStructuredViewMetadata()
+  const { toast } = useToast()
+  const hydratedViewMetadataKeyRef = useRef<string | null>(null)
+  const syncedViewMetadataSignatureRef = useRef<string | null>(null)
+  const autosaveReadyRef = useRef(false)
+  const skipNextStructuredViewAutosaveRef = useRef(false)
+  const localViewMetadataChangeBeforeHydrationRef = useRef(false)
+
+  const markLocalViewMetadataChange = useCallback(() => {
+    if (!hydratedViewMetadataKeyRef.current) {
+      localViewMetadataChangeBeforeHydrationRef.current = true
+    }
+  }, [])
+
+  useEffect(() => {
+    hydratedViewMetadataKeyRef.current = null
+    syncedViewMetadataSignatureRef.current = null
+    autosaveReadyRef.current = false
+    skipNextStructuredViewAutosaveRef.current = false
+    localViewMetadataChangeBeforeHydrationRef.current = false
+  }, [file.uri])
+
+  useEffect(() => {
+    const hydrationPlan = projectStructuredViewMetadataHydration({
+      currentHydrationKey: hydratedViewMetadataKeyRef.current,
+      fileUri: file.uri,
+      localViewMetadataChangeBeforeHydration: localViewMetadataChangeBeforeHydrationRef.current,
+      metadataSidecar: structuredViewMetadataQuery.data,
+      whiteboardLayoutKey,
+    })
+    if (hydrationPlan.action === 'none') return
+    if (hydrationPlan.action === 'sync-default') {
+      syncedViewMetadataSignatureRef.current = hydrationPlan.signature
+      return
+    }
+
+    hydratedViewMetadataKeyRef.current = hydrationPlan.hydrationKey
+    syncedViewMetadataSignatureRef.current = hydrationPlan.signature
+    autosaveReadyRef.current = true
+    if (!hydrationPlan.shouldHydrate) {
+      skipNextStructuredViewAutosaveRef.current = false
+      return
+    }
+    skipNextStructuredViewAutosaveRef.current = true
+    hydrateStructuredViewMetadata(hydrationPlan.metadata, whiteboardLayoutKey)
+  }, [
+    file.uri,
+    hydrateStructuredViewMetadata,
+    structuredViewMetadataQuery.data?.etag,
+    structuredViewMetadataQuery.data?.metaUri,
+    structuredViewMetadataQuery.data?.metadata,
+    structuredViewMetadataQuery.data?.ownerUri,
+    whiteboardLayoutKey,
+  ])
+
+  useEffect(() => {
+    if (!structuredViewMetadataQuery.data) return
+
+    const currentSignature = structuredViewMetadataSignature(currentViewMetadata)
+    if (skipNextStructuredViewAutosaveRef.current) {
+      skipNextStructuredViewAutosaveRef.current = false
+      return
+    }
+    if (!autosaveReadyRef.current) {
+      syncedViewMetadataSignatureRef.current ??= currentSignature
+      autosaveReadyRef.current = true
+    }
+    if (currentSignature === syncedViewMetadataSignatureRef.current) return
+
+    const timeoutId = window.setTimeout(() => {
+      void saveStructuredViewMetadata.mutateAsync({
+        file: {
+          uri: file.uri,
+          kind: file.kind,
+        },
+        metadata: currentViewMetadata,
+      }).then(() => {
+        syncedViewMetadataSignatureRef.current = currentSignature
+        localViewMetadataChangeBeforeHydrationRef.current = false
+      }).catch((error) => {
+        const description = error instanceof FilesSaveConflictError
+          ? '视图配置保存冲突：远端 .meta 已变化，请重新打开后再调整视图。'
+          : error instanceof Error
+            ? error.message
+            : '保存视图配置失败'
+        toast({ description, variant: 'destructive' })
+      })
+    }, 800)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [
+    currentViewMetadata,
+    file.kind,
+    file.uri,
+    saveStructuredViewMetadata,
+    structuredViewMetadataQuery.data,
+    toast,
+  ])
+
+  return { markLocalViewMetadataChange }
+}

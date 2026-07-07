@@ -23,6 +23,8 @@ Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏�
 - `Ingest` 是用户可见和 product/domain 层的名字：把外部或 Pod source 进入 LinX Files，并转成可浏览、可编辑、可审批、可重新同步的 card、block、subject、predicate、vocab proposal 和 approval。
 - OCR、PDF/DOC/PPT 抽取、byte-range fetch、authenticated fetch、ETag/If-Match、MIME/size/mtime、ACL/ACR、local cache 和 background scheduling 是 xpod/runtime 的底层能力，不在 UI 或领域 API 里叫 parser/index。
 - `Ingest record` / `Ingest 记录` 是用户可见的来源进度与同步状态 artifact；底层 RDF 可以继续有 `SourceIngestManifest` / `manifest.ttl` 等实现词。
+- 新写入默认使用 `/.data/ingest/sources/{source-slug}-{source-uri-hash}/manifest.ttl` 这类 Ingest record；旧 `/.data/index/sources/...`、`parser*`、`parsed*`、`index*` 只作为兼容读取和迁移别名。
+- Ingest proposals 是不可变的审批实例，放在 `/.data/proposals/source/{subject-source}-{instance}.ttl` 这类 proposal resource；刷新来源时创建新 proposal，不覆盖仍在 pending 的旧 proposal。
 - 新 UI、新文档和新写入不暴露 parser/index 作为产品概念；旧 `index*` / `parser*` / `parsed*` 词只作为 legacy compatibility。
 
 ## 范围
@@ -30,6 +32,7 @@ Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏�
 - Pod 根目录和容器树浏览。
 - Pod resource 详情。
 - 最近文件；Recent 可以递归收集最近修改的真实 resource/container，但不得把 `All` 变成全 Pod 扫描列表。
+- Recent 行可以显示父路径上下文，但不得引入 `来源` 列，也不得把 `sourceLabel` / 当前话题 / Pod 来源当作 tag。
 - 文件详情、预览、编辑入口。
 - 资源权限、URI、大小、类型、修改时间、source/provenance、workspace/repository/agent home 关联。
 - 基于路径、类型、标签、结构化 class/predicate 的浏览与过滤。
@@ -75,15 +78,20 @@ Table 规则：
 
 - 一行对应一个 RDF subject，包括 document URI 和 fragment subject。
 - `rdf:type` 在 UI 中作为必选 class scope，由 Table 右上角 Class 控件选择；表格内不再重复展示 class 列。
+- Class scope 入口默认收起为短 icon/menu；class term 定义菜单用于查看 locked definition、打开 URI、审阅 proposal 和进入受控 vocab 工作流。
 - 当前 class 的表头就是 schema，顺序是 `subject / predicate... / + Predicate`。
 - schema 列来自当前数据值、同 class 适用 vocab/shape-defined predicate 和 pending proposal；required predicate 即使当前为空也应显示为空列。
 - predicate header 默认隐藏 namespace，只显示 local name；`ns` toggle 可展示 prefix/namespace。
 - predicate 列宽按表头 divider 拖拽调整，不用全局宽度滑杆。
 - `+ Predicate` 属于表头区域，先展示当前 class 已有 predicate，再进入受控 predicate 创建/提议流程。
+- `+ Predicate` 创建卡片按 Term / Value / Shape 分组收集 namespace、local name、label、实际 predicate URI、value type、class scope、description 和 shape constraints。新增 class/predicate/enum option 先进入 vocab proposal，不直接写 canonical vocab。
 - `+ Subject` 属于表格最后一行，因为它新增的是行。
 - 格子操作由 predicate 类型决定：text/code/date inline edit；select/multi-select 打开 tag-selector；relation/URL 提供 open/link；checkbox 原地切换。
+- 可枚举 predicate 的 cell 菜单使用 tag selector：已选 chip、搜索输入和 `Select an option or create one` 在同一 popover；搜索不到时可创建 pending option。选项来源合并 observed values、canonical vocab enum options 和 pending proposals。
 - Table/Kanban 的可写业务值提交先创建 structured cell proposal，再镜像 Inbox approval；批准前不改 canonical `.ttl`。
 - 重新打开表格时，应从 pending Inbox approval target + proposal TTL hydrate 回 proposed value 和 pending `*`，不得重复提交或写 canonical 数据。
+- 结构化表格实现应基于 TanStack Table 的 headless row/column/sorting/filtering/sizing/visibility state。LinX 自己持有表格 UI primitives；不要在 page 组件里继续手写一套不可复用的表格状态机。
+- 筛选和排序是 Table head 的一等操作：subject/value search、表头排序、predicate visibility、predicate type、namespace、vocab term、shape warning、pending write 过滤都只影响当前投影，不写 canonical `.ttl`。
 
 ## Vocab 和 schema 行为
 
@@ -94,12 +102,17 @@ Table 规则：
 - `shapes.ttl` 记录 required、range/cardinality、datatype、pattern、UI form 等 constraint metadata；完整 SHACL 可以后续下沉到 models/drizzle-solid。
 - `.vocab` rows 是受控 schema/term registry，registry columns/meta predicates 是 ecosystem-defined，不像普通 `.data` 业务 cell 一样自由编辑。
 - AI 或用户提出 class/predicate/enum/shape 变更时，先创建 vocab proposal，标记 pending，用户批准后才写 canonical vocab。
+- Pending vocab 展示统一使用轻量 `*`：class scope label、predicate header、enum option chip/option label。完整状态、approve/discard 和 diff 放在对应 term 定义菜单、review 列表或 Inbox approval 里。
+- Pending term 可以参与当前表格预览、筛选和编辑，但导出、同步或跨客户端共享时必须携带 proposal 状态，不能伪装成 canonical term。
+- 普通 `.data` cell 编辑只能改 subject 业务值；vocab term 的 label、definition、range/type、enum set、deprecated、color、shape 链接等只能通过 class/predicate/enum 定义菜单或 vocabulary 管理视图修改，并受 vocab 写权限控制。
 
 ## `.meta` / `.acl` / `.acr` 边界
 
 - 文件 metadata 是同名 sidecar，例如 `report.md.meta`；container metadata 是该 container 内的 `.meta`，例如 `folder/.meta`。
 - `.meta` 不是业务索引。它可保存 title、description、checksum、view metadata、source hints、workspace/repository 快照等本 resource/container 的上下文。
 - 跨客户端共享的 structured view metadata 不写入源 `.ttl`，而是写入资源级 `.meta` sidecar：view mode、class scope、搜索/排序、隐藏 predicate、Kanban grouping/order、列宽、Whiteboard selected subjects/position/relation 等。
+- Structured view metadata 读取先用约定 sidecar 路径；只有 sidecar missing 时才读取 owner resource 的 same-origin `Link: rel="describedby"` / `rel="metadata"`。401/403 不做 linked fallback，cross-origin metadata link 只作为外部描述引用。
+- Structured view metadata autosave 只在用户实际修改 `+ View`、class/search/sort、predicate visibility、列宽、Kanban grouping/order 或 Whiteboard subjects/positions/visual relations 后触发；hydrate 不触发保存。保存只 PATCH `.meta` 的 `<#view>` block，避免污染源 `.ttl`。
 - `.acl` / `.acr` 是 file-level built-in capability，不是普通 `.meta` 行。File/folder/structured resource 详情只提供一个 Access 入口，点击后打开 ACL/ACR modal 或 access proposal 流程。
 - `.meta` / `.acl` / `.acr` sidecar 默认不进入普通文件浏览列表。
 
@@ -107,7 +120,8 @@ Table 规则：
 
 普通文件：
 
-- 可编辑文本/Markdown 文件打开单文件 sheet/modal，包含 rich editor / raw source switch 和尾部 `.meta`。
+- 可编辑文本/Markdown 文件打开单文件 sheet/modal，包含 Tiptap/ProseMirror rich editor / raw source switch 和尾部 `.meta`。主区域不内嵌可编辑正文 preview。
+- Markdown rich save 必须从编辑器文档序列化完整 raw resource，保留 Content-Type，并使用 ETag/`If-Match`；不得使用截断 `previewText` 作为保存源。JSON/HTML 等非 Markdown 第一阶段默认进 Raw source，等 round-trip 测试明确后再启用富文本写回。
 - 图片等只读预览文件保持预览面，不因为点击预览而打开编辑详情弹窗。
 - 私有 Pod 图片必须通过 authenticated fetch 读取 blob 并生成 object URL，不能把私有 resource URI 直接放进 `<img src>`。
 - 普通文件仍然可以作为 file+meta card 被收藏、引用或加入后续 whiteboard，但不生成 subject table。
@@ -115,10 +129,13 @@ Table 规则：
 文件夹：
 
 - 文件夹详情采用 Finder-like 浏览，而不是 card wall。
+- 支持 list / column / icon 视图；icon tile 只显示图标和文件名，不塞摘要、大小、修改时间或正文内容。
 - 单击子项只更新 folder-local selection 和轻量 preview；双击或 Enter 才打开子目录、文件详情或 structured table。
 - Folder-local preview 展示名称、类型、大小、修改时间、URI 和语义类型，不加载正文、不混入子文件 `.meta`。
 - 创建、上传、Copy、Move、Rename 都必须走真实 Pod resource 写入/复制/移动语义，并保留并发冲突保护。
-- Copy/Move/Rename UI 使用 Finder-style 目标路径心智，不暴露成“粘贴完整 URI”主流程；跨 Pod absolute URI 只能用于打开/复制 URI，不作为复制/移动目的地。
+- 创建子文件夹优先尝试 WebDAV `MKCOL`，必要时 fallback 到 LDP `POST + ldp:BasicContainer`。上传文本/Markdown/RDF/JSON 走 raw text resource，二进制走 blob resource，并使用 `If-None-Match: *` 防覆盖。
+- Copy/Move/Rename 优先尝试 WebDAV `COPY` / `MOVE`；当浏览器或 Pod 不支持时，可 fallback 到 GET source、PUT destination、Move DELETE source。fallback 需要保留同名 `.meta` sidecar 中的业务 metadata，并改写 owner subject；409/412 仍作为目标冲突，不得被 fallback 覆盖。
+- Copy/Move/Rename UI 使用 Finder-style 目标路径心智，不暴露成“粘贴完整 URI”主流程；跨 Pod absolute URI 只能用于打开/复制 URI，不作为复制/移动目的地。相对路径不得逃逸当前 folder。
 
 Subject 到文件：
 
@@ -126,7 +143,29 @@ Subject 到文件：
 - Enter、双击或 Peek 中的显式 `打开资源` 才进入 Files resource opening flow。
 - Fragment subject 或 relation/term target 默认打开 term/card 定义或同表内 subject preview；用户显式选择 “Open resource file” 时再打开承载文件。
 - 从 subject 跳到文件详情时要保存返回上下文：Table、class scope、搜索、排序、隐藏 predicate、当前 view、subject、scrollTop/row index。
+- 生产 route bridge 应把 subject open 写入 URL query，并在返回时同时用 subject 和 row index 恢复焦点；browser history helper 只作为无 RouterProvider 的组件测试 fallback。
 - Subject 直接资源跳转不隐式创建 Ingest proposal； source-linked card 的刷新/Review Ingest 在文件详情里发起。
+
+## Kanban 和 Whiteboard 规则
+
+Kanban：
+
+- Kanban 是 `+ View` 投影，不是独立数据模型。列分组来自 status/class/owner/review state 或自定义 predicate。
+- Card 标题是 subject/resource，正文是摘要，底部展示 class、selected predicate chips、pending vocab 标记、source-linked byline 和 relation 入口。
+- 第一阶段可使用 dnd-kit sortable/droppable primitives；跨列移动到可写 grouping predicate 时创建 structured cell proposal / Inbox approval，同列排序只写 `.meta` view metadata。
+- Locked vocab table 中的 Kanban 只能用于审阅 term/proposal 状态，不能绕过 vocab approval 写 canonical term。
+
+Whiteboard：
+
+- Whiteboard 只承载被用户选入的 subject cards，不默认铺开整个 `.ttl` 的所有 triples。
+- 线可以来自 RDF relation，也可以是临时 visual relation；二者必须在 UI 和 `.meta` 存储上区分。删除 subject 或清空 board 时同步清理相关 visual relation。
+- 第一阶段 Whiteboard 是 subject-card/relation projection，不是通用自由画布。后续若进入自由 canvas，再评估 tldraw；如果更偏 RDF relation graph / workflow editor，再评估 React Flow。
+
+## 富文本编辑器
+
+- 第一阶段使用 Tiptap / ProseMirror 作为普通可编辑文件和 source-linked card sheet 的 rich editor surface。它是 headless、extension-based、React/Vite 友好，便于 LinX 控制 Heptabase-like 低 chrome 编辑器、block toolbar、slash menu、link/embed/custom node 和 RDF metadata bridge。
+- 接入时必须覆盖序列化、粘贴、撤销/重做、accessibility、dirty/save state、source conflict、mode switch 和 persistence 测试。
+- Lexical 是长期备选，适合完全自定义 editor state/plugin；Milkdown/Crepe 是 Markdown-first 备选，但 schema extensibility 不如 Tiptap/ProseMirror 自然。
 
 ## Chat files 边界
 
