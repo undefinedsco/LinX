@@ -17,6 +17,10 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
     return '请先验证邮箱。打开注册邮箱里的验证邮件后，再回到 LinX 重试。'
   }
 
+  if (/unknown client|unknown_client|invalid_client|invalid client|unauthorized_client/.test(normalized)) {
+    return '登录凭据已失效（OIDC 客户端未注册）。LinX 已清除本地登录状态，请重新登录。'
+  }
+
   if (/login_required|interaction_required|consent_required|account_selection_required/.test(normalized)) {
     return '需要重新确认登录。请在弹出的登录窗口完成授权。'
   }

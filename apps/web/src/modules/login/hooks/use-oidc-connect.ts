@@ -3,9 +3,11 @@ import { useSession } from '@inrupt/solid-ui-react'
 import {
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
-  clearUnrestorableSolidAuthState,
+  clearSolidAuthClientState,
+  clearStoredSolidSession,
   getPendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
+  isInvalidClientError,
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
 } from '../login-utils'
@@ -97,7 +99,10 @@ export function useOidcConnect() {
     const generation = ++generationRef.current
 
     try {
-      clearUnrestorableSolidAuthState()
+      // Always begin a fresh login from a clean Solid auth state. A stale
+      // dynamically-registered client (e.g. deleted on the provider) would
+      // otherwise be reused and rejected with "unknown client".
+      clearSolidAuthClientState()
 
       const requestedEntryUrl = issuerUrl.replace(/\/$/, '')
       const explicitAccountIssuerUrl = normalizeLoginUrl(options?.accountIssuerUrl)
@@ -247,6 +252,11 @@ export function useOidcConnect() {
     } catch (error) {
       clearPendingLoginAttempt()
       clearPendingPostLoginMicroAppId()
+      if (isInvalidClientError(error)) {
+        // The provider rejected a stale/invalid client. Drop the cached Solid
+        // session so the next login attempt registers a fresh client.
+        clearStoredSolidSession()
+      }
       throw error
     } finally {
       if (generationRef.current === generation) {

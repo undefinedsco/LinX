@@ -20,6 +20,8 @@ import {
   getPendingLoginTransaction,
   getStoredSolidSession,
   getPendingCallbackError,
+  isInvalidClientError,
+  isInvalidClientErrorCode,
   resolvePostLoginMicroAppId,
   SIGN_OUT_EVENT,
 } from './login-utils'
@@ -177,6 +179,9 @@ export function useLoginController() {
       localConnectKeyRef.current = null
       setConnectingProvider(null)
       setState('idle')
+      if (isInvalidClientError(error)) {
+        clearStoredSolidSession()
+      }
       setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回空间选择页重试。'))
     }
   }, [
@@ -227,6 +232,26 @@ export function useLoginController() {
     const pendingAttempt = getPendingLoginAttempt()
     const pendingTransaction = getPendingLoginTransaction()
     const callbackError = getPendingCallbackError()
+    if (callbackError && isInvalidClientErrorCode(callbackError.error)) {
+      // The provider rejected a stale/invalid OIDC client on the callback.
+      // Purge the cached session and send the user back to re-login.
+      clearStoredSolidSession()
+      clearPendingLoginAttempt()
+      clearPendingPostLoginMicroAppId()
+      setConnectingProvider(null)
+      setError(formatLoginErrorForUser(
+        callbackError.description ?? callbackError.error,
+        '登录凭据已失效（OIDC 客户端未注册），请重新登录。',
+      ))
+      navigate({
+        to: '/$microAppId',
+        params: { microAppId: defaultMicroAppId },
+        replace: true,
+      })
+      setState('idle')
+      return
+    }
+
     if (
       pendingAttempt?.prompt === 'none'
       && callbackError?.error
@@ -620,6 +645,9 @@ export function useLoginController() {
     } catch (err: any) {
       resetDesktopAuthState()
       setConnectingProvider(null)
+      if (isInvalidClientError(err)) {
+        clearStoredSolidSession()
+      }
       setError(formatLoginErrorForUser(err, '连接失败。请检查网络后重试。'))
       setState('idle')
     }
@@ -688,7 +716,11 @@ export function useLoginController() {
         }
 
         void connect(targetStorageProviderUrl)
-      }).catch(() => {
+      }).catch((restoreError) => {
+        if (isInvalidClientError(restoreError)) {
+          clearStoredSolidSession()
+          setError(formatLoginErrorForUser(restoreError, '登录凭据已失效（OIDC 客户端未注册），请重新登录。'))
+        }
         setState('idle')
       })
       return

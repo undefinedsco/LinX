@@ -95,18 +95,19 @@ function hasRestorableSessionMetadata(parsed: Record<string, unknown>): boolean 
     || typeof parsed.refreshToken === 'string'
 }
 
-export function clearUnrestorableSolidAuthState(): boolean {
+function isSolidAuthStorageKey(key: string): boolean {
+  return key.startsWith('solidClientAuthenticationUser:')
+    || key.startsWith('solidClientAuthn:')
+    || key.startsWith('oidc.')
+}
+
+export function clearSolidAuthClientState(): boolean {
   if (typeof window === 'undefined') return false
-  if (getStoredSolidSession()) return false
 
   let removed = false
   const keys = Object.keys(localStorage)
   for (const key of keys) {
-    if (
-      key.startsWith('solidClientAuthenticationUser:')
-      || key.startsWith('solidClientAuthn:')
-      || key.startsWith('oidc.')
-    ) {
+    if (isSolidAuthStorageKey(key)) {
       localStorage.removeItem(key)
       removed = true
     }
@@ -115,15 +116,32 @@ export function clearUnrestorableSolidAuthState(): boolean {
   return removed
 }
 
+export function clearUnrestorableSolidAuthState(): boolean {
+  if (typeof window === 'undefined') return false
+  if (getStoredSolidSession()) return false
+  return clearSolidAuthClientState()
+}
+
+/**
+ * 判断错误是否源于 OIDC 客户端失效：动态注册的 client 在服务端被清除或不兼容，
+ * 服务端会返回 unknown client / invalid_client / unauthorized_client。
+ * 这类错误无法靠重试解决，必须清除本地陈旧会话后重新登录。
+ */
+export function isInvalidClientError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return /unknown client|unknown_client|invalid_client|invalid client|unauthorized_client/i.test(message)
+}
+
+export function isInvalidClientErrorCode(errorCode: string | null | undefined): boolean {
+  if (!errorCode) return false
+  return /unknown_client|invalid_client|unknown client|invalid client|unauthorized_client/i.test(errorCode)
+}
+
 export const clearStoredSolidSession = (_storageKey?: string) => {
   if (typeof window === 'undefined') return
   const keys = Object.keys(localStorage)
   for (const key of keys) {
-    if (
-      key.startsWith('solidClientAuthenticationUser:')
-      || key.startsWith('solidClientAuthn:')
-      || key.startsWith('oidc.')
-    ) {
+    if (isSolidAuthStorageKey(key)) {
       localStorage.removeItem(key)
     }
   }

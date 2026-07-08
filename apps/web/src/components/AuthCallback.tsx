@@ -8,9 +8,11 @@ import {
   clearPendingCallbackError,
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
+  clearStoredSolidSession,
   getPendingCallbackError,
   getPendingLoginAttempt,
   getPendingLoginTransaction,
+  isInvalidClientErrorCode,
 } from '@/modules/login/login-utils'
 import {
   getLoginTransactionRetryEntryUrl,
@@ -88,6 +90,11 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     if (errorParam) {
       if (errorParam === 'email_unverified' || errorParam === 'verify_required') {
         setError(formatLoginErrorForUser(errorParam, '请先验证邮箱后再登录。'))
+      } else if (isInvalidClientErrorCode(errorParam)) {
+        // The provider rejected a stale/invalid OIDC client. Purge the cached
+        // session so the user re-logs in with a freshly registered client.
+        clearStoredSolidSession()
+        setError(formatLoginErrorForUser(errorParam, '登录凭据已失效，请重新登录。'))
       } else if (pendingAttempt?.prompt === 'none' && isSilentAuthError(errorParam)) {
         if (!silentFallbackStartedRef.current) {
           silentFallbackStartedRef.current = true
@@ -100,6 +107,12 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     }
 
     if (callbackError?.error) {
+      if (isInvalidClientErrorCode(callbackError.error)) {
+        clearStoredSolidSession()
+        setError(formatLoginErrorForUser(callbackError.description ?? callbackError.error, '登录凭据已失效，请重新登录。'))
+        return
+      }
+
       if (pendingAttempt?.prompt === 'none' && isSilentAuthError(callbackError.error)) {
         if (!silentFallbackStartedRef.current) {
           silentFallbackStartedRef.current = true
@@ -120,6 +133,9 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
       const captured = capturePendingCallbackError(redirectUrl)
         ?? capturePendingCallbackError(normalizedRedirectUrl)
       if (captured?.error) {
+        if (isInvalidClientErrorCode(captured.error)) {
+          clearStoredSolidSession()
+        }
         setError(formatLoginErrorForUser(
           captured.description ?? captured.error,
           '登录请求被拒绝。请返回登录页后重试。',

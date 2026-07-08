@@ -14,6 +14,8 @@ import {
   getPendingLoginAttempt,
   getPendingLoginTransaction,
   hasStoredSolidSession,
+  isInvalidClientError,
+  isInvalidClientErrorCode,
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
   setPendingPostLoginMicroAppId,
@@ -329,6 +331,24 @@ describe('login-utils post-login target helpers', () => {
     expect(clearUnrestorableSolidAuthState()).toBe(false)
     expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('linx-session')
     expect(window.localStorage.getItem('solidClientAuthenticationUser:linx-session')).not.toBeNull()
+  })
+
+  describe('invalid-client detection', () => {
+    it('detects unknown/invalid client errors from thrown errors', () => {
+      expect(isInvalidClientError(new Error('Authenticating with unknown client'))).toBe(true)
+      expect(isInvalidClientError(new Error('invalid_client: client not registered'))).toBe(true)
+      expect(isInvalidClientError(new Error('unauthorized_client'))).toBe(true)
+      expect(isInvalidClientError(new Error('network error, please retry'))).toBe(false)
+      expect(isInvalidClientError('plain string about login')).toBe(false)
+      expect(isInvalidClientError(null)).toBe(false)
+    })
+
+    it('detects invalid-client callback error codes', () => {
+      expect(isInvalidClientErrorCode('unknown_client')).toBe(true)
+      expect(isInvalidClientErrorCode('invalid_client')).toBe(true)
+      expect(isInvalidClientErrorCode('access_denied')).toBe(false)
+      expect(isInvalidClientErrorCode(null)).toBe(false)
+    })
   })
 
   it('does not delete pending OIDC callback context while checking stored sessions', () => {

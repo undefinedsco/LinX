@@ -106,7 +106,7 @@ function StorageConflictView({
         </p>
       </div>
 
-      <div className="mx-4 space-y-3 rounded-2xl border border-border/60 bg-muted/25 p-4">
+      <div className="mx-4 space-y-3 rounded-lg border border-border/60 bg-muted/25 p-4">
         <StorageDetail label="当前空间应写入" value={storageConflict.expectedStorageUrl} />
         <StorageDetail label="账号当前绑定" value={storageConflict.actualStorageUrl ?? '未绑定'} />
       </div>
@@ -116,7 +116,7 @@ function StorageConflictView({
           <button
             type="button"
             onClick={onOpenCurrentSpacePodSetup}
-            className="w-full h-10 rounded-xl border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+            className="w-full h-9 rounded-md border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           >
             {isCreatePodSetup ? '创建当前空间' : '在当前空间创建'}
           </button>
@@ -124,7 +124,7 @@ function StorageConflictView({
         <button
           type="button"
           onClick={onDismiss}
-          className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+          className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
         >
           返回登录并重新选择空间
         </button>
@@ -194,13 +194,13 @@ function AccountView({
       <div className="px-5 pb-5 pt-2 space-y-2 shrink-0">
         <button
           onClick={onContinueStoredAccount}
-          className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+          className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
         >
           {hasRestorableSession ? `继续使用 ${storedAccount.displayName}` : `重新登录 ${storedAccount.displayName}`}
         </button>
         <button
           onClick={onSwitchAccount}
-          className="w-full h-9 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+          className="w-full h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
         >
           切换账号
         </button>
@@ -258,24 +258,24 @@ function ProviderSelectionView({
 
         <div className="w-full space-y-2">
           <p className="text-xs font-medium text-muted-foreground">数据保存位置</p>
-          <div className="grid grid-cols-2 rounded-xl border border-border/70 bg-muted/30 p-1">
+          <div className="grid grid-cols-2 rounded-lg border border-border/70 bg-muted/30 p-1">
             <button
               type="button"
               onClick={() => setSelectedSpace('cloud')}
               className={segmentClass(selectedSpace === 'cloud')}
             >
-              云端
+              云端空间
             </button>
             <button
               type="button"
               onClick={() => setSelectedSpace('local')}
               className={segmentClass(selectedSpace === 'local')}
             >
-              本机
+              本机空间
             </button>
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            {selectedSpace === 'local' ? '数据保存在这台电脑。' : '数据同步到云端。'}
+            {selectedSpace === 'local' ? '数据保存在本机空间。' : '数据同步到云端空间。'}
           </p>
         </div>
 
@@ -294,14 +294,14 @@ function ProviderSelectionView({
           type="button"
           disabled={!selectedProvider}
           onClick={() => selectedProvider && onConnect(selectedProvider.id)}
-          className="w-full h-11 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+          className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
           继续
         </button>
         <button
           type="button"
           onClick={() => setView('providers')}
-          className="w-full h-9 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+          className="w-full h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
         >
           其他账号供应商
         </button>
@@ -346,13 +346,13 @@ function ConfiguredProviderList({
         <button
           type="button"
           onClick={() => setSelectedProvider(null)}
-          className="-ml-2 inline-flex h-8 w-fit items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+          className="-ml-2 inline-flex h-8 w-fit items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
         >
           <ArrowLeft className="h-4 w-4" />
           更换供应商
         </button>
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/60 bg-muted/30">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-border/60 bg-muted/30">
             <Globe2 className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
           </div>
           <div className="space-y-2">
@@ -363,7 +363,7 @@ function ConfiguredProviderList({
         <button
           type="button"
           onClick={() => onConnect(selectedProvider.id)}
-          className="w-full h-11 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+          className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
         >
           继续
         </button>
@@ -377,7 +377,7 @@ function ConfiguredProviderList({
         <button
           type="button"
           onClick={onBack}
-          className="-ml-2 inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+          className="-ml-2 inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           aria-label="返回 undefineds 登录"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -389,7 +389,7 @@ function ConfiguredProviderList({
         <button
           type="button"
           onClick={onBack}
-          className="w-full rounded-xl border border-border/60 bg-muted/20 px-3 py-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
+          className="w-full rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
         >
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -404,7 +404,7 @@ function ConfiguredProviderList({
             key={provider.id}
             type="button"
             onClick={() => setSelectedProvider(provider)}
-            className="w-full rounded-xl border border-border/60 bg-muted/20 px-3 py-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
+            className="w-full rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -433,14 +433,14 @@ function ConfiguredProviderList({
                 type="button"
                 onClick={handleAdd}
                 disabled={!customUrl.trim()}
-                className="h-8 rounded-lg bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50"
+                className="h-8 rounded-md bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50"
               >
                 连接
               </button>
               <button
                 type="button"
                 onClick={() => { setIsAdding(false); setCustomUrl('') }}
-                className="h-8 rounded-lg border border-border/50 text-xs text-muted-foreground hover:text-foreground"
+                className="h-8 rounded-md border border-border/50 text-xs text-muted-foreground hover:text-foreground"
               >
                 取消
               </button>
@@ -450,7 +450,7 @@ function ConfiguredProviderList({
           <button
             type="button"
             onClick={() => setIsAdding(true)}
-            className="w-full h-9 flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors cursor-pointer"
+            className="w-full h-9 flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             + 添加供应商
@@ -463,7 +463,7 @@ function ConfiguredProviderList({
 
 function segmentClass(selected: boolean): string {
   return cn(
-    'h-9 rounded-lg text-sm font-medium transition-colors cursor-pointer',
+    'h-9 rounded-md text-sm font-medium transition-colors cursor-pointer',
     selected ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
   )
 }
@@ -500,7 +500,7 @@ function ConnectingView({
         <p className="text-sm text-foreground font-medium">{title}</p>
         <p className="text-xs text-muted-foreground mt-1">{detail}</p>
         {connectingProvider ? (
-          <div className="mt-4 w-full max-w-[18rem] rounded-2xl border border-border/60 bg-muted/30 px-3 py-2">
+          <div className="mt-4 w-full max-w-[18rem] rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
             <p className="truncate text-xs font-medium text-foreground">
               {formatProviderLabelForUser(connectingProvider.storageProviderLabel)}
             </p>
@@ -514,7 +514,7 @@ function ConnectingView({
         <button
           type="button"
           onClick={onCancel}
-          className="w-full h-9 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+          className="w-full h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
         >
           换一个空间
         </button>
@@ -599,7 +599,7 @@ function LocalOnboardingView({
       <div className="px-5 pt-5 pb-3 shrink-0 flex items-center gap-2">
         <button
           onClick={onBack}
-          className="-ml-1.5 inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+          className="-ml-1.5 inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           aria-label="返回空间选择"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -641,7 +641,7 @@ function LocalOnboardingView({
               ) : null}
               <button
                 onClick={onContinue}
-                className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+                className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
               >
                 {isLocalNetworkBlocked ? '重新检测' : '继续登录'}
               </button>
@@ -680,7 +680,7 @@ function RouteInfoCard({
   action?: ReactNode
 }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-muted/25 p-3">
+    <div className="rounded-lg border border-border/60 bg-muted/25 p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-medium tracking-wide text-muted-foreground/70">{title}</p>
         {action}
@@ -719,7 +719,7 @@ function LocalUnavailableRecovery({
           type="button"
           onClick={onRetry}
           disabled={!canRetry}
-          className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+          className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
           重试
         </button>
@@ -727,14 +727,14 @@ function LocalUnavailableRecovery({
           type="button"
           onClick={onOpenSettings}
           disabled={!canOpenSettings}
-          className="w-full h-10 rounded-xl border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+          className="w-full h-9 rounded-md border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
           打开设置
         </button>
         <button
           type="button"
           onClick={onSwitchAccount}
-          className="w-full h-9 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+          className="w-full h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
         >
           切换账号
         </button>
@@ -1002,7 +1002,7 @@ function StorageDetail({ label, value }: { label: string; value: string }) {
       <p className="text-[11px] font-medium tracking-wide text-muted-foreground/70">
         {label}
       </p>
-      <div className="rounded-xl border border-border/50 bg-background/70 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground break-all">
+      <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground break-all">
         {value}
       </div>
     </div>
