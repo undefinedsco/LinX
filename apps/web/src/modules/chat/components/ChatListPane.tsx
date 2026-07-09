@@ -142,14 +142,15 @@ const formatTimestamp = (value?: unknown): string => {
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
-/** Workspace status → preview text + color mapping */
+/** Workspace status → preview text + color mapping.
+ * 状态以中文标签 + 语义色 token 表达，不使用 emoji 作为核心状态语义（DESIGN §29/§131-135）。 */
 const WORKSPACE_STATUS_MAP: Record<WorkspaceStatus, { text: string; color: string }> = {
-  idle:               { text: '⏳ 待启动',   color: 'text-muted-foreground' },
-  active:             { text: '🟢 运行中',   color: 'text-green-600' },
-  waiting_approval:   { text: '⚠️ 等待确认', color: 'text-yellow-600' },
-  paused:             { text: '⏸ 已暂停',    color: 'text-muted-foreground' },
-  completed:          { text: '✅ 已完成',   color: 'text-green-600' },
-  error:              { text: '❌ 错误',     color: 'text-red-600' },
+  idle:               { text: '待启动',   color: 'text-muted-foreground' },
+  active:             { text: '运行中',   color: 'text-success' },
+  waiting_approval:   { text: '等待确认', color: 'text-warning' },
+  paused:             { text: '已暂停',    color: 'text-muted-foreground' },
+  completed:          { text: '已完成',   color: 'text-success' },
+  error:              { text: '错误',     color: 'text-destructive' },
 }
 
 const WORKSPACE_STATUS_PREVIEW: Record<WorkspaceStatus, string> = Object.fromEntries(
@@ -172,10 +173,10 @@ function getChatIcon(chat: Pick<ChatItemData, 'conversationKind' | 'threadMode'>
 /** Resolve preview text: workspace threads use status mapping, groups prefix sender name */
 function resolvePreview(chat: ChatItemData): string {
   if (chat.pendingInboxVariant === 'auth_required') {
-    return '🔐 等待认证'
+    return '等待认证'
   }
   if (chat.pendingInboxVariant === 'approval') {
-    return `⚠️ 待处理授权${chat.pendingInboxCount && chat.pendingInboxCount > 1 ? ` · ${chat.pendingInboxCount} 条` : ''}`
+    return `待处理授权${chat.pendingInboxCount && chat.pendingInboxCount > 1 ? ` · ${chat.pendingInboxCount} 条` : ''}`
   }
   if (chat.threadMode === 'workspace' && chat.workspaceStatus) {
     return WORKSPACE_STATUS_PREVIEW[chat.workspaceStatus]
@@ -192,7 +193,7 @@ function getWorkspaceStatusColor(status?: WorkspaceStatus): string | undefined {
 }
 
 function getInboxPreviewColor(variant?: ChatItemData['pendingInboxVariant']): string | undefined {
-  if (variant === 'approval') return 'text-yellow-600'
+  if (variant === 'approval') return 'text-warning'
   if (variant === 'auth_required') return 'text-blue-600'
   return undefined
 }
@@ -294,7 +295,7 @@ function ChatItem({
               <div className={cn(
                 'absolute -top-1 -right-1 flex items-center justify-center',
                 'min-w-[18px] h-[18px] px-1 rounded-full',
-                'bg-wechat-unread text-white text-[10px] font-medium',
+                'bg-destructive text-destructive-foreground text-[10px] font-medium',
                 'border-2 border-background'
               )}>
                 {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
@@ -336,7 +337,7 @@ function ChatItem({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-40">
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMute() }}>
-                          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
+                          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-muted-foreground')} />
                           {chat.muted ? '取消静音' : '静音'}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMarkUnread() }}>
@@ -378,7 +379,7 @@ function ChatItem({
                   </span>
                 )}
                 {chat.muted && (
-                  <BellOff strokeWidth={1.5} className="w-3 h-3 text-wechat-muted" />
+                  <BellOff strokeWidth={1.5} className="w-3 h-3 text-muted-foreground" />
                 )}
               </div>
             </div>
@@ -393,7 +394,7 @@ function ChatItem({
           {chat.starred ? '取消标星' : '标星'}
         </ContextMenuItem>
         <ContextMenuItem onClick={onMute}>
-          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
+          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-muted-foreground')} />
           {chat.muted ? '取消静音' : '静音'}
         </ContextMenuItem>
         {chat.threadMode !== 'workspace' && (

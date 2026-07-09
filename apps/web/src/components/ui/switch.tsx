@@ -9,24 +9,22 @@ const Switch = React.forwardRef<
   React.ElementRef<typeof SwitchPrimitives.Root>,
   React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root>
 >(({ className, ...props }, ref) => (
-  <SwitchPrimitives.Root
+    <SwitchPrimitives.Root
     className={cn(
-      // 温暖守护者风格：柔和阴影 + 平滑过渡
       "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full",
       "border-2 border-transparent",
       "transition-all duration-200",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
       "disabled:cursor-not-allowed disabled:opacity-50",
-      "data-[state=checked]:bg-primary data-[state=checked]:shadow-lg data-[state=checked]:shadow-primary/25",
+      "data-[state=checked]:bg-primary",
       "data-[state=unchecked]:bg-muted/50",
       className
     )}
     {...props}
     ref={ref}
   >
-    <SwitchPrimitives.Thumb
+      <SwitchPrimitives.Thumb
       className={cn(
-        // 温暖守护者风格：柔和阴影
         "pointer-events-none block h-5 w-5 rounded-full bg-background",
         "shadow-md ring-0",
         "transition-transform duration-200",

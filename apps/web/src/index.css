@@ -223,6 +223,12 @@
     @apply bg-background text-foreground;
   }
 
+  /* 全局焦点环兜底：可见、克制的 accent 环（§188）。
+     使用 :where() 保持 0 优先级，组件级 focus-visible 可覆盖。 */
+  :where(a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
   /* 全局滚动条美化 */
   ::-webkit-scrollbar {
     width: 6px;
@@ -299,34 +305,21 @@
     @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70;
   }
 
-  /* 温暖卡片 - 适配标准 Radius */
+  /* 卡片外壳 - 实色背景 + 细边框，克制阴影 */
   .warm-card {
-    @apply bg-card border border-border/50 rounded-xl;
-    @apply shadow-lg shadow-black/5;
-    @apply transition-all duration-300;
+    @apply bg-card border border-border/50 rounded-lg;
   }
+}
 
-  .warm-card-hover {
-    @apply hover:shadow-xl hover:shadow-black/8;
-    @apply hover:-translate-y-0.5;
-  }
-
-  /* 顶部装饰条 */
-  .top-accent {
-    @apply absolute top-0 left-0 right-0 h-1 rounded-t-xl;
-    background: linear-gradient(90deg,
-      hsl(var(--primary)),
-      hsl(var(--primary) / 0.5)
-    );
-  }
-
-  /* 温暖按钮 */
-  .btn-warm {
-    @apply rounded-lg h-10 px-4;
-    @apply bg-primary text-primary-foreground;
-    @apply shadow-sm;
-    @apply transition-all duration-200;
-    @apply hover:bg-primary/90;
-    @apply active:scale-[0.98];
+/* 全局可访问性：尊重 prefers-reduced-motion（§199-201）。
+   关闭动画/过渡/平滑滚动，保证状态含义不依赖动画表达。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

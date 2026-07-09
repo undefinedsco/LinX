@@ -147,10 +147,6 @@ export const shadows = {
   lg: 'shadow-lg',                // 深阴影 ⭐
   xl: 'shadow-xl',                // 超深阴影
   '2xl': 'shadow-2xl',            // 玻璃态阴影
-  
-  // 带颜色的阴影（用于按钮高亮）
-  primary: 'shadow-lg shadow-primary/30',  // 主色发光
-  primarySubtle: 'shadow-md shadow-primary/20',
 } as const
 
 /**

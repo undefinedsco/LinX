@@ -261,7 +261,7 @@ describe('LoginModal', () => {
     })
 
     const { container } = render(<LoginModal {...props} />)
-    expect(container.querySelector('.bg-violet-200\\/90')).toBeTruthy()
+    expect(container.querySelector('.bg-muted')).toBeTruthy()
   })
 
   it('shows compact first login with undefineds Cloud/Local data-space choice', () => {

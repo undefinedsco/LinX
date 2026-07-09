@@ -248,7 +248,7 @@ function ProviderSelectionView({
   return (
     <div className="flex-1 flex flex-col h-full px-7 py-7 text-center">
       <div className="flex-1 flex flex-col items-center justify-center gap-5">
-        <div className="h-14 w-14 overflow-hidden rounded-[18%] border border-violet-400/90 bg-violet-200/90 p-0.5 shadow-sm">
+        <div className="h-14 w-14 overflow-hidden rounded-xl border border-border bg-muted p-0.5">
           <img src={linxLogoUrl} alt="LinX" className="h-full w-full scale-[1.24] object-cover" />
         </div>
         <div className="space-y-2">
@@ -759,7 +759,7 @@ function AccountAvatar({
   const [productLogoFailed, setProductLogoFailed] = useState(false)
   const dim = size === 'lg' ? 'w-16 h-16' : 'w-11 h-11'
   const textSize = size === 'lg' ? 'text-2xl' : 'text-sm'
-  const radius = 'rounded-[18%]'
+  const radius = 'rounded-xl'
   const effectiveAvatarUrl = resolveAccountAvatarUrl(avatarUrl)
   const isProductLogo = isLinxLogoUrl(effectiveAvatarUrl)
   const productLogoInnerScale = size === 'lg' ? 'scale-[1.24]' : 'scale-[1.24]'
@@ -772,7 +772,7 @@ function AccountAvatar({
           dim,
           radius,
           'relative overflow-hidden shadow-sm',
-          isProductLogo && 'border border-violet-400/90 bg-violet-200/90 p-0.5',
+          isProductLogo && 'border border-border bg-muted p-0.5',
         )}
       >
         <img
@@ -790,7 +790,7 @@ function AccountAvatar({
 
   if (!productLogoFailed) {
     return (
-      <div className={cn(dim, radius, 'relative overflow-hidden border border-violet-400/90 bg-violet-200/90 p-0.5 shadow-sm')}>
+      <div className={cn(dim, radius, 'relative overflow-hidden border border-border bg-muted p-0.5')}>
         <img
           src={linxLogoUrl}
           alt="LinX"

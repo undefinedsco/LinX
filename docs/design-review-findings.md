@@ -179,3 +179,29 @@
 ---
 
 *生成方式：5 个并行 Explore agent 静态代码审查（只读），未改动任何文件。所有 file:line 来自 agent 报告，落地前建议逐条 `grep` 复核当前行号。*
+
+---
+
+## 8. 修复进度（阶段 A 第一批，已完成）
+
+按用户指示**只修系统性基础项**，未做散落 raw color/rounded 的机械替换；产品判断类项暂缓。
+
+| 项 | 状态 | 改动 |
+|----|------|------|
+| P0-1 emoji 核心状态 | ✅ | `ChatListPane.tsx` 去 emoji，状态色转 `text-success/warning/destructive` |
+| P0-3 wechat token | ✅ | 删 `tailwind.config.ts` `wechat` 命名空间；`ChatListPane` 用量转 `destructive`/`muted-foreground` |
+| P0-2 Logo 非 taro 紫 | ✅ | `LoginModal.tsx` `violet-400/200` → `border-border bg-muted`；`rounded-[18%]`→`rounded-xl` |
+| index.css warm/glow/gradient | ✅ | 删 `.top-accent`/`.btn-warm`/`.warm-card-hover`；`.warm-card` 去阴影/过渡 |
+| 全局 reduced-motion | ✅ | `index.css` 新增 `@media (prefers-reduced-motion: reduce)` |
+| 全局 focus-visible | ✅ | `index.css` 新增 `:where(a,button,...):focus-visible` 克制焦点环兜底 |
+| glow 阴影 token | ✅ | 删 `spacing.ts` `shadows.primary`/`primarySubtle` |
+| Button 默认高度 | ✅ | `button.tsx` `default` `h-10`→`h-9` |
+| Card 原语 | ✅ | `card.tsx` `rounded-2xl`→`rounded-lg`，去 `shadow-lg` |
+| Badge 原语 | ✅ | `badge.tsx` 去彩色阴影、`focus:`→`focus-visible:`、去 `backdrop-blur` |
+| Switch 原语 | ✅ | `switch.tsx` 去选中态彩色辉光 |
+| 测试断言同步 | ✅ | `LoginModal.test.tsx`/`ChatListPane.test.tsx` 4 处断言更新 |
+
+**验证**：`tsc --noEmit` 无错误；`vitest` 受影响模块 80/80 通过。
+
+**暂缓（产品判断，未动）**：P1-11 `独立空间` 登录路径、Cloud/Local/Standalone 存储标记配色、info token（蓝 running）。
+**未做（用户要求不机械替换的散落项）**：各业务文件中的 `rounded-2xl`、raw `amber`/`emerald`/`red` 等。

@@ -455,7 +455,7 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('⚠️ 待处理授权')).toBeInTheDocument()
+      expect(screen.getByText('待处理授权')).toBeInTheDocument()
     })
 
     it('prefers auth-required preview over generic approval preview', () => {
@@ -493,7 +493,7 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('🔐 等待认证')).toBeInTheDocument()
+      expect(screen.getByText('等待认证')).toBeInTheDocument()
     })
 
     it('renders runtime-backed chats as workspace threads with status preview', async () => {
@@ -542,7 +542,7 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(await screen.findByText('🟢 运行中')).toBeInTheDocument()
+      expect(await screen.findByText('运行中')).toBeInTheDocument()
     })
 
     it('copies runtime log from workspace thread context menu', async () => {
