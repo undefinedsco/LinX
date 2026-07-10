@@ -45,7 +45,7 @@ export const PlaceholderBlock = memo<PlaceholderBlockProps>(({
   return (
     <div className={cn('flex items-center gap-2 py-1', className)}>
       <LoadingDots />
-      <span className="text-sm text-muted-foreground">正在思考</span>
+      <span className="text-sm text-muted-foreground">正在生成回复，可按 Esc 中断</span>
       <TypingCursor />
     </div>
   )

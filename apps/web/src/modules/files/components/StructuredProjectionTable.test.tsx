@@ -163,6 +163,25 @@ describe('StructuredProjectionTable', () => {
     expect(screen.getByRole('button', { name: '类型 relation' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('keeps the predicate definition and submit action reachable inside the viewport', () => {
+    render(
+      <StructuredProjectionTable
+        documentUri="https://pod.example/.data/workspaces/ws-1/state.ttl"
+        projection={unsortedProjection}
+        classScope="udfs:Workspace"
+        editable
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    const addPredicateMenu = screen.getByRole('menu')
+    fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '新建 predicate' }))
+
+    expect(addPredicateMenu).toHaveClass('max-h-[calc(100vh-2rem)]')
+    expect(addPredicateMenu).toHaveClass('overflow-y-auto')
+    expect(screen.getByRole('button', { name: '提交待确认 predicate *' })).toHaveClass('sticky')
+  })
+
   it('renders data cells with quiet borders and compact padding', () => {
     render(
       <StructuredProjectionTable

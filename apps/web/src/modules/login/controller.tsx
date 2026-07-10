@@ -496,6 +496,7 @@ export function useLoginController() {
       cancelled = true
     }
   }, [
+    localOnboarding?.provisionCode,
     localOnboarding?.publicUrl,
     loginSuccess,
     logout,
@@ -504,6 +505,7 @@ export function useLoginController() {
     sessionRequestInProgress,
     session.info.isLoggedIn,
     session.info.webId,
+    session.fetch,
     setError,
     setState,
     setStoredAccount,
@@ -742,7 +744,7 @@ export function useLoginController() {
     }
 
     void connect(targetStorageProviderUrl)
-  }, [connect, isDesktop, providers, session, setState, startLocalLogin, storedAccount])
+  }, [connect, isDesktop, providers, session, setError, setState, startLocalLogin, storedAccount])
 
   const signInLocalOnboarding = useCallback(async () => {
     if (!localOnboarding || localOnboarding.state !== 'ready') {

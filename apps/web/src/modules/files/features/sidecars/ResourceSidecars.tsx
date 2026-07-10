@@ -26,7 +26,7 @@ function MetaRows({ rows, compact = false }: { rows: [string, string][]; compact
     <div className={compact ? 'space-y-0.5' : 'space-y-1'}>
       {rows.map(([label, value]) => (
         <div key={label} className="flex items-start justify-between gap-3 border-b border-border/20 py-1.5 text-xs last:border-0">
-          <span className={compact ? 'w-16 shrink-0 text-muted-foreground' : 'w-20 shrink-0 text-muted-foreground'}>{label}</span>
+          <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
           <span className="break-all text-right text-foreground/80">{value}</span>
         </div>
       ))}
@@ -56,7 +56,7 @@ function SidecarRawPanel({ panel }: { panel: ResourceMetaSidecarRawPanel | null 
 
   return (
     <div className={panel.tone === 'warning'
-      ? 'rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700'
+      ? 'rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning'
       : 'rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground'}
     >
       {panel.message}
@@ -66,8 +66,10 @@ function SidecarRawPanel({ panel }: { panel: ResourceMetaSidecarRawPanel | null 
 
 export function ResourceMetaSidecarContent({
   content,
+  showUserMetadata = true,
 }: {
   content: ResourceMetaSidecarContentModel
+  showUserMetadata?: boolean
 }) {
   if (content.status === 'loading') {
     return (
@@ -96,26 +98,38 @@ export function ResourceMetaSidecarContent({
 
   return (
     <div className="space-y-3">
-      {content.showFolderRows ? (
-        <div className="rounded-md border border-border/40 bg-background/70 px-3 py-2">
-          <p className="mb-1.5 text-[11px] font-medium text-foreground/80">文件夹摘要</p>
-          <MetaRows rows={content.folderRows} compact />
-        </div>
+      {showUserMetadata && content.userRows.length > 0 ? (
+        <section aria-label="用户元数据">
+          <p className="mb-1.5 text-[11px] font-medium text-foreground/80">元数据</p>
+          <MetaRows rows={content.userRows} compact />
+        </section>
       ) : null}
-      <MetaRows rows={content.metaRows} compact />
       {content.showSemanticRows ? (
-        <div className="rounded-md border border-border/40 bg-background/70 px-3 py-2">
-          <p className="mb-1.5 text-[11px] font-medium text-foreground/80">语义摘要</p>
+        <section aria-label="链接与 Schema">
+          <p className="mb-1.5 text-[11px] font-medium text-foreground/80">链接与 Schema</p>
           <MetaRows rows={content.semanticRows} compact />
-        </div>
+        </section>
       ) : null}
       {content.showWorkspaceRows ? (
-        <div className="rounded-md border border-border/40 bg-background/70 px-3 py-2">
-          <p className="mb-1.5 text-[11px] font-medium text-foreground/80">工作区摘要</p>
+        <section aria-label="工作区状态">
+          <p className="mb-1.5 text-[11px] font-medium text-foreground/80">工作区状态</p>
           <MetaRows rows={content.workspaceRows} compact />
-        </div>
+        </section>
       ) : null}
-      <SidecarRawPanel panel={content.rawPanel} />
+      {content.rawPanel?.kind === 'notice' ? <SidecarRawPanel panel={content.rawPanel} /> : null}
+      <details className="rounded-md border border-border/30 bg-muted/10">
+        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">技术信息</summary>
+        <div className="space-y-3 border-t border-border/20 p-3">
+          {content.showFolderRows ? (
+            <section>
+              <p className="mb-1.5 text-[11px] font-medium text-foreground/80">文件夹摘要</p>
+              <MetaRows rows={content.folderRows} compact />
+            </section>
+          ) : null}
+          <MetaRows rows={content.metaRows} compact />
+          {content.rawPanel?.kind === 'content' ? <SidecarRawPanel panel={content.rawPanel} /> : null}
+        </div>
+      </details>
     </div>
   )
 }
@@ -155,7 +169,7 @@ export function ResourceMetaTail({
             <MetaRows rows={content.fileRows} compact />
           </div>
           {children}
-          <ResourceMetaSidecarContent content={content} />
+          <ResourceMetaSidecarContent content={content} showUserMetadata={false} />
         </div>
       ) : null}
     </section>
@@ -196,6 +210,42 @@ export function ResourceMetaDrawer({
   )
 }
 
+type CurrentAccessSourceState = ReturnType<typeof useAccessPolicyDialogController>['currentAccessSourceState']
+
+function CurrentAccessSourceSummary({ state }: { state: CurrentAccessSourceState }) {
+  if (state.kind === 'loading') {
+    return <p className="rounded-md bg-muted/40 px-3 py-2 text-muted-foreground">{state.message}</p>
+  }
+  if (state.kind === 'error') {
+    return (
+      <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
+        <p className="font-medium">{state.title}</p>
+        <p className="mt-1 break-all text-[11px]">{state.message}</p>
+      </div>
+    )
+  }
+  if (state.kind !== 'linked') {
+    return <p className="rounded-md bg-muted/40 px-3 py-2 text-muted-foreground">{state.message}</p>
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border/40 bg-muted/20 px-3 py-2">
+      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-primary">
+        {state.source.providerLabel}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-foreground/80" title={state.source.uri}>
+        {state.description}
+      </span>
+      <span className="rounded bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
+        {state.statusLabel}
+      </span>
+      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+        {state.source.inheritanceLabel}
+      </span>
+    </div>
+  )
+}
+
 export function AccessPolicyDialog({
   file,
   onOpenPolicySource,
@@ -227,94 +277,14 @@ export function AccessPolicyDialog({
         </DialogHeader>
         <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4 text-xs">
           <div>
-            <p className="mb-1 font-medium text-foreground/80">资源</p>
-            <p className="break-all rounded-md bg-muted/40 px-3 py-2 text-muted-foreground">{accessDialog.sidecars.ownerUri}</p>
-          </div>
-          <div>
-            <p className="mb-1 font-medium text-foreground/80">权限规则</p>
-            <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2">
-              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-primary">
-                {accessDialog.currentPodPolicy.providerLabel}
-              </span>
-              <span className="text-foreground/80">
-                {accessDialog.currentPodPolicy.description}
-              </span>
-              <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {accessDialog.currentPodPolicy.state}
-              </span>
-            </div>
-          </div>
-          <div>
-            <p className="mb-1 font-medium text-foreground/80">当前权限来源</p>
-            {accessDialog.currentAccessSourceState.kind === 'loading' ? (
-              <p className="rounded-md bg-muted/40 px-3 py-2 text-muted-foreground">{accessDialog.currentAccessSourceState.message}</p>
-            ) : accessDialog.currentAccessSourceState.kind === 'error' ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
-                <p className="font-medium">{accessDialog.currentAccessSourceState.title}</p>
-                <p className="mt-1 break-all text-[11px]">{accessDialog.currentAccessSourceState.message}</p>
-              </div>
-            ) : accessDialog.currentAccessSourceState.kind === 'linked' ? (
-              <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2">
-                <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-primary">
-                  {accessDialog.currentAccessSourceState.source.providerLabel}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-foreground/80" title={accessDialog.currentAccessSourceState.source.uri}>
-                  {accessDialog.currentAccessSourceState.description}
-                </span>
-                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                  {accessDialog.currentAccessSourceState.statusLabel}
-                </span>
-                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                  {accessDialog.currentAccessSourceState.source.inheritanceLabel}
-                </span>
-              </div>
-            ) : (
-              <p className="rounded-md bg-muted/40 px-3 py-2 text-muted-foreground">{accessDialog.currentAccessSourceState.message}</p>
-            )}
-          </div>
-          <div>
             <p className="mb-1 font-medium text-foreground/80">当前可访问性</p>
             <AccessMatrix
               rows={accessDialog.accessMatrixRows}
             />
           </div>
-          <div className="grid gap-2">
-            <details className="rounded-md border border-border/40 bg-muted/10">
-              <summary className="cursor-pointer px-3 py-2 font-medium text-muted-foreground">
-                高级信息
-              </summary>
-              <div className="grid gap-2 border-t border-border/20 p-3">
-                {accessDialog.accessPolicySourceRows.map((row) => (
-                  <PolicySourceRow
-                    key={row.provider}
-                    provider={row.provider}
-                    uri={row.uri}
-                    state={row.state}
-                    canOpen={row.canOpen}
-                    onOpenPolicySource={accessDialog.openPolicySource}
-                  />
-                ))}
-              </div>
-            </details>
-          </div>
-          <div className="rounded-lg border border-border/40 bg-muted/15 p-3">
-            <p className="mb-2 font-medium text-foreground/80">策略维护</p>
-            <div className="grid gap-2 text-muted-foreground">
-              <p className="leading-relaxed">
-                当前只创建待确认的权限申请；真正写入 ACL/ACR 需要进入审批链。
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  disabled={!accessDialog.canOpenCurrentAccessSource}
-                  onClick={accessDialog.openCurrentAccessSource}
-                >
-                  打开当前策略
-                </Button>
-              </div>
-            </div>
+          <div>
+            <p className="mb-1 font-medium text-foreground/80">当前权限来源</p>
+            <CurrentAccessSourceSummary state={accessDialog.currentAccessSourceState} />
           </div>
           <div className="rounded-lg border border-border/40 bg-muted/15 p-3">
             <p className="mb-3 font-medium text-foreground/80">申请权限变更</p>
@@ -381,14 +351,14 @@ export function AccessPolicyDialog({
             {accessDialog.hasDisplayedPendingProposals ? (
               <div className="mt-3 space-y-2">
                 {accessDialog.displayedPendingProposals.map((proposal) => (
-                  <div key={proposal.id} className="rounded-md border border-amber-300/60 bg-amber-50/70 px-3 py-2 text-amber-950">
+                  <div key={proposal.id} className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-warning">
                     <p className="font-medium">待确认的权限申请</p>
                     <p className="mt-1">
                       {proposal.audienceLabel} · {proposal.modes}
                     </p>
                     <p className="mt-1 text-[11px] leading-relaxed">{proposal.reason}</p>
-                    <p className="mt-1 break-all text-[10px] text-amber-800/80">{proposal.proposalResourceUri}</p>
-                    <p className="mt-1 text-[10px] text-amber-800/80">等待确认；ACL/ACR 暂不变更。</p>
+                    <p className="mt-1 break-all text-[10px] text-warning/80">{proposal.proposalResourceUri}</p>
+                    <p className="mt-1 text-[10px] text-warning/80">等待确认；ACL/ACR 暂不变更。</p>
                   </div>
                 ))}
               </div>
@@ -397,9 +367,63 @@ export function AccessPolicyDialog({
               提交后等待确认；确认前不会写入 ACL/ACR。
             </p>
           </div>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            系统会使用当前有效的访问规则，并在应用变更前检查可用性。
-          </p>
+          <details className="rounded-md border border-border/40 bg-muted/10">
+            <summary className="cursor-pointer px-3 py-2 font-medium text-muted-foreground">
+              技术信息
+            </summary>
+            <div className="grid gap-4 border-t border-border/20 p-3">
+              <div>
+                <p className="mb-1 font-medium text-foreground/80">资源</p>
+                <p className="break-all rounded-md bg-muted/40 px-3 py-2 text-muted-foreground">{accessDialog.sidecars.ownerUri}</p>
+              </div>
+              <div>
+                <p className="mb-1 font-medium text-foreground/80">权限规则</p>
+                <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2">
+                  <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-primary">
+                    {accessDialog.currentPodPolicy.providerLabel}
+                  </span>
+                  <span className="text-foreground/80">
+                    {accessDialog.currentPodPolicy.description}
+                  </span>
+                  <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {accessDialog.currentPodPolicy.state}
+                  </span>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                {accessDialog.accessPolicySourceRows.map((row) => (
+                  <PolicySourceRow
+                    key={row.provider}
+                    provider={row.provider}
+                    uri={row.uri}
+                    state={row.state}
+                    canOpen={row.canOpen}
+                    onOpenPolicySource={accessDialog.openPolicySource}
+                  />
+                ))}
+              </div>
+              <div className="grid gap-2 text-muted-foreground">
+                <p className="font-medium text-foreground/80">策略维护</p>
+                <p className="leading-relaxed">
+                  当前只创建待确认的权限申请；真正写入 ACL/ACR 需要进入审批链。
+                </p>
+                <div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={!accessDialog.canOpenCurrentAccessSource}
+                    onClick={accessDialog.openCurrentAccessSource}
+                  >
+                    打开当前策略
+                  </Button>
+                </div>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                系统会使用当前有效的访问规则，并在应用变更前检查可用性。
+              </p>
+            </div>
+          </details>
         </div>
       </DialogContent>
     </Dialog>

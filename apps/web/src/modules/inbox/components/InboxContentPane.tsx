@@ -194,9 +194,9 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
             )}
 
             {isPendingAuthRequired && (
-              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+              <div className="rounded-xl border border-boundary/20 bg-boundary/5 p-4">
                 <div className="flex items-start gap-3">
-                  <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+                  <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-boundary" />
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-foreground">运行时等待额外认证</p>
                     <p className="text-xs leading-6 text-muted-foreground">
@@ -226,9 +226,9 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
             )}
 
             {isResolvedAuthRequired && (
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <div className="rounded-xl border border-success/20 bg-success/5 p-4">
                 <div className="flex items-start gap-3">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-foreground">运行时认证已完成</p>
                     <p className="text-xs leading-6 text-muted-foreground">

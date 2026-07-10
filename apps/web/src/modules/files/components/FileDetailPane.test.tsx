@@ -590,7 +590,8 @@ describe('FileDetailPane', () => {
     const sheetHeader = within(editorSheet).getByLabelText('文件详情标题')
     const dialogTitle = within(sheetHeader).getByText('Hello')
     expect(dialogTitle.tagName.toLowerCase()).toBe('h2')
-    expect(screen.getByLabelText('笔记标题')).toHaveValue('Hello')
+    expect(screen.queryByLabelText('笔记标题')).not.toBeInTheDocument()
+    expect(within(editorSheet).getByRole('heading', { name: 'Hello', level: 1 })).toBeInTheDocument()
     expect(within(sheetHeader).queryByText('text/markdown')).not.toBeInTheDocument()
     expect(within(sheetHeader).getByText('README.md')).toBeInTheDocument()
     expect(within(sheetHeader).queryByText('https://pod.example/public/README.md')).not.toBeInTheDocument()
@@ -747,6 +748,15 @@ describe('FileDetailPane', () => {
     expect(screen.getByLabelText('文件 meta')).toBeInTheDocument()
   })
 
+  it('uses the document heading as the single editable note title', async () => {
+    requestDefaultEditableFileSheetOpen()
+    render(<FileDetailPane />)
+
+    const editorSheet = await screen.findByRole('dialog', { name: 'Hello' })
+    expect(within(editorSheet).queryByRole('textbox', { name: '笔记标题' })).not.toBeInTheDocument()
+    expect(within(editorSheet).getByRole('heading', { name: 'Hello', level: 1 })).toBeInTheDocument()
+  })
+
   it('opens the editable file sheet when a folder or route requests it', async () => {
     useFilesStore.setState({ editableFileSheetOpenRequestUri: null })
 
@@ -787,6 +797,127 @@ describe('FileDetailPane', () => {
         content: expect.stringContaining('New sheet paragraph'),
       })
     })
+  })
+
+  it('keeps editable file content dirty when the raw resource save fails', async () => {
+    mockMutateRaw.mockRejectedValueOnce(new Error('Pod write failed'))
+    requestDefaultEditableFileSheetOpen()
+    render(<FileDetailPane />)
+
+    const editor = getRichEditorTextbox()
+    revealRichTextToolbar(editor)
+    fireEvent.paste(editor, {
+      clipboardData: {
+        getData: (type: string) => type === 'text/plain' ? 'Unsaved sheet paragraph' : '<p>Unsaved sheet paragraph</p>',
+      },
+    })
+
+    await waitFor(() => expect(screen.getByText('未保存')).toBeInTheDocument())
+
+    fireEvent.blur(editor)
+    revealRichTextToolbar(editor)
+
+    await waitFor(() => expect(screen.getByText('保存失败')).toBeInTheDocument())
+    expect(screen.queryByText('已保存')).not.toBeInTheDocument()
+    expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+      description: 'Pod write failed',
+      variant: 'destructive',
+    }))
+  })
+
+  it('requires an explicit discard after a failed save before closing the editor sheet', async () => {
+    mockMutateRaw.mockRejectedValue(new Error('Pod write failed'))
+    requestDefaultEditableFileSheetOpen()
+    render(<FileDetailPane />)
+
+    const editorSheet = await screen.findByRole('dialog', { name: 'Hello' })
+    const editor = getRichEditorTextbox()
+    revealRichTextToolbar(editor)
+    fireEvent.paste(editor, {
+      clipboardData: {
+        getData: (type: string) => type === 'text/plain' ? 'Keep this draft' : '<p>Keep this draft</p>',
+      },
+    })
+    await waitFor(() => expect(screen.getByText('未保存')).toBeInTheDocument())
+
+    fireEvent.click(within(editorSheet).getByRole('button', { name: 'Close' }))
+
+    const discardDialog = await screen.findByRole('dialog', { name: '未保存的修改' })
+    expect(editorSheet).toBeInTheDocument()
+    fireEvent.click(within(discardDialog).getByRole('button', { name: '继续编辑' }))
+    expect(editorSheet).toBeInTheDocument()
+
+    fireEvent.click(within(editorSheet).getByRole('button', { name: 'Close' }))
+    fireEvent.click(within(await screen.findByRole('dialog', { name: '未保存的修改' })).getByRole('button', { name: '放弃修改' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument())
+  })
+
+  it('does not discard or outlive an in-flight rich-text save when closing the sheet', async () => {
+    let resolveSave: ((value: unknown) => void) | undefined
+    mockMutateRaw.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveSave = resolve
+    }))
+    requestDefaultEditableFileSheetOpen()
+    render(<FileDetailPane />)
+
+    const editorSheet = await screen.findByRole('dialog', { name: 'Hello' })
+    const editor = getRichEditorTextbox()
+    fireEvent.paste(editor, {
+      clipboardData: {
+        getData: (type: string) => type === 'text/plain' ? 'Save before close' : '<p>Save before close</p>',
+      },
+    })
+    fireEvent.blur(editor)
+    await waitFor(() => expect(mockMutateRaw).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(within(editorSheet).getByRole('button', { name: 'Close' }))
+    const discardDialog = await screen.findByRole('dialog', { name: '未保存的修改' })
+    expect(within(discardDialog).getByRole('button', { name: '放弃修改' })).toBeDisabled()
+
+    await act(async () => {
+      resolveSave?.({
+        uri: 'https://pod.example/public/README.md',
+        content: '# Hello\nSave before close',
+        mimeType: 'text/markdown',
+        etag: '"raw-2"',
+      })
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument())
+    expect(screen.queryByRole('dialog', { name: '未保存的修改' })).not.toBeInTheDocument()
+  })
+
+  it('requires an explicit discard before closing a dirty raw source draft', async () => {
+    requestDefaultEditableFileSheetOpen()
+    render(<FileDetailPane />)
+
+    selectFileEditorMode('源码')
+    fireEvent.change(screen.getByLabelText('原始内容'), {
+      target: { value: '# Hello\nUnsaved raw draft' },
+    })
+
+    const editorSheet = screen.getByRole('dialog', { name: 'Hello' })
+    fireEvent.click(within(editorSheet).getByRole('button', { name: 'Close' }))
+
+    expect(await screen.findByRole('dialog', { name: '未保存的修改' })).toBeInTheDocument()
+    expect(editorSheet).toBeInTheDocument()
+  })
+
+  it('requires an explicit discard before switching away from a dirty editor mode', async () => {
+    requestDefaultEditableFileSheetOpen()
+    render(<FileDetailPane />)
+
+    selectFileEditorMode('源码')
+    fireEvent.change(screen.getByLabelText('原始内容'), {
+      target: { value: '# Hello\nKeep this raw draft' },
+    })
+    selectFileEditorMode('富文本')
+
+    const discardDialog = await screen.findByRole('dialog', { name: '未保存的修改' })
+    expect(screen.getByLabelText('原始内容')).toHaveValue('# Hello\nKeep this raw draft')
+
+    fireEvent.click(within(discardDialog).getByRole('button', { name: '放弃修改' }))
+    expect(getRichEditorTextbox()).toBeInTheDocument()
   })
 
   it('hydrates editable file RDF metadata from .meta and stages edits against the meta values', async () => {
@@ -2417,6 +2548,16 @@ describe('FileDetailPane', () => {
     expect(screen.getByLabelText('说明')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '提交申请' })).toBeEnabled()
     expect(screen.getByText('提交后等待确认；确认前不会写入 ACL/ACR。')).toBeInTheDocument()
+    const currentAccessHeading = within(accessDialog).getByText('当前可访问性')
+    const currentSourceHeading = within(accessDialog).getByText('当前权限来源')
+    const requestAccessHeading = within(accessDialog).getByText('申请权限变更')
+    const technicalDetailsHeading = within(accessDialog).getByText('技术信息')
+    expect(currentSourceHeading.closest('details')).toBeNull()
+    expect(currentAccessHeading.compareDocumentPosition(currentSourceHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(currentSourceHeading.compareDocumentPosition(requestAccessHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(currentAccessHeading.compareDocumentPosition(requestAccessHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(requestAccessHeading.compareDocumentPosition(technicalDetailsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(technicalDetailsHeading.closest('details')).not.toHaveAttribute('open')
     expect(within(accessDialog).queryByText('当前只创建待确认 proposal；真正写入 ACL/ACR 需要进入审批链。')).not.toBeInTheDocument()
     expect(screen.queryByText(/connected|not enabled|policy source|Effective access|Draft access/i)).not.toBeInTheDocument()
 
@@ -2930,7 +3071,7 @@ describe('FileDetailPane', () => {
     expect(within(metaTail).queryByText('ACL · direct')).not.toBeInTheDocument()
     expect(within(metaTail).queryByText('可查看、可追加、可管理权限')).not.toBeInTheDocument()
     expect(within(metaTail).getByText('https://pod.example/public/README.md.meta')).toBeInTheDocument()
-    expect(within(metaTail).getByText('语义摘要')).toBeInTheDocument()
+    expect(within(metaTail).getByText('链接与 Schema')).toBeInTheDocument()
     expect(within(metaTail).getByText('来源')).toBeInTheDocument()
     expect(within(metaTail).getByText('https://source.example/readme')).toBeInTheDocument()
     expect(within(metaTail).getByText('相关链接')).toBeInTheDocument()
@@ -2959,7 +3100,7 @@ describe('FileDetailPane', () => {
     expect(within(accessDialog).getAllByText('ACL').length).toBeGreaterThan(0)
     expect(within(accessDialog).getByText('当前资源')).toBeInTheDocument()
     expect(within(accessDialog).getByText('可查看、可追加、可管理权限')).toBeInTheDocument()
-    expect(within(accessDialog).getByText('高级信息')).toBeInTheDocument()
+    expect(within(accessDialog).getByText('技术信息')).toBeInTheDocument()
     expect(within(accessDialog).queryByText('当前 Pod 权限模型')).not.toBeInTheDocument()
     expect(within(accessDialog).queryByText(/policy provider/i)).not.toBeInTheDocument()
   })
@@ -3311,7 +3452,7 @@ describe('FileDetailPane', () => {
     openHeaderMetaDrawer()
 
     const drawer = screen.getByLabelText('Resource .meta inspector')
-    expect(within(drawer).getByText('工作区摘要')).toBeInTheDocument()
+    expect(within(drawer).getByText('工作区状态')).toBeInTheDocument()
     expect(within(drawer).getByText('仓库')).toBeInTheDocument()
     expect(within(drawer).getByText('https://pod.example/.data/repositories/linx.git')).toBeInTheDocument()
     expect(within(drawer).getByText('本地路径')).toBeInTheDocument()
@@ -5332,7 +5473,9 @@ describe('FileDetailPane', () => {
 
     openHeaderMetaDrawer()
     const drawer = screen.getByLabelText('Resource .meta inspector')
-    expect(within(drawer).getByText('语义摘要')).toBeInTheDocument()
+    const semanticHeading = within(drawer).getByText('链接与 Schema')
+    expect(semanticHeading).toBeInTheDocument()
+    expect(semanticHeading.closest('details')).toBeNull()
     expect(within(drawer).getByText('来源')).toBeInTheDocument()
     expect(within(drawer).getByText('https://source.example/workspace-card')).toBeInTheDocument()
     expect(within(drawer).queryByText('Personal workspace class.')).not.toBeInTheDocument()

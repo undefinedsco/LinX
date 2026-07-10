@@ -55,11 +55,11 @@ export function planFileDetailFavoriteToggle({
 }
 
 export function shouldResetFileDetailHorizontalScroll({
-  structuredViewMode,
+  structuredViewMode: _structuredViewMode,
 }: {
   structuredViewMode: string
 }) {
-  return structuredViewMode !== 'table'
+  return true
 }
 
 export function projectFileDetailStructuredReturnAction({

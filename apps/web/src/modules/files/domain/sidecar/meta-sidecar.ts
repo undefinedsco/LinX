@@ -96,9 +96,17 @@ function selectFileMetaPredicateRows(
     return { subject: '#meta', rows: exactMetaRows }
   }
   if (ownerSubject) {
-    const ownerRows = rows.filter((row) => row.subject === ownerSubject)
+    const ownerRows = rows.filter((row) => {
+      const displaySubject = normalizeRdfDisplayValue(row.subject)
+      if (displaySubject === ownerSubject) return true
+      try {
+        return new URL(displaySubject, metaUri).href === ownerSubject
+      } catch {
+        return false
+      }
+    })
     if (ownerRows.some((row) => rowHasAnyPredicate(row, predicateNames))) {
-      return { subject: ownerSubject, rows: ownerRows }
+      return { subject: ownerRows[0]?.subject ?? ownerSubject, rows: ownerRows }
     }
   }
   return { subject: '#meta', rows: [] }

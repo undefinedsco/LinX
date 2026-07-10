@@ -18,7 +18,7 @@ describe('useStructuredViewportController', () => {
     })
   })
 
-  it('resets horizontal scroll when leaving table view', () => {
+  it('resets outer horizontal scroll whenever the structured view changes', () => {
     const viewport = document.createElement('div')
     viewport.scrollLeft = 240
     const { result, rerender } = renderHook(
@@ -34,6 +34,11 @@ describe('useStructuredViewportController', () => {
     })
 
     rerender({ viewMode: 'whiteboard' })
+
+    expect(viewport.scrollLeft).toBe(0)
+
+    viewport.scrollLeft = 160
+    rerender({ viewMode: 'table' })
 
     expect(viewport.scrollLeft).toBe(0)
   })

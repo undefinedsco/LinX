@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { FilesWorkspacePane } from '../app/FilesWorkspacePane'
+import { FilesRouteBridgeProvider } from '../app/FilesRouteContext'
 import { useFilesStore } from '../app/store'
 
 const mockMutateAsync = vi.fn()
@@ -13,6 +14,12 @@ vi.mock('../features/list/FilesListPane', () => ({
 
 vi.mock('../features/detail/FileDetailPane', () => ({
   FileDetailPane: () => <div>file detail</div>,
+}))
+
+vi.mock('../features/tree/FilesTreePane', () => ({
+  FilesTreePane: ({ forceExpanded = false }: { forceExpanded?: boolean }) => (
+    <div data-testid="compact-files-tree" data-force-expanded={forceExpanded ? 'true' : 'false'}>files tree</div>
+  ),
 }))
 
 vi.mock('../queries', () => ({
@@ -51,10 +58,33 @@ beforeEach(() => {
 })
 
 describe('FilesWorkspacePane', () => {
+  it('offers the folder tree through an invoked drawer in compact content', () => {
+    render(<FilesWorkspacePane theme="light" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '浏览文件夹' }))
+
+    expect(screen.getByRole('dialog', { name: '文件夹' })).toBeInTheDocument()
+    expect(screen.getByTestId('compact-files-tree')).toHaveAttribute('data-force-expanded', 'true')
+  })
+
+  it('keeps compact Files connected to the application module switcher', () => {
+    const onNavigate = vi.fn()
+    render(
+      <FilesWorkspacePane
+        theme="light"
+        compactNavigation={<button onClick={() => onNavigate('chat')}>切换模块</button>}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '切换模块' }))
+
+    expect(onNavigate).toHaveBeenCalledWith('chat')
+  })
+
   it('restores a structured subject route from the initial URL', () => {
     window.history.replaceState({}, '', '/files?filesRoute=linx.files.structuredSubjectRoute.v1&filesDocument=https%3A%2F%2Fpod.example%2F.data%2Fstate.ttl&filesSubject=%23Report&filesTarget=https%3A%2F%2Fpod.example%2Fpublic%2Freport.md&filesScroll=96&filesView=kanban&filesClass=udfs%3AWorkspace&filesSearch=report&filesSort=title&filesSortDirection=desc&filesHidden=tags&filesKanban=status')
 
-    render(<FilesWorkspacePane paneId="content" appId="files" />)
+    render(<FilesWorkspacePane theme="light" />)
 
     expect(useFilesStore.getState()).toMatchObject({
       selectedFileId: 'https://pod.example/public/report.md',
@@ -76,10 +106,8 @@ describe('FilesWorkspacePane', () => {
   it('restores a structured subject route from the injected router search bridge', () => {
     window.history.replaceState({}, '', '/files')
 
-    render(<FilesWorkspacePane
-      paneId="content"
-      appId="files"
-      filesRouteBridge={{
+    render(
+      <FilesRouteBridgeProvider bridge={{
         search: {
           filesRoute: 'linx.files.structuredSubjectRoute.v1',
           filesDocument: 'https://pod.example/.data/state.ttl',
@@ -93,8 +121,10 @@ describe('FilesWorkspacePane', () => {
         },
         pushStructuredSubjectRoute: vi.fn(),
         clearStructuredSubjectRoute: vi.fn(),
-      }}
-    />)
+      }}>
+        <FilesWorkspacePane theme="light" />
+      </FilesRouteBridgeProvider>,
+    )
 
     expect(useFilesStore.getState()).toMatchObject({
       selectedFileId: 'https://pod.example/public/report.md',
@@ -115,10 +145,8 @@ describe('FilesWorkspacePane', () => {
       editableFileSheetOpenRequestUri: 'https://pod.example/public/report.md',
     })
 
-    render(<FilesWorkspacePane
-      paneId="content"
-      appId="files"
-      filesRouteBridge={{
+    render(
+      <FilesRouteBridgeProvider bridge={{
         search: {
           filesRoute: 'linx.files.structuredSubjectRoute.v1',
           filesDocument: 'https://pod.example/.data/state.ttl',
@@ -130,8 +158,10 @@ describe('FilesWorkspacePane', () => {
         },
         pushStructuredSubjectRoute: vi.fn(),
         clearStructuredSubjectRoute: vi.fn(),
-      }}
-    />)
+      }}>
+        <FilesWorkspacePane theme="light" />
+      </FilesRouteBridgeProvider>,
+    )
 
     expect(useFilesStore.getState()).toMatchObject({
       selectedFileId: 'https://pod.example/public/report.md',
@@ -145,7 +175,7 @@ describe('FilesWorkspacePane', () => {
   })
 
   it('restores and returns structured subject state from popstate', () => {
-    render(<FilesWorkspacePane paneId="content" appId="files" />)
+    render(<FilesWorkspacePane theme="light" />)
 
     act(() => {
       window.history.pushState({}, '', '/files?filesRoute=linx.files.structuredSubjectRoute.v1&filesDocument=https%3A%2F%2Fpod.example%2F.data%2Fstate.ttl&filesSubject=%23Report&filesTarget=https%3A%2F%2Fpod.example%2Fpublic%2Freport.md&filesScroll=128')
@@ -170,7 +200,7 @@ describe('FilesWorkspacePane', () => {
   })
 
   it('does not render source ingest as a floating workspace overlay', () => {
-    render(<FilesWorkspacePane paneId="content" appId="files" />)
+    render(<FilesWorkspacePane theme="light" />)
 
     expect(screen.getByText('files list')).toBeInTheDocument()
     expect(screen.getByText('file detail')).toBeInTheDocument()
@@ -181,7 +211,7 @@ describe('FilesWorkspacePane', () => {
   it('shows the file list first in the compact Files workspace when no file is selected', () => {
     useFilesStore.setState({ selectedFileId: null })
 
-    render(<FilesWorkspacePane paneId="content" appId="files" />)
+    render(<FilesWorkspacePane theme="light" />)
 
     expect(screen.getByLabelText('文件列表').className).toContain('max-md:flex')
     expect(screen.getByLabelText('文件工作区').className).toContain('max-md:hidden')
@@ -190,7 +220,7 @@ describe('FilesWorkspacePane', () => {
   it('prioritizes the selected file detail in the compact Files workspace and can return to the list', async () => {
     useFilesStore.setState({ selectedFileId: 'https://pod.example/.data/workspaces/ws-1/state.ttl' })
 
-    render(<FilesWorkspacePane paneId="content" appId="files" />)
+    render(<FilesWorkspacePane theme="light" />)
 
     expect(screen.getByLabelText('文件列表').className).toContain('max-md:hidden')
     expect(screen.getByLabelText('文件工作区').className).toContain('max-md:flex')
@@ -205,7 +235,7 @@ describe('FilesWorkspacePane', () => {
   it('shows when Files is opened from the chat files shortcut', () => {
     useFilesStore.setState({ entryScope: 'chat-files' })
 
-    render(<FilesWorkspacePane paneId="content" appId="files" />)
+    render(<FilesWorkspacePane theme="light" />)
 
     expect(screen.getByText('聊天文件')).toBeInTheDocument()
     expect(screen.getByText('当前范围来自聊天关联文件；目录仍按 Pod 原始位置打开。')).toBeInTheDocument()

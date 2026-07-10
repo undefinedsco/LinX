@@ -421,6 +421,7 @@ export function StructuredProjectionTable({
         sortKey={effectiveSortKey}
         sortDirection={sortDirection}
         editable={editable}
+        pinnedColumnId="subject"
         footerRow={footerRow}
         getRowClassName={(row) => projectStructuredProjectionTableRowClassName(row.original)}
         getCellClassName={(cell, index) => projectStructuredProjectionTableCellClassName({

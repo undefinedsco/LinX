@@ -32,7 +32,7 @@ export function SidecarDrawer({
       aria-label={ariaLabel}
       data-sidecar-coverage={coverage}
       className={cn(
-        'absolute z-10 flex flex-col bg-background/98 shadow-[-16px_0_30px_rgba(15,23,42,0.08)]',
+        'absolute z-10 flex flex-col bg-background shadow-[-16px_0_30px_rgba(15,23,42,0.08)]',
         coverage === 'content'
           ? 'inset-y-0 right-0 w-[360px] max-w-full border-l border-border/50'
           : 'inset-y-0 right-0 w-[320px] max-w-[86%] border-l border-border/50',

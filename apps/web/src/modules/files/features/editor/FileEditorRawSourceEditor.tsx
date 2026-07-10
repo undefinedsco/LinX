@@ -8,18 +8,24 @@ import { useFileEditorRawSourceController } from './useFileEditorRawSourceContro
 
 export function FileEditorRawSourceEditor({
   sourceState,
+  onDirtyChange,
+  onSavePendingChange,
   onSubmitProposal,
   proposalPending = false,
   proposalLabel,
   allowCanonicalSave = true,
 }: {
   sourceState: FileEditorRawSourceState
+  onDirtyChange?: (dirty: boolean) => void
+  onSavePendingChange?: (pending: boolean) => void
   onSubmitProposal?: (content: string) => Promise<void>
   proposalPending?: boolean
   proposalLabel?: string
   allowCanonicalSave?: boolean
 }) {
   const rawSource = useFileEditorRawSourceController({
+    onDirtyChange,
+    onSavePendingChange,
     onSubmitProposal,
     proposalPending,
     proposalLabel,

@@ -165,7 +165,7 @@ export function StructuredWhiteboardView({
         </svg>
         {whiteboard.relationEditorOpen ? (
           <form
-            className="absolute right-3 top-3 z-20 grid w-[min(360px,calc(100%-1.5rem))] gap-2 rounded-lg border border-border/40 bg-popover/95 p-2 text-xs shadow-sm backdrop-blur"
+            className="absolute right-3 top-3 z-20 grid w-[min(360px,calc(100%-1.5rem))] gap-2 rounded-lg border border-border/40 bg-popover p-2 text-xs shadow-sm"
             onSubmit={(event) => {
               event.preventDefault()
               whiteboard.saveVisualRelation()

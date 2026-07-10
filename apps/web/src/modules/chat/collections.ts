@@ -2161,7 +2161,7 @@ export function useChatMutations() {
   })
 
   const updateThread = useMutation({
-    mutationFn: ({ id, chatId, ...data }: { id: string; chatId: string } & Partial<ThreadRow>) => 
+    mutationFn: ({ id, chatId: _chatId, ...data }: { id: string; chatId: string } & Partial<ThreadRow>) =>
       chatOps.updateThread(id, data),
     onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: QUERY_KEYS.threads(variables.chatId) })

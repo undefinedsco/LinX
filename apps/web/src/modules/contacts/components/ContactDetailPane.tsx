@@ -78,8 +78,8 @@ function getShortId(id: string) {
 }
 
 const GenderIcon = ({ type }: { type?: string }) => {
-  if (type === 'male') return <span className="text-blue-500 font-bold ml-1">♂</span>
-  if (type === 'female') return <span className="text-pink-500 font-bold ml-1">♀</span>
+  if (type === 'male') return <span aria-label="男" className="ml-1 font-medium text-muted-foreground">♂</span>
+  if (type === 'female') return <span aria-label="女" className="ml-1 font-medium text-muted-foreground">♀</span>
   if (type === 'bot') return <Bot className="w-3.5 h-3.5 text-primary ml-1" />
   return null
 }
@@ -230,11 +230,8 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     return typeof record?.inbox === 'string' && record.inbox.length > 0 ? record.inbox : null
   }, [contact])
   const groupContactId = isGroup ? realContact?.id ?? null : null
-  const groupMemberRoleMap = useMemo(
-    () => (groupContactId ? contactOps.getGroupMemberRoles(groupContactId) : {}),
-    [groupContactId, contacts],
-  )
-  const groupMembers = useMemo<GroupMember[]>(() => {
+  const groupMemberRoleMap = groupContactId ? contactOps.getGroupMemberRoles(groupContactId) : {}
+  const groupMembers: GroupMember[] = (() => {
     if (!groupContactId) return []
 
     const memberRefs = contactOps.getGroupMembers(groupContactId)
@@ -259,7 +256,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       } as any),
       role: (groupMemberRoleMap[memberRef] as 'owner' | 'admin' | 'member' | undefined) ?? 'member',
     }))
-  }, [groupContactId, groupMemberRoleMap, contacts])
+  })()
   const currentUserRole = currentUserRef ? groupMemberRoleMap[currentUserRef] : undefined
   const isGroupOwner = currentUserRole === 'owner'
   const isGroupAdmin = currentUserRole === 'owner' || currentUserRole === 'admin'
@@ -270,7 +267,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     enabled: inviteMemberDialogOpen && !!inviteTargetGroupId,
   })
 
-  const inviteCandidates = useMemo(() => {
+  const inviteCandidates = (() => {
     if (!inviteTargetGroupId) return []
 
     const existingMembers = new Set(contactOps.getGroupMembers(inviteTargetGroupId))
@@ -285,7 +282,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
         const query = inviteSearch.toLowerCase()
         return candidate.name?.toLowerCase().includes(query) || candidate.alias?.toLowerCase().includes(query)
       })
-  }, [inviteContacts, inviteSearch, inviteTargetGroupId, contacts])
+  })()
 
   // === 操作处理函数 ===
 
@@ -308,7 +305,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       const chatId = await contactOps.findOrCreateChat(selectedId)
       selectChat(chatId)
       navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
-    } catch (e) {
+    } catch {
       notify.error('无法启动聊天')
     }
   }, [contact, selectedId, selectChat, navigate, realContact, notify])
@@ -335,7 +332,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     try {
       await contactOps.toggleStar(selectedId, !!contact.starred)
       notify.success(contact.starred ? '已取消星标' : '已添加星标')
-    } catch (e) {
+    } catch {
       notify.error('操作失败')
     }
   }, [contact, selectedId, notify])
@@ -346,7 +343,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     try {
       await contactOps.updateContact(selectedId, { isPublic: checked })
       notify.success(checked ? '已公开到个人资料' : '已设为私密')
-    } catch (e) {
+    } catch {
       notify.error('操作失败')
     }
   }, [contact, selectedId, notify])
@@ -365,7 +362,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       await contactOps.updateContact(selectedId, { alias: editingAlias.trim() || undefined })
       notify.success('备注名已更新')
       setEditMode('none')
-    } catch (e) {
+    } catch {
       notify.error('保存失败')
     } finally {
       setIsSaving(false)
@@ -387,7 +384,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       await contactOps.updateAgent(agentId, { instructions: editingPrompt.trim() })
       notify.success('系统提示词已更新')
       setEditMode('none')
-    } catch (e) {
+    } catch {
       notify.error('保存失败')
     } finally {
       setIsSaving(false)
@@ -403,7 +400,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       notify.success('联系人已删除')
       selectContact(null)
       setEditMode('none')
-    } catch (e) {
+    } catch {
       notify.error('删除失败')
     } finally {
       setIsSaving(false)
@@ -481,7 +478,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
           avatarUrl: profile.avatarUrl,
         }
       }))
-    } catch (e) {
+    } catch {
       setFriendSearch(s => ({
         ...s,
         isSearching: false,
@@ -507,7 +504,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       closeCreateDialog()
       // Select the new contact
       selectContact(result.id)
-    } catch (e) {
+    } catch {
       notify.error('添加失败，请重试')
     } finally {
       setIsSaving(false)
@@ -539,7 +536,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       closeCreateDialog()
       // Select the new contact
       selectContact(result.id)
-    } catch (e) {
+    } catch {
       notify.error('创建失败，请重试')
     } finally {
       setIsSaving(false)
@@ -655,7 +652,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onClick={handleToggleStar}>
-                <Star className={cn("w-4 h-4 mr-2", contact.starred && "fill-yellow-400 text-yellow-400")} />
+                <Star className={cn("w-4 h-4 mr-2", contact.starred && "fill-primary text-primary")} />
                 {contact.starred ? '取消星标' : '设为星标'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleOpenAliasEdit}>
@@ -688,7 +685,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
                   {contact.sourceType === 'wechat' && <span className="text-sm font-normal text-muted-foreground/60 ml-1">@wechat</span>}
                 </h2>
                 <GenderIcon type={gender} />
-                {contact.starred && <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />}
+                {contact.starred && <Star className="w-4 h-4 fill-primary text-primary" />}
               </div>
               <div className="text-sm text-muted-foreground flex items-center gap-2 h-6">
                 <span className="shrink-0 opacity-60 w-12 text-right">{contact.sourceType === 'wechat' ? '微信号:' : 'ID:'}</span>
@@ -742,7 +739,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 className="w-3 h-3 text-green-500/60" />
+                      <CheckCircle2 className="w-3 h-3 text-success/60" />
                       <span>{contactOps.getLastSyncedText(realContact?.lastSyncedAt)}</span>
                     </>
                   )}
@@ -995,7 +992,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
           </p>
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setEditMode('none')} disabled={isSaving}>取消</Button>
-            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleDelete} disabled={isSaving}>
+            <Button variant="destructive" onClick={handleDelete} disabled={isSaving}>
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               删除
             </Button>

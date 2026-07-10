@@ -192,7 +192,7 @@ function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
             )}
           </span>
           {contact.starred && (
-            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400 shrink-0" />
+            <Star className="w-3 h-3 shrink-0 fill-primary text-primary" />
           )}
           {isGroup && contact.groupInfo?.isOwner && (
             <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary shrink-0">
@@ -428,7 +428,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
                   if (el) sectionRefs.current.set(section.title, el)
                 }}
               >
-                <div className="h-6 px-3 flex items-center bg-muted/20 sticky top-0 z-10 backdrop-blur-sm">
+                <div className="h-6 px-3 flex items-center bg-background sticky top-0 z-10">
                   <span className="text-[10px] font-bold text-muted-foreground uppercase">{section.title}</span>
                 </div>
                 {section.items.map(contact => (

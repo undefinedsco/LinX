@@ -25,7 +25,7 @@ interface TaskProgressBlockProps {
 function getStepIcon(status: TaskProgressStepStatus) {
   switch (status) {
     case 'done':
-      return <CheckCircle className="w-4 h-4 text-green-500" />
+      return <CheckCircle className="w-4 h-4 text-success" />
     case 'error':
       return <XCircle className="w-4 h-4 text-destructive" />
     case 'running':
@@ -54,7 +54,7 @@ export const TaskProgressBlock = memo<TaskProgressBlockProps>(({
   block,
   className,
 }) => {
-  const { steps, currentStep, totalSteps, title } = block
+  const { steps, totalSteps, title } = block
   const doneCount = steps.filter(s => s.status === 'done').length
   const progressPct = totalSteps > 0 ? Math.round((doneCount / totalSteps) * 100) : 0
 

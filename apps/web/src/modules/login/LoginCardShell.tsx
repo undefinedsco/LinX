@@ -21,6 +21,9 @@ export function LoginCardShell({
       .join(' ')}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="登录 LinX"
         data-login-card-size={cardSize}
         className={[baseCardClassName, cardClassName]
         .filter(Boolean)

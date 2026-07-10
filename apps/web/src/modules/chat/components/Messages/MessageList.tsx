@@ -60,7 +60,7 @@ function TypingIndicator() {
         <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:-0.15s]" />
         <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" />
       </div>
-      <span className="text-xs text-muted-foreground">AI 正在思考...</span>
+      <span className="text-xs text-muted-foreground">正在生成回复，可按 Esc 中断</span>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   createStructuredPredicateValueEditorState,
@@ -27,10 +27,16 @@ export function useStructuredPredicateValueEditorController({
   options?: string[]
   onCommit: (nextValues: string[]) => void
 }) {
-  const resetState = useMemo(() => projectStructuredPredicateValueEditorResetState({
+  const projectedResetState = projectStructuredPredicateValueEditorResetState({
     kind,
     values,
-  }), [kind, values])
+  })
+  const resetKey = `${kind}\n${projectedResetState.incomingValuesKey}`
+  const resetStateRef = useRef({ key: resetKey, state: projectedResetState })
+  if (resetStateRef.current.key !== resetKey) {
+    resetStateRef.current = { key: resetKey, state: projectedResetState }
+  }
+  const resetState = resetStateRef.current.state
   const [editorState, setEditorState] = useState(() => createStructuredPredicateValueEditorState({
     kind,
     values,
@@ -42,7 +48,7 @@ export function useStructuredPredicateValueEditorController({
       draft: resetState.draft,
       selectedValues: resetState.selectedValues,
     })
-  }, [resetState.incomingValuesKey, kind])
+  }, [resetState])
 
   const {
     booleanValue,

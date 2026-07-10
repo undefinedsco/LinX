@@ -15,6 +15,8 @@ const appStorePath = 'src/modules/files/app/store.ts'
 const rootStoreShimPath = 'src/modules/files/store.ts'
 const rootIndexPath = 'src/modules/files/index.ts'
 const microAppRegistryPath = 'src/modules/layout/micro-app-registry.tsx'
+const primaryLayoutPath = 'src/modules/layout/PrimaryLayout.tsx'
+const routerPath = 'src/router.tsx'
 const rootFacadeSourcePattern = /^(?:(?:\/\/[^\n]*(?:\n|$))|\s|export(?:\s+type)?\s+(?:\*\s+from|\{[\s\S]*?\}\s+from)\s+['"]\.\/(?:app|data|domain|features|ui)\/[^'"]+['"];?|export\s+\{\};?)+$/
 const componentShimSourcePattern = /^(?:(?:\/\/[^\n]*(?:\n|$))|\s|export(?:\s+type)?\s+(?:\*\s+from|\{[\s\S]*?\}\s+from)\s+['"]\.\.\/(?:app|features|ui)\/[^'"]+['"];?)+$/
 
@@ -122,13 +124,25 @@ describe('Files app shell architecture boundary', () => {
     const microAppRegistrySource = readFileSync(microAppRegistryPath, 'utf8')
 
     expect(appWorkspaceSource).toContain('export function FilesWorkspacePane')
-    expect(appWorkspaceSource).toContain('FilesRouteBridgeProvider')
     expect(appWorkspaceSource).toContain('FilesWorkspacePaneContent')
+    expect(appWorkspaceSource).not.toContain('FilesRouteBridgeProvider')
     expect(shimSource).toMatch(/^export \{ FilesWorkspacePane \} from '..\/app\/FilesWorkspacePane'\nexport \{ default \} from '..\/app\/FilesWorkspacePane'\n?$/)
     expect(microAppRegistrySource).toContain("import('@/modules/files/app/FilesWorkspacePane')")
     expect(microAppRegistrySource).toContain("import('@/modules/files/features/tree/FilesTreePane')")
     expect(microAppRegistrySource).not.toContain("import('@/modules/files/components/FilesWorkspacePane')")
     expect(microAppRegistrySource).not.toContain("import('@/modules/files/components/FilesTreePane')")
+  })
+
+  it('keeps Files routing and entry scope out of the reusable layout shell', () => {
+    const primaryLayoutSource = readFileSync(primaryLayoutPath, 'utf8')
+    const routerSource = readFileSync(routerPath, 'utf8')
+
+    expect(primaryLayoutSource).not.toContain('@/modules/files')
+    expect(primaryLayoutSource).not.toContain('filesRouteBridge')
+    expect(primaryLayoutSource).not.toContain('chat-files')
+    expect(routerSource).toContain('FilesRouteBridgeProvider')
+    expect(routerSource).toContain('openChatFilesScope')
+    expect(routerSource).toContain('openAllFilesScope')
   })
 
   it('keeps root module exports pointed at owner layers instead of component shims', () => {

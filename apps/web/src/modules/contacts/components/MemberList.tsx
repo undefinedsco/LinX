@@ -42,7 +42,7 @@ interface MemberListProps {
 function RoleBadge({ role }: { role: MemberRole }) {
   if (role === 'owner') {
     return (
-      <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-500">
+      <span className="inline-flex items-center gap-0.5 text-[10px] text-warning">
         <Crown className="w-3 h-3" />
         群主
       </span>
@@ -50,7 +50,7 @@ function RoleBadge({ role }: { role: MemberRole }) {
   }
   if (role === 'admin') {
     return (
-      <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-400">
+      <span className="inline-flex items-center gap-0.5 text-[10px] text-boundary">
         <Shield className="w-3 h-3" />
         管理员
       </span>

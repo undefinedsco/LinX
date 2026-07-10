@@ -189,12 +189,12 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   })
 
   return (
-    <div className="relative min-h-full p-2 space-y-2">
+    <div className="relative min-h-full w-full min-w-0 max-w-full overflow-hidden p-2 space-y-2">
       <div
         ref={structuredViewport.viewportRef}
         data-structured-resource-viewport="true"
         aria-label={structuredViewport.chrome.viewport.ariaLabel}
-        className="max-h-full overflow-y-auto overflow-x-hidden bg-background px-2 py-2"
+        className="max-h-full w-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden bg-background px-2 py-2"
         onScroll={structuredViewport.handleStructuredViewportScroll}
         onClickCapture={structuredViewport.recordStructuredViewportScrollTop}
         onKeyDownCapture={structuredViewport.recordStructuredViewportScrollTop}

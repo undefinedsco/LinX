@@ -18,11 +18,15 @@ import {
 
 export function useFileEditorRawSourceController({
   sourceState,
+  onDirtyChange,
+  onSavePendingChange,
   onSubmitProposal,
   proposalPending = false,
   proposalLabel,
 }: {
   sourceState: FileEditorRawSourceState
+  onDirtyChange?: (dirty: boolean) => void
+  onSavePendingChange?: (pending: boolean) => void
   onSubmitProposal?: (content: string) => Promise<void>
   proposalPending?: boolean
   proposalLabel?: string
@@ -46,6 +50,16 @@ export function useFileEditorRawSourceController({
     proposalLabel,
     savePending: saveRaw.isPending,
   })
+
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+    return () => onDirtyChange?.(false)
+  }, [dirty, onDirtyChange])
+
+  useEffect(() => {
+    onSavePendingChange?.(saveRaw.isPending)
+    return () => onSavePendingChange?.(false)
+  }, [onSavePendingChange, saveRaw.isPending])
 
   const handleSave = useCallback(async () => {
     const savePlan = planFileEditorRawSourceSave({ rawResource, draft })

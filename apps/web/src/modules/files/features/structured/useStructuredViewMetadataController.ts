@@ -68,10 +68,7 @@ export function useStructuredViewMetadataController({
   }, [
     file.uri,
     hydrateStructuredViewMetadata,
-    structuredViewMetadataQuery.data?.etag,
-    structuredViewMetadataQuery.data?.metaUri,
-    structuredViewMetadataQuery.data?.metadata,
-    structuredViewMetadataQuery.data?.ownerUri,
+    structuredViewMetadataQuery.data,
     whiteboardLayoutKey,
   ])
 

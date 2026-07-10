@@ -1,17 +1,12 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": [
-    "src/main.tsx",
-    "src/router.tsx",
-    "src/components/AuthCallback.tsx",
-    "src/providers/**/*",
-    "src/lib/data/**/*",
-    "src/lib/micro-apps/**/*",
-    "src/modules/layout/**/*",
-    "src/modules/credentials/**/*",
-    "src/modules/login/**/*",
-    "src/types/**/*.d.ts",
-    "src/vite-env.d.ts"
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.architecture.test.ts",
+    "src/**/*.architecture.test.tsx",
+    "src/test/**/*"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

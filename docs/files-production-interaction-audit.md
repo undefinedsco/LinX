@@ -2,6 +2,8 @@
 
 Date: 2026-07-02
 
+Latest verification update: 2026-07-10
+
 Status: production evidence map with visual density, toolbar/byline, product-language, and final live visual taste passes verified; remaining visual work is future polish, not a Files refactor blocker.
 
 This document tracks the product interaction gate from
@@ -42,6 +44,15 @@ Files is the current scope. This audit covers:
 | Architecture must keep reusable UI, smart feature logic, domain rules, data collection, and app composition separated. | `files-root.architecture.test.ts`, `app/files-app.architecture.test.ts`, `data/files-data.architecture.test.ts`, `domain/files-domain.architecture.test.ts`, `features/files-features.architecture.test.ts`, `structured-table.architecture.test.ts`, and component architecture tests are the required gate. The latest focused architecture run passed in this workstream. | Not applicable. | Covered by architecture tests; keep adding guards when new boundary issues are found. |
 
 ## Latest Verification Evidence
+
+2026-07-10 product-level visual gate:
+
+- Seeded xpod production E2E passed against the current Web implementation and generated `.omx/artifacts/files-production-visual-audit/2026-07-10-product-verified/`.
+- The gate now waits for the real resource tree and current ACL/ACR state instead of capturing transient loading chrome.
+- Folder and structured `.meta` drawers must expose a visible human metadata region; structured metadata also surfaces vocab/shape/source links before collapsed HTTP/ETag/raw Turtle diagnostics.
+- The standard three-pane table must keep the complete `subject` and `+ predicate` controls in the viewport. Outer Radix `ScrollArea` content is width-constrained, while the inner TanStack table remains independently resizable and horizontally scrollable when schemas grow.
+- `+ predicate` is verified as a two-stage flow: search/reuse existing predicates first, then an explicit create row reveals term/type/description/shape fields.
+- Default subject/predicate/add column widths were tightened after the real screenshot showed `+ predicate` was only 9% visible. The final screenshot shows the complete schema affordance without adding a density toggle.
 
 Freshly verified in this workstream before this audit was written:
 

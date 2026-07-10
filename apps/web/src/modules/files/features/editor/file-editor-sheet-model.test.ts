@@ -15,11 +15,9 @@ import {
   projectFileEditorSheetContentView,
   projectFileEditorSheetChrome,
   projectFileEditorSheetReset,
-  projectFileEditorSheetTitle,
   projectFileEditorSourceLinkedDraft,
   projectFileEditorSourceLinkedPanel,
   projectFileEditorStructuredReturnAction,
-  replaceFileEditorMarkdownNoteTitle,
   type FileEditorContentViewMode,
   type FileEditorSourceLinkedDescriptor,
 } from './file-editor-sheet-model'
@@ -86,12 +84,10 @@ describe('file editor sheet model', () => {
 
     expect(modelSource).toContain('export function createFileEditorMetaTailId')
     expect(modelSource).toContain('export function createFileEditorSheetState')
-    expect(modelSource).toContain('export function projectFileEditorSheetTitle')
     expect(modelSource).toContain('export function projectFileEditorSheetContentView')
     expect(modelSource).toContain('export function projectFileEditorSheetReset')
     expect(modelSource).toContain('export function projectFileEditorSheetChrome')
     expect(modelSource).toContain('export function getFileEditorMarkdownNoteTitle')
-    expect(modelSource).toContain('export function replaceFileEditorMarkdownNoteTitle')
     expect(modelSource).toContain('export function projectFileEditorSourceLinkedDraft')
     expect(modelSource).toContain('export function projectFileEditorSourceLinkedPanel')
     expect(modelSource).toContain('export function projectFileEditorStructuredReturnAction')
@@ -277,9 +273,7 @@ describe('file editor sheet model', () => {
     expect(createFileEditorMetaTailId('https://pod.example/files/note.md')).toMatch(/^files-file-meta-tail-[a-z0-9]+$/)
     expect(getFileEditorMarkdownNoteTitle('# Full title\n\nbody', 'note.md')).toBe('Full title')
     expect(getFileEditorMarkdownNoteTitle('body only', 'note.md')).toBe('note')
-    expect(replaceFileEditorMarkdownNoteTitle('# Old\n\nbody', 'New')).toBe('# New\n\nbody')
-    expect(replaceFileEditorMarkdownNoteTitle('body', 'New')).toBe('# New\n\nbody')
-    expect(replaceFileEditorMarkdownNoteTitle('# Old\n\nbody', '  ')).toBe('# Old\n\nbody')
+    expect(getFileEditorMarkdownNoteTitle('intro\n\n# Later section', 'note.md')).toBe('note')
 
     expect(projectFileEditorCapabilities({
       fileMimeType: 'text/markdown',
@@ -346,7 +340,6 @@ describe('file editor sheet model', () => {
       contentView,
     })).toEqual({
       headerAriaLabel: '文件详情标题',
-      titleInputAriaLabel: '笔记标题',
       dialogTitle: 'Full title',
       resourceSummary: {
         mimeTypeLabel: 'text/markdown',
@@ -377,7 +370,7 @@ describe('file editor sheet model', () => {
     })
   })
 
-  it('projects editor sheet title and content view state transitions outside the controller', () => {
+  it('projects editor sheet content view state transitions outside the controller', () => {
     const initialState = createFileEditorSheetState({
       canUseRichEditor: true,
       noteTitle: 'Full title',
@@ -394,39 +387,25 @@ describe('file editor sheet model', () => {
       noteTitle: 'Asset',
       contentView: 'raw',
     })
-    expect(projectFileEditorSheetTitle({
-      current: initialState,
-      noteTitle: 'Full title',
-    })).toBe(initialState)
-
-    const renamedState = projectFileEditorSheetTitle({
-      current: initialState,
-      noteTitle: 'Renamed',
-    })
-
-    expect(renamedState).toEqual({
-      noteTitle: 'Renamed',
-      contentView: 'rich',
-    })
     expect(projectFileEditorSheetContentView({
       canUseRichEditor: true,
-      current: renamedState,
+      current: initialState,
       contentView: 'raw',
     })).toEqual({
-      noteTitle: 'Renamed',
+      noteTitle: 'Full title',
       contentView: 'raw',
     })
     expect(projectFileEditorSheetContentView({
       canUseRichEditor: false,
-      current: renamedState,
+      current: initialState,
       contentView: 'rich',
     })).toEqual({
-      noteTitle: 'Renamed',
+      noteTitle: 'Full title',
       contentView: 'raw',
     })
     expect(projectFileEditorSheetReset({
       canUseRichEditor: false,
-      current: renamedState,
+      current: initialState,
       noteTitle: 'Document title',
     })).toEqual({
       noteTitle: 'Document title',

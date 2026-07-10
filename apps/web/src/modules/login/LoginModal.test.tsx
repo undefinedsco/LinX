@@ -114,6 +114,12 @@ describe('LoginModal', () => {
     expect(container.innerHTML).toBe('')
   })
 
+  it('exposes the blocking login surface as a modal dialog', () => {
+    render(<LoginModal {...createProps()} />)
+
+    expect(screen.getByRole('dialog', { name: '登录 LinX' })).toHaveAttribute('aria-modal', 'true')
+  })
+
   it('shows restoring view with spinner', () => {
     const props = createProps({ state: 'restoring' })
     render(<LoginModal {...props} />)
@@ -526,6 +532,23 @@ describe('LoginModal', () => {
     expect(screen.getByText('此供应商不支持本机空间选择')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /本机/ })).toBeNull()
+  })
+
+  it('keeps an invalid custom provider URL in place and explains how to fix it', () => {
+    const props = createProps()
+    render(<LoginModal {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '其他账号供应商' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ 添加供应商' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '供应商地址' }), {
+      target: { value: 'https://' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('请输入有效的 http(s) 地址')
+    expect(screen.getByRole('textbox', { name: '供应商地址' })).toHaveValue('https://')
+    expect(props.onAddProvider).not.toHaveBeenCalled()
+    expect(props.onConnect).not.toHaveBeenCalled()
   })
 
   it('waits for an explicit click before continuing from the ready Local view', () => {

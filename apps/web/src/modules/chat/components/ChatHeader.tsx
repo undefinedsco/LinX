@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
-import { Bot, ChevronRight, PanelRightClose, PanelRightOpen, Star } from 'lucide-react'
+import { Bot, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -40,6 +40,7 @@ export function ChatHeader() {
   const { session } = useSession()
   const { toast } = useToast()
   const selectedChatId = useChatStore((state) => state.selectedChatId)
+  const selectChat = useChatStore((state) => state.selectChat)
   const showRightSidebar = useChatStore((state) => state.showRightSidebar)
   const toggleRightSidebar = useChatStore((state) => state.toggleRightSidebar)
   const [isAgentDialogOpen, setIsAgentDialogOpen] = useState(false)
@@ -224,6 +225,17 @@ export function ChatHeader() {
       <div className="flex h-full w-full items-center px-4">
         <div className="flex-1 flex items-center min-w-0">
           {chat ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mr-1 h-8 w-8 shrink-0 md:hidden"
+              aria-label="返回聊天列表"
+              onClick={() => selectChat(null)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          ) : null}
+          {chat ? (
             <>
               <button
                 type="button"
@@ -274,7 +286,7 @@ export function ChatHeader() {
               onClick={handleToggleStar}
               title={(chat as any).starred ? '取消收藏' : '收藏'}
             >
-              <Star className={`w-5 h-5 ${(chat as any).starred ? 'text-amber-500 fill-amber-500' : ''}`} />
+              <Star className={`w-5 h-5 ${(chat as any).starred ? 'fill-primary text-primary' : ''}`} />
             </Button>
             <Button
               variant="ghost"

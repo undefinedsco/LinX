@@ -6,7 +6,7 @@
  *
  * 核心色值：
  * - Primary / Lineage: Linked Data Taro Purple (#735FC4)
- * - Gray: Purple-tinted neutral
+ * - Neutral surfaces: achromatic gray
  * - Radius: 0.5rem (8px)
  */
 
@@ -16,32 +16,32 @@
     /* Shadcn UI Standard Theme (Light)               */
     /* LinX Linked Data family palette                */
     /* ============================================== */
-    --background: 260 30% 98%; /* #fbfaff */
-    --foreground: 252 22% 14%; /* #211c2b */
+    --background: 0 0% 98%;
+    --foreground: 0 0% 12%;
     
     --card: 0 0% 100%;
-    --card-foreground: 252 22% 14%;
+    --card-foreground: 0 0% 12%;
     
     --popover: 0 0% 100%;
-    --popover-foreground: 252 22% 14%;
+    --popover-foreground: 0 0% 12%;
     
     --primary: 252 46% 57%; /* #735fc4 linked-data taro */
     --primary-foreground: 0 0% 100%;
     
-    --secondary: 258 28% 96%; /* purple-tinted neutral */
-    --secondary-foreground: 252 22% 14%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 12%;
     
-    --muted: 258 24% 96%;
-    --muted-foreground: 255 11% 43%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 43%;
     
-    --accent: 258 28% 96%;
-    --accent-foreground: 252 22% 14%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 12%;
     
     --destructive: 352 43% 49%;
     --destructive-foreground: 0 0% 100%;
     
-    --border: 258 22% 88%;
-    --input: 258 22% 88%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
     --ring: 252 46% 57%;
     --lineage: 252 46% 57%;
     --lineage-foreground: 0 0% 100%;
@@ -57,9 +57,9 @@
     --radius-sm: 4px;
     --radius-md: 8px;
     --radius-lg: 12px;
-    --radius-xl: 20px;
-    --radius-2xl: 24px;
-    --radius-3xl: 28px;
+    --radius-xl: 16px;
+    --radius-2xl: 16px;
+    --radius-3xl: 16px;
     --radius: 0.5rem;
     
     --chart-1: 12 76% 61%;
@@ -71,14 +71,14 @@
     /* ============================================== */
     /* LinX Layout Mappings (Derived from Standard)   */
     /* ============================================== */
-    /* Sidebar: 使用紫灰 neutral，保留 Solid app 家族感 */
-    --layout-sidebar: 258 28% 96%;
+    /* Sidebar: neutral shell; purple is reserved for active state. */
+    --layout-sidebar: 0 0% 96%;
     
     /* List Pane: 使用 Background (纯白) */
     --layout-list-header: 0 0% 100%;
-    --layout-list-hover: 258 28% 96%;    /* hover 使用 muted */
+    --layout-list-hover: 0 0% 96%;
     --layout-list-item: 0 0% 100%;
-    --layout-list-selected: 258 30% 92%;     /* selected 使用香芋紫灰 */
+    --layout-list-selected: 252 24% 94%;
     
     /* Content Pane: 使用 Background (纯白) */
     --layout-content: 0 0% 100%;
@@ -94,32 +94,32 @@
     /* ============================================== */
     /* Shadcn UI Standard Theme (Dark)                */
     /* ============================================== */
-    --background: 258 22% 8%;
-    --foreground: 260 20% 96%;
+    --background: 0 0% 8%;
+    --foreground: 0 0% 96%;
     
-    --card: 258 20% 10%;
-    --card-foreground: 260 20% 96%;
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 96%;
     
-    --popover: 258 20% 10%;
-    --popover-foreground: 260 20% 96%;
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 96%;
     
     --primary: 252 48% 65%;
     --primary-foreground: 0 0% 100%;
     
-    --secondary: 255 16% 15%;
-    --secondary-foreground: 260 20% 96%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 96%;
     
-    --muted: 255 16% 15%;
-    --muted-foreground: 258 12% 68%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 68%;
     
-    --accent: 255 16% 15%;
-    --accent-foreground: 260 20% 96%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 96%;
     
     --destructive: 352 43% 49%;
     --destructive-foreground: 0 0% 100%;
     
-    --border: 255 14% 21%;
-    --input: 255 14% 21%;
+    --border: 0 0% 21%;
+    --input: 0 0% 21%;
     --ring: 252 48% 65%;
     --lineage: 252 48% 65%;
     --lineage-foreground: 0 0% 100%;
@@ -135,9 +135,9 @@
     --radius-sm: 4px;
     --radius-md: 8px;
     --radius-lg: 12px;
-    --radius-xl: 20px;
-    --radius-2xl: 24px;
-    --radius-3xl: 28px;
+    --radius-xl: 16px;
+    --radius-2xl: 16px;
+    --radius-3xl: 16px;
     --radius: 0.5rem;
     
     --chart-1: 220 70% 50%;
@@ -149,17 +149,17 @@
     /* ============================================== */
     /* LinX Layout Mappings (Derived from Standard)   */
     /* ============================================== */
-    /* Sidebar: 使用 Secondary (深紫灰) */
-    --layout-sidebar: 255 16% 15%;
+    /* Sidebar: neutral dark shell. */
+    --layout-sidebar: 0 0% 15%;
     
     /* List Pane: 使用 Background (最深) */
-    --layout-list-header: 258 22% 8%;
-    --layout-list-hover: 255 16% 15%;    /* hover 使用 muted */
-    --layout-list-item: 258 22% 8%;
-    --layout-list-selected: 255 16% 18%; /* selected 使用 secondary */
+    --layout-list-header: 0 0% 8%;
+    --layout-list-hover: 0 0% 15%;
+    --layout-list-item: 0 0% 8%;
+    --layout-list-selected: 252 14% 18%;
     
     /* Content Pane: 使用 Background */
-    --layout-content: 258 22% 8%;
+    --layout-content: 0 0% 8%;
   }
 
   /* 
@@ -167,24 +167,24 @@
    * 内容与 :root 保持一致
    */
   .light {
-    --background: 260 30% 98%;
-    --foreground: 252 22% 14%;
+    --background: 0 0% 98%;
+    --foreground: 0 0% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 252 22% 14%;
+    --card-foreground: 0 0% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 252 22% 14%;
+    --popover-foreground: 0 0% 12%;
     --primary: 252 46% 57%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 258 28% 96%;
-    --secondary-foreground: 252 22% 14%;
-    --muted: 258 24% 96%;
-    --muted-foreground: 255 11% 43%;
-    --accent: 258 28% 96%;
-    --accent-foreground: 252 22% 14%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 12%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 43%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 12%;
     --destructive: 352 43% 49%;
     --destructive-foreground: 0 0% 100%;
-    --border: 258 22% 88%;
-    --input: 258 22% 88%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
     --ring: 252 46% 57%;
     --lineage: 252 46% 57%;
     --lineage-foreground: 0 0% 100%;
@@ -200,17 +200,17 @@
     --radius-sm: 4px;
     --radius-md: 8px;
     --radius-lg: 12px;
-    --radius-xl: 20px;
-    --radius-2xl: 24px;
-    --radius-3xl: 28px;
+    --radius-xl: 16px;
+    --radius-2xl: 16px;
+    --radius-3xl: 16px;
     --radius: 0.5rem;
     
     /* Layout */
-    --layout-sidebar: 258 28% 96%;
+    --layout-sidebar: 0 0% 96%;
     --layout-list-header: 0 0% 100%;
-    --layout-list-hover: 258 28% 96%;
+    --layout-list-hover: 0 0% 96%;
     --layout-list-item: 0 0% 100%;
-    --layout-list-selected: 258 30% 92%;
+    --layout-list-selected: 252 24% 94%;
     --layout-content: 0 0% 100%;
   }
 }

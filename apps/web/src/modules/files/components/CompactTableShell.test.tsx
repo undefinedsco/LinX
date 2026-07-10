@@ -22,12 +22,14 @@ const columnHelper = createColumnHelper<Row>()
 
 function TestTable({
   editable = true,
+  pinnedColumnId,
   onCellActivate = vi.fn(),
   onCellKeyDown = vi.fn(),
   onColumnMouseResize = vi.fn(),
   onColumnTouchResize = vi.fn(),
 }: {
   editable?: boolean
+  pinnedColumnId?: string
   onCellActivate?: (row: Row, columnId: string, anchor: HTMLTableCellElement) => void
   onCellKeyDown?: KeyboardEventHandler<HTMLTableCellElement>
   onColumnMouseResize?: (columnId: string, startSize: number, startClientX: number) => void
@@ -69,6 +71,7 @@ function TestTable({
     <CompactTableShell
       table={table}
       editable={editable}
+      pinnedColumnId={pinnedColumnId}
       isCellInteractive={(cell) => !['locked', 'action'].includes(cell.column.id)}
       onCellActivate={onCellActivate}
       onCellKeyDown={onCellKeyDown}
@@ -144,5 +147,18 @@ describe('CompactTableShell', () => {
     expect(titleCell).toHaveClass('align-middle')
     expect(screen.getByRole('cell', { name: 'active' })).toHaveClass('border-l')
     expect(screen.getByRole('cell', { name: 'active' })).toHaveClass('border-border/5')
+  })
+
+  it('pins the requested identity column while the table scrolls horizontally', () => {
+    render(<TestTable pinnedColumnId="title" />)
+
+    const titleHeader = screen.getByRole('columnheader', { name: /Title/ })
+    const titleCell = screen.getByRole('cell', { name: 'Files' })
+
+    expect(titleHeader).toHaveClass('sticky', 'left-0')
+    expect(titleCell).toHaveClass('sticky', 'left-0')
+    expect(titleHeader).toHaveAttribute('data-pinned-column', 'true')
+    expect(titleCell).toHaveAttribute('data-pinned-column', 'true')
+    expect(screen.getByRole('cell', { name: 'active' })).not.toHaveClass('sticky')
   })
 })

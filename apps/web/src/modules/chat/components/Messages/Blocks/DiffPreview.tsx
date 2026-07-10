@@ -5,8 +5,8 @@
  *
  * Style spec (section 7.4):
  * - Background: bg-muted/30
- * - Deleted lines: bg-red-500/10 text-red-600
- * - Added lines: bg-green-500/10 text-green-600
+ * - Deleted lines use destructive semantics.
+ * - Added lines use success semantics.
  * - Font: font-mono text-xs
  * - Collapse diffs > 10 lines by default, show "展开 N 行变更"
  *
@@ -133,8 +133,8 @@ export const DiffPreview = memo<DiffPreviewProps>(
           <span className="text-xs text-muted-foreground truncate flex-1">
             {filePath}
           </span>
-          <span className="text-[10px] text-green-600 shrink-0">+{addCount}</span>
-          <span className="text-[10px] text-red-600 shrink-0">-{deleteCount}</span>
+          <span className="text-[10px] text-success shrink-0">+{addCount}</span>
+          <span className="text-[10px] text-destructive shrink-0">-{deleteCount}</span>
         </div>
 
         {/* Diff lines */}
@@ -144,8 +144,8 @@ export const DiffPreview = memo<DiffPreviewProps>(
               key={idx}
               className={cn(
                 'flex items-start py-0 leading-5 whitespace-pre',
-                line.type === 'add' && 'bg-green-500/10 text-green-600',
-                line.type === 'delete' && 'bg-red-500/10 text-red-600',
+                line.type === 'add' && 'bg-success/10 text-success',
+                line.type === 'delete' && 'bg-destructive/10 text-destructive',
                 line.type === 'context' && 'text-foreground/60',
               )}
             >

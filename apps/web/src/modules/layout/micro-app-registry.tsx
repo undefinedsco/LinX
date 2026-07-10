@@ -1,6 +1,5 @@
 import { lazy, type ComponentType, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import type { FilesRouteBridge } from '@/modules/files/route-state'
 import {
   MessageSquare,
   Bell,
@@ -23,10 +22,19 @@ export const microAppIds = [
 
 export type MicroAppId = (typeof microAppIds)[number]
 export type ThemeMode = 'light' | 'dark'
+export type MicroAppNavigationIntent = 'default' | 'chat-files'
+
+export interface MicroAppShortcutDefinition {
+  id: string
+  label: string
+  icon: LucideIcon
+  target: MicroAppId
+  intent: Exclude<MicroAppNavigationIntent, 'default'>
+}
 
 export interface MicroAppPaneProps {
   theme: ThemeMode
-  filesRouteBridge?: FilesRouteBridge
+  compactNavigation?: ReactNode
 }
 
 export type MicroAppListPane = ComponentType<MicroAppPaneProps>
@@ -64,6 +72,8 @@ export interface MicroAppDefinition {
   ListPane: MicroAppListPane
   ContentPane: MicroAppContentPane
   LayoutConfigBridge?: MicroAppLayoutConfigBridge
+  hidePrimaryRailOnCompact?: boolean
+  hideContentHeaderOnCompact?: boolean
 }
 
 function lazyPane<T extends ComponentType<any>>(
@@ -180,6 +190,8 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     },
     ListPane: FilesTreePane,
     ContentPane: FilesWorkspacePane,
+    hidePrimaryRailOnCompact: true,
+    hideContentHeaderOnCompact: true,
   },
   favorites: {
     id: 'favorites',
@@ -222,6 +234,16 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     LayoutConfigBridge: ModelServicesLayoutConfigBridge,
   },
 }
+
+export const microAppShortcuts: MicroAppShortcutDefinition[] = [
+  {
+    id: 'chat-files',
+    label: '聊天文件',
+    icon: FolderOpen,
+    target: 'files',
+    intent: 'chat-files',
+  },
+]
 
 export const defaultMicroAppId: MicroAppId = 'chat'
 

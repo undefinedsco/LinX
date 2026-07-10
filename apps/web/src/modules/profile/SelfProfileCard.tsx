@@ -21,9 +21,9 @@ import { useLoginStore } from "@linx/stores/login";
 type ProfileFieldKey = Extract<keyof SolidProfileUpdate, string>;
 
 const genderOptions: Record<string, { label: string; icon: string; className: string }> = {
-  male:       { label: "男", icon: "♂", className: "text-blue-500 font-bold" },
-  female:     { label: "女", icon: "♀", className: "text-pink-500 font-bold" },
-  "non-binary": { label: "非二元", icon: "⚧", className: "text-purple-500 font-bold" },
+  male:       { label: "男", icon: "♂", className: "text-muted-foreground font-medium" },
+  female:     { label: "女", icon: "♀", className: "text-muted-foreground font-medium" },
+  "non-binary": { label: "非二元", icon: "⚧", className: "text-muted-foreground font-medium" },
 };
 
 const readField = (record: SolidProfileRow | null, field: ProfileFieldKey): string => {
@@ -304,7 +304,7 @@ export function SelfProfileCard() {
     if (dataUpdatedAt) {
       return (
         <>
-          <CheckCircle2 className="w-3 h-3 text-green-500/60" />
+          <CheckCircle2 className="w-3 h-3 text-success/60" />
           <span>已同步 · {formatRelativeTime(dataUpdatedAt)}</span>
         </>
       );

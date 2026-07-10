@@ -156,7 +156,7 @@ describe('file detail pane model', () => {
   })
 
   it('projects empty state, shell fallback, and horizontal scroll reset decisions', () => {
-    expect(shouldResetFileDetailHorizontalScroll({ structuredViewMode: 'table' })).toBe(false)
+    expect(shouldResetFileDetailHorizontalScroll({ structuredViewMode: 'table' })).toBe(true)
     expect(shouldResetFileDetailHorizontalScroll({ structuredViewMode: 'kanban' })).toBe(true)
 
     expect(projectFileDetailControllerState({

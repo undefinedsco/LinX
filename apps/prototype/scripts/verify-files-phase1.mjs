@@ -805,7 +805,14 @@ try {
   await page.locator('.file-detail-layer[role="dialog"][aria-label="multi-channel-access.md detail"]').waitFor()
   const editor = page.locator('.rich-editor-shell[aria-label="multi-channel-access.md editor"] .ProseMirror').first()
   await editor.waitFor({ state: 'visible' })
+  if (await page.locator('.rich-editor-shell .rich-editor-toolbar').count() !== 0) {
+    throw new Error('Expected the rich editor toolbar to stay hidden until the editor receives focus')
+  }
   await page.locator('.rich-editor-shell[data-seed-format="blocks-with-double-newline-html"][data-seed-block-count="6"]').filter({ hasText: 'Local, LAN, tunnel, and cloud routes are access channels over the same Pod resource identity.' }).waitFor()
+  if (await page.locator('.rich-editor-shell .note-title-block > span, .rich-editor-shell .note-title-block > div').count() !== 0) {
+    throw new Error('Expected the note title block to avoid duplicating byline and tail metadata')
+  }
+  pass('markdown-editor-keeps-one-title-without-duplicate-meta')
   pass('markdown-editor-seeds-from-file-blocks')
   await page.locator('.file-property-panel[data-file-property-panel="/files/docs/multi-channel-access.md"][data-property-status="Draft"]').filter({ hasText: 'Properties' }).waitFor()
   const filePropertyPanel = page.locator('.file-property-panel[data-file-property-panel="/files/docs/multi-channel-access.md"]')
@@ -814,6 +821,20 @@ try {
   await page.locator('.file-property-panel[data-file-property-panel="/files/docs/multi-channel-access.md"][data-property-status="Ready"]').waitFor()
   pass('file-detail-properties-edit-status')
   await editor.click()
+  await page.locator('.rich-editor-shell .rich-editor-toolbar').waitFor({ state: 'visible' })
+  pass('markdown-editor-reveals-low-chrome-toolbar-on-focus')
+  const toolbarOverlapsContent = await page.evaluate(() => {
+    const toolbar = document.querySelector('.rich-editor-shell .rich-editor-toolbar')
+    const body = document.querySelector('.rich-editor-shell .rich-editor-body')
+    if (!(toolbar instanceof HTMLElement) || !(body instanceof HTMLElement)) return true
+    const toolbarRect = toolbar.getBoundingClientRect()
+    const bodyRect = body.getBoundingClientRect()
+    return toolbarRect.bottom > bodyRect.top
+  })
+  if (toolbarOverlapsContent) {
+    throw new Error('Expected the low-chrome rich editor toolbar not to cover the first content block')
+  }
+  pass('markdown-editor-toolbar-does-not-cover-content')
   await editor.press('End')
   await editor.type(`\n${typedText}`)
   await page.locator('.rich-editor-shell .ProseMirror').filter({ hasText: typedText }).waitFor()
@@ -997,6 +1018,12 @@ try {
   await mobilePage.locator('.rich-editor-shell[aria-label="multi-channel-access.md editor"] [contenteditable="true"]').waitFor()
   await mobilePage.locator('.file-property-panel[data-file-property-panel="/files/docs/multi-channel-access.md"]').waitFor()
   await mobilePage.locator('.file-detail-tail').filter({ hasText: 'multi-channel-access.md.meta' }).waitFor()
+  await mobilePage.locator('.tree-pane.mobile-open').waitFor({ state: 'detached' })
+  await mobilePage.waitForFunction(() => {
+    const tree = document.querySelector('.tree-pane')
+    return tree instanceof HTMLElement && tree.getBoundingClientRect().right <= 1
+  })
+  pass('mobile-file-tree-closes-before-file-sheet-opens')
   await expectViewportContained(
     mobilePage,
     ['.file-detail-layer', '.file-detail-dialog', '.file-detail-header', '.rich-editor-shell', '.file-property-panel', '.file-detail-tail'],

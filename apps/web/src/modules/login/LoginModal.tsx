@@ -324,19 +324,24 @@ function ConfiguredProviderList({
   const [selectedProvider, setSelectedProvider] = useState<LoginProviderOption | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [customUrl, setCustomUrl] = useState('')
+  const [customUrlError, setCustomUrlError] = useState<string | null>(null)
   const configuredProviders = providers.filter((provider) => resolveLoginProviderSource(provider) === 'custom')
 
   const handleAdd = () => {
     if (!customUrl.trim()) return
     try {
-      const normalized = customUrl.startsWith('http') ? customUrl : `https://${customUrl}`
-      new URL(normalized)
+      const normalized = /^https?:\/\//iu.test(customUrl.trim()) ? customUrl.trim() : `https://${customUrl.trim()}`
+      const parsed = new URL(normalized)
+      if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+        throw new Error('Unsupported provider URL')
+      }
       onAddProvider(normalized)
       onConnect(normalized)
       setCustomUrl('')
+      setCustomUrlError(null)
       setIsAdding(false)
     } catch {
-      // Keep the compact modal quiet; validation UX belongs to the provider settings surface.
+      setCustomUrlError('请输入有效的 http(s) 地址。')
     }
   }
 
@@ -422,12 +427,24 @@ function ConfiguredProviderList({
             <input
               autoFocus
               type="url"
+              aria-label="供应商地址"
+              aria-invalid={customUrlError ? true : undefined}
+              aria-describedby={customUrlError ? 'custom-provider-url-error' : undefined}
               placeholder="https://pod.example.com"
               value={customUrl}
-              onChange={(event) => setCustomUrl(event.target.value)}
+              onChange={(event) => {
+                setCustomUrl(event.target.value)
+                setCustomUrlError(null)
+              }}
               onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
               className="w-full h-9 px-3 text-sm border border-border/60 rounded-lg bg-background focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
             />
+            {customUrlError ? (
+              <p id="custom-provider-url-error" role="alert" className="flex items-center gap-1.5 text-left text-xs text-destructive">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                {customUrlError}
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -439,7 +456,11 @@ function ConfiguredProviderList({
               </button>
               <button
                 type="button"
-                onClick={() => { setIsAdding(false); setCustomUrl('') }}
+                onClick={() => {
+                  setIsAdding(false)
+                  setCustomUrl('')
+                  setCustomUrlError(null)
+                }}
                 className="h-8 rounded-md border border-border/50 text-xs text-muted-foreground hover:text-foreground"
               >
                 取消
@@ -584,7 +605,7 @@ function LocalOnboardingView({
     autoProbeKeyRef.current = probeKey
     void Promise.resolve(onTestConnectivity()).catch(() => undefined)
   }, [
-    connectivity?.status,
+    connectivity,
     isReady,
     isStandalone,
     onTestConnectivity,

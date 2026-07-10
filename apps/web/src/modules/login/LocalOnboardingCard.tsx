@@ -107,7 +107,7 @@ export function LocalOnboardingCard({
     } finally {
       setLaunchingAuth(false)
     }
-  }, [localProviderUrl, oidc, snapshot.cloudIdentityUrl, snapshot.spaceKind, snapshot.provisionCode])
+  }, [localProviderUrl, oidc, snapshot.cloudIdentityUrl, snapshot.nodeId, snapshot.spaceKind, snapshot.provisionCode])
 
   const handleOpenAdvancedSettings = useCallback(async () => {
     setActionError(null)
@@ -294,9 +294,9 @@ function RepairCard({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5">
+      <div className="rounded-2xl border border-warning/30 bg-warning/5 p-5">
         <div className="flex items-start gap-3">
-          <Wrench className="mt-0.5 h-5 w-5 text-amber-600" />
+          <Wrench className="mt-0.5 h-5 w-5 text-warning" />
           <div>
             <p className="text-sm font-medium">{title}</p>
             <p className="mt-2 text-sm text-muted-foreground leading-6">{message}</p>
@@ -351,7 +351,7 @@ function ReadyCard({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5">
+      <div className="rounded-2xl border border-success/30 bg-success/5 p-5">
         <p className="text-sm font-medium">{spaceKind === 'standalone' ? '独立空间已准备好' : '本地空间已准备好'}</p>
         <p className="mt-2 text-sm text-muted-foreground leading-6">{message}</p>
         <p className="mt-2 text-xs text-muted-foreground">

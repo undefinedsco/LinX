@@ -106,7 +106,7 @@ export function LockedVocabTablePreview({ file }: { file: FilesDetail }) {
         <LockedVocabRegistryTable rows={registryRows} registryKind={registryKind} onOpenTerm={lockedVocab.openTerm} />
       </div>
       {lockedVocab.primaryProjectionWarning ? (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+        <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
           {lockedVocab.primaryProjectionWarning}
         </div>
       ) : null}

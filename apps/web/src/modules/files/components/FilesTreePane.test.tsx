@@ -182,6 +182,25 @@ describe('FilesTreePane', () => {
     expect(useFilesStore.getState().selectedTreeNodeId).toBe('workspace:https://pod.example/.data/workspaces/ws-1/')
   })
 
+  it('uses roving focus and arrow navigation across visible tree items', () => {
+    render(<FilesTreePane {...defaultProps} />)
+
+    const allNode = screen.getByRole('treeitem', { name: /全部可浏览资源/ })
+    const recentNode = screen.getByRole('treeitem', { name: /最近文件/ })
+    const repositoryNode = screen.getByRole('treeitem', { name: /Repositories/ })
+
+    expect(allNode).toHaveAttribute('tabindex', '0')
+    expect(recentNode).toHaveAttribute('tabindex', '-1')
+    expect(screen.getByRole('button', { name: '展开 Pod 根目录' })).toHaveAttribute('tabindex', '-1')
+
+    allNode.focus()
+    fireEvent.keyDown(allNode, { key: 'ArrowDown' })
+    expect(recentNode).toHaveFocus()
+
+    fireEvent.keyDown(recentNode, { key: 'End' })
+    expect(repositoryNode).toHaveFocus()
+  })
+
   it('selects the recent files smart root on click', () => {
     render(<FilesTreePane {...defaultProps} />)
 

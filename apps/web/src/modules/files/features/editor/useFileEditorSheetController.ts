@@ -29,12 +29,10 @@ import {
   projectFileEditorSheetContentView,
   projectFileEditorSheetChrome,
   projectFileEditorSheetReset,
-  projectFileEditorSheetTitle,
   projectFileEditorRichTextSourceInput,
   projectFileEditorSourceLinkedDraft,
   projectFileEditorSourceLinkedPanel,
   projectFileEditorStructuredReturnAction,
-  replaceFileEditorMarkdownNoteTitle,
   type FileEditorSourceLinkedDescriptor,
 } from './file-editor-sheet-model'
 import { projectFileEditorRawSourceState } from './file-editor-raw-source-model'
@@ -117,9 +115,6 @@ export function useFileEditorSheetController({
     canUseRichEditor,
     noteTitle: currentNoteTitle,
   }))
-  const setNoteTitle = useCallback((noteTitle: string) => {
-    setSheetState((current) => projectFileEditorSheetTitle({ current, noteTitle }))
-  }, [])
   const setContentView = useCallback((contentView: FileEditorContentViewMode) => {
     setSheetState((current) => projectFileEditorSheetContentView({
       canUseRichEditor,
@@ -186,15 +181,9 @@ export function useFileEditorSheetController({
           ? error.message
           : '保存失败'
       toast({ description, variant: 'destructive' })
+      throw error
     }
   }, [rawResource, saveRichText, toast])
-
-  const saveNoteTitle = useCallback(async () => {
-    if (!canSaveRichText || !rawResource || saveRichText.isPending) return
-    const nextTitle = sheetState.noteTitle.trim()
-    if (!nextTitle || nextTitle === getFileEditorMarkdownNoteTitle(rawResource.content, file.name)) return
-    await saveRichTextContent(replaceFileEditorMarkdownNoteTitle(rawResource.content, nextTitle))
-  }, [canSaveRichText, file.name, rawResource, saveRichText.isPending, saveRichTextContent, sheetState.noteTitle])
 
   const submitChangeProposal = useCallback(async (
     content: string,
@@ -269,7 +258,6 @@ export function useFileEditorSheetController({
     rawSourceEditorState,
     richContentState,
     noteTitle: sheetState.noteTitle,
-    setNoteTitle,
     bylineItems,
     sheetChrome,
     richEditorContent,
@@ -283,7 +271,6 @@ export function useFileEditorSheetController({
     structuredReturnAction,
     returnToSourceStructuredSubject,
     saveRichTextContent,
-    saveNoteTitle,
     submitChangeProposal,
     proposalPending: isSourceLinkedEditor ? createSourceProposal.isPending : createAiProposal.isPending,
     proposalLabel: isSourceLinkedEditor ? 'Ingest 审批' : 'AI 修改审批',

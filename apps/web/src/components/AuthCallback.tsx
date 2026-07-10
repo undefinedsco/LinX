@@ -340,7 +340,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md bg-card border border-border/50 rounded-2xl shadow-2xl p-8 text-center">
+      <div className="w-full max-w-md rounded-xl border border-border/50 bg-card p-8 text-center shadow-lg">
         {visibleError ? (
           <div className="flex flex-col items-center animate-in fade-in">
             <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-6">

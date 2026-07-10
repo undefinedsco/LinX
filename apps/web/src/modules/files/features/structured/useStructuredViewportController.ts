@@ -27,7 +27,6 @@ export function useStructuredViewportController({
   const lastScrollTopRef = useRef(0)
 
   useEffect(() => {
-    if (viewMode === 'table') return
     const viewport = viewportRef.current
     if (viewport) viewport.scrollLeft = 0
   }, [fileUri, viewMode])

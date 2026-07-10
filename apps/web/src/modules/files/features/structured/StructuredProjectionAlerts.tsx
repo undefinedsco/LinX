@@ -28,7 +28,7 @@ export function StructuredShapeWarningsAlert({
   if (!alert.available) return null
 
   return (
-    <div className="mt-3 flex items-center gap-2 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800">
+    <div className="mt-3 flex items-center gap-2 rounded-md border border-warning/25 bg-warning/10 px-2 py-1.5 text-xs text-warning">
       <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <span className="font-medium">
         {alert.countLabel}
@@ -47,7 +47,7 @@ export function StructuredProjectionWarningsAlert({
   if (!alert.available) return null
 
   return (
-    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+    <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
       {alert.message}
     </div>
   )

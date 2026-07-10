@@ -1,4 +1,39 @@
-# LinX 前端 DESIGN.md 合规审查 — 需要修改清单
+# LinX 前端 DESIGN.md 合规审查与整改记录
+
+> 当前结论更新：2026-07-10。下方第 0-8 节保留 2026-07-06 原始静态审查快照，不能继续当作当前代码行号或未修清单。
+
+## 当前结论（2026-07-10）
+
+**产品判断：方向合理，架构已从“功能拼装”收敛为一致的 resource-first Files。** 文件夹使用 Finder/File Browser 的浏览与扫描模型；普通 Markdown/text 文件使用专注 Sheet；RDF 资源使用 class-scoped Table，并由 `+ View` 投影到 Kanban/Whiteboard/Raw。card 是 file/resource + RDF metadata，不形成第二套数据库。`.meta`、ACL/ACR、Ingest、vocab 和 approval 均已回到资源语义，而不是散落功能按钮。
+
+当前主要产品风险不再是模型冲突，而是**能力过宽导致的可发现性压力**。首屏继续只展示当前任务必需的浏览、表格与打开动作；vocab、shape、policy URI、proposal 和 Ingest 细节通过局部菜单、抽屉或审批入口渐进展开。不要为了“功能都能看见”重新铺开工具条和多层 card。
+
+### 已完成的系统性整改
+
+- 全局表面改为中性底色；紫色只承担稀疏 primary/lineage 语义；圆角上限、阴影、blur、warm/wechat 遗留已由 token 测试约束。
+- Chat 补齐 Esc 中断、停止按钮命名、键盘列表语义、移动返回路径、失败/重试状态和全宽工作表面。
+- Files 通用 `ui` 与业务 `features/data/domain/app` 分层已由 architecture tests 约束；通用 Shell 不导入 Files store 或 route 类型。
+- compact Files 只保留一个约 44-48px head，隐藏全局 rail；文件树按需从左侧抽屉打开且强制可读展开，并保留一个 Shell 注入的模块切换入口。
+- 文件列表恢复紧凑次级元数据，避免提供 size/MIME/modified 排序却让用户看不到排序依据。
+- 富文本工具条默认隐藏，聚焦后显示且不覆盖正文；正文只保留一个 H1，Properties/Meta 位于 Sheet 下部。
+- 富文本与源码共享 dirty/saving/discard 会话；关闭与模式切换不能静默丢稿，也不能在保存进行中执行“放弃”。
+- Access 先展示当前有效权限和 ACL/ACR 来源，再展示变更申请；完整 URI 与维护操作收在技术信息中。
+- `.meta` 抽屉使用实色覆盖内容区，优先展示标题/状态与 vocab、shape、source 等语义链接；HTTP、ETag 与原始 Turtle 保持折叠。
+- 结构化视图的外层内容区不再被聚焦按钮带着横滚；默认列宽在三栏桌面布局中完整保留 `subject` 与 `+ predicate`，横向溢出只发生在内层表格。
+- `+ predicate` 首层只承担搜索、复用已有 predicate 与“新建”入口；完整 term/type/description/shape 表单仅在主动展开后出现。
+- structured card title 只接受显式批准的 predicate identifier/URI，不再用任意 namespace 的 local-name 猜显示身份。
+- Chat `richContent` 重新消费 `@undefineds.co/models` 的 canonical `{ blocks }` contract；Web 不维护平行 `{ items }` 持久化协议。
+- ESLint flat config 与 TypeScript include 已覆盖全部 production `src/**/*.ts(x)`，不再以部分 source 的“绿灯”代替全量门禁。
+
+### 当前验证与剩余风险
+
+- 已通过 Web lint、全 production TypeScript、分层 Files 单元/集成测试、Prototype build 与 Files 全路径视觉/行为脚本。
+- Prototype 已覆盖 Table/Kanban/Whiteboard/Raw、folder/file/image、subject opening、meta/access、proposal/approval、Tiptap persistence 和 390px compact 路径。
+- 2026-07-10 已在 seeded xpod 登录环境完成真实 production visual E2E；当前证据位于 `.omx/artifacts/files-production-visual-audit/2026-07-10-product-verified/`，覆盖 Finder folder、`.meta`、Access、编辑器 Sheet、Table、predicate 两阶段、enum、Kanban、Whiteboard 与 390px compact。
+- 真实视觉门禁现在要求：容器树加载完成、`.meta` 人类摘要可见、`subject` 与 `+ predicate` 100% 位于视口、predicate 定义表单默认未展开。剩余验证风险是跨浏览器视觉差异与整套 Files 测试单进程运行时的机器资源压力，不是已知产品路径缺口。
+- 仍属产品决策而非代码缺陷：source-linked card 多 workspace 默认容器；mobile web 是否升级为一等创作端；哪些 Files-local RDF contract 先提升到 `@undefineds.co/models`。
+
+## 原始审查快照（2026-07-06）
 
 > 审查基准：`DESIGN.md`（2026-07-06 刷新版）、`docs/ui-style-guide.md`、`docs/ui-component-architecture.md`
 > 范围：`apps/web/src` 前端全模块（基础 token / 登录 / 聊天 / Files / Settings / 可访问性）

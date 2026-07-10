@@ -117,7 +117,7 @@ export function FileDetailPane() {
           title={isFavorite ? '取消收藏' : '收藏'}
           onClick={() => { void handleToggleFavorite() }}
         >
-          <Star className={cn('h-3.5 w-3.5', isFavorite && 'fill-amber-500 text-amber-500')} />
+          <Star className={cn('h-3.5 w-3.5', isFavorite && 'fill-primary text-primary')} />
         </Button>
         {showHeadSidecarActions ? (
           <ResourceSidecarActions

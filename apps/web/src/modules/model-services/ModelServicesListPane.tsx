@@ -28,7 +28,7 @@ export function ModelServicesListPane({}: MicroAppPaneProps) {
   return (
     <div className="flex flex-col h-full bg-muted/10 border-r border-border/40 min-w-0">
       {/* Search Header */}
-      <div className="flex items-center gap-2 h-16 px-4 bg-background/50 backdrop-blur-sm border-b border-border/40 shrink-0">
+      <div className="flex items-center gap-2 h-16 px-4 bg-background border-b border-border/40 shrink-0">
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
           <Input 

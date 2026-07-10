@@ -12,7 +12,7 @@ type StructuredProjectionTableCellInteractionInput = {
 }
 
 export function projectStructuredProjectionTableRowClassName(row: StructuredProjectionTableRowChromeInput) {
-  return row.pending ? 'bg-amber-500/5' : undefined
+  return row.pending ? 'bg-warning/5' : undefined
 }
 
 export function projectStructuredProjectionTableCellClassName({

@@ -30,15 +30,15 @@ interface ToolBlockProps {
 function getStatusIcon(status: MessageBlockStatus, toolStatus?: ToolCallStatus) {
   if (toolStatus) {
     switch (toolStatus) {
-      case 'done': return <CheckCircle className="w-4 h-4 text-green-500" />
+      case 'done': return <CheckCircle className="w-4 h-4 text-success" />
       case 'error': return <XCircle className="w-4 h-4 text-destructive" />
       case 'calling': return <Loader2 className="w-4 h-4 text-primary animate-spin" />
-      case 'waiting_approval': return <ShieldCheck className="w-4 h-4 text-amber-500" />
-      case 'running': return <Play className="w-4 h-4 text-blue-500" />
+      case 'waiting_approval': return <ShieldCheck className="w-4 h-4 text-warning" />
+      case 'running': return <Play className="w-4 h-4 text-primary" />
     }
   }
   switch (status) {
-    case MessageBlockStatus.SUCCESS: return <CheckCircle className="w-4 h-4 text-green-500" />
+    case MessageBlockStatus.SUCCESS: return <CheckCircle className="w-4 h-4 text-success" />
     case MessageBlockStatus.ERROR: return <XCircle className="w-4 h-4 text-destructive" />
     case MessageBlockStatus.PROCESSING:
     case MessageBlockStatus.STREAMING: return <Loader2 className="w-4 h-4 text-primary animate-spin" />

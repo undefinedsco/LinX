@@ -126,6 +126,10 @@ vi.mock('../runtime-client', () => ({
   }),
 }))
 
+vi.mock('./ChatListPane', () => ({
+  ChatListPane: () => <div data-testid="compact-chat-list">Compact chat list</div>,
+}))
+
 import { ChatContentPane } from './ChatContentPane'
 
 describe('ChatContentPane', () => {
@@ -165,6 +169,16 @@ describe('ChatContentPane', () => {
     mockRuntimeEventHandler.current = null
   })
 
+  it('shows the existing chat list in compact content when no chat is selected', () => {
+    storeState.selectedChatId = null
+    storeState.selectedThreadId = null
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByTestId('compact-chat-list')).toBeInTheDocument()
+    expect(screen.getByText('选择或创建一个聊天')).toBeInTheDocument()
+  })
+
   it('passes selected thread as the initial ChatKit thread without unsafe pre-upgrade method calls', () => {
     render(<ChatContentPane theme="light" />)
 
@@ -174,6 +188,13 @@ describe('ChatContentPane', () => {
       }),
     )
     expect(mockSetThreadId).not.toHaveBeenCalled()
+  })
+
+  it('uses the chat workspace as a full-bleed operational surface', () => {
+    render(<ChatContentPane theme="light" />)
+
+    const workspace = screen.getByTestId('chat-workspace-surface')
+    expect(workspace.className).not.toMatch(/rounded-|backdrop-blur|\bm-4\b/)
   })
 
   it('exposes LinX platform models to ChatKit with linx-lite as the default', () => {
@@ -244,7 +265,7 @@ describe('ChatContentPane', () => {
     })
   })
 
-  it('does not retry automatic initial thread creation for the same chat after a failure', async () => {
+  it('shows a recoverable error after initial thread creation fails', async () => {
     storeState.selectedChatId = 'chat-1'
     storeState.selectedThreadId = null
     mockUseThreadList.mockReturnValue({
@@ -253,7 +274,7 @@ describe('ChatContentPane', () => {
     })
     mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(false)
 
-    const { rerender } = render(<ChatContentPane theme="light" />)
+    render(<ChatContentPane theme="light" />)
 
     await waitFor(() => {
       expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(1)
@@ -264,13 +285,11 @@ describe('ChatContentPane', () => {
       options.onError(new Error('network down'))
     })
 
-    mockUseThreadList.mockReturnValue({
-      data: [],
-      isLoading: false,
-    })
-    rerender(<ChatContentPane theme="light" />)
+    expect(await screen.findByText('无法创建默认话题')).toBeInTheDocument()
+    expect(screen.getByText(/network down/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
 
-    expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(2))
   })
 
   it('shows approval banner and routes to inbox for pending approvals', () => {

@@ -131,6 +131,8 @@ function FilePreview({ files, onRemove }: FilePreviewProps) {
           
           {/* Remove Button */}
           <button
+            type="button"
+            aria-label={`移除 ${file.file.name}`}
             onClick={() => onRemove(file.id)}
             className={cn(
               'absolute -top-1 -right-1 w-4 h-4',
@@ -166,7 +168,7 @@ function TokenCount({ count, max, className }: TokenCountProps) {
     <div 
       className={cn(
         'text-xs text-muted-foreground',
-        isWarning && 'text-amber-500',
+        isWarning && 'text-warning',
         isError && 'text-destructive',
         className
       )}
@@ -229,13 +231,18 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
 
     // Handle keyboard
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Escape' && isGenerating && onStop) {
+        e.preventDefault()
+        onStop()
+        return
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         if (!disabled && !isGenerating && value.trim()) {
           onSend()
         }
       }
-    }, [disabled, isGenerating, value, onSend])
+    }, [disabled, isGenerating, onSend, onStop, value])
 
     // Handle drag events for file upload
     const handleDragOver = useCallback((e: DragEvent) => {
@@ -308,7 +315,9 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
             onClick={onStop}
             variant="secondary"
             size="icon"
-            className="h-9 w-9 rounded-lg bg-red-500 hover:bg-red-600 text-white"
+            className="h-9 w-9 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            aria-label="停止生成"
+            title="停止生成（Esc）"
           >
             <Square className="w-4 h-4" strokeWidth={1.5} />
           </Button>
@@ -352,7 +361,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
             // 过渡动画
             'transition-all duration-200',
             // 拖拽文件状态
-            isDragging && 'border-2 border-dashed border-green-500',
+            isDragging && 'border-2 border-dashed border-success',
           )}
         >
           {/* DragHandle - Cherry Studio: height 6px, opacity 0 -> 1 */}
@@ -379,6 +388,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
             <textarea
               ref={textareaRef}
               value={value}
+              aria-label="消息"
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
@@ -392,7 +402,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
                 'placeholder:text-muted-foreground/50',
                 // Cherry Studio: min-height 30px
                 'min-h-[30px]',
-                'focus:outline-none',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
                 // 自定义滚动条
                 '[&::-webkit-scrollbar]:w-[3px]',
@@ -430,8 +440,8 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
 
         {/* Drag Overlay for file upload */}
         {isDragging && (
-          <div className="absolute inset-0 bg-green-500/5 flex items-center justify-center pointer-events-none rounded-xl m-5 mb-5">
-            <div className="text-sm text-green-600 dark:text-green-400 font-medium">
+          <div className="absolute inset-0 bg-success/5 flex items-center justify-center pointer-events-none rounded-xl m-5 mb-5">
+            <div className="text-sm text-success font-medium">
               拖拽文件到这里上传
             </div>
           </div>

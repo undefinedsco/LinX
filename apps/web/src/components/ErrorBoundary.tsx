@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   children: ReactNode
@@ -32,33 +33,19 @@ export class ErrorBoundary extends Component<Props, State> {
       )
 
       return (
-        <div style={{
-          padding: '40px',
-          maxWidth: '480px',
-          margin: '0 auto',
-          fontFamily: 'inherit',
-          textAlign: 'center',
-        }}>
-          <h1 style={{ color: '#dc2626', fontSize: '22px', marginBottom: '12px' }}>
+        <div className="mx-auto max-w-[480px] px-6 py-10 text-center">
+          <h1 className="mb-3 text-xl font-semibold text-destructive">
             页面暂时无法显示
           </h1>
-          <p style={{ color: '#4b5563', fontSize: '14px', lineHeight: 1.7, margin: 0 }}>
+          <p className="m-0 text-sm leading-7 text-muted-foreground">
             {message}
           </p>
-          <button
+          <Button
             onClick={() => window.location.reload()}
-            style={{
-              marginTop: '24px',
-              padding: '10px 20px',
-              background: '#111827',
-              color: 'white',
-              border: 'none',
-              borderRadius: '999px',
-              cursor: 'pointer',
-            }}
+            className="mt-6"
           >
             刷新页面
-          </button>
+          </Button>
         </div>
       )
     }
@@ -66,4 +53,3 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children
   }
 }
-

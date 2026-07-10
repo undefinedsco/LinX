@@ -27,8 +27,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      // 温暖守护者风格：圆角 + 平滑过渡
-      "flex cursor-default select-none items-center rounded-lg px-2 py-2 text-sm outline-none",
+      "flex cursor-default select-none items-center rounded-md px-2 py-2 text-sm outline-none",
       "transition-colors duration-150",
       "focus:bg-muted/50 data-[state=open]:bg-muted/50",
       inset && "pl-8",
@@ -50,12 +49,10 @@ const DropdownMenuSubContent = React.forwardRef<
   <DropdownMenuPrimitive.SubContent
     ref={ref}
     className={cn(
-      // 温暖守护者风格：玻璃态 + 大圆角 + 紫色阴影
-      "z-50 min-w-[8rem] overflow-hidden rounded-xl",
-      "border border-border/30 bg-popover/95 backdrop-blur-md p-1",
+      "z-50 min-w-[8rem] overflow-hidden rounded-lg",
+      "border border-border/50 bg-popover p-1",
       "text-popover-foreground",
-      "shadow-[0_20px_60px_-12px_rgba(124,58,237,0.15)]",
-      // 动画
+      "shadow-lg",
       "data-[state=open]:animate-in data-[state=closed]:animate-out",
       "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
@@ -78,12 +75,10 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        // 温暖守护者风格：玻璃态 + 大圆角 + 紫色阴影
-        "z-50 min-w-[8rem] overflow-hidden rounded-xl",
-        "border border-border/30 bg-popover/95 backdrop-blur-md p-1",
+        "z-50 min-w-[8rem] overflow-hidden rounded-lg",
+        "border border-border/50 bg-popover p-1",
         "text-popover-foreground",
-        "shadow-[0_20px_60px_-12px_rgba(124,58,237,0.15)]",
-        // 动画
+        "shadow-lg",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
@@ -106,8 +101,7 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      // 温暖守护者风格：圆角 + 平滑过渡
-      "relative flex cursor-default select-none items-center rounded-lg px-2 py-2 text-sm outline-none",
+      "relative flex cursor-default select-none items-center rounded-md px-2 py-2 text-sm outline-none",
       "transition-colors duration-150",
       "focus:bg-muted/50 focus:text-foreground",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
@@ -126,8 +120,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
     className={cn(
-      // 温暖守护者风格：圆角 + 平滑过渡
-      "relative flex cursor-default select-none items-center rounded-lg py-2 pl-8 pr-2 text-sm outline-none",
+      "relative flex cursor-default select-none items-center rounded-md py-2 pl-8 pr-2 text-sm outline-none",
       "transition-colors duration-150",
       "focus:bg-muted/50 focus:text-foreground",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
@@ -154,8 +147,7 @@ const DropdownMenuRadioItem = React.forwardRef<
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
     className={cn(
-      // 温暖守护者风格：圆角 + 平滑过渡
-      "relative flex cursor-default select-none items-center rounded-lg py-2 pl-8 pr-2 text-sm outline-none",
+      "relative flex cursor-default select-none items-center rounded-md py-2 pl-8 pr-2 text-sm outline-none",
       "transition-colors duration-150",
       "focus:bg-muted/50 focus:text-foreground",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",

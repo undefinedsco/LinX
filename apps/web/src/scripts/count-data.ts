@@ -53,7 +53,7 @@ async function main() {
     { name: 'aiModels', resource: aiModelResource },
   ]
 
-  for (const item of tables) {
+  for (const item of resources) {
     try {
       const start = performance.now()
       const rows = await db.select().from(item.resource).execute()

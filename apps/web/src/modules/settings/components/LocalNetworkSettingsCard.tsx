@@ -233,7 +233,7 @@ function StatusNotice({ tone, message }: { tone: 'success' | 'error'; message: s
   return (
     <div className={
       tone === 'success'
-        ? 'flex items-start gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400'
+        ? 'flex items-start gap-2 rounded-xl border border-success/20 bg-success/10 px-3 py-2 text-sm text-success'
         : 'flex items-start gap-2 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive'
     }>
       <Icon className="mt-0.5 h-4 w-4 shrink-0" />

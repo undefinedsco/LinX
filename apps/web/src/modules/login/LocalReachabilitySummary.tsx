@@ -65,7 +65,7 @@ function ReachabilityIcon({
       title={accessibleLabel}
       className={cn(
         'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
-        state === 'reachable' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+        state === 'reachable' && 'bg-success/10 text-success',
         state === 'unreachable' && 'bg-destructive/10 text-destructive',
         state === 'checking' && 'bg-muted text-muted-foreground',
       )}

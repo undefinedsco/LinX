@@ -81,8 +81,8 @@ const config: Config = {
         md: "var(--radius-md)",
         lg: "var(--radius-lg)",
         xl: "var(--radius-xl)",
-        "2xl": "calc(var(--radius-xl) + 4px)",
-        "3xl": "calc(var(--radius-xl) + 8px)",
+        "2xl": "var(--radius-2xl)",
+        "3xl": "var(--radius-3xl)",
         full: "9999px"
       },
       keyframes: {

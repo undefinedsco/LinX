@@ -8,6 +8,7 @@ import {
   X,
   ListFilter,
   Tags,
+  ArrowUpDown,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -19,14 +20,17 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import type {
   FilesListEmptyStateIconKind,
+  FilesListSortField,
   FilesListToolbarChromeModel,
 } from '../../domain/list/list-view-model'
 import type { FilesEntry } from '../../domain/resource/resource-model'
@@ -60,6 +64,10 @@ function ListSearchBar({
   tagOptions,
   canFilterByTag,
   onTagFilterChange,
+  sortField,
+  sortDirection,
+  sortOptions,
+  onSort,
 }: {
   toolbarChrome: FilesListToolbarChromeModel
   value: string
@@ -71,7 +79,14 @@ function ListSearchBar({
   tagOptions: string[]
   canFilterByTag: boolean
   onTagFilterChange: (filter: string | null) => void
+  sortField: FilesListSortField
+  sortDirection: 'asc' | 'desc'
+  sortOptions: ReadonlyArray<{ id: FilesListSortField; label: string }>
+  onSort: (field: FilesListSortField) => void
 }) {
+  const currentSortLabel = sortOptions.find((option) => option.id === sortField)?.label ?? sortField
+  const directionActionLabel = sortDirection === 'desc' ? '升序' : '降序'
+
   return (
     <div aria-label={toolbarChrome.toolbarLabel} className="flex items-center gap-2 px-4 py-2 border-b border-border/50 shrink-0">
       <div className="relative flex-1 min-w-0">
@@ -122,6 +137,28 @@ function ListSearchBar({
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            aria-label="排序"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+            title={`${currentSortLabel} · ${sortDirection === 'asc' ? '升序' : '降序'}`}
+          >
+            <ArrowUpDown strokeWidth={1.5} className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-36">
+          <DropdownMenuRadioGroup value={sortField} onValueChange={(value) => onSort(value as FilesListSortField)}>
+            {sortOptions.map((option) => (
+              <DropdownMenuRadioItem key={option.id} value={option.id}>
+                {option.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => onSort(sortField)}>{directionActionLabel}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <DropdownMenu>
@@ -231,6 +268,10 @@ export function FilesListPane(_props: MicroAppPaneProps) {
         tagOptions={listPane.tagOptions}
         canFilterByTag={listPane.canFilterByTag}
         onTagFilterChange={listPane.setTagFilter}
+        sortField={listPane.sortField}
+        sortDirection={listPane.sortDirection}
+        sortOptions={listPane.sortOptions}
+        onSort={listPane.sortList}
       />
       {listPane.scopeHeader ? (
         <div className="border-b border-border/30 px-3 py-1.5 text-xs font-medium text-foreground">

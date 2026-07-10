@@ -73,6 +73,30 @@ describe('structured projections', () => {
     })
   })
 
+  it('uses a namespaced title term before falling back to the subject URI', () => {
+    const projection = projectTurtleTable(`
+<#Workspace> <https://undefineds.co/vocab/title> "Readable workspace" .
+`)
+
+    const kanban = projectStructuredKanban(projection)
+    const whiteboard = projectStructuredWhiteboard(projection)
+
+    expect(kanban.columns[0].cards[0].title).toBe('Readable workspace')
+    expect(whiteboard.nodes[0].title).toBe('Readable workspace')
+  })
+
+  it('does not treat an unrelated predicate with a title-like local name as card identity', () => {
+    const projection = projectTurtleTable(`
+<#Audit> <https://example.invalid/audit/name> "Internal audit key" .
+`)
+
+    const kanban = projectStructuredKanban(projection)
+    const whiteboard = projectStructuredWhiteboard(projection)
+
+    expect(kanban.columns[0].cards[0].title).toBe('#Audit')
+    expect(whiteboard.nodes[0].title).toBe('#Audit')
+  })
+
   it('projects subject-to-subject objects into whiteboard relation lines', () => {
     const projection = projectTurtleTable(`
 @prefix udfs: <https://undefineds.co/vocab/> .

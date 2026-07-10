@@ -115,18 +115,18 @@ export function InboxListPane(_props: MicroAppPaneProps) {
                   isSelected
                     ? 'border-primary/40 bg-primary/10'
                     : 'border-border/50 bg-card/50 hover:bg-accent/50',
-                  isResolvedAuth && !isSelected && 'border-emerald-500/20 bg-emerald-500/5 opacity-80',
+                  isResolvedAuth && !isSelected && 'border-success/20 bg-success/5 opacity-80',
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       {isPendingApproval ? (
-                        <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
+                        <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
                       ) : isResolvedAuth ? (
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
                       ) : isPendingAuthRequired ? (
-                        <KeyRound className="h-4 w-4 shrink-0 text-blue-500" />
+                        <KeyRound className="h-4 w-4 shrink-0 text-boundary" />
                       ) : (
                         <Clock3 className="h-4 w-4 shrink-0 text-muted-foreground" />
                       )}
@@ -136,11 +136,11 @@ export function InboxListPane(_props: MicroAppPaneProps) {
                           variant="outline"
                           className={cn(
                             'shrink-0 text-[10px]',
-                            isPendingApproval && 'border-amber-500/30 text-amber-600',
-                            isPendingAuthRequired && 'border-blue-500/30 text-blue-600',
-                            (isResolvedAuth || item.status === 'approved' || item.status === 'completed') && 'border-emerald-500/30 text-emerald-600',
-                            item.status === 'rejected' && 'border-red-500/30 text-red-600',
-                            item.status === 'error' && 'border-red-500/30 text-red-600',
+                            isPendingApproval && 'border-warning/30 text-warning',
+                            isPendingAuthRequired && 'border-boundary/30 text-boundary',
+                            (isResolvedAuth || item.status === 'approved' || item.status === 'completed') && 'border-success/30 text-success',
+                            item.status === 'rejected' && 'border-destructive/30 text-destructive',
+                            item.status === 'error' && 'border-destructive/30 text-destructive',
                             item.status === 'active' && 'border-primary/30 text-primary',
                             item.status === 'paused' && 'border-slate-400/40 text-slate-600',
                           )}

@@ -188,6 +188,37 @@ describe('ChatListPane', () => {
       expect(screen.getByText('Hi there')).toBeInTheDocument()
     })
 
+    it('opens a chat from the keyboard using listbox semantics', () => {
+      const selectChat = vi.fn()
+      const selectThread = vi.fn()
+      mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector(createDefaultStoreState({
+        selectChat,
+        selectThread,
+      })))
+      mockUseChatList.mockReturnValue({
+        data: [{
+          id: 'chat-keyboard',
+          title: 'Keyboard Chat',
+          lastMessagePreview: 'Open without a pointer',
+          updatedAt: new Date().toISOString(),
+          muted: false,
+          starred: false,
+          unreadCount: 0,
+        }],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      const option = screen.getByRole('option', { name: 'Keyboard Chat' })
+      option.focus()
+      fireEvent.keyDown(option, { key: 'Enter' })
+
+      expect(selectChat).toHaveBeenCalledWith('chat-keyboard')
+    })
+
     it('shows loading state', () => {
       mockUseChatList.mockReturnValue({
         data: [],

@@ -75,7 +75,7 @@ function TreeNodeItem({
       role="treeitem"
       aria-expanded={canExpand ? isExpanded : undefined}
       aria-selected={isSelected}
-      tabIndex={0}
+      tabIndex={isSelected ? 0 : -1}
       onClick={onSelect}
       onKeyDown={handleKeyDown}
       className={cn(
@@ -90,6 +90,7 @@ function TreeNodeItem({
       {canExpand ? (
         <button
           type="button"
+          tabIndex={-1}
           aria-label={toggleLabel}
           aria-expanded={isExpanded}
           onClick={(e) => {
@@ -122,6 +123,54 @@ function TreeNodeItem({
       )}
     </div>
   )
+}
+
+function handleTreeNavigation(event: KeyboardEvent<HTMLDivElement>) {
+  if (!(event.target instanceof HTMLElement)) return
+  const currentItem = event.target.closest<HTMLElement>('[role="treeitem"]')
+  if (!currentItem || !event.currentTarget.contains(currentItem)) return
+
+  const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]'))
+  const currentIndex = items.indexOf(currentItem)
+  if (currentIndex < 0) return
+
+  const focusItem = (item: HTMLElement | undefined) => {
+    if (!item) return
+    items.forEach((candidate) => {
+      candidate.tabIndex = candidate === item ? 0 : -1
+    })
+    item.focus()
+  }
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    focusItem(items[Math.min(currentIndex + 1, items.length - 1)])
+    return
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    focusItem(items[Math.max(currentIndex - 1, 0)])
+    return
+  }
+  if (event.key === 'Home') {
+    event.preventDefault()
+    focusItem(items[0])
+    return
+  }
+  if (event.key === 'End') {
+    event.preventDefault()
+    focusItem(items[items.length - 1])
+    return
+  }
+
+  const toggle = currentItem.querySelector<HTMLButtonElement>('button[aria-expanded]')
+  if (event.key === 'ArrowRight' && toggle?.getAttribute('aria-expanded') === 'false') {
+    event.preventDefault()
+    toggle.click()
+  } else if (event.key === 'ArrowLeft' && toggle?.getAttribute('aria-expanded') === 'true') {
+    event.preventDefault()
+    toggle.click()
+  }
 }
 
 function TreeSectionHeader({
@@ -178,7 +227,7 @@ function CollapsedTreeRail({
       >
         <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
       </button>
-      <div role="tree" aria-label={chrome.treeLabel} className="flex flex-col items-center gap-1">
+      <div role="tree" aria-label={chrome.treeLabel} className="flex flex-col items-center gap-1" onKeyDown={handleTreeNavigation}>
         {nodes.map((node) => {
           const Icon = ICON_MAP[node.type] ?? FolderOpen
           return (
@@ -186,6 +235,8 @@ function CollapsedTreeRail({
               key={node.id}
               type="button"
               role="treeitem"
+              aria-selected={selectedTreeNodeId === node.id}
+              tabIndex={selectedTreeNodeId === node.id ? 0 : -1}
               aria-label={node.label}
               title={node.label}
               className={cn(
@@ -242,10 +293,10 @@ function TreeChildren({
   })
 }
 
-export function FilesTreePane(_props: MicroAppPaneProps) {
+export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { forceExpanded?: boolean }) {
   const tree = useFilesTreePaneController()
 
-  if (tree.resourceRailCollapsed) {
+  if (tree.resourceRailCollapsed && !forceExpanded) {
     return (
       <CollapsedTreeRail
         chrome={tree.chrome}
@@ -259,14 +310,16 @@ export function FilesTreePane(_props: MicroAppPaneProps) {
 
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
-      <TreeSectionHeader
-        title={tree.chrome.headerTitle}
-        description={tree.description}
-        collapseLabel={tree.chrome.collapseRailLabel}
-        onCollapse={tree.toggleResourceRail}
-      />
+      {!forceExpanded ? (
+        <TreeSectionHeader
+          title={tree.chrome.headerTitle}
+          description={tree.description}
+          collapseLabel={tree.chrome.collapseRailLabel}
+          onCollapse={tree.toggleResourceRail}
+        />
+      ) : null}
       <ScrollArea className="flex-1">
-        <div className="py-1" role="tree" aria-label={tree.chrome.treeLabel}>
+        <div className="py-1" role="tree" aria-label={tree.chrome.treeLabel} onKeyDown={handleTreeNavigation}>
           {tree.contentState.kind === 'loading' ? (
             <div className="px-4 py-3 text-sm text-muted-foreground">{tree.chrome.rootLoadingLabel}</div>
           ) : tree.contentState.kind === 'error' ? (

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockToggleRightSidebar = vi.fn()
+const mockSelectChat = vi.fn()
 const mockUpdateChat = vi.fn()
 const mockUpdateAgentProfile = vi.fn()
 const mockUpdateAgentModel = vi.fn()
@@ -139,6 +140,7 @@ describe('ChatHeader', () => {
 
     mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
       selectedChatId: 'chat-1',
+      selectChat: mockSelectChat,
       showRightSidebar: false,
       toggleRightSidebar: mockToggleRightSidebar,
     }))
@@ -189,6 +191,14 @@ describe('ChatHeader', () => {
         refresh: vi.fn(),
       }
     })
+  })
+
+  it('returns to the chat list from the compact header', () => {
+    render(<ChatHeader />)
+
+    fireEvent.click(screen.getByRole('button', { name: '返回聊天列表' }))
+
+    expect(mockSelectChat).toHaveBeenCalledWith(null)
   })
 
   it('updates agent profile from the header dialog', async () => {

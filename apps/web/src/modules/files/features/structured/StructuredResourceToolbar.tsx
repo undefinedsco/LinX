@@ -180,7 +180,7 @@ export function StructuredResourceToolbar({
                 </DropdownMenuItem>
               ))}
               {toolbarModel.pendingClassProposals.map((proposal) => (
-                <div key={proposal.id} className="mx-1 my-1 rounded-md border border-amber-500/20 bg-amber-500/5 py-1 text-xs">
+                <div key={proposal.id} className="mx-1 my-1 rounded-md border border-warning/20 bg-warning/5 py-1 text-xs">
                   <DropdownMenuItem
                     onSelect={() => onSelectClassScope(proposal.uri)}
                     className="mx-1 px-1.5 text-xs"

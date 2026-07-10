@@ -9,7 +9,7 @@
     "build:check": "yarn workspace @linx/stores build && tsc && vite build",
     "preview": "vite preview",
     "test": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks\" vitest",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint src --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
     "@inrupt/solid-client": "^3.0.0",

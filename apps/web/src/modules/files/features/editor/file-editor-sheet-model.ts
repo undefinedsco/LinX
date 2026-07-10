@@ -15,7 +15,6 @@ export interface FileEditorSheetState {
 
 export interface FileEditorSheetChrome {
   headerAriaLabel: string
-  titleInputAriaLabel: string
   dialogTitle: string
   resourceSummary: {
     mimeTypeLabel: string
@@ -57,16 +56,6 @@ export function createFileEditorSheetState({
   }
 }
 
-export function projectFileEditorSheetTitle({
-  current,
-  noteTitle,
-}: {
-  current: FileEditorSheetState
-  noteTitle: string
-}): FileEditorSheetState {
-  return current.noteTitle === noteTitle ? current : { ...current, noteTitle }
-}
-
 export function projectFileEditorSheetContentView({
   canUseRichEditor,
   contentView,
@@ -102,19 +91,9 @@ export function createFileEditorMetaTailId(uri: string) {
 }
 
 export function getFileEditorMarkdownNoteTitle(content: string | null | undefined, fallback: string): string {
-  const heading = content?.match(/^#\s+(.+)$/m)?.[1]?.trim()
+  const heading = content?.match(/^\uFEFF?#\s+([^\r\n]+)(?:\r?\n|$)/)?.[1]?.trim()
   if (heading) return heading
   return fallback.replace(/\.[^.]+$/, '')
-}
-
-export function replaceFileEditorMarkdownNoteTitle(content: string, title: string): string {
-  const normalizedTitle = title.trim()
-  if (!normalizedTitle) return content
-  if (/^#\s+.+$/m.test(content)) {
-    return content.replace(/^#\s+.+$/m, `# ${normalizedTitle}`)
-  }
-  const body = content.trimStart()
-  return body ? `# ${normalizedTitle}\n\n${body}` : `# ${normalizedTitle}\n`
 }
 
 export function projectFileEditorSheetChrome({
@@ -137,7 +116,6 @@ export function projectFileEditorSheetChrome({
 
   return {
     headerAriaLabel: '文件详情标题',
-    titleInputAriaLabel: '笔记标题',
     dialogTitle: noteTitle || file.name,
     resourceSummary: {
       mimeTypeLabel: file.mimeType ?? 'file',

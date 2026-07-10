@@ -38,8 +38,7 @@ vi.mock('@/modules/inbox/components/InboxBellButton', () => ({
   InboxBellButton: () => <button aria-label="收件箱通知" type="button" />,
 }))
 
-import { PrimaryLayout } from './PrimaryLayout'
-import { useFilesStore } from '@/modules/files/app/store'
+import { getMainPanelDefaultSize, PrimaryLayout } from './PrimaryLayout'
 
 describe('PrimaryLayout', () => {
   beforeAll(() => {
@@ -72,7 +71,6 @@ describe('PrimaryLayout', () => {
     vi.clearAllMocks()
     mockSessionState.isLoggedIn = true
     mockSessionState.sessionRequestInProgress = false
-    useFilesStore.setState({ entryScope: 'all' })
   })
 
   it('shows only stable first-slice modules in primary navigation', () => {
@@ -85,7 +83,8 @@ describe('PrimaryLayout', () => {
   })
 
   it('exposes chat files only as a bottom secondary entry that opens Files in chat scope', () => {
-    render(<PrimaryLayout microAppId="chat" />)
+    const onNavigate = vi.fn()
+    render(<PrimaryLayout microAppId="chat" onNavigate={onNavigate} />)
 
     const chatFiles = screen.getByRole('button', { name: '聊天文件' })
     expect(chatFiles.closest('nav')).toBeNull()
@@ -93,18 +92,17 @@ describe('PrimaryLayout', () => {
     chatFiles.click()
 
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'files' } })
-    expect(useFilesStore.getState().entryScope).toBe('chat-files')
+    expect(onNavigate).toHaveBeenCalledWith('files', 'chat-files')
   })
 
   it('opens the primary Files navigation in the full files scope', () => {
-    useFilesStore.setState({ entryScope: 'chat-files' })
-
-    render(<PrimaryLayout microAppId="chat" />)
+    const onNavigate = vi.fn()
+    render(<PrimaryLayout microAppId="chat" onNavigate={onNavigate} />)
 
     screen.getByRole('button', { name: '文件' }).click()
 
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'files' } })
-    expect(useFilesStore.getState().entryScope).toBe('all')
+    expect(onNavigate).toHaveBeenCalledWith('files', 'default')
   })
 
   it('marks the active micro app on the layout root for route smoke tests', () => {
@@ -142,6 +140,11 @@ describe('PrimaryLayout', () => {
     expect(listPanel.className).toContain('overflow-hidden')
   })
 
+  it('allocates the main workspace as a percentage instead of an 80px panel', () => {
+    expect(getMainPanelDefaultSize(false)).toBe('80%')
+    expect(getMainPanelDefaultSize(true)).toBe('100%')
+  })
+
   it('removes the module list pane from compact layout so app content remains reachable', () => {
     const previousMatchMedia = window.matchMedia
     Object.defineProperty(window, 'matchMedia', {
@@ -161,6 +164,8 @@ describe('PrimaryLayout', () => {
     try {
       render(<PrimaryLayout microAppId="files" />)
       expect(screen.queryByTestId('micro-app-list-panel')).toBeNull()
+      expect(screen.queryByRole('button', { name: '文件' })).toBeNull()
+      expect(screen.queryByTestId('micro-app-content-head')).toBeNull()
     } finally {
       Object.defineProperty(window, 'matchMedia', {
         writable: true,

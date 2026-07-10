@@ -78,13 +78,18 @@ function localName(value: string): string {
 type ProjectionWithScope = StructuredTableProjection & { className?: string | null }
 
 const TITLE_PREDICATES = [
+  'title',
+  'name',
+  'label',
+  'udfs:title',
+  'https://undefineds.co/vocab/title',
   'schema:name',
   'https://schema.org/name',
+  'http://schema.org/name',
   'rdfs:label',
   'http://www.w3.org/2000/01/rdf-schema#label',
   'dcterms:title',
   'http://purl.org/dc/terms/title',
-  'title',
 ]
 
 const CLASS_PREDICATES = [
@@ -111,7 +116,8 @@ const SUMMARY_PREDICATES = [
 
 export function projectStructuredCards(projection: ProjectionWithScope): StructuredCardProjection[] {
   return projection.rows.map((row) => {
-    const title = firstValue(row, TITLE_PREDICATES) ?? row.subject
+    const title = firstValue(row, TITLE_PREDICATES)
+      ?? row.subject
     const className = firstValue(row, CLASS_PREDICATES) ?? projection.className ?? null
     const tags = TAG_PREDICATES.flatMap((predicate) => valuesFor(row, predicate)).map(localName)
 

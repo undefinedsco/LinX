@@ -128,12 +128,12 @@ export const spacingPresets = {
  */
 export const borderRadius = {
   none: 'rounded-none',           // 0px
-  sm: 'rounded-sm',               // 2px
-  md: 'rounded-md',               // 6px
-  lg: 'rounded-lg',               // 8px ⭐ 小圆角
-  xl: 'rounded-xl',               // 12px ⭐ 标准圆角
+  sm: 'rounded-sm',               // 4px
+  md: 'rounded-md',               // 8px
+  lg: 'rounded-lg',               // 12px ⭐ 小圆角
+  xl: 'rounded-xl',               // 16px ⭐ 标准圆角
   '2xl': 'rounded-2xl',           // 16px - 大圆角
-  '3xl': 'rounded-3xl',           // 24px
+  '3xl': 'rounded-3xl',           // 16px - 封顶，避免装饰性大圆角
   full: 'rounded-full',           // 完全圆形
 } as const
 
@@ -239,7 +239,6 @@ export const linxLayout = {
     borderRadius: 12,   // 统一圆角 (rounded-xl)
   },
 } as const
-
 
 
 

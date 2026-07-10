@@ -112,6 +112,50 @@ describe('resource meta sidecar content model', () => {
     })
   })
 
+  it('projects human-facing metadata before transport diagnostics', () => {
+    const content = projectResourceMetaSidecarContent({
+      file: folder,
+      isLoading: false,
+      error: null,
+      meta: meta({
+        content: [
+          '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .',
+          '@prefix udfs: <https://undefineds.co/vocab/> .',
+          '<#meta> rdfs:label "Public knowledge" ;',
+          '  udfs:tags "docs", "shared" ;',
+          '  udfs:reviewStatus "Needs review" .',
+        ].join('\n'),
+      }),
+    })
+
+    expect(content.userRows).toEqual([
+      ['标题', 'Public knowledge'],
+      ['标签', 'docs、shared'],
+      ['审核状态', 'Needs review'],
+    ])
+  })
+
+  it('projects owner metadata from a file-level sidecar subject', () => {
+    const content = projectResourceMetaSidecarContent({
+      file: folder,
+      isLoading: false,
+      error: null,
+      meta: meta({
+        content: [
+          '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .',
+          '@prefix udfs: <https://undefineds.co/vocab/> .',
+          '<./> rdfs:label "Public knowledge" ;',
+          '  udfs:reviewStatus "Ready" .',
+        ].join('\n'),
+      }),
+    })
+
+    expect(content.userRows).toEqual([
+      ['标题', 'Public knowledge'],
+      ['审核状态', 'Ready'],
+    ])
+  })
+
   it('normalizes loading, error, unknown, and missing sidecar states', () => {
     expect(projectResourceMetaSidecarContent({
       file: folder,

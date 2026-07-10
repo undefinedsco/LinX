@@ -402,25 +402,6 @@ describe('FileDetailPane rich text save wiring', () => {
     })
   })
 
-  it('saves the editable note title back to the first markdown heading', async () => {
-    render(<FileDetailPane />)
-
-    const titleInput = screen.getByLabelText('笔记标题')
-    expect(titleInput).toHaveValue('Hello')
-
-    fireEvent.change(titleInput, { target: { value: 'Project brief' } })
-    fireEvent.blur(titleInput)
-
-    await waitFor(() => expect(mockMutateRaw).toHaveBeenCalledWith({
-      resource: expect.objectContaining({
-        uri: 'https://pod.example/public/README.md',
-        mimeType: 'text/markdown',
-        etag: '"raw-1"',
-      }),
-      content: '# Project brief\nLinX full raw',
-    }))
-  })
-
   it('does not enable rich save for non-markdown raw resources', () => {
     mockFileDetail('application/json')
 

@@ -93,7 +93,10 @@ function SessionEventBridge({
     }
   }, [bumpVersion, onError, session.events, setSessionRequestInProgress])
 
-  const value = useMemo(() => ({ ...context }), [context, version])
+  const value = useMemo(() => {
+    void version
+    return { ...context }
+  }, [context, version])
 
   return (
     <SessionContext.Provider value={value}>

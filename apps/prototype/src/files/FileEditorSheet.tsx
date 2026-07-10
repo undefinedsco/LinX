@@ -47,16 +47,11 @@ function escapeHtml(value: string) {
 
 function blockToHtml(block: FileContentBlock) {
   if (block.kind === 'title') {
-    const meta = block.meta ?? []
     return `
       <div class="note-title-block" data-block-id="${escapeHtml(block.id)}">
-        <span>${escapeHtml(block.text ?? '')}</span>
         <h1>${escapeHtml(block.text ?? '')}</h1>
-        <div>
-          {meta}
-        </div>
       </div>
-    `.replace('{meta}', meta.map(([, value]) => `<em>${escapeHtml(value)}</em>`).join(''))
+    `
   }
   if (block.kind === 'heading') {
     const level = block.level === 3 ? 3 : 2
@@ -79,13 +74,7 @@ function blocksToRichTextContent(file: FileOpenSample) {
 
   return `
     <div class="note-title-block">
-      <span>${file.path}</span>
       <h1>${file.name.replace(/\.md$/, '')}</h1>
-      <div>
-        <em>draft</em>
-        <em>linked resource</em>
-        <em>private</em>
-      </div>
     </div>
     <p>Local, LAN, tunnel, and cloud routes are access channels over the same Pod resource identity. Use one canonical storage identity, then let each route describe how the same resource is reached.</p>
     <h2>Routes</h2>
@@ -134,6 +123,7 @@ function RichTextFileEditor({
   onChangeContent?: (content: StoredFileContent) => void
 }) {
   const chunks = blocksToChunks(file)
+  const [toolbarVisible, setToolbarVisible] = useState(false)
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -179,13 +169,17 @@ function RichTextFileEditor({
 
   return (
     <section
-      className="rich-editor-shell"
+      className={`rich-editor-shell${toolbarVisible ? ' editor-active' : ''}`}
       data-seed-block-count={file.blocks?.length ?? 0}
       data-seed-format={file.blocks?.length ? 'blocks-with-double-newline-html' : 'fallback-html'}
       data-storage-format={isFileEditorContent(content) ? content.format : content ? 'legacy-html' : 'seed-blocks'}
       aria-label={`${file.name} editor`}
+      onFocusCapture={() => setToolbarVisible(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setToolbarVisible(false)
+      }}
     >
-      <div className="rich-editor-toolbar" aria-label="Editor toolbar">
+      {toolbarVisible ? <div className="rich-editor-toolbar" aria-label="Editor toolbar">
         <button className="block-style-button" title="Block style">
           <FileText size={15} />
           <span>Paragraph</span>
@@ -210,12 +204,12 @@ function RichTextFileEditor({
             })}
           </span>
         ))}
-      </div>
+      </div> : null}
       <div className="rich-editor-body">
-        <div className="editor-block-tools" aria-label="Block tools">
+        {toolbarVisible ? <div className="editor-block-tools" aria-label="Block tools">
           <button title="Add block" aria-label="Add block"><Plus size={15} /></button>
           <button title="Move block" aria-label="Move block"><MoreHorizontal size={15} /></button>
-        </div>
+        </div> : null}
         <EditorContent editor={editor} />
       </div>
     </section>

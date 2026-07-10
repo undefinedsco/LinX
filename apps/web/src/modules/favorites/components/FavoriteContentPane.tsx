@@ -98,7 +98,7 @@ function FavoriteDetail({
       <div className="p-6 max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-start gap-4">
-          <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-lg bg-amber-500/10 text-amber-500">
+          <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-lg bg-primary/10 text-primary">
             <SourceIcon strokeWidth={1.5} className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">

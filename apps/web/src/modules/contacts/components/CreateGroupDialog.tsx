@@ -151,7 +151,7 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
             <div className="text-xs text-muted-foreground">
               已选: {selectedNames.join(', ') || '无'}（共 {total} 人{ownerRef ? '，包含你' : ''}）
               {total < 2 && (
-                <span className="text-amber-500 ml-1">（至少选择 {ownerRef ? 1 : 2} 人）</span>
+                <span className="text-warning ml-1">（至少选择 {ownerRef ? 1 : 2} 人）</span>
               )}
             </div>
           )}

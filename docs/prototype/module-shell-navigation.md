@@ -2,7 +2,7 @@
 
 ## 目标
 
-提供微信-like 桌面主壳：窄侧栏、少量一级入口、聊天默认主舞台。Shell 负责模块切换，不负责业务数据。
+提供克制的桌面主壳：窄侧栏、少量一级入口、聊天默认主舞台。Shell 负责模块切换与通用布局插槽，不负责业务数据。`DESIGN.md` 是视觉与交互的上位规范；微信只作为信息密度参考，不作为品牌皮肤。
 
 ## 范围
 
@@ -35,11 +35,15 @@ Narrow < 1180
 │Nav │ List Pane  │ Content Pane       │
 └────┴────────────┴────────────────────┘
 
-Mobile-like < 820
-┌────┬────────────────────┐
-│Nav │ Content Pane       │
-└────┴────────────────────┘
+Compact < 768
+┌─────────────────────────┐
+│ One module head         │
+├─────────────────────────┤
+│ Content / invoked panes │
+└─────────────────────────┘
 ```
+
+Files 在 compact width 下隐藏全局 rail 和通用 content head，仅保留自己的约 44-48px head；文件树从抽屉按需打开，资源选择后收起。Shell 通过 `compactNavigation` 插槽提供一个模块切换入口，不叠加第二条 head。
 
 ## 状态
 
@@ -60,16 +64,14 @@ Mobile-like < 820
 - 窄侧栏最底部菜单入口点击后展开二级菜单。
 - 头像点击打开个人卡片。
 
-## 底部菜单
+## 底部工具区
 
-底部菜单对齐微信桌面端位置：固定在窄侧栏最下面。
+底部工具区固定在窄侧栏最下面，入口保持少量、低干扰。
 
 二级入口：
 
-- 聊天文件。
-- 通用设置。
-- 服务状态。
-- 关于。
+- `聊天文件` 是 registry 声明的定向快捷入口，Shell 只转发通用 navigation intent。
+- 设置菜单包含通用设置、模型服务、服务管理和关于。
 
 `聊天文件` 在这里出现，不占一级导航。
 
@@ -84,6 +86,8 @@ Shell 只读取：
 
 Shell 不直接读写 chat/contact/file/favorite 数据。
 
+Files 的 `chat-files` entry scope 由 router/composition root 解释；`PrimaryLayout` 不导入 Files store、route type 或查询逻辑。模块自己的 compact 控件通过通用 render slot 注入，不把业务组件硬编码进 Shell。
+
 ## 验收
 
 - `chat` 是默认模块。
@@ -92,4 +96,6 @@ Shell 不直接读写 chat/contact/file/favorite 数据。
 - 聊天文件不在主侧栏业务入口里。
 - 底部菜单入口固定在窄侧栏最底部。
 - 主壳在 1440、1180、390 三种宽度下不挤压聊天内容。
+- compact Files 只出现一条模块 head，并保留模块切换入口。
+- compact Files 文件树抽屉始终以可读展开态出现，不继承桌面折叠 rail 的 56px 图标状态。
 - 退出登录后主壳消失。

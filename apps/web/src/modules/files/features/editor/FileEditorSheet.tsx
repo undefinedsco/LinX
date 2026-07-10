@@ -1,4 +1,4 @@
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
   Dialog,
@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +25,10 @@ import { RichTextFileEditor } from '../../ui/RichTextFileEditor'
 import { FileEditorSheetMetaTail } from './FileEditorSheetMetaTail'
 import { FileEditorRawSourceEditor } from './FileEditorRawSourceEditor'
 import { useFileEditorSheetController, type FileEditorSourceLinkedDescriptor } from './useFileEditorSheetController'
+
+type PendingDiscardAction =
+  | { type: 'close' }
+  | { type: 'switch-view'; view: 'rich' | 'raw' }
 
 export function FileEditorSheet({
   file,
@@ -48,11 +53,80 @@ export function FileEditorSheet({
     stagedSourceText,
   })
   const sidecarActions = useResourceSidecarActionsController(file)
-  const handleNoteTitleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    event.currentTarget.blur()
+  const setContentView = editor.setContentView
+  const [richTextDirty, setRichTextDirty] = useState(false)
+  const [richTextSaveStatus, setRichTextSaveStatus] = useState<'saved' | 'dirty' | 'saving' | 'error'>('saved')
+  const [rawSourceDirty, setRawSourceDirty] = useState(false)
+  const [rawSourceSavePending, setRawSourceSavePending] = useState(false)
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false)
+  const [pendingDiscardAction, setPendingDiscardAction] = useState<PendingDiscardAction | null>(null)
+  const hasUnsavedChanges = richTextDirty || rawSourceDirty
+  const savePending = richTextSaveStatus === 'saving' || rawSourceSavePending
+
+  useEffect(() => {
+    if (open) return
+    setRichTextDirty(false)
+    setRichTextSaveStatus('saved')
+    setRawSourceDirty(false)
+    setRawSourceSavePending(false)
+    setDiscardDialogOpen(false)
+    setPendingDiscardAction(null)
+  }, [open])
+
+  const requestDiscardConfirmation = (action: PendingDiscardAction) => {
+    setPendingDiscardAction(action)
+    setDiscardDialogOpen(true)
   }
+
+  const handleSheetOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && hasUnsavedChanges) {
+      requestDiscardConfirmation({ type: 'close' })
+      return
+    }
+    onOpenChange(nextOpen)
+  }
+
+  const handleContentViewChange = (view: 'rich' | 'raw') => {
+    if (view === editor.contentView) return
+    if (hasUnsavedChanges) {
+      requestDiscardConfirmation({ type: 'switch-view', view })
+      return
+    }
+    setContentView(view)
+  }
+
+  const discardChanges = () => {
+    if (savePending) return
+    const action = pendingDiscardAction
+    setDiscardDialogOpen(false)
+    setPendingDiscardAction(null)
+    setRichTextDirty(false)
+    setRawSourceDirty(false)
+    if (action?.type === 'switch-view') {
+      setContentView(action.view)
+      return
+    }
+    if (action?.type === 'close') onOpenChange(false)
+  }
+
+  useEffect(() => {
+    if (!discardDialogOpen || !pendingDiscardAction || hasUnsavedChanges || savePending) return
+    const action = pendingDiscardAction
+    setDiscardDialogOpen(false)
+    setPendingDiscardAction(null)
+    if (action.type === 'switch-view') {
+      setContentView(action.view)
+      return
+    }
+    onOpenChange(false)
+  }, [
+    discardDialogOpen,
+    hasUnsavedChanges,
+    onOpenChange,
+    pendingDiscardAction,
+    savePending,
+    setContentView,
+  ])
 
   const handleOpenMetaTail = () => {
     const metaTail = document.getElementById(editor.metaTailId)
@@ -84,6 +158,8 @@ export function FileEditorSheet({
         editable
         warning={editor.richEditorWarning}
         onSaveText={editor.canSaveRichText ? editor.saveRichTextContent : undefined}
+        onDirtyChange={setRichTextDirty}
+        onSaveStatusChange={setRichTextSaveStatus}
         onSubmitProposal={editor.canUseRichEditor ? editor.submitChangeProposal : undefined}
         proposalPending={editor.proposalPending}
         proposalLabel={editor.proposalLabel}
@@ -93,7 +169,8 @@ export function FileEditorSheet({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={handleSheetOpenChange}>
       <DialogContent
         data-files-editor-sheet="true"
         className="max-h-[92vh] w-[min(1120px,calc(100vw-32px))] max-w-none gap-0 overflow-hidden rounded-xl border-border/40 p-0 shadow-2xl"
@@ -138,7 +215,7 @@ export function FileEditorSheet({
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   {editor.sheetChrome.contentViewOptions.map((option) => (
-                    <DropdownMenuItem key={option.mode} onSelect={() => editor.setContentView(option.mode)}>
+                    <DropdownMenuItem key={option.mode} onSelect={() => handleContentViewChange(option.mode)}>
                       <Check className={cn('mr-2 h-3.5 w-3.5', option.active ? 'opacity-100' : 'opacity-0')} aria-hidden="true" />
                       {option.label}
                     </DropdownMenuItem>
@@ -149,16 +226,7 @@ export function FileEditorSheet({
           </div>
         </DialogHeader>
         <ScrollArea className="min-h-0 flex-1" aria-label={editor.sheetChrome.contentScrollAriaLabel}>
-          <div className="mx-auto w-full max-w-[760px] px-8 py-12">
-            <input
-              aria-label={editor.sheetChrome.titleInputAriaLabel}
-              className="mb-8 w-full min-w-0 rounded-sm border-0 bg-transparent px-0 py-0.5 text-4xl font-semibold leading-tight text-foreground outline-none placeholder:text-muted-foreground/40 focus-visible:ring-0 read-only:cursor-default"
-              value={editor.noteTitle}
-              readOnly={!editor.canSaveRichText}
-              onChange={(event) => editor.setNoteTitle(event.target.value)}
-              onBlur={editor.saveNoteTitle}
-              onKeyDown={handleNoteTitleKeyDown}
-            />
+          <div className="mx-auto w-full max-w-[760px] px-8 py-10">
             {editor.structuredReturnAction ? (
               <button
                 className="-mt-5 mb-5 text-[11px] font-medium text-primary hover:underline"
@@ -185,6 +253,8 @@ export function FileEditorSheet({
             ) : (
               <FileEditorRawSourceEditor
                 sourceState={editor.rawSourceEditorState}
+                onDirtyChange={setRawSourceDirty}
+                onSavePendingChange={setRawSourceSavePending}
                 onSubmitProposal={editor.submitChangeProposal}
                 proposalPending={editor.proposalPending}
                 proposalLabel={editor.proposalLabel}
@@ -207,6 +277,44 @@ export function FileEditorSheet({
           onOpenChange={sidecarActions.setAccessDialogOpen}
         />
       </DialogContent>
-    </Dialog>
+      </Dialog>
+      <Dialog
+        open={discardDialogOpen}
+        onOpenChange={(nextOpen) => {
+          setDiscardDialogOpen(nextOpen)
+          if (!nextOpen) setPendingDiscardAction(null)
+        }}
+      >
+        <DialogContent className="w-[min(420px,calc(100vw-32px))] gap-4 rounded-xl border-border/40 p-5">
+          <DialogHeader>
+            <DialogTitle>未保存的修改</DialogTitle>
+            <DialogDescription>
+              {pendingDiscardAction?.type === 'switch-view'
+                ? savePending
+                  ? '正在保存当前模式的修改。保存完成后会自动切换编辑模式。'
+                  : '当前模式的草稿尚未写入文件。继续编辑可以保留草稿，放弃修改会切换编辑模式。'
+                : savePending
+                  ? '正在保存修改。保存完成后会自动关闭文件详情。'
+                : '内容尚未写入当前文件。继续编辑可以保留草稿，放弃修改会关闭文件详情。'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDiscardDialogOpen(false)
+                setPendingDiscardAction(null)
+              }}
+            >
+              继续编辑
+            </Button>
+            <Button variant="destructive" size="sm" disabled={savePending} onClick={discardChanges}>
+              放弃修改
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

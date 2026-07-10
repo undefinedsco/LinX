@@ -234,7 +234,7 @@ export function StructuredPendingPredicateHeaderCell({
             <PredicateDefinitionRow label={chrome.menu.rows.status.label}>
               <p>{statusLabel}</p>
               {chrome.menu.approvalNotice ? (
-                <p className="mt-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                <p className="mt-1 rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">
                   {chrome.menu.approvalNotice}
                 </p>
               ) : null}
@@ -688,7 +688,7 @@ export function StructuredSubjectCell({
       <>
         <span>{pendingMarker?.displayLabel ?? displayLabel}</span>
         {pendingMarker ? (
-          <span className="ml-2 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal text-amber-700">
+          <span className="ml-2 rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-normal text-warning">
             {pendingMarker.label}
           </span>
         ) : null}
@@ -1070,7 +1070,7 @@ export function StructuredEnumCellSelector({
                       <PredicateDefinitionRow label={optionMenu.rows.status.label}>
                         <p>{optionMenu.rows.status.value}</p>
                         {optionMenu.rows.status.approvalReadyLabel ? (
-                          <p className="mt-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                          <p className="mt-1 rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">
                             {optionMenu.rows.status.approvalReadyLabel}
                           </p>
                         ) : null}
@@ -1115,7 +1115,7 @@ export function ShapeWarningIndicator({
       aria-label={ariaLabel}
       role="img"
       title={title}
-      className="ml-1 inline-flex shrink-0 text-amber-600"
+      className="ml-1 inline-flex shrink-0 text-warning"
     >
       <Info className="h-3 w-3" aria-hidden="true" />
     </span>
@@ -1145,7 +1145,7 @@ export function PendingCellWriteButton({
         aria-label={chrome.ariaLabel}
         role="status"
         title={chrome.title}
-        className="ml-1 inline-flex h-4 shrink-0 items-center rounded bg-amber-500/10 px-1 text-[10px] font-medium text-amber-700"
+        className="ml-1 inline-flex h-4 shrink-0 items-center rounded bg-warning/10 px-1 text-[10px] font-medium text-warning"
       >
         {chrome.marker}
       </span>
@@ -1157,7 +1157,7 @@ export function PendingCellWriteButton({
       type="button"
       aria-label={chrome.ariaLabel}
       title={chrome.title}
-      className="ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-amber-700 hover:bg-amber-500/10"
+      className="ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-warning hover:bg-warning/10"
       onClick={(event) => {
         event.stopPropagation()
         onDiscard?.()

@@ -69,6 +69,13 @@ export const SessionInputbar = memo<SessionInputbarProps>(
       }
     }, [value])
 
+    const handleInterrupt = useCallback(() => {
+      if (!onInterrupt) return
+      onInterrupt()
+      setInterruptFlash(true)
+      setTimeout(() => setInterruptFlash(false), 600)
+    }, [onInterrupt])
+
     const handleKeyDown = useCallback(
       (e: KeyboardEvent<HTMLTextAreaElement>) => {
         // Ctrl+C → interrupt signal (only when input is empty)
@@ -86,15 +93,8 @@ export const SessionInputbar = memo<SessionInputbarProps>(
           }
         }
       },
-      [disabled, value, onSend, onInterrupt],
+      [disabled, handleInterrupt, onSend, value],
     )
-
-    const handleInterrupt = useCallback(() => {
-      if (!onInterrupt) return
-      onInterrupt()
-      setInterruptFlash(true)
-      setTimeout(() => setInterruptFlash(false), 600)
-    }, [onInterrupt])
 
     const isDisabled = disabled || !isSessionActive
 
@@ -113,7 +113,7 @@ export const SessionInputbar = memo<SessionInputbarProps>(
             'bg-background',
             'transition-all duration-200',
             isFocused && 'border-primary/50',
-            interruptFlash && 'border-red-500/70',
+            interruptFlash && 'border-destructive/70',
             isDisabled && 'opacity-50',
           )}
         >

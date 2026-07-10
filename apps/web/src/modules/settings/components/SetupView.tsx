@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -77,7 +77,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
     }
   }, [spaceKind, domainSource, useTunnel])
 
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     setLoading(true)
     setError(null)
     setSuccess(null)
@@ -112,11 +112,11 @@ export function SetupView({ onComplete }: SetupViewProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [isServiceMode])
 
   useEffect(() => {
     void loadConfig()
-  }, [])
+  }, [loadConfig])
 
   const effectivePublicDomain = useMemo(() => {
     return normalizeDomain(publicDomain)
@@ -283,7 +283,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
           ) : null}
 
           {success ? (
-            <div className="flex items-start gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+            <div className="flex items-start gap-2 rounded-xl border border-success/20 bg-success/10 px-3 py-2 text-sm text-success">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{success}</span>
             </div>

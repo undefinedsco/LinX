@@ -480,7 +480,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
             <div className="space-y-4">
               <div className="rounded-md border border-border/40 p-4 space-y-3">
                 <div className="flex items-center gap-2">
-                  <CircleDot className="h-4 w-4 text-emerald-500" />
+                  <CircleDot className="h-4 w-4 text-success" />
                   <span className="text-sm font-medium">运行中</span>
                   <Badge variant="secondary" className="ml-auto">
                     {status?.pod?.publicUrl ? '公网地址' : '本地地址'}

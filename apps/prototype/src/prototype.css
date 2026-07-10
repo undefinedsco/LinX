@@ -3610,13 +3610,19 @@ button {
 }
 
 .rich-editor-toolbar {
+  position: relative;
+  z-index: 4;
   display: flex;
-  min-height: 46px;
+  min-height: 36px;
   align-items: center;
-  gap: 7px;
-  border-bottom: 1px solid var(--proto-line);
-  background: hsl(var(--secondary) / 0.34);
-  padding: 0 14px;
+  justify-self: center;
+  gap: 4px;
+  border: 1px solid var(--proto-line);
+  border-radius: 8px;
+  background: var(--proto-card);
+  margin: 6px 0;
+  padding: 2px 5px;
+  box-shadow: var(--proto-shadow-soft);
 }
 
 .editor-tool-group {
@@ -3629,8 +3635,8 @@ button {
 
 .rich-editor-toolbar button {
   display: inline-flex;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   align-items: center;
   justify-content: center;
   border-radius: 7px;
@@ -3647,7 +3653,7 @@ button {
 
 .rich-editor-toolbar .block-style-button {
   width: auto;
-  min-width: 126px;
+  min-width: 112px;
   justify-content: flex-start;
   gap: 7px;
   border: 1px solid var(--proto-line);
@@ -3668,6 +3674,7 @@ button {
 .rich-editor-body {
   position: relative;
   min-height: 0;
+  height: 100%;
   overflow: auto;
   background: var(--proto-card);
 }
@@ -3675,7 +3682,7 @@ button {
 .editor-block-tools {
   position: absolute;
   left: 18px;
-  top: 82px;
+  top: 78px;
   z-index: 1;
   display: grid;
   gap: 5px;
@@ -5408,8 +5415,8 @@ button {
 }
 
 .prototype-shell[data-module='files'] .rich-editor-toolbar {
-  min-height: 42px;
-  background: #fbfbfd;
+  min-height: 36px;
+  background: #fff;
 }
 
 .prototype-shell[data-module='files'] .rich-editor-toolbar button:hover,
@@ -6443,6 +6450,7 @@ button {
 
   .prototype-shell[data-module='files'] .rich-editor-toolbar {
     min-width: 0;
+    max-width: calc(100% - 20px);
     overflow-x: auto;
     padding: 0 8px;
   }

@@ -8,7 +8,7 @@ import {
 
 describe('structured projection table chrome model', () => {
   it('projects pending row and column-kind cell classes outside the table renderer', () => {
-    expect(projectStructuredProjectionTableRowClassName({ pending: true })).toBe('bg-amber-500/5')
+    expect(projectStructuredProjectionTableRowClassName({ pending: true })).toBe('bg-warning/5')
     expect(projectStructuredProjectionTableRowClassName({ pending: false })).toBeUndefined()
 
     expect(projectStructuredProjectionTableCellClassName({ columnId: 'subject', index: 0 })).toContain('font-medium')

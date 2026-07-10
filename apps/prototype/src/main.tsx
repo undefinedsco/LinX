@@ -1306,6 +1306,10 @@ function ModuleSurface({
     if (activeModule !== 'files') setFilesMobileTreeOpen(false)
   }, [activeModule])
 
+  useEffect(() => {
+    setFilesMobileTreeOpen(false)
+  }, [filesSelection])
+
   if (activeModule === 'contacts') {
     return (
       <>

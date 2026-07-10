@@ -216,6 +216,10 @@ export function ModelServicesContentPane() {
   const selectedId = useModelServicesStore((state) => state.selectedProviderId)
   
   const provider = selectedId ? providers[selectedId] : null
+  const providerId = provider?.id
+  const providerApiKey = provider?.apiKey
+  const providerBaseUrl = provider?.baseUrl
+  const providerModels = provider?.models
 
   const [localApiKey, setLocalApiKey] = useState('')
   const [localBaseUrl, setLocalBaseUrl] = useState('')
@@ -228,24 +232,24 @@ export function ModelServicesContentPane() {
   const [editingModel, setEditingModel] = useState<AIModel | undefined>(undefined)
 
   useEffect(() => {
-    if (provider) {
-      setLocalApiKey(provider.apiKey || '')
-      setLocalBaseUrl(provider.baseUrl || '')
+    if (providerId) {
+      setLocalApiKey(providerApiKey || '')
+      setLocalBaseUrl(providerBaseUrl || '')
       setShowKey(false)
       setIsVerifying(false)
       setModelSearch('')
     }
-  }, [provider?.id, provider?.apiKey, provider?.baseUrl])
+  }, [providerId, providerApiKey, providerBaseUrl])
 
   const filteredModels = useMemo(() => {
-    if (!provider) return []
-    if (!modelSearch) return provider.models
+    if (!providerModels) return []
+    if (!modelSearch) return providerModels
     const lower = modelSearch.toLowerCase()
-    return provider.models.filter(m => 
+    return providerModels.filter(m =>
       m.name.toLowerCase().includes(lower) || 
       m.id.toLowerCase().includes(lower)
     )
-  }, [provider?.models, modelSearch])
+  }, [providerModels, modelSearch])
 
   const isPlatformProvider = provider?.id === 'undefineds'
   const verificationRequiresApiKey = provider ? !['ollama', 'undefineds'].includes(provider.id) : true
@@ -325,7 +329,7 @@ export function ModelServicesContentPane() {
   // Add or Edit Model
   const handleSaveModel = (modelData: AIModel) => {
     if (!provider) return
-    let newModels = [...provider.models]
+    const newModels = [...provider.models]
     
     // Check if exists (Edit) or New (Add)
     const index = newModels.findIndex(m => m.id === modelData.id)
@@ -363,7 +367,7 @@ export function ModelServicesContentPane() {
   const IconComp = provider.icon
 
   return (
-    <div className="flex flex-col h-full bg-background/50 backdrop-blur-sm">
+    <div className="flex flex-col h-full bg-background">
       <TooltipProvider>
         
         {/* === Header === */}

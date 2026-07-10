@@ -20,7 +20,8 @@ describe('SidecarDrawer', () => {
     )
 
     const drawer = screen.getByLabelText('Resource .meta drawer')
-    expect(drawer).toHaveClass('absolute', 'right-0', 'w-[320px]')
+    expect(drawer).toHaveClass('absolute', 'right-0', 'w-[320px]', 'bg-background')
+    expect(drawer).not.toHaveClass('bg-background/98')
     expect(screen.getByText('Resource .meta')).toBeInTheDocument()
     expect(screen.getByText('drawer body')).toBeInTheDocument()
     expect(screen.getByTestId('drawer-icon')).toBeInTheDocument()

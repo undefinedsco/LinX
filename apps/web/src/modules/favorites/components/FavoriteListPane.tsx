@@ -152,7 +152,7 @@ function FavoriteCard({
           : 'hover:bg-layout-list-hover bg-transparent'
       )}
     >
-      <div className="shrink-0 mt-0.5 flex items-center justify-center w-8 h-8 rounded-md bg-amber-500/10 text-amber-500">
+      <div className="shrink-0 mt-0.5 flex items-center justify-center w-8 h-8 rounded-md bg-primary/10 text-primary">
         <SourceIcon strokeWidth={1.5} className="w-4 h-4" />
       </div>
       <div className="flex-1 min-w-0">

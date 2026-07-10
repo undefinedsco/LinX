@@ -5,6 +5,7 @@ import {
   getMetaSidecarRows,
 } from '../../domain/detail/detail-metadata'
 import {
+  extractFileMetaPredicateValues,
   summarizeMetaSidecarContent,
   summarizeWorkspaceMetaSidecarContent,
 } from '../../domain/sidecar/meta-sidecar'
@@ -45,6 +46,7 @@ export type ResourceMetaSidecarContentModel = {
   fileRows: [string, string][]
   folderRows: [string, string][]
   metaRows: [string, string][]
+  userRows: [string, string][]
   semanticRows: [string, string][]
   workspaceRows: [string, string][]
   showFolderRows: boolean
@@ -79,6 +81,7 @@ function emptyResourceMetaSidecarContent(
     fileRows: getFileMetaRows(file),
     folderRows: [],
     metaRows: [],
+    userRows: [],
     semanticRows: [],
     workspaceRows: [],
     showFolderRows: false,
@@ -121,11 +124,18 @@ function formatMetaQueryError(error: unknown) {
 }
 
 function resourceMetaRows(file: FilesDetail, meta: FilesMetaSidecar) {
+  const userValues = extractFileMetaPredicateValues(meta.metaUri, meta.mimeType, meta.content)
+  const userRows: [string, string][] = []
+  if (userValues.title) userRows.push(['标题', userValues.title])
+  if (userValues.tags.length > 0) userRows.push(['标签', userValues.tags.join('、')])
+  if (userValues.reviewStatus) userRows.push(['审核状态', userValues.reviewStatus])
+
   return {
     folderRows: file.kind === 'container'
       ? localizeMetaRows(getFolderMetaRows(file, file.childEntries?.length ?? 0, meta))
       : [],
     metaRows: localizeMetaRows(getMetaSidecarRows(meta)),
+    userRows,
     semanticRows: meta.state === 'exists'
       ? localizeMetaRows(summarizeMetaSidecarContent(meta.metaUri, meta.mimeType, meta.content))
       : [],

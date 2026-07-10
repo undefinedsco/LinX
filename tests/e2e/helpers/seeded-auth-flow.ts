@@ -4,9 +4,11 @@ import type { SeededXpodRuntime } from './seeded-xpod-runtime'
 export async function loginToSeededXpod(page: Page, runtime: SeededXpodRuntime): Promise<void> {
   await installSeededXpodDesktopBridge(page, runtime)
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('dialog', { name: '登录 LinX' })).toBeVisible({ timeout: 15_000 })
 
-  await page.getByRole('button', { name: /连接其他账号服务|连接其他 Solid 账号/ }).click()
+  await page.getByRole('button', { name: '其他账号供应商' }).click()
+  await expect(page.getByRole('heading', { name: '其他账号供应商' })).toBeVisible()
+  await page.getByRole('button', { name: /添加供应商/ }).click()
   await page.getByPlaceholder('https://pod.example.com').fill(runtime.baseUrl)
 
   await Promise.all([
@@ -70,7 +72,7 @@ export async function assertSeededLoginReady(page: Page, runtime: SeededXpodRunt
       null,
       { timeout: 30_000 },
     )
-    await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
+    await expect(page.getByRole('dialog', { name: '登录 LinX' })).toHaveCount(0)
   } catch (error) {
     const debugState = await readSeededAuthDebugState(page)
     throw new Error(`expected login route to be ready\n${JSON.stringify(debugState, null, 2)}`, { cause: error })

@@ -160,7 +160,7 @@ export function buildStructuredProjectionTableColumns({
     {
       id: 'subject',
       accessorFn: (row) => row.subject,
-      size: 140,
+      size: 124,
       sortingFn: structuredTableSortingFn,
       meta: { label: 'subject', resizable: true },
       header: () => (
@@ -201,7 +201,7 @@ export function buildStructuredProjectionTableColumns({
       return {
         id: predicate,
         accessorFn: (row) => (row.cells[predicate] ?? []).join(' '),
-        size: 150,
+        size: 128,
         sortingFn: structuredTableSortingFn,
         header: () => (
           <StructuredPredicateColumnHeader
@@ -312,7 +312,7 @@ export function buildStructuredProjectionTableColumns({
     }),
     ...(editable ? [{
       id: '__addPredicate',
-      size: 140,
+      size: 88,
       header: () => (
         <StructuredAddPredicateColumnHeader
           documentUri={documentUri}

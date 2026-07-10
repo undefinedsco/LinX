@@ -55,10 +55,14 @@ export function FilesList({
           const active = item.selection === selection
           const selectItem = () => {
             if (!item.selection) return
-            window.setTimeout(() => {
-              if (!item.selection) return
-              onSelect(item.selection)
+            const nextSelection = item.selection
+            if (mobileOpen) {
               onMobileClose?.()
+              window.setTimeout(() => onSelect(nextSelection), 180)
+              return
+            }
+            window.setTimeout(() => {
+              onSelect(nextSelection)
             }, 0)
           }
           const selectFromMobilePointer = (event: { preventDefault: () => void; stopPropagation: () => void }) => {

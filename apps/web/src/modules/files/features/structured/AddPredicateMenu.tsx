@@ -54,7 +54,10 @@ export function AddPredicateMenu({
           {menu.chrome.trigger.label}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 p-3">
+      <DropdownMenuContent
+        align="end"
+        className="max-h-[calc(100vh-2rem)] w-80 overflow-y-auto overscroll-contain p-3"
+      >
         <div className="space-y-3 text-xs">
           <div className="space-y-2">
             <div className="relative">
@@ -285,7 +288,7 @@ export function AddPredicateMenu({
               </div>
               <button
                 type="button"
-                className="w-full rounded-md bg-primary px-2 py-1.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                className="sticky bottom-0 mt-1 w-full rounded-md bg-primary px-2 py-1.5 text-[11px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-40"
                 disabled={menu.submitDisabled}
                 onClick={menu.submitDraft}
               >

@@ -6,7 +6,7 @@
  * ChatKit 的 assistant 响应会经由 runtime 转发并流式返回。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, Loader2, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
@@ -41,6 +41,7 @@ import {
   LINX_DEFAULT_SECRETARY,
 } from '../collections'
 import { SessionControlBar, type SessionStatus } from './SessionControlBar'
+import { ChatListPane } from './ChatListPane'
 import {
   fetchRuntimeSessionLog,
   isRuntimeSessionMode,
@@ -55,13 +56,14 @@ import { restoreChatMessageAnchor } from '../message-anchor'
 
 export interface ChatContentPaneProps extends MicroAppPaneProps {}
 
-function EmptyState({ title, description }: { title: string; description: string }) {
+function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
     <div className="flex flex-1 items-center justify-center bg-muted/30">
       <div className="max-w-sm px-6 text-center">
         <Bot className="mx-auto mb-4 h-16 w-16 text-muted-foreground/20" />
         <p className="mb-2 font-medium text-foreground">{title}</p>
         <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+        {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
       </div>
     </div>
   )
@@ -140,10 +142,10 @@ function InboxActionBanner({
     : '授权统一在收件箱处理；处理完成后 runtime 会自动续跑。'
 
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-amber-500/20 bg-amber-500/5 px-4 py-3">
+    <div className="flex items-center justify-between gap-3 border-b border-warning/20 bg-warning/5 px-4 py-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-          <Icon className="h-4 w-4 text-amber-600" />
+          <Icon className="h-4 w-4 text-warning" />
           <span>{title}</span>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">{description}</p>
@@ -613,11 +615,20 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   const mutations = useChatMutations()
   const isCreatingThreadRef = useRef(false)
   const lastAutoCreateThreadChatRef = useRef<string | null>(null)
+  const [threadCreationError, setThreadCreationError] = useState<string | null>(null)
+  const [threadCreationRetryKey, setThreadCreationRetryKey] = useState(0)
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
 
   useEffect(() => {
     lastAutoCreateThreadChatRef.current = null
+    setThreadCreationError(null)
   }, [selectedChatId])
+
+  const retryThreadCreation = useCallback(() => {
+    lastAutoCreateThreadChatRef.current = null
+    setThreadCreationError(null)
+    setThreadCreationRetryKey((current) => current + 1)
+  }, [])
 
   const activeChat = useMemo(() => {
     if (!selectedChatId || !chats) return null
@@ -641,6 +652,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     }
 
     if (normalizedThreads.length > 0) {
+      setThreadCreationError(null)
       selectThread(normalizedThreads[0]._id)
       return
     }
@@ -666,6 +678,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       },
       {
         onSuccess: (thread) => {
+          setThreadCreationError(null)
           const threadId = thread.id
           if (threadId) {
             selectThread(threadId)
@@ -679,7 +692,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
           isCreatingThreadRef.current = false
         },
         onError: (error) => {
-          console.error('Create default thread failed:', error)
+          setThreadCreationError(error instanceof Error ? error.message : '创建话题失败')
           isCreatingThreadRef.current = false
         },
       },
@@ -693,11 +706,21 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     selectedChatId,
     selectedThreadId,
     selectThread,
+    threadCreationRetryKey,
     threads,
   ])
 
   if (!selectedChatId) {
-    return <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与文件夹。" />
+    return (
+      <>
+        <div className="hidden min-h-0 flex-1 md:flex">
+          <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与文件夹。" />
+        </div>
+        <div className="flex min-h-0 flex-1 md:hidden" aria-label="聊天列表">
+          <ChatListPane {..._props} />
+        </div>
+      </>
+    )
   }
 
   if (!isReady) {
@@ -717,6 +740,15 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   }
 
   if (!selectedThreadId) {
+    if (threadCreationError) {
+      return (
+        <EmptyState
+          title="无法创建默认话题"
+          description={`${threadCreationError}。请检查当前空间后重试。`}
+          action={<Button variant="outline" size="sm" onClick={retryThreadCreation}>重试</Button>}
+        />
+      )
+    }
     return (
       <div className="flex flex-1 items-center justify-center bg-muted/30">
         <div className="text-center text-muted-foreground">
@@ -728,8 +760,8 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   }
 
   return (
-    <div className="flex h-full flex-1 overflow-hidden bg-muted/30">
-      <div className="m-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/50 bg-background/80 backdrop-blur-sm">
+    <div className="flex h-full flex-1 overflow-hidden bg-background">
+      <div data-testid="chat-workspace-surface" className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
         <RuntimeSessionToolbar
           threadId={selectedThreadId}
           threadTitle={activeThread?.title ?? '默认话题'}

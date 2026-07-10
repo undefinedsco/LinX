@@ -25,7 +25,8 @@ function repoRoot() {
   return cwd.endsWith(`${path.sep}tests${path.sep}e2e`) ? path.resolve(cwd, '../..') : cwd
 }
 
-const auditDir = path.resolve(repoRoot(), '.omx/artifacts/files-production-visual-audit/2026-07-02')
+const auditRunId = process.env.LINX_FILES_AUDIT_RUN_ID ?? new Date().toISOString().slice(0, 10)
+const auditDir = path.resolve(repoRoot(), '.omx/artifacts/files-production-visual-audit', auditRunId)
 
 function ensureAuditDir() {
   mkdirSync(auditDir, { recursive: true })
@@ -46,6 +47,7 @@ async function openFiles(page: Page) {
   await filesNavButton.click()
   await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByLabel('文件工作区')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText('正在加载容器...')).toHaveCount(0, { timeout: 30_000 })
 }
 
 async function selectResource(page: Page, resourceUri: string) {
@@ -339,6 +341,8 @@ test.describe('Files production visual audit', () => {
 
     await selectResource(page, seed.folderUri)
     await expect(page.getByLabel('文件工作区').getByText(seed.folderName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('Pod 根目录', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('button', { name: seed.folderName, exact: true })).toBeVisible({ timeout: 30_000 })
     const folderList = page.getByLabel('Folder list view')
     await expect(folderList).toBeVisible()
     await expect(folderList.getByRole('button', { name: seed.markdownName })).toBeVisible()
@@ -346,12 +350,18 @@ test.describe('Files production visual audit', () => {
     await capture(page, '01-folder-finder-detail-1440x900')
 
     await page.getByRole('button', { name: '查看 .meta' }).click()
-    await expect(page.getByLabel('Resource .meta inspector')).toContainText(seed.folderMetaUri)
+    const folderMetaDrawer = page.getByLabel('Resource .meta inspector')
+    await expect(folderMetaDrawer).toContainText(seed.folderMetaUri)
+    await expect(folderMetaDrawer).toContainText('Visual audit folder')
+    await expect(folderMetaDrawer).toContainText('Ready')
+    await expect(folderMetaDrawer.getByRole('region', { name: '用户元数据' })).toBeVisible()
     await capture(page, '02-folder-meta-drawer-1440x900')
     await closeMetaDrawer(page)
 
     await page.getByRole('button', { name: '查看 Access 来源' }).click()
-    await expect(page.getByRole('dialog', { name: '权限' })).toBeVisible({ timeout: 30_000 })
+    const accessDialog = page.getByRole('dialog', { name: '权限' })
+    await expect(accessDialog).toBeVisible({ timeout: 30_000 })
+    await expect(accessDialog.getByText('正在读取权限信息...')).toHaveCount(0, { timeout: 30_000 })
     await capture(page, '03-access-modal-1440x900')
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog', { name: '权限' })).toHaveCount(0)
@@ -368,13 +378,21 @@ test.describe('Files production visual audit', () => {
     await expect(editorSheet).toHaveCount(0)
 
     await openStructuredTable(page, seed)
+    const tableShell = page.locator('[data-compact-table-shell="true"]')
+    const subjectCell = page.locator(`[data-structured-subject-open="${seed.workspaceSubject}"]`)
+    const addPredicateButton = page.getByRole('button', { name: '+ predicate' })
     await expect(page.getByRole('separator', { name: '调整 subject 列宽' })).toBeVisible()
+    expect(await tableShell.evaluate((element) => element.scrollLeft)).toBe(0)
+    await expect(subjectCell).toBeInViewport({ ratio: 1 })
+    await expect(addPredicateButton).toBeInViewport({ ratio: 1 })
     await capture(page, '05-structured-table-1440x900')
 
     await page.getByRole('button', { name: '+ predicate' }).click()
     await expect(page.getByRole('textbox', { name: '选择或创建 predicate' })).toBeVisible()
     const createPredicateButton = page.getByRole('button', { name: '新建 predicate' })
     await expect(createPredicateButton).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByLabel('predicate term')).toHaveCount(0)
+    await capture(page, '06-predicate-picker-1440x900')
     await createPredicateButton.click()
     await expect(page.getByLabel('predicate term')).toBeVisible()
     await capture(page, '06-predicate-menu-1440x900')
@@ -392,7 +410,11 @@ test.describe('Files production visual audit', () => {
     await page.keyboard.press('Escape')
 
     await page.getByRole('button', { name: '查看 .meta' }).click()
-    await expect(page.getByLabel('Resource .meta inspector')).toContainText(seed.turtleMetaUri)
+    const turtleMetaDrawer = page.getByLabel('Resource .meta inspector')
+    await expect(turtleMetaDrawer).toContainText(seed.turtleMetaUri)
+    await expect(turtleMetaDrawer).toContainText('Visual Audit Workspace Table')
+    await expect(turtleMetaDrawer).toContainText(seed.turtleMetaUri.replace(/\.meta$/, ''))
+    await expect(turtleMetaDrawer.getByRole('region', { name: '用户元数据' })).toBeVisible()
     await capture(page, '08-structured-meta-drawer-1440x900')
     await closeMetaDrawer(page)
 

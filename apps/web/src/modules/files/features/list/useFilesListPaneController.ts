@@ -21,7 +21,7 @@ import {
 } from '../../domain/list/list-projection'
 import { getFilesListErrorState } from '../../domain/resource/files-error-state'
 import type { FilesEntry } from '../../domain/resource/resource-model'
-import { projectFilesListColumnHeaders } from './files-list-column-header-model'
+import { projectFilesListColumnHeaders, projectFilesListSortOptions } from './files-list-column-header-model'
 
 export function useFilesListPaneController() {
   const selectFile = useFilesStore((s) => s.selectFile)
@@ -59,6 +59,7 @@ export function useFilesListPaneController() {
   const mimeTypeOptions = useMemo(() => getVisibleMimeTypeOptions(baseEntries), [baseEntries])
   const tagOptions = useMemo(() => getVisibleTagOptions(baseEntries), [baseEntries])
   const columnHeaders = useMemo(() => projectFilesListColumnHeaders(), [])
+  const sortOptions = useMemo(() => projectFilesListSortOptions(), [])
   const scopeHeader = useMemo(() => projectFilesListScopeHeaderModel({ selection }), [selection])
   const toolbarChrome = useMemo(() => projectFilesListToolbarChromeModel(), [])
   const showRecentScopeHeader = Boolean(scopeHeader)
@@ -146,6 +147,7 @@ export function useFilesListPaneController() {
     sortField,
     sortDirection,
     sortList,
+    sortOptions,
     tagFilter,
     tagOptions,
     toolbarChrome,

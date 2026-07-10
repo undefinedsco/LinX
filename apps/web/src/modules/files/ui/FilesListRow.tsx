@@ -51,6 +51,7 @@ export function FilesListRow({
   renderContextMenu,
 }: FilesListRowProps) {
   const Icon = iconKind === 'folder' ? FolderOpen : FileText
+  const typeLabel = semanticLabel === '文件' && mimeTypeLabel !== '—' ? mimeTypeLabel : semanticLabel
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault()
@@ -94,34 +95,23 @@ export function FilesListRow({
                 <span
                   aria-label={metadataWarning.label}
                   title={metadataWarning.title ?? metadataWarning.label}
-                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-amber-600"
+                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-warning"
                 >
                   <CircleAlert strokeWidth={1.8} className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
               ) : null}
             </div>
-            {parentPath ? (
-              <div className="mt-0.5 truncate text-[11px] leading-3 text-muted-foreground/70" title={parentUri ?? parentPath}>
-                {parentPath}
-              </div>
-            ) : null}
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-muted-foreground/70">
+              <span className="min-w-0 flex-1 truncate" title={parentPath ? parentUri ?? parentPath : mimeTypeLabel}>
+                {parentPath ?? typeLabel}
+              </span>
+              {sizeLabel !== '—' ? <span className="shrink-0">{sizeLabel}</span> : null}
+              {modifiedLabel !== '—' ? (
+                <span className="max-w-24 shrink-0 truncate" title={modifiedLabel}>{modifiedLabel}</span>
+              ) : null}
+            </div>
           </div>
 
-          <span className="text-xs text-muted-foreground w-20 truncate shrink-0 hidden md:block">
-            {semanticLabel}
-          </span>
-
-          <span className="text-xs text-muted-foreground w-20 truncate shrink-0 hidden md:block" title={mimeTypeLabel}>
-            {mimeTypeLabel}
-          </span>
-
-          <span className="text-xs text-muted-foreground w-16 text-right shrink-0 hidden md:block">
-            {sizeLabel}
-          </span>
-
-          <span className="text-xs text-muted-foreground w-28 text-right shrink-0 hidden lg:block">
-            {modifiedLabel}
-          </span>
         </div>
       </ContextMenuTrigger>
       {renderContextMenu()}

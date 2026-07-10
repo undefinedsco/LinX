@@ -157,6 +157,25 @@ describe('extractFileMetaPredicateValues', () => {
     })
   })
 
+  it('resolves a server-normalized relative owner subject in a container sidecar', () => {
+    const values = extractFileMetaPredicateValues(
+      'https://pod.example/public/.meta',
+      'text/turtle',
+      `
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        @prefix udfs: <https://undefineds.co/vocab/> .
+        <./> rdfs:label "Public folder" ;
+          udfs:reviewStatus "Ready" .
+      `,
+    )
+
+    expect(values).toMatchObject({
+      subject: './',
+      title: 'Public folder',
+      reviewStatus: 'Ready',
+    })
+  })
+
   it('keeps relation previous values in their original Turtle token form', () => {
     const values = extractFileMetaPredicateValues(
       'https://pod.example/public/README.md.meta',

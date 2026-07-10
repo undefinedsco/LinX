@@ -27,6 +27,7 @@ import {
   type RichTextEditorBlockCommandMenuState,
   type RichTextEditorDocumentNode,
   type RichTextEditorDocumentSummary,
+  type RichTextEditorSaveStatus,
 } from './rich-text-file-editor-model'
 
 export { extractRichTextEditorDocumentSummary }
@@ -308,6 +309,8 @@ export function RichTextFileEditor({
   editable = false,
   warning = null,
   onSaveText,
+  onDirtyChange,
+  onSaveStatusChange,
   onSubmitProposal,
   proposalPending = false,
   proposalLabel = '审批',
@@ -317,6 +320,8 @@ export function RichTextFileEditor({
   editable?: boolean
   warning?: RichTextEditorWarning | null
   onSaveText?: (text: string) => void | Promise<void>
+  onDirtyChange?: (isDirty: boolean) => void
+  onSaveStatusChange?: (status: RichTextEditorSaveStatus) => void
   onSubmitProposal?: (text: string, documentSummary: RichTextEditorDocumentSummary) => void | Promise<void>
   proposalPending?: boolean
   proposalLabel?: string
@@ -347,6 +352,14 @@ export function RichTextFileEditor({
     dirtyRef.current = nextSaveState.isDirty
     setSaveState(nextSaveState)
   }, [savedText])
+
+  useEffect(() => {
+    onDirtyChange?.(saveState.isDirty)
+  }, [onDirtyChange, saveState.isDirty])
+
+  useEffect(() => {
+    onSaveStatusChange?.(saveState.status)
+  }, [onSaveStatusChange, saveState.status])
 
   const commitBlockCommandMenuState = (nextState: RichTextEditorBlockCommandMenuState) => {
     blockMenuOpenRef.current = nextState.open
@@ -579,7 +592,7 @@ export function RichTextFileEditor({
       data-toolbar-density="compact"
       data-control-placement="byline"
       data-control-surface="byline-contextual"
-      className="absolute left-7 top-0 z-10 flex min-h-7 w-fit max-w-[calc(100%-2rem)] flex-wrap items-center justify-start gap-0.5 rounded-md border border-border/40 bg-popover/95 px-1 py-1 text-muted-foreground shadow-sm backdrop-blur"
+      className="absolute left-7 top-0 z-10 flex min-h-7 w-fit max-w-[calc(100%-2rem)] flex-wrap items-center justify-start gap-0.5 rounded-md border border-border/40 bg-popover px-1 py-1 text-muted-foreground shadow-sm"
     >
       <button
         type="button"
@@ -754,8 +767,8 @@ export function RichTextFileEditor({
         <span
           className={cn(
             'ml-1 rounded-full px-2 py-0.5 text-[11px]',
-            saveState.status === 'saved' && 'bg-emerald-50 text-emerald-700',
-            saveState.status === 'dirty' && 'bg-amber-50 text-amber-700',
+            saveState.status === 'saved' && 'bg-success/10 text-success',
+            saveState.status === 'dirty' && 'bg-warning/10 text-warning',
             saveState.status === 'saving' && 'bg-muted text-muted-foreground',
             saveState.status === 'error' && 'bg-destructive/10 text-destructive',
           )}
@@ -786,10 +799,10 @@ export function RichTextFileEditor({
       onKeyDownCapture={handleEditorShellKeyDownCapture}
     >
       {warning ? (
-        <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-300/50 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
+        <div className="mb-3 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span className="font-medium">{warning.title}</span>
-          <span className="text-amber-800/80">{warning.description}</span>
+          <span className="text-warning/80">{warning.description}</span>
         </div>
       ) : null}
       <div className={cn('relative', editable && 'group/byline pl-7')}>
@@ -891,7 +904,7 @@ export function RichTextFileEditor({
           className={cn(
             'min-h-52 outline-none',
             '[&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-52',
-            '[&_.ProseMirror_h1]:text-xl [&_.ProseMirror_h1]:font-semibold [&_.ProseMirror_h1]:mb-3',
+            '[&_.ProseMirror_h1]:mb-5 [&_.ProseMirror_h1]:text-3xl [&_.ProseMirror_h1]:font-semibold [&_.ProseMirror_h1]:leading-tight',
             '[&_.ProseMirror_h2]:text-lg [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:mb-2',
             '[&_.ProseMirror_p]:my-2 [&_.ProseMirror_ul]:my-2 [&_.ProseMirror_ul]:pl-5',
             '[&_.ProseMirror_li]:list-disc',

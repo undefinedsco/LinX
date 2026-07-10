@@ -60,7 +60,7 @@ export default function InruptSimpleTest() {
     }
 
     handleAuth()
-  }, [session])
+  }, [issuer, session, tokenType])
 
   const handleLogin = () => {
     window.sessionStorage.removeItem(LOG_STORAGE_KEY)

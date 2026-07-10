@@ -54,7 +54,7 @@ function createBlock(type: MessageBlockType, extra = {}): MessageBlock {
     case MessageBlockType.TASK_PROGRESS:
       return {
         ...base, type,
-        taskId: 'task-1', title: 'Deploying',
+        task: 'task-1', title: 'Deploying',
         steps: [
           { id: 's1', label: 'Build', status: 'done' as const },
           { id: 's2', label: 'Deploy', status: 'running' as const },

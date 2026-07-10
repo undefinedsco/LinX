@@ -243,7 +243,18 @@ function ChatItem({
         <div
           data-testid="chat-list-item"
           data-chat-id={chat.id}
+          role="option"
+          aria-label={chat.title}
+          aria-selected={isActive}
+          tabIndex={0}
           onClick={onClick}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              onClick()
+            }
+          }}
           onMouseEnter={() => setIsHovering(true)}
           onMouseLeave={() => setIsHovering(false)}
           className={cn(
@@ -286,7 +297,7 @@ function ChatItem({
             {chat.conversationKind === 'one' && chat.threadMode === 'chat' && chat.onlineStatus && (
               <span className={cn(
                 'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background',
-                chat.onlineStatus === 'online' ? 'bg-green-500' : 'bg-muted-foreground/40'
+                chat.onlineStatus === 'online' ? 'bg-success' : 'bg-muted-foreground/40'
               )} />
             )}
 
@@ -318,11 +329,11 @@ function ChatItem({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
+                      className="h-7 w-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                       onClick={(e) => { e.stopPropagation(); onStar(); }}
                       title={chat.starred ? '取消标星' : '标星'}
                     >
-                      <Star strokeWidth={1.5} className={cn("w-4 h-4", chat.starred && "fill-amber-500 text-amber-500")} />
+                      <Star strokeWidth={1.5} className={cn("w-4 h-4", chat.starred && "fill-primary text-primary")} />
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -390,7 +401,7 @@ function ChatItem({
       {/* Context Menu — conversation/thread differentiated */}
       <ContextMenuContent className="w-40">
         <ContextMenuItem onClick={onStar}>
-          <Star className={cn('mr-2 h-4 w-4', chat.starred && 'text-amber-500 fill-amber-500')} />
+          <Star className={cn('mr-2 h-4 w-4', chat.starred && 'fill-primary text-primary')} />
           {chat.starred ? '取消标星' : '标星'}
         </ContextMenuItem>
         <ContextMenuItem onClick={onMute}>
@@ -804,7 +815,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
             暂无聊天
           </div>
         ) : (
-          <div className="divide-y divide-border/30 animate-fade-in">
+          <div role="listbox" aria-label="聊天" className="divide-y divide-border/30 animate-fade-in">
             {chats.map((chat) => (
               <ChatItem
                 key={chat.id}

@@ -8,12 +8,20 @@ export type FilesListColumnHeaderModel = {
 
 const FILES_LIST_COLUMN_HEADERS: readonly FilesListColumnHeaderModel[] = [
   { id: 'name', label: '名称', className: 'flex-1 flex items-center gap-1 hover:text-foreground' },
-  { id: 'kind', label: '类别', className: 'w-16 hidden md:flex items-center gap-1 hover:text-foreground' },
-  { id: 'mimeType', label: '类型', className: 'w-20 hidden md:flex items-center gap-1 hover:text-foreground' },
-  { id: 'size', label: '大小', className: 'w-16 hidden md:flex items-center gap-1 justify-end hover:text-foreground' },
-  { id: 'modifiedAt', label: '修改时间', className: 'w-28 hidden lg:flex items-center gap-1 justify-end hover:text-foreground' },
+]
+
+const FILES_LIST_SORT_OPTIONS: ReadonlyArray<Pick<FilesListColumnHeaderModel, 'id' | 'label'>> = [
+  { id: 'name', label: '名称' },
+  { id: 'kind', label: '类别' },
+  { id: 'mimeType', label: '类型' },
+  { id: 'size', label: '大小' },
+  { id: 'modifiedAt', label: '修改时间' },
 ]
 
 export function projectFilesListColumnHeaders() {
   return FILES_LIST_COLUMN_HEADERS
+}
+
+export function projectFilesListSortOptions() {
+  return FILES_LIST_SORT_OPTIONS
 }

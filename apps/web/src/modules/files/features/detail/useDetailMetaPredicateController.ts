@@ -99,13 +99,7 @@ export function useDetailMetaPredicateController({
       contextKey: metaPredicateContextKey,
       hydratedValues: hydratedMetaPredicateValues,
     }))
-  }, [
-    hydratedMetaPredicateValues.relation,
-    hydratedMetaPredicateValues.reviewStatus,
-    hydratedMetaPredicateValues.tags,
-    hydratedMetaPredicateValues.title,
-    metaPredicateContextKey,
-  ])
+  }, [hydratedMetaPredicateValues, metaPredicateContextKey])
 
   const metaPredicateStatus = (predicateKey: DetailMetaPredicateKey): DetailMetaPredicateProposalStatus | undefined => {
     return resolveDetailMetaPredicateProposalStatus({

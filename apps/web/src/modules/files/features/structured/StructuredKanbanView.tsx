@@ -151,7 +151,7 @@ function StructuredCard({
           <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{tag}</span>
         ))}
         {pendingMove ? (
-          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700">
+          <span className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
             {pendingMove.label}
           </span>
         ) : null}

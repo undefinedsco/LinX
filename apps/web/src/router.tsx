@@ -1,8 +1,13 @@
-import { Suspense, lazy, useEffect, useMemo } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo } from 'react'
 import { createRouter, createRootRoute, createRoute, Outlet, redirect, createHashHistory } from '@tanstack/react-router'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { PrimaryLayout } from './modules/layout/PrimaryLayout'
-import { defaultMicroAppId, isValidMicroAppId, MicroAppId } from './modules/layout/micro-app-registry'
+import {
+  defaultMicroAppId,
+  isValidMicroAppId,
+  MicroAppId,
+  type MicroAppNavigationIntent,
+} from './modules/layout/micro-app-registry'
 import { SolidLoginOverlay } from './modules/login'
 import { formatLoginErrorForUser } from './modules/login/error-messages'
 import { consumePendingPostLoginMicroAppId, setPendingPostLoginMicroAppId } from './modules/login/login-utils'
@@ -12,6 +17,8 @@ import {
   type FilesStructuredSubjectRouteState,
   type FilesRouteSearch,
 } from './modules/files/route-state'
+import { FilesRouteBridgeProvider } from './modules/files/app/FilesRouteContext'
+import { useFilesStore } from './modules/files/app/store'
 
 const SolidAuthCallback = lazy(() => import('./components/AuthCallback'))
 const DebugSearchableSelect = lazy(() =>
@@ -141,21 +148,24 @@ const setupRoute = createRoute({
   ),
 })
 
+function AuthCallbackRouteComponent() {
+  const navigate = useNavigate()
+
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      <SolidAuthCallback
+        onSuccess={() => navigate({ to: '/$microAppId', params: { microAppId: consumePendingPostLoginMicroAppId() }, replace: true })}
+        onError={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId }, replace: true })}
+      />
+    </Suspense>
+  )
+}
+
 // Auth callback route
 const callbackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/auth/callback',
-  component: () => {
-    const navigate = useNavigate()
-    return (
-      <Suspense fallback={<RouteFallback />}>
-        <SolidAuthCallback
-          onSuccess={() => navigate({ to: '/$microAppId', params: { microAppId: consumePendingPostLoginMicroAppId() }, replace: true })}
-          onError={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId }, replace: true })}
-        />
-      </Suspense>
-    )
-  },
+  component: AuthCallbackRouteComponent,
 })
 
 const microAppRoute = createRoute({
@@ -194,7 +204,20 @@ const microAppRoute = createRoute({
       },
     }), [navigate, search])
 
-    return <PrimaryLayout microAppId={microAppId as MicroAppId} filesRouteBridge={filesRouteBridge} />
+    const handleMicroAppNavigation = useCallback((id: MicroAppId, intent: MicroAppNavigationIntent) => {
+      if (id !== 'files') return
+      if (intent === 'chat-files') {
+        useFilesStore.getState().openChatFilesScope()
+        return
+      }
+      useFilesStore.getState().openAllFilesScope()
+    }, [])
+
+    return (
+      <FilesRouteBridgeProvider bridge={filesRouteBridge}>
+        <PrimaryLayout microAppId={microAppId as MicroAppId} onNavigate={handleMicroAppNavigation} />
+      </FilesRouteBridgeProvider>
+    )
   },
 })
 

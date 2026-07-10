@@ -134,6 +134,11 @@ describe('FilesListPane', () => {
     expect(screen.getByText('config.json')).toBeInTheDocument()
     expect(screen.getByText('1.0 KB')).toBeInTheDocument()
     expect(screen.getByText('512 B')).toBeInTheDocument()
+    expect(screen.getByText('text/markdown')).toBeInTheDocument()
+    expect(screen.getByText('application/json')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '名称' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '类别' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '修改时间' })).not.toBeInTheDocument()
     expect(screen.queryByText('来源')).not.toBeInTheDocument()
     expect(screen.queryByText('当前话题')).not.toBeInTheDocument()
     expect(screen.queryByText('Pod 根目录')).not.toBeInTheDocument()
@@ -336,7 +341,7 @@ describe('FilesListPane', () => {
     expect(screen.getByLabelText('无权限读取元数据')).toBeInTheDocument()
   })
 
-  it('shows structured and vocab semantic labels', () => {
+  it('keeps structured and vocab resource names readable in the compact list', () => {
     mockUseFilesEntries.mockReturnValue({
       data: [
         {
@@ -368,9 +373,11 @@ describe('FilesListPane', () => {
 
     render(<FilesListPane {...defaultProps} />)
 
-    expect(screen.getAllByText('.data 表')).toHaveLength(1)
-    expect(screen.getAllByText('vocab terms')).toHaveLength(1)
-    expect(screen.getAllByText('text/turtle')).toHaveLength(2)
+    expect(screen.getByText('state.ttl')).toBeInTheDocument()
+    expect(screen.getByText('terms.ttl')).toBeInTheDocument()
+    expect(screen.getByText('.data 表')).toBeInTheDocument()
+    expect(screen.getByText('vocab terms')).toBeInTheDocument()
+    expect(screen.queryByText('text/turtle')).not.toBeInTheDocument()
   })
 
   it('filters entries by search text', () => {
@@ -1072,6 +1079,18 @@ describe('FilesListPane', () => {
     fireEvent.click(screen.getByText('名称'))
 
     expect(useFilesStore.getState().sortField).toBe('name')
+  })
+
+  it('keeps all sort fields available from the compact list toolbar', () => {
+    render(<FilesListPane {...defaultProps} />)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '排序' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '大小' }))
+    expect(useFilesStore.getState().sortField).toBe('size')
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '排序' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '升序' }))
+    expect(useFilesStore.getState().sortDirection).toBe('asc')
   })
 
   it('shows local workspace empty state when current node is local', () => {

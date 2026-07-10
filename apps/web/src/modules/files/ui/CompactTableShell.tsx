@@ -12,6 +12,7 @@ export interface CompactTableShellProps<TData> {
   sortKey?: string | null
   sortDirection?: 'asc' | 'desc'
   editable?: boolean
+  pinnedColumnId?: string
   footerRow?: ReactNode
   getRowClassName?: (row: Row<TData>) => string | undefined
   getCellClassName?: (cell: Cell<TData, unknown>, index: number) => string | undefined
@@ -31,6 +32,7 @@ export function CompactTableShell<TData>({
   sortKey,
   sortDirection,
   editable = false,
+  pinnedColumnId,
   footerRow,
   getRowClassName,
   getCellClassName,
@@ -48,6 +50,7 @@ export function CompactTableShell<TData>({
             <tr key={headerGroup.id}>
               {headerGroup.headers.map((header, index) => {
                 const meta = columnMeta(header)
+                const pinned = header.column.id === pinnedColumnId
                 const ariaSort =
                   sortKey === header.column.id
                     ? sortDirection === 'desc' ? 'descending' : 'ascending'
@@ -56,9 +59,11 @@ export function CompactTableShell<TData>({
                   <th
                     key={header.id}
                     aria-sort={ariaSort}
+                    data-pinned-column={pinned || undefined}
                     className={cn(
                       'relative border-b border-border/40 px-2 py-1 align-middle font-medium',
                       index > 0 && 'border-l border-border/5',
+                      pinned && 'sticky left-0 z-20 bg-background shadow-[1px_0_0_hsl(var(--border)/0.12)]',
                     )}
                     style={{ width: `${header.getSize()}px` }}
                   >
@@ -93,10 +98,12 @@ export function CompactTableShell<TData>({
             <tr key={row.id} className={getRowClassName?.(row)}>
               {row.getVisibleCells().map((cell, index) => {
                 const interactive = editable && (isCellInteractive?.(cell, index) ?? true)
+                const pinned = cell.column.id === pinnedColumnId
 
                 return (
                   <td
                     key={cell.id}
+                    data-pinned-column={pinned || undefined}
                     tabIndex={interactive ? 0 : undefined}
                     onClick={(event) => {
                       if (interactive) {
@@ -115,6 +122,7 @@ export function CompactTableShell<TData>({
                     className={cn(
                       'align-middle',
                       index > 0 && 'border-l border-border/5',
+                      pinned && 'sticky left-0 z-10 bg-background shadow-[1px_0_0_hsl(var(--border)/0.08)]',
                       getCellClassName?.(cell, index),
                     )}
                     style={{ width: `${cell.column.getSize()}px` }}

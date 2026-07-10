@@ -282,8 +282,8 @@ const ThreadItem: FC<ThreadItemProps> = ({
           className={cn(
             'w-3.5 h-3.5',
             thread.starred
-              ? 'text-amber-500 fill-amber-500'
-              : 'text-muted-foreground/50 hover:text-amber-500'
+              ? 'fill-primary text-primary'
+              : 'text-muted-foreground/50 hover:text-primary'
           )}
         />
       </button>

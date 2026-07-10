@@ -5,7 +5,7 @@
  * 提供独立的 Markdown 渲染，不依赖 assistant-ui context
  */
 
-import { memo, type FC, type ComponentProps, Suspense, lazy, useMemo } from 'react'
+import { memo, type FC, type ComponentProps, type JSX, Suspense, lazy, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -68,7 +68,7 @@ const CodeBlock: FC<{
           onClick={() => copyToClipboard(code)}
         >
           {isCopied ? (
-            <Check className="h-3.5 w-3.5 text-green-500" />
+            <Check className="h-3.5 w-3.5 text-success" />
           ) : (
             <Copy className="h-3.5 w-3.5" />
           )}
