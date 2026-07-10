@@ -194,7 +194,7 @@ function getWorkspaceStatusColor(status?: WorkspaceStatus): string | undefined {
 
 function getInboxPreviewColor(variant?: ChatItemData['pendingInboxVariant']): string | undefined {
   if (variant === 'approval') return 'text-warning'
-  if (variant === 'auth_required') return 'text-blue-600'
+  if (variant === 'auth_required') return 'text-boundary'
   return undefined
 }
 

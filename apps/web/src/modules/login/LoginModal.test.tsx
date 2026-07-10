@@ -276,7 +276,11 @@ describe('LoginModal', () => {
     expect(screen.getByRole('button', { name: /本机/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: '继续' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '其他账号供应商' })).toBeTruthy()
-    expect(container.querySelector('[data-login-card-size="compact"]')).toBeTruthy()
+    const loginCard = container.querySelector('[data-login-card-size="compact"]')
+    expect(loginCard?.classList.contains('bg-card')).toBe(true)
+    expect(loginCard?.classList.contains('border')).toBe(true)
+    expect(loginCard?.classList.contains('border-border/50')).toBe(true)
+    expect(loginCard?.classList.contains('warm-card')).toBe(false)
 
     expect(screen.queryByText('选择空间')).toBeNull()
     expect(screen.queryByText('登录方式')).toBeNull()

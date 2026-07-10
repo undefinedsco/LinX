@@ -493,7 +493,7 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('等待认证')).toBeInTheDocument()
+      expect(screen.getByText('等待认证')).toHaveClass('text-boundary')
     })
 
     it('renders runtime-backed chats as workspace threads with status preview', async () => {

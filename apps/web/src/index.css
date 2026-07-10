@@ -305,10 +305,6 @@
     @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70;
   }
 
-  /* 卡片外壳 - 实色背景 + 细边框，克制阴影 */
-  .warm-card {
-    @apply bg-card border border-border/50 rounded-lg;
-  }
 }
 
 /* 全局可访问性：尊重 prefers-reduced-motion（§199-201）。

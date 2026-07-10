@@ -188,10 +188,10 @@
 
 | 项 | 状态 | 改动 |
 |----|------|------|
-| P0-1 emoji 核心状态 | ✅ | `ChatListPane.tsx` 去 emoji，状态色转 `text-success/warning/destructive` |
+| P0-1 emoji 核心状态 | ✅ | `ChatListPane.tsx` 去 emoji，状态色转 `text-success/warning/destructive/boundary` |
 | P0-3 wechat token | ✅ | 删 `tailwind.config.ts` `wechat` 命名空间；`ChatListPane` 用量转 `destructive`/`muted-foreground` |
 | P0-2 Logo 非 taro 紫 | ✅ | `LoginModal.tsx` `violet-400/200` → `border-border bg-muted`；`rounded-[18%]`→`rounded-xl` |
-| index.css warm/glow/gradient | ✅ | 删 `.top-accent`/`.btn-warm`/`.warm-card-hover`；`.warm-card` 去阴影/过渡 |
+| index.css warm/glow/gradient | ✅ | 删 `.top-accent`/`.btn-warm`/`.warm-card-hover`/`.warm-card`；登录卡片改用中性表面 utility |
 | 全局 reduced-motion | ✅ | `index.css` 新增 `@media (prefers-reduced-motion: reduce)` |
 | 全局 focus-visible | ✅ | `index.css` 新增 `:where(a,button,...):focus-visible` 克制焦点环兜底 |
 | glow 阴影 token | ✅ | 删 `spacing.ts` `shadows.primary`/`primarySubtle` |
@@ -199,7 +199,7 @@
 | Card 原语 | ✅ | `card.tsx` `rounded-2xl`→`rounded-lg`，去 `shadow-lg` |
 | Badge 原语 | ✅ | `badge.tsx` 去彩色阴影、`focus:`→`focus-visible:`、去 `backdrop-blur` |
 | Switch 原语 | ✅ | `switch.tsx` 去选中态彩色辉光 |
-| 测试断言同步 | ✅ | `LoginModal.test.tsx`/`ChatListPane.test.tsx` 4 处断言更新 |
+| 测试断言同步 | ✅ | `LoginModal.test.tsx`/`ChatListPane.test.tsx` 6 处断言更新 |
 
 **验证**：`tsc --noEmit` 无错误；`vitest` 受影响模块 80/80 通过。
 
