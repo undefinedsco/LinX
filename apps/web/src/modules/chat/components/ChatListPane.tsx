@@ -20,13 +20,16 @@ import { useMemo, useState, useCallback } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
 import {
-  isLinxDefaultSecretaryChat,
   useChatList,
   useChatMutations,
   useChatInit,
   useThreadIndex,
   useLinxDefaultSecretaryBootstrapSettling,
 } from '../collections'
+import {
+  orderChatItems,
+  projectSecretaryListCapabilities,
+} from '../domain/secretary-entry-model'
 import { resolveThreadChatId } from '@/lib/data/resource-identity'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
@@ -119,7 +122,9 @@ interface ChatItemData {
   runtimeThreadId?: string
   pendingInboxCount?: number
   pendingInboxVariant?: 'approval' | 'auth_required'
-  isProtected?: boolean
+  isProtected: boolean
+  canTogglePin: boolean
+  canDelete: boolean
 }
 
 // ============================================
@@ -230,7 +235,7 @@ function ChatItem({
   onDelete
 }: ChatItemProps) {
   const [isHovering, setIsHovering] = useState(false)
-  const canDelete = !chat.isProtected
+  const canDelete = chat.canDelete
   const hasSecondaryContextActions = chat.threadMode === 'workspace' || chat.conversationKind === 'group' || canDelete
 
   const previewColorClass = chat.threadMode === 'workspace'
@@ -326,15 +331,17 @@ function ChatItem({
               <div className="absolute right-0 top-0 h-full flex items-center justify-end gap-1 z-10">
                 {isHovering ? (
                   <div className="flex items-center gap-0.5 animate-in fade-in zoom-in-95 duration-150">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      onClick={(e) => { e.stopPropagation(); onStar(); }}
-                      title={chat.starred ? '取消标星' : '标星'}
-                    >
-                      <Star strokeWidth={1.5} className={cn("w-4 h-4", chat.starred && "fill-primary text-primary")} />
-                    </Button>
+                    {chat.canTogglePin && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                        onClick={(e) => { e.stopPropagation(); onStar(); }}
+                        title={chat.starred ? '取消标星' : '标星'}
+                      >
+                        <Star strokeWidth={1.5} className={cn("w-4 h-4", chat.starred && "fill-primary text-primary")} />
+                      </Button>
+                    )}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -400,10 +407,12 @@ function ChatItem({
 
       {/* Context Menu — conversation/thread differentiated */}
       <ContextMenuContent className="w-40">
-        <ContextMenuItem onClick={onStar}>
-          <Star className={cn('mr-2 h-4 w-4', chat.starred && 'fill-primary text-primary')} />
-          {chat.starred ? '取消标星' : '标星'}
-        </ContextMenuItem>
+        {chat.canTogglePin && (
+          <ContextMenuItem onClick={onStar}>
+            <Star className={cn('mr-2 h-4 w-4', chat.starred && 'fill-primary text-primary')} />
+            {chat.starred ? '取消标星' : '标星'}
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onClick={onMute}>
           <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-muted-foreground')} />
           {chat.muted ? '取消静音' : '静音'}
@@ -648,8 +657,9 @@ export function ChatListPane(_props: ChatListPaneProps) {
       }
     }
 
-    const formatted = rawChats.map((chat): ChatItemData => {
+    return orderChatItems(rawChats).map((chat): ChatItemData => {
       const id = chat.id ?? 'unknown'
+      const capabilities = projectSecretaryListCapabilities(chat)
       const pendingItems = inboxItems.filter((item) => item.chatId === id)
       const hasPendingApproval = pendingItems.some((item) => item.kind === 'approval' && item.status === 'pending')
       const hasAuthRequired = pendingItems.some((item) => item.category === 'auth_required')
@@ -669,7 +679,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
         title: chat.title ?? '未命名聊天',
         preview: chat.lastMessagePreview ?? '暂无消息',
         timestamp: formatTimestamp(chat.lastActiveAt ?? chat.updatedAt),
-        starred: chat.starred ?? false,
+        starred: capabilities.isPinned,
         muted: chat.muted ?? false,
         unreadCount: chat.unreadCount ?? 0,
         providerLogo: chat.avatarUrl ?? undefined,
@@ -682,15 +692,10 @@ export function ChatListPane(_props: ChatListPaneProps) {
         runtimeThreadId: runtimeSession?.threadId,
         pendingInboxCount,
         pendingInboxVariant,
-        isProtected: isLinxDefaultSecretaryChat(chat),
+        isProtected: capabilities.isProtected,
+        canTogglePin: capabilities.canTogglePin,
+        canDelete: capabilities.canDelete,
       }
-    })
-    
-    // 标星的排在前面
-    return formatted.sort((a, b) => {
-      if (a.starred && !b.starred) return -1
-      if (!a.starred && b.starred) return 1
-      return 0
     })
   }, [inboxItems, rawChats, runtimeSessions, threads])
 
@@ -715,7 +720,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   const handleStarChat = useCallback(async (chatId: string) => {
     const chat = chats.find(c => c.id === chatId)
-    if (!chat) return
+    if (!chat?.canTogglePin) return
     try {
       await mutations.updateChat.mutateAsync({
         id: chatId,
@@ -752,7 +757,8 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   const handleDeleteChat = useCallback(async (chatId: string) => {
     const chat = chats.find(c => c.id === chatId)
-    if (chat?.isProtected) {
+    if (!chat) return
+    if (!chat.canDelete || chat.isProtected) {
       toast({ description: '默认助手不能删除。' })
       return
     }

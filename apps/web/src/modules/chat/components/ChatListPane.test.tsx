@@ -29,6 +29,10 @@ const mockMutations = {
 }
 
 vi.mock('../collections', () => ({
+  LINX_DEFAULT_SECRETARY: {
+    chatId: 'chat/__secretary__',
+    title: 'AI Secretary',
+  },
   useChatList: (filters?: { search?: string }) => mockUseChatList(filters),
   useThreadIndex: (..._args: unknown[]) => mockUseThreadIndex(),
   useChatMutations: () => mockMutations,
@@ -359,6 +363,37 @@ describe('ChatListPane', () => {
       expect(screen.queryByText('删除')).not.toBeInTheDocument()
     })
 
+    it('does not expose star or delete affordances for AI Secretary', async () => {
+      mockUseChatList.mockReturnValue({
+        data: [
+          {
+            id: 'secretary-chat',
+            title: 'AI Secretary',
+            lastMessagePreview: '默认助手',
+            updatedAt: new Date().toISOString(),
+            starred: false,
+          },
+        ],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      const secretary = screen.getByRole('option', { name: 'AI Secretary' })
+      fireEvent.mouseEnter(secretary)
+
+      expect(screen.queryByTitle('标星')).not.toBeInTheDocument()
+      expect(screen.queryByTitle('取消标星')).not.toBeInTheDocument()
+
+      fireEvent.contextMenu(secretary)
+      expect(await screen.findByText('静音')).toBeInTheDocument()
+      expect(screen.queryByText('标星')).not.toBeInTheDocument()
+      expect(screen.queryByText('取消标星')).not.toBeInTheDocument()
+      expect(screen.queryByText('删除')).not.toBeInTheDocument()
+    })
+
     it('displays unread badge with count', () => {
       mockUseChatList.mockReturnValue({
         data: [
@@ -429,6 +464,42 @@ describe('ChatListPane', () => {
       const items = screen.getAllByText(/Chat/)
       // Starred should be first
       expect(items[0]).toHaveTextContent('Starred Chat')
+    })
+
+    it('orders AI Secretary before starred and ordinary chats', () => {
+      mockUseChatList.mockReturnValue({
+        data: [
+          {
+            id: 'chat-starred',
+            title: 'Starred Chat',
+            lastMessagePreview: 'Important',
+            updatedAt: new Date().toISOString(),
+            starred: true,
+          },
+          {
+            id: 'secretary-chat',
+            title: 'AI Secretary',
+            lastMessagePreview: '默认助手',
+            updatedAt: new Date().toISOString(),
+            starred: false,
+          },
+          {
+            id: 'chat-normal',
+            title: 'Normal Chat',
+            lastMessagePreview: 'Regular',
+            updatedAt: new Date().toISOString(),
+            starred: false,
+          },
+        ],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getAllByTestId('chat-list-item').map((item) => item.dataset.chatId))
+        .toEqual(['secretary-chat', 'chat-starred', 'chat-normal'])
     })
 
     it('calls selectChat when clicking a chat item', () => {
