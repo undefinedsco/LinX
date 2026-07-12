@@ -69,6 +69,10 @@ const {
       fetch: vi.fn(async () => Array.from(state.values())),
       subscribeToPod: vi.fn(async () => () => undefined),
       utils: {
+        writeDelete: vi.fn((ids: string | string[]) => {
+          const keys = Array.isArray(ids) ? ids : [ids]
+          keys.forEach((id) => state.delete(id))
+        }),
         writeUpsert: vi.fn((row: Record<string, unknown>) => {
           if (typeof row.id === 'string') {
             state.set(row.id, row)
@@ -381,6 +385,46 @@ describe('AI Secretary bootstrap', () => {
     ])
   })
 
+  it('returns the staged Secretary after timeout when the Pod chat query succeeds empty', async () => {
+    vi.useFakeTimers()
+    const { db, rows } = createSecretaryDb()
+    db.insert = vi.fn(() => ({
+      values() {
+        return {
+          execute: vi.fn(async () => new Promise(() => {})),
+        }
+      },
+    }))
+    db.select = vi.fn(() => ({
+      from() {
+        const query = {
+          orderBy: vi.fn(() => query),
+          execute: vi.fn(async () => []),
+        }
+        return query
+      },
+    }))
+    initializeChatCollections(db as any)
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    const timeoutResult = expect(resultPromise).rejects.toMatchObject({
+      kind: 'timeout',
+      recoverable: true,
+    })
+    await vi.advanceTimersByTimeAsync(SECRETARY_BOOTSTRAP_TIMEOUT_MS)
+    await timeoutResult
+
+    expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(false)
+    await expect(chatOps.fetchChats()).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': rows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+    ])
+    expect(db.select).toHaveBeenCalledTimes(1)
+  })
+
   it('does not publish an older account bootstrap after a new database is active', async () => {
     const firstRows = createSecretaryRows({
       podBase: 'https://node-0000.undefineds.co/alice/',
@@ -434,6 +478,48 @@ describe('AI Secretary bootstrap', () => {
     expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
       '@id': secondRows.chatIri,
     })
+  })
+
+  it('evicts a completed account Secretary cache before staging the next account', async () => {
+    vi.useFakeTimers()
+    const firstRows = createSecretaryRows({
+      podBase: 'https://node-0000.undefineds.co/alice/',
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+    })
+    const secondRows = createSecretaryRows({
+      podBase: 'https://node-0000.undefineds.co/bob/',
+      webId: 'https://id.undefineds.co/bob/profile/card#me',
+    })
+    const { db: firstDb } = createSecretaryDb({ rows: firstRows })
+    const { db: secondDb } = createSecretaryDb({ rows: secondRows })
+
+    initializeChatCollections(firstDb as any)
+    await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: true,
+    })
+    expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
+      '@id': firstRows.chatIri,
+    })
+
+    secondDb.insert = vi.fn(() => ({
+      values() {
+        return {
+          execute: vi.fn(async () => new Promise(() => {})),
+        }
+      },
+    }))
+    initializeChatCollections(secondDb as any)
+    const secondBootstrap = chatOps.ensureLinxWelcome({ force: true })
+    void secondBootstrap.catch(() => undefined)
+
+    await expect(chatOps.fetchChats()).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': secondRows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+    ])
   })
 
   it('returns the staged Secretary chat while remote persistence is in flight', async () => {

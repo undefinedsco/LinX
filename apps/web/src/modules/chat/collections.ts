@@ -777,6 +777,34 @@ function getStagedSecretaryChatRows(): ChatRow[] {
   return staged ? [staged] : []
 }
 
+function forgetLocalSecretaryChatRow(): void {
+  if (!chatCollection.get(LINX_DEFAULT_SECRETARY.chatId)) {
+    return
+  }
+
+  const collection = chatCollection as typeof chatCollection & {
+    state?: Map<string, ChatRow>
+    _state?: { syncedData?: { delete?: (id: string) => void } }
+    utils?: { writeDelete?: (id: string) => void }
+  }
+  const canManualSync = typeof collection.utils?.writeDelete === 'function'
+    && (typeof collection.isReady !== 'function' || collection.isReady())
+  if (canManualSync) {
+    try {
+      collection.utils?.writeDelete?.(LINX_DEFAULT_SECRETARY.chatId)
+      return
+    } catch {
+      // Fall through to headless/bootstrap state cleanup.
+    }
+  }
+
+  if (collection.state instanceof Map) {
+    collection.state.delete(LINX_DEFAULT_SECRETARY.chatId)
+    return
+  }
+  collection._state?.syncedData?.delete?.(LINX_DEFAULT_SECRETARY.chatId)
+}
+
 function mergeChatRows(priorityRows: ChatRow[], rows: ChatRow[]): ChatRow[] {
   const seen = new Set<string>()
   const merged: ChatRow[] = []
@@ -1856,7 +1884,7 @@ export const chatOps = {
       ? await hydrateChatRows(db, rows)
       : rows
     const lateFallbackRows = getStagedSecretaryChatRows()
-    if (lateFallbackRows.length > 0 && linxWelcomeInFlight) {
+    if (lateFallbackRows.length > 0) {
       return mergeChatRows(lateFallbackRows, hydratedRows)
     }
 
@@ -1940,6 +1968,7 @@ export function initializeChatCollections(db: SolidDatabase | null) {
   if (currentChatDatabase !== db) {
     currentChatDatabase = db
     linxWelcomeAttempt += 1
+    forgetLocalSecretaryChatRow()
     stagedDefaultSecretaryRows = null
     setLinxWelcomeInFlight(null)
   }
