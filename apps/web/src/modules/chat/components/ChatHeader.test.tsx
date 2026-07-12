@@ -87,6 +87,11 @@ vi.mock('../store', () => ({
 }))
 
 vi.mock('../collections', () => ({
+  LINX_DEFAULT_SECRETARY: {
+    chatId: 'chat/__secretary__',
+    title: 'AI Secretary',
+  },
+  isLinxDefaultSecretaryChat: (chat: { title?: string } | null | undefined) => chat?.title === 'AI Secretary',
   useChatList: () => mockUseChatList(),
   useChatMutations: () => ({
     updateChat: {
@@ -199,6 +204,31 @@ describe('ChatHeader', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回聊天列表' }))
 
     expect(mockSelectChat).toHaveBeenCalledWith(null)
+  })
+
+  it('does not expose or execute the star action for AI Secretary', () => {
+    mockUseChatList.mockReturnValue({
+      data: [
+        {
+          id: 'chat-1',
+          title: 'AI Secretary',
+          starred: false,
+        },
+      ],
+    })
+
+    render(<ChatHeader />)
+
+    const starButton = screen.queryByTitle('收藏')
+    if (starButton) fireEvent.click(starButton)
+
+    expect({
+      hasStarButton: Boolean(starButton),
+      mutationCalls: mockUpdateChat.mock.calls,
+    }).toEqual({
+      hasStarButton: false,
+      mutationCalls: [],
+    })
   })
 
   it('updates agent profile from the header dialog', async () => {

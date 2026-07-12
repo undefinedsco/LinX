@@ -20,6 +20,7 @@ import { InboxBellButton } from '@/modules/inbox/components/InboxBellButton'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useChatList, useChatMutations } from '../collections'
+import { projectSecretaryListCapabilities } from '../domain/secretary-entry-model'
 import { useEntity } from '@/lib/data/use-entity'
 import {
   normalizeAIConfigProviderId,
@@ -57,6 +58,10 @@ export function ChatHeader() {
     () => chats?.find((c) => c.id === selectedChatId) ?? null,
     [chats, selectedChatId],
   )
+  const chatCapabilities = useMemo(
+    () => chat ? projectSecretaryListCapabilities(chat) : null,
+    [chat],
+  )
 
   const contactUri = getPrimaryParticipantUri(chat, session.info.webId)
   const { data: contact, refresh: refreshContact } = useEntity(contactResource, contactUri)
@@ -80,17 +85,16 @@ export function ChatHeader() {
   const isSavingModel = mutations.updateAgentModel.isPending
 
   const handleToggleStar = useCallback(async () => {
-    if (!chat || !selectedChatId) return
-    const currentStarred = (chat as any).starred ?? false
+    if (!chat || !selectedChatId || !chatCapabilities?.canTogglePin) return
     try {
       await mutations.updateChat.mutateAsync({
         id: selectedChatId,
-        starred: !currentStarred,
+        starred: !chatCapabilities.isPinned,
       })
     } catch (e) {
       console.error('Toggle star failed', e)
     }
-  }, [chat, selectedChatId, mutations])
+  }, [chat, chatCapabilities, selectedChatId, mutations])
 
   useEffect(() => {
     if (!isAgentDialogOpen) return
@@ -279,15 +283,17 @@ export function ChatHeader() {
         {chat && (
           <div className="flex items-center gap-1 shrink-0 ml-2">
             <InboxBellButton />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-foreground"
-              onClick={handleToggleStar}
-              title={(chat as any).starred ? '取消收藏' : '收藏'}
-            >
-              <Star className={`w-5 h-5 ${(chat as any).starred ? 'fill-primary text-primary' : ''}`} />
-            </Button>
+            {chatCapabilities?.canTogglePin && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                onClick={handleToggleStar}
+                title={chatCapabilities.isPinned ? '取消收藏' : '收藏'}
+              >
+                <Star className={`w-5 h-5 ${chatCapabilities.isPinned ? 'fill-primary text-primary' : ''}`} />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
