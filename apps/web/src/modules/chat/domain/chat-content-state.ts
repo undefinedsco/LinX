@@ -16,6 +16,7 @@ export interface ChatContentState {
 export interface ChatContentStateInput {
   isAuthenticated?: boolean
   isLoading: boolean
+  isChatLoading?: boolean
   error?: unknown
   activeChat: unknown | null
   isSecretary: boolean
@@ -70,12 +71,14 @@ function state(kind: ChatContentStateKind, recoverable = false): ChatContentStat
 export function projectChatContentState({
   isAuthenticated = true,
   isLoading,
+  isChatLoading = isLoading,
   error,
   activeChat,
   isSecretary,
   hasThread,
 }: ChatContentStateInput): ChatContentState {
   if (!isAuthenticated) return state('login-required')
+  if (activeChat !== null && hasThread === true) return state('ready')
   if (error) {
     const kind = classifyError(error)
     return state(kind, kind !== 'login-required')
@@ -85,8 +88,10 @@ export function projectChatContentState({
     return state('welcome')
   }
 
+  if (activeChat === null) {
+    return isChatLoading ? state('loading') : state('not-found', true)
+  }
   if (isLoading) return state('loading')
-  if (activeChat === null) return state('not-found', true)
   if (hasThread === false) return state('loading')
 
   return state('ready')

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { EVENTS } from '@inrupt/solid-client-authn-browser'
 import { useSession } from '@inrupt/solid-ui-react'
 import type { SolidDatabase } from '@undefineds.co/models'
@@ -21,16 +21,21 @@ import {
   isStorageUrlWithinProviderBase,
 } from '@/modules/login/storage-reconciliation'
 
-interface SolidDatabaseContextValue {
+interface SolidDatabaseState {
   db: SolidDatabase | null
   status: 'idle' | 'initializing' | 'ready' | 'error'
   error: Error | null
+}
+
+interface SolidDatabaseContextValue extends SolidDatabaseState {
+  retry: () => void
 }
 
 const SolidDatabaseContext = createContext<SolidDatabaseContextValue>({
   db: null,
   status: 'idle',
   error: null,
+  retry: () => undefined,
 })
 
 export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
@@ -43,13 +48,13 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
   const inFlightSessionKeyRef = useRef<string | null>(null)
   const observedSessionKeyRef = useRef<string | null>(null)
 
-  const [value, setValue] = useState<SolidDatabaseContextValue>({
+  const [value, setValue] = useState<SolidDatabaseState>({
     db: null,
     status: 'idle',
     error: null,
   })
 
-  const publishValue = (nextValue: SolidDatabaseContextValue) => {
+  const publishValue = (nextValue: SolidDatabaseState) => {
     if (typeof window !== 'undefined') {
       (window as any).__SOLID_DB_STATUS__ = nextValue.status
       ;(window as any).__SOLID_DB_ERROR__ = nextValue.error?.message ?? null
@@ -237,7 +242,10 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     initDatabase()
   }, [sessionRequestInProgress, sessionVersion, session])
 
-  const contextValue = useMemo(() => value, [value])
+  const retry = useCallback(() => {
+    setSessionVersion((current) => current + 1)
+  }, [])
+  const contextValue = useMemo(() => ({ ...value, retry }), [retry, value])
 
   return (
     <SolidDatabaseContext.Provider value={contextValue}>

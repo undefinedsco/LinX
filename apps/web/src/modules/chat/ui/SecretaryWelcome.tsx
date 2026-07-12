@@ -15,6 +15,8 @@ export interface SecretaryWelcomeProps {
   onComposerValueChange: (value: string) => void
   onSubmit: () => void
   isSubmitting?: boolean
+  retryLabel?: string
+  onRetry?: () => void
 }
 
 export function SecretaryWelcome({
@@ -25,6 +27,8 @@ export function SecretaryWelcome({
   onComposerValueChange,
   onSubmit,
   isSubmitting = false,
+  retryLabel,
+  onRetry,
 }: SecretaryWelcomeProps) {
   const canSubmit = composerValue.trim().length > 0 && !isSubmitting
 
@@ -90,9 +94,16 @@ export function SecretaryWelcome({
             <SendHorizontal className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
-        <p role="status" className="mx-auto mt-2 w-full max-w-3xl text-xs text-muted-foreground">
-          {composerStatus}
-        </p>
+        <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between gap-3">
+          <p role="status" className="text-xs text-muted-foreground">
+            {composerStatus}
+          </p>
+          {retryLabel && onRetry ? (
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onRetry}>
+              {retryLabel}
+            </Button>
+          ) : null}
+        </div>
       </form>
     </section>
   )

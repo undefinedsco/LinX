@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLoginStore } from '@linx/stores/login'
 import { clearLocalAccessRoutesForTests } from '@/lib/local-access-route'
@@ -61,11 +61,13 @@ vi.mock('@undefineds.co/models', () => ({
 }))
 
 function Probe() {
-  const { status, db } = useSolidDatabase()
+  const database = useSolidDatabase() as ReturnType<typeof useSolidDatabase> & { retry?: () => void }
+  const { status, db } = database
   return (
     <div>
       <div data-testid="status">{status}</div>
       <div data-testid="has-db">{String(Boolean(db))}</div>
+      <button type="button" onClick={database.retry}>Retry database</button>
     </div>
   )
 }
@@ -1030,6 +1032,29 @@ describe('SolidDatabaseProvider', () => {
     expect(screen.getByTestId('status').textContent).toBe('error')
     expect(screen.getByTestId('has-db').textContent).toBe('false')
     expect((window as any).__SOLID_DB__).toBeUndefined()
+  })
+
+  it('retries database initialization after a recoverable failure', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock
+      .mockRejectedValueOnce(new Error('Pod init timed out'))
+      .mockResolvedValueOnce(db)
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+    expect(screen.getByTestId('status').textContent).toBe('error')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry database' }))
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('status').textContent).toBe('ready')
+    expect(screen.getByTestId('has-db').textContent).toBe('true')
   })
 
   it('does not drop an in-flight database initialization when a login event rerenders the same session', async () => {

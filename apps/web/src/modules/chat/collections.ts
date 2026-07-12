@@ -64,6 +64,7 @@ import {
   type AgentAiRuntimeLocation,
   writeAgentAiRuntimeLocationMetadata,
 } from './agent-runtime-location'
+import { runChatQueryWithBoundary } from './utils/chat-query-boundary'
 
 // ============================================================================
 // Database Getter
@@ -2057,28 +2058,31 @@ export function useChatList(filters?: { search?: string }) {
   const db = getDb()
   return useQuery({
     queryKey: [...QUERY_KEYS.chats, filters?.search || ''],
-    queryFn: async () => {
-      if (!db) return []
-      
-      // Use drizzle-solid ilike for server-side search
-      if (filters?.search?.trim()) {
-        const pattern = `%${filters.search.trim()}%`
-        const results = await db
-          .select()
-          .from(chatResource)
-          .where(
-            or(
-              like(chatResource.title as any, pattern),
-              like(chatResource.lastMessagePreview as any, pattern)
+    queryFn: ({ signal }) => runChatQueryWithBoundary(
+      (async () => {
+        if (!db) return []
+
+        // Use drizzle-solid ilike for server-side search
+        if (filters?.search?.trim()) {
+          const pattern = `%${filters.search.trim()}%`
+          const results = await db
+            .select()
+            .from(chatResource)
+            .where(
+              or(
+                like(chatResource.title as any, pattern),
+                like(chatResource.lastMessagePreview as any, pattern),
+              ),
             )
-          )
-          .orderBy('lastActiveAt', 'desc')
-          .execute()
-        return await hydrateChatRows(db, results as ChatRow[])
-      }
-      
-      return chatOps.fetchChats()
-    },
+            .orderBy('lastActiveAt', 'desc')
+            .execute()
+          return hydrateChatRows(db, results as ChatRow[])
+        }
+
+        return chatOps.fetchChats()
+      })(),
+      { signal },
+    ),
     enabled: !!db,
   })
 }
@@ -2092,16 +2096,19 @@ export function useThreadList(chatId: string, options?: { enabled?: boolean }) {
   
   return useQuery({
     queryKey: QUERY_KEYS.threads(chatId || ''),
-    queryFn: async () => {
-      if (!db || !chatId) return []
-      if (
-        normalizeChatRowId(chatId) === LINX_DEFAULT_SECRETARY.chatId
-        && isLinxDefaultSecretaryBootstrapPending()
-      ) {
-        return []
-      }
-      return queryThreadRowsForChat(db, chatId)
-    },
+    queryFn: ({ signal }) => runChatQueryWithBoundary(
+      (async () => {
+        if (!db || !chatId) return []
+        if (
+          normalizeChatRowId(chatId) === LINX_DEFAULT_SECRETARY.chatId
+          && isLinxDefaultSecretaryBootstrapPending()
+        ) {
+          return []
+        }
+        return queryThreadRowsForChat(db, chatId)
+      })(),
+      { signal },
+    ),
     enabled: !!db && !!chatId && enabled,
   })
 }

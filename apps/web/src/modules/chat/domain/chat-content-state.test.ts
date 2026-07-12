@@ -109,6 +109,31 @@ describe('chat content state', () => {
     })).toMatchObject({ kind: 'not-found' })
   })
 
+  it('does not let thread preparation hide a completed chat miss', () => {
+    const input = {
+      isAuthenticated: true,
+      isLoading: true,
+      isChatLoading: false,
+      error: null,
+      activeChat: null,
+      isSecretary: false,
+      hasThread: false,
+    } as Parameters<typeof projectChatContentState>[0] & { isChatLoading: boolean }
+
+    expect(projectChatContentState(input)).toMatchObject({ kind: 'not-found' })
+  })
+
+  it('keeps cached chat and thread content ready during a background query error', () => {
+    expect(projectChatContentState({
+      isAuthenticated: true,
+      isLoading: false,
+      error: Object.assign(new Error('HTTP 403'), { status: 403 }),
+      activeChat,
+      isSecretary: false,
+      hasThread: true,
+    })).toMatchObject({ kind: 'ready', recoverable: false })
+  })
+
   it('recognizes nested response status and abort timeout errors', () => {
     expect(projectChatContentState({
       isAuthenticated: true,
