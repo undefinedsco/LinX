@@ -65,7 +65,17 @@ interface PendingSecretaryDraft {
   text: string
   attempt: number
   chatId: string
-  webId: string
+  scopeKey: string
+}
+
+interface ScopedSecretaryDraft {
+  text: string
+  scopeKey: string
+}
+
+interface ScopedSecretaryError {
+  message: string
+  scopeKey: string
 }
 
 const SECRETARY_STARTER_ACTIONS: readonly SecretaryStarterAction[] = [
@@ -484,12 +494,14 @@ function ChatKitPanel({
   pendingComposerDraft,
   onComposerDraftApplied,
   onComposerDraftError,
+  sendDisabled,
 }: {
   session: any
   selectedThreadId: string
   pendingComposerDraft: PendingSecretaryDraft | null
-  onComposerDraftApplied: () => void
-  onComposerDraftError: (error: unknown) => void
+  onComposerDraftApplied: (draft: PendingSecretaryDraft) => void
+  onComposerDraftError: (draft: PendingSecretaryDraft, error: unknown) => void
+  sendDisabled: boolean
 }) {
   const selectThread = useChatStore((state) => state.selectThread)
   const messageAnchorId = useChatStore((state) => state.messageAnchorId)
@@ -589,9 +601,9 @@ function ChatKitPanel({
     const applyDraft = async () => {
       try {
         await setComposerValue({ text: pendingComposerDraft.text })
-        if (!disposed) onComposerDraftApplied()
+        if (!disposed) onComposerDraftApplied(pendingComposerDraft)
       } catch (error) {
-        if (!disposed) onComposerDraftError(error)
+        if (!disposed) onComposerDraftError(pendingComposerDraft, error)
       }
     }
 
@@ -666,12 +678,21 @@ function ChatKitPanel({
   }, [clearMessageAnchor, messageAnchorId, selectedThreadId])
 
   return (
-    <div className="h-full flex-1 overflow-hidden">
+    <div
+      data-testid="chatkit-send-boundary"
+      className="relative h-full flex-1 overflow-hidden"
+      aria-disabled={sendDisabled}
+    >
       <ChatKitComponent
         ref={chatKitHostRef as any}
         control={chatkit.control}
         style={{ display: 'block', width: '100%', height: '100%' }}
       />
+      {sendDisabled ? (
+        <div className="absolute inset-x-0 bottom-0 z-10 flex min-h-24 items-center justify-center border-t border-warning/20 bg-background/95 px-4 text-sm text-muted-foreground">
+          空间连接恢复后可继续发送
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -683,6 +704,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     status: databaseStatus,
     error: databaseError,
     retry: retryDatabase,
+    scopeKey: databaseScopeKey,
   } = useSolidDatabase()
   const { isReady } = useChatInit()
   const selectedChatId = useChatStore((state) => state.selectedChatId)
@@ -705,22 +727,44 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   const mutations = useChatMutations()
   const isCreatingThreadRef = useRef(false)
   const lastAutoCreateThreadChatRef = useRef<string | null>(null)
-  const [threadCreationError, setThreadCreationError] = useState<string | null>(null)
+  const [threadCreationFailure, setThreadCreationFailure] = useState<ScopedSecretaryError | null>(null)
   const [threadCreationRetryKey, setThreadCreationRetryKey] = useState(0)
-  const [secretaryDraft, setSecretaryDraft] = useState('')
+  const [secretaryDraftState, setSecretaryDraftState] = useState<ScopedSecretaryDraft>({
+    text: '',
+    scopeKey: '',
+  })
   const [pendingSecretaryDraft, setPendingSecretaryDraft] = useState<PendingSecretaryDraft | null>(null)
-  const [secretaryDraftHandoffError, setSecretaryDraftHandoffError] = useState<string | null>(null)
+  const [secretaryDraftHandoffFailure, setSecretaryDraftHandoffFailure] = useState<ScopedSecretaryError | null>(null)
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const isSecretary = selectedChatId === LINX_DEFAULT_SECRETARY.chatId
+  const secretaryScopeKey = `${databaseScopeKey}:${session.info.webId ?? 'logged-out'}`
+  const activeSecretaryScopeRef = useRef(secretaryScopeKey)
+  activeSecretaryScopeRef.current = secretaryScopeKey
+  const secretaryDraft = secretaryDraftState.scopeKey === secretaryScopeKey
+    ? secretaryDraftState.text
+    : ''
+  const activePendingSecretaryDraft = pendingSecretaryDraft?.scopeKey === secretaryScopeKey
+    ? pendingSecretaryDraft
+    : null
+  const threadCreationError = threadCreationFailure?.scopeKey === secretaryScopeKey
+    ? threadCreationFailure.message
+    : null
+  const secretaryDraftHandoffError = secretaryDraftHandoffFailure?.scopeKey === secretaryScopeKey
+    ? secretaryDraftHandoffFailure.message
+    : null
 
   useEffect(() => {
     lastAutoCreateThreadChatRef.current = null
-    setThreadCreationError(null)
-  }, [selectedChatId])
+    isCreatingThreadRef.current = false
+    setThreadCreationFailure(null)
+    setPendingSecretaryDraft(null)
+    setSecretaryDraftHandoffFailure(null)
+    setSecretaryDraftState({ text: '', scopeKey: secretaryScopeKey })
+  }, [secretaryScopeKey, selectedChatId])
 
   const retryThreadCreation = useCallback(() => {
     lastAutoCreateThreadChatRef.current = null
-    setThreadCreationError(null)
+    setThreadCreationFailure(null)
     setThreadCreationRetryKey((current) => current + 1)
   }, [])
 
@@ -734,34 +778,40 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
 
   const submitSecretaryDraft = useCallback(() => {
     const text = secretaryDraft.trim()
-    const webId = session.info.webId ?? ''
-    if (!text || !selectedChatId || !webId) return
+    if (!text || !selectedChatId || !session.info.webId) return
 
     setPendingSecretaryDraft({
       text,
       attempt: 0,
       chatId: selectedChatId,
-      webId,
+      scopeKey: secretaryScopeKey,
     })
-    setSecretaryDraftHandoffError(null)
+    setSecretaryDraftHandoffFailure(null)
     retryThreadCreation()
-  }, [retryThreadCreation, secretaryDraft, selectedChatId, session.info.webId])
+  }, [retryThreadCreation, secretaryDraft, secretaryScopeKey, selectedChatId, session.info.webId])
 
   const retrySecretaryDraftHandoff = useCallback(() => {
-    setSecretaryDraftHandoffError(null)
+    setSecretaryDraftHandoffFailure(null)
     setPendingSecretaryDraft((current) => current
+      && current.scopeKey === secretaryScopeKey
       ? { ...current, attempt: current.attempt + 1 }
       : current)
+  }, [secretaryScopeKey])
+
+  const completeSecretaryDraftHandoff = useCallback((draft: PendingSecretaryDraft) => {
+    setPendingSecretaryDraft((current) => current === draft ? null : current)
+    setSecretaryDraftState((current) => current.scopeKey === draft.scopeKey
+      ? { text: '', scopeKey: draft.scopeKey }
+      : current)
+    setSecretaryDraftHandoffFailure((current) => current?.scopeKey === draft.scopeKey ? null : current)
   }, [])
 
-  const completeSecretaryDraftHandoff = useCallback(() => {
-    setPendingSecretaryDraft(null)
-    setSecretaryDraft('')
-    setSecretaryDraftHandoffError(null)
-  }, [])
-
-  const failSecretaryDraftHandoff = useCallback(() => {
-    setSecretaryDraftHandoffError('无法将草稿填入当前话题。草稿仍保留，可重试。')
+  const failSecretaryDraftHandoff = useCallback((draft: PendingSecretaryDraft) => {
+    if (activeSecretaryScopeRef.current !== draft.scopeKey) return
+    setSecretaryDraftHandoffFailure({
+      message: '无法将草稿填入当前话题。草稿仍保留，可重试。',
+      scopeKey: draft.scopeKey,
+    })
   }, [])
 
   const activeChat = useMemo(() => {
@@ -794,7 +844,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     }
 
     if (normalizedThreads.length > 0) {
-      setThreadCreationError(null)
+      setThreadCreationFailure(null)
       selectThread(normalizedThreads[0]._id)
       return
     }
@@ -813,6 +863,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
 
     isCreatingThreadRef.current = true
     lastAutoCreateThreadChatRef.current = selectedChatId
+    const creationScopeKey = secretaryScopeKey
     mutations.createThread.mutate(
       {
         chatId: selectedChatId,
@@ -820,7 +871,11 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       },
       {
         onSuccess: (thread) => {
-          setThreadCreationError(null)
+          if (activeSecretaryScopeRef.current !== creationScopeKey) {
+            isCreatingThreadRef.current = false
+            return
+          }
+          setThreadCreationFailure(null)
           const threadId = thread.id
           if (threadId) {
             selectThread(threadId)
@@ -834,7 +889,12 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
           isCreatingThreadRef.current = false
         },
         onError: (error) => {
-          setThreadCreationError(error instanceof Error ? error.message : '创建话题失败')
+          if (activeSecretaryScopeRef.current === creationScopeKey) {
+            setThreadCreationFailure({
+              message: error instanceof Error ? error.message : '创建话题失败',
+              scopeKey: creationScopeKey,
+            })
+          }
           isCreatingThreadRef.current = false
         },
       },
@@ -851,6 +911,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     mutations.ensureThreadWorkspace,
     selectedChatId,
     selectedThreadId,
+    secretaryScopeKey,
     selectThread,
     threadCreationRetryKey,
     threads,
@@ -872,6 +933,19 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     isSecretary,
     hasThread: Boolean(selectedThreadId && activeThread),
   })
+  const readyWarning = contentState.kind === 'ready' && databaseStatus === 'error'
+    ? {
+        title: '当前空间连接已失效',
+        description: '当前显示缓存内容。恢复空间连接后才能继续发送。',
+        actionLabel: '重试连接',
+      }
+    : contentState.kind === 'ready' && (chatError || threadError)
+      ? {
+          title: '聊天同步失败，当前显示缓存内容',
+          description: '可以继续查看和输入；重试后会刷新当前聊天。',
+          actionLabel: '重试同步',
+        }
+      : null
 
   if (!selectedChatId) {
     return (
@@ -893,7 +967,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   if (contentState.kind === 'welcome') {
     const composerStatus = threadCreationError
       ? '默认话题暂未创建，草稿已保留。重试后可以继续。'
-      : pendingSecretaryDraft
+      : activePendingSecretaryDraft
         ? '草稿已保留，将在默认话题准备好后填入输入框。'
       : isDefaultSecretarySettling || !isReady || !db || isChatsLoading || isThreadsLoading
         ? '可以立即开始；对话记录会在空间准备好后同步。'
@@ -904,10 +978,13 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
         starterActions={SECRETARY_STARTER_ACTIONS}
         composerValue={secretaryDraft}
         composerStatus={composerStatus}
-        onStarterAction={(action) => setSecretaryDraft(action.prompt)}
-        onComposerValueChange={setSecretaryDraft}
+        onStarterAction={(action) => setSecretaryDraftState({
+          text: action.prompt,
+          scopeKey: secretaryScopeKey,
+        })}
+        onComposerValueChange={(text) => setSecretaryDraftState({ text, scopeKey: secretaryScopeKey })}
         onSubmit={submitSecretaryDraft}
-        isSubmitting={mutations.createThread.isPending || Boolean(pendingSecretaryDraft)}
+        isSubmitting={mutations.createThread.isPending || Boolean(activePendingSecretaryDraft)}
         retryLabel={threadCreationError ? '重试创建话题' : undefined}
         onRetry={threadCreationError ? retryThreadCreation : undefined}
       />
@@ -960,6 +1037,17 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
           workspaceUri={activeThread?.workspace}
         />
         <InboxActionBanner chatId={selectedChatId} threadId={selectedThreadId} />
+        {readyWarning ? (
+          <div role="alert" className="flex items-center justify-between gap-3 border-b border-warning/20 bg-warning/5 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">{readyWarning.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{readyWarning.description}</p>
+            </div>
+            <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={retryContentQueries}>
+              {readyWarning.actionLabel}
+            </Button>
+          </div>
+        ) : null}
         {secretaryDraftHandoffError ? (
           <div role="alert" className="flex items-center justify-between gap-3 border-b border-destructive/20 bg-destructive/5 px-4 py-3">
             <div className="min-w-0">
@@ -976,12 +1064,12 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
             session={session}
             selectedThreadId={selectedThreadId}
             pendingComposerDraft={isSecretary
-              && pendingSecretaryDraft?.chatId === selectedChatId
-              && pendingSecretaryDraft.webId === session.info.webId
-              ? pendingSecretaryDraft
+              && activePendingSecretaryDraft?.chatId === selectedChatId
+              ? activePendingSecretaryDraft
               : null}
             onComposerDraftApplied={completeSecretaryDraftHandoff}
             onComposerDraftError={failSecretaryDraftHandoff}
+            sendDisabled={databaseStatus === 'error'}
           />
         </div>
       </div>

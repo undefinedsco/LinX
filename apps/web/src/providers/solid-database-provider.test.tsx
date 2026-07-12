@@ -61,12 +61,16 @@ vi.mock('@undefineds.co/models', () => ({
 }))
 
 function Probe() {
-  const database = useSolidDatabase() as ReturnType<typeof useSolidDatabase> & { retry?: () => void }
+  const database = useSolidDatabase() as ReturnType<typeof useSolidDatabase> & {
+    retry?: () => void
+    scopeKey?: string
+  }
   const { status, db } = database
   return (
     <div>
       <div data-testid="status">{status}</div>
       <div data-testid="has-db">{String(Boolean(db))}</div>
+      <div data-testid="scope-key">{database.scopeKey ?? ''}</div>
       <button type="button" onClick={database.retry}>Retry database</button>
     </div>
   )
@@ -1055,6 +1059,28 @@ describe('SolidDatabaseProvider', () => {
     expect(createLinxSolidDatabaseMock).toHaveBeenCalledTimes(2)
     expect(screen.getByTestId('status').textContent).toBe('ready')
     expect(screen.getByTestId('has-db').textContent).toBe('true')
+  })
+
+  it('changes the exposed database scope when the active account changes', async () => {
+    createLinxSolidDatabaseMock.mockResolvedValue({})
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+    await flushAsyncWork()
+    const aliceScope = screen.getByTestId('scope-key').textContent
+    expect(aliceScope).not.toBe('')
+
+    sessionState.session.info.sessionId = 'session-2'
+    sessionState.session.info.webId = 'https://id.example.com/bob/profile/card#me'
+    await act(async () => {
+      vi.advanceTimersByTime(250)
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+
+    expect(screen.getByTestId('scope-key').textContent).not.toBe(aliceScope)
   })
 
   it('does not drop an in-flight database initialization when a login event rerenders the same session', async () => {

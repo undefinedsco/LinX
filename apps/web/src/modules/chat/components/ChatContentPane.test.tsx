@@ -147,6 +147,7 @@ describe('ChatContentPane', () => {
       status: 'ready',
       error: null,
       retry: mockDatabaseRetry,
+      scopeKey: 'account:alice',
     })
     mockIsRuntimeSessionMode.mockReturnValue(false)
     mockUseWorkspaceList.mockReturnValue({
@@ -350,8 +351,28 @@ describe('ChatContentPane', () => {
     render(<ChatContentPane theme="light" />)
 
     expect(screen.getByTestId('chatkit-root')).toBeInTheDocument()
-    expect(screen.queryByText('无法读取当前空间中的聊天')).not.toBeInTheDocument()
-    expect(screen.queryByText('读取聊天超时')).not.toBeInTheDocument()
+    expect(screen.getByText('聊天同步失败，当前显示缓存内容')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重试同步' }))
+    expect(mockChatRefetch).toHaveBeenCalledTimes(1)
+    expect(mockThreadRefetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps cached content visible but disables sending while the database is invalid', () => {
+    mockUseSolidDatabase.mockReturnValue({
+      db: null,
+      status: 'error',
+      error: new Error('database unavailable'),
+      retry: mockDatabaseRetry,
+      scopeKey: 'account:alice',
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByTestId('chatkit-root')).toBeInTheDocument()
+    expect(screen.getByText('当前空间连接已失效')).toBeInTheDocument()
+    expect(screen.getByTestId('chatkit-send-boundary')).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '重试连接' }))
+    expect(mockDatabaseRetry).toHaveBeenCalledTimes(1)
   })
 
   it('offers a dedicated Secretary thread retry even when the draft is empty', async () => {
@@ -429,6 +450,53 @@ describe('ChatContentPane', () => {
     await waitFor(() => expect(mockSetComposerValue).toHaveBeenCalledTimes(2))
   })
 
+  it('clears Secretary draft, pending handoff, and thread error when the account scope changes', async () => {
+    storeState.selectedChatId = '__secretary__/index.ttl#this'
+    storeState.selectedThreadId = null
+    mockUseChatList.mockReturnValue({
+      data: [{ id: '__secretary__/index.ttl#this', title: 'AI Secretary' }],
+      isLoading: false,
+      error: null,
+      refetch: mockChatRefetch,
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+      refetch: mockThreadRefetch,
+    })
+
+    const view = render(<ChatContentPane theme="light" />)
+    fireEvent.click(screen.getByRole('button', { name: /整理今天的工作/ }))
+    fireEvent.click(screen.getByRole('button', { name: '开始对话' }))
+    await waitFor(() => expect(mockMutations.createThread.mutate).toHaveBeenCalled())
+    const [, options] = mockMutations.createThread.mutate.mock.calls[0]
+    act(() => options.onError(new Error('old account thread failure')))
+    expect(screen.getByRole('button', { name: '重试创建话题' })).toBeInTheDocument()
+
+    mockSession.info.webId = 'https://bob.example/profile/card#me'
+    mockUseSolidDatabase.mockReturnValue({
+      db: null,
+      status: 'initializing',
+      error: null,
+      retry: mockDatabaseRetry,
+      scopeKey: 'account:bob',
+    })
+    mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(true)
+    mockUseChatList.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+      refetch: mockChatRefetch,
+    })
+    view.rerender(<ChatContentPane theme="light" />)
+
+    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toHaveValue('')
+    expect(screen.getByRole('button', { name: '开始对话' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '重试创建话题' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/old account thread failure/)).not.toBeInTheDocument()
+  })
+
   it('projects Solid database initialization errors and exposes database retry', () => {
     storeState.selectedThreadId = null
     mockUseSolidDatabase.mockReturnValue({
@@ -436,6 +504,7 @@ describe('ChatContentPane', () => {
       status: 'error',
       error: new Error('database initialization failed'),
       retry: mockDatabaseRetry,
+      scopeKey: 'account:alice',
     })
     mockUseChatList.mockReturnValue({
       data: undefined,

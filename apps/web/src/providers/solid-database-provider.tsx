@@ -25,6 +25,7 @@ interface SolidDatabaseState {
   db: SolidDatabase | null
   status: 'idle' | 'initializing' | 'ready' | 'error'
   error: Error | null
+  scopeKey: string
 }
 
 interface SolidDatabaseContextValue extends SolidDatabaseState {
@@ -35,6 +36,7 @@ const SolidDatabaseContext = createContext<SolidDatabaseContextValue>({
   db: null,
   status: 'idle',
   error: null,
+  scopeKey: 'logged-out',
   retry: () => undefined,
 })
 
@@ -52,6 +54,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     db: null,
     status: 'idle',
     error: null,
+    scopeKey: 'logged-out',
   })
 
   const publishValue = (nextValue: SolidDatabaseState) => {
@@ -116,6 +119,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     const podContextResolution = webId ? resolveLoginPodContext(webId) : { context: null }
     const databasePodKey = getDatabasePodKey(podContextResolution)
     const databaseKey = sessionKey ? getDatabaseKey(sessionKey, databasePodKey) : null
+    const databaseScopeKey = databaseKey ?? 'logged-out'
 
     if (sessionKey && podContextResolution.error) {
       initGenerationRef.current += 1
@@ -123,7 +127,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
       installLocalAccessRoute(null)
       dbInstanceRef.current = null
       initializedSessionKeyRef.current = null
-      publishValue({ db: null, status: 'error', error: podContextResolution.error })
+      publishValue({ db: null, status: 'error', error: podContextResolution.error, scopeKey: databaseScopeKey })
       return
     }
 
@@ -135,17 +139,26 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
         dbInstanceRef.current = null
         initializedSessionKeyRef.current = null
       }
-      publishValue({ db: null, status: 'idle', error: null })
+      publishValue({ db: null, status: 'idle', error: null, scopeKey: databaseScopeKey })
       return
     }
 
     // Reuse existing instance for same session
     if (dbInstanceRef.current && initializedSessionKeyRef.current === databaseKey) {
       setValue((current) => {
-        if (current.status === 'ready' && current.db === dbInstanceRef.current) {
+        if (
+          current.status === 'ready'
+          && current.db === dbInstanceRef.current
+          && current.scopeKey === databaseScopeKey
+        ) {
           return current
         }
-        const nextValue = { db: dbInstanceRef.current, status: 'ready' as const, error: null }
+        const nextValue = {
+          db: dbInstanceRef.current,
+          status: 'ready' as const,
+          error: null,
+          scopeKey: databaseScopeKey,
+        }
         if (typeof window !== 'undefined') {
           (window as any).__SOLID_DB_STATUS__ = nextValue.status
           ;(window as any).__SOLID_DB_ERROR__ = null
@@ -158,10 +171,15 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
 
     if (inFlightSessionKeyRef.current === databaseKey) {
       setValue((current) => {
-        if (current.status === 'initializing') {
+        if (current.status === 'initializing' && current.scopeKey === databaseScopeKey) {
           return current
         }
-        const nextValue = { db: null, status: 'initializing' as const, error: null }
+        const nextValue = {
+          db: null,
+          status: 'initializing' as const,
+          error: null,
+          scopeKey: databaseScopeKey,
+        }
         if (typeof window !== 'undefined') {
           (window as any).__SOLID_DB_STATUS__ = nextValue.status
           ;(window as any).__SOLID_DB_ERROR__ = null
@@ -177,7 +195,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     inFlightSessionKeyRef.current = databaseKey
     const initDatabase = async () => {
       try {
-        publishValue({ db: null, status: 'initializing', error: null })
+        publishValue({ db: null, status: 'initializing', error: null, scopeKey: databaseScopeKey })
 
         const runtimePodContext = await resolveRuntimePodContext(
           webId ?? '',
@@ -219,7 +237,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
         if (typeof window !== 'undefined') {
           (window as any).__SOLID_DB__ = instance
         }
-        publishValue({ db: instance, status: 'ready', error: null })
+        publishValue({ db: instance, status: 'ready', error: null, scopeKey: databaseScopeKey })
       } catch (error) {
         if (!isCurrentSession(session.info, sessionKey, generation, initGenerationRef.current)) {
           return
@@ -231,6 +249,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
           db: null,
           status: 'error',
           error: createUserFacingLoginError(error, '登录后初始化失败。请重新登录后重试。'),
+          scopeKey: databaseScopeKey,
         })
       } finally {
         if (inFlightSessionKeyRef.current === databaseKey && initGenerationRef.current === generation) {
@@ -245,7 +264,19 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
   const retry = useCallback(() => {
     setSessionVersion((current) => current + 1)
   }, [])
-  const contextValue = useMemo(() => ({ ...value, retry }), [retry, value])
+  const activeScopeKey = getActiveDatabaseScopeKey(session.info)
+  const contextValue = useMemo(() => {
+    const scopedValue = value.scopeKey === activeScopeKey
+      ? value
+      : {
+          db: null,
+          status: activeScopeKey === 'logged-out' ? 'idle' as const : 'initializing' as const,
+          error: null,
+          scopeKey: activeScopeKey,
+        }
+
+    return { ...scopedValue, retry }
+  }, [activeScopeKey, retry, value])
 
   return (
     <SolidDatabaseContext.Provider value={contextValue}>
@@ -298,6 +329,17 @@ function getSessionKey(sessionId: string | undefined, webId: string): string {
 
 function getDatabaseKey(sessionKey: string, podUrl: string | null): string {
   return `${sessionKey}:pod=${podUrl ?? 'default'}`
+}
+
+function getActiveDatabaseScopeKey(
+  info: { isLoggedIn: boolean; sessionId?: string; webId?: string },
+): string {
+  if (!info.isLoggedIn || !info.webId) return 'logged-out'
+  const podContextResolution = resolveLoginPodContext(info.webId)
+  return getDatabaseKey(
+    getSessionKey(info.sessionId, info.webId),
+    getDatabasePodKey(podContextResolution),
+  )
 }
 
 function getDatabasePodKey(resolution: LoginPodContextResolution): string | null {
