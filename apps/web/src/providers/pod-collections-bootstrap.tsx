@@ -111,6 +111,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
       })
 
     const welcomePromise = chatOps.ensureLinxWelcome({ force })
+    const isCurrentBootstrap = () => !cancelled && lastStartedRef.current === db
     const applyWelcomeResult = (result: LinxWelcomeResult | null) => {
       if (!result) return
       selectInitialSecretary(result.chatId, result.threadId)
@@ -129,12 +130,12 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
 
     void welcomePromise
       .then(async (result) => {
-        if (cancelled) return
+        if (!isCurrentBootstrap()) return
 
         applyWelcomeResult(result)
       })
       .catch((cause) => {
-        if (cancelled) return
+        if (!isCurrentBootstrap()) return
 
         const nextError = cause instanceof Error ? cause : new Error(String(cause))
         console.warn('[PodCollectionsBootstrap] Failed to prepare LinX welcome:', nextError)

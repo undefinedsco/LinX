@@ -277,4 +277,81 @@ describe('PodCollectionsBootstrap', () => {
     expect(selectThreadMock).not.toHaveBeenCalled()
     expect(toastMock).not.toHaveBeenCalled()
   })
+
+  it('ignores a previous account bootstrap result after the database changes', async () => {
+    const firstDb = { id: 'first-db' }
+    const secondDb = { id: 'second-db' }
+    let currentDb = firstDb
+    let resolveFirst: ((value: { chatId: string; created: boolean }) => void) | undefined
+    let resolveSecond: ((value: { chatId: string; created: boolean }) => void) | undefined
+    const firstWelcome = new Promise<{ chatId: string; created: boolean }>((resolve) => {
+      resolveFirst = resolve
+    })
+    const secondWelcome = new Promise<{ chatId: string; created: boolean }>((resolve) => {
+      resolveSecond = resolve
+    })
+    useSolidDatabaseMock.mockImplementation(() => ({ db: currentDb }))
+    ensureLinxWelcomeMock
+      .mockReturnValueOnce(firstWelcome)
+      .mockReturnValueOnce(secondWelcome)
+
+    const { rerender } = render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    currentDb = secondDb
+    rerender(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      resolveFirst?.({ chatId: 'first-account-chat', created: true })
+      await firstWelcome
+    })
+
+    expect(invalidateQueriesMock).not.toHaveBeenCalledWith({
+      queryKey: ['chats', 'first-account-chat', 'threads'],
+    })
+
+    await act(async () => {
+      resolveSecond?.({ chatId: 'second-account-chat', created: true })
+      await secondWelcome
+    })
+
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ['chats', 'second-account-chat', 'threads'],
+    })
+  })
+
+  it('preserves auth and token storage when Secretary bootstrap times out', async () => {
+    const db = { id: 'db' }
+    const localAuthKey = 'linx-test-auth-token'
+    const sessionAuthKey = 'linx-test-session-token'
+    window.localStorage.setItem(localAuthKey, 'local-token')
+    window.sessionStorage.setItem(sessionAuthKey, 'session-token')
+    const timeoutError = Object.assign(new Error('AI Secretary bootstrap timed out.'), {
+      kind: 'timeout',
+      name: 'SecretaryBootstrapTimeoutError',
+      recoverable: true,
+    })
+    useSolidDatabaseMock.mockReturnValue({ db })
+    ensureLinxWelcomeMock.mockRejectedValueOnce(timeoutError)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+        variant: 'destructive',
+      }))
+    })
+    expect(window.localStorage.getItem(localAuthKey)).toBe('local-token')
+    expect(window.sessionStorage.getItem(sessionAuthKey)).toBe('session-token')
+
+    window.localStorage.removeItem(localAuthKey)
+    window.sessionStorage.removeItem(sessionAuthKey)
+    warnSpy.mockRestore()
+  })
 })

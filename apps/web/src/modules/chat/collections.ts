@@ -70,8 +70,10 @@ import {
 // ============================================================================
 
 let dbGetter: (() => SolidDatabase | null) | null = null
+let currentChatDatabase: SolidDatabase | null = null
 const threadChatIdCache = new Map<string, string>()
 let linxWelcomeInFlight: Promise<LinxWelcomeResult | null> | null = null
+let linxWelcomeAttempt = 0
 const linxWelcomeListeners = new Set<() => void>()
 let stagedDefaultSecretaryRows: {
   agent: AgentRow
@@ -80,6 +82,7 @@ let stagedDefaultSecretaryRows: {
 } | null = null
 const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
 const DEFAULT_SECRETARY_EXACT_READ_TIMEOUT_MS = 1_500
+export const SECRETARY_BOOTSTRAP_TIMEOUT_MS = 10_000
 
 export const LINX_DEFAULT_SECRETARY = {
   agentKey: '__secretary__',
@@ -104,6 +107,16 @@ export interface LinxWelcomeResult {
 
 export interface EnsureLinxWelcomeOptions {
   force?: boolean
+}
+
+export class SecretaryBootstrapTimeoutError extends Error {
+  readonly kind = 'timeout'
+  readonly recoverable = true
+
+  constructor(timeoutMs: number) {
+    super(`AI Secretary bootstrap timed out after ${timeoutMs}ms.`)
+    this.name = 'SecretaryBootstrapTimeoutError'
+  }
 }
 
 type SecretaryMetadata = {
@@ -242,9 +255,6 @@ function setLinxWelcomeInFlight(promise: Promise<LinxWelcomeResult | null> | nul
     return
   }
   linxWelcomeInFlight = promise
-  if (!promise) {
-    stagedDefaultSecretaryRows = null
-  }
   notifyLinxWelcomeListeners()
 }
 
@@ -620,15 +630,17 @@ async function isProtectedLinxSecretaryChat(db: SolidDatabase, chatId: string): 
   return isLinxDefaultSecretaryChat(chat)
 }
 
-async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
+async function ensureLinxWelcomeInternal(isCurrentAttempt: () => boolean): Promise<LinxWelcomeResult | null> {
   const db = getDb()
   if (!db) {
     throw new Error('Solid database is not ready')
   }
 
-  const resources = await ensureDefaultSecretaryResources(db)
+  const resources = await ensureDefaultSecretaryResources(db, isCurrentAttempt)
 
-  void ensureDefaultSecretaryAgentHome(db)
+  if (isCurrentAttempt()) {
+    void ensureDefaultSecretaryAgentHome(db)
+  }
 
   return {
     chatId: LINX_DEFAULT_SECRETARY.chatId,
@@ -636,7 +648,10 @@ async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
   }
 }
 
-async function ensureDefaultSecretaryResources(db: SolidDatabase): Promise<{
+async function ensureDefaultSecretaryResources(
+  db: SolidDatabase,
+  isCurrentAttempt: () => boolean,
+): Promise<{
   agentIri: string
   contactIri: string
   chatIri: string
@@ -658,7 +673,9 @@ async function ensureDefaultSecretaryResources(db: SolidDatabase): Promise<{
     contactIri,
     chatIri,
   })
-  stageDefaultSecretaryRows(optimistic)
+  if (isCurrentAttempt()) {
+    stageDefaultSecretaryRows(optimistic)
+  }
 
   const [contactResult, chatResult] = await Promise.all([
     ensureDefaultSecretaryRow<ContactRow>(
@@ -669,7 +686,7 @@ async function ensureDefaultSecretaryResources(db: SolidDatabase): Promise<{
       _contactCollection,
       LINX_DEFAULT_SECRETARY.contactId,
       contactIri,
-      { trustCached: false },
+      { isCurrentAttempt, trustCached: false },
     ),
     ensureDefaultSecretaryRow<ChatRow>(
       db,
@@ -682,7 +699,7 @@ async function ensureDefaultSecretaryResources(db: SolidDatabase): Promise<{
       chatCollection,
       LINX_DEFAULT_SECRETARY.chatId,
       chatIri,
-      { trustCached: false },
+      { isCurrentAttempt, trustCached: false },
     ),
   ])
   const contactParticipantIri = typeof contactResult.row['@id'] === 'string'
@@ -838,7 +855,11 @@ async function ensureDefaultSecretaryRow<T extends Record<string, unknown> & { i
   collection: CollectionWriter<T>,
   collectionId: string,
   iri: string,
-  options: { trustCached?: boolean; skipExistingRead?: boolean } = {},
+  options: {
+    isCurrentAttempt?: () => boolean
+    trustCached?: boolean
+    skipExistingRead?: boolean
+  } = {},
 ): Promise<{ row: T; created: boolean }> {
   const cached = collection?.get?.(collectionId) as T | undefined
   if (cached && options.trustCached !== false) {
@@ -849,7 +870,9 @@ async function ensureDefaultSecretaryRow<T extends Record<string, unknown> & { i
     const existing = await findOptionalExactRecord<T>(db, resource as any, targetId)
     if (existing) {
       const normalized = normalizeCollectionRow(existing, collectionId, iri)
-      writeCollectionRow(collection, normalized, collectionId)
+      if (options.isCurrentAttempt?.() !== false) {
+        writeCollectionRow(collection, normalized, collectionId)
+      }
       return { row: normalized, created: false }
     }
   }
@@ -857,12 +880,16 @@ async function ensureDefaultSecretaryRow<T extends Record<string, unknown> & { i
   const created = normalizeCollectionRow(row as T, collectionId, iri)
   if (cached && options.trustCached === false) {
     const persisted = await insertPodRowWithRetry<T>(db, resource, created, targetId)
-    writeCollectionRow(collection, persisted, collectionId)
+    if (options.isCurrentAttempt?.() !== false) {
+      writeCollectionRow(collection, persisted, collectionId)
+    }
     return { row: persisted, created: true }
   }
 
   const persisted = await insertPodRowWithRetry<T>(db, resource, created, targetId)
-  writeCollectionRow(collection, persisted, collectionId)
+  if (options.isCurrentAttempt?.() !== false) {
+    writeCollectionRow(collection, persisted, collectionId)
+  }
   return { row: persisted, created: true }
 }
 
@@ -940,6 +967,21 @@ function withExactReadTimeout<T>(promise: Promise<T | null>, timeoutMs: number):
       const error = new Error('Exact record read timed out.')
       error.name = 'ExactReadTimeoutError'
       reject(error)
+    }, timeoutMs)
+  })
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
+  })
+}
+
+function withSecretaryBootstrapTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new SecretaryBootstrapTimeoutError(timeoutMs))
     }, timeoutMs)
   })
 
@@ -1195,7 +1237,9 @@ export const chatOps = {
     }
 
     if (!linxWelcomeInFlight) {
-      const inFlight = ensureLinxWelcomeInternal()
+      const attempt = ++linxWelcomeAttempt
+      const persistence = ensureLinxWelcomeInternal(() => linxWelcomeAttempt === attempt)
+      const inFlight = withSecretaryBootstrapTimeout(persistence, SECRETARY_BOOTSTRAP_TIMEOUT_MS)
       setLinxWelcomeInFlight(inFlight)
       void inFlight.then(
         () => {
@@ -1893,7 +1937,9 @@ export const chatOps = {
  * Call this from a component that has access to useSolidDatabase.
  */
 export function initializeChatCollections(db: SolidDatabase | null) {
-  if (!db) {
+  if (currentChatDatabase !== db) {
+    currentChatDatabase = db
+    linxWelcomeAttempt += 1
     stagedDefaultSecretaryRows = null
     setLinxWelcomeInFlight(null)
   }

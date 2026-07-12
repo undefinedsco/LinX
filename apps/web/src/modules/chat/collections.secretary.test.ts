@@ -99,7 +99,9 @@ import {
   chatOps,
   configureChatContactsPort,
   initializeChatCollections,
+  isLinxDefaultSecretaryBootstrapSettling,
   LINX_DEFAULT_SECRETARY,
+  SECRETARY_BOOTSTRAP_TIMEOUT_MS,
 } from './collections'
 
 configureChatContactsPort({
@@ -334,6 +336,104 @@ describe('AI Secretary bootstrap', () => {
       chatResource,
     ])
     vi.useRealTimers()
+  })
+
+  it('times out never-settling persistence without dropping the local Secretary projection', async () => {
+    vi.useFakeTimers()
+    const { db, rows } = createSecretaryDb({
+      chatSelectError: new Error('Collection queries over plain LDP are not supported'),
+    })
+    db.insert = vi.fn(() => ({
+      values() {
+        return {
+          execute: vi.fn(async () => new Promise(() => {})),
+        }
+      },
+    }))
+    initializeChatCollections(db as any)
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    const timeoutResult = expect(resultPromise).rejects.toMatchObject({
+      kind: 'timeout',
+      name: 'SecretaryBootstrapTimeoutError',
+      recoverable: true,
+    })
+
+    expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(true)
+    await expect(chatOps.fetchChats()).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': rows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+    ])
+
+    await vi.advanceTimersByTimeAsync(SECRETARY_BOOTSTRAP_TIMEOUT_MS)
+
+    await timeoutResult
+    expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(false)
+    await expect(chatOps.fetchChats()).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': rows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+    ])
+  })
+
+  it('does not publish an older account bootstrap after a new database is active', async () => {
+    const firstRows = createSecretaryRows({
+      podBase: 'https://node-0000.undefineds.co/alice/',
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+    })
+    const secondRows = createSecretaryRows({
+      podBase: 'https://node-0000.undefineds.co/bob/',
+      webId: 'https://id.undefineds.co/bob/profile/card#me',
+    })
+    const { db: firstDb } = createSecretaryDb({ rows: firstRows })
+    const { db: secondDb } = createSecretaryDb({ rows: secondRows })
+    let resolveFirstContact: (() => void) | undefined
+    let resolveFirstChat: (() => void) | undefined
+    firstDb.insert = vi.fn((resource: unknown) => ({
+      values(row: Record<string, unknown>) {
+        return {
+          execute: vi.fn(async () => new Promise((resolve) => {
+            const complete = () => resolve([{ ...row }])
+            if (resource === contactResource) {
+              resolveFirstContact = complete
+            } else if (resource === chatResource) {
+              resolveFirstChat = complete
+            }
+          })),
+        }
+      },
+    }))
+
+    initializeChatCollections(firstDb as any)
+    const firstBootstrap = chatOps.ensureLinxWelcome({ force: true })
+    await vi.waitFor(() => {
+      expect(resolveFirstContact).toBeTypeOf('function')
+      expect(resolveFirstChat).toBeTypeOf('function')
+    })
+
+    initializeChatCollections(secondDb as any)
+    await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: true,
+    })
+    expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
+      '@id': secondRows.chatIri,
+    })
+
+    resolveFirstContact?.()
+    resolveFirstChat?.()
+    await expect(firstBootstrap).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: true,
+    })
+    expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
+      '@id': secondRows.chatIri,
+    })
   })
 
   it('returns the staged Secretary chat while remote persistence is in flight', async () => {
