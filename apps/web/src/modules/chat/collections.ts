@@ -34,13 +34,16 @@ import {
   type ThreadInsert,
   type MessageRow,
   type MessageInsert,
-  type AgentInsert,
   type AgentRow,
-  type ContactInsert,
   type ContactRow,
   ContactClass,
   ContactType,
 } from '@undefineds.co/models'
+import {
+  agentCollection,
+  contactCollection as _contactCollection,
+} from './contacts-port'
+export { configureChatContactsPort } from './contacts-port'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime/chat-reconciler'
 import {
@@ -56,7 +59,7 @@ import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 import { DEFAULT_LINX_PLATFORM_MODEL_ID, getAgentProviderInfo } from '@/lib/agent-providers'
 import { toStringArray } from '@/lib/utils'
-import { ensureAgentHome } from './agent-home'
+import { ensureAgentHome } from '@/lib/data/agent-home'
 import {
   type AgentAiRuntimeLocation,
   writeAgentAiRuntimeLocationMetadata,
@@ -1023,33 +1026,7 @@ export const messageCollection = createPodCollection<typeof messageResource, Mes
 // Agent Collection (for creating AI chats)
 // ============================================================================
 
-export const agentCollection = createPodCollection<typeof agentResource, AgentRow, AgentInsert>({
-  resource: agentResource,
-  queryKey: ['agents'],
-  queryClient,
-  getDb,
-  orderBy: { column: 'name', direction: 'asc' },
-  getKey: (item) => {
-    if (!item.id) throw new Error('Agent item is missing id.')
-    return item.id
-  },
-})
-
-// ============================================================================
-// Contact Collection (for creating AI chats)
-// ============================================================================
-
-export const _contactCollection = createPodCollection<typeof contactResource, ContactRow, ContactInsert>({
-  resource: contactResource,
-  queryKey: ['contacts'],
-  queryClient,
-  getDb,
-  orderBy: { column: 'name', direction: 'asc' },
-  getKey: (item) => {
-    if (!item.id) throw new Error('Contact item is missing id.')
-    return item.id
-  },
-})
+export { agentCollection }
 
 // ============================================================================
 // Chat Operations (Business Logic)

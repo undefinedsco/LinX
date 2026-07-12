@@ -95,7 +95,17 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: null }),
 }))
 
-import { chatOps, initializeChatCollections, LINX_DEFAULT_SECRETARY } from './collections'
+import {
+  chatOps,
+  configureChatContactsPort,
+  initializeChatCollections,
+  LINX_DEFAULT_SECRETARY,
+} from './collections'
+
+configureChatContactsPort({
+  agentCollection: createCollectionMock({ queryKey: ['agents'] }) as any,
+  contactCollection: createCollectionMock({ queryKey: ['contacts'] }) as any,
+})
 
 describe('AI Secretary bootstrap', () => {
   beforeEach(() => {

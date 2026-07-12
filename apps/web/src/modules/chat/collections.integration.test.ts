@@ -12,7 +12,17 @@ import {
   getDefaultAIConfigCredentialId,
 } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
-import { chatOps, initializeChatCollections, LINX_DEFAULT_SECRETARY } from './collections'
+import {
+  chatOps,
+  configureChatContactsPort,
+  initializeChatCollections,
+  LINX_DEFAULT_SECRETARY,
+} from './collections'
+import {
+  agentCollection,
+  contactCollection,
+  initializeContactCollections,
+} from '@/modules/contacts/data/collections'
 
 let context: XpodIntegrationContext<typeof solidSchema> | null = null
 
@@ -26,6 +36,8 @@ async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>>
     schema: solidSchema,
     resources: [chatResource, threadResource, messageResource, aiProviderResource, credentialResource],
   })
+  initializeContactCollections(context.db)
+  configureChatContactsPort({ agentCollection, contactCollection })
   initializeChatCollections(context.db)
   return context
 }

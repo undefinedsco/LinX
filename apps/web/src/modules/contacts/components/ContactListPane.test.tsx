@@ -1,13 +1,14 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
 
 // --- Mock data (must be inline in factory) ---
 
-// Mock contactOps - factory function can't reference external variables
-vi.mock('../collections', () => {
-  const mockContacts = [
+const { mockSubscribeToPod, mockUseLiveQuery, mockContacts } = vi.hoisted(() => ({
+  mockSubscribeToPod: vi.fn(() => Promise.resolve(() => {})),
+  mockUseLiveQuery: vi.fn(),
+  mockContacts: [
     {
       id: 'mock-agent-1',
       name: '智能翻译官',
@@ -39,9 +40,19 @@ vi.mock('../collections', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     },
-  ]
-  
+  ],
+}))
+
+vi.mock('@tanstack/react-db', () => ({
+  useLiveQuery: mockUseLiveQuery,
+}))
+
+// Mock contactOps - factory function can't reference external variables
+vi.mock('../data/collections', () => {
   return {
+    contactCollection: {
+      startSyncImmediate: vi.fn(),
+    },
     contactOps: {
       getAll: vi.fn(() => mockContacts),
       search: vi.fn((query: string) => {
@@ -51,7 +62,8 @@ vi.mock('../collections', () => {
           (c.alias && c.alias.toLowerCase().includes(q))
         )
       }),
-      subscribeToPod: vi.fn(() => Promise.resolve(() => {})),
+      subscribeToPod: mockSubscribeToPod,
+      fetch: vi.fn(async () => mockContacts),
     },
     initializeContactCollections: vi.fn(),
   }
@@ -74,13 +86,13 @@ let mockStoreState = {
   setListFilter: vi.fn(),
 }
 
-vi.mock('../store', () => ({
+vi.mock('../app/store', () => ({
   useContactStore: (selector: (state: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
 // Import after mocks
 import { ContactListPane } from './ContactListPane'
-import { contactOps } from '../collections'
+import { contactOps } from '../data/collections'
 
 // Wrapper for React Query
 const createWrapper = () => {
@@ -95,6 +107,12 @@ const createWrapper = () => {
 describe('ContactListPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSubscribeToPod.mockImplementation(() => Promise.resolve(() => {}))
+    mockUseLiveQuery.mockReturnValue({
+      data: mockContacts,
+      isLoading: false,
+      isError: false,
+    })
     
     // Reset store state
     mockStoreState = {
@@ -135,6 +153,38 @@ describe('ContactListPane', () => {
       expect(await screen.findByText('翻译助手')).toBeInTheDocument()
       expect(await screen.findByText('Alice')).toBeInTheDocument()
       expect(await screen.findByText('老王')).toBeInTheDocument()
+    })
+
+    it('keeps query errors distinct from the empty state', async () => {
+      mockUseLiveQuery.mockReturnValueOnce({
+        data: [],
+        isLoading: false,
+        isError: true,
+      })
+
+      render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('联系人加载失败')
+      expect(screen.queryByText('暂无联系人')).not.toBeInTheDocument()
+    })
+
+    it('disposes a Pod subscription that resolves after unmount', async () => {
+      let resolveSubscription!: (unsubscribe: () => void) => void
+      const unsubscribe = vi.fn()
+      mockSubscribeToPod.mockReturnValueOnce(new Promise((resolve) => {
+        resolveSubscription = resolve
+      }))
+
+      const { unmount } = render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
+      await waitFor(() => expect(mockSubscribeToPod).toHaveBeenCalledOnce())
+      unmount()
+
+      await act(async () => {
+        resolveSubscription(unsubscribe)
+        await Promise.resolve()
+      })
+
+      expect(unsubscribe).toHaveBeenCalledOnce()
     })
   })
 

@@ -111,14 +111,11 @@ vi.mock('../runtime-client', () => ({
   resolveLocalContainer: vi.fn(async () => 'linx://device-123/repo/linx'),
 }))
 
-vi.mock('@/modules/contacts/collections', () => ({
+vi.mock('@/modules/contacts', () => ({
   contactOps: {
     fetchSolidProfile: (webId: string) => mockFetchSolidProfile(webId),
     addFriend: (input: unknown) => mockAddFriend(input),
   },
-}))
-
-vi.mock('@/modules/contacts/components/CreateGroupDialog', () => ({
   CreateGroupDialog: (props: unknown) => {
     mockCreateGroupDialog(props)
     const { onCreated } = props as { onCreated?: (contactId: string, chatId: string) => void }

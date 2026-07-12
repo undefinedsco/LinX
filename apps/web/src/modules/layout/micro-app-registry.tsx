@@ -101,10 +101,10 @@ const InboxContentPane = lazyPane(() =>
   import('@/modules/inbox/components/InboxContentPane').then((mod) => ({ default: mod.InboxContentPane })),
 )
 const ContactListPane = lazyPane(() =>
-  import('@/modules/contacts/components/ContactListPane').then((mod) => ({ default: mod.ContactListPane })),
+  import('@/modules/contacts/features/list/ContactListPane').then((mod) => ({ default: mod.ContactListPane })),
 )
 const ContactDetailPane = lazyPane(() =>
-  import('@/modules/contacts/components/ContactDetailPane').then((mod) => ({ default: mod.ContactDetailPane })),
+  import('@/modules/contacts/features/detail/ContactDetailPane').then((mod) => ({ default: mod.ContactDetailPane })),
 )
 const FavoriteListPane = lazyPane(() =>
   import('@/modules/favorites/components/FavoriteListPane').then((mod) => ({ default: mod.FavoriteListPane })),
@@ -119,22 +119,22 @@ const FilesWorkspacePane = lazyPane(() =>
   import('@/modules/files/app/FilesWorkspacePane').then((mod) => ({ default: mod.FilesWorkspacePane })),
 )
 const ModelServicesListPane = lazyPane(() =>
-  import('@/modules/model-services/ModelServicesListPane').then((mod) => ({ default: mod.ModelServicesListPane })),
+  import('@/modules/model-services/features/list/ModelServicesListPane').then((mod) => ({ default: mod.ModelServicesListPane })),
 )
 const ModelServicesContentPane = lazyPane(() =>
-  import('@/modules/model-services/ModelServicesContentPane').then((mod) => ({ default: mod.ModelServicesContentPane })),
+  import('@/modules/model-services/features/detail/ModelServicesContentPane').then((mod) => ({ default: mod.ModelServicesContentPane })),
 )
 const SettingsListPane = lazyPane(() =>
-  import('@/modules/settings/components/SettingsListPane').then((mod) => ({ default: mod.SettingsListPane })),
+  import('@/modules/settings/features/list/SettingsListPane').then((mod) => ({ default: mod.SettingsListPane })),
 )
 const SettingsContentPane = lazyPane(() =>
-  import('@/modules/settings/components/SettingsContentPane').then((mod) => ({ default: mod.SettingsContentPane })),
+  import('@/modules/settings/features/content/SettingsContentPane').then((mod) => ({ default: mod.SettingsContentPane })),
 )
 const ChatLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/chat/layout/ChatLayoutConfigBridge').then((mod) => ({ default: mod.ChatLayoutConfigBridge })),
 )
 const ModelServicesLayoutConfigBridge = lazyBridge(() =>
-  import('@/modules/model-services/ModelServicesLayoutConfigBridge').then((mod) => ({ default: mod.ModelServicesLayoutConfigBridge })),
+  import('@/modules/model-services/app/ModelServicesLayoutConfigBridge').then((mod) => ({ default: mod.ModelServicesLayoutConfigBridge })),
 )
 
 export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {

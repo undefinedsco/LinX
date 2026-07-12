@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 
 const mockSetSelectedProviderId = vi.fn()
+let mockQueryError: string | null = null
 
-vi.mock('./store', () => ({
+vi.mock('./app/store', () => ({
   useModelServicesStore: (selector: (state: { selectedProviderId: string, setSelectedProviderId: typeof mockSetSelectedProviderId }) => unknown) =>
     selector({
       selectedProviderId: 'openai',
@@ -11,7 +12,7 @@ vi.mock('./store', () => ({
     }),
 }))
 
-vi.mock('./hooks/useModelServices', () => ({
+vi.mock('./data/use-model-services', () => ({
   useModelServices: () => ({
     providers: {
       openai: {
@@ -27,6 +28,7 @@ vi.mock('./hooks/useModelServices', () => ({
         models: [],
       },
     },
+    error: mockQueryError,
   }),
 }))
 
@@ -35,6 +37,7 @@ import { ModelServicesListPane } from './ModelServicesListPane'
 describe('ModelServicesListPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockQueryError = null
   })
 
   it('renders provider list without exposing the unfinished custom-provider button', () => {
@@ -51,5 +54,14 @@ describe('ModelServicesListPane', () => {
     fireEvent.click(screen.getByText('Anthropic'))
 
     expect(mockSetSelectedProviderId).toHaveBeenCalledWith('anthropic')
+  })
+
+  it('surfaces query failures instead of showing an empty provider projection', () => {
+    mockQueryError = '模型服务配置读取失败，请重试。'
+
+    render(<ModelServicesListPane theme="dark" />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('模型服务配置读取失败，请重试。')
+    expect(screen.queryByText('无结果')).not.toBeInTheDocument()
   })
 })

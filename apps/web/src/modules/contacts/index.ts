@@ -1,11 +1,11 @@
-export { ContactListPane } from './components/ContactListPane'
-export { ContactDetailPane } from './components/ContactDetailPane'
-export { CreateGroupDialog } from './components/CreateGroupDialog'
-export { MemberList } from './components/MemberList'
-export { SelectableContactList } from './components/SelectableContactList'
-export type { GroupMember, MemberRole } from './components/MemberList'
-export { useContactStore } from './store'
-export type { ContactViewMode, CreateContactType } from './store'
+export { ContactListPane } from './features/list/ContactListPane'
+export { ContactDetailPane } from './features/detail/ContactDetailPane'
+export { CreateGroupDialog } from './features/groups/CreateGroupDialog'
+export { MemberList } from './ui/MemberList'
+export { SelectableContactList } from './ui/SelectableContactList'
+export type { GroupMember, MemberRole } from './ui/MemberList'
+export { useContactStore } from './app/store'
+export type { ContactViewMode, CreateContactType } from './app/store'
 export type {
   UnifiedContact,
   GroupContactInfo,
@@ -14,6 +14,6 @@ export type {
   SectionKey,
   ContactSourceType,
   ContactTag,
-} from './types'
-export { contactOps, contactCollection, initializeContactCollections } from './collections'
-export { CONTACTS_CP1_ENABLED } from './feature-flags'
+} from './domain/types'
+export { contactOps, contactCollection, initializeContactCollections } from './data/collections'
+export { CONTACTS_CP1_ENABLED } from './app/feature-flags'

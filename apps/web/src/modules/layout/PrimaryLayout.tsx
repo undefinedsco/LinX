@@ -31,13 +31,13 @@ import {
 } from '@/components/ui/popover'
 import { SelfProfileCard } from '@/modules/profile/SelfProfileCard'
 import { InboxBellButton } from '@/modules/inbox/components/InboxBellButton'
-import { ServiceManagementDialog } from '@/modules/settings/ServiceManagementDialog'
+import { ServiceManagementDialog } from '@/modules/settings/features/service/ServiceManagementDialog'
 import { requestSignOut } from '@/modules/login/login-utils'
 import { useSession } from '@/providers/solid-session-provider'
 import { AboutDialog } from './AboutDialog'
 import { useAppUpdateStatus } from './use-app-update-status'
 import { useThemeMode } from './use-theme-mode'
-import { OPEN_SERVICE_MANAGEMENT_EVENT } from '@/modules/settings/events'
+import { OPEN_SERVICE_MANAGEMENT_EVENT } from '@/modules/settings/app/events'
 
 interface PrimaryLayoutProps {
   microAppId: MicroAppId

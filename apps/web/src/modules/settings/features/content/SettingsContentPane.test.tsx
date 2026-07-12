@@ -114,8 +114,8 @@ vi.mock('@/modules/login/hooks/use-local-onboarding', () => ({
 }))
 
 import { SettingsContentPane } from './SettingsContentPane'
-import { useSettingsStore } from '../store'
-import { OPEN_SERVICE_MANAGEMENT_EVENT } from '../events'
+import { useSettingsStore } from '../../app/store'
+import { OPEN_SERVICE_MANAGEMENT_EVENT } from '../../app/events'
 
 describe('SettingsContentPane', () => {
   beforeEach(() => {
@@ -167,6 +167,10 @@ describe('SettingsContentPane', () => {
     expect(screen.getByText('本地网络')).toBeInTheDocument()
     expect(screen.getAllByText('https://node-0000.undefineds.co/').length).toBeGreaterThan(0)
     expect(screen.getAllByText('http://localhost:5737/').length).toBeGreaterThan(0)
+    expect(screen.queryByLabelText('自有公网域名（可选）')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '高级网络设置' }))
+
     expect(screen.getByText('已保存 token，不显示明文。')).toBeInTheDocument()
     expect(screen.queryByText('token-123')).not.toBeInTheDocument()
 

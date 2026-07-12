@@ -144,6 +144,13 @@ vi.mock('@/providers/query-provider', () => ({
   },
 }))
 
+vi.mock('@/lib/data/agent-home', () => ({
+  createAgentHome: vi.fn(async () => ({
+    created: true,
+    rollback: vi.fn(async () => {}),
+  })),
+}))
+
 // Mock crypto.randomUUID
 const mockUUIDs = [
   'uuid-1', 'uuid-2', 'uuid-3',
@@ -160,9 +167,24 @@ import {
   contactOps,
   contactCollection,
   agentCollection,
+  configureContactsChatPort,
   setContactsDatabaseGetter,
 } from './collections'
 import { queryClient } from '@/providers/query-provider'
+
+configureContactsChatPort({
+  chatCollection: {
+    state: mockCollectionState,
+    insert: mockInsert,
+    update: mockUpdate,
+    delete: mockDelete,
+  },
+  threadCollection: { state: new Map() },
+  useSelectChat: () => vi.fn(),
+  createMatrixGroupRoom: vi.fn(),
+  loadMatrixChatRow: vi.fn(),
+  loadMatrixThreadRow: vi.fn(),
+})
 
 describe('contactOps', () => {
   beforeEach(() => {

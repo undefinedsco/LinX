@@ -44,7 +44,7 @@ vi.mock('@/modules/chat/store', () => ({
 }))
 
 const mockSelectContact = vi.fn()
-vi.mock('@/modules/contacts/store', () => ({
+vi.mock('@/modules/contacts/app/store', () => ({
   useContactStore: (selector: (state: unknown) => unknown) => selector({
     select: mockSelectContact,
   }),

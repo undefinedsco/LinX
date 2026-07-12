@@ -26,7 +26,7 @@ vi.mock('@/modules/profile/SelfProfileCard', () => ({
   SelfProfileCard: () => <div>SelfProfileCard</div>,
 }))
 
-vi.mock('@/modules/settings/ServiceManagementDialog', () => ({
+vi.mock('@/modules/settings/features/service/ServiceManagementDialog', () => ({
   ServiceManagementDialog: () => null,
 }))
 

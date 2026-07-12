@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
@@ -8,7 +8,6 @@ const {
   mockNavigate,
   mockToast,
   mockStoreState,
-  mockContactState,
   mockAboutByRef,
   mockAboutError,
   mockSelectChat,
@@ -31,7 +30,6 @@ const {
     openInviteMemberDialog: vi.fn(),
     closeInviteMemberDialog: vi.fn(),
   },
-  mockContactState: new Map<string, any>(),
   mockAboutByRef: new Map<string, any>(),
   mockAboutError: { current: null as Error | null },
   mockSelectChat: vi.fn(),
@@ -40,6 +38,50 @@ const {
   mockUpdateContact: vi.fn(),
   mockUpdateAgent: vi.fn(),
 }))
+
+const { mockContactCollection, mockChatCollection, mockLiveQueryErrors } = vi.hoisted(() => {
+  const createCollection = () => {
+    let version = 0
+    const listeners = new Set<() => void>()
+    const state = new Map<string, any>()
+    return {
+      state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+      getVersion: () => version,
+      replace: (id: string, row: any) => {
+        state.set(id, row)
+        version += 1
+        listeners.forEach((listener) => listener())
+      },
+      fetch: vi.fn(async () => Array.from(state.values())),
+    }
+  }
+  return {
+    mockContactCollection: createCollection(),
+    mockChatCollection: createCollection(),
+    mockLiveQueryErrors: { contact: false, chat: false },
+  }
+})
+const mockContactState = mockContactCollection.state
+
+vi.mock('@tanstack/react-db', async () => {
+  const { useSyncExternalStore } = await import('react')
+  return {
+    useLiveQuery: (collection: typeof mockContactCollection) => {
+      useSyncExternalStore(collection.subscribe, collection.getVersion, collection.getVersion)
+      return {
+        data: Array.from(collection.state.values()),
+        isError: collection === mockContactCollection
+          ? mockLiveQueryErrors.contact
+          : mockLiveQueryErrors.chat,
+        isLoading: false,
+      }
+    },
+  }
+})
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
@@ -83,14 +125,14 @@ vi.mock('./CreateGroupDialog', () => ({
   CreateGroupDialog: ({ open }: { open: boolean }) => open ? <div data-testid="group-dialog" /> : null,
 }))
 
-vi.mock('../store', () => ({
+vi.mock('../app/store', () => ({
   useContactStore: (selector: (state: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
-vi.mock('../collections', () => ({
-  contactCollection: {
-    state: mockContactState,
-  },
+vi.mock('../data/collections', () => ({
+  contactCollection: mockContactCollection,
+  getContactsChatCollection: () => mockChatCollection,
+  useContactsChatSelection: () => mockSelectChat,
   contactOps: {
     findOrCreateChat: (...args: unknown[]) => mockFindOrCreateChat(...args),
     getLastSyncedText: (...args: unknown[]) => mockGetLastSyncedText(...args),
@@ -140,6 +182,9 @@ describe('ContactDetailPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockContactState.clear()
+    mockChatCollection.state.clear()
+    mockLiveQueryErrors.contact = false
+    mockLiveQueryErrors.chat = false
     mockAboutByRef.clear()
     mockAboutError.current = null
     Object.assign(mockStoreState, {
@@ -195,6 +240,46 @@ describe('ContactDetailPane', () => {
     expect(screen.getByText('Inbox')).toBeInTheDocument()
     expect(screen.getByText('公开关系')).toBeInTheDocument()
     expect(screen.queryByText('标签')).not.toBeInTheDocument()
+  })
+
+  it('reacts when the selected Contact row changes in the live collection', async () => {
+    const contact = makeContact({
+      id: 'contact-solid-1',
+      name: 'Alice Smith',
+      alias: 'Alice',
+      about: 'https://alice.solidcommunity.net/profile/card#me',
+    })
+
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Alice')
+
+    act(() => {
+      mockContactCollection.replace(contact.id, { ...contact, alias: 'Alicia' })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Alicia')
+    })
+  })
+
+  it('shows a retryable error instead of a loading state when detail queries fail', async () => {
+    const contact = makeContact({ id: 'contact-solid-1', name: 'Alice Smith' })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+    mockLiveQueryErrors.contact = true
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    expect(screen.getByRole('alert')).toHaveTextContent('联系人详情加载失败，请重试。')
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+
+    await waitFor(() => {
+      expect(mockContactCollection.fetch).toHaveBeenCalledOnce()
+      expect(mockChatCollection.fetch).toHaveBeenCalledOnce()
+    })
   })
 
   it('does not expose internal sync errors in the contact details', () => {

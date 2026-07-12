@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { SettingsListPane } from './SettingsListPane'
-import { useSettingsStore } from '../store'
+import { useSettingsStore } from '../../app/store'
 
 describe('SettingsListPane', () => {
   beforeEach(() => {

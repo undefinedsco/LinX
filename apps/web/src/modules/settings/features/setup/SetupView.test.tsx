@@ -39,7 +39,44 @@ describe('SetupView', () => {
     render(<SetupView />)
 
     expect(await screen.findByDisplayValue('/tmp/linx-pod')).toBeInTheDocument()
+    expect(screen.getByText('这里只保存配置，不会自动启动本地空间。')).toBeInTheDocument()
+    expect(screen.queryByText(/保存后服务会继续启动/)).not.toBeInTheDocument()
     expect(screen.getByText(/LinX 自动分配可登录地址/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('自有公网域名（可选）')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('自动检测公网 IP')).not.toBeInTheDocument()
+
+    const disclosure = screen.getByRole('button', { name: '高级网络设置' })
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(disclosure)
+
+    expect(screen.getByLabelText('自有公网域名（可选）')).toHaveValue('')
+    expect(screen.getByLabelText('自动检测公网 IP')).toBeInTheDocument()
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('preserves loaded advanced values while the disclosure is closed', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      dataDir: '/tmp/linx-pod',
+      port: 5737,
+      spaceKind: 'local',
+      publicDomain: 'pod.example.com',
+      autoDetectPublicIp: false,
+      tunnelProvider: 'cloudflare',
+      hasTunnelToken: true,
+    }))
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }))
+
+    render(<SetupView />)
+
+    expect(await screen.findByDisplayValue('/tmp/linx-pod')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('pod.example.com')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('保存配置'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const [, requestInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    const body = JSON.parse(String(requestInit.body))
+    expect(body.publicDomain).toBe('pod.example.com')
+    expect(body.network.tunnelProvider).toBe('cloudflare')
   })
 
   it('saves a local setup payload without a generated public domain', async () => {
@@ -84,7 +121,7 @@ describe('SetupView', () => {
       spaceKind: 'local',
       pod: expect.objectContaining({ dataDir: '/tmp/linx-pod' }),
     }))
-    expect(await screen.findByText('配置已保存，服务正在继续启动。')).toBeInTheDocument()
+    expect(await screen.findByText('配置已保存。启动服务仍需明确操作。')).toBeInTheDocument()
   })
 
   it('does not include a manual public domain for direct-access local setup', async () => {
@@ -245,6 +282,8 @@ describe('SetupView', () => {
     fireEvent.click(screen.getByText('保存配置'))
 
     expect(await screen.findByText('请填写隧道密钥，或沿用已保存密钥')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '高级网络设置' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('隧道密钥')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

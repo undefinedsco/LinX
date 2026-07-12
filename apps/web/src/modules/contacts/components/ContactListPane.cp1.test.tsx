@@ -10,7 +10,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
 import { ContactClass } from '@undefineds.co/models'
 
-// Mock contacts data with mixed types
+const { mockUseLiveQuery } = vi.hoisted(() => ({
+  mockUseLiveQuery: vi.fn(),
+}))
 const mockContacts = [
   { id: 's-1', name: 'Alice', rdfType: ContactClass.PERSON, contactType: 'solid', starred: false, avatarUrl: null, about: 'https://alice.example/profile/card#me' },
   { id: 's-2', name: 'Bob', rdfType: ContactClass.PERSON, contactType: 'solid', starred: true, avatarUrl: null, about: 'https://bob.example/profile/card#me' },
@@ -18,11 +20,19 @@ const mockContacts = [
   { id: 'g-1', name: 'Dev Team', rdfType: ContactClass.GROUP, contactType: 'solid', starred: false, avatarUrl: null, about: '/.data/contacts/g-1.ttl' },
 ]
 
-vi.mock('../collections', () => ({
+vi.mock('@tanstack/react-db', () => ({
+  useLiveQuery: mockUseLiveQuery,
+}))
+
+vi.mock('../data/collections', () => ({
+  contactCollection: {
+    startSyncImmediate: vi.fn(),
+  },
   contactOps: {
     getAll: vi.fn(() => mockContacts),
     search: vi.fn(() => []),
     subscribeToPod: vi.fn(() => Promise.resolve(() => {})),
+    fetch: vi.fn(async () => mockContacts),
     getGroupDisplayInfo: vi.fn(() => ({
       memberCount: 2,
       isOwner: true,
@@ -58,7 +68,7 @@ let mockStoreState = {
   setListFilter: vi.fn(),
 }
 
-vi.mock('../store', () => ({
+vi.mock('../app/store', () => ({
   useContactStore: (selector: (s: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
@@ -74,6 +84,11 @@ const createWrapper = () => {
 describe('ContactListPane CP1 Filtering', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockUseLiveQuery.mockReturnValue({
+      data: mockContacts,
+      isLoading: false,
+      isError: false,
+    })
     mockStoreState = {
       search: '',
       setSearch: vi.fn(),
@@ -91,7 +106,7 @@ describe('ContactListPane CP1 Filtering', () => {
 
     expect(screen.getByText('全部')).toBeInTheDocument()
     expect(screen.getByText('个人')).toBeInTheDocument()
-    expect(screen.getByText('AI')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'AI' })).toBeInTheDocument()
     expect(screen.getByText('群组')).toBeInTheDocument()
   })
 

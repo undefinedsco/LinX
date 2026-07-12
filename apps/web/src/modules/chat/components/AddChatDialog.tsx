@@ -18,8 +18,7 @@ import {
 import { CHAT_AGENT_PROVIDERS } from '@/lib/agent-providers'
 import { useChatStore } from '../store'
 import { useChatMutations } from '../collections'
-import { CreateGroupDialog } from '@/modules/contacts/components/CreateGroupDialog'
-import { contactOps } from '@/modules/contacts/collections'
+import { CreateGroupDialog, contactOps } from '@/modules/contacts'
 import {
   DEFAULT_RUNTIME_BASE_REF,
   DEFAULT_RUNTIME_TOOL,

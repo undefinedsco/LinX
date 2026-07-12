@@ -10,7 +10,7 @@ import { useFavoriteStore } from '../store'
 import { useFavoriteList, useFavoriteMutations } from '../collections'
 import type { FavoriteRow } from '@undefineds.co/models'
 import { useChatStore } from '@/modules/chat/store'
-import { useContactStore } from '@/modules/contacts/store'
+import { useContactStore } from '@/modules/contacts/app/store'
 import { useFilesStore } from '@/modules/files/store'
 import {
   Star,

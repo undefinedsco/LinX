@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
@@ -8,7 +8,6 @@ const {
   mockNavigate,
   mockToast,
   mockStoreState,
-  mockContactState,
   mockSelectChat,
   mockGetAll,
   mockGetGroupChat,
@@ -33,7 +32,6 @@ const {
     openInviteMemberDialog: vi.fn(),
     closeInviteMemberDialog: vi.fn(),
   },
-  mockContactState: new Map<string, any>(),
   mockSelectChat: vi.fn(),
   mockGetAll: vi.fn(),
   mockGetGroupChat: vi.fn(),
@@ -44,6 +42,46 @@ const {
   mockAddMemberToGroup: vi.fn(),
   mockCreateGroupWithChat: vi.fn(),
 }))
+
+const { mockContactCollection, mockChatCollection } = vi.hoisted(() => {
+  const createReactiveCollection = () => {
+    let version = 0
+    const listeners = new Set<() => void>()
+    const state = new Map<string, any>()
+    return {
+      state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+      getVersion: () => version,
+      replace: (id: string, row: any) => {
+        state.set(id, row)
+        version += 1
+        listeners.forEach((listener) => listener())
+      },
+    }
+  }
+  return {
+    mockContactCollection: createReactiveCollection(),
+    mockChatCollection: createReactiveCollection(),
+  }
+})
+const mockContactState = mockContactCollection.state
+
+vi.mock('@tanstack/react-db', async () => {
+  const { useSyncExternalStore } = await import('react')
+  return {
+    useLiveQuery: (collection: typeof mockContactCollection) => {
+      useSyncExternalStore(collection.subscribe, collection.getVersion, collection.getVersion)
+      return {
+        data: Array.from(collection.state.values()),
+        isError: false,
+        isLoading: false,
+      }
+    },
+  }
+})
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
@@ -79,14 +117,14 @@ vi.mock('@/modules/chat/store', () => ({
     selector({ selectChat: mockSelectChat }),
 }))
 
-vi.mock('../store', () => ({
+vi.mock('../app/store', () => ({
   useContactStore: (selector: (state: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
-vi.mock('../collections', () => ({
-  contactCollection: {
-    state: mockContactState,
-  },
+vi.mock('../data/collections', () => ({
+  contactCollection: mockContactCollection,
+  getContactsChatCollection: () => mockChatCollection,
+  useContactsChatSelection: () => mockSelectChat,
   contactOps: {
     getAll: (...args: unknown[]) => mockGetAll(...args),
     getGroupChat: (...args: unknown[]) => mockGetGroupChat(...args),
@@ -142,6 +180,7 @@ describe('ContactDetailPane group flows', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockContactState.clear()
+    mockChatCollection.state.clear()
     Object.assign(mockStoreState, {
       selectedId: null,
       viewMode: 'view',
@@ -205,6 +244,68 @@ describe('ContactDetailPane group flows', () => {
     expect(screen.getAllByText('群主').length).toBeGreaterThan(0)
     expect(screen.getByText('Bob')).toBeInTheDocument()
     expect(screen.queryByText('公开关系')).not.toBeInTheDocument()
+  })
+
+  it('reacts when the linked Chat membership changes in the live collection', async () => {
+    const group = makeContact({
+      id: 'group-1',
+      name: '产品群',
+      about: '/.data/chats/chat-1/index.ttl#this',
+      rdfType: ContactClass.GROUP,
+    })
+    const owner = makeContact({
+      id: 'owner-contact',
+      name: 'Me',
+      about: 'https://me.example/profile/card#me',
+    })
+    const bob = makeContact({
+      id: 'member-1',
+      name: 'Bob',
+      about: 'https://bob.example/profile/card#me',
+    })
+    const charlie = makeContact({
+      id: 'member-2',
+      name: 'Charlie',
+      about: 'https://charlie.example/profile/card#me',
+    })
+    const initialChat = {
+      id: 'chat-1',
+      participants: [owner.about, bob.about],
+      metadata: { memberRoles: { [owner.about]: 'owner', [bob.about]: 'member' } },
+    }
+
+    for (const contact of [group, owner, bob, charlie]) {
+      mockContactState.set(contact.id, contact)
+    }
+    mockChatCollection.state.set(initialChat.id, initialChat)
+    mockStoreState.selectedId = group.id
+    mockGetGroupChat.mockImplementation(() => mockChatCollection.state.get('chat-1'))
+    mockGetGroupMembers.mockImplementation(() => (
+      mockChatCollection.state.get('chat-1')?.participants ?? []
+    ))
+    mockGetGroupMemberRoles.mockImplementation(() => (
+      mockChatCollection.state.get('chat-1')?.metadata?.memberRoles ?? {}
+    ))
+    mockResolveMembers.mockImplementation((refs: string[]) => (
+      Array.from(mockContactState.values()).filter((contact) => refs.includes(contact.about))
+    ))
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+    expect(screen.getByText('Bob')).toBeInTheDocument()
+
+    act(() => {
+      mockChatCollection.replace('chat-1', {
+        ...initialChat,
+        participants: [owner.about, charlie.about],
+        metadata: { memberRoles: { [owner.about]: 'owner', [charlie.about]: 'admin' } },
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Bob')).not.toBeInTheDocument()
+      expect(screen.getByText('Charlie')).toBeInTheDocument()
+      expect(screen.getByText('管理员')).toBeInTheDocument()
+    })
   })
 
   it('starts the linked group chat instead of creating a direct chat', async () => {

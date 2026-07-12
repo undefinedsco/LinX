@@ -34,4 +34,16 @@ describe('searchProviderModels', () => {
 
     warn.mockRestore()
   })
+
+  it('uses a custom Base URL instead of the provider model endpoint', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ data: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await searchProviderModels('openai', 'sk-test', 'https://proxy.example.test/v1/')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://proxy.example.test/v1/models',
+      expect.any(Object),
+    )
+  })
 })

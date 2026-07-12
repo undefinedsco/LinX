@@ -4,17 +4,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 const mockToast = vi.fn()
 const mockUpdateProvider = vi.fn().mockResolvedValue(undefined)
 const mockSearchProviderModels = vi.fn()
+let mockQueryError: string | null = null
 
 vi.mock('@/components/ui/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
 }))
 
-vi.mock('./store', () => ({
+vi.mock('./app/store', () => ({
   useModelServicesStore: (selector: (state: { selectedProviderId: string }) => unknown) =>
     selector({ selectedProviderId: 'openai' }),
 }))
 
-vi.mock('./hooks/useModelServices', () => ({
+vi.mock('./data/use-model-services', () => ({
   useModelServices: () => ({
     providers: {
       openai: {
@@ -29,10 +30,11 @@ vi.mock('./hooks/useModelServices', () => ({
       },
     },
     updateProvider: mockUpdateProvider,
+    error: mockQueryError,
   }),
 }))
 
-vi.mock('./services/model-fetcher', () => ({
+vi.mock('./data/model-fetcher', () => ({
   searchProviderModels: (...args: unknown[]) => mockSearchProviderModels(...args),
 }))
 
@@ -41,6 +43,8 @@ import { ModelServicesContentPane } from './ModelServicesContentPane'
 describe('ModelServicesContentPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockUpdateProvider.mockResolvedValue(undefined)
+    mockQueryError = null
   })
 
   it('verifies provider connectivity with a real probe and persists returned models', async () => {
@@ -107,5 +111,48 @@ describe('ModelServicesContentPane', () => {
         description: '连接失败：模型列表获取失败。请检查密钥、服务地址或网络后重试。',
       }))
     })
+  })
+
+  it('keeps a persistence failure visible instead of reporting success', async () => {
+    mockUpdateProvider.mockRejectedValueOnce(new Error('Pod write failed'))
+
+    render(<ModelServicesContentPane />)
+
+    const apiKey = screen.getByPlaceholderText('sk-...')
+    fireEvent.change(apiKey, { target: { value: 'sk-test' } })
+    fireEvent.blur(apiKey)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('LinX 还不能在当前空间保存数据')
+    expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+      variant: 'destructive',
+      description: expect.stringContaining('LinX 还不能在当前空间保存数据'),
+    }))
+  })
+
+  it('does not report verification success when persisting fetched models fails', async () => {
+    mockSearchProviderModels.mockResolvedValue({
+      '在线获取': [{ id: 'gpt-4o', name: 'GPT-4o', capabilities: ['vision'] }],
+    })
+    mockUpdateProvider.mockRejectedValueOnce(new Error('Pod write failed'))
+
+    render(<ModelServicesContentPane />)
+
+    fireEvent.change(screen.getByPlaceholderText('sk-...'), {
+      target: { value: 'sk-test' },
+    })
+    fireEvent.click(screen.getByText('验证'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('LinX 还不能在当前空间保存数据')
+    expect(mockToast).not.toHaveBeenCalledWith(expect.objectContaining({
+      description: '连接成功，已同步 1 个模型',
+    }))
+  })
+
+  it('surfaces model-service query errors instead of rendering catalog defaults', () => {
+    mockQueryError = '模型服务配置读取失败，请重试。'
+
+    render(<ModelServicesContentPane />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('模型服务配置读取失败，请重试。')
   })
 })

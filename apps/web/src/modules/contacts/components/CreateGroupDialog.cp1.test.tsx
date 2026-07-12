@@ -34,7 +34,7 @@ vi.mock('@inrupt/solid-ui-react', () => ({
   }),
 }))
 
-vi.mock('../collections', () => ({
+vi.mock('../data/collections', () => ({
   contactOps: {
     getAll: vi.fn(() => mockContacts),
     createGroupWithChat: mockCreateGroupWithChat,

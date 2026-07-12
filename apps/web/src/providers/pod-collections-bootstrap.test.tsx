@@ -4,6 +4,8 @@ import { PodCollectionsBootstrap } from './pod-collections-bootstrap'
 
 const useSolidDatabaseMock = vi.fn()
 const initializeChatCollectionsMock = vi.fn()
+const configureChatContactsPortMock = vi.fn()
+const configureContactsChatPortMock = vi.fn()
 const initializeContactCollectionsMock = vi.fn()
 const initializeFavoriteCollectionsMock = vi.fn()
 const initializeFilesCollectionsMock = vi.fn()
@@ -28,6 +30,9 @@ vi.mock('./solid-database-provider', () => ({
 }))
 
 vi.mock('@/modules/chat/collections', () => ({
+  chatCollection: { id: 'chats' },
+  threadCollection: { id: 'threads' },
+  configureChatContactsPort: (...args: unknown[]) => configureChatContactsPortMock(...args),
   initializeChatCollections: (...args: unknown[]) => initializeChatCollectionsMock(...args),
   LINX_DEFAULT_SECRETARY: {
     chatId: '__secretary__/index.ttl#this',
@@ -58,8 +63,17 @@ vi.mock('@/components/ui/use-toast', () => ({
   useToast: () => ({ toast: toastMock }),
 }))
 
-vi.mock('@/modules/contacts/collections', () => ({
+vi.mock('@/modules/contacts/data/collections', () => ({
+  agentCollection: { id: 'agents' },
+  contactCollection: { id: 'contacts' },
+  configureContactsChatPort: (...args: unknown[]) => configureContactsChatPortMock(...args),
   initializeContactCollections: (...args: unknown[]) => initializeContactCollectionsMock(...args),
+}))
+
+vi.mock('@/modules/chat/matrix-service', () => ({
+  createMatrixGroupRoom: vi.fn(),
+  loadMatrixChatRow: vi.fn(),
+  loadMatrixThreadRow: vi.fn(),
 }))
 
 vi.mock('@/modules/favorites/collections', () => ({
@@ -77,7 +91,7 @@ vi.mock('@/modules/inbox/collections', () => ({
   initializeInboxCollections: (...args: unknown[]) => initializeInboxCollectionsMock(...args),
 }))
 
-vi.mock('@/modules/model-services/collections', () => ({
+vi.mock('@/modules/model-services/data/collections', () => ({
   initializeModelCollections: (...args: unknown[]) => initializeModelCollectionsMock(...args),
 }))
 
@@ -115,6 +129,14 @@ describe('PodCollectionsBootstrap', () => {
     })
 
     expect(initializeChatCollectionsMock).toHaveBeenCalledWith(null)
+    expect(configureChatContactsPortMock).toHaveBeenCalledWith(expect.objectContaining({
+      agentCollection: { id: 'agents' },
+      contactCollection: { id: 'contacts' },
+    }))
+    expect(configureContactsChatPortMock).toHaveBeenCalledWith(expect.objectContaining({
+      chatCollection: { id: 'chats' },
+      threadCollection: { id: 'threads' },
+    }))
     expect(initializeContactCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeFavoriteCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeFilesCollectionsMock).toHaveBeenCalledWith(null)
@@ -125,6 +147,31 @@ describe('PodCollectionsBootstrap', () => {
     expect(subscribeToPodMock).not.toHaveBeenCalled()
     expect(subscribeFilesToPodMock).not.toHaveBeenCalled()
     expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
+  })
+
+  it('binds contact and model collections before rendering consumers', () => {
+    const db = { id: 'db' }
+    const observeBindings = vi.fn()
+    useSolidDatabaseMock.mockReturnValue({ db })
+
+    function CollectionConsumer() {
+      observeBindings({
+        contactsBound: initializeContactCollectionsMock.mock.calls.some(([value]) => value === db),
+        modelsBound: initializeModelCollectionsMock.mock.calls.some(([value]) => value === db),
+      })
+      return <div>collection consumer</div>
+    }
+
+    render(
+      <PodCollectionsBootstrap>
+        <CollectionConsumer />
+      </PodCollectionsBootstrap>,
+    )
+
+    expect(observeBindings).toHaveBeenCalledWith({
+      contactsBound: true,
+      modelsBound: true,
+    })
   })
 
   it('stages the LinX welcome chat and renders children while Pod persistence continues in the background', async () => {
