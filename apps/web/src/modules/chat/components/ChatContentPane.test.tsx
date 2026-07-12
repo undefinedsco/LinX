@@ -23,8 +23,14 @@ const mockUseWorkspaceList = vi.fn()
 const mockUseChatList = vi.fn()
 const mockUseThreadList = vi.fn()
 const mockUseDefaultSecretaryBootstrapSettling = vi.fn()
+const mockChatRefetch = vi.fn()
+const mockThreadRefetch = vi.fn()
 const mockClearMessageAnchor = vi.fn()
 const mockRuntimeEventHandler = { current: null as ((event: unknown) => void) | null }
+const mockSession = {
+  info: { webId: 'https://alice.example/profile/card#me' as string | undefined },
+  fetch: vi.fn() as ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | undefined,
+}
 
 const storeState = {
   selectedChatId: 'chat-1',
@@ -40,10 +46,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@inrupt/solid-ui-react', () => ({
   useSession: () => ({
-    session: {
-      info: { webId: 'https://alice.example/profile/card#me' },
-      fetch: vi.fn(),
-    },
+    session: mockSession,
   }),
 }))
 
@@ -142,10 +145,15 @@ describe('ChatContentPane', () => {
     })
     mockUseChatList.mockReturnValue({
       data: [{ id: 'chat-1', title: 'Runtime Chat' }],
+      isLoading: false,
+      error: null,
+      refetch: mockChatRefetch,
     })
     mockUseThreadList.mockReturnValue({
       data: [{ id: 'thread-1', title: '默认话题' }],
       isLoading: false,
+      error: null,
+      refetch: mockThreadRefetch,
     })
     mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(false)
     mockUseRuntimeSession.mockReturnValue({
@@ -166,6 +174,8 @@ describe('ChatContentPane', () => {
     storeState.messageAnchorId = null
     storeState.selectedChatId = 'chat-1'
     storeState.selectedThreadId = 'thread-1'
+    mockSession.info.webId = 'https://alice.example/profile/card#me'
+    mockSession.fetch = vi.fn()
     mockRuntimeEventHandler.current = null
   })
 
@@ -212,24 +222,94 @@ describe('ChatContentPane', () => {
     )
   })
 
-  it('does not create an initial Secretary thread while bootstrap is still pending', async () => {
+  it('renders an interactive Secretary welcome while bootstrap is still pending', async () => {
     storeState.selectedChatId = '__secretary__/index.ttl#this'
     storeState.selectedThreadId = null
     mockUseChatList.mockReturnValue({
-      data: [{ id: '__secretary__/index.ttl#this', title: 'AI Secretary' }],
+      data: undefined,
+      isLoading: true,
+      error: null,
+      refetch: mockChatRefetch,
     })
     mockUseThreadList.mockReturnValue({
       data: [],
       isLoading: false,
+      error: null,
+      refetch: mockThreadRefetch,
     })
     mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(true)
 
     render(<ChatContentPane theme="light" />)
 
+    expect(screen.getByRole('heading', { name: '你好，我是 LinX Secretary' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: /整理今天的工作/ }))
+    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toHaveValue('帮我整理今天需要推进的工作')
+    expect(screen.queryByText('正在准备话题...')).not.toBeInTheDocument()
+    expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+  })
+
+  it('shows forbidden query state and retries chat and thread reads', async () => {
+    mockUseChatList.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: Object.assign(new Error('HTTP 403'), { status: 403 }),
+      refetch: mockChatRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByText('无法读取当前空间中的聊天')).toBeInTheDocument()
+    expect(screen.getByText(/没有读取这个空间的权限/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+
     await waitFor(() => {
-      expect(screen.getByText('正在准备话题...')).toBeInTheDocument()
+      expect(mockChatRefetch).toHaveBeenCalledTimes(1)
+      expect(mockThreadRefetch).toHaveBeenCalledTimes(1)
     })
     expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+  })
+
+  it('shows timeout separately from forbidden and offers retry', () => {
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: Object.assign(new Error('request timed out'), { name: 'TimeoutError' }),
+      refetch: mockThreadRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByText('读取聊天超时')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(screen.queryByText(/权限/)).not.toBeInTheDocument()
+  })
+
+  it('does not project loading after the chat query completes without a match', () => {
+    mockUseChatList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+      refetch: mockChatRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByText('找不到这个聊天')).toBeInTheDocument()
+    expect(screen.queryByText('正在加载聊天')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+  })
+
+  it('shows login-required without treating it as a recoverable query failure', () => {
+    mockSession.info.webId = undefined
+    mockSession.fetch = undefined
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByText('登录未完成')).toBeInTheDocument()
+    expect(screen.getByText('请先完成登录，再开始聊天。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument()
   })
 
   it('creates a random-id initial thread and binds the default Pod workspace after bootstrap when no thread exists', async () => {

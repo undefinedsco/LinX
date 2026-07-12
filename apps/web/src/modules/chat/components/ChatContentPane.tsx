@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useNavigate } from '@tanstack/react-router'
-import { Bot, Loader2, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
+import { Bot, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
@@ -53,8 +53,38 @@ import {
 } from '../runtime-client'
 import { buildWorkspaceSummary } from '../workspace-summary'
 import { restoreChatMessageAnchor } from '../message-anchor'
+import { projectChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
+import {
+  SecretaryWelcome,
+  type SecretaryStarterAction,
+} from '../ui/SecretaryWelcome'
 
 export interface ChatContentPaneProps extends MicroAppPaneProps {}
+
+const SECRETARY_STARTER_ACTIONS: readonly SecretaryStarterAction[] = [
+  { id: 'organize', label: '整理今天的工作', prompt: '帮我整理今天需要推进的工作' },
+  { id: 'find', label: '查找空间中的资料', prompt: '帮我查找当前空间中的相关资料' },
+  { id: 'plan', label: '规划下一步', prompt: '根据当前上下文规划下一步' },
+]
+
+const CONTENT_FAILURE_COPY: Partial<Record<ChatContentStateKind, { title: string; description: string }>> = {
+  forbidden: {
+    title: '无法读取当前空间中的聊天',
+    description: '当前账号没有读取这个空间的权限。权限更新后可以重试。',
+  },
+  timeout: {
+    title: '读取聊天超时',
+    description: '当前空间没有在限定时间内响应。请检查连接后重试。',
+  },
+  'not-found': {
+    title: '找不到这个聊天',
+    description: '当前空间中没有匹配的聊天记录。可以重新读取或从列表选择其他聊天。',
+  },
+  unavailable: {
+    title: '无法读取聊天',
+    description: '读取当前空间时发生错误。请检查连接后重试。',
+  },
+}
 
 function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
@@ -608,8 +638,18 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectedThreadId = useChatStore((state) => state.selectedThreadId)
   const selectThread = useChatStore((state) => state.selectThread)
-  const { data: chats } = useChatList()
-  const { data: threads = [], isLoading: isThreadsLoading } = useThreadList(selectedChatId || '', {
+  const {
+    data: chats,
+    isLoading: isChatsLoading,
+    error: chatError,
+    refetch: refetchChats,
+  } = useChatList()
+  const {
+    data: threads = [],
+    isLoading: isThreadsLoading,
+    error: threadError,
+    refetch: refetchThreads,
+  } = useThreadList(selectedChatId || '', {
     enabled: !!selectedChatId,
   })
   const mutations = useChatMutations()
@@ -617,7 +657,9 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   const lastAutoCreateThreadChatRef = useRef<string | null>(null)
   const [threadCreationError, setThreadCreationError] = useState<string | null>(null)
   const [threadCreationRetryKey, setThreadCreationRetryKey] = useState(0)
+  const [secretaryDraft, setSecretaryDraft] = useState('')
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
+  const isSecretary = selectedChatId === LINX_DEFAULT_SECRETARY.chatId
 
   useEffect(() => {
     lastAutoCreateThreadChatRef.current = null
@@ -630,6 +672,10 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     setThreadCreationRetryKey((current) => current + 1)
   }, [])
 
+  const retryContentQueries = useCallback(() => {
+    void Promise.all([refetchChats(), refetchThreads()])
+  }, [refetchChats, refetchThreads])
+
   const activeChat = useMemo(() => {
     if (!selectedChatId || !chats) return null
     return chats.find((chat) => chat.id === selectedChatId) ?? null
@@ -641,7 +687,15 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   }, [selectedThreadId, threads])
 
   useEffect(() => {
-    if (!selectedChatId || !isReady || isThreadsLoading) return
+    if (
+      !selectedChatId
+      || !isReady
+      || isChatsLoading
+      || isThreadsLoading
+      || chatError
+      || threadError
+      || !activeChat
+    ) return
 
     const normalizedThreads = threads
       .map((thread) => ({ ...thread, _id: thread.id }))
@@ -700,7 +754,11 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   }, [
     isDefaultSecretarySettling,
     isReady,
+    isChatsLoading,
     isThreadsLoading,
+    chatError,
+    threadError,
+    activeChat,
     mutations.createThread,
     mutations.ensureThreadWorkspace,
     selectedChatId,
@@ -709,6 +767,20 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     threadCreationRetryKey,
     threads,
   ])
+
+  const isAuthenticated = Boolean(session.info.webId && session.fetch)
+  const contentState = projectChatContentState({
+    isAuthenticated,
+    isLoading: !isReady
+      || !db
+      || isChatsLoading
+      || isThreadsLoading
+      || (!isSecretary && !selectedThreadId && !threadCreationError),
+    error: chatError ?? threadError,
+    activeChat,
+    isSecretary,
+    hasThread: Boolean(selectedThreadId && activeThread),
+  })
 
   if (!selectedChatId) {
     return (
@@ -723,40 +795,65 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     )
   }
 
-  if (!isReady) {
-    return <EmptyState title="正在连接空间" description="正在准备账号和数据访问，请稍等。" />
-  }
-
-  if (!session.info.webId || !session.fetch) {
+  if (contentState.kind === 'login-required') {
     return <EmptyState title="登录未完成" description="请先完成登录，再开始聊天。" />
   }
 
-  if (!db) {
-    return <EmptyState title="数据还没准备好" description="正在准备当前空间的数据访问。" />
+  if (contentState.kind === 'welcome') {
+    const composerStatus = threadCreationError
+      ? '默认话题暂未创建，草稿已保留。重试后可以继续。'
+      : isDefaultSecretarySettling || !isReady || !db || isChatsLoading || isThreadsLoading
+        ? '可以立即开始；对话记录会在空间准备好后同步。'
+        : '准备就绪；发送后将进入默认话题。'
+
+    return (
+      <SecretaryWelcome
+        starterActions={SECRETARY_STARTER_ACTIONS}
+        composerValue={secretaryDraft}
+        composerStatus={composerStatus}
+        onStarterAction={(action) => setSecretaryDraft(action.prompt)}
+        onComposerValueChange={setSecretaryDraft}
+        onSubmit={retryThreadCreation}
+        isSubmitting={mutations.createThread.isPending}
+      />
+    )
   }
 
-  if (!activeChat) {
+  if (threadCreationError && !selectedThreadId) {
+    return (
+      <EmptyState
+        title="无法创建默认话题"
+        description={`${threadCreationError}。请检查当前空间后重试。`}
+        action={<Button variant="outline" size="sm" onClick={retryThreadCreation}>重试</Button>}
+      />
+    )
+  }
+
+  if (contentState.kind === 'loading') {
+    if (!isReady) {
+      return <EmptyState title="正在连接空间" description="正在准备账号和数据访问，请稍等。" />
+    }
+    if (!db) {
+      return <EmptyState title="数据还没准备好" description="正在准备当前空间的数据访问。" />
+    }
     return <EmptyState title="正在加载聊天" description="正在从当前空间读取聊天内容。" />
   }
 
-  if (!selectedThreadId) {
-    if (threadCreationError) {
-      return (
-        <EmptyState
-          title="无法创建默认话题"
-          description={`${threadCreationError}。请检查当前空间后重试。`}
-          action={<Button variant="outline" size="sm" onClick={retryThreadCreation}>重试</Button>}
-        />
-      )
-    }
+  if (contentState.kind !== 'ready') {
+    const copy = CONTENT_FAILURE_COPY[contentState.kind] ?? CONTENT_FAILURE_COPY.unavailable!
     return (
-      <div className="flex flex-1 items-center justify-center bg-muted/30">
-        <div className="text-center text-muted-foreground">
-          <Loader2 className="mx-auto mb-3 h-6 w-6 animate-spin" />
-          <p className="text-sm">正在准备话题...</p>
-        </div>
-      </div>
+      <EmptyState
+        title={copy.title}
+        description={copy.description}
+        action={contentState.recoverable
+          ? <Button variant="outline" size="sm" onClick={retryContentQueries}>重试</Button>
+          : undefined}
+      />
     )
+  }
+
+  if (!selectedThreadId || !activeChat) {
+    return <EmptyState title="正在加载聊天" description="正在同步当前聊天与话题状态。" />
   }
 
   return (
