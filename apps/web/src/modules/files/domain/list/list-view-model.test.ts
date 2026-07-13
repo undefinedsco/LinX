@@ -7,6 +7,7 @@ import {
   projectFilesListEmptyStateModel,
   projectFilesListRow,
   projectFilesListScopeHeaderModel,
+  projectFilesListScopeControlModel,
   projectFilesListToolbarChromeModel,
   projectFilesListVisibleRows,
   type FilesListEntry,
@@ -137,6 +138,25 @@ describe('Files list domain view model', () => {
     expect(projectFilesListScopeHeaderModel({
       selection: { kind: 'container' },
     })).toBeNull()
+  })
+
+  it('projects the browser scope selector from entry and folder scope', () => {
+    expect(projectFilesListScopeControlModel({
+      entryScope: 'all',
+      selection: { kind: 'recent' },
+    })).toMatchObject({
+      id: 'recent',
+      label: '最近文件',
+      ariaLabel: '文件范围：最近文件',
+    })
+
+    expect(projectFilesListScopeControlModel({
+      entryScope: 'chat-files',
+      selection: { kind: 'all' },
+    })).toMatchObject({
+      id: 'chat-files',
+      label: '聊天文件',
+    })
   })
 
   it('projects list toolbar chrome outside the renderer', () => {

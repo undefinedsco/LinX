@@ -82,17 +82,11 @@ describe('PrimaryLayout', () => {
     expect(screen.getByLabelText('收藏')).toBeTruthy()
   })
 
-  it('exposes chat files only as a bottom secondary entry that opens Files in chat scope', () => {
-    const onNavigate = vi.fn()
-    render(<PrimaryLayout microAppId="chat" onNavigate={onNavigate} />)
+  it('does not duplicate Files with a second chat-files shortcut in the global rail', () => {
+    render(<PrimaryLayout microAppId="chat" />)
 
-    const chatFiles = screen.getByRole('button', { name: '聊天文件' })
-    expect(chatFiles.closest('nav')).toBeNull()
-
-    chatFiles.click()
-
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'files' } })
-    expect(onNavigate).toHaveBeenCalledWith('files', 'chat-files')
+    expect(screen.queryByRole('button', { name: '聊天文件' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '文件' })).toHaveLength(1)
   })
 
   it('opens the primary Files navigation in the full files scope', () => {

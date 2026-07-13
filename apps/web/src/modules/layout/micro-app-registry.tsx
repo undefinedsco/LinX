@@ -24,14 +24,6 @@ export type MicroAppId = (typeof microAppIds)[number]
 export type ThemeMode = 'light' | 'dark'
 export type MicroAppNavigationIntent = 'default' | 'chat-files'
 
-export interface MicroAppShortcutDefinition {
-  id: string
-  label: string
-  icon: LucideIcon
-  target: MicroAppId
-  intent: Exclude<MicroAppNavigationIntent, 'default'>
-}
-
 export interface MicroAppPaneProps {
   theme: ThemeMode
   compact?: boolean
@@ -235,16 +227,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     LayoutConfigBridge: ModelServicesLayoutConfigBridge,
   },
 }
-
-export const microAppShortcuts: MicroAppShortcutDefinition[] = [
-  {
-    id: 'chat-files',
-    label: '聊天文件',
-    icon: FolderOpen,
-    target: 'files',
-    intent: 'chat-files',
-  },
-]
 
 export const defaultMicroAppId: MicroAppId = 'chat'
 

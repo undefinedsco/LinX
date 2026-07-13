@@ -68,6 +68,18 @@ export type FilesListScopeHeaderModel = {
   label: string
 }
 
+export type FilesBrowserScopeId = 'all' | 'recent' | 'chat-files'
+
+export type FilesListScopeControlModel = {
+  id: FilesBrowserScopeId
+  label: string
+  ariaLabel: string
+  options: ReadonlyArray<{
+    id: FilesBrowserScopeId
+    label: string
+  }>
+}
+
 export type FilesListToolbarChromeModel = {
   toolbarLabel: string
   searchPlaceholder: string
@@ -160,6 +172,33 @@ export function projectFilesListScopeHeaderModel({
   }
 
   return null
+}
+
+export function projectFilesListScopeControlModel({
+  entryScope,
+  selection,
+}: {
+  entryScope: FilesEntryScope
+  selection: Pick<FilesListSelectionForEmptyState, 'kind'>
+}): FilesListScopeControlModel {
+  const options = [
+    { id: 'all', label: '全部文件' },
+    { id: 'recent', label: '最近文件' },
+    { id: 'chat-files', label: '聊天文件' },
+  ] as const
+  const id: FilesBrowserScopeId = entryScope === 'chat-files'
+    ? 'chat-files'
+    : selection.kind === 'recent'
+      ? 'recent'
+      : 'all'
+  const label = options.find((option) => option.id === id)?.label ?? options[0].label
+
+  return {
+    id,
+    label,
+    ariaLabel: `文件范围：${label}`,
+    options,
+  }
 }
 
 export function projectFilesListToolbarChromeModel(): FilesListToolbarChromeModel {

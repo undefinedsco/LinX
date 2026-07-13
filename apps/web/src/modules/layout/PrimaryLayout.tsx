@@ -8,7 +8,6 @@ import { Moon, Sun, Settings, Bot, Info, Activity, LogOut, Menu } from 'lucide-r
 import { cn } from '@/lib/utils'
 import {
   microAppRegistry,
-  microAppShortcuts,
   MicroAppId,
   ThemeMode,
   type MicroAppLayoutConfig,
@@ -300,11 +299,6 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
     navigate({ to: '/$microAppId', params: { microAppId: id } })
   }
 
-  const handleOpenShortcut = (shortcut: (typeof microAppShortcuts)[number]) => {
-    onNavigate?.(shortcut.target, shortcut.intent)
-    navigate({ to: '/$microAppId', params: { microAppId: shortcut.target } })
-  }
-
   const sidebarWidth = linxLayout.sidebar.defaultWidth // This is the leftmost App Nav width
   const hidePrimaryRail = Boolean(microAppRegistry[microAppId].hidePrimaryRailOnCompact && isCompactViewport)
   const compactNavigation = isCompactViewport ? (
@@ -440,22 +434,6 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                     strokeWidth={isActive ? 2 : 1.5}
                     fill={isActive ? "currentColor" : "none"}
                   />
-                </Button>
-              )
-            })}
-            {microAppShortcuts.map((shortcut) => {
-              const Icon = shortcut.icon
-              return (
-                <Button
-                  key={shortcut.id}
-                  variant="ghost"
-                  size="icon"
-                  className="w-9 h-9 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                  aria-label={shortcut.label}
-                  title={shortcut.label}
-                  onClick={() => handleOpenShortcut(shortcut)}
-                >
-                  <Icon className="w-6 h-6" strokeWidth={1.5} />
                 </Button>
               )
             })}

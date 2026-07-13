@@ -259,6 +259,39 @@ describe('FilesListPane', () => {
     expect(screen.getByText('聊天中引用的文件和当前话题 workspace 里的生成文件会显示在这里。')).toBeInTheDocument()
   })
 
+  it('switches all, recent, and chat files inside the browser head', () => {
+    mockUseSelectedFilesLocation.mockImplementation(() => (
+      useFilesStore.getState().selectedTreeNodeId === 'smart-root:recent'
+        ? { kind: 'recent' }
+        : { kind: 'all' }
+    ))
+    render(<FilesListPane {...defaultProps} />)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '文件范围：全部文件' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '最近文件' }))
+
+    expect(useFilesStore.getState()).toMatchObject({
+      entryScope: 'all',
+      selectedTreeNodeId: 'smart-root:recent',
+    })
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '文件范围：最近文件' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '聊天文件' }))
+
+    expect(useFilesStore.getState()).toMatchObject({
+      entryScope: 'chat-files',
+      selectedTreeNodeId: 'all',
+    })
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '文件范围：聊天文件' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '全部文件' }))
+
+    expect(useFilesStore.getState()).toMatchObject({
+      entryScope: 'all',
+      selectedTreeNodeId: 'all',
+    })
+  })
+
   it('renders recent files scope as modified entries with parent paths', () => {
     useFilesStore.setState({ selectedTreeNodeId: 'smart-root:recent' })
     mockUseSelectedFilesLocation.mockReturnValue({ kind: 'recent' })

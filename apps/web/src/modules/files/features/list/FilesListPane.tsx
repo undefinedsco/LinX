@@ -10,6 +10,7 @@ import {
   Tags,
   ArrowUpDown,
   ChevronLeft,
+  FolderTree,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -33,6 +34,8 @@ import type {
   FilesListEmptyStateIconKind,
   FilesListSortField,
   FilesListToolbarChromeModel,
+  FilesListScopeControlModel,
+  FilesBrowserScopeId,
 } from '../../domain/list/list-view-model'
 import type { FilesEntry } from '../../domain/resource/resource-model'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
@@ -71,6 +74,8 @@ function ListSearchBar({
   onSort,
   canGoBack,
   onBack,
+  scopeControl,
+  onScopeChange,
 }: {
   toolbarChrome: FilesListToolbarChromeModel
   value: string
@@ -88,6 +93,8 @@ function ListSearchBar({
   onSort: (field: FilesListSortField) => void
   canGoBack: boolean
   onBack: () => void
+  scopeControl: FilesListScopeControlModel
+  onScopeChange: (scope: FilesBrowserScopeId) => void
 }) {
   const currentSortLabel = sortOptions.find((option) => option.id === sortField)?.label ?? sortField
   const directionActionLabel = sortDirection === 'desc' ? '升序' : '降序'
@@ -104,6 +111,27 @@ function ListSearchBar({
       >
         <ChevronLeft strokeWidth={1.5} className="h-3.5 w-3.5" />
       </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={scopeControl.ariaLabel}
+            title={scopeControl.label}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+          >
+            <FolderTree strokeWidth={1.5} className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-36">
+          <DropdownMenuRadioGroup value={scopeControl.id} onValueChange={(value) => onScopeChange(value as FilesBrowserScopeId)}>
+            {scopeControl.options.map((option) => (
+              <DropdownMenuRadioItem key={option.id} value={option.id}>
+                {option.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <div className="relative flex-1 min-w-0">
         <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground">
           <Search strokeWidth={1.5} className="h-3.5 w-3.5" />
@@ -289,6 +317,8 @@ export function FilesListPane(_props: MicroAppPaneProps) {
         onSort={listPane.sortList}
         canGoBack={listPane.canGoBack}
         onBack={listPane.goBackFolder}
+        scopeControl={listPane.scopeControl}
+        onScopeChange={listPane.changeBrowserScope}
       />
       <div
         aria-label="当前文件夹路径"

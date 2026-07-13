@@ -8,9 +8,11 @@ import {
   projectFilesListContentState,
   projectFilesListEmptyStateModel,
   projectFilesListScopeHeaderModel,
+  projectFilesListScopeControlModel,
   projectFilesListToolbarChromeModel,
   projectFilesListVisibleRows,
   type FilesListSortField,
+  type FilesBrowserScopeId,
 } from '../../domain/list/list-view-model'
 import { resolveFilesListOpenDecision, type FilesListOpenTrigger } from '../../domain/list/list-open'
 import { projectCurrentFolderPath } from '../../domain/list/folder-history'
@@ -22,6 +24,7 @@ import {
 } from '../../domain/list/list-projection'
 import { getFilesListErrorState } from '../../domain/resource/files-error-state'
 import type { FilesEntry } from '../../domain/resource/resource-model'
+import { ALL_FILES_NODE_ID, RECENT_FILES_NODE_ID } from '../../domain/resource/resource-model'
 import { projectFilesListColumnHeaders, projectFilesListSortOptions } from './files-list-column-header-model'
 
 export function useFilesListPaneController() {
@@ -41,6 +44,9 @@ export function useFilesListPaneController() {
   const setSortField = useFilesStore((s) => s.setSortField)
   const toggleSortDirection = useFilesStore((s) => s.toggleSortDirection)
   const entryScope = useFilesStore((s) => s.entryScope)
+  const openAllFilesScope = useFilesStore((s) => s.openAllFilesScope)
+  const openChatFilesScope = useFilesStore((s) => s.openChatFilesScope)
+  const selectTreeNode = useFilesStore((s) => s.selectTreeNode)
   const setDetailTab = useFilesStore((s) => s.setDetailTab)
   const requestEditableFileSheetOpen = useFilesStore((s) => s.requestEditableFileSheetOpen)
   const { data: rawEntries = [], isLoading, error } = useFilesEntries(selectedTreeNodeId, entryScope)
@@ -65,6 +71,10 @@ export function useFilesListPaneController() {
   const columnHeaders = useMemo(() => projectFilesListColumnHeaders(), [])
   const sortOptions = useMemo(() => projectFilesListSortOptions(), [])
   const scopeHeader = useMemo(() => projectFilesListScopeHeaderModel({ selection }), [selection])
+  const scopeControl = useMemo(
+    () => projectFilesListScopeControlModel({ entryScope, selection }),
+    [entryScope, selection],
+  )
   const toolbarChrome = useMemo(() => projectFilesListToolbarChromeModel(), [])
   const showRecentScopeHeader = Boolean(scopeHeader)
   const hasVisibleFiles = files.length > 0
@@ -115,6 +125,16 @@ export function useFilesListPaneController() {
     void copyFilesText(projectFilesListCopyText(filesToCopy))
   }, [])
 
+  const changeBrowserScope = useCallback((scope: FilesBrowserScopeId) => {
+    if (scope === 'chat-files') {
+      openChatFilesScope()
+      return
+    }
+
+    openAllFilesScope()
+    selectTreeNode(scope === 'recent' ? RECENT_FILES_NODE_ID : ALL_FILES_NODE_ID)
+  }, [openAllFilesScope, openChatFilesScope, selectTreeNode])
+
   const emptyState = useMemo(() => projectFilesListEmptyStateModel({
     entryScope,
     mimeTypeFilter,
@@ -144,6 +164,8 @@ export function useFilesListPaneController() {
     openFile,
     goBackFolder,
     searchText,
+    scopeControl,
+    changeBrowserScope,
     selectFile,
     selection,
     setMimeTypeFilter,
