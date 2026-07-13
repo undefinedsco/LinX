@@ -201,7 +201,7 @@ function MicroAppContentRenderer({
               )}
               <div className="flex-1 min-h-0 flex flex-col">
                 <Suspense fallback={<PaneFallback />}>
-                  <ContentPane theme={theme} compactNavigation={compactNavigation} />
+                  <ContentPane theme={theme} compact={isCompactViewport} compactNavigation={compactNavigation} />
                 </Suspense>
               </div>
             </div>

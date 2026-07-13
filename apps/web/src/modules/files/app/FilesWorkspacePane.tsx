@@ -18,7 +18,7 @@ import { structuredSubjectRouteFromBrowser, structuredSubjectRouteFromSearchObje
 import { useFilesRouteBridge } from './FilesRouteContext'
 
 function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
-  const { compactNavigation, theme } = props
+  const { compact = false, compactNavigation, theme } = props
   const entryScope = useFilesStore((state) => state.entryScope)
   const selectedFileId = useFilesStore((state) => state.selectedFileId)
   const selectFile = useFilesStore((state) => state.selectFile)
@@ -66,6 +66,29 @@ function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
     return () => window.removeEventListener('popstate', restoreFromBrowserRoute)
   }, [filesRouteBridge, restoreStructuredSubjectRoute, returnToStructuredSubject])
 
+  const renderDetailSurface = (className?: string) => (
+    <section
+      className={cn('relative min-h-0 flex-1 flex-col bg-background', className)}
+      aria-label="文件工作区"
+    >
+      {entryScope === 'chat-files' ? (
+        <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border/30 bg-muted/20 px-3 text-xs">
+          <span className="font-medium text-foreground">聊天文件</span>
+          <span className="text-muted-foreground">当前范围来自聊天关联文件；目录仍按 Pod 原始位置打开。</span>
+        </div>
+      ) : null}
+      <FileDetailPane />
+    </section>
+  )
+
+  if (!compact) {
+    return (
+      <div className="flex h-full min-h-0 min-w-0 bg-background">
+        {renderDetailSurface('flex')}
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-background">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/30 bg-background px-2 md:hidden">
@@ -96,31 +119,17 @@ function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
         <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-foreground">文件</span>
         {compactNavigation}
       </div>
-      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 md:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1">
       <section
         className={cn(
-          'min-h-0 border-r border-border/40 bg-layout-list-item md:block',
+          'min-h-0 border-r border-border/40 bg-layout-list-item',
           compactDetailActive ? 'max-md:hidden' : 'max-md:flex max-md:flex-col',
         )}
         aria-label="文件列表"
       >
         <FilesListPane theme={theme} />
       </section>
-      <section
-        className={cn(
-          'relative min-h-0 flex-col bg-background md:flex',
-          compactDetailActive ? 'max-md:flex' : 'max-md:hidden',
-        )}
-        aria-label="文件工作区"
-      >
-        {entryScope === 'chat-files' ? (
-          <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border/30 bg-muted/20 px-3 text-xs">
-            <span className="font-medium text-foreground">聊天文件</span>
-            <span className="text-muted-foreground">当前范围来自聊天关联文件；目录仍按 Pod 原始位置打开。</span>
-          </div>
-        ) : null}
-        <FileDetailPane />
-      </section>
+      {renderDetailSurface(compactDetailActive ? 'max-md:flex' : 'max-md:hidden')}
       </div>
       <Dialog open={compactTreeOpen} onOpenChange={setCompactTreeOpen}>
         <DialogContent variant="sheet-left" className="md:hidden">

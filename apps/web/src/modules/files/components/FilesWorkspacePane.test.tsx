@@ -59,7 +59,7 @@ beforeEach(() => {
 
 describe('FilesWorkspacePane', () => {
   it('offers the folder tree through an invoked drawer in compact content', () => {
-    render(<FilesWorkspacePane theme="light" />)
+    render(<FilesWorkspacePane theme="light" compact />)
 
     fireEvent.click(screen.getByRole('button', { name: '浏览文件夹' }))
 
@@ -72,6 +72,7 @@ describe('FilesWorkspacePane', () => {
     render(
       <FilesWorkspacePane
         theme="light"
+        compact
         compactNavigation={<button onClick={() => onNavigate('chat')}>切换模块</button>}
       />,
     )
@@ -199,10 +200,10 @@ describe('FilesWorkspacePane', () => {
     })
   })
 
-  it('does not render source ingest as a floating workspace overlay', () => {
+  it('renders only the resource detail in the desktop workspace', () => {
     render(<FilesWorkspacePane theme="light" />)
 
-    expect(screen.getByText('files list')).toBeInTheDocument()
+    expect(screen.queryByText('files list')).not.toBeInTheDocument()
     expect(screen.getByText('file detail')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ingest 来源' })).not.toBeInTheDocument()
     expect(document.querySelector('[data-files-ingest-action="true"]')).toBeNull()
@@ -211,7 +212,7 @@ describe('FilesWorkspacePane', () => {
   it('shows the file list first in the compact Files workspace when no file is selected', () => {
     useFilesStore.setState({ selectedFileId: null })
 
-    render(<FilesWorkspacePane theme="light" />)
+    render(<FilesWorkspacePane theme="light" compact />)
 
     expect(screen.getByLabelText('文件列表').className).toContain('max-md:flex')
     expect(screen.getByLabelText('文件工作区').className).toContain('max-md:hidden')
@@ -220,7 +221,7 @@ describe('FilesWorkspacePane', () => {
   it('prioritizes the selected file detail in the compact Files workspace and can return to the list', async () => {
     useFilesStore.setState({ selectedFileId: 'https://pod.example/.data/workspaces/ws-1/state.ttl' })
 
-    render(<FilesWorkspacePane theme="light" />)
+    render(<FilesWorkspacePane theme="light" compact />)
 
     expect(screen.getByLabelText('文件列表').className).toContain('max-md:hidden')
     expect(screen.getByLabelText('文件工作区').className).toContain('max-md:flex')

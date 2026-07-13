@@ -34,6 +34,7 @@ export interface MicroAppShortcutDefinition {
 
 export interface MicroAppPaneProps {
   theme: ThemeMode
+  compact?: boolean
   compactNavigation?: ReactNode
 }
 
@@ -112,8 +113,8 @@ const FavoriteListPane = lazyPane(() =>
 const FavoriteContentPane = lazyPane(() =>
   import('@/modules/favorites/components/FavoriteContentPane').then((mod) => ({ default: mod.FavoriteContentPane })),
 )
-const FilesTreePane = lazyPane(() =>
-  import('@/modules/files/features/tree/FilesTreePane').then((mod) => ({ default: mod.FilesTreePane })),
+const FilesListPane = lazyPane(() =>
+  import('@/modules/files/features/list/FilesListPane').then((mod) => ({ default: mod.FilesListPane })),
 )
 const FilesWorkspacePane = lazyPane(() =>
   import('@/modules/files/app/FilesWorkspacePane').then((mod) => ({ default: mod.FilesWorkspacePane })),
@@ -188,7 +189,7 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
       itemTitle: '文件预览',
       itemSubtitle: '打开、复制、收藏',
     },
-    ListPane: FilesTreePane,
+    ListPane: FilesListPane,
     ContentPane: FilesWorkspacePane,
     hidePrimaryRailOnCompact: true,
     hideContentHeaderOnCompact: true,
