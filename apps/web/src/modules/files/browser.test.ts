@@ -1445,7 +1445,7 @@ describe('files browser', () => {
     expect(rootData.podRootUri).toBe('https://pod.example/')
     expect(rootData.nodes).toEqual([
       expect.objectContaining({ id: 'all', count: 3 }),
-      expect.objectContaining({ id: 'smart-root:recent', type: 'recent', count: 5 }),
+      expect.objectContaining({ id: 'smart-root:recent', type: 'recent' }),
       expect.objectContaining({
         id: 'workspace:https://pod.example/.data/workspaces/ws-1/',
         type: 'workspace',
@@ -1477,52 +1477,31 @@ describe('files browser', () => {
     ])
   })
 
-  it('counts modified resources and containers in the recent files smart root', async () => {
+  it('does not recursively scan or fetch metadata while building the visible root', async () => {
+    const listContainerResources = vi.fn(async (containerUrl: string) => {
+      if (containerUrl === 'https://pod.example/') {
+        return ['https://pod.example/public/', 'https://pod.example/README.md']
+      }
+      if (containerUrl === 'https://pod.example/public/') {
+        return ['https://pod.example/public/docs/', 'https://pod.example/public/new.md']
+      }
+      return []
+    })
+    const authFetch = vi.fn(async () => createResponse('', { 'content-type': 'text/markdown' })) as typeof fetch
     const db = createDb({
-      listContainerResources: async (containerUrl: string) => {
-        if (containerUrl === 'https://pod.example/') {
-          return [
-            'https://pod.example/public/',
-            'https://pod.example/README.md',
-            'https://pod.example/README.md.meta',
-            'https://pod.example/no-date.md',
-          ]
-        }
-        if (containerUrl === 'https://pod.example/public/') {
-          return [
-            'https://pod.example/public/docs/',
-            'https://pod.example/public/new.md',
-          ]
-        }
-        if (containerUrl === 'https://pod.example/public/docs/') {
-          return [
-            'https://pod.example/public/docs/deep.md',
-          ]
-        }
-        return []
-      },
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method === 'HEAD' && url.endsWith('/no-date.md')) {
-          return createResponse('', {
-            'content-type': 'text/markdown',
-            'content-length': '17',
-          })
-        }
-        return createResponse('', {
-          'content-type': url.endsWith('/') ? 'text/turtle' : 'text/markdown',
-          'content-length': url.endsWith('/') ? '0' : '17',
-          'last-modified': 'Sat, 01 Mar 2026 10:00:00 GMT',
-        })
-      }) as typeof fetch,
+      listContainerResources,
+      fetch: authFetch,
     })
 
     const rootData = await buildRootNodes(db, 'https://pod.example/public/')
 
     expect(rootData.nodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'all', count: 5 }),
-      expect.objectContaining({ id: 'smart-root:recent', type: 'recent', count: 5 }),
+      expect.objectContaining({ id: 'all', count: 4 }),
+      expect.objectContaining({ id: 'smart-root:recent', type: 'recent' }),
     ]))
+    expect(listContainerResources).toHaveBeenCalledTimes(2)
+    expect(listContainerResources).not.toHaveBeenCalledWith('https://pod.example/public/docs/')
+    expect(authFetch).not.toHaveBeenCalled()
   })
 
   it('parses path-backed smart root ids as container-backed roots', () => {

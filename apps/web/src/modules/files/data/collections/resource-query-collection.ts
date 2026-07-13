@@ -9,6 +9,7 @@ import type {
   FilesRootData,
   FilesTreeNode,
 } from '../pod-adapter'
+import { shouldRetryPodRequest, withPodRequestBoundary } from '../pod-adapter/pod-request-boundary'
 
 export type FilesSelectedLocation = {
   kind: 'all' | 'recent' | 'local-workspace' | 'container'
@@ -34,8 +35,9 @@ export interface FilesEntryListInput {
 
 export interface FilesResourceQueryOptions<TData> {
   queryKey: QueryKey
-  queryFn: () => Promise<TData>
+  queryFn: (context?: { signal?: AbortSignal }) => Promise<TData>
   enabled: boolean
+  retry?: (failureCount: number, error: unknown) => boolean
 }
 
 interface ResourceQueryKeyCollection {
@@ -92,11 +94,12 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
     }): FilesResourceQueryOptions<FilesRootData> {
       return {
         queryKey: filesResourceQueryKeys.roots(input.workspaceUri),
-        queryFn: async () => {
+        queryFn: async (context) => withPodRequestBoundary(async () => {
           if (!input.db) throw new Error('Database not connected')
           return filesResourceCollection.buildRoots(input.workspaceUri, input.db)
-        },
+        }, { signal: context?.signal }),
         enabled: !!input.db,
+        retry: shouldRetryPodRequest,
       }
     },
 
@@ -111,7 +114,7 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
 
       return {
         queryKey: filesResourceQueryKeys.children(input.parentNode?.id, containerUri),
-        queryFn: async () => {
+        queryFn: async (context) => withPodRequestBoundary(async () => {
           if (!input.db || !containerUri || !input.parentNode) return []
           return filesResourceCollection.listChildTreeNodes(
             containerUri,
@@ -119,8 +122,9 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
             input.podRootUri ?? null,
             input.db,
           )
-        },
+        }, { signal: context?.signal }),
         enabled: !!input.db && !!containerUri && !!input.parentNode,
+        retry: shouldRetryPodRequest,
       }
     },
 
@@ -145,7 +149,7 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
           chatPodRootUri: input.chatPodRootUri,
           chatFileFingerprint: input.chatFileFingerprint,
         }),
-        queryFn: async () => {
+        queryFn: async (context) => withPodRequestBoundary(async () => {
           if (!input.db) return []
           return filesResourceCollection.listEntries({
             entryScope: input.entryScope,
@@ -155,8 +159,9 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
             chatPodRootUri: input.chatPodRootUri,
             messages: input.messages ?? [],
           }, input.db)
-        },
+        }, { signal: context?.signal }),
         enabled: !!input.db && (input.entryScope !== 'chat-files' || !!input.workspaceUri || !!input.chatPodRootUri),
+        retry: shouldRetryPodRequest,
       }
     },
 
@@ -166,11 +171,12 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
     }): FilesResourceQueryOptions<FilesDetail> {
       return {
         queryKey: filesResourceQueryKeys.detail(input.fileUri),
-        queryFn: async () => {
+        queryFn: async (context) => withPodRequestBoundary(async () => {
           if (!input.db || !input.fileUri) throw new Error('No file selected')
           return filesResourceCollection.readDetail(input.fileUri, input.db)
-        },
+        }, { signal: context?.signal }),
         enabled: !!input.db && !!input.fileUri,
+        retry: shouldRetryPodRequest,
       }
     },
 
@@ -182,11 +188,12 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
       const enabled = input.enabled ?? true
       return {
         queryKey: filesResourceQueryKeys.rawText(input.fileUri),
-        queryFn: async () => {
+        queryFn: async (context) => withPodRequestBoundary(async () => {
           if (!input.db || !input.fileUri) throw new Error('No file selected')
           return filesResourceCollection.readRawText(input.fileUri, input.db)
-        },
+        }, { signal: context?.signal }),
         enabled: !!input.db && !!input.fileUri && enabled,
+        retry: shouldRetryPodRequest,
       }
     },
 
@@ -198,11 +205,12 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
       const enabled = input.enabled ?? true
       return {
         queryKey: filesResourceQueryKeys.blob(input.fileUri),
-        queryFn: async () => {
+        queryFn: async (context) => withPodRequestBoundary(async () => {
           if (!input.db || !input.fileUri) throw new Error('No file selected')
           return filesResourceCollection.readBlob(input.fileUri, input.db)
-        },
+        }, { signal: context?.signal }),
         enabled: !!input.db && !!input.fileUri && enabled,
+        retry: shouldRetryPodRequest,
       }
     },
   }

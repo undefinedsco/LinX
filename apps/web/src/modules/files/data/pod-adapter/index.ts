@@ -11,6 +11,7 @@ import {
   renderStructuredViewMetadataTurtle,
   type StructuredViewMetadata,
 } from '../../domain/structured/structured-view-metadata'
+import { PodRequestError, withPodRequestBoundary } from './pod-request-boundary'
 import { summarizeWacAclPolicy } from '../../domain/resource/access-policy-model'
 import {
   classifyFilesEntry,
@@ -744,7 +745,15 @@ function createUnavailableMetadata(uri: string, kind: FilesEntryKind, error: unk
   metadataError: string
 } {
   const message = error instanceof Error ? error.message : String(error)
-  const metadataErrorKind = error instanceof FilesResourceReadError ? error.kind : 'unknown'
+  const metadataErrorKind = error instanceof FilesResourceReadError
+    ? error.kind
+    : error instanceof PodRequestError
+      ? error.kind === 'unauthorized' || error.kind === 'forbidden' || error.kind === 'missing'
+        ? error.kind
+        : error.kind === 'timeout' || error.kind === 'offline' || error.kind === 'aborted'
+          ? 'network'
+          : 'unknown'
+      : 'unknown'
 
   return {
     headers: {},
@@ -766,19 +775,33 @@ function sortEntries(entries: FilesEntry[]): FilesEntry[] {
   })
 }
 
-async function countOptionalContainerEntries(db: SolidDatabase, containerUri: string): Promise<number | undefined> {
-  try {
-    return (await listContainerEntries(db, containerUri)).length
-  } catch {
-    return undefined
-  }
-}
-
-function countRecentFiles(entries: FilesEntry[]): number {
-  return entries.filter((entry) => (
-    Boolean(entry.modifiedAt)
-    && !isFilesSidecarSemanticKind(entry.semanticKind)
-  )).length
+async function listContainerEntryStubs(
+  db: SolidDatabase,
+  containerUri: string,
+  sourceLabel?: string,
+): Promise<FilesEntry[]> {
+  const normalizedContainerUri = normalizeContainerUri(containerUri)
+  const podRootUri = getPodRootUri(db)
+  const resourceUris = await getContainerLister(db)(normalizedContainerUri)
+  const entries = resourceUris.flatMap((uri): FilesEntry[] => {
+    const normalizedUri = uri.endsWith('/') ? normalizeContainerUri(uri) : uri
+    const kind: FilesEntryKind = normalizedUri.endsWith('/') ? 'container' : 'resource'
+    const semanticKind = classifyFilesEntry(normalizedUri, kind === 'container', podRootUri)
+    if (isFilesSidecarSemanticKind(semanticKind)) return []
+    return [{
+      id: normalizedUri,
+      uri: normalizedUri,
+      name: getEntryName(normalizedUri),
+      kind,
+      semanticKind,
+      parentUri: normalizedContainerUri,
+      mimeType: guessMimeType(normalizedUri, kind === 'container'),
+      size: null,
+      modifiedAt: null,
+      sourceLabel,
+    }]
+  })
+  return sortEntries(entries)
 }
 
 export async function listContainerEntries(
@@ -796,7 +819,10 @@ export async function listContainerEntries(
     const kind: FilesEntryKind = normalizedUri.endsWith('/') ? 'container' : 'resource'
     const pathSemanticKind = classifyFilesEntry(normalizedUri, kind === 'container', podRootUri)
     if (isFilesSidecarSemanticKind(pathSemanticKind)) return null
-    const metadata = await readMetadata(db, normalizedUri)
+    const metadata = await withPodRequestBoundary(
+      () => readMetadata(db, normalizedUri),
+      { timeoutMs: 2_500 },
+    )
       .then((resourceMetadata) => ({
         ...resourceMetadata,
         metadataState: 'available' as const,
@@ -898,7 +924,7 @@ export async function buildRootNodes(
   workspaceUri?: string | null,
 ): Promise<FilesRootData> {
   const podRootUri = getPodRootUri(db)
-  const podRootEntries = await listContainerEntries(db, podRootUri, 'Pod 根目录')
+  const podRootEntriesPromise = listContainerEntryStubs(db, podRootUri, 'Pod 根目录')
 
   let workspaceNode: FilesTreeNode | null = null
   let workspaceEntries: FilesEntry[] = []
@@ -914,7 +940,7 @@ export async function buildRootNodes(
         uri: workspaceUri,
       }
     } else {
-      workspaceEntries = await listContainerEntries(db, workspaceUri, '当前话题')
+      workspaceEntries = await listContainerEntryStubs(db, workspaceUri, '当前话题')
       workspaceCount = workspaceEntries.length
       workspaceNode = {
         id: createWorkspaceNodeId(workspaceUri),
@@ -926,6 +952,7 @@ export async function buildRootNodes(
     }
   }
 
+  const podRootEntries = await podRootEntriesPromise
   const allEntries = workspaceNode?.type === 'workspace'
     ? Array.from(new Map([
       ...podRootEntries.map((entry) => [entry.uri, entry] as const),
@@ -933,8 +960,6 @@ export async function buildRootNodes(
     ]).values())
     : podRootEntries
   const allCount = allEntries.length
-  const recursiveEntries = await listAllBrowsableEntries(db, workspaceUri, { recursive: true })
-  const recentCount = countRecentFiles(recursiveEntries)
 
   const nodes: FilesTreeNode[] = [
     {
@@ -947,7 +972,6 @@ export async function buildRootNodes(
       id: RECENT_FILES_NODE_ID,
       label: '最近文件',
       type: 'recent',
-      count: recentCount,
     },
   ]
 
@@ -958,33 +982,24 @@ export async function buildRootNodes(
   const agentsRootUri = resolvePodChildContainerUri(podRootUri, '.data/agents/')
   const workspacesRootUri = resolvePodChildContainerUri(podRootUri, '.data/workspaces/')
   const repositoriesRootUri = resolvePodChildContainerUri(podRootUri, '.data/repositories/')
-  const [agentsCount, workspacesCount, repositoriesCount] = await Promise.all([
-    countOptionalContainerEntries(db, agentsRootUri),
-    countOptionalContainerEntries(db, workspacesRootUri),
-    countOptionalContainerEntries(db, repositoriesRootUri),
-  ])
-
   nodes.push(
     {
       id: AGENTS_ROOT_NODE_ID,
       label: 'Agent homes',
       type: 'agents-root',
       uri: agentsRootUri,
-      count: agentsCount,
     },
     {
       id: WORKSPACES_ROOT_NODE_ID,
       label: 'Workspaces',
       type: 'workspaces-root',
       uri: workspacesRootUri,
-      count: workspacesCount,
     },
     {
       id: REPOSITORIES_ROOT_NODE_ID,
       label: 'Repositories',
       type: 'repositories-root',
       uri: repositoriesRootUri,
-      count: repositoriesCount,
     },
   )
 

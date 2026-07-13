@@ -6,6 +6,12 @@ export interface FilesErrorState {
 }
 
 export function getFilesListErrorState(error: unknown): FilesErrorState {
+  if (typeof error === 'object' && error !== null && (error as { kind?: unknown }).kind === 'timeout') {
+    return {
+      title: '读取容器超时',
+      description: '当前空间响应较慢，可以重试或先切换到其它文件夹。',
+    }
+  }
   if (error instanceof FilesResourceReadError) {
     switch (error.kind) {
       case 'unauthorized':
