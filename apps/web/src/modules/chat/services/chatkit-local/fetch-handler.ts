@@ -18,14 +18,19 @@ export interface LocalChatKitFetchOptions {
   db: SolidDatabase
   webId: string
   authFetch: typeof fetch
+  isAvailable?: () => boolean
 }
 
 export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): typeof fetch {
-  const { db, webId, authFetch } = options
+  const { db, webId, authFetch, isAvailable = () => true } = options
   const store = new LocalChatKitStore(db, webId, authFetch)
   const service = new LocalChatKitService({ store, db, webId, authFetch })
 
   return async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (!isAvailable()) {
+      return unavailableResponse()
+    }
+
     try {
       // Read request body
       let body: string
@@ -95,4 +100,16 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
       )
     }
   }
+}
+
+export function unavailableResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        code: 'space_unavailable',
+        message: '当前空间连接尚未恢复，请稍后重试。',
+      },
+    }),
+    { status: 503, headers: { 'Content-Type': 'application/json' } },
+  )
 }

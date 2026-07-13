@@ -2080,6 +2080,14 @@ export function buildThreadListQueryKey(scopeKey: string, chatId: string) {
   return [...QUERY_KEYS.threads(chatId), 'scope', scopeKey] as const
 }
 
+export function buildThreadIndexQueryKey(scopeKey: string) {
+  return ['threads', 'index', 'scope', scopeKey] as const
+}
+
+export function buildMessageListQueryKey(scopeKey: string, chatId: string, threadId: string) {
+  return [...QUERY_KEYS.messages(chatId, threadId), 'scope', scopeKey] as const
+}
+
 async function queryThreadRowsForChat(
   db: SolidDatabase,
   chatId: string,
@@ -2195,16 +2203,29 @@ export function useThreadList(chatId: string, options?: { enabled?: boolean }) {
  * Hook to fetch all threads for chat list/runtime index use cases.
  */
 export function useThreadIndex(options?: { enabled?: boolean }) {
-  const db = getDb()
+  const { db, scopeKey } = useSolidDatabase()
+  const generation = observeChatQueryScope(scopeKey, db)
+  const isCurrent = () => isChatQueryScopeCurrent(scopeKey, db, generation)
   const enabled = options?.enabled ?? !!db
 
   return useQuery({
-    queryKey: ['threads', 'index'],
-    queryFn: async () => {
-      if (!db) return []
-      return threadCollection.fetch()
-    },
+    queryKey: buildThreadIndexQueryKey(scopeKey),
+    queryFn: ({ signal }) => runChatQueryWithBoundary(
+      async (operationSignal) => {
+        if (!db) return []
+        throwIfChatQueryAborted(operationSignal)
+        const rows = await db.select()
+          .from(threadResource)
+          .orderBy('updatedAt', 'desc')
+          .execute() as ThreadRow[]
+        throwIfChatQueryAborted(operationSignal)
+        throwIfChatQueryStale(isCurrent)
+        return rows
+      },
+      { signal, isCurrent },
+    ),
     enabled: !!db && enabled,
+    retry: CHAT_QUERY_RETRY,
   })
 }
 
@@ -2223,15 +2244,42 @@ export function useWorkspaceList(options?: { enabled?: boolean }) {
  * Hook to fetch message list for a thread
  */
 export function useMessageList(chatId: string | null, threadId: string | null) {
-  const db = getDb()
+  const { db, scopeKey } = useSolidDatabase()
+  const generation = observeChatQueryScope(scopeKey, db)
+  const isCurrent = () => isChatQueryScopeCurrent(scopeKey, db, generation)
   
   return useQuery({
-    queryKey: QUERY_KEYS.messages(chatId || '', threadId || ''),
-    queryFn: async () => {
-      if (!db || !threadId || !chatId) return []
-      return chatOps.fetchMessages(threadId, chatId)
-    },
+    queryKey: buildMessageListQueryKey(scopeKey, chatId || '', threadId || ''),
+    queryFn: ({ signal }) => runChatQueryWithBoundary(
+      async (operationSignal) => {
+        if (!db || !threadId || !chatId) return []
+        throwIfChatQueryAborted(operationSignal)
+        const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
+        throwIfChatQueryAborted(operationSignal)
+        throwIfChatQueryStale(isCurrent)
+        if (!resolvedChatId) {
+          throw new Error(`Failed to resolve chat id for thread ${threadId}`)
+        }
+        const threadRef = await buildThreadIri(db, threadId, resolvedChatId)
+        throwIfChatQueryAborted(operationSignal)
+        throwIfChatQueryStale(isCurrent)
+        if (!threadRef) {
+          throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
+        }
+
+        const rows = await db.select()
+          .from(messageResource)
+          .where(eq((messageResource as any).thread, threadRef))
+          .orderBy('createdAt', 'asc')
+          .execute() as MessageRow[]
+        throwIfChatQueryAborted(operationSignal)
+        throwIfChatQueryStale(isCurrent)
+        return rows
+      },
+      { signal, isCurrent },
+    ),
     enabled: !!db && !!threadId && !!chatId,
+    retry: CHAT_QUERY_RETRY,
   })
 }
 

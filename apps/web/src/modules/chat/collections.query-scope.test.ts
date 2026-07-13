@@ -1,6 +1,11 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
-import { buildChatListQueryKey, buildThreadListQueryKey } from './collections'
+import {
+  buildChatListQueryKey,
+  buildMessageListQueryKey,
+  buildThreadIndexQueryKey,
+  buildThreadListQueryKey,
+} from './collections'
 
 describe('chat query account scope', () => {
   it('does not expose cached chat rows from a previous account scope', () => {
@@ -26,5 +31,15 @@ describe('chat query account scope', () => {
     await queryClient.invalidateQueries({ queryKey: ['chats', 'chat-1', 'threads'] })
 
     expect(queryClient.getQueryState(scopedKey)?.isInvalidated).toBe(true)
+  })
+
+  it('isolates the runtime thread index by account scope', () => {
+    expect(buildThreadIndexQueryKey('account:alice'))
+      .not.toEqual(buildThreadIndexQueryKey('account:bob'))
+  })
+
+  it('isolates message caches even when chat and thread ids are reused', () => {
+    expect(buildMessageListQueryKey('account:alice', 'chat-1', 'thread-1'))
+      .not.toEqual(buildMessageListQueryKey('account:bob', 'chat-1', 'thread-1'))
   })
 })

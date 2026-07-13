@@ -375,6 +375,55 @@ describe('ChatContentPane', () => {
     expect(mockDatabaseRetry).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps cached content read-only while the database is still reinitializing', () => {
+    mockUseSolidDatabase.mockReturnValue({
+      db: null,
+      status: 'initializing',
+      error: null,
+      retry: mockDatabaseRetry,
+      scopeKey: 'account:alice',
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByTestId('chatkit-root')).toBeInTheDocument()
+    expect(screen.getByText('正在恢复当前空间连接')).toBeInTheDocument()
+    expect(screen.getByTestId('chatkit-send-boundary')).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('ignores a thread creation callback after the user switches chats', async () => {
+    storeState.selectedChatId = '__secretary__/index.ttl#this'
+    storeState.selectedThreadId = null
+    mockUseChatList.mockReturnValue({
+      data: [{ id: '__secretary__/index.ttl#this', title: 'AI Secretary' }],
+      isLoading: false,
+      error: null,
+      refetch: mockChatRefetch,
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+      refetch: mockThreadRefetch,
+    })
+
+    const view = render(<ChatContentPane theme="light" />)
+    await waitFor(() => expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(1))
+    const [, options] = mockMutations.createThread.mutate.mock.calls[0]
+
+    storeState.selectedChatId = 'chat-2'
+    mockUseChatList.mockReturnValue({
+      data: [{ id: 'chat-2', title: 'Other Chat' }],
+      isLoading: false,
+      error: null,
+      refetch: mockChatRefetch,
+    })
+    view.rerender(<ChatContentPane theme="light" />)
+    act(() => options.onSuccess({ id: 'stale-thread' }))
+
+    expect(storeState.selectThread).not.toHaveBeenCalledWith('stale-thread')
+  })
+
   it('offers a dedicated Secretary thread retry even when the draft is empty', async () => {
     storeState.selectedChatId = '__secretary__/index.ttl#this'
     storeState.selectedThreadId = null

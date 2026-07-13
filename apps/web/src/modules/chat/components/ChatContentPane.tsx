@@ -29,7 +29,7 @@ import { useInboxStore } from '@/modules/inbox/store'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { DEFAULT_LINX_PLATFORM_MODEL_ID, LINX_PLATFORM_MODEL_IDS } from '@/lib/agent-providers'
-import { createLocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
+import { createLocalChatKitFetch, unavailableResponse } from '../services/chatkit-local/fetch-handler'
 import { useChatStore } from '../store'
 import {
   useChatInit,
@@ -76,6 +76,7 @@ interface ScopedSecretaryDraft {
 interface ScopedSecretaryError {
   message: string
   scopeKey: string
+  chatId: string
 }
 
 const SECRETARY_STARTER_ACTIONS: readonly SecretaryStarterAction[] = [
@@ -508,11 +509,20 @@ function ChatKitPanel({
   const clearMessageAnchor = useChatStore((state) => state.clearMessageAnchor)
   const theme = useThemeMode()
   const { db } = useSolidDatabase()
+  const sendAvailableRef = useRef(!sendDisabled)
+  sendAvailableRef.current = !sendDisabled
   const chatKitHostRef = useRef<(HTMLElement & { setThreadId?: (threadId: string | null) => Promise<void> | void }) | null>(null)
 
   const localFetch = useMemo(() => {
-    if (!db || !session.info.webId || !session.fetch) return session.fetch
-    return createLocalChatKitFetch({ db, webId: session.info.webId, authFetch: session.fetch })
+    if (!db || !session.info.webId || !session.fetch) {
+      return async () => unavailableResponse()
+    }
+    return createLocalChatKitFetch({
+      db,
+      webId: session.info.webId,
+      authFetch: session.fetch,
+      isAvailable: () => sendAvailableRef.current,
+    })
   }, [db, session.fetch, session.info.webId])
 
   const chatkit = useChatKit({
@@ -727,6 +737,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   const mutations = useChatMutations()
   const isCreatingThreadRef = useRef(false)
   const lastAutoCreateThreadChatRef = useRef<string | null>(null)
+  const threadCreationAttemptRef = useRef(0)
   const [threadCreationFailure, setThreadCreationFailure] = useState<ScopedSecretaryError | null>(null)
   const [threadCreationRetryKey, setThreadCreationRetryKey] = useState(0)
   const [secretaryDraftState, setSecretaryDraftState] = useState<ScopedSecretaryDraft>({
@@ -740,6 +751,8 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   const secretaryScopeKey = `${databaseScopeKey}:${session.info.webId ?? 'logged-out'}`
   const activeSecretaryScopeRef = useRef(secretaryScopeKey)
   activeSecretaryScopeRef.current = secretaryScopeKey
+  const activeSelectedChatRef = useRef(selectedChatId)
+  activeSelectedChatRef.current = selectedChatId
   const secretaryDraft = secretaryDraftState.scopeKey === secretaryScopeKey
     ? secretaryDraftState.text
     : ''
@@ -747,20 +760,26 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     ? pendingSecretaryDraft
     : null
   const threadCreationError = threadCreationFailure?.scopeKey === secretaryScopeKey
+    && threadCreationFailure.chatId === selectedChatId
     ? threadCreationFailure.message
     : null
   const secretaryDraftHandoffError = secretaryDraftHandoffFailure?.scopeKey === secretaryScopeKey
+    && secretaryDraftHandoffFailure.chatId === selectedChatId
     ? secretaryDraftHandoffFailure.message
     : null
 
   useEffect(() => {
-    lastAutoCreateThreadChatRef.current = null
-    isCreatingThreadRef.current = false
     setThreadCreationFailure(null)
     setPendingSecretaryDraft(null)
     setSecretaryDraftHandoffFailure(null)
     setSecretaryDraftState({ text: '', scopeKey: secretaryScopeKey })
-  }, [secretaryScopeKey, selectedChatId])
+  }, [secretaryScopeKey])
+
+  useEffect(() => {
+    lastAutoCreateThreadChatRef.current = null
+    isCreatingThreadRef.current = false
+    threadCreationAttemptRef.current += 1
+  }, [selectedChatId])
 
   const retryThreadCreation = useCallback(() => {
     lastAutoCreateThreadChatRef.current = null
@@ -769,12 +788,12 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   }, [])
 
   const retryContentQueries = useCallback(() => {
-    if (databaseStatus === 'error') {
+    if (databaseStatus !== 'ready' || !db) {
       retryDatabase()
       return
     }
     void Promise.all([refetchChats(), refetchThreads()])
-  }, [databaseStatus, refetchChats, refetchThreads, retryDatabase])
+  }, [databaseStatus, db, refetchChats, refetchThreads, retryDatabase])
 
   const submitSecretaryDraft = useCallback(() => {
     const text = secretaryDraft.trim()
@@ -811,6 +830,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     setSecretaryDraftHandoffFailure({
       message: '无法将草稿填入当前话题。草稿仍保留，可重试。',
       scopeKey: draft.scopeKey,
+      chatId: draft.chatId,
     })
   }, [])
 
@@ -864,6 +884,8 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     isCreatingThreadRef.current = true
     lastAutoCreateThreadChatRef.current = selectedChatId
     const creationScopeKey = secretaryScopeKey
+    const creationChatId = selectedChatId
+    const creationAttempt = ++threadCreationAttemptRef.current
     mutations.createThread.mutate(
       {
         chatId: selectedChatId,
@@ -871,8 +893,11 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       },
       {
         onSuccess: (thread) => {
-          if (activeSecretaryScopeRef.current !== creationScopeKey) {
-            isCreatingThreadRef.current = false
+          if (
+            activeSecretaryScopeRef.current !== creationScopeKey
+            || activeSelectedChatRef.current !== creationChatId
+            || threadCreationAttemptRef.current !== creationAttempt
+          ) {
             return
           }
           setThreadCreationFailure(null)
@@ -889,13 +914,18 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
           isCreatingThreadRef.current = false
         },
         onError: (error) => {
-          if (activeSecretaryScopeRef.current === creationScopeKey) {
+          if (
+            activeSecretaryScopeRef.current === creationScopeKey
+            && activeSelectedChatRef.current === creationChatId
+            && threadCreationAttemptRef.current === creationAttempt
+          ) {
             setThreadCreationFailure({
               message: error instanceof Error ? error.message : '创建话题失败',
               scopeKey: creationScopeKey,
+              chatId: creationChatId,
             })
+            isCreatingThreadRef.current = false
           }
-          isCreatingThreadRef.current = false
         },
       },
     )
@@ -939,7 +969,13 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
         description: '当前显示缓存内容。恢复空间连接后才能继续发送。',
         actionLabel: '重试连接',
       }
-    : contentState.kind === 'ready' && (chatError || threadError)
+    : contentState.kind === 'ready' && (databaseStatus !== 'ready' || !db)
+      ? {
+          title: '正在恢复当前空间连接',
+          description: '当前显示缓存内容。空间连接恢复前暂时不能发送。',
+          actionLabel: '重试连接',
+        }
+      : contentState.kind === 'ready' && (chatError || threadError)
       ? {
           title: '聊天同步失败，当前显示缓存内容',
           description: '可以继续查看和输入；重试后会刷新当前聊天。',
@@ -1069,7 +1105,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
               : null}
             onComposerDraftApplied={completeSecretaryDraftHandoff}
             onComposerDraftError={failSecretaryDraftHandoff}
-            sendDisabled={databaseStatus === 'error'}
+            sendDisabled={databaseStatus !== 'ready' || !db}
           />
         </div>
       </div>
