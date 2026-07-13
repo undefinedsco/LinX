@@ -485,7 +485,7 @@ function ListHeader({
   // Persistent Search Mode (WeChat Style)
   if (variant === 'search') {
     return (
-      <div className="h-16 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
+      <div data-testid="chat-list-header" className="h-12 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
         <div className="relative flex-1 min-w-0">
           <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground">
             <Search strokeWidth={1.5} className="h-3.5 w-3.5" />
@@ -539,7 +539,7 @@ function ListHeader({
 
   // Title Mode (with expandable search)
   return (
-    <div className="h-16 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
+    <div data-testid="chat-list-header" className="h-12 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
       {isSearchExpanded ? (
         <>
           <div className="relative flex-1 min-w-0">

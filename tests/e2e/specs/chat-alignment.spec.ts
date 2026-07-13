@@ -15,6 +15,25 @@ test.describe('Chat Module - Visual Alignment', () => {
   })
 
   test.describe('列表视觉规范', () => {
+    test('列表头与内容头应使用同一条 48px 基线', async ({ page }) => {
+      const listHeader = page.getByTestId('chat-list-header')
+      const contentHeader = page.getByTestId('micro-app-content-head')
+
+      await expect(listHeader).toBeVisible()
+      await expect(contentHeader).toBeVisible()
+      const [listBox, contentBox] = await Promise.all([
+        listHeader.boundingBox(),
+        contentHeader.boundingBox(),
+      ])
+
+      expect(listBox).not.toBeNull()
+      expect(contentBox).not.toBeNull()
+      expect(listBox!.height).toBeGreaterThanOrEqual(47)
+      expect(listBox!.height).toBeLessThanOrEqual(49)
+      expect(contentBox!.height).toBeGreaterThanOrEqual(47)
+      expect(contentBox!.height).toBeLessThanOrEqual(49)
+      expect(Math.abs(listBox!.y - contentBox!.y)).toBeLessThanOrEqual(1)
+    })
     
     test('列表行高应为 64px', async ({ page }) => {
       // 等待列表加载
@@ -400,13 +419,15 @@ test.describe('Chat Module - Content Panel', () => {
     
     // 当前聊天输入由 ChatKit custom element 承载，textarea 位于组件内部/shadow DOM，
     // e2e 只断言产品输入面板已挂载，不假设内部 DOM 结构。
-    const composer = page.locator('openai-chatkit').first()
+    const composer = page.locator('openai-chatkit').first().or(
+      page.getByRole('textbox', { name: '给 Secretary 发消息' }),
+    )
     const hasComposer = await composer.waitFor({ state: 'visible', timeout: 5_000 })
       .then(() => true)
       .catch(() => false)
     
     if (hasChatItem && !hasComposer) {
-      const blockedByAuthOrData = await page.getByText(/登录未完成|数据还没准备好|正在连接空间|正在准备话题/).isVisible().catch(() => false)
+      const blockedByAuthOrData = await page.getByText(/登录未完成|数据还没准备好|正在连接空间/).isVisible().catch(() => false)
       if (blockedByAuthOrData) {
         console.log('ℹ️ ChatKit composer blocked by auth/data/thread preparation state, skipping composer assertion')
         return

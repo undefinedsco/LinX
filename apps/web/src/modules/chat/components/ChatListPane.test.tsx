@@ -152,6 +152,14 @@ describe('ChatListPane', () => {
     mockMutations.ensureLinxWelcome.isPending = false
   })
 
+  it('uses the shared 48px list-head geometry', () => {
+    render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+    const header = screen.getByTestId('chat-list-header')
+    expect(header).toHaveClass('h-12')
+    expect(header).not.toHaveClass('h-16')
+  })
+
   afterEach(() => {
     vi.useRealTimers()
   })

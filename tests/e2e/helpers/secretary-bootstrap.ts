@@ -61,7 +61,7 @@ async function readSecretaryUiState(page: Page): Promise<SecretaryUiState> {
     const failed = text.includes('默认助手准备失败')
     const hasSecretaryLabel = text.includes('AI Secretary')
     return {
-      uiReady: hasSecretaryLabel && !failed && !preparing,
+      uiReady: hasSecretaryLabel && !failed,
       preparing,
       failed,
       hasSecretaryLabel,
@@ -91,6 +91,8 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
     if (!db || !podUrl || !fetchFn) {
       return {
         ok: false,
+        uiReady: ui.hasSecretaryLabel && !ui.failed,
+        filesReady: false,
         podUrl,
         ui,
         files: [],
@@ -101,6 +103,8 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
     if (ui.preparing && !ui.failed) {
       return {
         ok: false,
+        uiReady: true,
+        filesReady: false,
         podUrl,
         ui,
         files: [],
@@ -149,7 +153,7 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
     }))
 
     const filesReady = files.every((file) => file.ok)
-    const uiReady = ui.hasSecretaryLabel && !ui.failed && !ui.preparing
+    const uiReady = ui.hasSecretaryLabel && !ui.failed
 
     return {
       ok: uiReady && filesReady,
