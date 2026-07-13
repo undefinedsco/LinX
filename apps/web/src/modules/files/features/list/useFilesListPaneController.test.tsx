@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useFilesStore } from '../../app/store'
@@ -49,6 +49,7 @@ describe('useFilesListPaneController', () => {
       tagFilter: null,
       detailTab: 'preview',
       editableFileSheetOpenRequestUri: null,
+      folderHistory: [],
     })
     mockUseSelectedFilesLocation.mockReturnValue({ kind: 'all' })
     mockUseFilesEntries.mockReturnValue({
@@ -81,5 +82,35 @@ describe('useFilesListPaneController', () => {
       parentPath: '/public/',
       sizeLabel: '1.2 KB',
     })
+  })
+
+  it('enters folders through browser history and exposes the current path', () => {
+    useFilesStore.setState({
+      selectedTreeNodeId: 'container:https://pod.example/public/',
+      selectedFileId: 'https://pod.example/public/report.md',
+    })
+    mockUseSelectedFilesLocation.mockReturnValue({
+      kind: 'container',
+      containerUri: 'https://pod.example/public/',
+    })
+    const folder = entry({
+      uri: 'https://pod.example/public/docs/',
+      name: 'docs',
+      kind: 'container',
+      semanticKind: 'folder',
+      mimeType: 'text/turtle',
+    })
+
+    const { result } = renderHook(() => useFilesListPaneController())
+    expect(result.current.currentPathLabel).toBe('/public')
+    expect(result.current.canGoBack).toBe(false)
+
+    act(() => result.current.openFile(folder, 'double-click'))
+
+    expect(useFilesStore.getState()).toMatchObject({
+      selectedTreeNodeId: 'container:https://pod.example/public/docs/',
+      selectedFileId: 'https://pod.example/public/docs/',
+    })
+    expect(useFilesStore.getState().folderHistory).toHaveLength(1)
   })
 })

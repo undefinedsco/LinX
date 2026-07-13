@@ -9,6 +9,7 @@ import {
   ListFilter,
   Tags,
   ArrowUpDown,
+  ChevronLeft,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -68,6 +69,8 @@ function ListSearchBar({
   sortDirection,
   sortOptions,
   onSort,
+  canGoBack,
+  onBack,
 }: {
   toolbarChrome: FilesListToolbarChromeModel
   value: string
@@ -83,12 +86,24 @@ function ListSearchBar({
   sortDirection: 'asc' | 'desc'
   sortOptions: ReadonlyArray<{ id: FilesListSortField; label: string }>
   onSort: (field: FilesListSortField) => void
+  canGoBack: boolean
+  onBack: () => void
 }) {
   const currentSortLabel = sortOptions.find((option) => option.id === sortField)?.label ?? sortField
   const directionActionLabel = sortDirection === 'desc' ? '升序' : '降序'
 
   return (
     <div aria-label={toolbarChrome.toolbarLabel} className="flex items-center gap-2 px-4 py-2 border-b border-border/50 shrink-0">
+      <button
+        type="button"
+        aria-label="返回上一个文件夹"
+        title="返回上一个文件夹"
+        disabled={!canGoBack}
+        onClick={onBack}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:opacity-30"
+      >
+        <ChevronLeft strokeWidth={1.5} className="h-3.5 w-3.5" />
+      </button>
       <div className="relative flex-1 min-w-0">
         <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground">
           <Search strokeWidth={1.5} className="h-3.5 w-3.5" />
@@ -272,7 +287,16 @@ export function FilesListPane(_props: MicroAppPaneProps) {
         sortDirection={listPane.sortDirection}
         sortOptions={listPane.sortOptions}
         onSort={listPane.sortList}
+        canGoBack={listPane.canGoBack}
+        onBack={listPane.goBackFolder}
       />
+      <div
+        aria-label="当前文件夹路径"
+        className="shrink-0 truncate border-b border-border/30 px-4 py-1.5 text-[11px] text-muted-foreground"
+        title={listPane.currentPathLabel}
+      >
+        {listPane.currentPathLabel}
+      </div>
       {listPane.scopeHeader ? (
         <div className="border-b border-border/30 px-3 py-1.5 text-xs font-medium text-foreground">
           {listPane.scopeHeader.label}

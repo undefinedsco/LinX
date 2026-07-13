@@ -43,6 +43,7 @@ beforeEach(() => {
     tagFilter: null,
     detailTab: 'preview',
     editableFileSheetOpenRequestUri: null,
+    folderHistory: [],
   })
   Object.assign(navigator, {
     clipboard: {
@@ -126,6 +127,31 @@ beforeEach(() => {
 const defaultProps = { paneId: 'list', appId: 'files' }
 
 describe('FilesListPane', () => {
+  it('shows the current path and restores the previous folder from the head', () => {
+    useFilesStore.setState({
+      selectedTreeNodeId: createContainerNodeId('https://pod.example/public/docs/'),
+      selectedFileId: 'https://pod.example/public/docs/',
+      folderHistory: [{
+        treeNodeId: createContainerNodeId('https://pod.example/public/'),
+        selectedFileId: 'https://pod.example/public/',
+        scrollKey: null,
+      }],
+    })
+    mockUseSelectedFilesLocation.mockReturnValue({
+      kind: 'container',
+      containerUri: 'https://pod.example/public/docs/',
+    })
+
+    render(<FilesListPane {...defaultProps} />)
+
+    expect(screen.getByLabelText('当前文件夹路径')).toHaveTextContent('/public/docs')
+    fireEvent.click(screen.getByRole('button', { name: '返回上一个文件夹' }))
+    expect(useFilesStore.getState()).toMatchObject({
+      selectedTreeNodeId: createContainerNodeId('https://pod.example/public/'),
+      selectedFileId: 'https://pod.example/public/',
+    })
+  })
+
   it('renders queried entries', () => {
     render(<FilesListPane {...defaultProps} />)
 
@@ -626,7 +652,7 @@ describe('FilesListPane', () => {
     fireEvent.doubleClick(screen.getByText('public'))
 
     expect(useFilesStore.getState().selectedTreeNodeId).toBe(createContainerNodeId('https://pod.example/public/'))
-    expect(useFilesStore.getState().selectedFileId).toBeNull()
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
   })
 
   it('single-clicking a container selects it for folder detail without entering it', () => {
@@ -1070,7 +1096,7 @@ describe('FilesListPane', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: /public/ }), { key: 'Enter' })
 
     expect(useFilesStore.getState().selectedTreeNodeId).toBe(createContainerNodeId('https://pod.example/public/'))
-    expect(useFilesStore.getState().selectedFileId).toBeNull()
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
   })
 
   it('clicking the name header updates sort field', () => {
@@ -1107,6 +1133,6 @@ describe('FilesListPane', () => {
     render(<FilesListPane {...defaultProps} />)
 
     expect(screen.getByText('当前话题绑定的是本地目录')).toBeInTheDocument()
-    expect(screen.getByText(/\/repo\/linx/)).toBeInTheDocument()
+    expect(screen.getByText(/\/repo\/linx 暂时不能/)).toBeInTheDocument()
   })
 })

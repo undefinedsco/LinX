@@ -26,10 +26,38 @@ beforeEach(() => {
     structuredSubjectReturnContext: null,
     structuredScrollRestoration: null,
     editableFileSheetOpenRequestUri: null,
+    folderHistory: [],
   })
 })
 
 describe('files store whiteboard layout persistence', () => {
+  it('enters a folder with history and restores the previous browser location', () => {
+    useFilesStore.setState({
+      selectedTreeNodeId: 'container:https://pod.example/public/',
+      selectedFileId: 'https://pod.example/public/report.md',
+    })
+
+    useFilesStore.getState().enterFolder({
+      treeNodeId: 'container:https://pod.example/public/docs/',
+      containerUri: 'https://pod.example/public/docs/',
+      scrollKey: 'docs:0',
+    })
+
+    expect(useFilesStore.getState()).toMatchObject({
+      selectedTreeNodeId: 'container:https://pod.example/public/docs/',
+      selectedFileId: 'https://pod.example/public/docs/',
+    })
+    expect(useFilesStore.getState().folderHistory).toHaveLength(1)
+
+    useFilesStore.getState().goBackFolder()
+
+    expect(useFilesStore.getState()).toMatchObject({
+      selectedTreeNodeId: 'container:https://pod.example/public/',
+      selectedFileId: 'https://pod.example/public/report.md',
+      folderHistory: [],
+    })
+  })
+
   it('restores structured view configuration per document when returning to a file', () => {
     const stateUri = 'https://pod.example/.data/state.ttl'
     const otherUri = 'https://pod.example/.data/other.ttl'

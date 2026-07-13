@@ -13,6 +13,7 @@ import {
   type FilesListSortField,
 } from '../../domain/list/list-view-model'
 import { resolveFilesListOpenDecision, type FilesListOpenTrigger } from '../../domain/list/list-open'
+import { projectCurrentFolderPath } from '../../domain/list/folder-history'
 import {
   getVisibleMimeTypeOptions,
   getVisibleTagOptions,
@@ -26,7 +27,9 @@ import { projectFilesListColumnHeaders, projectFilesListSortOptions } from './fi
 export function useFilesListPaneController() {
   const selectFile = useFilesStore((s) => s.selectFile)
   const selectedTreeNodeId = useFilesStore((s) => s.selectedTreeNodeId)
-  const selectTreeNode = useFilesStore((s) => s.selectTreeNode)
+  const enterFolder = useFilesStore((s) => s.enterFolder)
+  const folderHistory = useFilesStore((s) => s.folderHistory)
+  const goBackFolder = useFilesStore((s) => s.goBackFolder)
   const searchText = useFilesStore((s) => s.searchText)
   const setSearchText = useFilesStore((s) => s.setSearchText)
   const mimeTypeFilter = useFilesStore((s) => s.mimeTypeFilter)
@@ -42,6 +45,7 @@ export function useFilesListPaneController() {
   const requestEditableFileSheetOpen = useFilesStore((s) => s.requestEditableFileSheetOpen)
   const { data: rawEntries = [], isLoading, error } = useFilesEntries(selectedTreeNodeId, entryScope)
   const selection = useSelectedFilesLocation(selectedTreeNodeId)
+  const currentPathLabel = useMemo(() => projectCurrentFolderPath(selection), [selection])
 
   const baseEntries = useMemo(
     () => projectFilesListBaseEntries(rawEntries, selection),
@@ -80,7 +84,7 @@ export function useFilesListPaneController() {
       const decision = resolveFilesListOpenDecision(file, trigger)
       switch (decision.type) {
         case 'browse-container':
-          selectTreeNode(decision.treeNodeId)
+          enterFolder({ treeNodeId: decision.treeNodeId, containerUri: file.uri })
           break
         case 'select-file':
           selectFile(decision.fileUri)
@@ -96,7 +100,7 @@ export function useFilesListPaneController() {
           break
       }
     },
-    [requestEditableFileSheetOpen, selectFile, selectTreeNode, setDetailTab],
+    [enterFolder, requestEditableFileSheetOpen, selectFile, setDetailTab],
   )
 
   const sortList = useCallback((field: FilesListSortField) => {
@@ -133,9 +137,12 @@ export function useFilesListPaneController() {
     hasVisibleFiles,
     isLoading,
     canFilterByTag,
+    canGoBack: folderHistory.length > 0,
+    currentPathLabel,
     mimeTypeFilter,
     mimeTypeOptions,
     openFile,
+    goBackFolder,
     searchText,
     selectFile,
     selection,

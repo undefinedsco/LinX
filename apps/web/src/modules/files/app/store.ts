@@ -9,6 +9,11 @@
  */
 import { create } from 'zustand'
 import type { FilesEntryScope } from '../domain/list/entry-scope'
+import {
+  popFolderHistory,
+  pushFolderHistory,
+  type FolderHistoryEntry,
+} from '../domain/list/folder-history'
 import type { StructuredWhiteboardVisualRelation } from '../domain/structured/structured-projections'
 import { shouldRequestEditableSheetForStructuredSubjectTarget } from '../domain/resource/resource-semantics'
 import {
@@ -111,6 +116,7 @@ interface FilesStore {
   selectedTreeNodeId: string | null
   expandedTreeNodeIds: Set<string>
   resourceRailCollapsed: boolean
+  folderHistory: FolderHistoryEntry[]
 
   // File list
   entryScope: FilesEntryScope
@@ -145,6 +151,9 @@ interface FilesStore {
   selectTreeNode: (id: string | null) => void
   toggleTreeNode: (id: string) => void
   toggleResourceRail: () => void
+  enterFolder: (input: { treeNodeId: string; containerUri: string; scrollKey?: string | null }) => void
+  goBackFolder: () => void
+  clearFolderHistory: () => void
 
   // Actions: file list
   openAllFilesScope: () => void
@@ -286,6 +295,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
   selectedTreeNodeId: 'all',
   expandedTreeNodeIds: new Set<string>(),
   resourceRailCollapsed: false,
+  folderHistory: [],
 
   // File list
   entryScope: 'all',
@@ -337,6 +347,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
       structuredKanbanGroupPredicate: null,
       structuredSubjectReturnContext: null,
       structuredScrollRestoration: null,
+      folderHistory: [],
     }),
   toggleTreeNode: (id) =>
     set((state) => {
@@ -347,9 +358,42 @@ export const useFilesStore = create<FilesStore>((set) => ({
     }),
   toggleResourceRail: () =>
     set((state) => ({ resourceRailCollapsed: !state.resourceRailCollapsed })),
+  enterFolder: ({ treeNodeId, containerUri, scrollKey = null }) =>
+    set((state) => ({
+      folderHistory: pushFolderHistory(state.folderHistory, {
+        treeNodeId: state.selectedTreeNodeId,
+        selectedFileId: state.selectedFileId,
+        scrollKey,
+      }),
+      selectedTreeNodeId: treeNodeId,
+      selectedFileId: containerUri,
+      selectedFileIds: new Set<string>(),
+      detailTab: 'preview',
+      editableFileSheetOpenRequestUri: null,
+      ...structuredSelectionState(state, containerUri),
+      structuredSubjectReturnContext: null,
+      structuredScrollRestoration: null,
+    })),
+  goBackFolder: () =>
+    set((state) => {
+      const back = popFolderHistory(state.folderHistory)
+      if (!back.target) return state
+      return {
+        folderHistory: back.history,
+        selectedTreeNodeId: back.target.treeNodeId,
+        selectedFileId: back.target.selectedFileId,
+        selectedFileIds: new Set<string>(),
+        detailTab: 'preview',
+        editableFileSheetOpenRequestUri: null,
+        ...structuredSelectionState(state, back.target.selectedFileId),
+        structuredSubjectReturnContext: null,
+        structuredScrollRestoration: null,
+      }
+    }),
+  clearFolderHistory: () => set({ folderHistory: [] }),
 
   // Actions: file list
-  openAllFilesScope: () => set({ entryScope: 'all' }),
+  openAllFilesScope: () => set({ entryScope: 'all', folderHistory: [] }),
   openChatFilesScope: () => set({
     entryScope: 'chat-files',
     selectedTreeNodeId: 'all',
@@ -359,6 +403,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
     mimeTypeFilter: null,
     tagFilter: null,
     editableFileSheetOpenRequestUri: null,
+    folderHistory: [],
   }),
   selectFile: (id) => set((state) => ({
     selectedFileId: id,
