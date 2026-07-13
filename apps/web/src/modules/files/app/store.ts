@@ -138,6 +138,7 @@ interface FilesStore {
   structuredSortDirection: StructuredSortDirection
   structuredHiddenPredicates: Set<string>
   structuredViewConfigsByDocument: Record<string, StructuredViewConfig>
+  structuredViewDirtyDocuments: Set<string>
   structuredColumnSizingByDocument: Record<string, StructuredColumnSizingState>
   structuredWhiteboardLayoutsByDocument: Record<string, Record<string, StructuredWhiteboardPosition>>
   structuredWhiteboardSubjectsByDocument: Record<string, string[]>
@@ -182,6 +183,8 @@ interface FilesStore {
   toggleStructuredPredicateVisibility: (predicate: string) => void
   setStructuredColumnSizing: (documentUri: string, updater: StructuredColumnSizingUpdater) => void
   hydrateStructuredViewMetadata: (metadata: StructuredViewMetadataHydrationInput, whiteboardLayoutKey: string) => void
+  markStructuredViewMetadataDirty: (documentUri: string) => void
+  clearStructuredViewMetadataDirty: (documentUri: string) => void
   setStructuredWhiteboardNodePosition: (layoutKey: string, subject: string, position: StructuredWhiteboardPosition) => void
   setStructuredWhiteboardVisualRelations: (documentUri: string, relations: StructuredWhiteboardVisualRelation[]) => void
   addStructuredWhiteboardSubject: (documentUri: string, subject: string) => void
@@ -317,6 +320,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
   structuredSortDirection: 'asc',
   structuredHiddenPredicates: new Set<string>(),
   structuredViewConfigsByDocument: readStructuredViewConfigsFromStorage(),
+  structuredViewDirtyDocuments: new Set<string>(),
   structuredColumnSizingByDocument: Object.fromEntries(
     Object.entries(readStructuredViewConfigsFromStorage()).map(([documentUri, config]) => [documentUri, config.columnSizing]),
   ),
@@ -606,6 +610,20 @@ export const useFilesStore = create<FilesStore>((set) => ({
         },
         structuredWhiteboardLayoutsByDocument: nextLayouts,
       }
+    }),
+  markStructuredViewMetadataDirty: (documentUri) =>
+    set((state) => {
+      if (state.structuredViewDirtyDocuments.has(documentUri)) return state
+      const next = new Set(state.structuredViewDirtyDocuments)
+      next.add(documentUri)
+      return { structuredViewDirtyDocuments: next }
+    }),
+  clearStructuredViewMetadataDirty: (documentUri) =>
+    set((state) => {
+      if (!state.structuredViewDirtyDocuments.has(documentUri)) return state
+      const next = new Set(state.structuredViewDirtyDocuments)
+      next.delete(documentUri)
+      return { structuredViewDirtyDocuments: next }
     }),
   setStructuredWhiteboardNodePosition: (layoutKey, subject, position) =>
     set((state) => {

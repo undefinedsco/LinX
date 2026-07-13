@@ -56,6 +56,9 @@ export function useStructuredViewStateController({
   const setWhiteboardNodePosition = useFilesStore((state) => state.setStructuredWhiteboardNodePosition)
   const setWhiteboardVisualRelations = useFilesStore((state) => state.setStructuredWhiteboardVisualRelations)
   const hydrateStructuredViewMetadata = useFilesStore((state) => state.hydrateStructuredViewMetadata)
+  const localViewMetadataDirty = useFilesStore((state) => state.structuredViewDirtyDocuments.has(file.uri))
+  const markStructuredViewMetadataDirty = useFilesStore((state) => state.markStructuredViewMetadataDirty)
+  const clearStructuredViewMetadataDirty = useFilesStore((state) => state.clearStructuredViewMetadataDirty)
 
   const columnSizing = columnSizingByDocument[file.uri] ?? EMPTY_COLUMN_SIZING
   const effectiveClassScope = useMemo(
@@ -98,6 +101,9 @@ export function useStructuredViewStateController({
     currentViewMetadata,
     file,
     hydrateStructuredViewMetadata,
+    localViewMetadataDirty,
+    markStructuredViewMetadataDirty,
+    clearStructuredViewMetadataDirty,
     whiteboardLayoutKey,
   })
 

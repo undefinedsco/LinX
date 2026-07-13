@@ -17,6 +17,7 @@ beforeEach(() => {
     structuredSortDirection: 'asc',
     structuredHiddenPredicates: new Set<string>(),
     structuredViewConfigsByDocument: {},
+    structuredViewDirtyDocuments: new Set<string>(),
     structuredColumnSizingByDocument: {},
     structuredWhiteboardLayoutsByDocument: {},
     structuredWhiteboardSubjectsByDocument: {},
@@ -31,6 +32,16 @@ beforeEach(() => {
 })
 
 describe('files store whiteboard layout persistence', () => {
+  it('keeps unsaved view metadata dirty across responsive owner remounts until save succeeds', () => {
+    const documentUri = 'https://pod.example/.data/state.ttl'
+
+    useFilesStore.getState().markStructuredViewMetadataDirty(documentUri)
+    expect(useFilesStore.getState().structuredViewDirtyDocuments.has(documentUri)).toBe(true)
+
+    useFilesStore.getState().clearStructuredViewMetadataDirty(documentUri)
+    expect(useFilesStore.getState().structuredViewDirtyDocuments.has(documentUri)).toBe(false)
+  })
+
   it('enters a folder with history and restores the previous browser location', () => {
     useFilesStore.setState({
       selectedTreeNodeId: 'container:https://pod.example/public/',

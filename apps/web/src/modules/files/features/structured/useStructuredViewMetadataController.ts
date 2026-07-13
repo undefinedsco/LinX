@@ -12,11 +12,17 @@ export function useStructuredViewMetadataController({
   currentViewMetadata,
   file,
   hydrateStructuredViewMetadata,
+  localViewMetadataDirty,
+  markStructuredViewMetadataDirty,
+  clearStructuredViewMetadataDirty,
   whiteboardLayoutKey,
 }: {
   currentViewMetadata: StructuredViewMetadata
   file: Pick<FilesDetail, 'uri' | 'kind'>
   hydrateStructuredViewMetadata: (metadata: Required<StructuredViewMetadata>, whiteboardLayoutKey: string) => void
+  localViewMetadataDirty: boolean
+  markStructuredViewMetadataDirty: (documentUri: string) => void
+  clearStructuredViewMetadataDirty: (documentUri: string) => void
   whiteboardLayoutKey: string
 }) {
   const structuredViewMetadataQuery = useStructuredViewMetadata(file)
@@ -29,10 +35,11 @@ export function useStructuredViewMetadataController({
   const localViewMetadataChangeBeforeHydrationRef = useRef(false)
 
   const markLocalViewMetadataChange = useCallback(() => {
+    markStructuredViewMetadataDirty(file.uri)
     if (!hydratedViewMetadataKeyRef.current) {
       localViewMetadataChangeBeforeHydrationRef.current = true
     }
-  }, [])
+  }, [file.uri, markStructuredViewMetadataDirty])
 
   useEffect(() => {
     hydratedViewMetadataKeyRef.current = null
@@ -46,7 +53,7 @@ export function useStructuredViewMetadataController({
     const hydrationPlan = projectStructuredViewMetadataHydration({
       currentHydrationKey: hydratedViewMetadataKeyRef.current,
       fileUri: file.uri,
-      localViewMetadataChangeBeforeHydration: localViewMetadataChangeBeforeHydrationRef.current,
+      localViewMetadataChangeBeforeHydration: localViewMetadataChangeBeforeHydrationRef.current || localViewMetadataDirty,
       metadataSidecar: structuredViewMetadataQuery.data,
       whiteboardLayoutKey,
     })
@@ -68,6 +75,7 @@ export function useStructuredViewMetadataController({
   }, [
     file.uri,
     hydrateStructuredViewMetadata,
+    localViewMetadataDirty,
     structuredViewMetadataQuery.data,
     whiteboardLayoutKey,
   ])
@@ -96,6 +104,7 @@ export function useStructuredViewMetadataController({
       }).then(() => {
         syncedViewMetadataSignatureRef.current = currentSignature
         localViewMetadataChangeBeforeHydrationRef.current = false
+        clearStructuredViewMetadataDirty(file.uri)
       }).catch((error) => {
         const description = error instanceof FilesSaveConflictError
           ? '视图配置保存冲突：远端 .meta 已变化，请重新打开后再调整视图。'
@@ -109,6 +118,7 @@ export function useStructuredViewMetadataController({
     return () => window.clearTimeout(timeoutId)
   }, [
     currentViewMetadata,
+    clearStructuredViewMetadataDirty,
     file.kind,
     file.uri,
     saveStructuredViewMetadata,
