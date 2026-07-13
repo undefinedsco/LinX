@@ -3,9 +3,9 @@ import { FilePlus2 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useSourceIngestToolbarController } from './useSourceIngestToolbarController'
 
-export function SourceIngestToolbarAction() {
-  const ingest = useSourceIngestToolbarController()
+export type SourceIngestFormController = ReturnType<typeof useSourceIngestToolbarController>
 
+export function SourceIngestForm({ ingest }: { ingest: SourceIngestFormController }) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!ingest.canIngest) return
@@ -20,6 +20,56 @@ export function SourceIngestToolbarAction() {
     if (!ingest.canIngest) return
     void ingest.submitIngest()
   }
+
+  return (
+    <form className="grid gap-2" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
+      <div className="flex items-center gap-2">
+        <select
+          aria-label={ingest.chrome.sourceKindLabel}
+          className="h-8 rounded-md border border-border/50 bg-background px-2 text-xs text-foreground outline-none"
+          value={ingest.sourceKind}
+          onChange={(event) => ingest.setSourceKind(event.target.value)}
+        >
+          {ingest.sourceKindOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <input
+          aria-label={ingest.chrome.sourceUriLabel}
+          className="h-8 min-w-0 flex-1 rounded-md border border-border/50 bg-background px-2 text-xs outline-none focus:border-primary/50"
+          placeholder={ingest.chrome.sourceUriPlaceholder}
+          value={ingest.sourceUri}
+          onChange={(event) => ingest.setSourceUri(event.target.value)}
+        />
+      </div>
+      <input
+        aria-label={ingest.chrome.titleLabel}
+        className="h-8 min-w-0 rounded-md border border-border/50 bg-background px-2 text-xs outline-none focus:border-primary/50"
+        placeholder={ingest.chrome.titlePlaceholder}
+        value={ingest.title}
+        onChange={(event) => ingest.setTitle(event.target.value)}
+      />
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-[11px] text-muted-foreground">
+          {ingest.chrome.containerLabel}
+        </p>
+        <button
+          type="submit"
+          className="h-8 shrink-0 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-40"
+          disabled={!ingest.canIngest}
+        >
+          {ingest.chrome.submitLabel}
+        </button>
+      </div>
+      {ingest.feedback.formError ? (
+        <p className="truncate text-[11px] text-destructive" role="status" title={ingest.feedback.formError}>{ingest.feedback.formError}</p>
+      ) : null}
+    </form>
+  )
+}
+
+export function SourceIngestToolbarAction() {
+  const ingest = useSourceIngestToolbarController()
 
   return (
     <>
@@ -53,49 +103,7 @@ export function SourceIngestToolbarAction() {
           </button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[400px] rounded-lg p-3 shadow-lg">
-          <form className="grid gap-2" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
-            <div className="flex items-center gap-2">
-              <select
-                aria-label={ingest.chrome.sourceKindLabel}
-                className="h-8 rounded-md border border-border/50 bg-background px-2 text-xs text-foreground outline-none"
-                value={ingest.sourceKind}
-                onChange={(event) => ingest.setSourceKind(event.target.value)}
-              >
-                {ingest.sourceKindOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-              <input
-                aria-label={ingest.chrome.sourceUriLabel}
-                className="h-8 min-w-0 flex-1 rounded-md border border-border/50 bg-background px-2 text-xs outline-none focus:border-primary/50"
-                placeholder={ingest.chrome.sourceUriPlaceholder}
-                value={ingest.sourceUri}
-                onChange={(event) => ingest.setSourceUri(event.target.value)}
-              />
-            </div>
-            <input
-              aria-label={ingest.chrome.titleLabel}
-              className="h-8 min-w-0 rounded-md border border-border/50 bg-background px-2 text-xs outline-none focus:border-primary/50"
-              placeholder={ingest.chrome.titlePlaceholder}
-              value={ingest.title}
-              onChange={(event) => ingest.setTitle(event.target.value)}
-            />
-            <div className="flex items-center justify-between gap-2">
-              <p className="min-w-0 truncate text-[11px] text-muted-foreground">
-                {ingest.chrome.containerLabel}
-              </p>
-              <button
-                type="submit"
-                className="h-8 shrink-0 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-40"
-                disabled={!ingest.canIngest}
-              >
-                {ingest.chrome.submitLabel}
-              </button>
-            </div>
-            {ingest.feedback.formError ? (
-              <p className="truncate text-[11px] text-destructive" role="status" title={ingest.feedback.formError}>{ingest.feedback.formError}</p>
-            ) : null}
-          </form>
+          <SourceIngestForm ingest={ingest} />
         </PopoverContent>
       </Popover>
     </>

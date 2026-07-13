@@ -3,15 +3,17 @@ import { describe, expect, it } from 'vitest'
 
 import {
   isFolderUploadTextResource,
+  projectFolderUploadBatchPlan,
   projectFolderUploadResourcePlan,
 } from './domain/folder/folder-upload-model'
 
 const folderUploadModelPath = 'src/modules/files/domain/folder/folder-upload-model.ts'
 
-function uploadFile(overrides: { name?: string; type?: string } = {}) {
+function uploadFile(overrides: { name?: string; type?: string; webkitRelativePath?: string } = {}) {
   return {
     name: overrides.name ?? 'notes.md',
     type: overrides.type ?? '',
+    webkitRelativePath: overrides.webkitRelativePath,
   }
 }
 
@@ -28,6 +30,57 @@ describe('folder upload model', () => {
     expect(modelSource).not.toContain('useMemo')
     expect(modelSource).not.toContain('useToast')
     expect(modelSource).not.toContain('uploadedFile.text()')
+  })
+
+  it('preserves nested folder-picker paths as ordered container and resource plans', () => {
+    expect(projectFolderUploadBatchPlan({
+      uploadedFiles: [
+        uploadFile({
+          name: 'report.md',
+          type: 'text/markdown',
+          webkitRelativePath: 'Project/Docs/report.md',
+        }),
+        uploadFile({
+          name: 'cover.png',
+          type: 'image/png',
+          webkitRelativePath: 'Project/cover.png',
+        }),
+      ],
+      containerUri: 'https://pod.example/public/',
+    })).toEqual({
+      folders: [
+        {
+          containerUri: 'https://pod.example/public/',
+          name: 'Project',
+          uri: 'https://pod.example/public/Project/',
+        },
+        {
+          containerUri: 'https://pod.example/public/Project/',
+          name: 'Docs',
+          uri: 'https://pod.example/public/Project/Docs/',
+        },
+      ],
+      resources: [
+        {
+          contentKind: 'text',
+          fileIndex: 0,
+          fileName: 'report.md',
+          resource: {
+            mimeType: 'text/markdown',
+            uri: 'https://pod.example/public/Project/Docs/report.md',
+          },
+        },
+        {
+          contentKind: 'blob',
+          fileIndex: 1,
+          fileName: 'cover.png',
+          resource: {
+            mimeType: 'image/png',
+            uri: 'https://pod.example/public/Project/cover.png',
+          },
+        },
+      ],
+    })
   })
 
   it('projects sanitized upload target, mime fallback, and content kind', () => {

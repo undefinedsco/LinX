@@ -14,6 +14,12 @@ const mockUseMoveFileResource = vi.fn()
 const mockMoveFileResource = vi.fn()
 const mockUseCreateSourceIngest = vi.fn()
 const mockCreateSourceIngest = vi.fn()
+const mockUseCreateRawTextResource = vi.fn()
+const mockCreateRawTextResource = vi.fn()
+const mockUseCreateBlobResource = vi.fn()
+const mockCreateBlobResource = vi.fn()
+const mockUseCreateFolderResource = vi.fn()
+const mockCreateFolderResource = vi.fn()
 const mockToast = vi.fn()
 
 vi.mock('../data/queries', () => ({
@@ -23,6 +29,9 @@ vi.mock('../data/queries', () => ({
   useCopyFileResource: () => mockUseCopyFileResource(),
   useMoveFileResource: () => mockUseMoveFileResource(),
   useCreateSourceIngest: () => mockUseCreateSourceIngest(),
+  useCreateRawTextResource: () => mockUseCreateRawTextResource(),
+  useCreateBlobResource: () => mockUseCreateBlobResource(),
+  useCreateFolderResource: () => mockUseCreateFolderResource(),
 }))
 
 vi.mock('@/components/ui/use-toast', () => ({
@@ -73,10 +82,32 @@ beforeEach(() => {
     mutateAsync: mockCreateSourceIngest,
     isPending: false,
   })
+  mockCreateRawTextResource.mockImplementation(async ({ resource }: { resource: { uri: string; mimeType: string } }) => ({
+    ...resource,
+    etag: null,
+    headers: {},
+    content: '',
+  }))
+  mockUseCreateRawTextResource.mockReturnValue({ mutateAsync: mockCreateRawTextResource, isPending: false })
+  mockCreateBlobResource.mockImplementation(async ({ resource }: { resource: { uri: string; mimeType: string } }) => ({
+    ...resource,
+    headers: {},
+    blob: new Blob(),
+  }))
+  mockUseCreateBlobResource.mockReturnValue({ mutateAsync: mockCreateBlobResource, isPending: false })
+  mockCreateFolderResource.mockImplementation(async ({ containerUri, name }: { containerUri: string; name: string }) => ({
+    uri: new URL(`${name}/`, containerUri).toString(),
+    name,
+    kind: 'container',
+  }))
+  mockUseCreateFolderResource.mockReturnValue({ mutateAsync: mockCreateFolderResource, isPending: false })
   mockDeleteFileResource.mockClear()
   mockCopyFileResource.mockClear()
   mockMoveFileResource.mockClear()
   mockCreateSourceIngest.mockClear()
+  mockCreateRawTextResource.mockClear()
+  mockCreateBlobResource.mockClear()
+  mockCreateFolderResource.mockClear()
   mockToast.mockClear()
   mockUseFilesEntries.mockReturnValue({
     data: [
@@ -171,7 +202,7 @@ describe('FilesListPane', () => {
     expect(screen.queryByText('/public/')).not.toBeInTheDocument()
   })
 
-  it('keeps source ingest in the list toolbar instead of a workspace overlay', async () => {
+  it('opens web ingestion through the user-facing add menu', async () => {
     useFilesStore.setState({
       selectedTreeNodeId: createContainerNodeId('https://pod.example/public/'),
     })
@@ -184,20 +215,22 @@ describe('FilesListPane', () => {
 
     const toolbar = screen.getByLabelText('资源工具栏')
     expect(within(toolbar).getByPlaceholderText('搜索当前范围...')).toBeInTheDocument()
-    const ingestButton = within(toolbar).getByRole('button', { name: 'Ingest 来源' })
-    expect(ingestButton.closest('[data-files-ingest-action="true"]')).toBeNull()
-
-    fireEvent.click(ingestButton)
-    fireEvent.change(screen.getByLabelText('来源地址'), {
+    fireEvent.pointerDown(within(toolbar).getByRole('button', { name: '添加' }))
+    expect(screen.getByRole('menuitem', { name: '新建文档' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '新建文件夹' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '上传文件' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '上传文件夹' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: '添加网页' }))
+    fireEvent.change(await screen.findByLabelText('来源地址'), {
       target: { value: 'https://example.com/report.pdf' },
     })
-    fireEvent.change(screen.getByLabelText('卡片标题'), {
+    fireEvent.change(screen.getByLabelText('标题'), {
       target: { value: 'Quarterly report' },
     })
     fireEvent.change(screen.getByLabelText('来源类型'), {
       target: { value: 'pdf' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '创建 Ingest 卡片' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加网页' }))
 
     await waitFor(() => {
       expect(mockCreateSourceIngest).toHaveBeenCalledWith({
@@ -207,21 +240,22 @@ describe('FilesListPane', () => {
         sourceKind: 'pdf',
       })
     })
-    expect(await screen.findByText('已创建 Ingest 卡片')).toBeInTheDocument()
+    expect(await screen.findByText('网页已添加')).toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/quarterly-report.card.ttl')
   })
 
-  it('keeps list-toolbar source ingest disabled outside a concrete container', () => {
+  it('keeps add actions disabled outside a concrete container', () => {
     mockUseSelectedFilesLocation.mockReturnValue({ kind: 'all' })
 
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(within(screen.getByLabelText('资源工具栏')).getByRole('button', { name: 'Ingest 来源' }))
-    expect(screen.getByRole('button', { name: '创建 Ingest 卡片' })).toBeDisabled()
-    expect(screen.getByText('先选文件夹')).toBeInTheDocument()
+    fireEvent.pointerDown(within(screen.getByLabelText('资源工具栏')).getByRole('button', { name: '添加' }))
+    expect(screen.getByRole('menuitem', { name: '新建文档' })).toHaveAttribute('data-disabled')
+    expect(screen.getByRole('menuitem', { name: '添加网页' })).toHaveAttribute('data-disabled')
+    expect(screen.getByText('先选择一个文件夹')).toBeInTheDocument()
   })
 
-  it('shows user-facing source ingest errors from the list toolbar', async () => {
+  it('shows user-facing web processing errors from the add menu', async () => {
     mockCreateSourceIngest.mockRejectedValue(new Error('ParserIndexManifest is unavailable'))
     mockUseSelectedFilesLocation.mockReturnValue({
       kind: 'container',
@@ -230,18 +264,103 @@ describe('FilesListPane', () => {
 
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(within(screen.getByLabelText('资源工具栏')).getByRole('button', { name: 'Ingest 来源' }))
-    fireEvent.change(screen.getByLabelText('来源地址'), {
+    fireEvent.pointerDown(within(screen.getByLabelText('资源工具栏')).getByRole('button', { name: '添加' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '添加网页' }))
+    fireEvent.change(await screen.findByLabelText('来源地址'), {
       target: { value: 'https://example.com/report.pdf' },
     })
-    fireEvent.change(screen.getByLabelText('卡片标题'), {
+    fireEvent.change(screen.getByLabelText('标题'), {
       target: { value: 'Quarterly report' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '创建 Ingest 卡片' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加网页' }))
 
-    expect(await screen.findByText('Ingest 队列暂不可用')).toBeInTheDocument()
+    expect(await screen.findByText('网页处理暂不可用')).toBeInTheDocument()
     expect(screen.queryByText(/ParserIndexManifest/)).not.toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBeNull()
+  })
+
+  it('creates an editable document from the add menu', async () => {
+    useFilesStore.setState({
+      selectedTreeNodeId: createContainerNodeId('https://pod.example/public/'),
+    })
+    mockUseSelectedFilesLocation.mockReturnValue({
+      kind: 'container',
+      containerUri: 'https://pod.example/public/',
+    })
+
+    render(<FilesListPane {...defaultProps} />)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '添加' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '新建文档' }))
+    fireEvent.change(await screen.findByLabelText('文件名'), { target: { value: 'Notes' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建' }))
+
+    await waitFor(() => {
+      expect(mockCreateRawTextResource).toHaveBeenCalledWith({
+        resource: {
+          uri: 'https://pod.example/public/Notes.md',
+          mimeType: 'text/markdown',
+        },
+        content: '# Notes\n',
+      })
+    })
+    expect(useFilesStore.getState()).toMatchObject({
+      selectedFileId: 'https://pod.example/public/Notes.md',
+      editableFileSheetOpenRequestUri: 'https://pod.example/public/Notes.md',
+    })
+  })
+
+  it('uploads local files and preserves folder-picker hierarchy', async () => {
+    useFilesStore.setState({
+      selectedTreeNodeId: createContainerNodeId('https://pod.example/public/'),
+    })
+    mockUseSelectedFilesLocation.mockReturnValue({
+      kind: 'container',
+      containerUri: 'https://pod.example/public/',
+    })
+
+    render(<FilesListPane {...defaultProps} />)
+
+    const looseFile = new File(['# Loose'], 'loose.md', { type: 'text/markdown' })
+    fireEvent.change(screen.getByLabelText('选择上传文件'), {
+      target: { files: [looseFile] },
+    })
+
+    await waitFor(() => {
+      expect(mockCreateRawTextResource).toHaveBeenCalledWith({
+        resource: {
+          uri: 'https://pod.example/public/loose.md',
+          mimeType: 'text/markdown',
+        },
+        content: '# Loose',
+      })
+    })
+
+    const nestedFile = new File(['# Nested'], 'nested.md', { type: 'text/markdown' })
+    Object.defineProperty(nestedFile, 'webkitRelativePath', {
+      value: 'Project/Docs/nested.md',
+    })
+    fireEvent.change(screen.getByLabelText('选择上传文件夹'), {
+      target: { files: [nestedFile] },
+    })
+
+    await waitFor(() => {
+      expect(mockCreateFolderResource).toHaveBeenNthCalledWith(1, {
+        containerUri: 'https://pod.example/public/',
+        name: 'Project',
+      })
+      expect(mockCreateFolderResource).toHaveBeenNthCalledWith(2, {
+        containerUri: 'https://pod.example/public/Project/',
+        name: 'Docs',
+      })
+      expect(mockCreateRawTextResource).toHaveBeenCalledWith({
+        resource: {
+          uri: 'https://pod.example/public/Project/Docs/nested.md',
+          mimeType: 'text/markdown',
+        },
+        content: '# Nested',
+      })
+    })
   })
 
   it('requests chat-scoped entries and shows an honest empty state', () => {
@@ -515,7 +634,7 @@ describe('FilesListPane', () => {
     expect(screen.queryByText('README.md.meta')).not.toBeInTheDocument()
     expect(screen.queryByText('README.md.acr')).not.toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '类型筛选' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     expect(screen.getByRole('menuitemradio', { name: 'text/markdown' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitemradio', { name: 'text/turtle' })).not.toBeInTheDocument()
   })
@@ -579,7 +698,7 @@ describe('FilesListPane', () => {
     expect(screen.queryByText('README.md.acl')).not.toBeInTheDocument()
     expect(screen.queryByText('README.md.acr')).not.toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '类型筛选' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     expect(screen.getByRole('menuitemradio', { name: 'text/markdown' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitemradio', { name: 'text/turtle' })).not.toBeInTheDocument()
   })
@@ -597,7 +716,7 @@ describe('FilesListPane', () => {
   it('filters entries from the visible type menu and can clear it', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '类型筛选' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'text/markdown' }))
 
     expect(useFilesStore.getState().mimeTypeFilter).toBe('text/markdown')
@@ -605,7 +724,7 @@ describe('FilesListPane', () => {
     expect(screen.queryByText('config.json')).not.toBeInTheDocument()
     expect(screen.queryByText('public')).not.toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '类型筛选' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: '全部类型' }))
 
     expect(useFilesStore.getState().mimeTypeFilter).toBeNull()
@@ -617,7 +736,7 @@ describe('FilesListPane', () => {
     render(<FilesListPane {...defaultProps} />)
 
     expect(screen.queryByText('当前话题')).not.toBeInTheDocument()
-    fireEvent.pointerDown(screen.getByRole('button', { name: '标签筛选' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     expect(screen.queryByRole('menuitemradio', { name: '当前话题' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'docs' }))
 
@@ -626,7 +745,7 @@ describe('FilesListPane', () => {
     expect(screen.queryByText('config.json')).not.toBeInTheDocument()
     expect(screen.queryByText('public')).not.toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '标签筛选' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: '全部标签' }))
 
     expect(useFilesStore.getState().tagFilter).toBeNull()
@@ -1143,11 +1262,11 @@ describe('FilesListPane', () => {
   it('keeps all sort fields available from the compact list toolbar', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '排序' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: '大小' }))
     expect(useFilesStore.getState().sortField).toBe('size')
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '排序' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '升序' }))
     expect(useFilesStore.getState().sortDirection).toBe('asc')
   })

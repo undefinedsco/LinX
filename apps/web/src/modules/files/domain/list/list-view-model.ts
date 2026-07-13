@@ -84,6 +84,7 @@ export type FilesListToolbarChromeModel = {
   toolbarLabel: string
   searchPlaceholder: string
   clearSearchLabel: string
+  filterAndSortLabel: string
   mimeTypeFilterLabel: string
   allMimeTypesLabel: string
   tagFilterLabel: string
@@ -206,6 +207,7 @@ export function projectFilesListToolbarChromeModel(): FilesListToolbarChromeMode
     toolbarLabel: '资源工具栏',
     searchPlaceholder: '搜索当前范围...',
     clearSearchLabel: '清空搜索',
+    filterAndSortLabel: '筛选和排序',
     mimeTypeFilterLabel: '类型筛选',
     allMimeTypesLabel: '全部类型',
     tagFilterLabel: '标签筛选',

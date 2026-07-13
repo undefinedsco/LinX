@@ -204,14 +204,14 @@ export function projectSourceIngestToolbarChrome({
   isPending: boolean
 }): SourceIngestToolbarChrome {
   return {
-    triggerLabel: 'Ingest 来源',
+    triggerLabel: '添加网页',
     sourceKindLabel: '来源类型',
     sourceUriLabel: '来源地址',
     sourceUriPlaceholder: 'https://...',
-    titleLabel: '卡片标题',
+    titleLabel: '标题',
     titlePlaceholder: '标题',
     containerLabel: containerUri ?? '先选文件夹',
-    submitLabel: isPending ? 'Ingest 中...' : '创建 Ingest 卡片',
+    submitLabel: isPending ? '添加中...' : '添加网页',
   }
 }
 
@@ -229,7 +229,7 @@ export function projectSourceIngestToolbarFeedback({
     formError: errorMessage,
     success: createdTargetUri
       ? {
-        message: '已创建 Ingest 卡片',
+        message: '网页已添加',
         targetUri: createdTargetUri,
       }
       : null,
@@ -238,12 +238,12 @@ export function projectSourceIngestToolbarFeedback({
 
 export function getSourceIngestCreationErrorMessage(error: unknown): string {
   if (error instanceof Error && /source could not be read/i.test(error.message)) {
-    return 'Ingest 来源暂不可读'
+    return '网页内容暂不可读'
   }
 
   if (error instanceof Error && /(Source Ingest|Ingest|queue|parser|manifest)/i.test(error.message)) {
-    return 'Ingest 队列暂不可用'
+    return '网页处理暂不可用'
   }
 
-  return 'Ingest 创建失败'
+  return '网页添加失败'
 }

@@ -3,30 +3,40 @@ import { useRef, useState, type ChangeEvent, type DragEvent as ReactDragEvent } 
 import { useToast } from '@/components/ui/use-toast'
 import {
   useCreateBlobResource,
+  useCreateFolderResource,
   useCreateRawTextResource,
 } from '../../data/queries'
-import { projectFolderUploadResourcePlan } from '../../domain/folder/folder-upload-model'
+import { projectFolderUploadBatchPlan } from '../../domain/folder/folder-upload-model'
 
 export function useFolderDetailUploadController({
   containerUri,
   onUploadedResource,
 }: {
-  containerUri: string
+  containerUri: string | null
   onUploadedResource: (uri: string) => void
 }) {
   const { toast } = useToast()
   const createRawText = useCreateRawTextResource()
   const createBlob = useCreateBlobResource()
+  const createFolder = useCreateFolderResource()
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
+  const uploadFolderInputRef = useRef<HTMLInputElement | null>(null)
   const [isDropTargetActive, setIsDropTargetActive] = useState(false)
 
   const uploadFiles = async (uploadedFiles: File[]) => {
-    if (uploadedFiles.length === 0) return
+    if (uploadedFiles.length === 0 || !containerUri) return
     try {
+      const batchPlan = projectFolderUploadBatchPlan({ uploadedFiles, containerUri })
       let lastResourceUri: string | null = null
-      for (const uploadedFile of uploadedFiles) {
-        const plan = projectFolderUploadResourcePlan({ uploadedFile, containerUri })
-        if (!plan) continue
+      for (const folder of batchPlan.folders) {
+        await createFolder.mutateAsync({
+          containerUri: folder.containerUri,
+          name: folder.name,
+        })
+      }
+      for (const plan of batchPlan.resources) {
+        const uploadedFile = uploadedFiles[plan.fileIndex]
+        if (!uploadedFile) continue
         if (plan.contentKind === 'text') {
           const created = await createRawText.mutateAsync({
             resource: plan.resource,
@@ -59,6 +69,12 @@ export function useFolderDetailUploadController({
     await uploadFiles(uploadedFiles)
   }
 
+  const uploadPickedFolder = async (event: ChangeEvent<HTMLInputElement>) => {
+    const uploadedFiles = Array.from(event.currentTarget.files ?? [])
+    event.currentTarget.value = ''
+    await uploadFiles(uploadedFiles)
+  }
+
   const handleUploadDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes('Files')) {
       event.preventDefault()
@@ -79,9 +95,12 @@ export function useFolderDetailUploadController({
     handleUploadDragOver,
     handleUploadDrop,
     isDropTargetActive,
+    openFolderUploadPicker: () => uploadFolderInputRef.current?.click(),
     openUploadPicker: () => uploadInputRef.current?.click(),
+    uploadFolderInputRef,
     uploadInputRef,
-    uploadPending: createRawText.isPending || createBlob.isPending,
+    uploadPending: createFolder.isPending || createRawText.isPending || createBlob.isPending,
+    uploadPickedFolder,
     uploadPickedFiles,
   }
 }

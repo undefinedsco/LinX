@@ -16,6 +16,7 @@ import {
 } from '../../domain/list/list-view-model'
 import { resolveFilesListOpenDecision, type FilesListOpenTrigger } from '../../domain/list/list-open'
 import { projectCurrentFolderPath } from '../../domain/list/folder-history'
+import { projectFilesAddContainerUri } from '../../domain/list/files-add-menu-model'
 import {
   getVisibleMimeTypeOptions,
   getVisibleTagOptions,
@@ -52,6 +53,7 @@ export function useFilesListPaneController() {
   const { data: rawEntries = [], isLoading, error } = useFilesEntries(selectedTreeNodeId, entryScope)
   const selection = useSelectedFilesLocation(selectedTreeNodeId)
   const currentPathLabel = useMemo(() => projectCurrentFolderPath(selection), [selection])
+  const addContainerUri = useMemo(() => projectFilesAddContainerUri(selection), [selection])
 
   const baseEntries = useMemo(
     () => projectFilesListBaseEntries(rawEntries, selection),
@@ -147,6 +149,7 @@ export function useFilesListPaneController() {
 
   return {
     baseEntries,
+    addContainerUri,
     columnHeaders,
     contentState,
     copyFiles,

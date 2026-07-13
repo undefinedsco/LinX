@@ -173,7 +173,7 @@ describe('source ingest toolbar model', () => {
       ...editedState,
       feedback: {
         createdTargetUri: null,
-        errorMessage: 'Ingest 队列暂不可用',
+        errorMessage: '网页处理暂不可用',
       },
     })
   })
@@ -207,10 +207,10 @@ describe('source ingest toolbar model', () => {
   })
 
   it('projects creation error copy without controller regex branches', () => {
-    expect(getSourceIngestCreationErrorMessage(new Error('source could not be read: 403'))).toBe('Ingest 来源暂不可读')
-    expect(getSourceIngestCreationErrorMessage(new Error('parser manifest queue unavailable'))).toBe('Ingest 队列暂不可用')
-    expect(getSourceIngestCreationErrorMessage(new Error('other'))).toBe('Ingest 创建失败')
-    expect(getSourceIngestCreationErrorMessage('unknown')).toBe('Ingest 创建失败')
+    expect(getSourceIngestCreationErrorMessage(new Error('source could not be read: 403'))).toBe('网页内容暂不可读')
+    expect(getSourceIngestCreationErrorMessage(new Error('parser manifest queue unavailable'))).toBe('网页处理暂不可用')
+    expect(getSourceIngestCreationErrorMessage(new Error('other'))).toBe('网页添加失败')
+    expect(getSourceIngestCreationErrorMessage('unknown')).toBe('网页添加失败')
   })
 
   it('projects toolbar success and error feedback outside the renderer', () => {
@@ -232,28 +232,28 @@ describe('source ingest toolbar model', () => {
       closedError: null,
       formError: null,
       success: {
-        message: '已创建 Ingest 卡片',
+        message: '网页已添加',
         targetUri: 'https://pod.example/files/report.card.ttl',
       },
     })
 
     expect(projectSourceIngestToolbarFeedback({
       createdTargetUri: null,
-      errorMessage: 'Ingest 队列暂不可用',
+      errorMessage: '网页处理暂不可用',
       open: true,
     })).toEqual({
       closedError: null,
-      formError: 'Ingest 队列暂不可用',
+      formError: '网页处理暂不可用',
       success: null,
     })
 
     expect(projectSourceIngestToolbarFeedback({
       createdTargetUri: null,
-      errorMessage: 'Ingest 队列暂不可用',
+      errorMessage: '网页处理暂不可用',
       open: false,
     })).toEqual({
-      closedError: 'Ingest 队列暂不可用',
-      formError: 'Ingest 队列暂不可用',
+      closedError: '网页处理暂不可用',
+      formError: '网页处理暂不可用',
       success: null,
     })
   })
@@ -263,14 +263,14 @@ describe('source ingest toolbar model', () => {
       containerUri: null,
       isPending: false,
     })).toEqual({
-      triggerLabel: 'Ingest 来源',
+      triggerLabel: '添加网页',
       sourceKindLabel: '来源类型',
       sourceUriLabel: '来源地址',
       sourceUriPlaceholder: 'https://...',
-      titleLabel: '卡片标题',
+      titleLabel: '标题',
       titlePlaceholder: '标题',
       containerLabel: '先选文件夹',
-      submitLabel: '创建 Ingest 卡片',
+      submitLabel: '添加网页',
     })
 
     expect(projectSourceIngestToolbarChrome({
@@ -278,7 +278,7 @@ describe('source ingest toolbar model', () => {
       isPending: true,
     })).toMatchObject({
       containerLabel: 'https://pod.example/files/',
-      submitLabel: 'Ingest 中...',
+      submitLabel: '添加中...',
     })
   })
 })

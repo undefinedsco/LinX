@@ -341,7 +341,8 @@ test.describe('Files production visual audit', () => {
 
     await selectResource(page, seed.folderUri)
     await expect(page.getByLabel('文件工作区').getByText(seed.folderName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText('Pod 根目录', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('button', { name: '文件范围：全部文件' })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('button', { name: '聊天文件' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: seed.folderName, exact: true })).toBeVisible({ timeout: 30_000 })
     const folderList = page.getByLabel('Folder list view')
     await expect(folderList).toBeVisible()

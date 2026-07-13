@@ -7,8 +7,6 @@ import {
   Search,
   X,
   ListFilter,
-  Tags,
-  ArrowUpDown,
   ChevronLeft,
   FolderTree,
 } from 'lucide-react'
@@ -23,6 +21,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -42,7 +41,7 @@ import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import { FilesListColumnHeader } from '../../ui/FilesListColumnHeader'
 import { FilesListRow } from '../../ui/FilesListRow'
 import { FilesOperationSheet } from '../../ui/FilesOperationSheet'
-import { SourceIngestToolbarAction } from '../ingest/SourceIngestAction'
+import { FilesAddMenu } from '../add/FilesAddMenu'
 import { useFilesListPaneController } from './useFilesListPaneController'
 import { useFilesListOperationController } from './useFilesListOperationController'
 import { useFilesListSelectionController } from './useFilesListSelectionController'
@@ -76,6 +75,8 @@ function ListSearchBar({
   onBack,
   scopeControl,
   onScopeChange,
+  addContainerUri,
+  addEntries,
 }: {
   toolbarChrome: FilesListToolbarChromeModel
   value: string
@@ -95,6 +96,8 @@ function ListSearchBar({
   onBack: () => void
   scopeControl: FilesListScopeControlModel
   onScopeChange: (scope: FilesBrowserScopeId) => void
+  addContainerUri: string | null
+  addEntries: FilesEntry[]
 }) {
   const currentSortLabel = sortOptions.find((option) => option.id === sortField)?.label ?? sortField
   const directionActionLabel = sortDirection === 'desc' ? '升序' : '降序'
@@ -154,21 +157,24 @@ function ListSearchBar({
           </button>
         )}
       </div>
-      <SourceIngestToolbarAction />
+      <FilesAddMenu containerUri={addContainerUri} entries={addEntries} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            aria-label={toolbarChrome.mimeTypeFilterLabel}
+            aria-label={toolbarChrome.filterAndSortLabel}
             className={cn(
               'flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground',
-              mimeTypeFilter && 'bg-primary/10 text-primary',
+              (mimeTypeFilter || tagFilter) && 'bg-primary/10 text-primary',
             )}
-            title={mimeTypeFilter ?? toolbarChrome.allMimeTypesLabel}
+            title={`${toolbarChrome.filterAndSortLabel} · ${currentSortLabel}`}
           >
             <ListFilter strokeWidth={1.5} className="h-3.5 w-3.5" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-48">
+        <DropdownMenuContent align="end" className="min-w-52">
+          <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+            {toolbarChrome.mimeTypeFilterLabel}
+          </DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={mimeTypeFilter ?? '__all__'}
             onValueChange={(value) => onMimeTypeFilterChange(value === '__all__' ? null : value)}
@@ -180,19 +186,27 @@ function ListSearchBar({
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            aria-label="排序"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-            title={`${currentSortLabel} · ${sortDirection === 'asc' ? '升序' : '降序'}`}
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+            {toolbarChrome.tagFilterLabel}
+          </DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={tagFilter ?? '__all__'}
+            onValueChange={(value) => onTagFilterChange(value === '__all__' ? null : value)}
           >
-            <ArrowUpDown strokeWidth={1.5} className="h-3.5 w-3.5" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-36">
+            <DropdownMenuRadioItem value="__all__">{toolbarChrome.allTagsLabel}</DropdownMenuRadioItem>
+            {canFilterByTag ? tagOptions.map((tag) => (
+              <DropdownMenuRadioItem key={tag} value={tag}>
+                {tag}
+              </DropdownMenuRadioItem>
+            )) : (
+              <DropdownMenuRadioItem value="__none__" disabled>暂无标签</DropdownMenuRadioItem>
+            )}
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+            排序
+          </DropdownMenuLabel>
           <DropdownMenuRadioGroup value={sortField} onValueChange={(value) => onSort(value as FilesListSortField)}>
             {sortOptions.map((option) => (
               <DropdownMenuRadioItem key={option.id} value={option.id}>
@@ -202,34 +216,6 @@ function ListSearchBar({
           </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => onSort(sortField)}>{directionActionLabel}</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            aria-label={toolbarChrome.tagFilterLabel}
-            className={cn(
-              'flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:opacity-40',
-              tagFilter && 'bg-primary/10 text-primary',
-            )}
-            title={tagFilter ?? toolbarChrome.allTagsLabel}
-            disabled={!canFilterByTag}
-          >
-            <Tags strokeWidth={1.5} className="h-3.5 w-3.5" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-40">
-          <DropdownMenuRadioGroup
-            value={tagFilter ?? '__all__'}
-            onValueChange={(value) => onTagFilterChange(value === '__all__' ? null : value)}
-          >
-            <DropdownMenuRadioItem value="__all__">{toolbarChrome.allTagsLabel}</DropdownMenuRadioItem>
-            {tagOptions.map((tag) => (
-              <DropdownMenuRadioItem key={tag} value={tag}>
-                {tag}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -319,6 +305,8 @@ export function FilesListPane(_props: MicroAppPaneProps) {
         onBack={listPane.goBackFolder}
         scopeControl={listPane.scopeControl}
         onScopeChange={listPane.changeBrowserScope}
+        addContainerUri={listPane.addContainerUri}
+        addEntries={listPane.baseEntries}
       />
       <div
         aria-label="当前文件夹路径"
