@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   Archive,
@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  Cloud,
   Contact,
   ExternalLink,
   Download,
@@ -19,13 +20,19 @@ import {
   FolderOpen,
   Home,
   Image,
+  Info,
   Link2,
   LockKeyhole,
   List,
+  ListFilter,
+  LogOut,
   Menu,
   MessageSquare,
   Mic,
+  MonitorCog,
   MoreHorizontal,
+  PanelRightClose,
+  PanelRightOpen,
   Paperclip,
   Plus,
   Search,
@@ -38,17 +45,22 @@ import {
   Upload,
   UserRound,
   UsersRound,
+  Wrench,
 } from 'lucide-react'
 import '../../web/src/index.css'
 import './prototype.css'
-import { FilesDetail, FilesList, FilesMain } from './files/FilesModule'
+import { FilesDetail, FilesMain } from './files/FilesModule'
 import { FilesWorkspace } from './files/FilesWorkspace'
+import { FilesBrowser } from './files/FilesBrowser'
+import type { FilesFolderId } from './files/files-types'
+import { ConfirmSheet, EmptyState, useDismissable, usePopover } from './shared/ui'
 import { readPrototypeStorage, writePrototypeStorage } from './files/prototypeStorage'
 import type { FilePropertyState } from './files/FileEditorSheet'
 import type {
   ChatFileItem,
   FileOpenSample,
   FilesSelection,
+  FolderChildItem,
   IconType,
   StoredFileContent,
   StructuredView,
@@ -56,7 +68,8 @@ import type {
 
 type ModuleId = 'chat' | 'contacts' | 'files' | 'favorites'
 type InboxItemStatus = 'pending' | 'approved' | 'denied'
-type RailSurface = 'chatFiles' | 'keys' | 'models' | 'settings'
+type SettingsSection = 'general' | 'models' | 'runtime' | 'network' | 'about'
+type FavoriteTab = '全部' | '消息' | '文件' | '链接' | '联系人'
 const FILE_CONTENTS_STORAGE_KEY = 'linx.prototype.files.fileContentsByPath'
 const FILE_PROPERTIES_STORAGE_KEY = 'linx.prototype.files.filePropertiesByPath'
 
@@ -111,19 +124,17 @@ interface ModelRouteItem {
   active?: boolean
 }
 
+interface ToastItem {
+  id: number
+  title: string
+  kind: 'ok' | 'err'
+}
+
 const navItems: NavItem[] = [
   { id: 'chat', label: '聊天', icon: MessageSquare },
   { id: 'contacts', label: '联系人', icon: Contact },
   { id: 'files', label: '文件', icon: FolderOpen },
   { id: 'favorites', label: '收藏', icon: Star },
-]
-
-const menuItems: Array<{ label: string; icon: IconType; action?: RailSurface }> = [
-  { label: '聊天文件', icon: FileArchive, action: 'chatFiles' },
-  { label: '聊天记录管理', icon: FileText },
-  { label: '密钥', icon: LockKeyhole, action: 'keys' },
-  { label: '模型', icon: Bot, action: 'models' },
-  { label: '设置', icon: Settings, action: 'settings' },
 ]
 
 const chatFolders = ['全部', '未读', '工作区', '个人']
@@ -195,24 +206,38 @@ const contacts: Array<{ group: string; items: ListItem[] }> = [
   },
 ]
 
+const favoriteTypeByTab: Record<Exclude<FavoriteTab, '全部'>, string> = {
+  消息: 'msg',
+  文件: 'file',
+  链接: 'link',
+  联系人: 'contact',
+}
+
+const favoriteTypeOf = (item: ListItem): string => {
+  if (item.icon === MessageSquare) return 'msg'
+  if (item.icon === Link2) return 'link'
+  if (item.icon === UsersRound || item.icon === UserRound || item.icon === Contact || item.icon === Bot) return 'contact'
+  return 'file'
+}
+
 const initialFavorites: Array<{ group: string; items: ListItem[] }> = [
   {
-    group: 'Today',
+    group: '今天',
     items: [
-      { id: 'rule', title: 'Secretary 初始化规则', subtitle: '默认助手不可删除，可改名', meta: '09:41', icon: MessageSquare, active: true },
-      { id: 'ui', title: 'UI layout reference.png', subtitle: '/alice/files/images/', meta: '09:30', icon: Image },
+      { id: 'rule', title: 'Secretary 初始化规则', subtitle: 'AI Secretary · 今天 09:41', meta: '09:41', icon: MessageSquare, active: true },
+      { id: 'ui', title: 'UI layout reference.png', subtitle: '/files/images/', meta: '09:30', icon: Image },
       { id: 'figma', title: 'Login flow - Figma', subtitle: 'figma.com/file/abc123', meta: '09:12', icon: Link2 },
     ],
   },
   {
-    group: 'Yesterday',
+    group: '昨天',
     items: [
-      { id: 'tunnel', title: 'tunnel.md', subtitle: '/alice/files/docs/', meta: 'Tue 16:22', icon: FileText },
+      { id: 'tunnel', title: 'tunnel.md', subtitle: '/files/docs/', meta: 'Tue 16:22', icon: FileText },
       { id: 'cloudflare', title: 'Cloudflare Tunnel setup', subtitle: 'developers.cloudflare.com', meta: 'Tue 15:48', icon: Link2 },
     ],
   },
   {
-    group: 'This week',
+    group: '本周',
     items: [
       { id: 'room', title: 'Design Room', subtitle: '4 members', meta: 'Mon 11:20', icon: UsersRound },
     ],
@@ -304,7 +329,7 @@ const secretKeys: SecretKeyItem[] = [
     masked: 'sk-•••• •••• 92A',
     usage: 'Chat / Coding',
     status: 'Default',
-    runtimeState: 'Active · In use',
+    runtimeState: '使用中',
     health: 'OK',
     linkedModels: 'gpt-5.5, gpt-5.3-codex-spark',
     lastUsed: '正在使用 · AI Secretary',
@@ -317,7 +342,7 @@ const secretKeys: SecretKeyItem[] = [
     masked: 'rc-•••• •••• 41F',
     usage: 'Image generation',
     status: '429',
-    runtimeState: 'Rate limited',
+    runtimeState: '已限流',
     health: 'HTTP 429',
     linkedModels: 'rightcodes-image',
     lastUsed: '2 分钟前 · 生图请求',
@@ -329,7 +354,7 @@ const secretKeys: SecretKeyItem[] = [
     masked: 'loc-•••• •••• 08C',
     usage: 'Dev only',
     status: '500',
-    runtimeState: 'Server error',
+    runtimeState: '服务错误',
     health: 'HTTP 500',
     linkedModels: 'local fallback',
     lastUsed: '7 分钟前 · fallback 运行',
@@ -375,15 +400,26 @@ function AvatarMark({ icon: Icon, active = false }: { icon: IconType; active?: b
 function Sidebar({
   activeModule,
   onChangeModule,
-  onOpenSecondary,
+  onOpenSettings,
+  onRequestSignOut,
 }: {
   activeModule: ModuleId
   onChangeModule: (module: ModuleId) => void
-  onOpenSecondary: (surface: RailSurface) => void
+  onOpenSettings: (section: SettingsSection) => void
+  onRequestSignOut: () => void
 }) {
+  const settingsMenu = usePopover('.rail-menu')
+
+  const settingsItems: Array<{ label: string; icon: IconType; section: SettingsSection }> = [
+    { label: '通用设置', icon: Settings, section: 'general' },
+    { label: '模型服务', icon: Bot, section: 'models' },
+    { label: '服务管理', icon: Wrench, section: 'runtime' },
+    { label: '关于', icon: Info, section: 'about' },
+  ]
+
   return (
     <aside className="side-rail">
-      <button className="profile-dot" aria-label="个人资料">
+      <button className="profile-dot" aria-label="个人资料" title="gan@undefineds.co">
         <Sparkles size={17} />
       </button>
       <nav className="module-nav" aria-label="主导航">
@@ -402,25 +438,58 @@ function Sidebar({
           )
         })}
       </nav>
+      <button
+        className="space-badge"
+        title="当前空间：云端空间 · Pod 已同步"
+        aria-label="当前空间：云端空间，Pod 已同步"
+        onClick={() => onOpenSettings('runtime')}
+      >
+        <Cloud size={16} />
+        <i />
+      </button>
       <div className="rail-menu">
-        <div className="rail-menu-popover" role="menu">
-          {menuItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <button
-                key={item.label}
-                role="menuitem"
-                onClick={() => {
-                  if (item.action) onOpenSecondary(item.action)
-                }}
-              >
-                <Icon size={16} />
-                <span>{item.label}</span>
-              </button>
-            )
-          })}
-        </div>
-        <button aria-label="菜单">
+        {settingsMenu.open ? (
+          <div className="rail-menu-popover open" role="menu" aria-label="设置菜单">
+            <div className="rail-menu-account">
+              <strong>gan@undefineds.co</strong>
+              <span>云端空间 · Pod 已同步</span>
+            </div>
+            {settingsItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.label}
+                  role="menuitem"
+                  onClick={() => {
+                    settingsMenu.close()
+                    onOpenSettings(item.section)
+                  }}
+                >
+                  <Icon size={16} />
+                  <span>{item.label}</span>
+                </button>
+              )
+            })}
+            <div className="rail-menu-divider" />
+            <button
+              role="menuitem"
+              className="destructive"
+              onClick={() => {
+                settingsMenu.close()
+                onRequestSignOut()
+              }}
+            >
+              <LogOut size={16} />
+              <span>退出登录</span>
+            </button>
+          </div>
+        ) : null}
+        <button
+          aria-label="设置"
+          title="设置"
+          aria-expanded={settingsMenu.open}
+          onClick={settingsMenu.toggle}
+        >
           <Menu size={21} />
         </button>
       </div>
@@ -428,7 +497,17 @@ function Sidebar({
   )
 }
 
-function SearchHeader({ placeholder, addLabel }: { placeholder: string; addLabel?: string }) {
+function SearchHeader({
+  placeholder,
+  addLabel,
+  filter,
+}: {
+  placeholder: string
+  addLabel?: string
+  filter?: { options: string[]; active: string; onChange: (value: string) => void }
+}) {
+  const filterMenu = usePopover('.list-filter-anchor')
+
   return (
     <header className="list-header">
       <div className="search-pill">
@@ -436,8 +515,39 @@ function SearchHeader({ placeholder, addLabel }: { placeholder: string; addLabel
         <span>{placeholder}</span>
         <kbd>⌘K</kbd>
       </div>
+      {filter ? (
+        <span className="list-filter-anchor">
+          <button
+            className={`icon-button ${filter.active !== filter.options[0] ? 'filter-active' : ''}`}
+            aria-label="筛选"
+            title="筛选"
+            aria-expanded={filterMenu.open}
+            onClick={filterMenu.toggle}
+          >
+            <ListFilter size={16} />
+          </button>
+          {filterMenu.open ? (
+            <span className="list-filter-menu" role="menu">
+              {filter.options.map((option) => (
+                <button
+                  role="menuitem"
+                  className={option === filter.active ? 'active' : ''}
+                  key={option}
+                  onClick={() => {
+                    filter.onChange(option)
+                    filterMenu.close()
+                  }}
+                >
+                  <span className="chk">{option === filter.active ? <Check size={13} /> : null}</span>
+                  <span>{option}</span>
+                </button>
+              ))}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
       {addLabel ? (
-        <button className="icon-button" aria-label={addLabel}>
+        <button className="icon-button" aria-label={addLabel} title={addLabel}>
           <Plus size={17} />
         </button>
       ) : null}
@@ -445,11 +555,28 @@ function SearchHeader({ placeholder, addLabel }: { placeholder: string; addLabel
   )
 }
 
-function ListRow({ item, dense = false }: { item: ListItem; dense?: boolean }) {
+function ListRow({
+  item,
+  dense = false,
+  selected,
+  onSelect,
+  rowRef,
+}: {
+  item: ListItem
+  dense?: boolean
+  selected?: boolean
+  onSelect?: () => void
+  rowRef?: (el: HTMLButtonElement | null) => void
+}) {
   const Icon = item.icon
   return (
-    <button className={`list-row ${item.active ? 'active' : ''} ${item.muted ? 'muted' : ''} ${dense ? 'dense' : ''}`}>
-      <AvatarMark icon={Icon} active={item.active} />
+    <button
+      className={`list-row ${selected ?? item.active ? 'active' : ''} ${item.muted ? 'muted' : ''} ${dense ? 'dense' : ''}`}
+      onClick={onSelect}
+      ref={rowRef}
+      tabIndex={selected ? 0 : -1}
+    >
+      <AvatarMark icon={Icon} active={selected ?? item.active} />
       <span className="list-row-main">
         <span className="list-row-title">
           <strong>{item.title}</strong>
@@ -461,13 +588,34 @@ function ListRow({ item, dense = false }: { item: ListItem; dense?: boolean }) {
   )
 }
 
-function TopTools({ pendingCount, onOpenInbox }: { pendingCount: number; onOpenInbox: () => void }) {
+function TopTools({
+  pendingCount,
+  onOpenInbox,
+  detailOpen,
+  onToggleDetail,
+}: {
+  pendingCount: number
+  onOpenInbox: () => void
+  detailOpen?: boolean
+  onToggleDetail?: () => void
+}) {
   return (
     <div className="top-tools">
-      <button className="icon-button" aria-label="消息中心" onClick={onOpenInbox}>
+      <button className="icon-button" aria-label={`收件箱，${pendingCount} 待处理`} title="收件箱" onClick={onOpenInbox}>
         <Bell size={16} />
-        {pendingCount > 0 ? <i /> : null}
+        {pendingCount > 0 ? <i className="bell-count">{pendingCount}</i> : null}
       </button>
+      {onToggleDetail ? (
+        <button
+          className="icon-button"
+          aria-label={detailOpen ? '收起侧边栏' : '展开侧边栏'}
+          title={detailOpen ? '收起侧边栏' : '展开侧边栏'}
+          aria-pressed={detailOpen}
+          onClick={onToggleDetail}
+        >
+          {detailOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+        </button>
+      ) : null}
       <button className="icon-button" aria-label="更多">
         <MoreHorizontal size={17} />
       </button>
@@ -475,18 +623,44 @@ function TopTools({ pendingCount, onOpenInbox }: { pendingCount: number; onOpenI
   )
 }
 
-function ChatList() {
+function ChatList({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
+  const rowsRef = useRef<Array<HTMLButtonElement | null>>([])
+
+  const moveSelection = (currentIndex: number, delta: number) => {
+    const nextIndex = Math.min(Math.max(currentIndex + delta, 0), chats.length - 1)
+    if (nextIndex === currentIndex) return
+    const next = chats[nextIndex]
+    onSelect(next.id)
+    window.setTimeout(() => rowsRef.current[nextIndex]?.focus(), 0)
+  }
+
   return (
     <section className="list-pane">
       <SearchHeader placeholder="搜索会话、Thread 或 Workspace" addLabel="新建会话" />
-      <div className="folder-tabs">
-        {chatFolders.map((folder, index) => (
-          <button className={index === 0 ? 'active' : ''} key={folder}>{folder}</button>
-        ))}
-      </div>
-      <div className="list-scroll">
-        {chats.map((chat) => (
-          <ListRow item={chat} key={chat.id} />
+      <div
+        className="list-scroll"
+        role="listbox"
+        aria-label="会话列表"
+        onKeyDown={(event) => {
+          const currentIndex = chats.findIndex((chat) => chat.id === selectedId)
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            moveSelection(currentIndex, 1)
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            moveSelection(currentIndex, -1)
+          }
+        }}
+      >
+        {chats.map((chat, index) => (
+          <ListRow
+            item={chat}
+            key={chat.id}
+            selected={chat.id === selectedId}
+            onSelect={() => onSelect(chat.id)}
+            rowRef={(el) => { rowsRef.current[index] = el }}
+          />
         ))}
       </div>
     </section>
@@ -529,76 +703,142 @@ function ApprovalInlineCard({
   )
 }
 
+function SecretaryWelcome({ onOpenInbox }: { onOpenInbox: () => void }) {
+  return (
+    <article className="message-card secretary welcome-card">
+      <AvatarMark icon={Bot} active />
+      <div>
+        <strong>早上好。我是 AI Secretary，你的默认助手。</strong>
+        <ul>
+          <li><FolderOpen size={14} /> 工作现场已就绪：linx-prototype · undefinedsco/LinX</li>
+          <li><Cloud size={14} /> 数据保存在云端空间，Pod 已同步</li>
+          <li><Check size={14} /> Session 会绑定 Agent、Thread 和 Workspace</li>
+        </ul>
+        <div className="starter-actions">
+          <button>整理今天的链接</button>
+          <button>继续上次任务</button>
+          <button onClick={onOpenInbox}>查看待审批</button>
+        </div>
+        <time>09:41</time>
+      </div>
+    </article>
+  )
+}
+
+function AiStateStrips({ onOpenInbox, onRetry }: { onOpenInbox: () => void; onRetry: () => void }) {
+  const [retrying, setRetrying] = useState(false)
+  return (
+    <>
+      <div className="ai-state-strip error" role="alert">
+        <span className="strip-label">中断</span>
+        <span className="strip-text">模型请求超时（gateway）</span>
+        <button
+          onClick={() => {
+            if (retrying) return
+            setRetrying(true)
+            window.setTimeout(() => {
+              setRetrying(false)
+              onRetry()
+            }, 900)
+          }}
+        >
+          {retrying ? '重试中…' : '重试'}
+        </button>
+      </div>
+      <div className="ai-state-strip waiting" role="status">
+        <span className="strip-spinner" />
+        <span className="strip-text">等待处理 · 运行时请求了一个工具调用，已转入收件箱</span>
+        <button onClick={onOpenInbox}>查看</button>
+      </div>
+    </>
+  )
+}
+
 function ChatMain({
+  selectedChat,
   pendingCount,
   approvalStatus,
   onApprove,
   onDeny,
   onOpenInbox,
+  detailOpen,
+  onToggleDetail,
+  notify,
 }: {
+  selectedChat: string
   pendingCount: number
   approvalStatus: InboxItemStatus
   onApprove: () => void
   onDeny: () => void
   onOpenInbox: () => void
+  detailOpen?: boolean
+  onToggleDetail?: () => void
+  notify: (title: string, kind?: 'ok' | 'err') => void
 }) {
+  const isSecretary = selectedChat === 'secretary'
+  const chatMeta = chats.find((chat) => chat.id === selectedChat) ?? chats[0]
+
   return (
     <main className="work-pane chat-work">
       <header className="work-header">
         <div>
-          <h1>AI Secretary</h1>
-          <p>当前 Thread · 默认助手 · Pod 已同步</p>
+          <h1>{chatMeta.title}</h1>
+          <p>{isSecretary ? '默认助手 · 当前 Thread「原型调整」 · 云端空间已同步' : '云端空间已同步'}</p>
         </div>
-        <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
+        <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} detailOpen={detailOpen} onToggleDetail={onToggleDetail} />
       </header>
-      <section className="chat-stage">
-        <div className="day-label">今天</div>
-        <article className="message-card secretary">
-          <AvatarMark icon={Bot} active />
-          <div>
-            <strong>我已准备好默认工作现场。</strong>
-            <ul>
-              <li><FolderOpen size={14} /> Workspace: linx-prototype</li>
-              <li><FileText size={14} /> Repository: undefinedsco/LinX</li>
-              <li><Check size={14} /> Session 会绑定 Agent、Thread 和 Workspace</li>
-            </ul>
-            <time>09:41</time>
-          </div>
-        </article>
-        <ApprovalInlineCard
-          status={approvalStatus}
-          onApprove={onApprove}
-          onDeny={onDeny}
-          onOpenInbox={onOpenInbox}
-        />
-        <article className="message-card mine">
-          <p>按新模型继续重做原型，保持界面接近用户心智。</p>
-          <time>09:42 ✓</time>
-        </article>
-      </section>
+      {isSecretary ? (
+        <section className="chat-stage">
+          <div className="day-label">今天</div>
+          <SecretaryWelcome onOpenInbox={onOpenInbox} />
+          <ApprovalInlineCard
+            status={approvalStatus}
+            onApprove={onApprove}
+            onDeny={onDeny}
+            onOpenInbox={onOpenInbox}
+          />
+          <article className="message-card mine">
+            <p>按新模型继续重做原型，保持界面接近用户心智。</p>
+            <time>09:42 ✓</time>
+          </article>
+          <AiStateStrips onOpenInbox={onOpenInbox} onRetry={() => notify('已重试 · 请求已重新发送')} />
+        </section>
+      ) : (
+        <section className="chat-stage">
+          <div className="day-label">今天</div>
+          <article className="message-card secretary">
+            <AvatarMark icon={chatMeta.icon} />
+            <div>
+              <strong>{chatMeta.title}</strong>
+              <p style={{ margin: 0, color: 'var(--proto-ink-soft)', fontSize: 13 }}>{chatMeta.subtitle}。这个会话还没有新消息，直接输入即可开始。</p>
+              <time>09:30</time>
+            </div>
+          </article>
+        </section>
+      )}
       <footer className="composer-card">
-        <div className="composer-input">发消息给 AI Secretary，或把链接、文件、任务直接丢进来</div>
+        <div className="composer-input" contentEditable suppressContentEditableWarning data-placeholder={`发消息给 ${chatMeta.title}，或把链接、文件、任务直接丢进来`} />
         <div className="composer-actions">
-          <button><Paperclip size={16} /></button>
-          <button><Image size={16} /></button>
-          <button><Link2 size={16} /></button>
-          <button><Tags size={16} /></button>
-          <button><Mic size={16} /></button>
-          <button className="send"><SendHorizontal size={16} /></button>
+          <button aria-label="添加附件"><Paperclip size={16} /></button>
+          <button aria-label="添加图片"><Image size={16} /></button>
+          <button aria-label="保存链接"><Link2 size={16} /></button>
+          <button aria-label="添加标签"><Tags size={16} /></button>
+          <button aria-label="语音输入"><Mic size={16} /></button>
+          <button className="send" aria-label="发送" onClick={() => notify('消息已发送')}><SendHorizontal size={16} /></button>
         </div>
       </footer>
     </main>
   )
 }
 
-function ChatDetail() {
+function ChatDetail({ onOpenChatFiles }: { onOpenChatFiles: () => void }) {
   return (
     <aside className="detail-pane">
       <section className="identity-card">
         <AvatarMark icon={Bot} active />
         <h2>AI Secretary</h2>
         <p>默认 Agent · 不可删除</p>
-        <button>请赐名</button>
+        <button>改名</button>
       </section>
       <section className="detail-card">
         <h3>当前工作现场</h3>
@@ -616,6 +856,7 @@ function ChatDetail() {
         <h3>快捷入口</h3>
         <button className="wide-action"><Check size={15} /> 新任务</button>
         <button className="wide-action"><Upload size={15} /> 上传文件</button>
+        <button className="wide-action" onClick={onOpenChatFiles}><FileArchive size={15} /> 聊天文件</button>
         <button className="wide-action"><Link2 size={15} /> 保存链接</button>
       </section>
     </aside>
@@ -640,15 +881,25 @@ function ContactsList() {
   )
 }
 
-function ContactsMain({ pendingCount, onOpenInbox }: { pendingCount: number; onOpenInbox: () => void }) {
+function ContactsMain({
+  pendingCount,
+  onOpenInbox,
+  detailOpen,
+  onToggleDetail,
+}: {
+  pendingCount: number
+  onOpenInbox: () => void
+  detailOpen?: boolean
+  onToggleDetail?: () => void
+}) {
   return (
     <main className="work-pane contact-work">
       <header className="work-header">
         <div>
           <h1>AI Secretary</h1>
-          <p>联系人投影，链接到默认 Agent</p>
+          <p>默认助手 · 联系人投影</p>
         </div>
-        <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
+        <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} detailOpen={detailOpen} onToggleDetail={onToggleDetail} />
       </header>
       <section className="contact-profile-card">
         <AvatarMark icon={Bot} active />
@@ -659,13 +910,14 @@ function ContactsMain({ pendingCount, onOpenInbox }: { pendingCount: number; onO
       </section>
       <div className="primary-actions">
         <button className="primary"><MessageSquare size={16} /> 发消息</button>
-        <button><Sparkles size={16} /> 请赐名</button>
+        <button><Sparkles size={16} /> 改名</button>
         <button><Star size={16} /> 收藏</button>
       </div>
       <section className="info-table">
         <InfoRow label="Contact" value="/.data/contacts/ai-secretary.ttl" />
         <InfoRow label="Agent" value="/.data/agents/secretary/profile.ttl" />
         <InfoRow label="Agent Home" value="/.data/agents/secretary/" />
+        <InfoRow label="聊天模型" value="linx-lite" />
         <InfoRow label="规则" value="默认助手不可删除；可改名、改头像" />
         <InfoRow label="说明" value="帮你整理聊天、文件、链接、任务和上下文。" />
       </section>
@@ -693,106 +945,125 @@ function ContactsDetail() {
   )
 }
 
-function FavoritesList({ favoriteGroups }: { favoriteGroups: Array<{ group: string; items: ListItem[] }> }) {
+function FavoritesList({
+  favoriteGroups,
+  activeTab,
+  onChangeTab,
+  selectedId,
+  onSelect,
+}: {
+  favoriteGroups: Array<{ group: string; items: ListItem[] }>
+  activeTab: FavoriteTab
+  onChangeTab: (tab: FavoriteTab) => void
+  selectedId: string | null
+  onSelect: (item: ListItem) => void
+}) {
+  const tabs: FavoriteTab[] = ['全部', '消息', '文件', '链接', '联系人']
+  const filteredGroups = favoriteGroups
+    .map((group) => ({
+      ...group,
+      items: activeTab === '全部' ? group.items : group.items.filter((item) => favoriteTypeOf(item) === favoriteTypeByTab[activeTab]),
+    }))
+    .filter((group) => group.items.length > 0)
+
   return (
-    <section className="list-pane" data-favorites-surface="list">
-      <SearchHeader placeholder="Search saved" />
-      <div className="folder-tabs">
-        {['All', 'Msg', 'File', 'Link', 'Contact'].map((tab, index) => (
-          <button className={index === 0 ? 'active' : ''} key={tab}>{tab}</button>
-        ))}
-      </div>
+    <section className="list-pane">
+      <SearchHeader
+        placeholder="搜索收藏"
+        filter={{ options: tabs, active: activeTab, onChange: (value) => onChangeTab(value as FavoriteTab) }}
+      />
       <div className="list-scroll grouped">
-        {favoriteGroups.map((group) => (
-          <div className="row-group" key={group.group}>
-            <h3>{group.group}</h3>
-            {group.items.map((item) => (
-              <span data-favorite-item={item.id} data-favorite-path={item.subtitle} key={item.id}>
-                <ListRow dense item={item} />
-              </span>
-            ))}
+        {filteredGroups.length === 0 ? (
+          <div className="list-empty-hint">
+            <p>这一类还没有收藏。</p>
           </div>
-        ))}
+        ) : (
+          filteredGroups.map((group) => (
+            <div className="row-group" key={group.group}>
+              <h3>{group.group}</h3>
+              {group.items.map((item) => (
+                <ListRow dense item={item} key={item.id} selected={item.id === selectedId} onSelect={() => onSelect(item)} />
+              ))}
+            </div>
+          ))
+        )}
       </div>
     </section>
   )
 }
 
 function FavoritesMain({
-  favoriteGroups,
+  selected,
   pendingCount,
   onOpenInbox,
+  onGoFiles,
 }: {
-  favoriteGroups: Array<{ group: string; items: ListItem[] }>
+  selected: ListItem | null
   pendingCount: number
   onOpenInbox: () => void
+  onGoFiles: () => void
 }) {
+  if (!selected) {
+    return (
+      <main className="work-pane favorites-work">
+        <header className="work-header">
+          <div>
+            <h1>收藏</h1>
+            <p>回到原消息、原文件、原联系人</p>
+          </div>
+          <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
+        </header>
+        <EmptyState
+          icon={Star}
+          title="在聊天、文件或联系人里点星标"
+          description="收藏的内容会出现在这里，并能回到它们原来的位置。"
+          action={<button className="wide-action strong" onClick={onGoFiles}>去看看文件</button>}
+        />
+      </main>
+    )
+  }
+
+  const Icon = selected.icon
   return (
     <main className="work-pane favorites-work">
       <header className="work-header">
         <div>
-          <h1>Favorites</h1>
-          <p>回到原消息、原文件、原联系人</p>
+          <h1>{selected.title}</h1>
+          <p>{selected.subtitle}</p>
         </div>
         <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
       </header>
-      <section className="saved-feed" data-favorites-surface="feed">
-        {favoriteGroups.map((group) => (
-          <div className="saved-group" key={group.group}>
-            <h2>{group.group}</h2>
-            {group.items.map((item) => {
-              const Icon = item.icon
-              return (
-                <button
-                  className={item.active ? 'active' : ''}
-                  data-favorite-item={item.id}
-                  data-favorite-path={item.subtitle}
-                  key={item.id}
-                >
-                  <AvatarMark icon={Icon} active={item.active} />
-                  <span>
-                    <strong>{item.title}</strong>
-                    <small>{item.subtitle}</small>
-                  </span>
-                  <time>{item.meta}</time>
-                </button>
-              )
-            })}
+      <section className="favorite-detail-body">
+        <section className="identity-card saved-identity">
+          <AvatarMark icon={Icon} active />
+          <h2>{selected.title}</h2>
+          <p>{selected.subtitle}</p>
+        </section>
+        <section className="detail-card">
+          <h3>回到原处</h3>
+          <DetailLine icon={MessageSquare} label="来源" value={selected.subtitle} />
+          <DetailLine icon={Clock3} label="收藏时间" value={selected.meta} />
+        </section>
+        <section className="detail-card">
+          <h3>标签</h3>
+          <div className="tag-cloud">
+            <span>规则</span>
+            <span>助手</span>
+            <span>默认设置</span>
+            <span>+</span>
           </div>
-        ))}
+        </section>
+        <div className="primary-actions">
+          <button className="primary"><MessageSquare size={15} /> 回到来源</button>
+          <button><Star size={15} /> 取消收藏</button>
+        </div>
       </section>
     </main>
   )
 }
 
-function FavoritesDetail() {
-  return (
-    <aside className="detail-pane">
-      <section className="identity-card saved-identity">
-        <AvatarMark icon={Star} active />
-        <h2>Secretary 初始化规则</h2>
-        <p>Message · AI Secretary</p>
-      </section>
-      <section className="detail-card">
-        <h3>Go back to</h3>
-        <DetailLine icon={MessageSquare} label="Message" value="09:41" />
-        <DetailLine icon={Bot} label="Agent" value="AI Secretary" />
-        <DetailLine icon={FolderOpen} label="Workspace" value="linx-prototype" />
-      </section>
-      <section className="detail-card">
-        <h3>Tags</h3>
-        <div className="tag-cloud">
-          <span>规则</span>
-          <span>助手</span>
-          <span>默认设置</span>
-          <span>+</span>
-        </div>
-      </section>
-    </aside>
-  )
-}
-
 function ChatFilesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  useDismissable(open, onClose)
   if (!open) return null
 
   return (
@@ -892,6 +1163,7 @@ function InboxSheet({
   onDeny: () => void
   onClose: () => void
 }) {
+  useDismissable(open, onClose)
   if (!open) return null
   const activeItem = items[0]
   const activeStatus = approvalStatus
@@ -931,7 +1203,7 @@ function InboxSheet({
           <section className="inbox-list-column">
             <div className="inbox-column-header">
               <h3>待处理</h3>
-              <span>{activeStatus === 'pending' ? '2 pending' : '1 pending'}</span>
+              <span>{activeStatus === 'pending' ? '2 待处理' : '1 待处理'}</span>
             </div>
             <div className="inbox-list-scroll">
               {items.map((item, index) => {
@@ -993,9 +1265,9 @@ function InboxSheet({
             </section>
             <section className="inbox-entry-card">
               <h3>当前选择</h3>
-              <DetailLine icon={ShieldCheck} label="Type" value="Approval" />
-              <DetailLine icon={Clock3} label="Time" value={activeItem.time} />
-              <DetailLine icon={Bot} label="Source" value="AI Secretary" />
+              <DetailLine icon={ShieldCheck} label="类型" value="审批" />
+              <DetailLine icon={Clock3} label="时间" value={activeItem.time} />
+              <DetailLine icon={Bot} label="来源" value="AI Secretary" />
             </section>
             <section className="inbox-entry-card compact">
               <h3>策略</h3>
@@ -1008,8 +1280,33 @@ function InboxSheet({
   )
 }
 
-function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+const settingsNavItems: Array<{ section: SettingsSection; label: string; desc: string; icon: IconType }> = [
+  { section: 'general', label: '通用', desc: '账号、外观与常用入口', icon: Settings },
+  { section: 'models', label: '模型服务', desc: '提供商、密钥与模型路由', icon: Bot },
+  { section: 'runtime', label: '运行环境', desc: '当前壳与本地服务', icon: MonitorCog },
+  { section: 'network', label: '本地网络', desc: '域名、隧道与可达性', icon: Home },
+  { section: 'about', label: '关于', desc: '版本与更新', icon: Info },
+]
+
+function SettingsDialog({
+  open,
+  section,
+  onChangeSection,
+  onClose,
+  notify,
+}: {
+  open: boolean
+  section: SettingsSection
+  onChangeSection: (section: SettingsSection) => void
+  onClose: () => void
+  notify: (title: string, kind?: 'ok' | 'err') => void
+}) {
+  const [serviceRunning, setServiceRunning] = useState(true)
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false)
+  useDismissable(open, onClose)
   if (!open) return null
+
+  const activeNav = settingsNavItems.find((item) => item.section === section) ?? settingsNavItems[0]
 
   return (
     <div className="modal-layer settings-layer" role="dialog" aria-label="设置">
@@ -1018,7 +1315,7 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
         <header className="modal-header">
           <div>
             <h2>设置</h2>
-            <p>账号、服务、Local 和通知；密钥与模型在底部菜单中独立打开</p>
+            <p>{activeNav.desc}</p>
           </div>
           <button className="icon-button" aria-label="关闭设置弹窗" onClick={onClose}>
             <ChevronRight size={17} />
@@ -1027,16 +1324,10 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
         <div className="settings-three-column">
           <aside className="settings-nav-column">
             <div className="settings-nav-title">设置</div>
-            {[
-              { label: '账号', icon: UserRound, active: true },
-              { label: '服务状态', icon: ShieldCheck },
-              { label: 'Local Provider', icon: Home },
-              { label: '通知', icon: Bell },
-              { label: '关于', icon: FileText },
-            ].map((item) => {
+            {settingsNavItems.map((item) => {
               const Icon = item.icon
               return (
-                <button className={item.active ? 'active' : ''} key={item.label}>
+                <button className={item.section === section ? 'active' : ''} key={item.section} onClick={() => onChangeSection(item.section)}>
                   <Icon size={15} />
                   <span>{item.label}</span>
                 </button>
@@ -1044,199 +1335,211 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
             })}
           </aside>
           <main className="settings-main-column">
-            <section className="settings-section-card">
-              <div className="settings-section-header">
-                <div>
-                  <h3>账号</h3>
-                  <p>登录状态、Pod 状态和基础资料。</p>
-                </div>
-              </div>
-              <div className="settings-info-list">
-                <InfoRow label="Account" value="gan@undefineds.co" />
-                <InfoRow label="Provider" value="Cloud" />
-                <InfoRow label="Pod" value="Connected" />
-                <InfoRow label="WebID" value="https://gan.undefineds.co/profile/card#me" />
-              </div>
-            </section>
-            <section className="settings-section-card">
-              <div className="settings-section-header">
-                <div>
-                  <h3>低频入口</h3>
-                  <p>密钥和模型是并列二级页面，不放进设置内部。</p>
-                </div>
-              </div>
-              <div className="settings-shortcut-list">
-                <button><LockKeyhole size={16} /> 密钥</button>
-                <button><Bot size={16} /> 模型</button>
-              </div>
-            </section>
-          </main>
-          <aside className="settings-detail-column">
-            <section className="settings-detail-card">
-              <h3>当前状态</h3>
-              <DetailLine icon={Check} label="Login" value="Active" />
-              <DetailLine icon={Home} label="Local" value="Off" />
-              <DetailLine icon={Bell} label="Notice" value="Enabled" />
-            </section>
-            <section className="settings-detail-card">
-              <h3>边界</h3>
-              <p>设置不管理供应商；供应商只是密钥和模型页面里的分组。</p>
-            </section>
-          </aside>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function KeysDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null
-
-  return (
-    <div className="modal-layer settings-layer" role="dialog" aria-label="密钥">
-      <button className="modal-backdrop" aria-label="关闭密钥" onClick={onClose} />
-      <section className="modal-panel settings-panel">
-        <header className="modal-header">
-          <div>
-            <h2>密钥</h2>
-            <p>按供应商分组的共享 credential 池；不展示明文 API key</p>
-          </div>
-          <button className="icon-button" aria-label="关闭密钥弹窗" onClick={onClose}>
-            <ChevronRight size={17} />
-          </button>
-        </header>
-        <div className="settings-three-column keys-surface">
-          <aside className="settings-nav-column">
-            <div className="settings-nav-title">供应商</div>
-            {['全部', 'OpenAI', 'RightCodes', 'OpenAI-compatible'].map((label, index) => (
-              <button className={index === 0 ? 'active' : ''} key={label}>
-                <LockKeyhole size={15} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </aside>
-          <main className="settings-main-column">
-            {['OpenAI', 'RightCodes', 'OpenAI-compatible'].map((provider) => (
-              <section className="settings-section-card" key={provider}>
+            {section === 'general' ? (
+              <>
+                <section className="settings-section-card">
+                  <div className="settings-section-header">
+                    <div>
+                      <h3>账号</h3>
+                      <p>登录状态、Pod 状态和基础资料。</p>
+                    </div>
+                  </div>
+                  <div className="settings-info-list">
+                    <InfoRow label="Account" value="gan@undefineds.co" />
+                    <InfoRow label="Provider" value="undefineds 账号" />
+                    <InfoRow label="数据空间" value="云端空间" />
+                    <InfoRow label="Pod" value="已同步" />
+                  </div>
+                </section>
+                <section className="settings-section-card">
+                  <div className="settings-section-header">
+                    <div>
+                      <h3>外观</h3>
+                      <p>主题跟随系统，强调色仅用于状态与当前位置。</p>
+                    </div>
+                  </div>
+                  <div className="settings-info-list">
+                    <InfoRow label="主题" value="跟随系统" />
+                    <InfoRow label="密度" value="桌面紧凑" />
+                  </div>
+                </section>
+              </>
+            ) : null}
+            {section === 'models' ? (
+              <>
+                {['OpenAI', 'RightCodes', 'OpenAI-compatible'].map((provider) => (
+                  <section className="settings-section-card" key={provider}>
+                    <div className="settings-section-header">
+                      <div>
+                        <h3>{provider}</h3>
+                        <p>连接配置与可用模型；API Key 保存在你的私有 Pod 设置中。</p>
+                      </div>
+                      <button onClick={() => notify('连接成功，已同步 3 个模型')}>验证</button>
+                    </div>
+                    <div className="secret-list">
+                      {secretKeys.filter((item) => item.provider === provider).map((item) => (
+                        <button className={item.active ? 'active' : ''} key={item.id}>
+                          <AvatarMark icon={LockKeyhole} active={item.active} />
+                          <span>
+                            <strong>{item.name}</strong>
+                            <small>{item.masked}</small>
+                            <small>{item.runtimeState} · {item.lastUsed}</small>
+                          </span>
+                          <em className={item.health === 'HTTP 429' || item.health === 'HTTP 500' ? 'danger' : item.active ? 'active' : ''}>{item.health.startsWith('HTTP') ? item.health : item.status}</em>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="model-route-list">
+                      {modelRoutes.filter((item) => item.provider === provider).map((item) => (
+                        <button className={item.active ? 'active' : ''} key={item.id}>
+                          <span>
+                            <strong>{item.name}</strong>
+                            <small>{item.route}</small>
+                          </span>
+                          <span>{item.credential}</span>
+                          <span>{item.note}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </>
+            ) : null}
+            {section === 'runtime' ? (
+              <>
+                <section className="settings-section-card">
+                  <div className="settings-section-header">
+                    <div>
+                      <h3>运行环境</h3>
+                      <p>当前壳、认证方式，以及与本地服务相关的入口。</p>
+                    </div>
+                  </div>
+                  <div className="runtime-env">
+                    <span className="env-badge"><MonitorCog size={12} /> Web</span>
+                    <span className="env-badge ok">Solid Pod 登录</span>
+                    <span className="env-badge ok">云端空间 · Pod 已同步</span>
+                  </div>
+                  <div className="settings-info-list">
+                    <InfoRow label="Shell" value="Browser shell + shared web app" />
+                    <InfoRow label="认证" value="Solid Pod 登录" />
+                  </div>
+                </section>
+                <section className="settings-section-card">
+                  <div className="settings-section-header">
+                    <div>
+                      <h3>本地服务</h3>
+                      <p>本机空间的文件、会话与同步都依赖这个服务。</p>
+                    </div>
+                  </div>
+                  <div className="service-row">
+                    <span className={`status-pill ${serviceRunning ? 'approved' : 'denied'}`}>{serviceRunning ? '本地服务运行中' : '已停止'}</span>
+                    <button className="wide-action" onClick={() => notify('正在重启本地服务…')}>重启</button>
+                    <button className="wide-action danger" onClick={() => setStopConfirmOpen(true)}>停止服务</button>
+                  </div>
+                </section>
+              </>
+            ) : null}
+            {section === 'network' ? (
+              <section className="settings-section-card">
                 <div className="settings-section-header">
                   <div>
-                    <h3>{provider}</h3>
-                    <p>供应商只是分组，不是单独设置页。</p>
+                    <h3>本地网络</h3>
+                    <p>可记录多个访问配置，但同一时间只有一个生效配置。</p>
                   </div>
-                  <button><Plus size={15} /> 新密钥</button>
                 </div>
-                <div className="secret-list">
-                  {secretKeys.filter((item) => item.provider === provider).map((item) => (
-                    <button className={item.active ? 'active' : ''} key={item.id}>
-                      <AvatarMark icon={LockKeyhole} active={item.active} />
-                      <span>
-                        <strong>{item.name}</strong>
-                        <small>{item.masked}</small>
-                        <small>{item.runtimeState} · {item.lastUsed}</small>
-                      </span>
-                      <em className={item.health === 'HTTP 429' || item.health === 'HTTP 500' ? 'danger' : item.active ? 'active' : ''}>{item.health.startsWith('HTTP') ? item.health : item.status}</em>
-                    </button>
-                  ))}
+                <div className="settings-info-list">
+                  <InfoRow label="Local" value="仅本机 · 无需公网可达" />
+                  <InfoRow label="LAN" value="局域网 · 192.168.1.8" />
+                  <InfoRow label="Tunnel" value="node-0000.undefineds.co · 生效中" />
                 </div>
+                <p className="settings-note">切换配置会先停止旧配置、启动新配置，并验证可达性。</p>
               </section>
-            ))}
-          </main>
-          <aside className="settings-detail-column">
-            <section className="settings-detail-card">
-              <h3>当前激活</h3>
-              <InfoRow label="Key" value="OpenAI Team Key" />
-              <InfoRow label="State" value="Active · In use" />
-              <InfoRow label="Models" value="gpt-5.5 / spark" />
-            </section>
-            <section className="settings-detail-card warning">
-              <h3>异常记录</h3>
-              <InfoRow label="HTTP 429" value="RightCodes Draw Key" />
-              <InfoRow label="HTTP 500" value="Local Lab Key" />
-            </section>
-            <section className="settings-detail-card compact">
-              <h3>边界</h3>
-              <p>密钥只在这里维护；Agent 和 Session 只引用偏好，不保存 API key。</p>
-            </section>
-          </aside>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function ModelsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null
-
-  return (
-    <div className="modal-layer settings-layer" role="dialog" aria-label="模型">
-      <button className="modal-backdrop" aria-label="关闭模型" onClick={onClose} />
-      <section className="modal-panel settings-panel">
-        <header className="modal-header">
-          <div>
-            <h2>模型</h2>
-            <p>按供应商分组的模型路由；引用密钥页面里的 credential</p>
-          </div>
-          <button className="icon-button" aria-label="关闭模型弹窗" onClick={onClose}>
-            <ChevronRight size={17} />
-          </button>
-        </header>
-        <div className="settings-three-column models-surface">
-          <aside className="settings-nav-column">
-            <div className="settings-nav-title">供应商</div>
-            {['全部', 'OpenAI', 'RightCodes'].map((label, index) => (
-              <button className={index === 0 ? 'active' : ''} key={label}>
-                <Bot size={15} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </aside>
-          <main className="settings-main-column">
-            {['OpenAI', 'RightCodes'].map((provider) => (
-              <section className="settings-section-card" key={provider}>
+            ) : null}
+            {section === 'about' ? (
+              <section className="settings-section-card">
                 <div className="settings-section-header">
                   <div>
-                    <h3>{provider}</h3>
-                    <p>模型按供应商分组，credential 来自密钥池。</p>
+                    <h3>关于 LinX</h3>
+                    <p>版本与更新。</p>
                   </div>
-                  <button><Plus size={15} /> 新模型</button>
+                  <button onClick={() => notify('已是最新版本')}>检查更新</button>
                 </div>
-                <div className="model-route-list">
-                  {modelRoutes.filter((item) => item.provider === provider).map((item) => (
-                    <button className={item.active ? 'active' : ''} key={item.id}>
-                      <span>
-                        <strong>{item.name}</strong>
-                        <small>{item.route}</small>
-                      </span>
-                      <span>{item.credential}</span>
-                      <span>{item.note}</span>
-                    </button>
-                  ))}
+                <div className="settings-info-list">
+                  <InfoRow label="版本" value="0.2.45 (prototype)" />
+                  <InfoRow label="Runtime" value="xpod 0.3.52" />
                 </div>
               </section>
-            ))}
+            ) : null}
           </main>
           <aside className="settings-detail-column">
-            <section className="settings-detail-card">
-              <h3>默认策略</h3>
-              <DetailLine icon={Check} label="Default" value="gpt-5.5" />
-              <DetailLine icon={LockKeyhole} label="Key" value="OpenAI Team Key" />
-              <DetailLine icon={Sparkles} label="Fallback" value="轮询可用模型" />
-            </section>
-            <section className="settings-detail-card warning">
-              <h3>受影响模型</h3>
-              <InfoRow label="HTTP 429" value="rightcodes-image" />
-              <InfoRow label="HTTP 500" value="local fallback" />
-            </section>
-            <section className="settings-detail-card compact">
-              <h3>边界</h3>
-              <p>模型页面只配置路由和默认偏好；供应商只是分组，不另设管理页。</p>
-            </section>
+            {section === 'models' ? (
+              <>
+                <section className="settings-detail-card">
+                  <h3>默认策略</h3>
+                  <DetailLine icon={Check} label="默认模型" value="gpt-5.5" />
+                  <DetailLine icon={LockKeyhole} label="密钥" value="OpenAI Team Key" />
+                  <DetailLine icon={Sparkles} label="回退策略" value="轮询可用模型" />
+                </section>
+                <section className="settings-detail-card warning">
+                  <h3>异常记录</h3>
+                  <InfoRow label="HTTP 429" value="RightCodes Draw Key" />
+                  <InfoRow label="HTTP 500" value="Local Lab Key" />
+                </section>
+                <section className="settings-detail-card compact">
+                  <h3>边界</h3>
+                  <p>密钥只在这里维护；Agent 和 Session 只引用偏好，不保存 API key。</p>
+                </section>
+              </>
+            ) : (
+              <>
+                <section className="settings-detail-card">
+                  <h3>当前状态</h3>
+                  <DetailLine icon={Check} label="Login" value="Active" />
+                  <DetailLine icon={Cloud} label="空间" value="云端 · 已同步" />
+                  <DetailLine icon={Bell} label="Notice" value="Enabled" />
+                </section>
+                <section className="settings-detail-card compact">
+                  <h3>边界</h3>
+                  <p>设置不管理供应商；供应商只是密钥和模型页面里的分组。</p>
+                </section>
+              </>
+            )}
           </aside>
         </div>
+        {stopConfirmOpen ? (
+          <ConfirmSheet
+            title="停止本地服务？"
+            description="停止后本机空间的文件、会话与同步将不可用，需要手动重新启动。"
+            confirmLabel="停止服务"
+            destructive
+            onCancel={() => setStopConfirmOpen(false)}
+            onConfirm={() => {
+              setStopConfirmOpen(false)
+              setServiceRunning(false)
+              notify('已停止本地服务', 'err')
+            }}
+          />
+        ) : null}
       </section>
     </div>
   )
 }
+
+function ToastHost({ toasts }: { toasts: ToastItem[] }) {
+  if (toasts.length === 0) return null
+  return (
+    <div className="toast-host" aria-live="polite">
+      {toasts.map((toast) => (
+        <div className={`toast ${toast.kind}`} key={toast.id}>
+          <span className="toast-ico">{toast.kind === 'err' ? '!' : '✓'}</span>
+          <span>{toast.title}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+
 
 function DetailLine({ icon: Icon, label, value }: { icon: IconType; label: string; value: string }) {
   return (
@@ -1259,18 +1562,30 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function ModuleSurface({
   activeModule,
+  selectedChat,
+  onSelectChat,
+  selectedFavorite,
+  onSelectFavorite,
+  favoriteTab,
+  onChangeFavoriteTab,
   pendingCount,
   approvalStatus,
   onApprove,
   onDeny,
   onOpenInbox,
+  onOpenChatFiles,
   structuredView,
   onChangeStructuredView,
+  detailPaneOpen,
+  onToggleDetailPane,
   filesDetailOpen,
   onToggleFilesDetail,
   onCloseFilesDetail,
   filesSelection,
   onSelectFile,
+  filesFolder,
+  onNavigateFolder,
+  openedChild,
   favoriteGroups,
   fileContentsByPath,
   filePropertiesByPath,
@@ -1278,20 +1593,34 @@ function ModuleSurface({
   onChangeFileContent,
   onChangeFileProperties,
   onToggleFileFavorite,
+  onGoFiles,
+  notify,
 }: {
   activeModule: ModuleId
+  selectedChat: string
+  onSelectChat: (id: string) => void
+  selectedFavorite: ListItem | null
+  onSelectFavorite: (item: ListItem | null) => void
+  favoriteTab: FavoriteTab
+  onChangeFavoriteTab: (tab: FavoriteTab) => void
   pendingCount: number
   approvalStatus: InboxItemStatus
   onApprove: () => void
   onDeny: () => void
   onOpenInbox: () => void
+  onOpenChatFiles: () => void
   structuredView: StructuredView
   onChangeStructuredView: (view: StructuredView) => void
+  detailPaneOpen: boolean
+  onToggleDetailPane: () => void
   filesDetailOpen: boolean
   onToggleFilesDetail: () => void
   onCloseFilesDetail: () => void
   filesSelection: FilesSelection
-  onSelectFile: (selection: FilesSelection) => void
+  onSelectFile: (selection: FilesSelection, child?: FolderChildItem) => void
+  filesFolder: FilesFolderId
+  onNavigateFolder: (folder: FilesFolderId) => void
+  openedChild: FolderChildItem | null
   favoriteGroups: Array<{ group: string; items: ListItem[] }>
   fileContentsByPath: Record<string, StoredFileContent>
   filePropertiesByPath: Record<string, FilePropertyState>
@@ -1299,6 +1628,8 @@ function ModuleSurface({
   onChangeFileContent: (path: string, content: StoredFileContent) => void
   onChangeFileProperties: (path: string, properties: FilePropertyState) => void
   onToggleFileFavorite: (file: FileOpenSample) => void
+  onGoFiles: () => void
+  notify: (title: string, kind?: 'ok' | 'err') => void
 }) {
   const [filesMobileTreeOpen, setFilesMobileTreeOpen] = useState(false)
 
@@ -1308,14 +1639,14 @@ function ModuleSurface({
 
   useEffect(() => {
     setFilesMobileTreeOpen(false)
-  }, [filesSelection])
+  }, [filesSelection, filesFolder])
 
   if (activeModule === 'contacts') {
     return (
       <>
         <ContactsList />
-        <ContactsMain pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
-        <ContactsDetail />
+        <ContactsMain pendingCount={pendingCount} onOpenInbox={onOpenInbox} detailOpen={detailPaneOpen} onToggleDetail={onToggleDetailPane} />
+        {detailPaneOpen ? <ContactsDetail /> : null}
       </>
     )
   }
@@ -1326,16 +1657,24 @@ function ModuleSurface({
         onCloseMobileTree={() => setFilesMobileTreeOpen(false)}
         onOpenMobileTree={() => setFilesMobileTreeOpen(true)}
         list={(
-          <FilesList
+          <FilesBrowser
             mobileOpen={filesMobileTreeOpen}
             onMobileClose={() => setFilesMobileTreeOpen(false)}
+            folder={filesFolder}
             selection={filesSelection}
+            openedChildName={openedChild?.name ?? null}
+            onNavigate={onNavigateFolder}
             onSelect={onSelectFile}
+            isFileFavorite={isFileFavorite}
+            onToggleFileFavorite={onToggleFileFavorite}
+            notify={notify}
           />
         )}
         main={
           <FilesMain
             selection={filesSelection}
+            folder={filesFolder}
+            openedChild={openedChild}
             structuredView={structuredView}
             onChangeView={onChangeStructuredView}
             detailOpen={filesDetailOpen}
@@ -1346,50 +1685,74 @@ function ModuleSurface({
             onToggleDetail={onToggleFilesDetail}
             onCloseDetail={onCloseFilesDetail}
             onOpenSelection={onSelectFile}
+            onNavigateFolder={onNavigateFolder}
             isFileFavorite={isFileFavorite}
             onToggleFileFavorite={onToggleFileFavorite}
+            notify={notify}
           />
         }
-        detail={<FilesDetail open={filesDetailOpen} selection={filesSelection} />}
+        detail={<FilesDetail open={filesDetailOpen} selection={filesSelection} folder={filesFolder} onClose={onCloseFilesDetail} />}
       />
     )
   }
   if (activeModule === 'favorites') {
     return (
       <>
-        <FavoritesList favoriteGroups={favoriteGroups} />
-        <FavoritesMain favoriteGroups={favoriteGroups} pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
-        <FavoritesDetail />
+        <FavoritesList
+          favoriteGroups={favoriteGroups}
+          activeTab={favoriteTab}
+          onChangeTab={onChangeFavoriteTab}
+          selectedId={selectedFavorite?.id ?? null}
+          onSelect={onSelectFavorite}
+        />
+        <FavoritesMain
+          selected={selectedFavorite}
+          pendingCount={pendingCount}
+          onOpenInbox={onOpenInbox}
+          onGoFiles={onGoFiles}
+        />
       </>
     )
   }
   return (
     <>
-      <ChatList />
+      <ChatList selectedId={selectedChat} onSelect={onSelectChat} />
       <ChatMain
+        selectedChat={selectedChat}
         pendingCount={pendingCount}
         approvalStatus={approvalStatus}
         onApprove={onApprove}
         onDeny={onDeny}
         onOpenInbox={onOpenInbox}
+        detailOpen={detailPaneOpen}
+        onToggleDetail={onToggleDetailPane}
+        notify={notify}
       />
-      <ChatDetail />
+      {detailPaneOpen ? <ChatDetail onOpenChatFiles={onOpenChatFiles} /> : null}
     </>
   )
 }
 
 function PrototypeApp() {
   const [activeModule, setActiveModule] = useState<ModuleId>('chat')
+  const [selectedChat, setSelectedChat] = useState('secretary')
+  const [selectedFavorite, setSelectedFavorite] = useState<ListItem | null>(null)
+  const [favoriteTab, setFavoriteTab] = useState<FavoriteTab>('全部')
   const [chatFilesOpen, setChatFilesOpen] = useState(false)
-  const [keysOpen, setKeysOpen] = useState(false)
-  const [modelsOpen, setModelsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [inboxOpen, setInboxOpen] = useState(false)
   const [approvalStatus, setApprovalStatus] = useState<InboxItemStatus>('pending')
   const [structuredView, setStructuredView] = useState<StructuredView>('table')
+  const [detailPaneOpen, setDetailPaneOpen] = useState(true)
   const [filesDetailOpen, setFilesDetailOpen] = useState(false)
   const [filesSelection, setFilesSelection] = useState<FilesSelection>('structuredVocab')
+  const [filesFolder, setFilesFolder] = useState<FilesFolderId>('vocab')
+  const [openedChild, setOpenedChild] = useState<FolderChildItem | null>(null)
   const [favoriteGroups, setFavoriteGroups] = useState(initialFavorites)
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false)
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+  const toastIdRef = useRef(0)
   const [fileContentsByPath, setFileContentsByPath] = useState<Record<string, StoredFileContent>>(() => (
     readPrototypeStorage<Record<string, StoredFileContent>>(FILE_CONTENTS_STORAGE_KEY, {})
   ))
@@ -1397,6 +1760,15 @@ function PrototypeApp() {
     readPrototypeStorage<Record<string, FilePropertyState>>(FILE_PROPERTIES_STORAGE_KEY, {})
   ))
   const pendingCount = approvalStatus === 'pending' ? 2 : 1
+
+  const notify = (title: string, kind: 'ok' | 'err' = 'ok') => {
+    toastIdRef.current += 1
+    const id = toastIdRef.current
+    setToasts((current) => [...current.slice(-3), { id, title, kind }])
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id))
+    }, 3200)
+  }
 
   useEffect(() => {
     writePrototypeStorage(FILE_CONTENTS_STORAGE_KEY, fileContentsByPath)
@@ -1439,53 +1811,111 @@ function PrototypeApp() {
     <div className="prototype-page light">
       <div className="principle-badge">Mindset prototype · chat-first</div>
       <div
-        className={`prototype-shell${activeModule === 'files' && !filesDetailOpen ? ' files-detail-collapsed' : ''}`}
+        className={`prototype-shell${activeModule === 'files' && !filesDetailOpen ? ' files-detail-collapsed' : ''}${!detailPaneOpen && (activeModule === 'chat' || activeModule === 'contacts') ? ' detail-collapsed' : ''}`}
         data-module={activeModule}
       >
         <Sidebar
           activeModule={activeModule}
           onChangeModule={setActiveModule}
-          onOpenSecondary={(surface) => {
-            if (surface === 'chatFiles') setChatFilesOpen(true)
-            if (surface === 'keys') setKeysOpen(true)
-            if (surface === 'models') setModelsOpen(true)
-            if (surface === 'settings') setSettingsOpen(true)
+          onOpenSettings={(section) => {
+            setSettingsSection(section)
+            setSettingsOpen(true)
           }}
+          onRequestSignOut={() => setSignOutConfirmOpen(true)}
         />
         <ModuleSurface
           activeModule={activeModule}
+          selectedChat={selectedChat}
+          onSelectChat={setSelectedChat}
+          selectedFavorite={selectedFavorite}
+          onSelectFavorite={setSelectedFavorite}
+          favoriteTab={favoriteTab}
+          onChangeFavoriteTab={(tab) => {
+            setFavoriteTab(tab)
+            setSelectedFavorite(null)
+          }}
           pendingCount={pendingCount}
           approvalStatus={approvalStatus}
-          onApprove={() => setApprovalStatus('approved')}
-          onDeny={() => setApprovalStatus('denied')}
+          onApprove={() => {
+            setApprovalStatus('approved')
+            notify('已批准 · 写入 AI Secretary 个人卡片')
+          }}
+          onDeny={() => {
+            setApprovalStatus('denied')
+            notify('已拒绝 · 不会修改个人卡片', 'err')
+          }}
           onOpenInbox={() => setInboxOpen(true)}
+          onOpenChatFiles={() => setChatFilesOpen(true)}
           structuredView={structuredView}
           onChangeStructuredView={setStructuredView}
+          detailPaneOpen={detailPaneOpen}
+          onToggleDetailPane={() => setDetailPaneOpen((open) => !open)}
           filesDetailOpen={filesDetailOpen}
           onToggleFilesDetail={() => setFilesDetailOpen((open) => !open)}
           onCloseFilesDetail={() => setFilesDetailOpen(false)}
           filesSelection={filesSelection}
-          onSelectFile={setFilesSelection}
+          onSelectFile={(selection, child) => {
+            setFilesSelection(selection)
+            setOpenedChild(child ?? null)
+            setStructuredView('table')
+          }}
+          filesFolder={filesFolder}
+          onNavigateFolder={(folder) => {
+            setFilesFolder(folder)
+            setOpenedChild(null)
+            setFilesSelection(folder === 'files' ? 'folderRoot' : 'folder')
+          }}
+          openedChild={openedChild}
           favoriteGroups={favoriteGroups}
           fileContentsByPath={fileContentsByPath}
           filePropertiesByPath={filePropertiesByPath}
           isFileFavorite={isFileFavorite}
           onChangeFileContent={changeFileContent}
           onChangeFileProperties={changeFileProperties}
-          onToggleFileFavorite={toggleFileFavorite}
+          onToggleFileFavorite={(file) => {
+            const wasFavorite = isFileFavorite(file.path)
+            toggleFileFavorite(file)
+            notify(wasFavorite ? '已取消收藏' : '已收藏 · 在收藏模块可回到这里')
+          }}
+          onGoFiles={() => setActiveModule('files')}
+          notify={notify}
         />
         <InboxSheet
           open={inboxOpen}
           items={inboxItems}
           approvalStatus={approvalStatus}
-          onApprove={() => setApprovalStatus('approved')}
-          onDeny={() => setApprovalStatus('denied')}
+          onApprove={() => {
+            setApprovalStatus('approved')
+            notify('已批准 · 写入 AI Secretary 个人卡片')
+          }}
+          onDeny={() => {
+            setApprovalStatus('denied')
+            notify('已拒绝 · 不会修改个人卡片', 'err')
+          }}
           onClose={() => setInboxOpen(false)}
         />
         <ChatFilesDialog open={chatFilesOpen} onClose={() => setChatFilesOpen(false)} />
-        <KeysDialog open={keysOpen} onClose={() => setKeysOpen(false)} />
-        <ModelsDialog open={modelsOpen} onClose={() => setModelsOpen(false)} />
-        <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <SettingsDialog
+          open={settingsOpen}
+          section={settingsSection}
+          onChangeSection={setSettingsSection}
+          onClose={() => setSettingsOpen(false)}
+          notify={notify}
+        />
+        {signOutConfirmOpen ? (
+          <ConfirmSheet
+            title="退出登录？"
+            description="将断开与当前空间的连接。未同步的修改会保留在本机，下次登录后继续。"
+            confirmLabel="退出登录"
+            destructive
+            onCancel={() => setSignOutConfirmOpen(false)}
+            onConfirm={() => {
+              setSignOutConfirmOpen(false)
+              notify('已退出登录')
+            }}
+          />
+        ) : null}
+        <ToastHost toasts={toasts} />
       </div>
     </div>
   )

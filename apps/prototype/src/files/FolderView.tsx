@@ -1,234 +1,379 @@
 import { useState } from 'react'
 import {
+  ArrowDownAZ,
+  ArrowUpAZ,
   ChevronRight,
-  Columns3,
-  LayoutGrid,
+  Database,
+  FilePlus2,
+  FolderOpen,
+  FolderPlus,
+  Link2,
   List,
+  LayoutGrid,
+  MoreHorizontal,
   Plus,
+  Star,
   Upload,
 } from 'lucide-react'
 import { FileDetailModal, type FilePropertyState } from './FileEditorSheet'
-import type { FileOpenSample, FilesSelection, FolderOpenSample, StoredFileContent } from './files-types'
+import type { FileOpenSample, FolderChildItem, FolderOpenSample, IconType, StoredFileContent } from './files-types'
 import { AccessPolicyDialog } from './ResourceSidecars'
-import { AccessIconButton, FilePageHeader, MetaToggleButton } from './files-ui'
-import { multiChannelAccessBlocks } from './files-model'
+import { AccessIconButton, FilePageHeader, FolderAddMenu, MetaToggleButton, ViewTabs, type FolderAddAction } from './files-ui'
+import { ConfirmSheet, Menu, RowActions, usePopover } from '../shared/ui'
+import { useResourceOps, favoriteSampleFor } from './resource-ops'
 
-type FolderViewMode = 'list' | 'column' | 'icon'
+type FolderSortKey = 'name' | 'kind' | 'size' | 'modified' | 'permission'
 
-export function FolderMain({
+const folderTableColumns: Array<{ id: FolderSortKey; label: string; width: number }> = [
+  { id: 'name', label: '名称', width: 280 },
+  { id: 'kind', label: '类型', width: 110 },
+  { id: 'size', label: '大小', width: 90 },
+  { id: 'modified', label: '修改时间', width: 140 },
+  { id: 'permission', label: '权限', width: 100 },
+]
+
+function childFacts(child: FolderChildItem): { size: string; modified: string; permission: string } {
+  const parts = child.detail.split('·').map((part) => part.trim())
+  return {
+    size: parts[0] ?? '—',
+    modified: parts[1] ?? '—',
+    permission: 'Private',
+  }
+}
+
+function sizeRank(size: string): number {
+  const match = size.match(/(\d+(?:\.\d+)?)\s*(KB|MB|B)/i)
+  if (!match) return -1
+  const value = parseFloat(match[1])
+  const unit = match[2].toUpperCase()
+  if (unit === 'MB') return value * 1024
+  if (unit === 'B') return value / 1024
+  return value
+}
+
+export function FolderOverview({
   folder,
   detailOpen,
   onToggleDetail,
-  onOpenSelection,
-  isFileFavorite,
+  onOpenChild,
   fileContentsByPath,
   filePropertiesByPath,
   onChangeFileContent,
   onChangeFileProperties,
+  isFileFavorite,
   onToggleFileFavorite,
+  notify,
 }: {
   folder: FolderOpenSample
   detailOpen: boolean
   onToggleDetail: () => void
-  onOpenSelection?: (selection: FilesSelection) => void
+  onOpenChild?: (child: FolderChildItem) => void
   fileContentsByPath?: Record<string, StoredFileContent>
   filePropertiesByPath?: Record<string, FilePropertyState>
-  isFileFavorite?: (path: string) => boolean
   onChangeFileContent?: (path: string, content: StoredFileContent) => void
   onChangeFileProperties?: (path: string, properties: FilePropertyState) => void
+  isFileFavorite?: (path: string) => boolean
   onToggleFileFavorite?: (file: FileOpenSample) => void
+  notify?: (title: string, kind?: 'ok' | 'err') => void
 }) {
-  const [selectedChildName, setSelectedChildName] = useState(folder.children[0]?.name ?? '')
-  const [viewMode, setViewMode] = useState<FolderViewMode>('list')
-  const [documentOpen, setDocumentOpen] = useState(false)
-  const selectedChild = folder.children.find((child) => child.name === selectedChildName) ?? folder.children[0]
-  const SelectedIcon = selectedChild.icon
   const [accessOpen, setAccessOpen] = useState(false)
-  const isSelectedDocument = selectedChild.name.endsWith('.md')
-  const isSelectedImage = selectedChild.kind === 'Image'
-  const isSelectedStructured = selectedChild.targetSelection === 'structuredData' || selectedChild.targetSelection === 'structuredVocab'
-  const hasSelectedOpenTarget = Boolean(selectedChild.targetSelection)
-  const pathParts = folder.path.split('/').filter(Boolean)
-  const openSelectedChild = () => {
-    if (isSelectedDocument) {
-      setDocumentOpen(true)
-      return
-    }
-    if (selectedChild.targetSelection) onOpenSelection?.(selectedChild.targetSelection)
-  }
-  const selectedDocumentFile: FileOpenSample = {
+  const [newDocOpen, setNewDocOpen] = useState(false)
+  const [folderView, setFolderView] = useState<'table' | 'list' | 'grid'>('table')
+  const [sortKey, setSortKey] = useState<FolderSortKey>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [focusName, setFocusName] = useState<string | null>(null)
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const addPopover = usePopover('.folder-add-anchor, .add-menu')
+  const ops = useResourceOps(folder.id, notify)
+
+  const children = ops.childrenOf(folder.id)
+  const sortedChildren = [...children].sort((left, right) => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    if (sortKey === 'kind') return left.kind.localeCompare(right.kind) * dir || left.name.localeCompare(right.name)
+    if (sortKey === 'size') return (sizeRank(childFacts(left).size) - sizeRank(childFacts(right).size)) * dir
+    if (sortKey === 'modified') return childFacts(left).modified.localeCompare(childFacts(right).modified) * dir
+    if (sortKey === 'permission') return childFacts(left).permission.localeCompare(childFacts(right).permission) * dir
+    return left.name.localeCompare(right.name) * dir
+  })
+
+  const gridStyle = {
+    '--schema-template': folderTableColumns.map((column) => `${column.width}px`).join(' '),
+    '--schema-min-width': `${folderTableColumns.reduce((sum, column) => sum + column.width, 0)}px`,
+    '--schema-row-height': '34px',
+    '--schema-cell-gap': '0px',
+    '--schema-row-padding': '0 10px',
+  } as React.CSSProperties
+
+  const newDocFile: FileOpenSample = {
     id: 'document',
-    name: selectedChild.name,
-    path: `${folder.path}${selectedChild.name}`,
+    name: '未命名.md',
+    path: `${folder.path}未命名.md`,
     kind: 'Markdown document',
-    summary: `${selectedChild.name} is an editable Markdown resource in this folder.`,
-    icon: selectedChild.icon,
-    blocks: multiChannelAccessBlocks,
+    summary: `在 ${folder.path} 中新建的文档。`,
+    icon: FilePlus2,
     meta: [
       ['format', 'text/markdown'],
-      ['size', selectedChild.detail.split('·')[0]?.trim() ?? 'Markdown'],
-      ['modified', selectedChild.detail.split('·')[1]?.trim() ?? 'Unknown'],
+      ['size', '0 KB'],
+      ['modified', '刚刚'],
       ['permission', 'Private'],
     ],
   }
+
+  const openChild = (child: FolderChildItem) => {
+    setMenuFor(null)
+    onOpenChild?.(child)
+  }
+
+  const toggleFavorite = (child: FolderChildItem) => {
+    onToggleFileFavorite?.(favoriteSampleFor(child, folder.id))
+  }
+
+  const runAddAction = (action: FolderAddAction) => {
+    addPopover.close()
+    if (action === 'new-doc') setNewDocOpen(true)
+    if (action === 'new-folder') ops.openSheet({ kind: 'new-folder' })
+    if (action === 'upload-files') ops.addUploadedImage()
+    if (action === 'upload-folder') notify?.('已上传文件夹（保留层级）')
+    if (action === 'add-web') notify?.('已添加网页 · Ingest 准备中')
+  }
+
+  const rowOps = (child: FolderChildItem) => (
+    <RowActions
+      favorited={isFileFavorite?.(`${folder.path}${child.name}`) ?? false}
+      menuOpen={menuFor === child.name}
+      onToggleFavorite={() => toggleFavorite(child)}
+      onToggleMenu={() => setMenuFor((current) => current === child.name ? null : child.name)}
+    />
+  )
+
+  const addAnchor = (
+    <div className="folder-add-anchor">
+      <button className="folder-add-row" onClick={addPopover.toggle} aria-expanded={addPopover.open}>
+        <Plus size={14} />
+        <span>添加</span>
+      </button>
+      {addPopover.open ? (
+        <FolderAddMenu path={folder.path} className="folder-add-menu" onPick={runAddAction} />
+      ) : null}
+    </div>
+  )
+
+  const emptyHint = <p>当前文件夹为空。用下面的 + 添加新建或上传资源。</p>
 
   return (
     <main className="work-pane files-work file-open-work">
       <FilePageHeader title={folder.name} subtitle={`${folder.kind} · ${folder.path}`}>
         <AccessIconButton onClick={() => setAccessOpen(true)} />
-        <button><Upload size={15} /> Upload</button>
-        <button><Plus size={15} /> New</button>
         <MetaToggleButton open={detailOpen} onToggle={onToggleDetail} />
       </FilePageHeader>
-      <section className="folder-detail-surface">
-        <div className="finder-toolbar" aria-label="Folder toolbar">
-          <span className="finder-nav">
-            <button title="Back"><ChevronRight size={14} /></button>
-            <button title="Forward"><ChevronRight size={14} /></button>
-          </span>
-          <span className="finder-path">
-            <button>Pod Home</button>
-            {pathParts.map((part) => (
-              <span className="finder-path-part" key={part}>
-                <ChevronRight size={13} />
-                <button>{part}</button>
-              </span>
-            ))}
-          </span>
-          <span className="finder-view-toggle">
-            <button
-              className={viewMode === 'list' ? 'active' : ''}
-              title="List view"
-              aria-label="Folder list view"
-              onClick={() => setViewMode('list')}
-            >
-              <List size={14} />
-            </button>
-            <button
-              className={viewMode === 'column' ? 'active' : ''}
-              title="Column view"
-              aria-label="Folder column view"
-              onClick={() => setViewMode('column')}
-            >
-              <Columns3 size={14} />
-            </button>
-            <button
-              className={viewMode === 'icon' ? 'active' : ''}
-              title="Icon view"
-              aria-label="Folder icon view"
-              onClick={() => setViewMode('icon')}
-            >
-              <LayoutGrid size={14} />
-            </button>
-          </span>
-        </div>
-        <div className={`folder-browser ${viewMode}`} data-folder-root={folder.name} data-folder-view={viewMode} data-view={viewMode}>
-          <div className="folder-list-pane">
-            {viewMode !== 'icon' ? (
-              <div className="folder-browser-head">
-              <span>Name</span>
-              <span>Kind</span>
-              <span>Modified</span>
-              </div>
-            ) : null}
-            <div className="folder-browser-list" data-layout={viewMode === 'icon' ? 'icon-grid' : 'list'} aria-label={`${folder.name} children`}>
-              {folder.children.map((child) => {
-                const Icon = child.icon
-                const resourceKind = child.targetSelection === 'structuredData' || child.targetSelection === 'structuredVocab'
-                  ? 'structured-data'
-                  : child.targetSelection === 'folder' || child.kind === 'Folder'
-                    ? 'folder'
-                    : child.name.endsWith('.md')
-                      ? 'editable-file'
-                      : child.kind === 'Image'
-                        ? 'readonly-image'
-                        : 'file'
-                return (
+      <section className="resource-viewbar folder-viewbar">
+        <ViewTabs
+          ariaLabel="文件夹视图"
+          views={[
+            { id: 'table', label: 'Table', icon: Database },
+            { id: 'list', label: 'List', icon: List },
+            { id: 'grid', label: 'Grid', icon: LayoutGrid },
+          ]}
+          active={folderView}
+          onChange={(id) => setFolderView(id as 'table' | 'list' | 'grid')}
+        />
+      </section>
+      {folderView === 'grid' ? (
+        <section className="structured-table compact-table folder-table">
+          <div className="folder-grid-view">
+            {sortedChildren.length === 0 ? <div className="folder-table-empty">{emptyHint}</div> : null}
+            {sortedChildren.map((child) => {
+              const Icon = child.icon
+              const facts = childFacts(child)
+              const active = child.name === focusName
+              return (
+                <div className="folder-row-wrap" key={child.name}>
                   <button
-                    className={`folder-child ${child.name === selectedChild.name ? 'active' : ''}`}
-                    data-folder-child={child.name}
-                    data-resource-name={child.name}
-                    data-resource-kind={resourceKind}
-                    key={child.name}
-                    onClick={() => setSelectedChildName(child.name)}
-                    onDoubleClick={() => {
-                      if (child.name.endsWith('.md')) setDocumentOpen(true)
-                      if (child.targetSelection) onOpenSelection?.(child.targetSelection)
+                    className={`folder-grid-card ${active ? 'active' : ''}`}
+                    onClick={() => {
+                      setFocusName(child.name)
+                      openChild(child)
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      setFocusName(child.name)
+                      setMenuFor(child.name)
                     }}
                   >
-                    <span><Icon size={16} /> <strong>{child.name}</strong></span>
-                    <em>{child.kind}</em>
-                    <small>{child.detail}</small>
+                    <Icon size={26} />
+                    <strong>{child.name}</strong>
+                    <small>{child.kind} · {facts.size}</small>
                   </button>
-                )
-              })}
-            </div>
-          </div>
-          {viewMode === 'column' ? (
-            <div className="folder-middle-column" data-folder-column="children" aria-label={`${folder.name} selected child details`}>
-              <header>
-                <span>{folder.name}</span>
-                <strong>{selectedChild.name}</strong>
-              </header>
-              <div className="folder-column-card">
-                <SelectedIcon size={22} />
-                <span>
-                  <strong>{selectedChild.kind}</strong>
-                  <small>{selectedChild.detail}</small>
-                </span>
-              </div>
-              <div className="folder-column-list">
-                {folder.children.slice(0, 4).map((child) => (
-                  <span className={child.name === selectedChild.name ? 'active' : ''} key={child.name}>{child.name}</span>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          <aside
-            className="folder-preview-pane"
-            data-selected-resource={selectedChild.name}
-            aria-label="Selected folder item preview"
-          >
-            <SelectedIcon size={28} />
-            <h2>{selectedChild.name}</h2>
-            <p>{selectedChild.kind} · {selectedChild.detail}</p>
-            {isSelectedImage ? (
-              <div className="folder-preview-card image" data-folder-preview="image">
-                <strong>Image preview</strong>
-                <span>{selectedChild.detail}</span>
-                <div className="folder-image-thumb">
-                  <span className="preview-window"><span /><span /><span /></span>
-                  <div className="preview-layout"><aside /><main><b /><b /><b /></main></div>
+                  {menuFor === child.name ? (
+                    <Menu items={ops.rowMenuItems(child, openChild)} label={`${child.name} 操作`} onClose={() => setMenuFor(null)} />
+                  ) : null}
                 </div>
-              </div>
-            ) : (
-              <div className="folder-preview-card" data-folder-preview={isSelectedDocument ? 'document' : isSelectedStructured ? 'structured-data' : 'resource'}>
-                <strong>{isSelectedDocument ? 'Markdown document' : selectedChild.kind}</strong>
-                <span>{selectedChild.detail}</span>
-              </div>
-            )}
-            {isSelectedDocument || isSelectedStructured || hasSelectedOpenTarget ? (
-              <button className="folder-open-child" onClick={openSelectedChild}>
-                Open
-              </button>
-            ) : null}
-          </aside>
-        </div>
-      </section>
-      <footer className="table-status">{folder.meta[0][1]} · {folder.meta[1][1]} · {folder.meta[2][1]}</footer>
-      {documentOpen ? (
+              )
+            })}
+          </div>
+          {addAnchor}
+        </section>
+      ) : null}
+      {folderView === 'list' ? (
+        <section className="structured-table compact-table folder-table">
+          <div className="folder-list-view">
+            {sortedChildren.length === 0 ? <div className="folder-table-empty">{emptyHint}</div> : null}
+            {sortedChildren.map((child, index) => {
+              const Icon = child.icon
+              const facts = childFacts(child)
+              const active = child.name === focusName
+              return (
+                <div className="folder-row-wrap" key={child.name}>
+                  <button
+                    className={`folder-list-row ${active ? 'active' : ''}`}
+                    tabIndex={active ? 0 : -1}
+                    onClick={() => {
+                      setFocusName(child.name)
+                      openChild(child)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') openChild(child)
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        const delta = event.key === 'ArrowDown' ? 1 : -1
+                        const nextIndex = Math.min(Math.max(index + delta, 0), sortedChildren.length - 1)
+                        setFocusName(sortedChildren[nextIndex]?.name ?? null)
+                      }
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      setFocusName(child.name)
+                      setMenuFor(child.name)
+                    }}
+                  >
+                    <span className="folder-cell-name">
+                      <Icon size={16} />
+                      <span className="folder-list-name">
+                        <strong>{child.name}</strong>
+                        <small>{child.kind} · {facts.size} · {facts.modified}</small>
+                      </span>
+                      {child.targetFolder ? <ChevronRight size={13} className="folder-cell-enter" /> : null}
+                    </span>
+                    <span className="folder-cell-tail">
+                      <em>{facts.permission}</em>
+                      {rowOps(child)}
+                    </span>
+                  </button>
+                  {menuFor === child.name ? (
+                    <Menu items={ops.rowMenuItems(child, openChild)} label={`${child.name} 操作`} onClose={() => setMenuFor(null)} />
+                  ) : null}
+                </div>
+              )
+            })}
+            {addAnchor}
+          </div>
+        </section>
+      ) : null}
+      {folderView === 'table' ? (
+        <section className="structured-table compact-table folder-table">
+          <div className="subject-grid" style={gridStyle}>
+            <div className="subject-head">
+              {folderTableColumns.map((column) => (
+                <span className="schema-head-label compact-head-label" key={column.id}>
+                  <button
+                    className={`folder-sort-button ${sortKey === column.id ? 'active' : ''}`}
+                    onClick={() => {
+                      if (sortKey === column.id) setSortDir((dir) => dir === 'asc' ? 'desc' : 'asc')
+                      else {
+                        setSortKey(column.id)
+                        setSortDir('asc')
+                      }
+                    }}
+                  >
+                    {column.label}
+                    {sortKey === column.id ? (sortDir === 'asc' ? <ArrowDownAZ size={13} /> : <ArrowUpAZ size={13} />) : null}
+                  </button>
+                </span>
+              ))}
+            </div>
+            {sortedChildren.length === 0 ? <div className="folder-table-empty">{emptyHint}</div> : null}
+            {sortedChildren.map((child, index) => {
+              const Icon = child.icon
+              const facts = childFacts(child)
+              const active = child.name === focusName
+              return (
+                <div className="folder-row-wrap" key={child.name}>
+                  <button
+                    className={`subject-row folder-table-row ${active ? 'active' : ''}`}
+                    tabIndex={active ? 0 : -1}
+                    onClick={() => {
+                      setFocusName(child.name)
+                      openChild(child)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') openChild(child)
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        const delta = event.key === 'ArrowDown' ? 1 : -1
+                        const nextIndex = Math.min(Math.max(index + delta, 0), sortedChildren.length - 1)
+                        setFocusName(sortedChildren[nextIndex]?.name ?? null)
+                      }
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      setFocusName(child.name)
+                      setMenuFor(child.name)
+                    }}
+                  >
+                    <span className="folder-cell-name">
+                      <Icon size={15} />
+                      <strong>{child.name}</strong>
+                      {child.targetFolder ? <ChevronRight size={13} className="folder-cell-enter" /> : null}
+                    </span>
+                    <span>{child.kind}</span>
+                    <span>{facts.size}</span>
+                    <span>{facts.modified}</span>
+                    <span className="folder-cell-tail">
+                      <em>{facts.permission}</em>
+                      {rowOps(child)}
+                    </span>
+                  </button>
+                  {menuFor === child.name ? (
+                    <Menu items={ops.rowMenuItems(child, openChild)} label={`${child.name} 操作`} onClose={() => setMenuFor(null)} />
+                  ) : null}
+                </div>
+              )
+            })}
+            {addAnchor}
+          </div>
+        </section>
+      ) : null}
+      <footer className="table-status">{folder.meta[0]?.[1]} · {folder.meta[1]?.[1]} · {folder.meta[2]?.[1]}</footer>
+      {newDocOpen ? (
         <FileDetailModal
-          content={fileContentsByPath?.[selectedDocumentFile.path]}
-          file={selectedDocumentFile}
-          fileProperties={filePropertiesByPath?.[selectedDocumentFile.path]}
-          isFavorite={isFileFavorite?.(selectedDocumentFile.path)}
-          onChangeContent={(content) => onChangeFileContent?.(selectedDocumentFile.path, content)}
-          onChangeFileProperties={(properties) => onChangeFileProperties?.(selectedDocumentFile.path, properties)}
-          onClose={() => setDocumentOpen(false)}
+          content={fileContentsByPath?.[newDocFile.path]}
+          file={newDocFile}
+          fileProperties={filePropertiesByPath?.[newDocFile.path]}
+          isFavorite={isFileFavorite?.(newDocFile.path)}
+          onChangeContent={(content) => onChangeFileContent?.(newDocFile.path, content)}
+          onChangeFileProperties={(properties) => onChangeFileProperties?.(newDocFile.path, properties)}
+          onClose={() => setNewDocOpen(false)}
           onToggleFavorite={onToggleFileFavorite}
+          notify={notify}
         />
       ) : null}
       {accessOpen ? <AccessPolicyDialog scope="Folder" onClose={() => setAccessOpen(false)} /> : null}
+      {ops.sheet && ops.sheetMeta ? (
+        <ConfirmSheet
+          title={ops.sheetMeta.title}
+          description={ops.sheetMeta.description}
+          confirmLabel={ops.sheetMeta.confirmLabel}
+          destructive={ops.sheetMeta.destructive}
+          error={ops.sheetError || undefined}
+          input={ops.sheetMeta.hasInput ? {
+            ariaLabel: ops.sheet.kind === 'move' ? '目标路径' : '新名称',
+            value: ops.sheetValue,
+            onChange: ops.setSheetValue,
+          } : undefined}
+          onCancel={ops.closeSheet}
+          onConfirm={ops.confirmSheet}
+        />
+      ) : null}
     </main>
   )
 }

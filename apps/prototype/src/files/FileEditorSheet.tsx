@@ -1,16 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Placeholder from '@tiptap/extension-placeholder'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import {
+  Archive,
   Bold,
   Check,
   ChevronDown,
+  Clock3,
   Code2,
+  Download,
   ExternalLink,
   FileCode2,
   FileText,
+  HardDrive,
+  Info,
   Italic,
+  LayoutGrid,
   Link2,
   List,
   ListOrdered,
@@ -18,9 +24,11 @@ import {
   Plus,
   Quote,
   Redo2,
+  Share2,
   ShieldCheck,
   Star,
   Tags,
+  Trash2,
   Underline,
   Undo2,
   X,
@@ -29,7 +37,8 @@ import { fileOpenSamples, sourceLinkedCardForSubject, sourceLinkedCardSample, vo
 import { sourceReviewSnapshot, type SourceReviewState } from './files-proposals'
 import { TypedPredicateCell } from './typed-cell-editors'
 import type { FileContentBlock, FileContentChunk, FileEditorContent, FileOpenSample, IconType, SourceIngestState, PredicateDefinition, SourceReviewSample, StoredFileContent, SubjectOpenTarget } from './files-types'
-import { AccessPolicyDialog, FileMetaBlock } from './ResourceSidecars'
+import { AccessPolicyDialog } from './ResourceSidecars'
+import { InfoPanel, InfoRow } from '../shared/ui'
 
 export interface FilePropertyState {
   status: string
@@ -323,15 +332,18 @@ function defaultFileProperties(file: FileOpenSample): FilePropertyState {
   return { status: 'Draft', tags: 'notes, file' }
 }
 
-function FilePropertyPanel({
+function FileInfoPanel({
   file,
   properties,
   onChangeProperties,
+  notify,
 }: {
   file: FileOpenSample
   properties: FilePropertyState
   onChangeProperties?: (properties: FilePropertyState) => void
+  notify?: (title: string, kind?: 'ok' | 'err') => void
 }) {
+  const [hidden, setHidden] = useState(false)
   const [activeProperty, setActiveProperty] = useState<string | null>(null)
   const [enumDrafts, setEnumDrafts] = useState<Record<string, string>>({})
   const sourceLinked = file.kind === 'Source-linked card'
@@ -355,14 +367,6 @@ function FilePropertyPanel({
       type: 'multi-select',
       uri: '/.vocab/terms.ttl#tags',
     },
-    ...(sourceLinked && file.sourceReview ? [{
-      description: 'Canonical source URL for this card.',
-      id: 'udfs:source',
-      label: 'udfs:source',
-      readonlyValue: file.sourceReview.source,
-      type: 'url' as const,
-      uri: '/.vocab/terms.ttl#source',
-    }] : []),
   ]
   const setProperty = (key: keyof FilePropertyState, value: string) => {
     onChangeProperties?.({ ...properties, [key]: value })
@@ -372,54 +376,88 @@ function FilePropertyPanel({
     const sum = value.split('').reduce((total, char) => total + char.charCodeAt(0), 0)
     return tones[sum % tones.length]
   }
+  const tagList = properties.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
 
   return (
-    <section
-      className="file-property-panel"
-      data-file-property-panel={file.path}
-      data-property-status={properties.status}
-      aria-label="File properties"
-    >
-      <header>
-        <strong>Properties</strong>
-        <small>{sourceLinked ? 'source-linked card' : 'file card'}</small>
+    <section className="file-info-panel" data-file-property-panel={file.path} data-property-status={properties.status} aria-label="Info">
+      <header className="file-info-head">
+        <span><Info size={13} /> Info</span>
+        <span className="file-info-head-side">
+          <small>{sourceLinked ? 'source-linked card' : 'file card'}</small>
+          <button onClick={() => setHidden((current) => !current)}>{hidden ? 'Show' : 'Hide'}</button>
+        </span>
       </header>
-      {propertyPredicates.map((predicate) => {
-        const propertyKey = predicate.propertyKey
-        const value = propertyKey ? properties[propertyKey] : predicate.readonlyValue
-        return (
-          <div className="file-property-row" data-property-id={predicate.id} key={predicate.id}>
-            <span>{predicate.label}</span>
-            <TypedPredicateCell
-              active={activeProperty === predicate.id}
-              enumDraft={enumDrafts[predicate.id] ?? ''}
-              enumOptions={predicate.options ?? []}
-              enumOptionState={() => undefined}
-              enumOptionTone={enumTone}
-              enumOptionUri={(option) => `/.vocab/terms.ttl#${option}`}
-              predicate={predicate}
-              readonly={!propertyKey}
-              subject={subject}
-              value={value}
-              onActivate={() => setActiveProperty(predicate.id)}
-              onApproveEnumOption={() => {}}
-              onClearActive={() => setActiveProperty(null)}
-              onCreateEnumOption={(option) => {
-                if (!propertyKey) return
-                setProperty(propertyKey, predicate.type === 'multi-select' && value ? `${value}, ${option}` : option)
-              }}
-              onCycleEnumTone={() => {}}
-              onDiscardEnumOption={() => {}}
-              onSetEnumDraft={(nextValue) => setEnumDrafts((current) => ({ ...current, [predicate.id]: nextValue }))}
-              onSetValue={(nextValue) => {
-                if (!propertyKey) return
-                setProperty(propertyKey, nextValue)
-              }}
-              onToggleEnumDefinition={() => {}}
-            />
+      {hidden ? null : (
+        <div className="file-info-body">
+          <div className="file-info-row">
+            <span><Clock3 size={12} /> Modified</span>
+            <strong>{file.meta.find(([label]) => label === 'modified')?.[1] ?? '—'}</strong>
           </div>
-        )
-      })}
+          <div className="file-info-row">
+            <span><FileCode2 size={12} /> Format</span>
+            <strong>{file.meta.find(([label]) => label === 'format')?.[1] ?? file.kind}</strong>
+          </div>
+          <div className="file-info-row">
+            <span><HardDrive size={12} /> Size</span>
+            <strong>{file.meta.find(([label]) => label === 'size')?.[1] ?? '—'}</strong>
+          </div>
+          <div className="file-info-row">
+            <span><Tags size={12} /> Tags ({tagList.length})</span>
+            <span className="file-info-tags">
+              {tagList.map((tag) => (
+                <em className={`file-info-tag ${enumTone(tag)}`} key={tag}>{tag}</em>
+              ))}
+              <button aria-label="添加标签" title="添加标签" onClick={() => notify?.('在下方 tags 行编辑标签')}>+</button>
+            </span>
+          </div>
+          {propertyPredicates.map((predicate) => {
+            const propertyKey = predicate.propertyKey
+            const value = propertyKey ? properties[propertyKey] : ''
+            return (
+              <div className="file-info-row editable" data-property-id={predicate.id} key={predicate.id}>
+                <span>{predicate.label}</span>
+                <TypedPredicateCell
+                  active={activeProperty === predicate.id}
+                  enumDraft={enumDrafts[predicate.id] ?? ''}
+                  enumOptions={predicate.options ?? []}
+                  enumOptionState={() => undefined}
+                  enumOptionTone={enumTone}
+                  enumOptionUri={(option) => `/.vocab/terms.ttl#${option}`}
+                  predicate={predicate}
+                  readonly={!propertyKey}
+                  subject={subject}
+                  value={value}
+                  onActivate={() => setActiveProperty(predicate.id)}
+                  onApproveEnumOption={() => {}}
+                  onClearActive={() => setActiveProperty(null)}
+                  onCreateEnumOption={(option) => {
+                    if (!propertyKey) return
+                    setProperty(propertyKey, predicate.type === 'multi-select' && value ? `${value}, ${option}` : option)
+                  }}
+                  onCycleEnumTone={() => {}}
+                  onDiscardEnumOption={() => {}}
+                  onSetEnumDraft={(nextValue) => setEnumDrafts((current) => ({ ...current, [predicate.id]: nextValue }))}
+                  onSetValue={(nextValue) => {
+                    if (!propertyKey) return
+                    setProperty(propertyKey, nextValue)
+                  }}
+                  onToggleEnumDefinition={() => {}}
+                />
+              </div>
+            )
+          })}
+          {sourceLinked && file.sourceReview ? (
+            <div className="file-info-row">
+              <span><Link2 size={12} /> Source</span>
+              <strong className="file-info-link">{file.sourceReview.source}</strong>
+            </div>
+          ) : null}
+          <div className="file-info-row">
+            <span><FileText size={12} /> Path</span>
+            <strong className="file-info-path">{file.path}</strong>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -436,6 +474,7 @@ export function FileDetailModal({
   onChangeSourceIngestState,
   onChangeSourceReviewState,
   onToggleFavorite,
+  notify,
   sourceReviewState = 'pending',
 }: {
   content?: StoredFileContent
@@ -449,22 +488,56 @@ export function FileDetailModal({
   onChangeSourceIngestState?: (state: SourceIngestState) => void
   onChangeSourceReviewState?: (state: SourceReviewState) => void
   onToggleFavorite?: (file: FileOpenSample) => void
+  notify?: (title: string, kind?: 'ok' | 'err') => void
   sourceReviewState?: SourceReviewState
 }) {
   const Icon = file.icon
   const [accessOpen, setAccessOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLSpanElement>(null)
   const closeLater = () => window.setTimeout(onClose, 0)
   const sourceLinked = file.kind === 'Source-linked card'
   const resolvedProperties = fileProperties ?? defaultFileProperties(file)
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !accessOpen) closeLater()
+      if (event.key === 'Escape' && !accessOpen) {
+        if (moreOpen) {
+          setMoreOpen(false)
+          return
+        }
+        closeLater()
+      }
     }
 
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [accessOpen, onClose])
+  }, [accessOpen, moreOpen, onClose])
+
+  useEffect(() => {
+    if (!moreOpen) return
+    const closeOnOutside = (event: MouseEvent) => {
+      if (moreRef.current && event.target instanceof Node && !moreRef.current.contains(event.target)) setMoreOpen(false)
+    }
+    window.addEventListener('mousedown', closeOnOutside)
+    return () => window.removeEventListener('mousedown', closeOnOutside)
+  }, [moreOpen])
+
+  const moreItems: Array<{ label: string; icon: IconType; kbd?: string; destructive?: boolean; run: () => void }> = [
+    { label: '在新标签打开', icon: ExternalLink, kbd: '⌘⏎', run: () => notify?.('已在新标签打开（演示）') },
+    { label: '导出为 Markdown', icon: Download, kbd: '', run: () => notify?.('已导出 Markdown') },
+    { label: '导出为 PDF', icon: FileText, kbd: '', run: () => notify?.('已导出 PDF') },
+    { label: '版本历史', icon: Clock3, kbd: '', run: () => notify?.('版本历史（演示）') },
+    { label: '复制链接', icon: Link2, kbd: '⌘L', run: () => notify?.('已复制链接') },
+    { label: '分享', icon: Share2, kbd: '', run: () => notify?.('分享（演示）') },
+    { label: '加入收件箱', icon: Archive, kbd: '', run: () => notify?.('已加入收件箱') },
+    { label: '管理标签', icon: Tags, kbd: '⌘T', run: () => notify?.('在 Info 面板编辑标签') },
+    { label: '加到白板', icon: LayoutGrid, kbd: '⌘M', run: () => notify?.('已加到白板（演示）') },
+    { label: '删除', icon: Trash2, destructive: true, run: () => {
+      notify?.('文件已删除', 'err')
+      onClose()
+    } },
+  ]
 
   return (
     <div className="file-detail-layer" role="dialog" aria-label={`${file.name} detail`}>
@@ -490,7 +563,33 @@ export function FileDetailModal({
             >
               <Star size={15} />
             </button>
-            <button title="Copy link" aria-label="Copy link"><Link2 size={15} /></button>
+            <span className="file-more-anchor" ref={moreRef}>
+              <button title="更多" aria-label="更多" aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}>
+                <MoreHorizontal size={16} />
+              </button>
+              {moreOpen ? (
+                <span className="file-more-menu" role="menu">
+                  {moreItems.map((item) => {
+                    const ItemIcon = item.icon
+                    return (
+                      <button
+                        role="menuitem"
+                        className={item.destructive ? 'destructive' : ''}
+                        key={item.label}
+                        onClick={() => {
+                          setMoreOpen(false)
+                          item.run()
+                        }}
+                      >
+                        <ItemIcon size={14} />
+                        <span>{item.label}</span>
+                        {item.kbd ? <kbd>{item.kbd}</kbd> : null}
+                      </button>
+                    )
+                  })}
+                </span>
+              ) : null}
+            </span>
             <button aria-label="Close file detail" onClick={closeLater}>
               <X size={16} />
             </button>
@@ -525,14 +624,12 @@ export function FileDetailModal({
             onChangeReviewState={onChangeSourceReviewState ?? (() => {})}
           />
         ) : null}
-        <FilePropertyPanel
+        <FileInfoPanel
           file={file}
           properties={resolvedProperties}
           onChangeProperties={onChangeFileProperties}
+          notify={notify}
         />
-        <section className="file-detail-tail">
-          <FileMetaBlock heading="Meta" kind={file.kind} meta={file.meta} path={file.path} metaName={`${file.name}.meta`} />
-        </section>
         {accessOpen ? <AccessPolicyDialog scope="File" onClose={() => setAccessOpen(false)} /> : null}
       </article>
     </div>
@@ -549,6 +646,7 @@ export function SubjectOpenDialog({
   onChangeSourceIngestState,
   onChangeSourceReviewState,
   onClose,
+  notify,
   sourceReviewState = 'pending',
 }: {
   fileContentsByPath?: Record<string, StoredFileContent>
@@ -560,6 +658,7 @@ export function SubjectOpenDialog({
   onChangeSourceIngestState?: (source: string, state: SourceIngestState) => void
   onChangeSourceReviewState?: (state: SourceReviewState) => void
   onClose: () => void
+  notify?: (title: string, kind?: 'ok' | 'err') => void
   sourceReviewState?: SourceReviewState
 }) {
   if (target.kind === 'file-resource') {
@@ -630,26 +729,6 @@ export function SubjectOpenDialog({
     : isVocab
       ? target.row.subject.startsWith('/.vocab/') ? target.row.subject : `/.vocab/terms.ttl${target.row.subject.startsWith('#') ? target.row.subject : `#${target.row.subject}`}`
       : `/.data/workspaces/linx-prototype.ttl${target.row.subject}`
-  const meta: Array<[string, string]> = isExternal
-    ? [
-        ['Ingest', `${externalSourceIngestState?.ingestStatus ?? 'lazy'} · ${externalSourceIngestState?.readChunks ?? 0}/${externalSourceIngestState?.totalChunks ?? 0} read`],
-        ['manifest', ingestManifestPath],
-        ['sync', externalSourceIngestState?.syncStatus ?? 'scheduled · 24h'],
-        ['source hash', externalSourceIngestState?.sourceHash ?? 'sha256:92d7'],
-      ]
-    : isVocab && vocabTerm
-      ? [
-          ['term kind', vocabTerm.kind],
-          ['range', vocabTerm.range],
-          ['status', vocabTerm.status],
-          ['shape usage', 'FileResource · GrantPage'],
-        ]
-    : [
-        ['class', target.row.className],
-        ['relation', target.row.relation],
-        ['status', target.row.status],
-        ['return', 'table · class scope retained'],
-      ]
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -671,7 +750,7 @@ export function SubjectOpenDialog({
             <small>{target.row.subject}</small>
           </span>
           <div className="file-detail-actions">
-            <button title="Copy URI" aria-label="Copy URI"><Link2 size={15} /></button>
+            <button title="Copy URI" aria-label="Copy URI" onClick={() => notify?.('已复制 URI')}><Link2 size={15} /></button>
             <button title="Open source" aria-label="Open source"><ExternalLink size={15} /></button>
             <button aria-label="Close subject detail" onClick={closeLater}>
               <X size={16} />
@@ -691,56 +770,44 @@ export function SubjectOpenDialog({
               data-source-ingest-sync={externalSourceIngestState?.syncStatus ?? ''}
               data-source-ingest-manifest={ingestManifestPath}
             >
-              <span><strong>source</strong><em>HTTP URL stays the canonical origin</em></span>
-              <span><strong>manifest</strong><em>{ingestManifestPath} · existing Ingest manifest reused when hash matches</em></span>
-              <span><strong>ingest</strong><em>{externalSourceIngestState?.ingestStatus} · {externalSourceIngestState?.readChunks}/{externalSourceIngestState?.totalChunks} read · progressive chunks load only when read</em></span>
+              <span><strong>ingest</strong><em>{externalSourceIngestState?.ingestStatus} · {externalSourceIngestState?.readChunks}/{externalSourceIngestState?.totalChunks} read</em></span>
               <span><strong>sync</strong><em>{externalSourceIngestState?.syncStatus}</em></span>
-              <span><strong>card</strong><em>local edits keep source lineage without overwrite</em></span>
               <button data-source-ingest-action="read" aria-label="Read external Ingest chunks" onClick={readExternalChunks}>
                 <Plus size={13} /> Load chunks
               </button>
             </div>
+          ) : null}
+        </section>
+        <InfoPanel badge={kind}>
+          {isExternal ? (
+            <>
+              <InfoRow icon={Link2} label="Source" value="HTTP URL stays the canonical origin" />
+              <InfoRow icon={FileCode2} label="Manifest" value={ingestManifestPath} />
+              <InfoRow icon={ShieldCheck} label="Source hash" value={externalSourceIngestState?.sourceHash ?? 'sha256:92d7'} />
+            </>
           ) : isVocab ? (
-            <div className="source-ingest-preview">
-              <span><strong>kind</strong><em>{vocabTerm?.kind ?? 'Term'}</em></span>
-              <span><strong>range</strong><em>{vocabTerm?.range ?? 'defined in terms.ttl'}</em></span>
-              <span><strong>shape</strong><em>used by current class predicate rules</em></span>
-              <span><strong>open</strong><em>resource file remains {path.split('#')[0]}</em></span>
-            </div>
+            <>
+              <InfoRow icon={Tags} label="Kind" value={vocabTerm?.kind ?? 'Term'} />
+              <InfoRow icon={ExternalLink} label="Range" value={vocabTerm?.range ?? '—'} />
+              <InfoRow icon={Check} label="Status" value={vocabTerm?.status ?? '—'} />
+              <InfoRow icon={FileText} label="Shape" value="used by current class predicate rules" />
+            </>
           ) : (
-            <div className="source-ingest-preview">
-              <span><strong>type</strong><em>{target.row.className}</em></span>
-              <span><strong>links</strong><em>{target.row.relation}</em></span>
-              <span><strong>file</strong><em>contained by /.data/workspaces/linx-prototype.ttl</em></span>
-              <span><strong>return</strong><em>table · class scope · row retained</em></span>
-            </div>
+            <>
+              <InfoRow icon={Tags} label="Class" value={target.row.className} />
+              <InfoRow icon={Link2} label="Links" value={target.row.relation || '—'} />
+              <InfoRow icon={Check} label="Status" value={target.row.status || '—'} />
+            </>
           )}
-        </section>
-        {target.routeContext ? (
-          <section
-            className="subject-return-context"
-            data-route-class={target.routeContext.className}
-            data-route-kind={target.kind}
-            data-route-source={target.routeContext.source}
-            data-route-subject={target.routeContext.rowSubject}
-            data-route-view={target.routeContext.view}
-            data-route-row={target.routeContext.rowSubject}
-            data-route-row-index={target.routeContext.rowIndex ?? ''}
-            data-route-scroll-top={target.routeContext.tableScrollTop ?? ''}
-            data-route-destination={target.routeContext.destination ?? ''}
-            data-route-search={target.routeContext.searchQuery}
-            data-route-sort={target.routeContext.sortMode}
-            aria-label="Subject return context"
-          >
-            <span><strong>Return</strong><em>{target.routeContext.view} · {target.routeContext.className}</em></span>
-            <span><strong>Row</strong><em>{target.routeContext.rowSubject}</em></span>
-            <span><strong>Position</strong><em>row {target.routeContext.rowIndex ?? 0}</em></span>
-            <span><strong>Filter</strong><em>{target.routeContext.searchQuery || 'none'} · {target.routeContext.sortMode}</em></span>
-          </section>
-        ) : null}
-        <section className="file-detail-tail">
-          <FileMetaBlock heading="Meta" kind={kind} meta={meta} path={path} metaName={`${target.row.subject}.meta`} />
-        </section>
+          {target.routeContext ? (
+            <InfoRow
+              icon={Undo2}
+              label="Return"
+              value={`${target.routeContext.view} · ${target.routeContext.className} · row ${target.routeContext.rowIndex ?? 0}`}
+            />
+          ) : null}
+          <InfoRow icon={FileText} label="Path" value={path} />
+        </InfoPanel>
       </article>
     </div>
   )

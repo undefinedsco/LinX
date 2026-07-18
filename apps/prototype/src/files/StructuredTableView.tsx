@@ -38,6 +38,8 @@ import {
   type SourceReviewState,
 } from './files-proposals'
 import { TypedPredicateCell } from './typed-cell-editors'
+import { ViewTabs } from './files-ui'
+import { usePopover } from '../shared/ui'
 import {
   classVocabUri,
   getStructuredProjection,
@@ -50,6 +52,7 @@ import {
   structuredSubjectValues,
   subjectRows,
   vocabStateLabel,
+  vocabTermSlug,
 } from './files-model'
 import type {
   IconType,
@@ -79,30 +82,47 @@ export function StructuredFilterMenu({
   approvedClassNames,
   discardedClassNames,
   selectedClass,
+  classOptions,
   onApproveClass,
   onDiscardClass,
   onSelectClass,
+  onCreateClass,
 }: {
   approvedClassNames: string[]
   discardedClassNames: string[]
   selectedClass: string
+  classOptions: string[]
   onApproveClass: (className: string) => void
   onDiscardClass: (className: string) => void
   onSelectClass: (className: string) => void
+  onCreateClass?: (className: string) => void
 }) {
   const [openClassDefinition, setOpenClassDefinition] = useState<string | null>(null)
+  const [creatingClass, setCreatingClass] = useState(false)
+  const [draftClassName, setDraftClassName] = useState('')
   const classSubjectCount = (className: string) => subjectRows.filter((row) => row.className === className).length
-  const visibleClassOptions = structuredClassOptions.filter((className) => !discardedClassNames.includes(className))
+  const visibleClassOptions = classOptions.filter((className) => !discardedClassNames.includes(className))
+
+  const commitCreateClass = () => {
+    const raw = draftClassName.trim()
+    if (!raw) return
+    const name = vocabTermSlug(raw).replace(/^./, (char) => char.toUpperCase())
+    onCreateClass?.(name)
+    onSelectClass(name)
+    setCreatingClass(false)
+    setDraftClassName('')
+  }
 
   return (
     <div className="structured-filter-menu" role="menu" aria-label="Structured filters">
       <section>
-        <h3>rdf:type</h3>
+        <h3>rdf:type · class scope</h3>
         {visibleClassOptions.map((className) => {
           const classState = approvedClassNames.includes(className) ? undefined : structuredClassStates[className]
+          const isCreated = !structuredClassOptions.includes(className)
           return (
             <span
-              className={`${className === selectedClass ? 'active' : ''} ${classState ? 'vocab-pending' : ''}`}
+              className={`${className === selectedClass ? 'active' : ''} ${classState || isCreated ? 'vocab-pending' : ''}`}
               key={className}
             >
               <button
@@ -114,7 +134,7 @@ export function StructuredFilterMenu({
                 <Tags size={14} />
                 <span>
                   <strong>{className}</strong>
-                  <small>{classSubjectCount(className)} subject · {structuredBasePredicatesByClass[className].length} predicates</small>
+                  <small>{classSubjectCount(className)} subject · {(structuredBasePredicatesByClass[className] ?? []).length} predicates{isCreated ? ' · 新建' : ''}</small>
                   {classState ? <em className={`vocab-state-star ${classState}`} title={vocabStateLabel(classState)}>*</em> : null}
                 </span>
                 {className === selectedClass ? <Check size={14} /> : null}
@@ -167,6 +187,32 @@ export function StructuredFilterMenu({
             </span>
           )
         })}
+        {creatingClass ? (
+          <span className="class-create-row">
+            <input
+              autoFocus
+              value={draftClassName}
+              placeholder="udfs:Note"
+              aria-label="新 class 名称"
+              onChange={(event) => setDraftClassName(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitCreateClass()
+                if (event.key === 'Escape') {
+                  setCreatingClass(false)
+                  setDraftClassName('')
+                }
+              }}
+            />
+            <button aria-label="创建 class" onClick={commitCreateClass}>
+              <Check size={14} />
+            </button>
+          </span>
+        ) : (
+          <button className="class-create-trigger" onClick={() => setCreatingClass(true)}>
+            <Plus size={14} />
+            <span>新建 Class</span>
+          </button>
+        )}
       </section>
     </div>
   )
@@ -179,7 +225,7 @@ export function StructuredViewTabs({
   structuredView: StructuredView
   onChangeView: (view: StructuredView) => void
 }) {
-  const [viewMenuOpen, setViewMenuOpen] = useState(false)
+  const viewMenu = usePopover('.view-menu-anchor')
   const viewDefs: Record<StructuredView, { label: string; icon: IconType }> = {
     table: { label: 'Table', icon: Database },
     discover: { label: 'Discover', icon: Search },
@@ -190,57 +236,46 @@ export function StructuredViewTabs({
   const visibleViews: StructuredView[] = structuredView === 'table' ? ['table'] : ['table', structuredView]
 
   return (
-    <nav className="structured-tabs" aria-label="RDF resource views">
-      {visibleViews.map((viewId) => {
-        const view = viewDefs[viewId]
-        const Icon = view.icon
-        return (
+    <ViewTabs
+      ariaLabel="RDF resource views"
+      views={visibleViews.map((viewId) => ({ id: viewId, label: viewDefs[viewId].label, icon: viewDefs[viewId].icon }))}
+      active={structuredView}
+      onChange={(id) => onChangeView(id as StructuredView)}
+      trailing={(
+        <span className="view-menu-anchor">
           <button
-            className={structuredView === viewId ? 'active' : ''}
-            key={viewId}
-            onClick={() => onChangeView(viewId)}
-            title={view.label}
+            className="add-view-button"
+            onClick={viewMenu.toggle}
+            title="Add view"
           >
-            <Icon size={15} />
-            <span>{view.label}</span>
+            <Plus size={15} />
+            <span>View</span>
           </button>
-        )
-      })}
-      <span className="view-menu-anchor">
-        <button
-          className="add-view-button"
-          onClick={() => {
-            window.setTimeout(() => setViewMenuOpen((open) => !open), 0)
-          }}
-          title="Add view"
-        >
-          <Plus size={15} />
-          <span>View</span>
-        </button>
-        {viewMenuOpen ? (
-          <div className="view-menu" role="menu" aria-label="Add view">
-            {(['kanban', 'whiteboard', 'raw'] as StructuredView[]).map((viewId) => {
-              const view = viewDefs[viewId]
-              const Icon = view.icon
-              return (
-                <button
-                  key={viewId}
-                  onClick={() => {
-                    window.setTimeout(() => {
-                      onChangeView(viewId)
-                      setViewMenuOpen(false)
-                    }, 0)
-                  }}
-                >
-                  <Icon size={16} />
-                  <span>{view.label}</span>
-                </button>
-              )
-            })}
-          </div>
-        ) : null}
-      </span>
-    </nav>
+          {viewMenu.open ? (
+            <div className="view-menu" role="menu" aria-label="Add view">
+              {(['kanban', 'whiteboard', 'raw'] as StructuredView[]).map((viewId) => {
+                const view = viewDefs[viewId]
+                const Icon = view.icon
+                return (
+                  <button
+                    key={viewId}
+                    onClick={() => {
+                      window.setTimeout(() => {
+                        onChangeView(viewId)
+                        viewMenu.close()
+                      }, 0)
+                    }}
+                  >
+                    <Icon size={16} />
+                    <span>{view.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+        </span>
+      )}
+    />
   )
 }
 
@@ -286,12 +321,12 @@ function CompactTableShell({
 export function VocabTermsTable({ rows }: { rows: VocabTermRow[] }) {
   const [termMenu, setTermMenu] = useState<string | null>(null)
   const columns: CompactTableColumn[] = [
-    { id: 'term', label: 'Term', icon: FileCode2, width: 150 },
-    { id: 'kind', label: 'Kind', icon: Tags, width: 88 },
+    { id: 'term', label: 'Term', icon: FileCode2, width: 238 },
+    { id: 'kind', label: 'Kind', icon: Tags, width: 92 },
     { id: 'label', label: 'Label', icon: FileText, width: 132 },
-    { id: 'definition', label: 'Definition', icon: FileText, width: 270 },
-    { id: 'range', label: 'Range', icon: ExternalLink, width: 146 },
-    { id: 'status', label: 'Status', icon: Check, width: 112 },
+    { id: 'definition', label: 'Definition', icon: FileText, width: 300 },
+    { id: 'range', label: 'Range', icon: ExternalLink, width: 196 },
+    { id: 'status', label: 'Status', icon: Check, width: 96 },
     { id: 'actions', label: '', width: 46 },
   ]
 
@@ -363,6 +398,7 @@ export function StructuredTable({
   onDiscardPredicateProposal,
   onOpenSubjectRoute,
   onOpenResourceFile,
+  notify,
   onSetCellValue,
 }: {
   canonicalVocab: boolean
@@ -390,6 +426,7 @@ export function StructuredTable({
   onDiscardPredicateProposal: (predicateId: string) => void
   onOpenSubjectRoute?: (route: LastOpenedSubjectRoute) => void
   onOpenResourceFile?: (selection: 'structuredVocab' | 'structuredData', row: SubjectRow, route: LastOpenedSubjectRoute) => void
+  notify?: (title: string, kind?: 'ok' | 'err') => void
   onSetCellValue: (subject: string, predicateId: string, nextValue: string) => void
 }) {
   const [predicateMenuOpen, setPredicateMenuOpen] = useState(false)
@@ -406,6 +443,9 @@ export function StructuredTable({
   const [predicateDefinitionMenu, setPredicateDefinitionMenu] = useState<string | null>(null)
   const [subjectPeek, setSubjectPeek] = useState<SubjectRow | null>(null)
   const [subjectOpenTarget, setSubjectOpenTarget] = useState<SubjectOpenTarget | null>(null)
+  const [addedSubjects, setAddedSubjects] = useState<SubjectRow[]>([])
+  const [creatingSubject, setCreatingSubject] = useState(false)
+  const [draftSubjectName, setDraftSubjectName] = useState('')
   const gridRef = useRef<HTMLDivElement | null>(null)
   const lastRouteRef = useRef<LastOpenedSubjectRoute | null>(null)
   const predicateTypeMeta = new Map(predicateTypeOptions.map((type) => [type.kind, type]))
@@ -427,7 +467,10 @@ export function StructuredTable({
     '--schema-cell-gap': '0px',
     '--schema-row-padding': '0 7px',
   } as React.CSSProperties
-  const visibleRows = subjectRows.filter((row) => row.className === selectedClass)
+  const visibleRows = useMemo(() => [
+    ...subjectRows.filter((row) => row.className === selectedClass),
+    ...addedSubjects.filter((row) => row.className === selectedClass),
+  ], [selectedClass, addedSubjects])
 
   useEffect(() => {
     setActiveCell(null)
@@ -436,6 +479,8 @@ export function StructuredTable({
     setEnumDefinitionMenu(null)
     setPredicateDefinitionMenu(null)
     setSubjectPeek(null)
+    setCreatingSubject(false)
+    setDraftSubjectName('')
     const nextName = 'review status'
     setDraftPredicateName(nextName)
     setDraftPredicateUri(makePredicateProposalUri(selectedClass, nextName))
@@ -952,13 +997,69 @@ export function StructuredTable({
           </div>
           )
         })}
+        {!canonicalVocab && displayRows.length === 0 && !creatingSubject ? (
+          <div className="structured-empty-hint">
+            <p>还没有 {selectedClass} 行。点击下面任意格子创建第一行；或先用 + Predicate 添加列。</p>
+          </div>
+        ) : null}
         {!canonicalVocab ? (
-          <button className="add-subject-row">
-            <span className="subject-name"><Plus size={15} /> Subject</span>
-            {predicateHeaders.map((header) => (
-              <span key={header.id} />
-            ))}
-          </button>
+          creatingSubject ? (
+            <div className="add-subject-row creating">
+              <span className="subject-name">
+                <input
+                  autoFocus
+                  value={draftSubjectName}
+                  placeholder="#subject 名称，回车创建"
+                  aria-label="新 subject 名称"
+                  onChange={(event) => setDraftSubjectName(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      const raw = draftSubjectName.trim()
+                      if (!raw) return
+                      const slug = vocabTermSlug(raw)
+                      setAddedSubjects((current) => [...current, {
+                        subject: `#${slug || 'subject'}`,
+                        className: selectedClass,
+                        label: raw,
+                        meta: '',
+                        relation: '',
+                        status: 'Draft',
+                      }])
+                      setCreatingSubject(false)
+                      setDraftSubjectName('')
+                    }
+                    if (event.key === 'Escape') {
+                      setCreatingSubject(false)
+                      setDraftSubjectName('')
+                    }
+                  }}
+                />
+              </span>
+              {predicateHeaders.map((header) => (
+                <span key={header.id} />
+              ))}
+            </div>
+          ) : (
+            <div className="add-subject-row" role="button" aria-label="添加 subject">
+              {['subject', ...predicateHeaders.map((header) => header.id)].map((cellId, cellIndex) => (
+                <span
+                  className={cellIndex === 0 ? 'subject-name' : 'add-cell'}
+                  key={cellId}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setCreatingSubject(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setCreatingSubject(true)
+                    }
+                  }}
+                >
+                  {cellIndex === 0 ? <><Plus size={15} /> Subject</> : null}
+                </span>
+              ))}
+            </div>
+          )
         ) : null}
       </div>
       {subjectOpenTarget ? (
@@ -975,6 +1076,7 @@ export function StructuredTable({
             setSubjectOpenTarget(null)
             window.requestAnimationFrame(restoreSubjectRoute)
           }}
+          notify={notify}
           sourceReviewState={sourceReviewState}
         />
       ) : null}

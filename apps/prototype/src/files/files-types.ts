@@ -3,9 +3,10 @@ import type { JSONContent } from '@tiptap/core'
 
 export type IconType = LucideIcon
 export type StructuredView = 'table' | 'discover' | 'kanban' | 'whiteboard' | 'raw'
-export type FilesSelection = 'structuredVocab' | 'structuredVocabShapes' | 'structuredVocabNamespaces' | 'structuredData' | 'folderRoot' | 'folder' | 'document' | 'image' | 'restricted'
+export type FilesSelection = 'structuredVocab' | 'structuredVocabShapes' | 'structuredVocabNamespaces' | 'structuredData' | 'structuredEmpty' | 'folderRoot' | 'folder' | 'document' | 'image' | 'jsonl' | 'restricted'
 export type StructuredVocabSelection = 'structuredVocab' | 'structuredVocabShapes' | 'structuredVocabNamespaces'
-export type RegularFileSelection = Exclude<FilesSelection, StructuredVocabSelection | 'structuredData' | 'folderRoot' | 'folder' | 'restricted'>
+export type RegularFileSelection = Exclude<FilesSelection, StructuredVocabSelection | 'structuredData' | 'structuredEmpty' | 'folderRoot' | 'folder' | 'restricted'>
+export type FilesFolderId = 'files' | 'docs' | 'vocab' | 'data' | 'images' | 'cards' | 'screenshots' | 'workspaces' | 'agents' | 'agentsSecretary' | 'proposals' | 'proposalsVocab'
 export type TableSortMode = 'none' | 'asc' | 'desc'
 export type PredicateKind = 'text' | 'number' | 'select' | 'multi-select' | 'date' | 'checkbox' | 'url' | 'phone' | 'email' | 'relation'
 export type VocabTermState = 'confirmed' | 'ai-pending' | 'modified-pending'
@@ -135,11 +136,24 @@ export interface SourceIngestState {
   manifestPath: string
 }
 
+export interface FolderChildItem {
+  name: string
+  kind: string
+  icon: IconType
+  detail: string
+  targetSelection?: FilesSelection
+  targetFolder?: FilesFolderId
+  metaPeek?: Array<[string, string]>
+  access?: { mode: string; source: string; kind: 'ACL' | 'ACR' }
+}
+
 export interface FolderOpenSample {
+  id: FilesFolderId
   name: string
   path: string
   kind: string
   summary: string
+  parent?: FilesFolderId
   meta: Array<[string, string]>
-  children: Array<{ name: string; kind: string; icon: IconType; detail: string; targetSelection?: FilesSelection }>
+  children: FolderChildItem[]
 }

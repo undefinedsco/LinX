@@ -16,6 +16,7 @@ import {
 import type {
   FileContentBlock,
   FileOpenSample,
+  FilesFolderId,
   FilesSelection,
   FolderOpenSample,
   IconType,
@@ -29,6 +30,14 @@ import type {
 } from './files-types'
 
 export const subjectRows: SubjectRow[] = [
+  {
+    subject: '#secretary',
+    className: 'Agent',
+    label: 'AI Secretary profile',
+    meta: 'name, avatar, welcomeMessage',
+    relation: 'agent home',
+    status: 'Valid',
+  },
   {
     subject: '#FileResource',
     className: 'Class',
@@ -146,6 +155,12 @@ export const structuredBasePredicatesByClass: Record<string, PredicateDefinition
 }
 
 export const structuredSubjectValues: Record<string, Record<string, string>> = {
+  '#secretary': {
+    'dcterms:title': 'AI Secretary',
+    'ldp:contains': 'profile.ttl',
+    'udfs:skills': 'solid-modeling, taste',
+    'udfs:backend': 'hybrid',
+  },
   '#FileResource': {
     'dcterms:title': 'File resource',
     'schema:about': '../files/',
@@ -405,43 +420,356 @@ export const vocabNamespaces: VocabTermRow[] = [
 ]
 
 export const folderOpenSample: FolderOpenSample = {
+  id: 'docs',
   name: 'docs',
   path: '/files/docs/',
   kind: 'Pod container',
+  parent: 'files',
   summary: 'Editable notes, design references, and generated reports stored as normal Pod resources.',
   meta: [
-    ['contains', '7 resources'],
+    ['contains', '6 resources'],
     ['modified', 'Today 09:36'],
     ['permission', 'Private'],
     ['policy', 'inherited access summary'],
   ],
   children: [
-    { name: 'multi-channel-access.md', kind: 'Markdown', icon: FileText, detail: '18 KB · Today 09:30' },
-    { name: 'linx-prototype.ttl', kind: 'Turtle', icon: FileCode2, detail: 'Structured RDF · Today 09:12', targetSelection: 'structuredData' },
-    { name: 'files-module-notes.md', kind: 'Markdown', icon: FileText, detail: '12 KB · Yesterday 16:42' },
-    { name: 'reference-screenshots/', kind: 'Folder', icon: FolderOpen, detail: '4 images · Private' },
-    { name: 'prototype-layout.png', kind: 'Image', icon: Image, detail: '842 KB · Yesterday 18:12' },
-    { name: 'runtime-evidence.jsonl', kind: 'JSONL', icon: FileCode2, detail: '31 KB · Today 08:56' },
+    {
+      name: 'multi-channel-access.md',
+      kind: 'Markdown',
+      icon: FileText,
+      detail: '18 KB · Today 09:30',
+      targetSelection: 'document',
+      metaPeek: [
+        ['title', 'multi-channel-access'],
+        ['linked resource', '/files/docs/multi-channel-access.md'],
+        ['view state', 'editor · rich'],
+      ],
+      access: { mode: 'Private', source: 'own .acl', kind: 'ACL' },
+    },
+    {
+      name: 'linx-prototype.ttl',
+      kind: 'Turtle',
+      icon: FileCode2,
+      detail: 'Structured RDF · Today 09:12',
+      targetSelection: 'structuredData',
+      metaPeek: [
+        ['subjects', '7'],
+        ['class scope', 'Workspace'],
+        ['predicates', '5 · 1 pending'],
+      ],
+      access: { mode: 'Private', source: '继承自 /files/ ACR', kind: 'ACR' },
+    },
+    {
+      name: 'files-module-notes.md',
+      kind: 'Markdown',
+      icon: FileText,
+      detail: '12 KB · Yesterday 16:42',
+      targetSelection: 'document',
+      metaPeek: [
+        ['title', 'files-module-notes'],
+        ['view state', 'editor · raw'],
+      ],
+      access: { mode: 'Private', source: '继承自 /files/ ACR', kind: 'ACR' },
+    },
+    {
+      name: 'reference-screenshots',
+      kind: 'Folder',
+      icon: FolderOpen,
+      detail: '4 images · Private',
+      targetFolder: 'screenshots',
+      access: { mode: 'Private', source: '继承自 /files/ ACR', kind: 'ACR' },
+    },
+    {
+      name: 'prototype-layout.png',
+      kind: 'Image',
+      icon: Image,
+      detail: '842 KB · Yesterday 18:12',
+      targetSelection: 'image',
+      metaPeek: [
+        ['checksum', 'sha256:7fa1'],
+        ['source', 'AI Secretary · 文件消息'],
+      ],
+      access: { mode: 'Private', source: '继承自 /files/ ACR', kind: 'ACR' },
+    },
+    {
+      name: 'runtime-evidence.jsonl',
+      kind: 'JSONL',
+      icon: FileCode2,
+      detail: '31 KB · Today 08:56',
+      targetSelection: 'jsonl',
+      metaPeek: [
+        ['records', '128 lines'],
+        ['source', 'runtime evidence sink'],
+      ],
+      access: { mode: 'Private', source: '继承自 /files/ ACR', kind: 'ACR' },
+    },
+    {
+      name: 'empty-notes.ttl',
+      kind: 'Turtle',
+      icon: FileCode2,
+      detail: '0 KB · 刚刚创建',
+      targetSelection: 'structuredEmpty',
+      metaPeek: [
+        ['subjects', '0'],
+        ['state', 'empty'],
+      ],
+      access: { mode: 'Private', source: '继承自 /files/ ACR', kind: 'ACR' },
+    },
   ],
 }
 
 export const filesRootFolderOpenSample: FolderOpenSample = {
+  id: 'files',
   name: 'files',
   path: '/files/',
   kind: 'Pod container',
   summary: 'User-facing file space for folders, editable notes, media, and structured resources.',
   meta: [
-    ['contains', '4 folders'],
+    ['contains', '4 resources'],
     ['modified', 'Today 09:40'],
     ['permission', 'Private'],
     ['policy', 'root ACR applies to file children'],
   ],
   children: [
-    { name: 'docs', kind: 'Folder', icon: FolderOpen, detail: '7 resources · Private', targetSelection: 'folder' },
-    { name: 'images', kind: 'Folder', icon: FolderOpen, detail: '4 images · Private' },
-    { name: 'cards', kind: 'Folder', icon: FolderOpen, detail: 'source-linked notes · Private' },
-    { name: 'linx-prototype.ttl', kind: 'Turtle', icon: FileCode2, detail: 'Structured RDF · Today 09:12', targetSelection: 'structuredData' },
+    { name: 'docs', kind: 'Folder', icon: FolderOpen, detail: '6 resources · Private', targetFolder: 'docs', access: { mode: 'Private', source: 'own ACR', kind: 'ACR' } },
+    { name: 'images', kind: 'Folder', icon: FolderOpen, detail: '4 images · Private', targetFolder: 'images', access: { mode: 'Private', source: '继承自 /files/ ACR', kind: 'ACR' } },
+    { name: 'cards', kind: 'Folder', icon: FolderOpen, detail: 'source-linked notes · Private', targetFolder: 'cards', access: { mode: 'Private', source: '继承自 /files/ ACR', kind: 'ACR' } },
+    {
+      name: 'linx-prototype.ttl',
+      kind: 'Turtle',
+      icon: FileCode2,
+      detail: 'Structured RDF · Today 09:12',
+      targetSelection: 'structuredData',
+      metaPeek: [
+        ['subjects', '7'],
+        ['class scope', 'Workspace'],
+        ['predicates', '5 · 1 pending'],
+      ],
+      access: { mode: 'Private', source: '继承自 /files/ ACR', kind: 'ACR' },
+    },
   ],
+}
+
+export const vocabFolderOpenSample: FolderOpenSample = {
+  id: 'vocab',
+  name: '.vocab',
+  path: '/.vocab/',
+  kind: 'Pod container',
+  summary: 'User-owned vocabulary: terms, shapes, and namespace registry as sibling resources.',
+  meta: [
+    ['contains', '3 resources'],
+    ['modified', 'Today 09:38'],
+    ['permission', 'Private'],
+    ['policy', 'readonly registry · proposals via Inbox'],
+  ],
+  children: [
+    {
+      name: 'terms.ttl',
+      kind: 'Turtle',
+      icon: FileCode2,
+      detail: '5 subjects · 21 predicates',
+      targetSelection: 'structuredVocab',
+      metaPeek: [
+        ['subjects', '5'],
+        ['predicates', '21'],
+        ['state', '2 warnings'],
+      ],
+      access: { mode: 'Readonly registry', source: '.vocab ACR · 提案走 Inbox', kind: 'ACR' },
+    },
+    {
+      name: 'shapes.ttl',
+      kind: 'Turtle',
+      icon: FileCode2,
+      detail: '3 shapes',
+      targetSelection: 'structuredVocabShapes',
+      metaPeek: [
+        ['subjects', '3'],
+        ['shapes', '3 NodeShape'],
+      ],
+      access: { mode: 'Readonly registry', source: '.vocab ACR · 提案走 Inbox', kind: 'ACR' },
+    },
+    {
+      name: 'namespaces.ttl',
+      kind: 'Turtle',
+      icon: FileCode2,
+      detail: '3 namespaces',
+      targetSelection: 'structuredVocabNamespaces',
+      metaPeek: [
+        ['subjects', '3'],
+        ['prefixes', 'udfs · dcterms · sh'],
+      ],
+      access: { mode: 'Readonly registry', source: '.vocab ACR · 提案走 Inbox', kind: 'ACR' },
+    },
+  ],
+}
+
+export const dataFolderOpenSample: FolderOpenSample = {
+  id: 'data',
+  name: '.data',
+  path: '/.data/',
+  kind: 'Pod container',
+  summary: 'Product-owned data containers: workspaces, agents, proposals, and audit records.',
+  meta: [
+    ['contains', '4 resources'],
+    ['modified', 'Today 09:41'],
+    ['permission', 'Private'],
+    ['policy', 'owner write · app proposals'],
+  ],
+  children: [
+    { name: 'workspaces', kind: 'Folder', icon: FolderOpen, detail: 'linx-prototype.ttl · 1 workspace', targetFolder: 'workspaces', access: { mode: 'Private', source: 'own ACR', kind: 'ACR' } },
+    { name: 'agents', kind: 'Folder', icon: FolderOpen, detail: 'secretary/profile.ttl', targetFolder: 'agents', access: { mode: 'Private', source: 'own ACR', kind: 'ACR' } },
+    { name: 'proposals', kind: 'Folder', icon: FolderOpen, detail: 'vocab/review-status.ttl', targetFolder: 'proposals', access: { mode: 'Private', source: 'own ACR', kind: 'ACR' } },
+    {
+      name: 'restricted.ttl',
+      kind: 'Turtle',
+      icon: FileCode2,
+      detail: 'No access · 403',
+      targetSelection: 'restricted',
+      access: { mode: 'No access', source: 'own .acl · 403 Forbidden', kind: 'ACL' },
+    },
+  ],
+}
+
+export const folderSamples: Record<FilesFolderId, FolderOpenSample> = {
+  files: filesRootFolderOpenSample,
+  docs: folderOpenSample,
+  vocab: vocabFolderOpenSample,
+  data: dataFolderOpenSample,
+  images: {
+    id: 'images',
+    name: 'images',
+    path: '/files/images/',
+    kind: 'Pod container',
+    parent: 'files',
+    summary: 'Image resources from chat and uploads.',
+    meta: [
+      ['contains', '4 images'],
+      ['modified', 'Yesterday 18:12'],
+      ['permission', 'Private'],
+    ],
+    children: [
+      { name: 'prototype-layout.png', kind: 'Image', icon: Image, detail: '842 KB · Yesterday 18:12', targetSelection: 'image' },
+      { name: 'ui-layout-reference.png', kind: 'Image', icon: Image, detail: '2.1 MB · Today 09:30', targetSelection: 'image' },
+      { name: 'cover-draft.png', kind: 'Image', icon: Image, detail: '640 KB · Tuesday', targetSelection: 'image' },
+      { name: 'empty-state.png', kind: 'Image', icon: Image, detail: '312 KB · Monday', targetSelection: 'image' },
+    ],
+  },
+  cards: {
+    id: 'cards',
+    name: 'cards',
+    path: '/files/cards/',
+    kind: 'Pod container',
+    parent: 'files',
+    summary: 'Source-linked cards derived from Ingest output, local edits stay user-owned.',
+    meta: [
+      ['contains', '2 cards'],
+      ['modified', 'Today 08:40'],
+      ['permission', 'Private'],
+    ],
+    children: [
+      { name: 'grant-wiki-page.card.md', kind: 'Markdown', icon: FileText, detail: '6 KB · Today 08:40', targetSelection: 'document' },
+      { name: 'reading-list.card.md', kind: 'Markdown', icon: FileText, detail: '4 KB · Yesterday', targetSelection: 'document' },
+    ],
+  },
+  screenshots: {
+    id: 'screenshots',
+    name: 'reference-screenshots',
+    path: '/files/docs/reference-screenshots/',
+    kind: 'Pod container',
+    parent: 'docs',
+    summary: 'Design reference screenshots collected during review.',
+    meta: [
+      ['contains', '4 images'],
+      ['modified', 'Yesterday 17:02'],
+      ['permission', 'Private'],
+    ],
+    children: [
+      { name: 'chat-default.png', kind: 'Image', icon: Image, detail: '212 KB · Yesterday 17:02', targetSelection: 'image' },
+      { name: 'files-module.png', kind: 'Image', icon: Image, detail: '198 KB · Yesterday 17:02', targetSelection: 'image' },
+      { name: 'inbox-sheet.png', kind: 'Image', icon: Image, detail: '164 KB · Yesterday 17:01', targetSelection: 'image' },
+      { name: 'settings.png', kind: 'Image', icon: Image, detail: '181 KB · Yesterday 17:01', targetSelection: 'image' },
+    ],
+  },
+  workspaces: {
+    id: 'workspaces',
+    name: 'workspaces',
+    path: '/.data/workspaces/',
+    kind: 'Pod container',
+    parent: 'data',
+    summary: 'Workspace bindings used by Threads and Sessions.',
+    meta: [
+      ['contains', '1 workspace'],
+      ['modified', 'Today 09:41'],
+      ['permission', 'Private'],
+    ],
+    children: [
+      { name: 'linx-prototype.ttl', kind: 'Turtle', icon: FileCode2, detail: 'Structured RDF · Today 09:41', targetSelection: 'structuredData' },
+    ],
+  },
+  agents: {
+    id: 'agents',
+    name: 'agents',
+    path: '/.data/agents/',
+    kind: 'Pod container',
+    parent: 'data',
+    summary: 'Agent homes: profile, skills, and grants per agent.',
+    meta: [
+      ['contains', '1 agent'],
+      ['modified', 'Today 09:44'],
+      ['permission', 'Private'],
+    ],
+    children: [
+      { name: 'secretary', kind: 'Folder', icon: FolderOpen, detail: 'profile.ttl · skills', targetFolder: 'agentsSecretary' },
+    ],
+  },
+  agentsSecretary: {
+    id: 'agentsSecretary',
+    name: 'secretary',
+    path: '/.data/agents/secretary/',
+    kind: 'Pod container',
+    parent: 'agents',
+    summary: 'AI Secretary home: profile, skills, and grants.',
+    meta: [
+      ['contains', '1 resource'],
+      ['modified', 'Today 09:44'],
+      ['permission', 'Private'],
+    ],
+    children: [
+      { name: 'profile.ttl', kind: 'Turtle', icon: FileCode2, detail: '2 KB · Today 09:44', targetSelection: 'structuredData' },
+    ],
+  },
+  proposals: {
+    id: 'proposals',
+    name: 'proposals',
+    path: '/.data/proposals/',
+    kind: 'Pod container',
+    parent: 'data',
+    summary: 'Pending proposals staged before canonical RDF changes.',
+    meta: [
+      ['contains', '1 container'],
+      ['modified', 'Today 09:20'],
+      ['permission', 'Private'],
+    ],
+    children: [
+      { name: 'vocab', kind: 'Folder', icon: FolderOpen, detail: 'review-status.ttl', targetFolder: 'proposalsVocab' },
+    ],
+  },
+  proposalsVocab: {
+    id: 'proposalsVocab',
+    name: 'vocab',
+    path: '/.data/proposals/vocab/',
+    kind: 'Pod container',
+    parent: 'proposals',
+    summary: 'Vocab proposals awaiting Inbox review.',
+    meta: [
+      ['contains', '1 resource'],
+      ['modified', 'Today 09:20'],
+      ['permission', 'Private'],
+    ],
+    children: [
+      { name: 'review-status.ttl', kind: 'Turtle', icon: FileCode2, detail: '1 KB · Today 09:20', targetSelection: 'structuredData' },
+    ],
+  },
 }
 
 export const multiChannelAccessBlocks: FileContentBlock[] = [
@@ -552,6 +880,26 @@ export const fileOpenSamples: Record<RegularFileSelection, FileOpenSample> = {
       ['format', 'image/png'],
       ['size', '842 KB'],
       ['modified', 'Yesterday 18:12'],
+      ['permission', 'Private'],
+    ],
+  },
+  jsonl: {
+    id: 'jsonl',
+    name: 'runtime-evidence.jsonl',
+    path: '/files/docs/runtime-evidence.jsonl',
+    kind: 'JSONL data',
+    summary: 'Runtime evidence records, one JSON object per line. Read-only preview.',
+    icon: FileCode2,
+    blocks: [
+      { id: 'l1', kind: 'code', text: '{"ts":"2026-07-17T08:56:01Z","event":"session.start","runtime":"xpod/0.3.52"}' },
+      { id: 'l2', kind: 'code', text: '{"ts":"2026-07-17T08:56:04Z","event":"tool.call","name":"pod.read","ms":212}' },
+      { id: 'l3', kind: 'code', text: '{"ts":"2026-07-17T08:56:09Z","event":"approval.request","scope":"profile:write"}' },
+      { id: 'l4', kind: 'code', text: '{"ts":"2026-07-17T08:57:12Z","event":"session.stop","reason":"user interrupt"}' },
+    ],
+    meta: [
+      ['format', 'application/x-ndjson'],
+      ['size', '31 KB'],
+      ['modified', 'Today 08:56'],
       ['permission', 'Private'],
     ],
   },

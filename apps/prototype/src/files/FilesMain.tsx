@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import {
   ArrowUpDown,
   Check,
+  Copy,
   Database,
   FileCode2,
   FolderOpen,
   ListFilter,
-  MoreHorizontal,
   Search,
   Tags,
   X,
@@ -40,14 +40,17 @@ import {
 } from './files-proposals'
 import {
   predicateLocalName,
+  folderSamples,
   sourceLinkedCardForSubject,
   sourceLinkedCardSample,
   structuredBasePredicatesByClass,
+  structuredClassOptions,
   vocabNamespaces,
   vocabShapes,
   vocabTerms,
 } from './files-model'
-import type { FileOpenSample, FilesSelection, LastOpenedSubjectRoute, SourceIngestState, PredicateDefinition, StoredFileContent, StructuredView, TableSortMode } from './files-types'
+import type { FileOpenSample, FilesFolderId, FilesSelection, FolderChildItem, LastOpenedSubjectRoute, SourceIngestState, PredicateDefinition, StoredFileContent, StructuredView, TableSortMode } from './files-types'
+import { EmptyState } from '../shared/ui'
 import { AccessIconButton, FilePageHeader, MetaToggleButton } from './files-ui'
 
 const SOURCE_REVIEW_STORAGE_KEY = 'linx.prototype.files.sourceReviewStatesByPath'
@@ -92,34 +95,43 @@ function readStoredSourceIngestStates() {
 
 export function FilesMain({
   selection,
+  folder,
+  openedChild,
   structuredView,
   onChangeView,
   detailOpen,
   onToggleDetail,
   onCloseDetail,
   onOpenSelection,
+  onNavigateFolder,
   isFileFavorite,
   fileContentsByPath,
   filePropertiesByPath,
   onChangeFileContent,
   onChangeFileProperties,
   onToggleFileFavorite,
+  notify,
 }: {
   selection: FilesSelection
+  folder: FilesFolderId
+  openedChild?: FolderChildItem | null
   structuredView: StructuredView
   onChangeView: (view: StructuredView) => void
   detailOpen: boolean
   onToggleDetail: () => void
   onCloseDetail: () => void
-  onOpenSelection?: (selection: FilesSelection) => void
+  onOpenSelection?: (selection: FilesSelection, child?: FolderChildItem) => void
+  onNavigateFolder?: (folder: FilesFolderId) => void
   fileContentsByPath?: Record<string, StoredFileContent>
   filePropertiesByPath?: Record<string, FilePropertyState>
   isFileFavorite?: (path: string) => boolean
   onChangeFileContent?: (path: string, content: StoredFileContent) => void
   onChangeFileProperties?: (path: string, properties: FilePropertyState) => void
   onToggleFileFavorite?: (file: FileOpenSample) => void
+  notify?: (title: string, kind?: 'ok' | 'err') => void
 }) {
-  const [selectedClass, setSelectedClass] = useState('Class')
+  const [selectedClass, setSelectedClass] = useState('')
+  const [createdClassNames, setCreatedClassNames] = useState<string[]>([])
   const [filterMenuOpen, setFilterMenuOpen] = useState(false)
   const [showPredicateNamespace, setShowPredicateNamespace] = useState(false)
   const [tableSearchOpen, setTableSearchOpen] = useState(false)
@@ -158,7 +170,7 @@ export function FilesMain({
     readPrototypeStorage<ProposalResourceRecord[]>(PROPOSAL_RESOURCES_STORAGE_KEY, [])
   ))
   const [accessOpen, setAccessOpen] = useState(false)
-  const isStructured = selection === 'structuredVocab' || selection === 'structuredVocabShapes' || selection === 'structuredVocabNamespaces' || selection === 'structuredData'
+  const isStructured = selection === 'structuredVocab' || selection === 'structuredVocabShapes' || selection === 'structuredVocabNamespaces' || selection === 'structuredData' || selection === 'structuredEmpty'
   const isVocab = selection === 'structuredVocab' || selection === 'structuredVocabShapes' || selection === 'structuredVocabNamespaces'
   const effectiveStructuredView = isVocab ? 'table' : structuredView
   const vocabTitle = selection === 'structuredVocabShapes'
@@ -171,7 +183,7 @@ export function FilesMain({
     : selection === 'structuredVocabNamespaces'
       ? vocabNamespaces
       : vocabTerms
-  const title = isVocab ? vocabTitle : '.data/workspaces/linx-prototype.ttl'
+  const title = isVocab ? vocabTitle : selection === 'structuredEmpty' ? '/files/docs/empty-notes.ttl' : openedChild ? `${folderSamples[folder].path}${openedChild.name}` : '.data/workspaces/linx-prototype.ttl'
   const classPredicates = resolvePredicateProposals(
     visibleDefinitionsAfterDiscard([
       ...(structuredBasePredicatesByClass[selectedClass] ?? []),
@@ -227,8 +239,24 @@ export function FilesMain({
   }, [cellOverrides])
 
   useEffect(() => {
-    setSelectedClass(isVocab ? 'Class' : 'Workspace')
-  }, [isVocab])
+    if (isVocab) {
+      setSelectedClass('Class')
+      return
+    }
+    if (selection === 'structuredEmpty') {
+      setSelectedClass('')
+      return
+    }
+    if (openedChild?.name === 'profile.ttl') {
+      setSelectedClass('Agent')
+      return
+    }
+    if (openedChild?.name === 'review-status.ttl') {
+      setSelectedClass('GrantPage')
+      return
+    }
+    setSelectedClass('Workspace')
+  }, [isVocab, selection, openedChild])
 
   useEffect(() => {
     if (isVocab && structuredView !== 'table') onChangeView('table')
@@ -338,6 +366,8 @@ export function FilesMain({
     return (
       <RegularFileMain
         selection={selection}
+        folderId={folder}
+        openedChild={openedChild}
         detailOpen={detailOpen}
         fileContentsByPath={fileContentsByPath}
         filePropertiesByPath={filePropertiesByPath}
@@ -346,8 +376,10 @@ export function FilesMain({
         onToggleDetail={onToggleDetail}
         onCloseDetail={onCloseDetail}
         onOpenSelection={onOpenSelection}
+        onNavigateFolder={onNavigateFolder}
         isFileFavorite={isFileFavorite}
         onToggleFileFavorite={onToggleFileFavorite}
+        notify={notify}
       />
     )
   }
@@ -367,7 +399,7 @@ export function FilesMain({
     >
       <FilePageHeader title={title} actionClassName="head-actions" actionLabel="File header tools">
         <AccessIconButton onClick={() => setAccessOpen(true)} />
-        <button title="More"><MoreHorizontal size={17} /></button>
+        <button title="复制 URI" aria-label="复制 URI" onClick={() => notify?.('已复制 URI')}><Copy size={15} /></button>
         <MetaToggleButton open={detailOpen} onToggle={onToggleDetail} />
       </FilePageHeader>
       <section className="resource-viewbar">
@@ -382,9 +414,9 @@ export function FilesMain({
           {!isVocab ? (
             <span className="commandbar-anchor class-scope-anchor">
               <button
-                className={`class-scope-button ${filterMenuOpen ? 'active' : ''}`}
-                title={`Filter: ${selectedClass}`}
-                aria-label={`Filter class ${selectedClass}`}
+                className={`class-scope-button ${filterMenuOpen || !selectedClass ? 'active' : ''}`}
+                title={selectedClass ? `Class: ${selectedClass}` : '选择 Class'}
+                aria-label={selectedClass ? `Filter class ${selectedClass}` : '选择 Class'}
                 aria-expanded={filterMenuOpen}
                 onClick={() => {
                   window.setTimeout(() => {
@@ -399,16 +431,23 @@ export function FilesMain({
               {filterMenuOpen ? (
                 <StructuredFilterMenu
                   approvedClassNames={approvedClassNames}
+                  classOptions={selection === 'structuredEmpty'
+                    ? createdClassNames
+                    : [...structuredClassOptions, ...createdClassNames.filter((name) => !structuredClassOptions.includes(name))]}
                   discardedClassNames={discardedClassNames}
                   selectedClass={selectedClass}
                   onApproveClass={(className) => {
                     setApprovedClassNames((current) => approveProposalId(current, className))
                     recordProposalResource('class', className, 'approve', className)
                   }}
+                  onCreateClass={(className) => {
+                    setCreatedClassNames((current) => current.includes(className) ? current : [...current, className])
+                    recordProposalResource('class', className, 'create', className)
+                  }}
                   onDiscardClass={(className) => {
                     setDiscardedClassNames((current) => discardProposalId(current, className))
                     recordProposalResource('class', className, 'discard', className)
-                    if (selectedClass === className) setSelectedClass('Class')
+                    if (selectedClass === className) setSelectedClass('')
                   }}
                   onSelectClass={(className) => {
                     setSelectedClass(className)
@@ -418,22 +457,12 @@ export function FilesMain({
               ) : null}
             </span>
           ) : null}
-          <button
-            className={`namespace-switch ${showPredicateNamespace ? 'active' : ''}`}
-            title={showPredicateNamespace ? 'Hide predicate namespace' : 'Show predicate namespace'}
-            role="switch"
-            aria-pressed={showPredicateNamespace}
-            aria-checked={showPredicateNamespace}
-            onClick={() => setShowPredicateNamespace((visible) => !visible)}
-          >
-            <span className="switch-track"><span className="switch-thumb" /></span>
-          </button>
           {!isVocab ? (
             <span className="commandbar-anchor column-visibility-anchor">
               <button
                 className={columnMenuOpen ? 'active' : ''}
-                title="Show or hide predicate columns"
-                aria-label="Show or hide predicate columns"
+                title="列与命名空间"
+                aria-label="列与命名空间"
                 aria-expanded={columnMenuOpen}
                 onClick={() => {
                   window.setTimeout(() => {
@@ -462,6 +491,15 @@ export function FilesMain({
                     </button>
                   ))}
                   <small>{visiblePredicateCount} visible</small>
+                  <button
+                    className={`predicate-visibility-option namespace-option ${showPredicateNamespace ? 'active' : ''}`}
+                    role="switch"
+                    aria-checked={showPredicateNamespace}
+                    onClick={() => setShowPredicateNamespace((visible) => !visible)}
+                  >
+                    <Check size={13} />
+                    <span>显示命名空间</span>
+                  </button>
                 </div>
               ) : null}
             </span>
@@ -531,7 +569,15 @@ export function FilesMain({
           ) : null}
         </div>
       </section>
-      {effectiveStructuredView === 'table' ? (
+      {!selectedClass ? (
+        <EmptyState
+          icon={Tags}
+          title="这个资源还没有任何 class"
+          description="先创建一个 class，再定义它的列，然后添加行。"
+          action={<button className="primary-action" onClick={() => setFilterMenuOpen(true)}><Tags size={15} /> 新建 Class</button>}
+        />
+      ) : null}
+      {selectedClass && effectiveStructuredView === 'table' ? (
         isVocab ? (
           <VocabTermsTable rows={vocabRows} />
         ) : (
@@ -573,12 +619,13 @@ export function FilesMain({
               })
               onOpenSelection?.(nextSelection)
             }}
+            notify={notify}
             onSetCellValue={setCellValue}
             sourceReviewState={sourceLinkedReviewState}
           />
         )
       ) : null}
-      {effectiveStructuredView === 'discover' ? (
+      {selectedClass && effectiveStructuredView === 'discover' ? (
         <StructuredDiscover
           selectedClass={selectedClass}
           predicates={classPredicates}
@@ -588,7 +635,7 @@ export function FilesMain({
           sortMode={tableSortMode}
         />
       ) : null}
-      {effectiveStructuredView === 'kanban' ? (
+      {selectedClass && effectiveStructuredView === 'kanban' ? (
         <StructuredKanbanView
           selectedClass={selectedClass}
           predicates={classPredicates}
@@ -599,7 +646,7 @@ export function FilesMain({
           onSetCellValue={setCellValue}
         />
       ) : null}
-      {effectiveStructuredView === 'whiteboard' ? (
+      {selectedClass && effectiveStructuredView === 'whiteboard' ? (
         <StructuredWhiteboardView
           selectedClass={selectedClass}
           predicates={classPredicates}
@@ -609,7 +656,7 @@ export function FilesMain({
           sortMode={tableSortMode}
         />
       ) : null}
-      {effectiveStructuredView === 'raw' ? (
+      {selectedClass && effectiveStructuredView === 'raw' ? (
         <StructuredRaw
           selectedClass={selectedClass}
           predicates={classPredicates}
