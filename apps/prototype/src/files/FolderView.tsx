@@ -78,7 +78,7 @@ export function FolderOverview({
 }) {
   const [accessOpen, setAccessOpen] = useState(false)
   const [newDocOpen, setNewDocOpen] = useState(false)
-  const [folderView, setFolderView] = useState<'table' | 'list' | 'grid'>('table')
+  const [folderView, setFolderView] = useState<'table' | 'grid'>('table')
   const [sortKey, setSortKey] = useState<FolderSortKey>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [focusName, setFocusName] = useState<string | null>(null)
@@ -171,11 +171,10 @@ export function FolderOverview({
           ariaLabel="文件夹视图"
           views={[
             { id: 'table', label: 'Table', icon: Database },
-            { id: 'list', label: 'List', icon: List },
             { id: 'grid', label: 'Grid', icon: LayoutGrid },
           ]}
           active={folderView}
-          onChange={(id) => setFolderView(id as 'table' | 'list' | 'grid')}
+          onChange={(id) => setFolderView(id as 'table' | 'grid')}
         />
       </section>
       {folderView === 'grid' ? (
@@ -184,12 +183,12 @@ export function FolderOverview({
             {sortedChildren.length === 0 ? <div className="folder-table-empty">{emptyHint}</div> : null}
             {sortedChildren.map((child) => {
               const Icon = child.icon
-              const facts = childFacts(child)
               const active = child.name === focusName
               return (
                 <div className="folder-row-wrap" key={child.name}>
                   <button
                     className={`folder-grid-card ${active ? 'active' : ''}`}
+                    title={child.name}
                     onClick={() => {
                       setFocusName(child.name)
                       openChild(child)
@@ -200,9 +199,8 @@ export function FolderOverview({
                       setMenuFor(child.name)
                     }}
                   >
-                    <Icon size={26} />
+                    <Icon size={44} strokeWidth={1.3} />
                     <strong>{child.name}</strong>
-                    <small>{child.kind} · {facts.size}</small>
                   </button>
                   {menuFor === child.name ? (
                     <Menu items={ops.rowMenuItems(child, openChild)} label={`${child.name} 操作`} onClose={() => setMenuFor(null)} />
@@ -210,62 +208,14 @@ export function FolderOverview({
                 </div>
               )
             })}
-          </div>
-          {addAnchor}
-        </section>
-      ) : null}
-      {folderView === 'list' ? (
-        <section className="structured-table compact-table folder-table">
-          <div className="folder-list-view">
-            {sortedChildren.length === 0 ? <div className="folder-table-empty">{emptyHint}</div> : null}
-            {sortedChildren.map((child, index) => {
-              const Icon = child.icon
-              const facts = childFacts(child)
-              const active = child.name === focusName
-              return (
-                <div className="folder-row-wrap" key={child.name}>
-                  <button
-                    className={`folder-list-row ${active ? 'active' : ''}`}
-                    tabIndex={active ? 0 : -1}
-                    onClick={() => {
-                      setFocusName(child.name)
-                      openChild(child)
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') openChild(child)
-                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                        event.preventDefault()
-                        const delta = event.key === 'ArrowDown' ? 1 : -1
-                        const nextIndex = Math.min(Math.max(index + delta, 0), sortedChildren.length - 1)
-                        setFocusName(sortedChildren[nextIndex]?.name ?? null)
-                      }
-                    }}
-                    onContextMenu={(event) => {
-                      event.preventDefault()
-                      setFocusName(child.name)
-                      setMenuFor(child.name)
-                    }}
-                  >
-                    <span className="folder-cell-name">
-                      <Icon size={16} />
-                      <span className="folder-list-name">
-                        <strong>{child.name}</strong>
-                        <small>{child.kind} · {facts.size} · {facts.modified}</small>
-                      </span>
-                      {child.targetFolder ? <ChevronRight size={13} className="folder-cell-enter" /> : null}
-                    </span>
-                    <span className="folder-cell-tail">
-                      <em>{facts.permission}</em>
-                      {rowOps(child)}
-                    </span>
-                  </button>
-                  {menuFor === child.name ? (
-                    <Menu items={ops.rowMenuItems(child, openChild)} label={`${child.name} 操作`} onClose={() => setMenuFor(null)} />
-                  ) : null}
-                </div>
-              )
-            })}
-            {addAnchor}
+            <div className="folder-add-anchor">
+              <button className="folder-grid-add" onClick={addPopover.toggle} aria-expanded={addPopover.open} aria-label="新建或上传">
+                <span className="grid-add-icon"><Plus size={20} /></span>
+              </button>
+              {addPopover.open ? (
+                <FolderAddMenu path={folder.path} className="folder-add-menu" onPick={runAddAction} />
+              ) : null}
+            </div>
           </div>
         </section>
       ) : null}

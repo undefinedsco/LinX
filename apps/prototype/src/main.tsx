@@ -1735,6 +1735,7 @@ function ModuleSurface({
 
 function PrototypeApp() {
   const [activeModule, setActiveModule] = useState<ModuleId>('chat')
+  const [listWidth, setListWidth] = useState(272)
   const [selectedChat, setSelectedChat] = useState('secretary')
   const [selectedFavorite, setSelectedFavorite] = useState<ListItem | null>(null)
   const [favoriteTab, setFavoriteTab] = useState<FavoriteTab>('全部')
@@ -1807,12 +1808,31 @@ function PrototypeApp() {
     })
   }
 
+  const startSplitterDrag = (event: React.MouseEvent) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = listWidth
+    const splitter = event.currentTarget
+    splitter.classList.add('dragging')
+    const onMove = (moveEvent: MouseEvent) => {
+      setListWidth(Math.min(480, Math.max(232, startWidth + moveEvent.clientX - startX)))
+    }
+    const onUp = () => {
+      splitter.classList.remove('dragging')
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   return (
     <div className="prototype-page light">
       <div className="principle-badge">Mindset prototype · chat-first</div>
       <div
         className={`prototype-shell${activeModule === 'files' && !filesDetailOpen ? ' files-detail-collapsed' : ''}${!detailPaneOpen && (activeModule === 'chat' || activeModule === 'contacts') ? ' detail-collapsed' : ''}`}
         data-module={activeModule}
+        style={{ '--list-w': `${listWidth}px` } as React.CSSProperties}
       >
         <Sidebar
           activeModule={activeModule}
@@ -1822,6 +1842,15 @@ function PrototypeApp() {
             setSettingsOpen(true)
           }}
           onRequestSignOut={() => setSignOutConfirmOpen(true)}
+        />
+        <div
+          className="pane-splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整列表宽度，双击恢复默认"
+          title="拖动调整宽度，双击恢复默认"
+          onMouseDown={startSplitterDrag}
+          onDoubleClick={() => setListWidth(272)}
         />
         <ModuleSurface
           activeModule={activeModule}

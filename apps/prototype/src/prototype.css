@@ -85,7 +85,7 @@ button {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 74px minmax(232px, 286px) minmax(420px, 1fr) minmax(260px, 318px);
+  grid-template-columns: 74px var(--list-w, 272px) minmax(420px, 1fr) minmax(260px, 318px);
   grid-template-rows: minmax(0, 1fr);
   height: calc(100vh - 36px);
   min-height: 720px;
@@ -97,15 +97,15 @@ button {
 }
 
 .prototype-shell.files-detail-collapsed {
-  grid-template-columns: 74px minmax(232px, 286px) minmax(420px, 1fr);
+  grid-template-columns: 74px var(--list-w, 272px) minmax(420px, 1fr);
 }
 
 .prototype-shell[data-module='files'] {
-  grid-template-columns: 74px minmax(232px, 286px) minmax(420px, 1fr) minmax(260px, 318px);
+  grid-template-columns: 74px var(--list-w, 272px) minmax(420px, 1fr) minmax(260px, 318px);
 }
 
 .prototype-shell[data-module='files'].files-detail-collapsed {
-  grid-template-columns: 74px minmax(232px, 286px) minmax(420px, 1fr);
+  grid-template-columns: 74px var(--list-w, 272px) minmax(420px, 1fr);
 }
 
 .side-rail {
@@ -6256,7 +6256,7 @@ button {
   }
 
   .prototype-shell {
-    grid-template-columns: 66px minmax(224px, 286px) minmax(390px, 1fr);
+    grid-template-columns: 66px var(--list-w, 272px) minmax(390px, 1fr);
     height: calc(100vh - 20px);
     min-height: 620px;
     border-radius: 14px;
@@ -6267,7 +6267,7 @@ button {
   }
 
   .prototype-shell.files-detail-collapsed {
-    grid-template-columns: 66px minmax(224px, 286px) minmax(390px, 1fr);
+    grid-template-columns: 66px var(--list-w, 272px) minmax(390px, 1fr);
   }
 }
 
@@ -6985,7 +6985,7 @@ button {
 /* ---------- favorites two-pane ---------- */
 
 .prototype-shell[data-module='favorites'] {
-  grid-template-columns: 74px minmax(232px, 286px) minmax(420px, 1fr);
+  grid-template-columns: 74px var(--list-w, 272px) minmax(420px, 1fr);
 }
 
 .favorites-empty {
@@ -7869,7 +7869,7 @@ button {
 /* ---------- review pass 2: detail pane collapse + browser tools ---------- */
 
 .prototype-shell.detail-collapsed {
-  grid-template-columns: 74px minmax(232px, 286px) minmax(420px, 1fr);
+  grid-template-columns: 74px var(--list-w, 272px) minmax(420px, 1fr);
 }
 
 .browser-search {
@@ -8024,7 +8024,7 @@ button {
 
 @media (max-width: 1180px) {
   .prototype-shell.detail-collapsed {
-    grid-template-columns: 66px minmax(224px, 286px) minmax(390px, 1fr);
+    grid-template-columns: 66px var(--list-w, 272px) minmax(390px, 1fr);
   }
 }
 
@@ -9017,67 +9017,90 @@ button {
   font-size: 10.5px;
 }
 
-/* ---------- pass 14: folder grid (平铺) view ---------- */
+/* ---------- pass 14: folder grid (平铺) view — Finder icon style ---------- */
 
 .folder-grid-view {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 148px);
+  grid-template-columns: repeat(auto-fill, 104px);
   align-content: start;
   justify-content: start;
-  gap: 14px;
-  padding: 16px;
+  gap: 14px 10px;
+  padding: 16px 18px;
 }
 
 .folder-grid-card {
   display: grid;
-  width: 148px;
-  height: 116px;
-  align-content: center;
+  width: 104px;
+  min-height: 88px;
+  align-content: start;
   justify-items: center;
-  gap: 6px;
-  border: 1px solid var(--proto-line);
-  border-radius: 10px;
-  background: var(--proto-card);
+  gap: 5px;
+  border: 0;
+  background: transparent;
   color: var(--proto-ink-soft);
   cursor: pointer;
-  padding: 12px 10px;
+  padding: 2px;
   text-align: center;
 }
 
-.folder-grid-card:hover {
-  background: hsl(var(--layout-list-hover));
-}
-
-.folder-grid-card.active {
-  background: hsl(var(--layout-list-selected));
-  border-color: hsl(var(--primary) / 0.3);
-}
-
 .folder-grid-card svg {
-  color: var(--proto-ink-faint);
+  color: var(--proto-ink-soft);
+}
+
+.folder-grid-card strong {
+  display: -webkit-box;
+  overflow: hidden;
+  max-width: 100px;
+  border-radius: 5px;
+  color: var(--proto-ink);
+  font-size: 11.5px;
+  font-weight: var(--proto-weight-regular);
+  line-height: 1.3;
+  padding: 1px 5px;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.folder-grid-card:hover strong {
+  background: hsl(var(--foreground) / 0.07);
+}
+
+.folder-grid-card.active strong {
+  background: var(--proto-action);
+  color: var(--proto-action-fg);
 }
 
 .folder-grid-card.active svg {
   color: var(--proto-action);
 }
 
-.folder-grid-card strong {
-  overflow: hidden;
-  max-width: 128px;
-  color: var(--proto-ink);
-  font-size: 12px;
-  font-weight: var(--proto-weight-medium);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.folder-grid-add {
+  display: grid;
+  width: 104px;
+  min-height: 88px;
+  align-content: start;
+  justify-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--proto-ink-faint);
+  cursor: pointer;
+  padding: 2px;
 }
 
-.folder-grid-card small {
-  overflow: hidden;
-  max-width: 128px;
-  color: var(--proto-ink-faint);
-  font-size: 10.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.folder-grid-add .grid-add-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1.5px dashed var(--proto-line-strong);
+  border-radius: 10px;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.folder-grid-add:hover .grid-add-icon {
+  border-color: var(--proto-action);
+  color: var(--proto-action);
 }
 
 /* ---------- pass 15: denied state ---------- */
@@ -9229,4 +9252,48 @@ button {
 .empty-state .wide-action {
   width: auto;
   padding: 0 16px;
+}
+
+/* ---------- resizable list pane splitter ---------- */
+
+.prototype-shell {
+  --rail-w: 74px;
+}
+
+.pane-splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--rail-w) + var(--list-w, 272px) - 4px);
+  z-index: 32;
+  width: 8px;
+  cursor: col-resize;
+}
+
+.pane-splitter::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  content: "";
+  transition: background 120ms ease;
+}
+
+.pane-splitter:hover::after,
+.pane-splitter.dragging::after {
+  background: hsl(var(--primary) / 0.45);
+}
+
+@media (max-width: 1180px) {
+  .prototype-shell {
+    --rail-w: 66px;
+  }
+}
+
+@media (max-width: 760px) {
+  .pane-splitter {
+    display: none;
+  }
 }
