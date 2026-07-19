@@ -80,6 +80,7 @@ describe('buildModelServiceInsertRows', () => {
     expect(rows.credentialPayload?.id).toBe(
       credentialResource.buildId({ id: plan.credentialPayload!.id }),
     )
+    expect(rows.credentialPayload?.provider).toBe(plan.providerId)
     expect(rows.modelPayloads[0]?.id).toBe(
       aiModelResource.buildId({
         id: 'test-model',

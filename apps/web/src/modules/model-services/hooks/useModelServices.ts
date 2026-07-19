@@ -38,6 +38,10 @@ export function buildModelServiceInsertRows(plan: ReturnType<typeof buildAIConfi
     ? {
         ...plan.credentialPayload,
         id: credentialResource.buildId({ id: plan.credentialPayload.id }),
+        // Keep the credential relation inside the owning user's Pod. Passing
+        // the shared plan's canonical `/settings/...` reference directly to
+        // drizzle-solid resolves it against the xpod server root instead.
+        provider: plan.providerId,
       }
     : undefined
   const modelPayloads = plan.modelUpserts.map((model) => ({
@@ -376,7 +380,7 @@ export function useModelServices() {
       })
       if (credentialTarget) {
         await withTimeout(
-          updateExactRecord(db as any, credentialResource as any, credentialTarget, plan.credentialPayload as AnyRow),
+          updateExactRecord(db as any, credentialResource as any, credentialTarget, insertRows.credentialPayload as AnyRow),
           PERSIST_OPERATION_TIMEOUT_MS,
           '访问密钥保存超时，请重试。',
         )

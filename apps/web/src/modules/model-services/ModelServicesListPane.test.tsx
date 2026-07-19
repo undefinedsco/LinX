@@ -150,4 +150,30 @@ describe('ModelServicesListPane', () => {
       }))
     })
   })
+
+  it('filters synced models by a partial model name', async () => {
+    mockSearchProviderModels.mockResolvedValue({
+      '在线获取': [
+        { id: 'gpt-5.5', name: 'GPT-5.5', capabilities: [] },
+        { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', capabilities: [] },
+      ],
+    })
+
+    render(<ModelServicesListPane theme="dark" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '添加模型服务' }))
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-timecc' } })
+    fireEvent.click(screen.getByText('同步模型'))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('主模型')).toBeInTheDocument()
+    })
+
+    const modelInput = screen.getByLabelText('主模型')
+    fireEvent.focus(modelInput)
+    fireEvent.change(modelInput, { target: { value: '5.5' } })
+
+    expect(screen.getByText('GPT-5.5')).toBeInTheDocument()
+    expect(screen.queryByText('GPT-5.4 Mini')).not.toBeInTheDocument()
+  })
 })

@@ -28,6 +28,7 @@ export interface SearchableSelectProps<T> {
   
   // --- UI ---
   placeholder?: string
+  id?: string
   loading?: boolean
   className?: string
   disabled?: boolean
@@ -55,6 +56,7 @@ export function SearchableSelect<T>({
   getValue,
   renderOption,
   placeholder = "Select...",
+  id,
   loading: externalLoading,
   className,
   disabled,
@@ -203,6 +205,7 @@ export function SearchableSelect<T>({
     <div className={cn("relative w-full", className)} ref={containerRef}>
       <div className="relative">
         <Input
+          id={id}
           ref={inputRef}
           value={inputValue}
           onChange={(e) => {

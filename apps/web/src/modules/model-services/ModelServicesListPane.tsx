@@ -44,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
@@ -542,18 +543,24 @@ function AddModelServiceDialog({
                 <div className="space-y-2">
                   <Label htmlFor="model-service-model">主模型</Label>
                   {syncedModels.length > 0 ? (
-                    <Select value={mainModel} onValueChange={setMainModel}>
-                      <SelectTrigger id="model-service-model" className="h-12 rounded-lg bg-background">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {syncedModels.map((model) => (
-                          <SelectItem key={model.id} value={model.id}>
-                            {model.name || model.id}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      id="model-service-model"
+                      options={syncedModels}
+                      value={syncedModels.find((model) => model.id === mainModel) ?? null}
+                      onChange={(model) => model && setMainModel(model.id)}
+                      getLabel={(model) => model.name || model.id}
+                      getValue={(model) => model.id}
+                      placeholder="搜索已同步的模型，例如 5.5"
+                      className="[&_input]:h-12 [&_input]:rounded-lg [&_input]:bg-background"
+                      renderOption={(model) => (
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{model.name || model.id}</span>
+                          {model.name && model.name !== model.id ? (
+                            <span className="truncate text-xs text-muted-foreground">{model.id}</span>
+                          ) : null}
+                        </span>
+                      )}
+                    />
                   ) : (
                     <Input
                       id="model-service-model"
