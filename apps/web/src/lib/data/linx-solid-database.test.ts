@@ -79,6 +79,9 @@ describe('createLinxSolidDatabase', () => {
     expect(credentialResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/settings/-/sparql')
     expect(aiProviderResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/settings/providers/-/sparql')
     expect(aiModelResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/settings/providers/-/sparql')
+    expect(credentialResource.setSparqlEndpoint).toHaveBeenCalledTimes(2)
+    expect(aiProviderResource.setSparqlEndpoint).toHaveBeenCalledTimes(2)
+    expect(aiModelResource.setSparqlEndpoint).toHaveBeenCalledTimes(2)
   })
 
   it('wraps authenticated fetch for local transport while preserving canonical Pod URLs', async () => {

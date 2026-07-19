@@ -6,10 +6,112 @@ import {
   credentialResource,
 } from '@undefineds.co/models'
 import {
+  buildModelServiceExactUpdate,
+  collectKnownModelServiceProviderIds,
   buildModelServiceInsertRows,
+  buildCredentialVerificationUpdate,
+  mergeModelServiceCredentialRows,
+  mergeModelServiceProviderRows,
   normalizeLiveQueryRows,
   recoverModelServiceProviderRows,
 } from './useModelServices'
+
+describe('collectKnownModelServiceProviderIds', () => {
+  it('recovers a provider id from a partially persisted default credential', () => {
+    expect(collectKnownModelServiceProviderIds(
+      [],
+      [{ id: 'credentials.ttl#timecc-default', failCount: 0 }],
+      [],
+    )).toEqual(['timecc'])
+  })
+})
+
+describe('buildModelServiceExactUpdate', () => {
+  it('preserves predicates omitted by a partial mutation plan', () => {
+    expect(buildModelServiceExactUpdate(
+      { id: 'timecc.ttl', displayName: 'Timecc', baseUrl: 'https://timicc.com/v1' },
+      { baseUrl: 'https://timicc.com/v2' },
+    )).toEqual({
+      id: 'timecc.ttl',
+      displayName: 'Timecc',
+      baseUrl: 'https://timicc.com/v2',
+    })
+  })
+})
+
+describe('mergeModelServiceCredentialRows', () => {
+  it('recovers a credential omitted by a collection query from its exact read', () => {
+    const exact = {
+      id: 'credentials.ttl#timecc-default',
+      provider: '/settings/providers/timecc.ttl',
+      apiKey: 'secret-test-key',
+    }
+
+    expect(mergeModelServiceCredentialRows([], [exact])).toEqual([exact])
+  })
+
+  it('lets the exact read restore fields missing from a partial query row', () => {
+    expect(mergeModelServiceCredentialRows(
+      [{ id: 'timecc-default', failCount: 0 }],
+      [{ id: 'credentials.ttl#timecc-default', apiKey: 'secret-test-key' }],
+    )).toEqual([{
+      id: 'credentials.ttl#timecc-default',
+      failCount: 0,
+      apiKey: 'secret-test-key',
+    }])
+  })
+})
+
+describe('mergeModelServiceProviderRows', () => {
+  it('restores Base URL omitted by a partial provider query', () => {
+    expect(mergeModelServiceProviderRows(
+      [{ id: 'timecc', displayName: 'Timecc' }],
+      [{ id: 'timecc.ttl', baseUrl: 'https://timicc.com/v1' }],
+    )).toEqual([{
+      id: 'timecc.ttl',
+      displayName: 'Timecc',
+      baseUrl: 'https://timicc.com/v1',
+    }])
+  })
+})
+
+describe('buildCredentialVerificationUpdate', () => {
+  it('preserves credential configuration while recording a failed verification', () => {
+    const credential = {
+      id: 'timecc-default',
+      provider: '/settings/providers/timecc.ttl',
+      apiKey: 'secret-test-key',
+      label: 'Timecc Key',
+      service: 'ai',
+      status: 'active',
+      isDefault: true,
+      failCount: 1,
+    }
+
+    expect(buildCredentialVerificationUpdate(credential, new Error('unavailable'))).toEqual({
+      ...credential,
+      failCount: 2,
+    })
+  })
+
+  it('preserves credential configuration while recording a successful verification', () => {
+    const credential = {
+      id: 'timecc-default',
+      provider: '/settings/providers/timecc.ttl',
+      apiKey: 'secret-test-key',
+      status: 'active',
+      failCount: 3,
+    }
+
+    const update = buildCredentialVerificationUpdate(credential)
+
+    expect(update).toMatchObject({
+      ...credential,
+      failCount: 0,
+    })
+    expect(update.lastUsedAt).toBeInstanceOf(Date)
+  })
+})
 
 describe('normalizeLiveQueryRows', () => {
   it('keeps the resource rows returned directly by TanStack DB', () => {

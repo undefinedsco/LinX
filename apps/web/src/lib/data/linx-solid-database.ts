@@ -115,6 +115,10 @@ async function createLinxSolidDatabaseUncached(
   }
 
   assertExplicitPodUrlApplied(instance, options.podUrl, 'after Pod initialization')
+  // Schema/bootstrap initialization may restore each resource's default
+  // database endpoint. AI configuration lives outside `.data`, so reapply its
+  // scoped endpoints after bootstrap and make this the final resource state.
+  configureAIConfigQueryEndpoints(instance)
   report({ stage: 'database:init:done' })
 
   return instance

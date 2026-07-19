@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from '@tanstack/react-db'
 import {
   aiModelResource,
@@ -62,6 +62,91 @@ export function buildModelServiceInsertRows(plan: ReturnType<typeof buildAIConfi
 
 export function normalizeLiveQueryRows<T extends AnyRow>(rows: T[] | undefined): T[] {
   return rows?.filter(Boolean) ?? []
+}
+
+export function mergeModelServiceCredentialRows(
+  queriedRows: AnyRow[],
+  exactRows: AnyRow[],
+): AnyRow[] {
+  const merged = [...queriedRows]
+  for (const exactRow of exactRows) {
+    const exactId = String(exactRow.id ?? '')
+    const exactFragment = exactId.split('#').pop()?.replace(/\.ttl$/, '') ?? exactId
+    const index = merged.findIndex((row) => {
+      const rowId = String(row.id ?? '')
+      const rowFragment = rowId.split('#').pop()?.replace(/\.ttl$/, '') ?? rowId
+      if (rowFragment === exactFragment) return true
+      const rowProvider = String(row.provider ?? '')
+      const exactProvider = String(exactRow.provider ?? '')
+      return Boolean(rowProvider && exactProvider && sameAIConfigProviderFamily(rowProvider, exactProvider))
+    })
+    if (index >= 0) merged[index] = { ...merged[index], ...exactRow }
+    else merged.push(exactRow)
+  }
+  return merged
+}
+
+export function mergeModelServiceProviderRows(
+  queriedRows: AnyRow[],
+  exactRows: AnyRow[],
+): AnyRow[] {
+  const merged = [...queriedRows]
+  for (const exactRow of exactRows) {
+    const exactId = String(exactRow.id ?? '')
+    const index = merged.findIndex((row) =>
+      sameAIConfigProviderFamily(String(row.id ?? ''), exactId),
+    )
+    if (index >= 0) merged[index] = { ...merged[index], ...exactRow }
+    else merged.push(exactRow)
+  }
+  return merged
+}
+
+export function buildCredentialVerificationUpdate(
+  credential: AnyRow,
+  error?: unknown,
+): AnyRow {
+  const currentFailCount = typeof credential.failCount === 'number' ? credential.failCount : 0
+
+  // xpod's exact-record update rewrites the RDF subject from the supplied
+  // values. Keep the credential fields in the payload so recording health
+  // does not erase its key, provider relation, label, or enabled state.
+  return {
+    ...credential,
+    ...(error
+      ? { failCount: currentFailCount + 1 }
+      : { failCount: 0, lastUsedAt: new Date() }),
+  }
+}
+
+export function buildModelServiceExactUpdate(
+  current: AnyRow,
+  updates: AnyRow,
+): AnyRow {
+  // xpod currently materializes updateById as a subject replacement. Mutation
+  // plans intentionally contain only changed fields, so sending a plan payload
+  // directly would erase every unchanged RDF predicate on that subject.
+  return { ...current, ...updates }
+}
+
+export function collectKnownModelServiceProviderIds(
+  providerRows: AnyRow[],
+  credentialRows: AnyRow[],
+  modelRows: AnyRow[],
+): string[] {
+  const ids = new Set<string>()
+  const add = (value: unknown) => {
+    const id = normalizeAIConfigProviderId(String(value ?? ''))
+    if (id) ids.add(id)
+  }
+  providerRows.forEach((row) => add(row.id))
+  modelRows.forEach((row) => add(row.isProvidedBy))
+  credentialRows.forEach((row) => {
+    if (row.provider) add(row.provider)
+    const fragment = String(row.id ?? '').split('#').pop()?.replace(/\.ttl$/, '') ?? ''
+    if (fragment.endsWith('-default')) add(fragment.slice(0, -'-default'.length))
+  })
+  return [...ids]
 }
 
 export function recoverModelServiceProviderRows(
@@ -175,6 +260,8 @@ async function refetchModelServiceCollections() {
 
 export function useModelServices() {
   const { db } = useSolidDatabase()
+  const [exactCredentialRows, setExactCredentialRows] = useState<AnyRow[]>([])
+  const [exactProviderRows, setExactProviderRows] = useState<AnyRow[]>([])
 
   useEffect(() => {
     if (!db) return
@@ -182,6 +269,12 @@ export function useModelServices() {
     credentialCollection.startSyncImmediate()
     providerCollection.startSyncImmediate()
     modelCollection.startSyncImmediate()
+
+    // These collections are module-level singletons and may already be ready
+    // with an empty snapshot from the logged-out phase. Starting sync does not
+    // refetch an already-ready query, so refresh explicitly whenever the active
+    // Solid database becomes available or changes.
+    void refetchModelServiceCollections()
   }, [db])
 
   const { data: rawCredentialRows } = useLiveQuery((q) => q.from({ c: credentialCollection }))
@@ -201,9 +294,65 @@ export function useModelServices() {
     [rawModelRows],
   )
 
+  const knownProviderIds = useMemo(() => {
+    return collectKnownModelServiceProviderIds(providerRows, credentialRows, modelRows)
+  }, [credentialRows, modelRows, providerRows])
+
+  useEffect(() => {
+    if (!db || knownProviderIds.length === 0) {
+      setExactCredentialRows([])
+      return
+    }
+
+    let cancelled = false
+    void Promise.all(knownProviderIds.map(async (providerId) => {
+      const resourceId = credentialResource.buildId({ id: `${providerId}-default` })
+      try {
+        return await (db as any).findById(credentialResource, resourceId)
+      } catch {
+        return null
+      }
+    })).then((rows) => {
+      if (!cancelled) setExactCredentialRows(rows.filter(Boolean) as AnyRow[])
+    })
+
+    return () => { cancelled = true }
+  }, [db, knownProviderIds])
+
+  useEffect(() => {
+    if (!db || knownProviderIds.length === 0) {
+      setExactProviderRows([])
+      return
+    }
+
+    let cancelled = false
+    void Promise.all(knownProviderIds.map(async (providerId) => {
+      const resourceId = aiProviderResource.buildId({ id: providerId })
+      try {
+        return await (db as any).findById(aiProviderResource, resourceId)
+      } catch {
+        return null
+      }
+    })).then((rows) => {
+      if (!cancelled) setExactProviderRows(rows.filter(Boolean) as AnyRow[])
+    })
+
+    return () => { cancelled = true }
+  }, [db, knownProviderIds])
+
+  const effectiveCredentialRows = useMemo(
+    () => mergeModelServiceCredentialRows(credentialRows, exactCredentialRows),
+    [credentialRows, exactCredentialRows],
+  )
+
+  const mergedProviderRows = useMemo(
+    () => mergeModelServiceProviderRows(providerRows, exactProviderRows),
+    [exactProviderRows, providerRows],
+  )
+
   const effectiveProviderRows = useMemo(
-    () => recoverModelServiceProviderRows(providerRows, credentialRows, modelRows),
-    [credentialRows, modelRows, providerRows],
+    () => recoverModelServiceProviderRows(mergedProviderRows, effectiveCredentialRows, modelRows),
+    [effectiveCredentialRows, mergedProviderRows, modelRows],
   )
 
   const providerStates = useMemo(
@@ -212,10 +361,10 @@ export function useModelServices() {
         catalog: [],
         fallbackToCatalogModels: false,
         providerRows: effectiveProviderRows,
-        credentialRows,
+        credentialRows: effectiveCredentialRows,
         modelRows,
       }),
-    [credentialRows, effectiveProviderRows, modelRows],
+    [effectiveCredentialRows, effectiveProviderRows, modelRows],
   )
 
   const providers = useMemo(() => {
@@ -229,8 +378,8 @@ export function useModelServices() {
       const metadata = getAIConfigProviderMetadata(providerState.id)
       const credential = selectAIConfigCredential(
         providerState.id,
-        credentialRows,
-        providerRows,
+        effectiveCredentialRows,
+        mergedProviderRows,
       )?.credential
       const failCount = typeof credential?.failCount === 'number' ? credential.failCount : 0
       const verificationStatus = failCount > 0
@@ -265,14 +414,17 @@ export function useModelServices() {
         defaultApiKeyPlaceholder: template?.defaultApiKeyPlaceholder,
         defaultModels: template?.defaultModels || metadata.defaultModels,
         apiKey: providerState?.apiKey || '',
-        baseUrl: providerState?.baseUrl || template?.defaultBaseUrl || metadata.defaultBaseUrl,
+        baseUrl:
+          (typeof providerRow?.baseUrl === 'string' && providerRow.baseUrl.trim()
+            ? providerRow.baseUrl.trim()
+            : providerState?.baseUrl) || template?.defaultBaseUrl || metadata.defaultBaseUrl,
         models: providerState?.models?.length ? providerState.models : defaultModels,
         verificationStatus,
       }
     })
 
     return merged
-  }, [credentialRows, effectiveProviderRows, providerStates])
+  }, [effectiveCredentialRows, effectiveProviderRows, mergedProviderRows, providerStates])
 
   const updateProvider = useCallback(async (id: string, updates: Partial<AIProvider>) => {
     if (!db) throw new Error('Solid database is not ready.')
@@ -286,8 +438,14 @@ export function useModelServices() {
       modelCount: updates.models?.length ?? 0,
     })
 
-    let currentProviderRows = collectionRows(providerCollection, providerRows)
-    let currentCredentialRows = collectionRows(credentialCollection, credentialRows)
+    let currentProviderRows = mergeModelServiceProviderRows(
+      collectionRows(providerCollection, mergedProviderRows),
+      exactProviderRows,
+    )
+    let currentCredentialRows = mergeModelServiceCredentialRows(
+      collectionRows(credentialCollection, effectiveCredentialRows),
+      exactCredentialRows,
+    )
     let currentModelRows = collectionRows(modelCollection, modelRows)
     const isNewProvider = !currentProviderRows.some((row) =>
       sameAIConfigProviderFamily(typeof row.id === 'string' ? row.id : '', id),
@@ -298,8 +456,14 @@ export function useModelServices() {
     // an unrelated collection. Existing providers still require fresh rows.
     if (!isNewProvider) {
       await ensureModelServiceCollectionsReady()
-      currentProviderRows = collectionRows(providerCollection, providerRows)
-      currentCredentialRows = collectionRows(credentialCollection, credentialRows)
+      currentProviderRows = mergeModelServiceProviderRows(
+        collectionRows(providerCollection, mergedProviderRows),
+        exactProviderRows,
+      )
+      currentCredentialRows = mergeModelServiceCredentialRows(
+        collectionRows(credentialCollection, effectiveCredentialRows),
+        exactCredentialRows,
+      )
       currentModelRows = collectionRows(modelCollection, modelRows)
     } else {
       logModelServicesPersist('collection_preload_skipped_for_new_provider', { providerId: id })
@@ -356,7 +520,12 @@ export function useModelServices() {
       })
       if (existingProvider) {
         await withTimeout(
-          updateExactRecord(db as any, aiProviderResource as any, existingProvider, plan.providerPayload as AnyRow),
+          updateExactRecord(
+            db as any,
+            aiProviderResource as any,
+            existingProvider,
+            buildModelServiceExactUpdate(existingProvider, plan.providerPayload as AnyRow),
+          ),
           PERSIST_OPERATION_TIMEOUT_MS,
           '供应商配置保存超时，请重试。',
         )
@@ -380,7 +549,12 @@ export function useModelServices() {
       })
       if (credentialTarget) {
         await withTimeout(
-          updateExactRecord(db as any, credentialResource as any, credentialTarget, insertRows.credentialPayload as AnyRow),
+          updateExactRecord(
+            db as any,
+            credentialResource as any,
+            credentialTarget,
+            buildModelServiceExactUpdate(credentialTarget, insertRows.credentialPayload as AnyRow),
+          ),
           PERSIST_OPERATION_TIMEOUT_MS,
           '访问密钥保存超时，请重试。',
         )
@@ -428,7 +602,12 @@ export function useModelServices() {
         })
         if (existing) {
           await withTimeout(
-            updateExactRecord(db as any, aiModelResource as any, existing, modelPayload as AnyRow),
+            updateExactRecord(
+              db as any,
+              aiModelResource as any,
+              existing,
+              buildModelServiceExactUpdate(existing, modelPayload as AnyRow),
+            ),
             PERSIST_OPERATION_TIMEOUT_MS,
             `模型 ${modelPayload.id} 保存超时，请重试。`,
           )
@@ -467,14 +646,20 @@ export function useModelServices() {
     logModelServicesPersist('update_provider_succeeded', {
       providerId: plan.providerId,
     })
-  }, [credentialRows, db, modelRows, providerRows])
+  }, [db, effectiveCredentialRows, exactCredentialRows, exactProviderRows, mergedProviderRows, modelRows])
 
   const deleteProvider = useCallback(async (id: string) => {
     if (!db) throw new Error('Solid database is not ready.')
     await ensureModelServiceCollectionsReady()
 
-    const currentProviderRows = collectionRows(providerCollection, providerRows)
-    const currentCredentialRows = collectionRows(credentialCollection, credentialRows)
+    const currentProviderRows = mergeModelServiceProviderRows(
+      collectionRows(providerCollection, mergedProviderRows),
+      exactProviderRows,
+    )
+    const currentCredentialRows = mergeModelServiceCredentialRows(
+      collectionRows(credentialCollection, effectiveCredentialRows),
+      exactCredentialRows,
+    )
     const currentModelRows = collectionRows(modelCollection, modelRows)
     const provider = currentProviderRows.find((row) =>
       sameAIConfigProviderFamily(typeof row.id === 'string' ? row.id : '', id),
@@ -497,23 +682,26 @@ export function useModelServices() {
     }
 
     await refetchModelServiceCollections()
-  }, [credentialRows, db, modelRows, providerRows])
+  }, [db, effectiveCredentialRows, exactCredentialRows, exactProviderRows, mergedProviderRows, modelRows])
 
   const recordVerificationResult = useCallback(async (id: string, error?: unknown) => {
     if (!db) throw new Error('Solid database is not ready.')
     await ensureModelServiceCollectionsReady()
-    const currentProviderRows = collectionRows(providerCollection, providerRows)
-    const currentCredentialRows = collectionRows(credentialCollection, credentialRows)
+    const currentProviderRows = mergeModelServiceProviderRows(
+      collectionRows(providerCollection, mergedProviderRows),
+      exactProviderRows,
+    )
+    const currentCredentialRows = mergeModelServiceCredentialRows(
+      collectionRows(credentialCollection, effectiveCredentialRows),
+      exactCredentialRows,
+    )
     const credential = selectAIConfigCredential(id, currentCredentialRows, currentProviderRows)?.credential
     if (!credential) return
 
-    const currentFailCount = typeof credential.failCount === 'number' ? credential.failCount : 0
-    const update = error
-      ? { failCount: currentFailCount + 1 }
-      : { failCount: 0, lastUsedAt: new Date() }
+    const update = buildCredentialVerificationUpdate(credential, error)
     await updateExactRecord(db as any, credentialResource as any, credential, update as AnyRow)
     await refetchCollection(credentialCollection, 'ai-credentials')
-  }, [credentialRows, db, providerRows])
+  }, [db, effectiveCredentialRows, exactCredentialRows, exactProviderRows, mergedProviderRows])
 
   return {
     providers,

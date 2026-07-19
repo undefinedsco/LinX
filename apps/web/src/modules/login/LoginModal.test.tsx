@@ -297,6 +297,20 @@ describe('LoginModal', () => {
     expect(props.onConnect).toHaveBeenCalledWith('local')
   })
 
+  it('uses standalone for 本机 when the service runs a standalone xpod', () => {
+    const baseProps = createProps()
+    const props = createProps({
+      providers: baseProps.providers.filter((provider) => provider.source !== 'local'),
+    })
+    render(<LoginModal {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /本机/ }))
+    fireEvent.click(screen.getByRole('button', { name: '继续' }))
+
+    expect(props.onConnect).toHaveBeenCalledWith('standalone')
+    expect(props.onConnect).not.toHaveBeenCalledWith('cloud')
+  })
+
   it('shows Local startup status inline without leaving the compact login state', () => {
     const props = createProps({
       localLoginStatus: {

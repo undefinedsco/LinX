@@ -232,7 +232,10 @@ function ProviderSelectionView({
   const [selectedSpace, setSelectedSpace] = useState<'cloud' | 'local'>('cloud')
   const cloudProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'cloud')
   const localProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'local')
-  const selectedProvider = selectedSpace === 'local' ? (localProvider ?? cloudProvider) : cloudProvider
+  const standaloneProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'standalone')
+  const selectedProvider = selectedSpace === 'local'
+    ? (localProvider ?? standaloneProvider)
+    : cloudProvider
 
   if (view === 'providers') {
     return (

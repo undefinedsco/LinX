@@ -118,10 +118,11 @@ export function useSessionRestore() {
     }
   }, [session.info.isLoggedIn])
 
-  // When SolidSessionProvider finishes before the mutable session object updates,
-  // keep the callback restore alive for the same timeout as direct Desktop restores.
+  // Bound every restore attempt, including a provider request that never settles.
+  // The provider can remain "in progress" forever when discovery/token refresh is
+  // interrupted, so waiting for that flag to turn false before starting the timer
+  // leaves the login modal permanently stuck on its restoring state.
   useEffect(() => {
-    if (sessionRequestInProgress) return
     if (session.info.isLoggedIn) return
     if (!isRestoring) return
     if (providerFailureTimerRef.current !== null) return

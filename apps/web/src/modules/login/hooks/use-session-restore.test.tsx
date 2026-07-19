@@ -210,6 +210,31 @@ describe('useSessionRestore', () => {
     expect(screen.getByTestId('restore-failed').textContent).toBe('true')
   })
 
+  it('fails a web restore that remains in progress instead of loading forever', async () => {
+    vi.useFakeTimers()
+    delete window.xpodDesktop
+    getStoredSolidSessionMock.mockReturnValue({
+      sessionId: 'linx-session',
+      issuerUrl: 'http://localhost:5737',
+      redirectUrl: 'http://127.0.0.1:5173/auth/callback',
+      clientId: 'http://127.0.0.1:5173/client',
+      tokenType: 'Bearer',
+    })
+    sessionState.sessionRequestInProgress = true
+
+    render(<TestComponent />)
+    await act(async () => {})
+
+    expect(screen.getByTestId('restore-failed').textContent).toBe('false')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000)
+    })
+
+    expect(screen.getByTestId('restore-failed').textContent).toBe('true')
+    expect(screen.getByTestId('restore-complete').textContent).toBe('false')
+  })
+
   it('normalizes desktop loopback callback and routes to the callback page after redirect event', async () => {
     window.history.replaceState({}, '', '/chat')
     render(<TestComponent />)
