@@ -11,6 +11,7 @@ import { User, Bot, Loader2 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { resolveSafeChatAvatarUrl } from '../../avatar-url'
 
 export interface MessageHeaderProps {
   role: 'user' | 'assistant' | 'system'
@@ -98,11 +99,11 @@ export const MessageHeader = memo<MessageHeaderProps>(({
 
   // 头像源 - senderAvatarUrl (群聊) 优先
   const avatarSrc = useMemo(() => {
-    if (senderAvatarUrl) return senderAvatarUrl
+    if (senderAvatarUrl) return resolveSafeChatAvatarUrl(senderAvatarUrl, model?.provider)
     if (isUser) return userAvatar
-    if (assistant?.avatar) return assistant.avatar
-    return modelLogoUrl
-  }, [senderAvatarUrl, isUser, userAvatar, assistant, modelLogoUrl])
+    if (assistant?.avatar) return resolveSafeChatAvatarUrl(assistant.avatar, model?.provider)
+    return resolveSafeChatAvatarUrl(modelLogoUrl, model?.provider)
+  }, [senderAvatarUrl, isUser, userAvatar, assistant, modelLogoUrl, model?.provider])
 
   // 头像 fallback 文字
   const avatarFallbackText = useMemo(() => {

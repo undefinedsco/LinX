@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { solidProfileResource } from '@undefineds.co/models'
+import {
+  aiModelResource,
+  aiProviderResource,
+  credentialResource,
+  solidProfileResource,
+} from '@undefineds.co/models'
 import { createLinxSolidDatabase, createTransportRewriteSession } from './linx-solid-database'
 
 const drizzleMock = vi.fn()
@@ -11,6 +16,9 @@ vi.mock('@undefineds.co/drizzle-solid', () => ({
 }))
 
 vi.mock('@undefineds.co/models', () => ({
+  aiModelResource: { setSparqlEndpoint: vi.fn() },
+  aiProviderResource: { setSparqlEndpoint: vi.fn() },
+  credentialResource: { setSparqlEndpoint: vi.fn() },
   solidProfileResource: { config: { base: 'idp:///profile/card' } },
   solidSchema: { chat: 'schema' },
 }))
@@ -23,6 +31,9 @@ describe('createLinxSolidDatabase', () => {
   beforeEach(() => {
     drizzleMock.mockReset()
     initializeLinxPodStorageMock.mockReset()
+    vi.mocked(aiModelResource.setSparqlEndpoint).mockClear()
+    vi.mocked(aiProviderResource.setSparqlEndpoint).mockClear()
+    vi.mocked(credentialResource.setSparqlEndpoint).mockClear()
   })
 
   it('creates and initializes the database before returning it', async () => {
@@ -36,7 +47,8 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
       podUrl: undefined,
-      resourcePreparation: 'best-effort',
+      preferredChannels: ['websocket', 'streaming-http'],
+      resourcePreparation: 'off',
       schema: { chat: 'schema' },
     })
     expect(initializeLinxPodStorageMock).toHaveBeenCalledWith(db, expect.objectContaining({
@@ -60,9 +72,13 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
       podUrl: 'https://pod.example.com/',
-      resourcePreparation: 'best-effort',
+      preferredChannels: ['websocket', 'streaming-http'],
+      resourcePreparation: 'off',
       schema: { chat: 'schema' },
     })
+    expect(credentialResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/settings/-/sparql')
+    expect(aiProviderResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/settings/providers/-/sparql')
+    expect(aiModelResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/settings/providers/-/sparql')
   })
 
   it('wraps authenticated fetch for local transport while preserving canonical Pod URLs', async () => {
@@ -96,7 +112,8 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(expect.any(Object), {
       disableInteropDiscovery: true,
       podUrl: 'https://node.example/alice/',
-      resourcePreparation: 'best-effort',
+      preferredChannels: ['websocket', 'streaming-http'],
+      resourcePreparation: 'off',
       schema: { chat: 'schema' },
     })
   })
@@ -172,7 +189,7 @@ describe('createLinxSolidDatabase', () => {
 
     expect(drizzleMock).toHaveBeenCalledWith(session, expect.objectContaining({
       podUrl: 'https://node-0000.undefineds.co/alice/',
-      resourcePreparation: 'best-effort',
+      resourcePreparation: 'off',
     }))
     expect(runtime.setPodUrl).toHaveBeenCalledWith('https://node-0000.undefineds.co/alice/')
   })

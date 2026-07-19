@@ -207,7 +207,7 @@ describe('getProviderStatusBadge', () => {
     })
 
     expect(getProviderStatusBadge(provider)).toEqual({
-      label: '可用',
+      label: '已准备好',
       tone: 'success',
     })
   })
@@ -288,7 +288,7 @@ describe('getProviderActionLabel', () => {
     expect(getProviderActionLabel(provider)).toBe('设置')
   })
 
-  it('maps ready Local to login action', () => {
+  it('maps ready Local to continue login action', () => {
     const provider = createLocalProvider({
       runtime: {
         kind: 'local-pod',
@@ -303,6 +303,6 @@ describe('getProviderActionLabel', () => {
       },
     })
 
-    expect(getProviderActionLabel(provider)).toBe('登录')
+    expect(getProviderActionLabel(provider)).toBe('继续登录')
   })
 })

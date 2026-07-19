@@ -25,7 +25,7 @@ function TestComponent() {
   const { connect } = useOidcConnect()
 
   return (
-    <button onClick={() => void connect('http://localhost:5737/')}>
+    <button onClick={() => { void connect('http://localhost:5737/').catch(() => undefined) }}>
       connect
     </button>
   )
@@ -35,7 +35,7 @@ function CloudTestComponent() {
   const { connect } = useOidcConnect()
 
   return (
-    <button onClick={() => void connect('https://id.undefineds.co/')}>
+    <button onClick={() => { void connect('https://id.undefineds.co/').catch(() => undefined) }}>
       connect cloud
     </button>
   )
@@ -45,14 +45,14 @@ function EmbeddedTestComponent() {
   const { connect } = useOidcConnect()
 
   return (
-    <button onClick={() => void connect('http://localhost:5737/', {
+    <button onClick={() => { void connect('http://localhost:5737/', {
       authorizationSurface: 'embedded',
       issuerLabel: 'Cloud',
       storageProviderLabel: 'Local',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
-    })}>
+    }).catch(() => undefined) }}>
       connect embedded
     </button>
   )
@@ -113,7 +113,7 @@ function ManagedLocalWithCloudAccountAuthorityTestComponent() {
         provisionCode: 'pc-123',
       },
       nodeId: 'node-0000',
-    }) }}>
+    }).catch(() => undefined) }}>
       connect split local
     </button>
   )
@@ -172,6 +172,7 @@ describe('useOidcConnect', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     delete window.xpodDesktop
+    delete (window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
     window.sessionStorage.clear()
     window.history.replaceState({}, '', '/')
   })
@@ -194,6 +195,24 @@ describe('useOidcConnect', () => {
       clientName: 'LinX',
     })
     expect(options.handleRedirect).toBeUndefined()
+  })
+
+  it('uses dynamic client registration in service mode', async () => {
+    delete window.xpodDesktop
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+    render(<TestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+
+    expect(loginMock.mock.calls[0][0]).toMatchObject({
+      oidcIssuer: 'http://127.0.0.1:5737',
+      redirectUrl: `${window.location.origin}/auth/callback`,
+    })
+    expect(loginMock.mock.calls[0][0]).not.toHaveProperty('clientId')
   })
 
   it('uses desktop loopback redirect and in-app auth window flow', async () => {
@@ -405,6 +424,27 @@ describe('useOidcConnect', () => {
     }
   })
 
+  it('rejects browser login setup when Inrupt resolves but the page does not leave the app', async () => {
+    vi.useFakeTimers()
+    try {
+      delete window.xpodDesktop
+      loginMock.mockResolvedValueOnce(undefined)
+      render(<ErrorHandledTestComponent />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'connect safely' }))
+
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(loginMock).toHaveBeenCalledTimes(1)
+      expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+      expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('allows retrying after a pending login setup is cancelled', async () => {
     loginMock.mockImplementation(() => new Promise(() => {}))
     render(<CancelableTestComponent />)
@@ -543,5 +583,15 @@ describe('useOidcConnect', () => {
     })
     expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
     expect(window.localStorage.getItem('solidClientAuthenticationUser:pending-session')).toBeNull()
+  })
+
+  it('does not silently accept a duplicate login while the first setup is pending', async () => {
+    loginMock.mockImplementationOnce(() => new Promise<void>(() => {}))
+    render(<TestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => expect(loginMock).toHaveBeenCalledTimes(1))
   })
 })

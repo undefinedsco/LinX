@@ -3,7 +3,7 @@ import {
   Eye, EyeOff, ExternalLink, 
   Loader2, Globe, Box, Image as ImageIcon,
   Settings2, Info, Plus, Search,
-  Copy, Pencil, Trash2, Lock
+  Copy, Pencil, Trash2, Lock, RefreshCw, CircleAlert, CircleCheck, CircleDashed
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -33,8 +33,9 @@ import { useModelServices } from './hooks/useModelServices'
 import { PlaceholderContentPane } from '@/modules/layout/placeholders'
 import { cn } from '@/lib/utils'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
-import type { AIModel } from './types'
+import type { AIModel, AIProvider } from './types'
 import { searchProviderModels } from './services/model-fetcher'
+import { resolveSelectedProviderId } from './selection'
 
 // --- Helper Components ---
 
@@ -79,6 +80,48 @@ const inferCapabilities = (modelId: string, explicitCaps: string[] = []): string
   }
   
   return Array.from(caps)
+}
+
+const buildSyncedModelList = (existingModels: AIModel[], fetchedModels: AIModel[]) => {
+  const fetchedById = new Map<string, AIModel>()
+  fetchedModels.forEach((model) => {
+    if (!model.id) return
+    fetchedById.set(model.id, {
+      ...model,
+      enabled: model.enabled ?? true,
+      isCustom: false,
+    })
+  })
+
+  const customModels = existingModels.filter((model) => model.isCustom && !fetchedById.has(model.id))
+  return [...fetchedById.values(), ...customModels]
+}
+
+const countRemovedOnlineModels = (existingModels: AIModel[], fetchedModels: AIModel[]) => {
+  const fetchedIds = new Set(fetchedModels.map((model) => model.id))
+  return existingModels.filter((model) => !model.isCustom && !fetchedIds.has(model.id)).length
+}
+
+async function fetchLatestProviderModels(
+  provider: AIProvider,
+  apiKey: string,
+  baseUrl: string,
+): Promise<AIModel[]> {
+  const fetchedGroups = await searchProviderModels(
+    provider,
+    apiKey || undefined,
+    baseUrl || undefined,
+  )
+
+  return Object.values(fetchedGroups)
+    .flat()
+    .map((model) => ({
+      id: model.id,
+      name: model.name,
+      capabilities: model.capabilities,
+      enabled: true,
+      isCustom: false,
+    }))
 }
 
 // --- Add/Edit Model Dialog Component ---
@@ -212,15 +255,20 @@ function AddModelDialog({
 export function ModelServicesContentPane() {
   const { toast } = useToast()
   
-  const { providers, updateProvider } = useModelServices()
+  const { providers, updateProvider, deleteProvider, recordVerificationResult } = useModelServices()
   const selectedId = useModelServicesStore((state) => state.selectedProviderId)
-  
-  const provider = selectedId ? providers[selectedId] : null
+  const selectProvider = useModelServicesStore((state) => state.setSelectedProviderId)
+  const effectiveSelectedId = resolveSelectedProviderId(providers, selectedId)
+  const provider = effectiveSelectedId ? providers[effectiveSelectedId] : null
 
   const [localApiKey, setLocalApiKey] = useState('')
   const [localBaseUrl, setLocalBaseUrl] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [isVerifying, setIsVerifying] = useState(false)
+  const [isSyncingModels, setIsSyncingModels] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isDeletingProvider, setIsDeletingProvider] = useState(false)
+  const [deleteProviderDialogOpen, setDeleteProviderDialogOpen] = useState(false)
   const [modelSearch, setModelSearch] = useState('')
   
   // Dialog State
@@ -233,6 +281,7 @@ export function ModelServicesContentPane() {
       setLocalBaseUrl(provider.baseUrl || '')
       setShowKey(false)
       setIsVerifying(false)
+      setIsSyncingModels(false)
       setModelSearch('')
     }
   }, [provider?.id, provider?.apiKey, provider?.baseUrl])
@@ -250,19 +299,48 @@ export function ModelServicesContentPane() {
   const isPlatformProvider = provider?.id === 'undefineds'
   const verificationRequiresApiKey = provider ? !['ollama', 'undefineds'].includes(provider.id) : true
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!provider) return
-    if (localApiKey !== provider.apiKey || localBaseUrl !== provider.baseUrl) {
-      updateProvider(provider.id, {
+    if (localApiKey === provider.apiKey && localBaseUrl === provider.baseUrl) return
+    setIsSaving(true)
+    try {
+      await updateProvider(provider.id, {
         apiKey: localApiKey,
-        baseUrl: localBaseUrl
+        baseUrl: localBaseUrl,
       })
+    } catch (error) {
+      toast({ variant: 'destructive', description: `保存失败：${formatErrorForUser(error)}` })
+    } finally {
+      setIsSaving(false)
     }
   }
 
-  const handleToggleEnable = (checked: boolean) => {
+  const handleToggleEnable = async (checked: boolean) => {
     if (!provider) return
-    updateProvider(provider.id, { enabled: checked })
+    setIsSaving(true)
+    try {
+      await updateProvider(provider.id, { enabled: checked })
+      toast({ description: checked ? '模型服务已启用' : '模型服务已停用' })
+    } catch (error) {
+      toast({ variant: 'destructive', description: `操作失败：${formatErrorForUser(error)}` })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDeleteProvider = async () => {
+    if (!provider) return
+    setIsDeletingProvider(true)
+    try {
+      await deleteProvider(provider.id)
+      selectProvider(null)
+      setDeleteProviderDialogOpen(false)
+      toast({ description: `已删除 ${provider.name}` })
+    } catch (error) {
+      toast({ variant: 'destructive', description: `删除失败：${formatErrorForUser(error)}` })
+    } finally {
+      setIsDeletingProvider(false)
+    }
   }
 
   const handleVerify = async () => {
@@ -271,36 +349,32 @@ export function ModelServicesContentPane() {
     try {
       const normalizedApiKey = localApiKey.trim()
       const normalizedBaseUrl = localBaseUrl.trim()
-      const fetchedGroups = await searchProviderModels(
-        provider,
-        normalizedApiKey || undefined,
-        normalizedBaseUrl || undefined,
-      )
-      const fetchedModels: AIModel[] = Object.values(fetchedGroups)
-        .flat()
-        .map((model) => ({
-          id: model.id,
-          name: model.name,
-          capabilities: model.capabilities,
-          enabled: true,
-        }))
-      const mergedModels = [
-        ...provider.models,
-        ...fetchedModels.filter((model) => !provider.models.some((existing) => existing.id === model.id)),
-      ]
-
       await updateProvider(provider.id, {
         apiKey: normalizedApiKey,
         baseUrl: normalizedBaseUrl || provider.defaultBaseUrl,
-        models: mergedModels,
       })
+      const fetchedModels = await fetchLatestProviderModels(provider, normalizedApiKey, normalizedBaseUrl)
+      const syncedModels = buildSyncedModelList(provider.models, fetchedModels)
+      const removedCount = countRemovedOnlineModels(provider.models, fetchedModels)
+
+      await updateProvider(provider.id, {
+        models: syncedModels,
+      })
+      await recordVerificationResult(provider.id)
 
       toast({ 
-        description: fetchedModels.length > 0 ? `连接成功，已同步 ${fetchedModels.length} 个模型` : '连接成功',
+        description: fetchedModels.length > 0
+          ? `连接成功，已同步 ${fetchedModels.length} 个模型${removedCount > 0 ? `，移除 ${removedCount} 个过期模型` : ''}`
+          : '连接成功',
         className: "bg-green-500/15 border-green-500/20 text-green-600" 
       })
     } catch (e) {
       console.warn('[ModelServices] Provider verification failed:', e)
+      try {
+        await recordVerificationResult(provider.id, e)
+      } catch (healthError) {
+        console.warn('[ModelServices] Failed to persist verification result:', healthError)
+      }
       const rawMessage = e instanceof Error ? e.message : String(e ?? '')
       let message = formatErrorForUser(e, '请检查密钥、服务地址或网络后重试。')
       if (/401|unauthorized|api key|invalid key|missing key|incorrect api key/i.test(rawMessage)) {
@@ -314,6 +388,44 @@ export function ModelServicesContentPane() {
       })
     } finally {
       setIsVerifying(false)
+    }
+  }
+
+  const handleSyncModels = async () => {
+    if (!provider) return
+    setIsSyncingModels(true)
+    try {
+      const normalizedApiKey = localApiKey.trim()
+      const normalizedBaseUrl = localBaseUrl.trim()
+      const fetchedModels = await fetchLatestProviderModels(provider, normalizedApiKey, normalizedBaseUrl)
+      const syncedModels = buildSyncedModelList(provider.models, fetchedModels)
+      const removedCount = countRemovedOnlineModels(provider.models, fetchedModels)
+
+      await updateProvider(provider.id, {
+        ...(localApiKey !== provider.apiKey ? { apiKey: normalizedApiKey } : {}),
+        ...(localBaseUrl !== provider.baseUrl ? { baseUrl: normalizedBaseUrl || provider.defaultBaseUrl } : {}),
+        models: syncedModels,
+      })
+
+      toast({
+        description: `已同步 ${fetchedModels.length} 个模型${removedCount > 0 ? `，下线 ${removedCount} 个过期模型` : ''}`,
+        className: "bg-green-500/15 border-green-500/20 text-green-600"
+      })
+    } catch (e) {
+      console.warn('[ModelServices] Model sync failed:', e)
+      const rawMessage = e instanceof Error ? e.message : String(e ?? '')
+      let message = formatErrorForUser(e, '请检查密钥、服务地址或网络后重试。')
+      if (/401|unauthorized|api key|invalid key|missing key|incorrect api key/i.test(rawMessage)) {
+        message = '密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。'
+      } else if (/模型列表获取失败|model list|models/i.test(rawMessage)) {
+        message = '模型列表获取失败。请检查密钥、服务地址或网络后重试。'
+      }
+      toast({
+        variant: "destructive",
+        description: `同步失败：${message}`
+      })
+    } finally {
+      setIsSyncingModels(false)
     }
   }
   
@@ -363,7 +475,7 @@ export function ModelServicesContentPane() {
   const IconComp = provider.icon
 
   return (
-    <div className="flex flex-col h-full bg-background/50 backdrop-blur-sm">
+    <div className="flex h-full min-w-[720px] flex-col bg-background/50 backdrop-blur-sm">
       <TooltipProvider>
         
         {/* === Header === */}
@@ -381,6 +493,23 @@ export function ModelServicesContentPane() {
               <div className="flex flex-col gap-0.5 justify-center">
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-semibold tracking-tight leading-none">{provider.name}</h2>
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      'h-5 gap-1 px-1.5 text-[10px] font-normal',
+                      provider.verificationStatus === 'available' && 'bg-emerald-500/10 text-emerald-600',
+                      provider.verificationStatus === 'failed' && 'bg-destructive/10 text-destructive',
+                    )}
+                  >
+                    {provider.verificationStatus === 'available' && <CircleCheck className="h-3 w-3" />}
+                    {provider.verificationStatus === 'failed' && <CircleAlert className="h-3 w-3" />}
+                    {provider.verificationStatus === 'unverified' && <CircleDashed className="h-3 w-3" />}
+                    {provider.verificationStatus === 'available'
+                      ? '可用'
+                      : provider.verificationStatus === 'failed'
+                        ? '验证失败'
+                        : '未验证'}
+                  </Badge>
                   {provider.description && (
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -406,12 +535,28 @@ export function ModelServicesContentPane() {
             </div>
 
             <div className="flex items-center gap-3">
+              {!isPlatformProvider && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 border-destructive/30 px-2.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setDeleteProviderDialogOpen(true)}
+                  disabled={isSaving || isDeletingProvider}
+                  aria-label={`删除服务 ${provider.name}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  删除服务
+                </Button>
+              )}
               <span className={cn("text-xs font-medium transition-colors", provider.enabled ? "text-foreground" : "text-muted-foreground")}>
-                {provider.enabled ? '已启用' : '未启用'}
+                {provider.enabled ? '停用服务' : '启用服务'}
               </span>
               <Switch 
                 checked={provider.enabled}
-                onCheckedChange={handleToggleEnable}
+                onCheckedChange={(checked) => void handleToggleEnable(checked)}
+                disabled={isSaving}
+                aria-label={provider.enabled ? '停用服务' : '启用服务'}
                 className="scale-90 data-[state=checked]:bg-primary"
               />
             </div>
@@ -446,7 +591,7 @@ export function ModelServicesContentPane() {
                       type={showKey ? "text" : "password"} 
                       value={localApiKey}
                       onChange={(e) => setLocalApiKey(e.target.value)}
-                      onBlur={handleSave}
+                      onBlur={() => void handleSave()}
                       disabled={isPlatformProvider}
                       placeholder={provider.defaultApiKeyPlaceholder || "sk-..."}
                       className="pr-24 font-mono bg-muted/20 focus:bg-background transition-colors border-border/60 focus:border-primary/50"
@@ -487,7 +632,7 @@ export function ModelServicesContentPane() {
                   <Input 
                     value={localBaseUrl}
                     onChange={(e) => setLocalBaseUrl(e.target.value)}
-                    onBlur={handleSave}
+                    onBlur={() => void handleSave()}
                     disabled={isPlatformProvider}
                     placeholder={provider.defaultBaseUrl}
                     className="font-mono bg-muted/20 focus:bg-background transition-colors border-border/60 focus:border-primary/50"
@@ -533,6 +678,16 @@ export function ModelServicesContentPane() {
                         data-1p-ignore
                       />
                     </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1.5 text-xs rounded-md"
+                      onClick={handleSyncModels}
+                      disabled={isSyncingModels || isVerifying || (verificationRequiresApiKey && !localApiKey.trim())}
+                    >
+                      {isSyncingModels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      同步模型
+                    </Button>
                     <Button 
                       size="sm" 
                       variant="outline" 
@@ -576,6 +731,7 @@ export function ModelServicesContentPane() {
                           <button 
                             onClick={() => handleCopy(model.id)}
                             className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                            aria-label={`复制 ${model.id} ID`}
                             title="复制 ID"
                           >
                             <Copy className="w-3 h-3" />
@@ -586,10 +742,22 @@ export function ModelServicesContentPane() {
                     
                     {/* Right: Actions */}
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pl-2">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(model)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => openEditDialog(model)}
+                        aria-label={`编辑模型 ${model.id}`}
+                      >
                         <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDeleteModel(model.id)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => handleDeleteModel(model.id)}
+                        aria-label={`删除模型 ${model.id}`}
+                      >
                         <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
                       </Button>
                     </div>
@@ -616,6 +784,26 @@ export function ModelServicesContentPane() {
         onSave={handleSaveModel}
         initialData={editingModel}
       />
+
+      <Dialog open={deleteProviderDialogOpen} onOpenChange={setDeleteProviderDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除模型服务</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm leading-6 text-muted-foreground">
+            将删除“{provider.name}”及其凭据和模型配置。已经绑定到该服务的聊天需要重新选择模型。
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteProviderDialogOpen(false)} disabled={isDeletingProvider}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={() => void handleDeleteProvider()} disabled={isDeletingProvider}>
+              {isDeletingProvider && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              删除服务
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

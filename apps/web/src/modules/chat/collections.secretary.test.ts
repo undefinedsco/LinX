@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { agentResource, chatResource, contactResource, threadResource } from '@undefineds.co/models'
+import { agentResource, chatResource, contactResource, threadRepository, threadResource } from '@undefineds.co/models'
 import { agentResourceId } from '@/lib/data/resource-identity'
 
 const {
@@ -117,6 +117,8 @@ describe('AI Secretary bootstrap', () => {
     const chatIri = `${podBase}.data/chat/__secretary__/index.ttl#this`
     const contactIri = `${podBase}.data/contacts/__secretary__.ttl`
     const agentIri = `${podBase}agents/__secretary__/`
+    const threadId = threadRepository.idForChat(chatIri, LINX_DEFAULT_SECRETARY.threadKey)
+    const threadIri = threadRepository.iriForChat(podBase, chatIri, LINX_DEFAULT_SECRETARY.threadKey)
     const contactRow = {
       id: LINX_DEFAULT_SECRETARY.contactId,
       '@id': contactIri,
@@ -140,6 +142,14 @@ describe('AI Secretary bootstrap', () => {
       createdAt: new Date('2026-06-02T00:00:00.000Z'),
       updatedAt: new Date('2026-06-02T00:00:00.000Z'),
     }
+    const threadRow = {
+      id: threadId,
+      '@id': threadIri,
+      parent: chatIri,
+      title: LINX_DEFAULT_SECRETARY.threadTitle,
+      createdAt: new Date('2026-06-02T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-02T00:00:00.000Z'),
+    }
 
     return {
       podBase,
@@ -147,9 +157,12 @@ describe('AI Secretary bootstrap', () => {
       chatIri,
       contactIri,
       agentIri,
+      threadId,
+      threadIri,
       contactRow,
       agentRow,
       chatRow,
+      threadRow,
     }
   }
 
@@ -158,6 +171,7 @@ describe('AI Secretary bootstrap', () => {
     chatSelectError?: Error
     existingResources?: boolean
     hangExactReads?: boolean
+    threadRows?: Array<Record<string, unknown>>
   } = {}) {
     const rows = options.rows ?? createSecretaryRows()
     const insertedRows: Array<{ resource: unknown; row: Record<string, unknown> }> = []
@@ -179,6 +193,9 @@ describe('AI Secretary bootstrap', () => {
       }
       if (resource === chatResource && id === LINX_DEFAULT_SECRETARY.chatResourceId) {
         return rows.chatRow
+      }
+      if (resource === threadResource && id === rows.threadId) {
+        return rows.threadRow
       }
       return null
     })
@@ -202,6 +219,7 @@ describe('AI Secretary bootstrap', () => {
         if (resource === chatResource) return rows.chatIri
         if (resource === contactResource) return rows.contactIri
         if (resource === agentResource) return rows.agentIri
+        if (resource === threadResource) return rows.threadIri
         return null
       }),
       insert: insertMock,
@@ -214,6 +232,9 @@ describe('AI Secretary bootstrap', () => {
               if (resource === chatResource) {
                 if (options.chatSelectError) throw options.chatSelectError
                 return [rows.chatRow]
+              }
+              if (resource === threadResource) {
+                return options.threadRows ?? []
               }
               return []
             }),
@@ -241,16 +262,19 @@ describe('AI Secretary bootstrap', () => {
 
     await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toEqual({
       chatId: LINX_DEFAULT_SECRETARY.chatId,
+      threadId: rows.threadId,
       created: true,
     })
     expect(findByIdMock.mock.calls.map(([, id]) => id)).toEqual([
       LINX_DEFAULT_SECRETARY.contactResourceId,
       LINX_DEFAULT_SECRETARY.chatResourceId,
+      rows.threadId,
     ])
     expect(db.select).not.toHaveBeenCalled()
-    expect(insertedRows).toHaveLength(2)
+    expect(insertedRows).toHaveLength(3)
     expect(insertedRows.some(({ resource }) => resource === contactResource)).toBe(true)
     expect(insertedRows.some(({ resource }) => resource === chatResource)).toBe(true)
+    expect(insertedRows.some(({ resource }) => resource === threadResource)).toBe(true)
     expect(insertedRows.find(({ resource }) => resource === contactResource)?.row).toMatchObject({
       id: LINX_DEFAULT_SECRETARY.contactId,
       '@id': rows.contactIri,
@@ -260,6 +284,12 @@ describe('AI Secretary bootstrap', () => {
       id: LINX_DEFAULT_SECRETARY.chatId,
       '@id': rows.chatIri,
       participants: [rows.contactIri],
+    })
+    expect(insertedRows.find(({ resource }) => resource === threadResource)?.row).toMatchObject({
+      id: rows.threadId,
+      '@id': rows.threadIri,
+      parent: rows.chatIri,
+      title: LINX_DEFAULT_SECRETARY.threadTitle,
     })
     expect(collectionStates.get('agents')?.get(LINX_DEFAULT_SECRETARY.agentId)).toMatchObject({
       id: LINX_DEFAULT_SECRETARY.agentId,
@@ -275,15 +305,18 @@ describe('AI Secretary bootstrap', () => {
 
     await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toEqual({
       chatId: LINX_DEFAULT_SECRETARY.chatId,
+      threadId: rows.threadId,
       created: true,
     })
     expect(findByIdMock.mock.calls.map(([, id]) => id)).toEqual([
       LINX_DEFAULT_SECRETARY.contactResourceId,
       LINX_DEFAULT_SECRETARY.chatResourceId,
+      rows.threadId,
     ])
-    expect(insertedRows).toHaveLength(2)
+    expect(insertedRows).toHaveLength(3)
     expect(insertedRows.some(({ resource }) => resource === contactResource)).toBe(true)
     expect(insertedRows.some(({ resource }) => resource === chatResource)).toBe(true)
+    expect(insertedRows.some(({ resource }) => resource === threadResource)).toBe(true)
     expect(insertedRows.find(({ resource }) => resource === chatResource)?.row).toMatchObject({
       id: LINX_DEFAULT_SECRETARY.chatId,
       '@id': rows.chatIri,
@@ -291,7 +324,7 @@ describe('AI Secretary bootstrap', () => {
   })
 
   it('does not require full chat collection queries when Secretary resources already exist', async () => {
-    const { db, insertedRows } = createSecretaryDb({
+    const { db, insertedRows, rows } = createSecretaryDb({
       chatSelectError: new Error('SPARQL unavailable'),
       existingResources: true,
     })
@@ -299,6 +332,7 @@ describe('AI Secretary bootstrap', () => {
 
     await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toEqual({
       chatId: LINX_DEFAULT_SECRETARY.chatId,
+      threadId: rows.threadId,
       created: false,
     })
     expect(db.select).not.toHaveBeenCalled()
@@ -317,11 +351,13 @@ describe('AI Secretary bootstrap', () => {
 
     await expect(resultPromise).resolves.toEqual({
       chatId: LINX_DEFAULT_SECRETARY.chatId,
+      threadId: expect.any(String),
       created: true,
     })
     expect(insertedRows.map(({ resource }) => resource)).toEqual([
       contactResource,
       chatResource,
+      threadResource,
     ])
     vi.useRealTimers()
   })
@@ -418,6 +454,7 @@ describe('AI Secretary bootstrap', () => {
     resolveChatInsert?.()
     await expect(bootstrapPromise).resolves.toEqual({
       chatId: LINX_DEFAULT_SECRETARY.chatId,
+      threadId: rows.threadId,
       created: true,
     })
   })

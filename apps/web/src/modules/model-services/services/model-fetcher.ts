@@ -46,6 +46,30 @@ const buildHeaders = (providerId: string, apiKey?: string) => {
   return headers
 }
 
+const shouldUseServiceModelProxy = () =>
+  typeof window !== 'undefined' && Boolean((window as any).__LINX_SERVICE__)
+
+const fetchModelList = (endpoint: string, providerId: string, apiKey?: string) => {
+  if (!shouldUseServiceModelProxy()) {
+    return fetch(endpoint, {
+      headers: buildHeaders(providerId, apiKey),
+    })
+  }
+
+  return fetch('/api/model-services/models', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      providerId,
+      endpoint,
+      apiKey: apiKey || '',
+    }),
+  })
+}
+
 function formatModelListError(status: number): string {
   if (status === 401 || status === 403) {
     return '密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。'
@@ -89,13 +113,15 @@ export const searchProviderModels = async (
     throw new Error('请先填写 API Key 再搜索在线模型')
   }
 
-  const endpoint =
-    providerDef?.modelsApi ||
-    `${(baseUrl || providerDef?.defaultBaseUrl || '').replace(/\/$/, '')}/models`
+  const configuredBaseUrl = (baseUrl || '').trim().replace(/\/$/, '')
+  const defaultBaseUrl = (providerDef?.defaultBaseUrl || '').trim().replace(/\/$/, '')
+  const endpoint = configuredBaseUrl
+    ? providerId === 'ollama'
+      ? `${configuredBaseUrl.replace(/\/v1$/, '')}/api/tags`
+      : `${configuredBaseUrl}/models`
+    : providerDef?.modelsApi || `${defaultBaseUrl}/models`
 
-  const res = await fetch(endpoint, {
-    headers: buildHeaders(providerId, apiKey),
-  })
+  const res = await fetchModelList(endpoint, providerId, apiKey)
   if (!res.ok) {
     const text = await res.text()
     console.warn('[ModelFetcher] Failed to fetch model list:', {

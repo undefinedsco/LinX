@@ -16,7 +16,7 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 // ============================================
@@ -186,6 +186,7 @@ export function InputbarTools({
   ]
 
   return (
+    <TooltipProvider>
     <div className={cn('flex items-center gap-1', className)}>
       {/* Left Slot */}
       {leftSlot}
@@ -231,6 +232,7 @@ export function InputbarTools({
       {/* Right Slot */}
       {rightSlot}
     </div>
+    </TooltipProvider>
   )
 }
 

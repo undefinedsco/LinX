@@ -1,6 +1,11 @@
 import { drizzle } from '@undefineds.co/drizzle-solid'
 import type { SolidDatabase } from '@undefineds.co/models'
-import { solidSchema } from '@undefineds.co/models'
+import {
+  aiModelResource,
+  aiProviderResource,
+  credentialResource,
+  solidSchema,
+} from '@undefineds.co/models'
 import { installBrowserSparqlEngine } from './browser-sparql-engine'
 import { initializeLinxPodStorage, type PodStorageBootstrapEvent } from './pod-storage-bootstrap'
 import {
@@ -73,13 +78,21 @@ async function createLinxSolidDatabaseUncached(
   const instance = drizzle(runtimeSession as any, {
     disableInteropDiscovery: true,
     podUrl: normalizePodUrl(options.podUrl),
-    resourcePreparation: 'best-effort',
+    // WebSocket channels do not consume the browser's limited HTTP/1.1 request
+    // slots. Streaming HTTP remains available when a Pod has no WebSocket
+    // notification service.
+    preferredChannels: ['websocket', 'streaming-http'],
+    // LinX explicitly bootstraps its Pod containers below. Re-running table
+    // preparation before every CRUD operation can leave writes waiting on a
+    // stale initialization promise after session restore.
+    resourcePreparation: 'off',
     schema: solidSchema,
   } as any) as unknown as SolidDatabase
   report({ stage: 'database:create:done' })
 
   applyPodUrlOverride(instance, options.podUrl)
   assertExplicitPodUrlApplied(instance, options.podUrl, 'before Pod initialization')
+  configureAIConfigQueryEndpoints(instance)
   report({
     stage: 'database:pod-url:ready',
     target: normalizePodUrl((instance as any).getDialect?.()?.getPodUrl?.()),
@@ -105,6 +118,15 @@ async function createLinxSolidDatabaseUncached(
   report({ stage: 'database:init:done' })
 
   return instance
+}
+
+export function configureAIConfigQueryEndpoints(db: SolidDatabase): void {
+  const podUrl = normalizePodUrl((db as any).getDialect?.()?.getPodUrl?.())
+  if (!podUrl) return
+
+  credentialResource.setSparqlEndpoint(new URL('settings/-/sparql', podUrl).toString())
+  aiProviderResource.setSparqlEndpoint(new URL('settings/providers/-/sparql', podUrl).toString())
+  aiModelResource.setSparqlEndpoint(new URL('settings/providers/-/sparql', podUrl).toString())
 }
 
 export function createTransportRewriteSession(

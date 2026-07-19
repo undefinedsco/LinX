@@ -191,7 +191,7 @@ describe('ChatContentPane', () => {
     )
   })
 
-  it('does not create an initial Secretary thread while bootstrap is still pending', async () => {
+  it('creates an initial Secretary thread immediately when bootstrap is pending but the thread list is ready', async () => {
     storeState.selectedChatId = '__secretary__/index.ttl#this'
     storeState.selectedThreadId = null
     mockUseChatList.mockReturnValue({
@@ -206,9 +206,46 @@ describe('ChatContentPane', () => {
     render(<ChatContentPane theme="light" />)
 
     await waitFor(() => {
-      expect(screen.getByText('正在准备话题...')).toBeInTheDocument()
+      expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(1)
     })
-    expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+    expect(mockMutations.createThread.mutate.mock.calls[0][0]).toEqual({
+      chatId: '__secretary__/index.ttl#this',
+      optimistic: true,
+      title: '默认话题',
+    })
+  })
+
+  it('creates the default Secretary thread after the bootstrap grace period even if threads are still loading', async () => {
+    vi.useFakeTimers()
+    try {
+      storeState.selectedChatId = '__secretary__/index.ttl#this'
+      storeState.selectedThreadId = null
+      mockUseChatList.mockReturnValue({
+        data: [{ id: '__secretary__/index.ttl#this', title: 'AI Secretary' }],
+      })
+      mockUseThreadList.mockReturnValue({
+        data: [],
+        isLoading: true,
+      })
+      mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(true)
+
+      render(<ChatContentPane theme="light" />)
+
+      expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(1)
+      expect(mockMutations.createThread.mutate.mock.calls[0][0]).toEqual({
+        chatId: '__secretary__/index.ttl#this',
+        optimistic: true,
+        title: '默认话题',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('creates a random-id initial thread and binds the default Pod workspace after bootstrap when no thread exists', async () => {

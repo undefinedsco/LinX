@@ -111,7 +111,7 @@ describe('useProviders', () => {
     })
   })
 
-  it('creates explicit Local and Standalone providers in LinX Service space without Cloud provisioning', async () => {
+  it('creates only the Standalone provider in LinX Service space without Cloud provisioning', async () => {
     delete window.xpodDesktop
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
 
@@ -142,11 +142,11 @@ describe('useProviders', () => {
     render(<TestComponent />)
 
     await waitFor(() => {
-      expect(screen.getByText('Local')).toBeTruthy()
       expect(screen.getByText('Standalone')).toBeTruthy()
-      expect(screen.getByText('本地空间')).toBeTruthy()
       expect(screen.getByText('本机空间')).toBeTruthy()
     })
+    expect(screen.queryByText('Local')).toBeNull()
+    expect(screen.queryByText('本地空间')).toBeNull()
   })
 
   it('projects Service space provisioning into a Local snapshot', async () => {
@@ -203,7 +203,7 @@ describe('useProviders', () => {
     const standaloneProvider = result.current.providers.find((item) => item.id === 'standalone')
     expect(localProvider?.storageProvider.url).toBe('https://pod.example.com')
     expect(localProvider?.oidcProvider.url).toBe('https://id.undefineds.co')
-    expect(standaloneProvider?.runtime?.onboarding?.state).toBe('repair_required')
+    expect(standaloneProvider).toBeUndefined()
   })
 
   it('does not project localhost as the Local storage provider before a login storage address exists', async () => {
@@ -241,10 +241,9 @@ describe('useProviders', () => {
     await waitFor(() => {
       const localProvider = result.current.providers.find((item) => item.id === 'local')
       const standaloneProvider = result.current.providers.find((item) => item.id === 'standalone')
-      expect(localProvider?.storageProvider.url).toBe('')
-      expect(localProvider?.url).toBe('')
-      expect(localProvider?.runtime?.onboarding?.state).toBe('repair_required')
+      expect(localProvider).toBeUndefined()
       expect(standaloneProvider?.storageProvider.url).toBe('http://localhost:5737')
+      expect(standaloneProvider?.runtime?.onboarding?.state).toBe('ready')
     })
   })
 
@@ -283,10 +282,9 @@ describe('useProviders', () => {
     await waitFor(() => {
       const localProvider = result.current.providers.find((item) => item.id === 'local')
       const standaloneProvider = result.current.providers.find((item) => item.id === 'standalone')
-      expect(localProvider?.storageProvider.url).toBe('')
-      expect(localProvider?.url).toBe('')
-      expect(localProvider?.runtime?.onboarding?.state).toBe('repair_required')
+      expect(localProvider).toBeUndefined()
       expect(standaloneProvider?.storageProvider.url).toBe('http://localhost:5737')
+      expect(standaloneProvider?.runtime?.onboarding?.state).toBe('ready')
     })
   })
 

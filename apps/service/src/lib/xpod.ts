@@ -13,6 +13,9 @@ import { resolveLinxUserDataDir } from './linx-paths'
 
 const XPOD_PACKAGE_CANDIDATES = ['@undefineds.co/xpod', 'xpod']
 const CANONICAL_OIDC_ISSUER_ENV_KEY = 'oidcIssuer'
+const DEFAULT_AUTH_MODE = 'acp'
+
+type AuthMode = 'acp' | 'acl' | 'allow-all'
 
 function readOidcIssuerEnv(env: Record<string, string | undefined>): string | undefined {
   const canonical = env[CANONICAL_OIDC_ISSUER_ENV_KEY]?.trim()
@@ -43,6 +46,38 @@ function normalizeOidcIssuerEnv(env: Record<string, string | undefined>): void {
   removeOidcIssuerEnv(env)
   if (oidcIssuer) {
     env[CANONICAL_OIDC_ISSUER_ENV_KEY] = oidcIssuer
+  }
+}
+
+function normalizeAuthMode(value: string | undefined): AuthMode {
+  const normalized = value?.trim().toLowerCase()
+  if (!normalized) return DEFAULT_AUTH_MODE
+
+  if (normalized === 'acp' || normalized === 'acr') return 'acp'
+  if (normalized === 'acl' || normalized === 'wac' || normalized === 'webacl') return 'acl'
+  if (normalized === 'allow-all' || normalized === 'allowall') return 'allow-all'
+
+  return DEFAULT_AUTH_MODE
+}
+
+function cssAuthModeConfigImports(authMode: AuthMode): string[] {
+  switch (authMode) {
+    case 'acl':
+      return [
+        'css:config/ldp/authorization/webacl.json',
+        'css:config/util/auxiliary/acl.json',
+      ]
+    case 'allow-all':
+      return [
+        'css:config/ldp/authorization/allow-all.json',
+        'css:config/util/auxiliary/empty.json',
+      ]
+    case 'acp':
+    default:
+      return [
+        'css:config/ldp/authorization/acp.json',
+        'css:config/util/auxiliary/acr.json',
+      ]
   }
 }
 
@@ -139,11 +174,13 @@ export function buildCssRuntimeEnv(env: Record<string, string>, overrides: Recor
 export function createEmbeddedCssRuntimeConfig(options: {
   configPath: string
   runtimeRoot: string
+  authMode?: string
   oidcIssuer?: string
 }): { configPath: string; cwd?: string } {
   fs.mkdirSync(options.runtimeRoot, { recursive: true })
   const runtimeConfigPath = path.join(options.runtimeRoot, 'css-runtime.config.json')
   const relativeConfigPath = path.relative(options.runtimeRoot, options.configPath).replace(/\\/g, '/')
+  const authMode = normalizeAuthMode(options.authMode)
   fs.writeFileSync(runtimeConfigPath, JSON.stringify({
     '@context': [
       'https://linkedsoftwaredependencies.org/bundles/npm/@solid/community-server/^8.0.0/components/context.jsonld',
@@ -152,6 +189,7 @@ export function createEmbeddedCssRuntimeConfig(options: {
     ],
     import: [
       relativeConfigPath.startsWith('.') ? relativeConfigPath : `./${relativeConfigPath}`,
+      ...cssAuthModeConfigImports(authMode),
     ],
     '@graph': [],
   }, null, 2), 'utf-8')
@@ -465,6 +503,7 @@ export class XpodModule {
     const cssRuntimeConfig = createEmbeddedCssRuntimeConfig({
       configPath,
       runtimeRoot: path.join(resolveLinxUserDataDir(), 'xpod-css-runtime'),
+      authMode: env.CSS_AUTH_MODE,
       oidcIssuer,
     })
     const cssArgs = buildEmbeddedCssArgs({
@@ -692,10 +731,9 @@ export class XpodModule {
       const response = await fetch(`http://localhost:${port}/service/status`, {
         signal: AbortSignal.timeout(3000),
       })
-      if (!response.ok) {
-        return false
-      }
       const status = await response.json() as Array<{ name: string; status: string }>
+      // External xpod may return 503 while both workers in its structured
+      // status payload are already running. Worker state is authoritative.
       return isXpodStatusReady(status)
     } catch {
       return false

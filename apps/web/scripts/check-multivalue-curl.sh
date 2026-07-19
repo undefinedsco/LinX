@@ -1,31 +1,40 @@
 #!/bin/bash
-# 检查 drizzle-solid 多值问题（通过 xpod 的 quadstore）
+set -euo pipefail
 
 echo "============================================================"
 echo "drizzle-solid 多值问题诊断"
 echo "============================================================"
 echo ""
 
-# 直接查询 xpod 的 quadstore.sqlite
-QUADSTORE="/Users/ganlu/develop/xpod/data/quadstore.sqlite"
+DATABASE_URL="${CSS_SPARQL_ENDPOINT:-postgresql://postgres:postgres@localhost:5432/xpod_local}"
 
-if [ ! -f "$QUADSTORE" ]; then
-    echo "错误: 找不到 quadstore.sqlite"
-    exit 1
+if [[ "$DATABASE_URL" == sqlite:* ]]; then
+  echo "当前脚本不再直接读取 quadstore.sqlite。"
+  echo "本地 Docker 开发请使用 PostgreSQL，并设置 CSS_SPARQL_ENDPOINT。"
+  exit 1
 fi
 
-echo "数据库: $QUADSTORE"
+run_psql() {
+  if command -v psql >/dev/null 2>&1; then
+    psql "$DATABASE_URL" "$@"
+    return
+  fi
+
+  if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx 'shared-postgres'; then
+    docker exec shared-postgres psql -U postgres -d xpod_local "$@"
+    return
+  fi
+
+  echo "错误: 找不到 psql，也没有运行中的 shared-postgres 容器。"
+  exit 1
+}
+
+echo "数据库: $DATABASE_URL"
 echo ""
 
-# 先看一下表结构
-echo "--- 查看数据库表结构 ---"
-sqlite3 "$QUADSTORE" ".tables"
+echo "--- 查看数据表 ---"
+run_psql -c "\\dt"
 echo ""
 
-echo "--- 查看表 schema ---"
-sqlite3 "$QUADSTORE" ".schema" | head -30
-echo ""
-
-# 查看数据样本
-echo "--- 数据样本 (前10条) ---"
-sqlite3 "$QUADSTORE" "SELECT * FROM sqlite_master WHERE type='table' LIMIT 1;"
+echo "--- internal_kv 数据量 ---"
+run_psql -tAc "select count(*) from internal_kv;"

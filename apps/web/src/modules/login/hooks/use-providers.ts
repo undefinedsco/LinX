@@ -208,7 +208,10 @@ export function useProviders() {
       }
     } else if (isServiceMode) {
       const fallbackUrl = localOnboarding?.localUrl ?? localOnboarding?.baseUrl ?? 'http://localhost:5737'
-      for (const source of ['local', 'standalone'] as const) {
+      const sources = localOnboarding?.spaceKind === 'local'
+        ? (['local'] as const)
+        : (['standalone'] as const)
+      for (const source of sources) {
         const providerSnapshot = projectLocalOnboardingForSource(localOnboarding, source)
         const runtimeStatus = resolveRuntimeStatus(providerSnapshot)
         local.push({
@@ -497,7 +500,10 @@ function buildServiceLocalSnapshot(
     && publicUrl,
   )
   const running = Boolean(status.pod?.running)
-  const spaceKind = status.spaceKind ?? config?.spaceKind ?? (hasLocalCloudBinding ? 'local' : 'standalone')
+  const configuredSpaceKind = status.spaceKind ?? config?.spaceKind
+  const spaceKind = configuredSpaceKind === 'local' && !hasLocalCloudBinding
+    ? 'standalone'
+    : configuredSpaceKind ?? (hasLocalCloudBinding ? 'local' : 'standalone')
 
   return {
     state: running ? 'ready' : 'idle',

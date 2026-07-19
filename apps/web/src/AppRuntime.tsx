@@ -4,22 +4,22 @@ import { SolidDatabaseProvider } from './providers/solid-database-provider'
 import { PodCollectionsBootstrap } from './providers/pod-collections-bootstrap'
 import { TelemetryProvider } from './lib/telemetry/telemetry-context'
 import { router } from './router'
+import { cleanupExpiredLoginTransaction } from './modules/login/login-utils'
 
 export function AppRuntime() {
-  const isDesktopRuntime =
-    typeof window !== 'undefined'
-    && Boolean(
-      window.xpodDesktop?.auth?.prepareLoopbackRedirect
-      && window.xpodDesktop?.auth?.consumePendingRedirect,
-    )
-  const shouldRestoreInProvider =
-    typeof window !== 'undefined'
-    && window.location.protocol !== 'file:'
-    && !isDesktopRuntime
+  const isDesktop = typeof window !== 'undefined' && Boolean(window.xpodDesktop?.auth)
+  const isAuthCallback = typeof window !== 'undefined'
+    && window.location.pathname.startsWith('/auth/callback')
+
+  // Callback processing still needs the oidc.* state/PKCE/sessionId mapping.
+  // Never run auth maintenance before AuthCallback has consumed it.
+  if (!isAuthCallback) {
+    cleanupExpiredLoginTransaction()
+  }
 
   return (
     <SolidSessionProvider
-      restorePreviousSession={shouldRestoreInProvider}
+      restorePreviousSession={!isDesktop && !isAuthCallback}
       onError={(error) => console.warn('🔴 SessionProvider error (ignored):', error)}
     >
       <SolidDatabaseProvider>

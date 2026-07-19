@@ -106,3 +106,4 @@ packages/models/tests/w3c-data/
 # Legacy local models checkout; LinX consumes @undefineds.co/models from npm.
 /packages/models/
 .omx/
+.gstack/

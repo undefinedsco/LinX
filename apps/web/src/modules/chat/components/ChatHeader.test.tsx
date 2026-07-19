@@ -12,6 +12,7 @@ const mockToast = vi.fn()
 const mockUseChatStore = vi.fn()
 const mockUseEntity = vi.fn()
 const mockUseChatList = vi.fn()
+let mockModelServiceProviders: Record<string, any> = {}
 
 vi.mock('@inrupt/solid-ui-react', () => ({
   useSession: () => ({
@@ -53,6 +54,14 @@ vi.mock('@/components/ui/model-selector', () => ({
 }))
 
 vi.mock('@/lib/agent-providers', () => ({
+  CHAT_AGENT_PROVIDERS: [
+    {
+      slug: 'undefineds',
+      displayName: 'LinX Platform',
+      logoUrl: 'undefineds.png',
+      models: [{ id: 'linx-lite', displayName: 'LinX Lite' }],
+    },
+  ],
   DEFAULT_LINX_PLATFORM_MODEL_ID: 'linx-lite',
   LINX_PLATFORM_PROVIDER_ID: 'undefineds',
   normalizeChatModelId: (modelId: string) => modelId === 'undefineds/linx-lite' ? 'linx-lite' : modelId,
@@ -70,6 +79,13 @@ vi.mock('@/lib/agent-providers', () => ({
           ? 'LinX Platform'
           : 'OpenAI',
     logoUrl: `${slug}.png`,
+  }),
+}))
+
+vi.mock('@/modules/model-services/hooks/useModelServices', () => ({
+  useModelServices: () => ({
+    providers: mockModelServiceProviders,
+    updateProvider: vi.fn(),
   }),
 }))
 
@@ -136,6 +152,20 @@ import { ChatHeader } from './ChatHeader'
 describe('ChatHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockModelServiceProviders = {
+      openai: {
+        id: 'openai',
+        name: 'OpenAI',
+        enabled: true,
+        models: [{ id: 'gpt-4o-mini', name: 'GPT-4o mini', enabled: true, capabilities: [] }],
+      },
+      anthropic: {
+        id: 'anthropic',
+        name: 'Anthropic',
+        enabled: true,
+        models: [{ id: 'claude-3-5-sonnet-latest', name: 'Claude 3.5 Sonnet', enabled: true, capabilities: [] }],
+      },
+    }
 
     mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
       selectedChatId: 'chat-1',
@@ -217,7 +247,7 @@ describe('ChatHeader', () => {
   it('updates model from the header dialog and derives provider', async () => {
     render(<ChatHeader />)
 
-    fireEvent.click(screen.getByText('gpt-4o-mini'))
+    fireEvent.click(screen.getByText('OpenAI / GPT-4o mini'))
     fireEvent.change(screen.getByLabelText('选择模型'), { target: { value: 'claude-3-5-sonnet-latest' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
@@ -233,6 +263,52 @@ describe('ChatHeader', () => {
 
     expect(mockRefreshAgent).toHaveBeenCalled()
     expect(mockRefreshContact).toHaveBeenCalled()
+  })
+
+  it('shows when the bound model service is disabled', () => {
+    mockUseEntity.mockImplementation((_resource: unknown, iri: string | null | undefined) => {
+      if (iri === 'contact-iri') {
+        return {
+          data: {
+            id: 'contact-1',
+            about: 'agent-iri',
+            contactType: 'agent',
+          },
+          refresh: mockRefreshContact,
+        }
+      }
+
+      if (iri === 'agent-iri') {
+        return {
+          data: {
+            id: 'agent-1',
+            name: '助手A',
+            provider: 'disabled',
+            model: 'disabled-model',
+            avatarUrl: 'disabled.png',
+          },
+          refresh: mockRefreshAgent,
+        }
+      }
+
+      return {
+        data: null,
+        refresh: vi.fn(),
+      }
+    })
+
+    mockModelServiceProviders = {
+      disabled: {
+        id: 'disabled',
+        name: 'Disabled',
+        enabled: false,
+        models: [{ id: 'disabled-model', name: 'Disabled Model', enabled: true, capabilities: [] }],
+      },
+    }
+
+    render(<ChatHeader />)
+
+    expect(screen.getByText('模型服务已停用')).toBeInTheDocument()
   })
 
   it('updates the agent AI runtime location from the profile dialog', async () => {

@@ -10,14 +10,13 @@ import {
 
 const CALLBACK_RESTORE_TIMEOUT = 15000
 
+export type SessionRestoreStatus = 'idle' | 'restoring' | 'complete' | 'failed'
+
 /**
  * useSessionRestore — observes session state managed by SolidSessionProvider.
  *
- * SolidSessionProvider already calls handleIncomingRedirect on mount for web.
- * This hook only calls handleIncomingRedirect for Desktop callback URLs, where
- * the OAuth response arrives through Electron's loopback bridge instead of the
- * current renderer location.
- * It only:
+ * AuthCallback handles web callback redirects. For ordinary web routes the root
+ * SolidSessionProvider owns restoration of a stored session. This hook only:
  *   1. Waits for session.info.isLoggedIn to become true (or timeout)
  *   2. For Desktop: consumes pending redirect URLs and routes the renderer to /auth/callback
  *   3. Reports restoreComplete / restoreFailed to the login controller
@@ -29,9 +28,8 @@ const CALLBACK_RESTORE_TIMEOUT = 15000
  */
 export function useSessionRestore() {
   const { session, sessionRequestInProgress } = useSession()
-  const [isRestoring, setIsRestoring] = useState(false)
-  const [restoreComplete, setRestoreComplete] = useState(false)
-  const [restoreFailed, setRestoreFailed] = useState(false)
+  const [status, setStatus] = useState<SessionRestoreStatus>('idle')
+  const isRestoring = status === 'restoring'
   const attemptedRef = useRef(false)
   const providerFailureTimerRef = useRef<number | null>(null)
   const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
@@ -47,8 +45,7 @@ export function useSessionRestore() {
   }, [desktopApi])
 
   const routeDesktopRedirectToCallback = useCallback((redirectUrl: string) => {
-    setIsRestoring(true)
-    setRestoreFailed(false)
+    setStatus('restoring')
 
     if (redirectUrl === window.location.href) {
       return
@@ -74,27 +71,29 @@ export function useSessionRestore() {
         if (redirectUrl) {
           routeDesktopRedirectToCallback(redirectUrl)
         } else if (shouldAttemptCurrentLocationRestore()) {
-          setIsRestoring(true)
+          setStatus('restoring')
         } else {
-          setIsRestoring(false)
-          setRestoreFailed(false)
+          setStatus('idle')
         }
       }).catch(() => {
-        setIsRestoring(false)
-        setRestoreFailed(false)
+        setStatus('idle')
       })
       return
     }
 
-    // Web: SolidSessionProvider handles handleIncomingRedirect.
-    // We just need to wait for it to finish.
     const isCallbackUrl = shouldAttemptCurrentLocationRestore()
-    if (isCallbackUrl || hasStoredSession) {
-      setIsRestoring(true)
-    } else {
-      setRestoreFailed(true)
+    if (isCallbackUrl) {
+      setStatus('restoring')
+      return
     }
-  }, [session.info.isLoggedIn, desktopApi, consumeDesktopRedirect, routeDesktopRedirectToCallback, hasStoredSession])
+
+    if (!hasStoredSession) {
+      setStatus('failed')
+      return
+    }
+
+    setStatus('restoring')
+  }, [session, session.info.isLoggedIn, desktopApi, consumeDesktopRedirect, routeDesktopRedirectToCallback, hasStoredSession])
 
   // Listen for Desktop redirect events
   useEffect(() => {
@@ -115,9 +114,7 @@ export function useSessionRestore() {
         window.clearTimeout(providerFailureTimerRef.current)
         providerFailureTimerRef.current = null
       }
-      setRestoreComplete(true)
-      setRestoreFailed(false)
-      setIsRestoring(false)
+      setStatus('complete')
     }
   }, [session.info.isLoggedIn])
 
@@ -132,14 +129,11 @@ export function useSessionRestore() {
     providerFailureTimerRef.current = window.setTimeout(() => {
       providerFailureTimerRef.current = null
       if (session.info.isLoggedIn) {
-        setRestoreComplete(true)
-        setRestoreFailed(false)
-        setIsRestoring(false)
+        setStatus('complete')
         return
       }
 
-      setIsRestoring(false)
-      setRestoreFailed(true)
+      setStatus('failed')
     }, CALLBACK_RESTORE_TIMEOUT)
 
     return () => {
@@ -151,9 +145,10 @@ export function useSessionRestore() {
   }, [sessionRequestInProgress, session.info.isLoggedIn, isRestoring])
 
   return {
+    status,
     isRestoring,
-    restoreComplete,
-    restoreFailed,
+    restoreComplete: status === 'complete',
+    restoreFailed: status === 'failed',
     hasStoredSession: desktopApi?.auth
       ? shouldAttemptCurrentLocationRestore()
       : hasStoredSession || shouldAttemptCurrentLocationRestore(),

@@ -45,6 +45,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
   const [retrying, setRetrying] = useState(false)
   const navigatedRef = useRef(false)
   const silentFallbackStartedRef = useRef(false)
+  const webRedirectRestoreStartedRef = useRef(false)
   const desktopRedirectRestoreStartedRef = useRef(false)
   const desktopRedirectRestoreInProgressRef = useRef(false)
   const pendingAttempt = useMemo(() => getPendingLoginAttempt(), [])
@@ -203,6 +204,55 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
       cancelled = true
     }
   }, [error, restoreDesktopRedirect, session.info.isLoggedIn, sessionRequestInProgress])
+
+  useEffect(() => {
+    if (error || navigatedRef.current || session.info.isLoggedIn) return
+    if (sessionRequestInProgress) return
+
+    const currentRedirectUrl = getCurrentLocationCallbackRedirectUrl()
+    if (!currentRedirectUrl) return
+
+    const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
+    if (desktopAuth) return
+    if (webRedirectRestoreStartedRef.current) return
+    webRedirectRestoreStartedRef.current = true
+
+    let cancelled = false
+    void handleIncomingRedirectWithRetry(() => session.handleIncomingRedirect({
+      url: currentRedirectUrl,
+      restorePreviousSession: false,
+    })).then(async (restored) => {
+      if (cancelled || navigatedRef.current) return
+
+      const restoredSessionId = typeof restored?.sessionId === 'string'
+        ? restored.sessionId
+        : session.info.sessionId
+      if (restored?.isLoggedIn || session.info.isLoggedIn) {
+        const persistence = await ensureCurrentSessionPersistence(
+          restoredSessionId,
+          SESSION_CURRENT_KEY_TIMEOUT_MS,
+        )
+        if (cancelled || navigatedRef.current) return
+        if (persistence === 'missing') {
+          console.warn('[auth-callback] continuing after web redirect before currentSession was persisted')
+        }
+        navigatedRef.current = true
+        onSuccess?.()
+        return
+      }
+
+      setError('登录未完成，请重试。')
+    }).catch((restoreError) => {
+      console.warn('[auth-callback] failed to restore web redirect', restoreError)
+      if (!session.info.isLoggedIn) {
+        setError(formatLoginErrorForUser(restoreError, '登录未完成，请重试。'))
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [error, onSuccess, session, session.info.isLoggedIn, session.info.sessionId, sessionRequestInProgress])
 
   useEffect(() => {
     if (error || navigatedRef.current || session.info.isLoggedIn) return

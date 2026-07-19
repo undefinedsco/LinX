@@ -1,4 +1,5 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,6 @@ import {
   type MicroAppLayoutConfig,
 } from './micro-app-registry'
 import { linxLayout } from '@/theme/spacing'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -73,7 +73,9 @@ function MicroAppContentRenderer({
   const ListPane = activeMicroApp.ListPane
   const ContentPane = activeMicroApp.ContentPane
   const LayoutConfigBridge = activeMicroApp.LayoutConfigBridge
+  const layoutContainerRef = useRef<HTMLDivElement>(null)
   const [layoutConfig, setLayoutConfig] = useState<MicroAppLayoutConfig | undefined>(undefined)
+  const [listPanelWidth, setListPanelWidth] = useState<number>(linxLayout.listPanel.defaultWidth)
   const handleLayoutConfigChange = useCallback(
     (nextConfig: MicroAppLayoutConfig | undefined) => {
       setLayoutConfig(nextConfig)
@@ -82,9 +84,43 @@ function MicroAppContentRenderer({
   )
 
   const rightSidebarWidth = layoutConfig?.rightSidebar ? layoutConfig.rightSidebarWidth ?? 320 : 0
-  const listPanelWidth = linxLayout.listPanel.defaultWidth
   const listPanelMinWidth = linxLayout.listPanel.minWidth
   const listPanelMaxWidth = linxLayout.listPanel.maxWidth
+  const contentAreaMinWidth = linxLayout.contentArea.minWidth
+
+  const clampListPanelWidth = useCallback(
+    (nextWidth: number) => {
+      const containerWidth = layoutContainerRef.current?.getBoundingClientRect().width
+      const maxWidthByContent = containerWidth
+        ? Math.max(listPanelMinWidth, Math.min(listPanelMaxWidth, containerWidth - contentAreaMinWidth))
+        : listPanelMaxWidth
+      return Math.min(Math.max(nextWidth, listPanelMinWidth), maxWidthByContent)
+    },
+    [contentAreaMinWidth, listPanelMaxWidth, listPanelMinWidth],
+  )
+
+  const handleListResizePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const container = layoutContainerRef.current
+      if (!container) return
+
+      event.preventDefault()
+      const containerRect = container.getBoundingClientRect()
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        setListPanelWidth(clampListPanelWidth(moveEvent.clientX - containerRect.left))
+      }
+
+      const handlePointerUp = () => {
+        document.removeEventListener('pointermove', handlePointerMove)
+        document.removeEventListener('pointerup', handlePointerUp)
+      }
+
+      document.addEventListener('pointermove', handlePointerMove)
+      document.addEventListener('pointerup', handlePointerUp, { once: true })
+    },
+    [clampListPanelWidth],
+  )
 
   return (
     <>
@@ -93,12 +129,9 @@ function MicroAppContentRenderer({
           <LayoutConfigBridge onConfigChange={handleLayoutConfigChange} />
         </Suspense>
       ) : null}
-      <ResizablePanelGroup direction="horizontal" className="h-full w-full">
-        <ResizablePanel
-          defaultSize={20}
-          minSize={15}
-          maxSize={30}
-          className="shrink-0"
+      <div ref={layoutContainerRef} className="flex h-full w-full min-w-0 overflow-hidden">
+        <div
+          className="shrink-0 overflow-hidden"
           style={{
             minWidth: listPanelMinWidth,
             width: listPanelWidth,
@@ -118,12 +151,21 @@ function MicroAppContentRenderer({
               <ListPane theme={theme} />
             </Suspense>
           </section>
-        </ResizablePanel>
+        </div>
 
-        <ResizableHandle withHandle />
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整列表宽度"
+          className="group relative z-10 h-full w-1 shrink-0 cursor-col-resize bg-transparent outline-none hover:bg-primary/15 focus-visible:bg-primary/20"
+          onPointerDown={handleListResizePointerDown}
+          tabIndex={0}
+        >
+          <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/50 transition-colors group-hover:bg-primary/50" />
+        </div>
 
-        <ResizablePanel defaultSize={80}>
-          <section className="h-full flex bg-layout-content">
+        <div className="min-w-0 flex-1 overflow-auto">
+          <section className="h-full min-w-0 flex bg-layout-content">
             <div className="flex-1 flex flex-col min-h-0">
               {!layoutConfig?.hideHeader && (
                 <div className="h-16 flex items-center border-b border-border bg-layout-content">
@@ -179,8 +221,8 @@ function MicroAppContentRenderer({
               </aside>
             )}
           </section>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        </div>
+      </div>
     </>
   )
 }
@@ -219,7 +261,7 @@ function SettingsMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onNavigate('model-services')} className="cursor-pointer">
           <Bot className="mr-2 h-4 w-4" strokeWidth={1.5} />
-          <span>模型服务</span>
+          <span>模型管理</span>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onOpenServiceManagement} className="cursor-pointer text-boundary focus:text-boundary">
           <Activity className="mr-2 h-4 w-4" strokeWidth={1.5} />
@@ -319,22 +361,22 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={cn(
-                      "w-9 h-9 rounded-md transition-all duration-200",
-                      isActive 
-                        ? "text-primary hover:bg-transparent hover:text-primary" 
-                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    )}
+	                    className={cn(
+	                      "w-9 h-9 rounded-md transition-all duration-200",
+		                      isActive
+		                        ? "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary"
+	                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+	                    )}
                     onClick={() => handleNavigate(app.id)}
                     aria-label={navLabel}
                     title={navLabel}
                   >
-                    <Icon 
-                      size={24} 
-                      strokeWidth={isActive ? 2 : 1.5} 
-                      fill={isActive ? "currentColor" : "none"}
-                      className="transition-all"
-                    />
+		                    <Icon
+		                      size={24}
+		                      strokeWidth={isActive ? 2.25 : 1.5}
+	                      fill="none"
+	                      className="transition-all"
+	                    />
                   </Button>
                 </div>
               )
@@ -350,24 +392,24 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                   key={app.id}
                   variant="ghost"
                   size="icon"
-                  className={cn(
-                    "w-9 h-9 rounded-md hover:bg-transparent",
-                    isActive 
-                      ? "text-primary hover:text-primary" 
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
+	                  className={cn(
+	                    "w-9 h-9 rounded-md",
+		                    isActive
+		                      ? "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary"
+	                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+	                  )}
                   onClick={() => handleNavigate(app.id)}
                   aria-label={app.label}
                 >
-                  <Icon 
-                    size={24} 
-                    strokeWidth={isActive ? 2 : 1.5}
-                    fill={isActive ? "currentColor" : "none"} 
-                  />
+		                  <Icon
+		                    size={24}
+	                    strokeWidth={isActive ? 2.25 : 1.5}
+		                    fill="none"
+	                  />
                 </Button>
               )
             })}
-            {/* Settings Popover and Utilities */} 
+	            {/* Settings Popover and Utilities */}
             {bottomUtilities.map((utility) => {
               if (utility.id === 'settings') {
                 return (

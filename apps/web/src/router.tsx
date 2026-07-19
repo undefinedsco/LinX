@@ -1,6 +1,8 @@
 import { Suspense, lazy } from 'react'
 import { createRouter, createRootRoute, createRoute, Outlet, redirect, createHashHistory } from '@tanstack/react-router'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams, useRouterState } from '@tanstack/react-router'
+import { useSession } from '@inrupt/solid-ui-react'
+import { useLoginStore, type LoginState } from '@linx/stores/login'
 import { PrimaryLayout } from './modules/layout/PrimaryLayout'
 import { defaultMicroAppId, isValidMicroAppId, MicroAppId } from './modules/layout/micro-app-registry'
 import { SolidLoginOverlay } from './modules/login'
@@ -24,11 +26,46 @@ function RouteFallback() {
   return <div className="min-h-screen bg-background" />
 }
 
+export function shouldRenderAuthenticatedOutlet(input: {
+  pathname: string
+  isLoggedIn: boolean
+  sessionRequestInProgress: boolean
+  loginState: LoginState
+}): boolean {
+  if (isRouteAllowedBeforeAuthentication(input.pathname)) {
+    return true
+  }
+
+  return input.isLoggedIn
+    && !input.sessionRequestInProgress
+    && input.loginState === 'authenticated'
+}
+
+function isRouteAllowedBeforeAuthentication(pathname: string): boolean {
+  return pathname.startsWith('/auth/callback')
+    || pathname.startsWith('/test/')
+    || pathname.startsWith('/debug/')
+    || pathname.startsWith('/setup')
+    || pathname.startsWith('/inrupt-test')
+}
+
 // Root route component
 const RootComponent = () => {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+  const { session, sessionRequestInProgress } = useSession()
+  const loginState = useLoginStore((state) => state.state)
+  const renderOutlet = shouldRenderAuthenticatedOutlet({
+    pathname,
+    isLoggedIn: session.info.isLoggedIn === true,
+    sessionRequestInProgress,
+    loginState,
+  })
+
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <Outlet />
+      {renderOutlet ? <Outlet /> : <RouteFallback />}
       <SolidLoginOverlay />
     </div>
   )

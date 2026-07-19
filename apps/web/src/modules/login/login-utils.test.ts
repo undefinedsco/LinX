@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   capturePendingCallbackError,
+  cleanupExpiredLoginTransaction,
   clearUnrestorableSolidAuthState,
+  clearStoredSolidAuthRecords,
   clearPendingCallbackError,
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
@@ -16,6 +18,7 @@ import {
   hasStoredSolidSession,
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
+  prepareFreshLoginAttempt,
 } from './login-utils'
 import { getRememberedAccount } from '@linx/stores/login'
 
@@ -46,6 +49,22 @@ describe('login-utils post-login target helpers', () => {
     ensurePendingPostLoginMicroAppId('contacts')
     expect(consumePendingPostLoginMicroAppId()).toBe('contacts')
     expect(consumePendingPostLoginMicroAppId()).toBe('chat')
+  })
+
+  it('clears only Solid auth records without dropping the pending post-login target', () => {
+    ensurePendingPostLoginMicroAppId('files')
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-1', '{"isLoggedIn":"true"}')
+    window.localStorage.setItem('oidc.test', 'value')
+    window.localStorage.setItem('linx-remembered-account', '{"displayName":"Ganlu"}')
+
+    clearStoredSolidAuthRecords()
+
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:session-1')).toBeNull()
+    expect(window.localStorage.getItem('oidc.test')).toBeNull()
+    expect(window.localStorage.getItem('linx-remembered-account')).toBe('{"displayName":"Ganlu"}')
+    expect(consumePendingPostLoginMicroAppId()).toBe('files')
   })
 
   it('does not overwrite an existing pending target', () => {
@@ -146,6 +165,55 @@ describe('login-utils post-login target helpers', () => {
     })
   })
 
+  it('removes expired and timestamp-less pending login transactions', () => {
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'http://localhost:5737',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+      createdAt: 1_000,
+    }))
+
+    expect(cleanupExpiredLoginTransaction(1_000 + 15 * 60 * 1000 + 1)).toBe(true)
+    expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
+
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'http://localhost:5737',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    }))
+    expect(cleanupExpiredLoginTransaction()).toBe(true)
+  })
+
+  it('keeps a current pending login transaction', () => {
+    const now = Date.now()
+    setPendingLoginAttempt({
+      issuerUrl: 'http://localhost:5737',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    })
+
+    expect(cleanupExpiredLoginTransaction(now + 1_000)).toBe(false)
+    expect(getPendingLoginAttempt()).not.toBeNull()
+  })
+
+  it('prepares a fresh login without deleting a remembered account or valid Solid session', () => {
+    window.localStorage.setItem('linx-remembered-account', '{"displayName":"Ganlu"}')
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-1', JSON.stringify({
+      isLoggedIn: true,
+      webId: 'http://localhost:5737/cuilinsu/profile/card#me',
+    }))
+    window.sessionStorage.setItem('linx-pending-login-attempt', '{"invalid":true}')
+    capturePendingCallbackError('http://localhost:5173/auth/callback?error=access_denied')
+
+    prepareFreshLoginAttempt()
+
+    expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
+    expect(getPendingCallbackError()).toBeNull()
+    expect(window.localStorage.getItem('linx-remembered-account')).toBe('{"displayName":"Ganlu"}')
+    expect(getStoredSolidSession()).not.toBeNull()
+  })
+
   it('captures callback errors before the auth library cleans the URL', () => {
     const captured = capturePendingCallbackError('http://localhost:5173/auth/callback?error=access_denied&error_description=Denied')
 
@@ -225,6 +293,32 @@ describe('login-utils post-login target helpers', () => {
 
     expect(hasStoredSolidSession()).toBe(false)
     expect(getStoredSolidSession()).toBeNull()
+  })
+
+  it('detects Inrupt dynamic client metadata saved after a completed web login', () => {
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'linx-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:linx-session',
+      JSON.stringify({
+        clientId: 'dynamic-client',
+        clientType: 'dynamic',
+        dpop: 'true',
+        idTokenSignedResponseAlg: 'ES256',
+        issuer: 'http://localhost:5737/',
+        keepAlive: 'true',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+      }),
+    )
+
+    expect(hasStoredSolidSession()).toBe(true)
+    expect(getStoredSolidSession()).toEqual({
+      sessionId: 'linx-session',
+      issuerUrl: 'http://localhost:5737/',
+      redirectUrl: 'http://localhost:5173/auth/callback',
+      clientId: 'dynamic-client',
+      tokenType: null,
+      webId: null,
+    })
   })
 
   it('reads the current stored Solid session metadata', () => {

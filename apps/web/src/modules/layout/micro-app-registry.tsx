@@ -224,13 +224,13 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
   },
   'model-services': {
     id: 'model-services',
-    label: '模型服务',
+    label: '模型管理',
     icon: Bot, // Using Bot icon for AI Model Services
     header: {
-      moduleTitle: '模型服务',
-      moduleSubtitle: '配置 AI 提供商及模型',
+      moduleTitle: '模型管理',
+      moduleSubtitle: '切换默认模型并配置 AI 提供商',
       itemTitle: '提供商详情',
-      itemSubtitle: 'API Key & Model Management',
+      itemSubtitle: 'API Key 与模型切换',
     },
     ListPane: ModelServicesListPane,
     ContentPane: ModelServicesContentPane,

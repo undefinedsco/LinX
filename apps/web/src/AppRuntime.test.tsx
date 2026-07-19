@@ -35,7 +35,7 @@ describe('AppRuntime', () => {
     window.history.replaceState({}, '', '/')
   })
 
-  it('lets the Inrupt provider restore sessions in normal web runtime', () => {
+  it('enables Inrupt session restore on normal web routes', () => {
     render(<AppRuntime />)
 
     expect(solidSessionProviderMock).toHaveBeenCalledWith(
@@ -44,14 +44,27 @@ describe('AppRuntime', () => {
   })
 
 
-  it('keeps web-style desktop test stubs on normal web callback restore', () => {
+  it('disables restore when a desktop auth bridge is present', () => {
     window.xpodDesktop = { auth: { openEmbeddedAuthorization: vi.fn() } } as any
 
     render(<AppRuntime />)
 
     expect(solidSessionProviderMock).toHaveBeenCalledWith(
-      expect.objectContaining({ restorePreviousSession: true }),
+      expect.objectContaining({ restorePreviousSession: false }),
     )
+  })
+
+  it('keeps web callback processing owned by AuthCallback', () => {
+    window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
+    window.localStorage.setItem('oidc.xyz', 'pkce-state')
+
+    render(<AppRuntime />)
+
+    expect(solidSessionProviderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ restorePreviousSession: false }),
+    )
+    expect(window.localStorage.getItem('oidc.xyz')).toBe('pkce-state')
+    window.localStorage.removeItem('oidc.xyz')
   })
 
   it('disables Inrupt silent restore in Electron desktop runtime', () => {

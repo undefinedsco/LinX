@@ -15,6 +15,7 @@ const mockIsRuntimeSessionMode = vi.fn()
 const mockFetchSolidProfile = vi.fn()
 const mockAddFriend = vi.fn()
 const mockCreateGroupDialog = vi.fn()
+let mockModelServiceProviders: Record<string, any> = {}
 
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
@@ -45,6 +46,7 @@ vi.mock('@/components/ui/model-selector', () => ({
 }))
 
 vi.mock('@/lib/agent-providers', () => ({
+  LINX_PLATFORM_PROVIDER_ID: 'undefineds',
   CHAT_AGENT_PROVIDERS: [
     {
       slug: 'undefineds',
@@ -57,6 +59,13 @@ vi.mock('@/lib/agent-providers', () => ({
       models: [{ id: 'gpt-4o-mini', displayName: 'GPT-4o mini' }],
     },
   ],
+}))
+
+vi.mock('@/modules/model-services/hooks/useModelServices', () => ({
+  useModelServices: () => ({
+    providers: mockModelServiceProviders,
+    updateProvider: vi.fn(),
+  }),
 }))
 
 vi.mock('@/components/ui/switch', () => ({
@@ -147,6 +156,7 @@ describe('AddChatDialog', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockModelServiceProviders = {}
 
     setupStore()
     mockCreateAIChat.mockResolvedValue({ id: 'chat-1' })
@@ -243,6 +253,32 @@ describe('AddChatDialog', () => {
     expect(mockSelectThread).toHaveBeenCalledWith('thread-1')
     expect(mockCloseAddDialog).toHaveBeenCalled()
     expect(onCreated).toHaveBeenCalledWith('chat-1')
+  })
+
+  it('uses the first enabled model service when creating an AI chat', async () => {
+    mockModelServiceProviders = {
+      openai22: {
+        id: 'openai22',
+        name: 'OpenAI22',
+        enabled: true,
+        selectedModelId: 'gpt-5.4-mini',
+        models: [{ id: 'gpt-5.4-mini', name: 'gpt-5.4-mini', enabled: true, capabilities: [] }],
+      },
+    }
+
+    render(<AddChatDialog />)
+
+    fireEvent.change(screen.getByLabelText('助手名称'), { target: { value: '模型服务助手' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建' }))
+
+    await waitFor(() => {
+      expect(mockCreateAIChat).toHaveBeenCalledWith({
+        title: '模型服务助手',
+        provider: 'openai22',
+        model: 'gpt-5.4-mini',
+        systemPrompt: undefined,
+      })
+    })
   })
 
   it('blocks submit when runtime is enabled without repo path', async () => {

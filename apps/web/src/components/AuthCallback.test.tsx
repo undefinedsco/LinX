@@ -116,6 +116,37 @@ describe('AuthCallback', () => {
     expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('session-1')
   })
 
+  it('restores a normal web callback redirect on the callback page', async () => {
+    window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
+    handleIncomingRedirectMock.mockImplementationOnce(async () => {
+      window.localStorage.setItem(
+        'solidClientAuthenticationUser:session-1',
+        JSON.stringify({
+          isLoggedIn: 'true',
+          webId: 'http://localhost:5737/cuilinsu/profile/card#me',
+        }),
+      )
+      return {
+        isLoggedIn: true,
+        sessionId: 'session-1',
+        webId: 'http://localhost:5737/cuilinsu/profile/card#me',
+      }
+    })
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    await waitFor(() => {
+      expect(handleIncomingRedirectMock).toHaveBeenCalledWith({
+        url: 'http://localhost:3000/auth/callback?code=abc&state=xyz',
+        restorePreviousSession: false,
+      })
+    })
+    await waitFor(() => {
+      expect(onSuccessMock).toHaveBeenCalledTimes(1)
+    })
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('session-1')
+  })
+
   it('restores a Desktop loopback redirect from the pending main-process callback', async () => {
     consumePendingRedirectMock.mockResolvedValueOnce('http://127.0.0.1:43123/auth/callback?code=abc&state=xyz')
     handleIncomingRedirectMock.mockImplementationOnce(async () => {

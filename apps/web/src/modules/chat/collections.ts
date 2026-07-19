@@ -87,6 +87,7 @@ export const LINX_DEFAULT_SECRETARY = {
   chatKey: '__secretary__',
   chatId: chatResource.buildId({ id: '__secretary__' }),
   chatResourceId: chatResource.buildId({ id: '__secretary__' }),
+  threadKey: '__default__',
   title: 'AI Secretary',
   provider: 'undefineds',
   model: DEFAULT_LINX_PLATFORM_MODEL_ID,
@@ -624,13 +625,61 @@ async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
   }
 
   const resources = await ensureDefaultSecretaryResources(db)
+  const thread = await ensureDefaultSecretaryThread(db, resources.chatIri)
 
   void ensureDefaultSecretaryAgentHome(db)
 
   return {
     chatId: LINX_DEFAULT_SECRETARY.chatId,
-    created: resources.created,
+    threadId: thread.threadId,
+    created: resources.created || thread.created,
   }
+}
+
+async function ensureDefaultSecretaryThread(
+  db: SolidDatabase,
+  chatIri: string,
+): Promise<{ threadId: string; created: boolean }> {
+  const now = new Date()
+  const threadResourceId = buildThreadResourceId(LINX_DEFAULT_SECRETARY.threadKey, chatIri)
+  const threadIri = resolveResourceIri(db, threadResource, threadResourceId)
+
+  if (!threadIri) {
+    throw new Error('Failed to resolve AI Secretary default thread IRI.')
+  }
+
+  const exact = await findOptionalExactRecord<ThreadRow>(db, threadResource, threadResourceId)
+  if (exact) {
+    const normalized = normalizeCollectionRow(exact, threadResourceId, threadIri)
+    cacheThreadRow(normalized, LINX_DEFAULT_SECRETARY.chatId)
+    return { threadId: normalized.id, created: false }
+  }
+
+  const created = {
+    id: threadResourceId,
+    '@id': threadIri,
+    parent: chatIri,
+    title: LINX_DEFAULT_SECRETARY.threadTitle,
+    createdAt: now,
+    updatedAt: now,
+  } as ThreadRow
+  const persisted = await insertPodRowWithRetry<ThreadRow>(
+    db,
+    threadResource,
+    created,
+    threadResourceId,
+  )
+  cacheThreadRow(persisted, LINX_DEFAULT_SECRETARY.chatId)
+  return { threadId: persisted.id, created: true }
+}
+
+function cacheThreadRow(row: ThreadRow, chatId?: string | null): void {
+  if (!row.id) return
+  const rowChatId = resolveThreadChatRowId(row) ?? normalizeChatRowId(chatId)
+  if (rowChatId) {
+    threadChatIdCache.set(row.id, rowChatId)
+  }
+  writeCollectionRow(threadCollection, row, row.id)
 }
 
 async function ensureDefaultSecretaryResources(db: SolidDatabase): Promise<{
@@ -969,7 +1018,7 @@ export const chatCollection = createPodCollection<typeof chatResource, ChatRow, 
 // Columns needed for thread list view
 const threadListColumns: (keyof ThreadRow)[] = [
   'id',
-  'chat',
+  'parent',
   'title',
   'starred',
   'workspace',
@@ -1323,7 +1372,7 @@ export const chatOps = {
   /**
    * Create a new thread
    */
-  async createThread(chatId: string, title?: string, options?: { threadId?: string }): Promise<ThreadRow> {
+  async createThread(chatId: string, title?: string, options?: { threadId?: string; optimistic?: boolean }): Promise<ThreadRow> {
     const db = getDb()
     const threadKey = options?.threadId?.trim() || crypto.randomUUID()
     const now = new Date()
@@ -1353,7 +1402,25 @@ export const chatOps = {
     } as ThreadInsert & { '@id'?: string }
     
     if (db) {
-      await db.insert(threadResource).values(threadData as any).execute()
+      const persistThread = db.insert(threadResource).values(threadData as any).execute()
+      if (options?.optimistic) {
+        void persistThread
+          .then(() => {
+            console.info('[chatOps] create_thread_persist_succeeded', {
+              chatId,
+              threadId: threadResourceId,
+            })
+          })
+          .catch((error) => {
+            console.error('[chatOps] create_thread_persist_failed', {
+              chatId,
+              threadId: threadResourceId,
+              error,
+            })
+          })
+      } else {
+        await persistThread
+      }
     } else {
       const tx = threadCollection.insert(threadData as ThreadRow)
       await tx.isPersisted.promise
@@ -1983,12 +2050,7 @@ async function queryThreadRowsForChat(db: SolidDatabase, chatId: string): Promis
     throw error
   }
 
-  rows.forEach((row) => {
-    const rowChatId = resolveThreadChatRowId(row)
-    if (row.id && rowChatId) {
-      threadChatIdCache.set(row.id, rowChatId)
-    }
-  })
+  rows.forEach((row) => cacheThreadRow(row, chatId))
 
   return rows
 }
@@ -2133,8 +2195,8 @@ export function useChatMutations() {
   })
 
   const createThread = useMutation({
-    mutationFn: ({ chatId, title }: { chatId: string; title?: string }) => 
-      chatOps.createThread(chatId, title),
+    mutationFn: ({ chatId, title, optimistic }: { chatId: string; title?: string; optimistic?: boolean }) =>
+      chatOps.createThread(chatId, title, { optimistic }),
     onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: QUERY_KEYS.threads(variables.chatId) })
     },

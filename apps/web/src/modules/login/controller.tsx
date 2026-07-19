@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useNavigate } from '@tanstack/react-router'
 import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
@@ -14,19 +14,17 @@ import {
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
   clearStoredSolidSession,
+  clearStoredSolidAuthRecords,
   consumePendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
   getPendingLoginAttempt,
   getPendingLoginTransaction,
   getStoredSolidSession,
   getPendingCallbackError,
+  prepareFreshLoginAttempt,
   resolvePostLoginMicroAppId,
   SIGN_OUT_EVENT,
 } from './login-utils'
-import {
-  getLoginTransactionRetryEntryUrl,
-  type LoginTransaction,
-} from './login-transaction'
 import type { ConnectingProviderInfo, LocalLoginProviderSource, LoginProviderOption } from './types'
 import type { LocalOnboardingSnapshot } from '@/types/electron-api'
 import { detectStorageConflict, type StorageConflict } from './storage-reconciliation'
@@ -35,47 +33,109 @@ import {
   resolveLoginProviderSource,
 } from './provider-model'
 import { formatLoginErrorForUser } from './error-messages'
+import {
+  createInitialLoginFlowState,
+  loginFlowReducer,
+  selectLoginFlowVisibleError,
+  type LoginErrorScope,
+} from './login-flow'
 
-const LOCAL_RESTORE_TIMEOUT_MS = 5000
-function normalizeUrl(url: string): string {
-  return url.replace(/\/$/, '')
+const LOGIN_HANDOFF_WATCHDOG_MS = 12_000
+
+async function waitForLoginHandoff(
+  connect: Promise<void>,
+  cancel: () => void,
+  timeoutMs = LOGIN_HANDOFF_WATCHDOG_MS,
+): Promise<void> {
+  let timeoutId: number | undefined
+  try {
+    await Promise.race([
+      connect,
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          cancel()
+          reject(new Error('登录页打开超时。请重试。'))
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+  }
 }
 
-function restoreStoredSolidSession(session: ReturnType<typeof useSession>['session']) {
-  return Promise.race([
-    session.handleIncomingRedirect({
-      url: window.location.href,
-      restorePreviousSession: true,
-    }),
-    new Promise<undefined>((resolve) => {
-      window.setTimeout(() => resolve(undefined), LOCAL_RESTORE_TIMEOUT_MS)
-    }),
-  ])
+function reloadAfterSessionReset(): void {
+  window.setTimeout(() => {
+    window.location.reload()
+  }, 0)
+}
+
+function normalizeUrl(url: string): string {
+  return url.replace(/\/$/, '')
 }
 
 export function useLoginController() {
   const { session, logout, sessionRequestInProgress } = useSession()
   const navigate = useNavigate()
-  const [view, setView] = useState<'default' | 'local'>('default')
 
   const {
-    state,
-    error,
+    state: legacyState,
+    error: storeError,
     storedAccount,
-    setState,
-    setError,
+    setState: setLegacyState,
+    setError: setStoreError,
     setStoredAccount,
-    loginSuccess,
-    reset,
+    loginSuccess: legacyLoginSuccess,
+    reset: legacyReset,
   } = useLoginStore()
+  const [flow, dispatchFlow] = useReducer(loginFlowReducer, legacyState, createInitialLoginFlowState)
+  const state = flow.phase
+  const setState = useCallback((nextState: typeof legacyState) => {
+    dispatchFlow({ type: 'set-phase', phase: nextState })
+    setLegacyState(nextState)
+  }, [setLegacyState])
+  const loginSuccess = useCallback((account: StoredAccount) => {
+    dispatchFlow({ type: 'set-phase', phase: 'authenticated' })
+    legacyLoginSuccess(account)
+  }, [legacyLoginSuccess])
+  const reset = useCallback(() => {
+    dispatchFlow({ type: 'reset-default' })
+    legacyReset()
+  }, [legacyReset])
+  const view = flow.view
+  const localLoginActive = flow.localLoginActive
+  const activeLocalProviderSource = flow.localProviderSource
+  const storageConflict = flow.storageConflict
+  const connectingProvider = flow.connectingProvider
+  const setView = useCallback((nextView: 'default' | 'local') => {
+    dispatchFlow({ type: 'set-view', view: nextView })
+  }, [])
+  const setLocalLoginActive = useCallback((active: boolean) => {
+    dispatchFlow({ type: 'set-local-login-active', active })
+  }, [])
+  const setActiveLocalProviderSource = useCallback((source: LocalLoginProviderSource) => {
+    dispatchFlow({ type: 'set-local-provider-source', source })
+  }, [])
+  const setStorageConflict = useCallback((conflict: StorageConflict | null) => {
+    dispatchFlow({ type: 'set-storage-conflict', conflict })
+  }, [])
+  const setConnectingProvider = useCallback((provider: ConnectingProviderInfo | null) => {
+    dispatchFlow({ type: 'set-connecting-provider', provider })
+  }, [])
+  const setError = useCallback((message: string | null, scope: LoginErrorScope = 'global') => {
+    if (message) {
+      dispatchFlow({ type: 'set-error', scope, message })
+    } else {
+      dispatchFlow({ type: 'clear-error' })
+    }
+    setStoreError(message)
+  }, [setStoreError])
 
   const initRef = useRef(false)
   const suppressAutoLoginRef = useRef(false)
-  const localConnectKeyRef = useRef<string | null>(null)
   const desktopAuthPendingRef = useRef(false)
   const desktopAuthSurfaceOpenedRef = useRef(false)
-  const silentLocalFallbackStartedRef = useRef(false)
   const loginFinalizeGenerationRef = useRef(0)
+  const localLoginAttemptRef = useRef(false)
   const restore = useSessionRestore()
   const oidc = useOidcConnect()
   const embeddedAuthorization = useEmbeddedAuthorizationState()
@@ -86,10 +146,11 @@ export function useLoginController() {
     localOnboarding,
     startLocal,
   } = useProviders()
-  const [localLoginActive, setLocalLoginActive] = useState(false)
-  const [activeLocalProviderSource, setActiveLocalProviderSource] = useState<LocalLoginProviderSource>('local')
-  const [storageConflict, setStorageConflict] = useState<StorageConflict | null>(null)
-  const [connectingProvider, setConnectingProvider] = useState<ConnectingProviderInfo | null>(null)
+  const error = selectLoginFlowVisibleError({
+    flow,
+    storeError,
+    localOnboarding,
+  })
   const isDesktop = typeof window !== 'undefined' && Boolean(window.xpodDesktop?.auth)
   const resetDesktopAuthState = useCallback((): void => {
     desktopAuthPendingRef.current = false
@@ -101,6 +162,17 @@ export function useLoginController() {
     source: LocalLoginProviderSource,
     options?: { restoreAccount?: StoredAccount | null },
   ) => {
+    console.info('[login] connect ready local snapshot', {
+      source,
+      snapshotState: snapshot.state,
+      snapshotSpaceKind: snapshot.spaceKind,
+      hasLocalUrl: Boolean(snapshot.localUrl),
+      hasBaseUrl: Boolean(snapshot.baseUrl),
+      hasPublicUrl: Boolean(snapshot.publicUrl),
+      hasProvisionCode: Boolean(snapshot.provisionCode),
+      isLoggedIn: session.info.isLoggedIn,
+      webId: session.info.webId,
+    })
     const storedSolidSession = getStoredSolidSession()
     const accountForReuse = options?.restoreAccount ?? storedAccount
     const shouldTrySilentDesktopAuth = isDesktop
@@ -134,10 +206,6 @@ export function useLoginController() {
 
     const oidcEntryUrl = accountIssuerUrl
 
-    const connectKey = `${oidcEntryUrl}|${accountIssuerUrl}|${localProviderUrl}|${snapshot.provisionCode ?? ''}`
-    if (localConnectKeyRef.current === connectKey) return
-    localConnectKeyRef.current = connectKey
-    silentLocalFallbackStartedRef.current = false
 
     setLocalLoginActive(false)
     setState('connecting')
@@ -155,7 +223,7 @@ export function useLoginController() {
     })
 
     const connectOptions = {
-      authorizationSurface: 'embedded',
+      authorizationSurface: isDesktop ? 'embedded' : 'window',
       route: source,
       accountIssuerUrl,
       accountIssuerLabel: isStandalone ? 'Standalone' : 'Cloud',
@@ -171,13 +239,30 @@ export function useLoginController() {
     } as const
 
     try {
-      await oidc.connect(oidcEntryUrl, connectOptions)
+      console.info('[login] starting oidc local connect', {
+        source,
+        oidcEntryUrl,
+        accountIssuerUrl,
+        localProviderUrl,
+        authorizationSurface: connectOptions.authorizationSurface,
+        strictDiscovery: connectOptions.strictDiscovery === true,
+      })
+      await waitForLoginHandoff(
+        oidc.connect(oidcEntryUrl, connectOptions),
+        oidc.cancel,
+      )
     } catch (error: any) {
+      console.warn('[login] local oidc connect failed', {
+        source,
+        message: error instanceof Error ? error.message : String(error),
+      })
       resetDesktopAuthState()
-      localConnectKeyRef.current = null
       setConnectingProvider(null)
       setState('idle')
-      setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回空间选择页重试。'))
+      setError(
+        formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回空间选择页重试。'),
+        'auth-surface',
+      )
     }
   }, [
     isDesktop,
@@ -224,41 +309,6 @@ export function useLoginController() {
       || Boolean(getPendingCallbackError())
     const callbackRestoreFailed = path.startsWith('/auth/callback') && !hasCallbackError
 
-    const pendingAttempt = getPendingLoginAttempt()
-    const pendingTransaction = getPendingLoginTransaction()
-    const callbackError = getPendingCallbackError()
-    if (
-      pendingAttempt?.prompt === 'none'
-      && callbackError?.error
-      && isSilentAuthError(callbackError.error)
-      && !silentLocalFallbackStartedRef.current
-    ) {
-      silentLocalFallbackStartedRef.current = true
-      const retryEntryUrl = pendingTransaction
-        ? getLoginTransactionRetryEntryUrl(pendingTransaction)
-        : pendingAttempt.issuerUrl
-      void oidc.connect(retryEntryUrl, {
-        authorizationSurface: pendingAttempt.authorizationSurface,
-        returnToMicroAppId: pendingAttempt.returnToMicroAppId,
-        route: pendingTransaction?.route,
-        accountIssuerUrl: pendingTransaction?.accountIssuerUrl ?? pendingAttempt.accountIssuerUrl,
-        accountIssuerLabel: pendingTransaction?.accountIssuerLabel ?? pendingAttempt.accountIssuerLabel,
-        storageProviderUrl: pendingTransaction?.storageProviderUrl ?? pendingAttempt.storageProviderUrl,
-        storageProviderLabel: pendingTransaction?.storageProviderLabel ?? pendingAttempt.storageProviderLabel,
-        authorizationQuery: pendingTransaction?.authorizationQuery ?? pendingAttempt.authorizationQuery,
-        ...(shouldUseStrictDiscoveryForRetry(pendingTransaction, pendingAttempt)
-          ? { strictDiscovery: true as const }
-          : {}),
-        nodeId: pendingTransaction?.nodeId,
-      }).catch((error: any) => {
-        resetDesktopAuthState()
-        setConnectingProvider(null)
-        setError(formatLoginErrorForUser(error, '重新发起登录失败。请返回登录页后再试。'))
-        setState('idle')
-      })
-      return
-    }
-
     // Only act on callback restore failures — don't interfere with user-initiated connecting state
     if (!callbackRestoreFailed && state === 'restoring') {
       setState('idle')
@@ -270,7 +320,7 @@ export function useLoginController() {
     clearPendingLoginAttempt()
     clearPendingPostLoginMicroAppId()
     setConnectingProvider(null)
-    setError('登录未完成，请重试。')
+    setError('登录未完成，请重试。', 'auth-callback')
 
     navigate({
       to: '/$microAppId',
@@ -321,8 +371,6 @@ export function useLoginController() {
       setView('default')
       setActiveLocalProviderSource('local')
       setLocalLoginActive(false)
-      localConnectKeyRef.current = null
-      silentLocalFallbackStartedRef.current = false
       setState('idle')
     }
   }, [
@@ -404,7 +452,6 @@ export function useLoginController() {
         setActiveLocalProviderSource('local')
         setLocalLoginActive(false)
         setConnectingProvider(null)
-        localConnectKeyRef.current = null
         resetDesktopAuthState()
         clearPendingCallbackError()
         clearPendingLoginAttempt()
@@ -425,7 +472,6 @@ export function useLoginController() {
       setActiveLocalProviderSource('local')
       setLocalLoginActive(false)
       setConnectingProvider(null)
-      localConnectKeyRef.current = null
       resetDesktopAuthState()
       clearPendingCallbackError()
       clearPendingLoginAttempt()
@@ -464,7 +510,7 @@ export function useLoginController() {
       }
       clearStoredSolidSession()
       setState('idle')
-      setError(formatLoginErrorForUser(error, '登录后初始化失败。请返回登录页后重试。'))
+      setError(formatLoginErrorForUser(error, '登录后初始化失败。请返回登录页后重试。'), 'auth-callback')
     })
 
     return () => {
@@ -490,11 +536,27 @@ export function useLoginController() {
 
   const startLocalLogin = useCallback(async (
     source: LocalLoginProviderSource,
-    options?: { restoreAccount?: StoredAccount | null },
+    options?: { restoreAccount?: StoredAccount | null; skipStoredSessionRestore?: boolean },
   ) => {
+    if (localLoginAttemptRef.current) {
+      console.info('[login] ignored duplicate local login attempt', { source })
+      return
+    }
+    localLoginAttemptRef.current = true
+    console.info('[login] start local login', {
+      source,
+      hasRestoreAccount: Boolean(options?.restoreAccount),
+      skipStoredSessionRestore: options?.skipStoredSessionRestore === true,
+      isDesktop,
+      isLoggedIn: session.info.isLoggedIn,
+      webId: session.info.webId,
+    })
+    const shouldResetFailedAuthSession = !session.info.isLoggedIn
+      && (flow.error?.scope === 'auth-surface' || Boolean(storeError))
     loginFinalizeGenerationRef.current += 1
     suppressAutoLoginRef.current = false
     setStorageConflict(null)
+    prepareFreshLoginAttempt()
     setError(null)
     setState('idle')
     setConnectingProvider(null)
@@ -503,18 +565,41 @@ export function useLoginController() {
     setView('local')
     setActiveLocalProviderSource(source)
     setLocalLoginActive(false)
-    localConnectKeyRef.current = null
-    silentLocalFallbackStartedRef.current = false
 
     try {
-      const canRestoreLocalSession = Boolean(
+      if (shouldResetFailedAuthSession) {
+        try {
+          await logout()
+        } catch (error) {
+          console.warn('[login] failed auth session reset was ignored', error)
+        }
+        prepareFreshLoginAttempt()
+      }
+
+      const storedSolidSession = getStoredSolidSession()
+      const canReuseActiveLocalSession = Boolean(
         options?.restoreAccount
+        && session.info.isLoggedIn
         && canReuseSessionForLocalSpace({
           account: options.restoreAccount,
           providers,
           activeWebId: session.info.webId,
-          storedSolidSession: getStoredSolidSession(),
+          storedSolidSession: null,
         }),
+      )
+      const canTryDesktopStoredLocalSession = Boolean(
+        isDesktop
+        && !options?.skipStoredSessionRestore
+        && options?.restoreAccount
+        && canReuseSessionForLocalSpace({
+          account: options.restoreAccount,
+          providers,
+          activeWebId: session.info.webId,
+          storedSolidSession,
+        }),
+      )
+      const canRestoreLocalSession = Boolean(
+        canReuseActiveLocalSession || canTryDesktopStoredLocalSession,
       )
 
       if (!canRestoreLocalSession && session.info.isLoggedIn) {
@@ -526,11 +611,23 @@ export function useLoginController() {
         }
       }
 
+      if (!isDesktop && !canRestoreLocalSession && storedSolidSession) {
+        clearStoredSolidAuthRecords()
+      }
+
       const snapshot = await startLocal(source)
+      console.info('[login] local start snapshot', {
+        requestedSource: source,
+        snapshotState: snapshot?.state,
+        snapshotSpaceKind: snapshot?.spaceKind,
+        hasLocalUrl: Boolean(snapshot?.localUrl),
+        hasBaseUrl: Boolean(snapshot?.baseUrl),
+        hasPublicUrl: Boolean(snapshot?.publicUrl),
+      })
 
       if (snapshot?.state === 'error') {
         setLocalLoginActive(false)
-        setError(formatLoginErrorForUser(snapshot.message, '本地空间启动失败。请稍后重试。'))
+        setError(formatLoginErrorForUser(snapshot.message, '本地空间启动失败。请稍后重试。'), 'local-start')
         return
       }
 
@@ -545,22 +642,6 @@ export function useLoginController() {
           return
         }
 
-        if (!isDesktop && getStoredSolidSession()) {
-          setState('restoring')
-
-          try {
-            const restored = await restoreStoredSolidSession(session)
-
-            if (restored?.isLoggedIn || session.info.isLoggedIn) {
-              setState('restoring')
-              return
-            }
-          } catch {
-            // fall through to interactive login
-          } finally {
-            setState('idle')
-          }
-        }
       }
 
       if (snapshot?.state === 'ready') {
@@ -573,9 +654,11 @@ export function useLoginController() {
       setLocalLoginActive(isLocalStartupSnapshot(snapshot))
     } catch (error: any) {
       setLocalLoginActive(false)
-      setError(formatLoginErrorForUser(error, '本地空间启动失败。请稍后重试。'))
+      setError(formatLoginErrorForUser(error, '本地空间启动失败。请稍后重试。'), 'local-start')
+    } finally {
+      localLoginAttemptRef.current = false
     }
-  }, [connectReadyLocalSnapshot, isDesktop, logout, providers, resetDesktopAuthState, session, setError, setState, startLocal, storedAccount])
+  }, [connectReadyLocalSnapshot, flow.error?.scope, isDesktop, logout, providers, resetDesktopAuthState, session, setError, setState, startLocal, storeError, storedAccount])
 
   const connect = useCallback(async (providerKey: string) => {
     loginFinalizeGenerationRef.current += 1
@@ -590,6 +673,7 @@ export function useLoginController() {
       })
       return
     }
+    prepareFreshLoginAttempt()
     const issuerUrl = provider?.oidcProvider?.url ?? normalizedProviderKeyUrl
     const storageProviderUrl = provider?.storageProvider?.url ?? normalizedProviderKeyUrl
 
@@ -620,7 +704,7 @@ export function useLoginController() {
     } catch (err: any) {
       resetDesktopAuthState()
       setConnectingProvider(null)
-      setError(formatLoginErrorForUser(err, '连接失败。请检查网络后重试。'))
+      setError(formatLoginErrorForUser(err, '连接失败。请检查网络后重试。'), 'auth-surface')
       setState('idle')
     }
   }, [oidc, providers, resetDesktopAuthState, setError, setState, startLocalLogin, storedAccount])
@@ -658,46 +742,13 @@ export function useLoginController() {
       return
     }
 
-    const storedSolidSession = getStoredSolidSession()
-    if (!isDesktop && storedSolidSession) {
-      setState('restoring')
-      void session.handleIncomingRedirect({
-        url: window.location.href,
-        restorePreviousSession: true,
-      }).then((restored) => {
-        if (restored?.isLoggedIn || session.info.isLoggedIn) {
-          setState('restoring')
-          return
-        }
-
-        setState('idle')
-        const matched = resolveStoredAccountProvider(targetStorageProviderUrl, providers)
-        if (matched) {
-          const matchedSource = resolveLoginProviderSource(matched)
-          if (isLocalLoginProviderSource(matchedSource)) {
-            void startLocalLogin(matchedSource)
-            return
-          }
-          void connect(matched.id)
-          return
-        }
-
-        if (isLocalAccessUrl(targetStorageProviderUrl)) {
-          void startLocalLogin('standalone')
-          return
-        }
-
-        void connect(targetStorageProviderUrl)
-      }).catch(() => {
-        setState('idle')
-      })
-      return
-    }
-
     if (matched) {
       const matchedSource = resolveLoginProviderSource(matched)
       if (isLocalLoginProviderSource(matchedSource)) {
-        void startLocalLogin(matchedSource)
+        void startLocalLogin(matchedSource, {
+          restoreAccount: storedAccount,
+          skipStoredSessionRestore: true,
+        })
         return
       }
       void connect(matched.id)
@@ -705,7 +756,10 @@ export function useLoginController() {
     }
 
     if (isLocalAccessUrl(targetStorageProviderUrl)) {
-      void startLocalLogin('standalone')
+      void startLocalLogin('standalone', {
+        restoreAccount: storedAccount,
+        skipStoredSessionRestore: true,
+      })
       return
     }
 
@@ -713,6 +767,15 @@ export function useLoginController() {
   }, [connect, isDesktop, providers, session, setState, startLocalLogin, storedAccount])
 
   const signInLocalOnboarding = useCallback(async () => {
+    setError(null)
+    console.info('[login] sign in local onboarding', {
+      activeLocalProviderSource,
+      onboardingState: localOnboarding?.state,
+      onboardingSpaceKind: localOnboarding?.spaceKind,
+      hasLocalUrl: Boolean(localOnboarding?.localUrl),
+      hasBaseUrl: Boolean(localOnboarding?.baseUrl),
+      hasPublicUrl: Boolean(localOnboarding?.publicUrl),
+    })
     if (!localOnboarding || localOnboarding.state !== 'ready') {
       void startLocalLogin(activeLocalProviderSource, {
         restoreAccount: getReusableLocalStoredAccount(storedAccount, providers, activeLocalProviderSource),
@@ -735,6 +798,7 @@ export function useLoginController() {
     connectReadyLocalSnapshot,
     localOnboarding,
     providers,
+    setError,
     startLocalLogin,
     storedAccount,
   ])
@@ -751,7 +815,7 @@ export function useLoginController() {
     try {
       await desktopApi.localOnboarding.saveTunnelToken({ token })
     } catch (error: any) {
-      setError(formatLoginErrorForUser(error, '保存隧道密钥失败。请稍后重试。'))
+      setError(formatLoginErrorForUser(error, '保存隧道密钥失败。请稍后重试。'), 'connectivity')
     } finally {
       setLocalLoginActive(false)
     }
@@ -769,7 +833,7 @@ export function useLoginController() {
     try {
       await desktopApi.localOnboarding.testConnectivity()
     } catch (error: any) {
-      setError(formatLoginErrorForUser(error, '测试本地空间连接失败。请稍后重试。'))
+      setError(formatLoginErrorForUser(error, '测试本地空间连接失败。请稍后重试。'), 'connectivity')
     } finally {
       setLocalLoginActive(false)
     }
@@ -787,7 +851,6 @@ export function useLoginController() {
     setLocalLoginActive(false)
     setStoredAccount(null)
     setConnectingProvider(null)
-    localConnectKeyRef.current = null
     setState('idle')
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
@@ -802,8 +865,6 @@ export function useLoginController() {
     setActiveLocalProviderSource('local')
     setLocalLoginActive(false)
     setConnectingProvider(null)
-    localConnectKeyRef.current = null
-    silentLocalFallbackStartedRef.current = false
     resetDesktopAuthState()
     clearPendingCallbackError()
     clearPendingLoginAttempt()
@@ -833,9 +894,9 @@ export function useLoginController() {
     setActiveLocalProviderSource('local')
     setLocalLoginActive(false)
     setConnectingProvider(null)
-    localConnectKeyRef.current = null
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
+    reloadAfterSessionReset()
   }, [embeddedAuthorization, logout, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
 
   const signOut = useCallback(async () => {
@@ -854,10 +915,10 @@ export function useLoginController() {
     setActiveLocalProviderSource('local')
     setLocalLoginActive(false)
     setConnectingProvider(null)
-    localConnectKeyRef.current = null
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
     reset()
+    reloadAfterSessionReset()
   }, [embeddedAuthorization, logout, oidc, reset, resetDesktopAuthState])
 
   // Listen for sign-out events from other components (e.g. PrimaryLayout)
@@ -877,7 +938,6 @@ export function useLoginController() {
     setView('default')
     setLocalLoginActive(false)
     setConnectingProvider(null)
-    localConnectKeyRef.current = null
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
   }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
@@ -955,13 +1015,6 @@ function isLocalStartupSnapshot(snapshot: LocalOnboardingSnapshot | null | undef
   }
 
   return snapshot.state === 'checking' || snapshot.state === 'starting'
-}
-
-function isSilentAuthError(error: string): boolean {
-  return error === 'login_required'
-    || error === 'interaction_required'
-    || error === 'consent_required'
-    || error === 'account_selection_required'
 }
 
 function resolveStorageConflictAction(
@@ -1310,50 +1363,6 @@ function resolveProviderDisplayName(provider: LoginProviderOption | undefined, f
   } catch {
     return fallbackUrl
   }
-}
-
-function shouldUseStrictDiscoveryForRetry(
-  transaction: LoginTransaction | null,
-  attempt: ReturnType<typeof getPendingLoginAttempt>,
-): boolean {
-  if (transaction?.strictDiscovery === true || attempt?.strictDiscovery === true) {
-    return true
-  }
-
-  if (transaction?.route === 'standalone') {
-    return true
-  }
-
-  if (transaction?.route === 'local') {
-    return false
-  }
-
-  return isStandaloneOrLoopbackPendingLoginAttempt(attempt)
-}
-
-function isStandaloneOrLoopbackPendingLoginAttempt(attempt: ReturnType<typeof getPendingLoginAttempt>): boolean {
-  if (!attempt) {
-    return false
-  }
-
-  const storageProviderLabel = attempt.storageProviderLabel?.trim().toLowerCase()
-  if (storageProviderLabel === 'local') {
-    return false
-  }
-  if (storageProviderLabel === 'standalone') {
-    return true
-  }
-
-  const accountIssuerLabel = attempt.accountIssuerLabel?.trim().toLowerCase()
-  if (accountIssuerLabel === 'standalone') {
-    return true
-  }
-
-  return Boolean(
-    attempt.storageProviderUrl && isLocalAccessUrl(attempt.storageProviderUrl),
-  ) || Boolean(
-    attempt.issuerUrl && isLocalAccessUrl(attempt.issuerUrl),
-  )
 }
 
 function sameUrlOrigin(left: string, right: string): boolean {

@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ModelSelector } from '@/components/ui/model-selector'
 import { useToast } from '@/components/ui/use-toast'
 import { InboxBellButton } from '@/modules/inbox/components/InboxBellButton'
+import { useModelServices } from '@/modules/model-services/hooks/useModelServices'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useChatList, useChatMutations } from '../collections'
@@ -30,6 +31,7 @@ import {
 } from '@undefineds.co/models'
 import { DEFAULT_LINX_PLATFORM_MODEL_ID, LINX_PLATFORM_PROVIDER_ID, findAgentProviderForModel, getAgentProviderInfo, normalizeChatModelId } from '@/lib/agent-providers'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
+import { buildChatModelOptions, findProviderForModel } from '../model-options'
 import {
   describeAgentWorkspaceAccess,
   readAgentAiRuntimeLocation,
@@ -51,6 +53,11 @@ export function ChatHeader() {
 
   const { data: chats } = useChatList()
   const mutations = useChatMutations()
+  const { providers: modelServiceProviders } = useModelServices()
+  const modelOptions = useMemo(
+    () => buildChatModelOptions(modelServiceProviders),
+    [modelServiceProviders],
+  )
 
   const chat = useMemo(
     () => chats?.find((c) => c.id === selectedChatId) ?? null,
@@ -71,10 +78,30 @@ export function ChatHeader() {
     if (!provider) return null
     return getAgentProviderInfo(provider)
   }, [provider])
+  const selectedModelOption = useMemo(
+    () =>
+      modelOptions.find((option) => option.providerId === provider && option.id === model)
+      ?? modelOptions.find((option) => option.id === model),
+    [model, modelOptions, provider],
+  )
+  const currentProviderName =
+    selectedModelOption?.providerName
+    || modelServiceProviders[provider]?.name
+    || providerInfo?.displayName
+    || provider
+  const currentModelName = selectedModelOption?.name || model || 'Select Model'
+  const currentProviderDisabled = provider !== LINX_PLATFORM_PROVIDER_ID && modelServiceProviders[provider]?.enabled === false
   const draftProvider = useMemo(() => {
-    const providerSlug = findAgentProviderForModel(modelDraft)
-    return providerSlug ? getAgentProviderInfo(providerSlug) : null
-  }, [modelDraft])
+    const providerSlug = findProviderForModel(modelOptions, modelDraft, provider) ?? findAgentProviderForModel(modelDraft)
+    const modelOption = modelOptions.find((option) => option.providerId === providerSlug && option.id === modelDraft)
+      ?? modelOptions.find((option) => option.id === modelDraft)
+    return providerSlug
+      ? {
+          id: providerSlug,
+          displayName: modelOption?.providerName || modelServiceProviders[providerSlug]?.name || getAgentProviderInfo(providerSlug)?.displayName || providerSlug,
+        }
+      : null
+  }, [modelDraft, modelOptions, modelServiceProviders, provider])
   const isSavingAgentProfile = mutations.updateAgentProfile.isPending
   const isSavingModel = mutations.updateAgentModel.isPending
 
@@ -180,7 +207,7 @@ export function ChatHeader() {
       return
     }
 
-    const nextProvider = findAgentProviderForModel(normalizedModel)
+    const nextProvider = findProviderForModel(modelOptions, normalizedModel, provider) ?? findAgentProviderForModel(normalizedModel)
     if (!nextProvider) {
       toast({
         title: '无法识别模型提供方',
@@ -212,7 +239,9 @@ export function ChatHeader() {
     agentId,
     contactId,
     modelDraft,
+    modelOptions,
     mutations.updateAgentModel,
+    provider,
     refreshAgent,
     refreshContact,
     selectedChatId,
@@ -255,8 +284,13 @@ export function ChatHeader() {
                   </AvatarFallback>
                 </Avatar>
                 <span className="truncate text-sm text-muted-foreground">
-                  {model || 'Select Model'}
+                  {currentProviderName} / {currentModelName}
                 </span>
+                {currentProviderDisabled && (
+                  <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
+                    模型服务已停用
+                  </span>
+                )}
               </button>
             </>
           ) : (
@@ -363,6 +397,8 @@ export function ChatHeader() {
               <ModelSelector
                 type="chat"
                 value={modelDraft}
+                selectedProviderId={draftProvider?.id}
+                options={modelOptions}
                 onChange={setModelDraft}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground"
               />

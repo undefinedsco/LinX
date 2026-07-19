@@ -306,6 +306,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
         return (
           <Button
             onClick={onStop}
+            aria-label="停止生成"
             variant="secondary"
             size="icon"
             className="h-9 w-9 rounded-lg bg-red-500 hover:bg-red-600 text-white"
@@ -318,6 +319,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
       return (
         <Button
           onClick={onSend}
+          aria-label="发送"
           disabled={disabled || !value.trim()}
           size="icon"
           className="h-9 w-9 rounded-lg"

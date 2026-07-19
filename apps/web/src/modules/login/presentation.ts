@@ -110,7 +110,7 @@ export function getProviderActionLabel(provider: LoginProviderOption): string {
         case 'repair_required':
           return '设置'
         case 'ready':
-          return '登录'
+          return '继续登录'
         case 'error':
           return '修复'
       }
@@ -124,7 +124,7 @@ export function getProviderActionLabel(provider: LoginProviderOption): string {
       case 'starting':
         return '查看'
       case 'running':
-        return '登录'
+        return '继续登录'
       case 'error':
         return '修复'
     }
@@ -141,11 +141,11 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
   }
 
   if (source === 'local' && provider.runtime?.onboarding?.state === 'ready') {
-    return { label: '可用', tone: 'success' }
+    return { label: '已准备好', tone: 'success' }
   }
 
   if (source === 'standalone' && provider.runtime?.onboarding?.state === 'ready') {
-    return { label: '可用', tone: 'success' }
+    return { label: '已准备好', tone: 'success' }
   }
 
   if (provider.runtime?.kind === 'local-pod') {
@@ -162,7 +162,7 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
         case 'repair_required':
           return { label: '需设置', tone: 'warning' }
         case 'ready':
-          return { label: '就绪', tone: 'success' }
+          return { label: '已准备好', tone: 'success' }
         case 'error':
           return { label: '需修复', tone: 'danger' }
       }
@@ -172,7 +172,7 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
       case 'starting':
         return { label: '准备中', tone: 'primary' }
       case 'running':
-        return { label: '就绪', tone: 'success' }
+        return { label: '已准备好', tone: 'success' }
       case 'error':
         return { label: '需修复', tone: 'danger' }
       case 'stopped':

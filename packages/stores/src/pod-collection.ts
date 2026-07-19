@@ -5,6 +5,7 @@ import type { SolidDatabase } from '@undefineds.co/models'
 import { asBaseRelativeResourceId, requireRowResourceId } from '@linx/agent-runtime/pod-resource-identity'
 import type { PodResource as PodResourceSchema } from '@undefineds.co/drizzle-solid'
 import { deleteExactRecord, updateExactRecord } from './exact-records'
+import { getPodNotificationManager } from './pod-notification-manager'
 
 function isPodCollectionDebugEnabled(): boolean {
   return typeof process !== 'undefined'
@@ -141,6 +142,7 @@ export function createPodCollection<
         const ensured = ensureId(modified as TData, 'insert')
         const payload = toPersistableInsert(ensured, resource)
         await db.insert(resource).values(payload as any).execute()
+        return { refetch: false }
       },
 
       // UPDATE
@@ -151,6 +153,7 @@ export function createPodCollection<
 
         try {
           await updateExactRecord(db, resource as any, (original ?? modified) as any, modified as any)
+          return { refetch: false }
         } catch (error) {
           console.error(`[PodCollection] Update failed for ${queryKey.join('/')}:`, error)
           throw error
@@ -163,6 +166,7 @@ export function createPodCollection<
         if (!db) throw new Error('Database not connected')
         const { original } = transaction.mutations[0]
         await deleteExactRecord(db, resource as any, original as any)
+        return { refetch: false }
       }
     })
   )
@@ -190,7 +194,7 @@ export function createPodCollection<
     }
 
     try {
-      const sub = await (db as any).subscribe(resource, {
+      const unsubscribe = await getPodNotificationManager(db).register(resource, {
         onCreate: async (activity: any) => {
           debugPodCollection(`[PodCollection] onCreate: ${activity.object}`)
           // 直接 invalidate，让 useQuery 重新获取完整列表
@@ -207,7 +211,7 @@ export function createPodCollection<
       })
       
       debugPodCollection(`[PodCollection] Subscribed to ${queryKey.join('/')}`)
-      return () => sub.unsubscribe()
+      return unsubscribe
     } catch (error) {
       console.error(`[PodCollection] Subscription failed`, error)
       return () => {}

@@ -182,6 +182,80 @@ async function requestJson(origin, pathname, options = {}) {
   })
 }
 
+async function requestText(origin, pathname, options = {}) {
+  const url = new URL(pathname, origin)
+
+  return await new Promise((resolve, reject) => {
+    const req = http.request(url, {
+      method: options.method ?? 'GET',
+      headers: options.headers ?? {},
+    }, (res) => {
+      let data = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => {
+        data += chunk
+      })
+      res.on('end', () => {
+        resolve({
+          status: res.statusCode,
+          body: data,
+          headers: res.headers,
+        })
+      })
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+test('serves service runtime marker as an external script and injects it into SPA HTML', async (t) => {
+  const { server } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const envScript = await requestText(origin, '/linx-service-env.js')
+  assert.equal(envScript.status, 200)
+  assert.match(envScript.body, /window\.__LINX_SERVICE__ = true/)
+
+  const html = await requestText(origin, '/chat')
+  assert.equal(html.status, 200)
+  assert.match(html.body, /src="\/linx-service-env\.js"/)
+  assert.match(html.body, /window\.__LINX_SERVICE__ = true/)
+})
+
+test('serves static Solid-OIDC client metadata for service web login', async (t) => {
+  const { server } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/auth/client')
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.client_id, `${origin}/auth/client`)
+  assert.equal(response.body.client_name, 'LinX')
+  assert.deepEqual(response.body.redirect_uris, [`${origin}/auth/callback`])
+  assert.equal(response.body.token_endpoint_auth_method, 'none')
+})
+
+test('static Solid-OIDC client metadata allows localhost callback when fetched from Docker host alias', async (t) => {
+  const { server } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/auth/client', {
+    headers: {
+      Host: 'host.docker.internal:5173',
+    },
+  })
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.client_id, 'http://host.docker.internal:5173/auth/client')
+  assert.deepEqual(response.body.redirect_uris, [
+    'http://host.docker.internal:5173/auth/callback',
+    'http://localhost:5173/auth/callback',
+  ])
+})
+
 test('setup writes Cloud+Local user-managed canonical domain env when Local has a public domain', async (t) => {
   const { server, tmpDir, fetchCalls } = loadWebServerWithStubs(t)
   const { listener, origin } = await listenOnRandomPort(server.app)
@@ -268,6 +342,37 @@ test('setup writes Cloud+Local Cloud-managed canonical domain env without a user
   assert.match(env, /^LINX_PROVISION_CODE=provision-code$/m)
   assert.match(env, /^LINX_SP_DOMAIN=node-0000\.undefineds\.co$/m)
   assert.doesNotMatch(env, /^LINX_PUBLIC_DOMAIN=/m)
+})
+
+test('setup preserves configured Postgres storage URLs for external xpod local dev', async (t) => {
+  const { server, tmpDir } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  fs.writeFileSync(path.join(tmpDir, '.env'), [
+    'LINX_EXTERNAL_XPOD=true',
+    'CSS_SPARQL_ENDPOINT=postgresql://postgres:postgres@host.docker.internal:5432/xpod_local',
+    'CSS_IDENTITY_DB_URL=postgresql://postgres:postgres@host.docker.internal:5432/xpod_local',
+    'CSS_USAGE_DB_URL=postgresql://postgres:postgres@host.docker.internal:5432/xpod_local',
+  ].join('\n'))
+
+  const response = await requestJson(origin, '/api/setup', {
+    method: 'POST',
+    body: setupPayload({
+      spaceKind: 'standalone',
+      publicDomain: '',
+    }),
+  })
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.success, true)
+
+  const env = fs.readFileSync(path.join(tmpDir, '.env'), 'utf-8')
+  assert.match(env, /^LINX_EXTERNAL_XPOD=true$/m)
+  assert.match(env, /^CSS_SPARQL_ENDPOINT=postgresql:\/\/postgres:postgres@host\.docker\.internal:5432\/xpod_local$/m)
+  assert.match(env, /^CSS_IDENTITY_DB_URL=postgresql:\/\/postgres:postgres@host\.docker\.internal:5432\/xpod_local$/m)
+  assert.match(env, /^CSS_USAGE_DB_URL=postgresql:\/\/postgres:postgres@host\.docker\.internal:5432\/xpod_local$/m)
+  assert.doesNotMatch(env, /quadstore\.sqlite|identity\.sqlite|usage\.sqlite/)
 })
 
 test('setup returns user-facing copy when Local binding fails', async (t) => {
@@ -387,7 +492,7 @@ test('setup config persists a generated runtime device identity', async (t) => {
   assert.equal(fs.readFileSync(path.join(tmpDir, '.device-id'), 'utf-8').trim(), first.body.deviceId)
 })
 
-test('service start accepts the configured Local space', async (t) => {
+test('service start accepts the configured Local space with Cloud registration', async (t) => {
   const { server, tmpDir, startCalls } = loadWebServerWithStubs(t)
   const { listener, origin } = await listenOnRandomPort(server.app)
   t.after(() => listener.close())
@@ -395,6 +500,11 @@ test('service start accepts the configured Local space', async (t) => {
   fs.writeFileSync(path.join(tmpDir, '.env'), [
     'LINX_SPACE_KIND=local',
     'CSS_PORT=5737',
+    'CSS_BASE_URL=https://node-0000.undefineds.co/',
+    'XPOD_NODE_ID=node-123',
+    'XPOD_NODE_TOKEN=node-token',
+    'XPOD_SERVICE_TOKEN=service-token',
+    'LINX_PROVISION_CODE=provision-code',
   ].join('\n'))
 
   const response = await requestJson(origin, '/api/service/start', {
@@ -407,7 +517,7 @@ test('service start accepts the configured Local space', async (t) => {
   assert.equal(startCalls.length, 1)
 })
 
-test('service start rejects a requested space that does not match generated config', async (t) => {
+test('service start accepts Standalone when Local config has no Cloud registration', async (t) => {
   const { server, tmpDir, startCalls } = loadWebServerWithStubs(t)
   const { listener, origin } = await listenOnRandomPort(server.app)
   t.after(() => listener.close())
@@ -415,6 +525,31 @@ test('service start rejects a requested space that does not match generated conf
   fs.writeFileSync(path.join(tmpDir, '.env'), [
     'LINX_SPACE_KIND=local',
     'CSS_PORT=5737',
+  ].join('\n'))
+
+  const response = await requestJson(origin, '/api/service/start', {
+    method: 'POST',
+    body: { spaceKind: 'standalone' },
+  })
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.success, true)
+  assert.equal(startCalls.length, 1)
+})
+
+test('service start rejects a requested space that does not match the effective config', async (t) => {
+  const { server, tmpDir, startCalls } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  fs.writeFileSync(path.join(tmpDir, '.env'), [
+    'LINX_SPACE_KIND=local',
+    'CSS_PORT=5737',
+    'CSS_BASE_URL=https://node-0000.undefineds.co/',
+    'XPOD_NODE_ID=node-123',
+    'XPOD_NODE_TOKEN=node-token',
+    'XPOD_SERVICE_TOKEN=service-token',
+    'LINX_PROVISION_CODE=provision-code',
   ].join('\n'))
 
   const response = await requestJson(origin, '/api/service/start', {
@@ -453,6 +588,11 @@ test('service start failure returns user-facing copy without runtime details', a
   fs.writeFileSync(path.join(tmpDir, '.env'), [
     'LINX_SPACE_KIND=local',
     'CSS_PORT=5737',
+    'CSS_BASE_URL=https://node-0000.undefineds.co/',
+    'XPOD_NODE_ID=node-123',
+    'XPOD_NODE_TOKEN=node-token',
+    'XPOD_SERVICE_TOKEN=service-token',
+    'LINX_PROVISION_CODE=provision-code',
   ].join('\n'))
 
   const response = await requestJson(origin, '/api/service/start', {
@@ -518,6 +658,83 @@ test('server AI proxy targets the running xpod runtime and ignores caller suppli
   assert.ok(aiCall)
   assert.equal(fetchCalls.some((call) => call.url.includes('evil.example')), false)
   assert.equal(JSON.parse(aiCall.init.body).model, 'linx-lite')
+})
+
+test('model service chat proxy forwards OpenAI-compatible requests without exposing keys in the URL', async (t) => {
+  const { server, fetchCalls } = loadWebServerWithStubs(t, {
+    aiResponse: async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/model-services/chat/completions', {
+    method: 'POST',
+    body: {
+      providerId: 'openai',
+      endpoint: 'https://example.com/v1/chat/completions',
+      apiKey: 'sk-test',
+      body: {
+        model: 'gpt-5.4-mini',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+      },
+    },
+  })
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body, { choices: [{ message: { content: 'ok' } }] })
+
+  const aiCall = fetchCalls.find((call) => call.url === 'https://example.com/v1/chat/completions')
+  assert.ok(aiCall)
+  assert.equal(aiCall.init.method, 'POST')
+  assert.equal(aiCall.init.headers.Authorization, 'Bearer sk-test')
+  assert.equal(aiCall.url.includes('sk-test'), false)
+  assert.equal(JSON.parse(aiCall.init.body).model, 'gpt-5.4-mini')
+})
+
+test('model service endpoints reject untrusted browser origins', async (t) => {
+  const { server } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/model-services/models', {
+    method: 'POST',
+    headers: { origin: 'https://attacker.example' },
+    body: { providerId: 'openai', endpoint: 'https://example.com/v1/models' },
+  })
+
+  assert.equal(response.status, 403)
+  assert.equal(response.body.error, '请求来源不受信任。')
+})
+
+test('model service proxy rejects private network targets except local Ollama', async (t) => {
+  const { server, fetchCalls } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const rejected = await requestJson(origin, '/api/model-services/chat/completions', {
+    method: 'POST',
+    body: {
+      providerId: 'openai',
+      endpoint: 'http://127.0.0.1:9999/private',
+      body: { model: 'gpt-test', messages: [] },
+    },
+  })
+
+  assert.equal(rejected.status, 400)
+  assert.equal(fetchCalls.some((call) => call.url.includes('127.0.0.1:9999')), false)
+})
+
+test('legacy local model config endpoint is removed', async (t) => {
+  const { server } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/model-services/local-config', { method: 'GET' })
+  assert.equal(response.status, 404)
 })
 
 test('stored Cloud registration is ignored when no public URL can be recovered', (t) => {

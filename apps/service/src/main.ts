@@ -10,6 +10,9 @@ import { app, BrowserWindow, shell } from 'electron'
 import { getXpodModule } from './lib/xpod'
 import { getWebServerModule } from './lib/web-server'
 import { getTrayModule } from './lib/tray'
+import { prependLinxLocalBinToPath } from './lib/linx-paths'
+
+prependLinxLocalBinToPath()
 
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock()
@@ -97,12 +100,16 @@ async function waitForSetupComplete(): Promise<void> {
 async function startServices(isAfterSetup = false): Promise<void> {
   console.log('[LinX] Starting services...')
 
-  // Start xpod
-  try {
-    await getXpodModule().start()
-    console.log('[LinX] xpod started')
-  } catch (error) {
-    console.error('[LinX] Failed to start xpod:', error)
+  // Start xpod unless the local Pod is managed externally, such as by Docker.
+  if (getWebServerModule().isExternalXpodEnabled()) {
+    console.log('[LinX] External xpod enabled; skipping managed xpod startup')
+  } else {
+    try {
+      await getXpodModule().start()
+      console.log('[LinX] xpod started')
+    } catch (error) {
+      console.error('[LinX] Failed to start xpod:', error)
+    }
   }
 
   // Start web server (skip if already started during setup)

@@ -856,6 +856,7 @@ export class LocalChatKitService {
   }
 
   private async getAiConfig(provider: string | null | undefined): Promise<{
+    providerId: string
     baseUrl: string
     apiKey: string
     defaultModel?: string
@@ -879,11 +880,53 @@ export class LocalChatKitService {
       providerRow ? [providerRow as Record<string, unknown>] : [],
     )
 
-    if (!selected) return null
+    if (!selected) {
+      return await this.getLocalServiceAiConfig(providerId)
+    }
 
     return {
+      providerId,
       baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
       apiKey: selected.apiKey,
+    }
+  }
+
+  private async getLocalServiceAiConfig(providerId: string): Promise<{
+    providerId: string
+    baseUrl: string
+    apiKey: string
+    defaultModel?: string
+  } | null> {
+    if (typeof window === 'undefined' || !(window as any).__LINX_SERVICE__) {
+      return null
+    }
+
+    const podUrl = (this.db as any)?.getDialect?.()?.getPodUrl?.()
+    if (typeof podUrl !== 'string' || !podUrl.trim()) {
+      return null
+    }
+
+    const params = new URLSearchParams({ podUrl, providerId })
+    const response = await fetch(`/api/model-services/local-config?${params.toString()}`)
+    if (!response.ok) {
+      return null
+    }
+    const body = await response.json()
+    const provider = Array.isArray(body?.providers) ? body.providers[0] : null
+    if (provider?.enabled === false) {
+      throw new Error('当前模型服务已停用，请重新选择模型。')
+    }
+    const apiKey = typeof provider?.apiKey === 'string' ? provider.apiKey : ''
+    const baseUrl = typeof provider?.baseUrl === 'string' ? provider.baseUrl : ''
+    const defaultModel = typeof provider?.selectedModelId === 'string' ? provider.selectedModelId : undefined
+    if (!apiKey || !baseUrl) {
+      return null
+    }
+    return {
+      providerId,
+      baseUrl,
+      apiKey,
+      defaultModel,
     }
   }
 
@@ -1111,69 +1154,61 @@ export class LocalChatKitService {
     return ''
   }
 
+  private fetchProviderChatCompletion(
+    config: { providerId: string; apiKey: string },
+    endpoint: string,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    if (this.isServiceMode()) {
+      return fetch('/api/model-services/chat/completions', {
+        method: 'POST',
+        headers: {
+          Accept: 'text/event-stream, text/plain, application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          providerId: config.providerId,
+          endpoint,
+          apiKey: config.apiKey,
+          body,
+        }),
+      })
+    }
+
+    return fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+  }
+
   private async *streamFromProvider(
-    config: { baseUrl: string; apiKey: string },
+    config: { providerId: string; baseUrl: string; apiKey: string },
     messages: Array<{ role: string; content: string }>,
     model: string,
     inferenceOptions?: any,
   ): AsyncIterable<string> {
     const cleanBase = config.baseUrl.replace(/\/$/, '')
     const endpoint = `${cleanBase}/chat/completions`
+    const body = {
+      model,
+      messages,
+      stream: true,
+      temperature: inferenceOptions?.temperature ?? 0.7,
+      max_tokens: inferenceOptions?.max_tokens ?? 2048,
+    }
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        stream: true,
-        temperature: inferenceOptions?.temperature ?? 0.7,
-        max_tokens: inferenceOptions?.max_tokens ?? 2048,
-      }),
-    })
+    const response = await this.fetchProviderChatCompletion(config, endpoint, body)
 
     if (!response.ok) {
       const text = await response.text()
       throw new Error(`AI API Error ${response.status}: ${text.slice(0, 200)}`)
     }
 
-    const reader = response.body?.getReader()
-    if (!reader) {
-      throw new Error('No response body')
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed || !trimmed.startsWith('data: ')) continue
-
-        const data = trimmed.slice(6)
-        if (data === '[DONE]') return
-
-        try {
-          const parsed = JSON.parse(data)
-          const delta = parsed.choices?.[0]?.delta?.content
-          if (delta) {
-            yield delta
-          }
-        } catch {
-          // skip malformed SSE lines
-        }
-      }
-    }
+    yield* this.readTextOrSseStream(response)
   }
 
   private async buildConversationHistory(

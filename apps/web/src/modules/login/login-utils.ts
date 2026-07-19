@@ -12,6 +12,7 @@ const PENDING_LOGIN_ATTEMPT_KEY = 'linx-pending-login-attempt'
 const CALLBACK_ERROR_KEY = 'linx-pending-callback-error'
 const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
 const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
+const PENDING_LOGIN_MAX_AGE_MS = 15 * 60 * 1000
 
 export interface PendingLoginAttempt {
   /** OIDC entry URL passed to Inrupt. For Local+Cloud this is the Cloud issuer. */
@@ -64,11 +65,13 @@ export const hasStoredSolidSession = (_storageKey?: string) => {
 
 export function getStoredSolidSession(): StoredSolidSessionInfo | null {
   if (typeof window === 'undefined') return null
+  const storage = getLocalStorage()
+  if (!storage) return null
 
-  const sessionId = window.localStorage.getItem(CURRENT_SOLID_SESSION_KEY)
+  const sessionId = storage.getItem(CURRENT_SOLID_SESSION_KEY)
   if (!sessionId) return null
 
-  const raw = window.localStorage.getItem(`${SOLID_SESSION_PREFIX}${sessionId}`)
+  const raw = storage.getItem(`${SOLID_SESSION_PREFIX}${sessionId}`)
   if (!raw) return null
 
   try {
@@ -93,21 +96,34 @@ function hasRestorableSessionMetadata(parsed: Record<string, unknown>): boolean 
     || parsed.isLoggedIn === true
     || typeof parsed.webId === 'string'
     || typeof parsed.refreshToken === 'string'
+    || (
+      typeof parsed.issuer === 'string'
+      && typeof parsed.redirectUrl === 'string'
+      && typeof parsed.clientId === 'string'
+      && (
+        parsed.dpop === 'true'
+        || parsed.dpop === true
+        || parsed.keepAlive === 'true'
+        || parsed.keepAlive === true
+      )
+    )
 }
 
 export function clearUnrestorableSolidAuthState(): boolean {
   if (typeof window === 'undefined') return false
   if (getStoredSolidSession()) return false
+  const storage = getLocalStorage()
+  if (!storage) return false
 
   let removed = false
-  const keys = Object.keys(localStorage)
+  const keys = Object.keys(storage)
   for (const key of keys) {
     if (
       key.startsWith('solidClientAuthenticationUser:')
       || key.startsWith('solidClientAuthn:')
       || key.startsWith('oidc.')
     ) {
-      localStorage.removeItem(key)
+      storage.removeItem(key)
       removed = true
     }
   }
@@ -117,19 +133,38 @@ export function clearUnrestorableSolidAuthState(): boolean {
 
 export const clearStoredSolidSession = (_storageKey?: string) => {
   if (typeof window === 'undefined') return
-  const keys = Object.keys(localStorage)
+  clearStoredSolidAuthRecords()
+  clearPendingPostLoginMicroAppId()
+  clearPendingLoginAttempt()
+  clearPendingCallbackError()
+}
+
+export function clearStoredSolidAuthRecords() {
+  if (typeof window === 'undefined') return
+  const storage = getLocalStorage()
+  if (!storage) return
+  const keys = Object.keys(storage)
   for (const key of keys) {
     if (
       key.startsWith('solidClientAuthenticationUser:')
       || key.startsWith('solidClientAuthn:')
       || key.startsWith('oidc.')
     ) {
-      localStorage.removeItem(key)
+      storage.removeItem(key)
     }
   }
-  clearPendingPostLoginMicroAppId()
-  clearPendingLoginAttempt()
-  clearPendingCallbackError()
+}
+
+function getLocalStorage(): Storage | null {
+  const storage = typeof window !== 'undefined' ? window.localStorage : undefined
+  if (
+    !storage
+    || typeof storage.getItem !== 'function'
+    || typeof storage.removeItem !== 'function'
+  ) {
+    return null
+  }
+  return storage
 }
 
 export function resolvePostLoginMicroAppId(pathname?: string): MicroAppId {
@@ -282,6 +317,42 @@ export function consumePendingLoginAttempt(): PendingLoginAttempt | null {
 export function clearPendingLoginAttempt() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(PENDING_LOGIN_ATTEMPT_KEY)
+}
+
+export function cleanupExpiredLoginTransaction(
+  now = Date.now(),
+  maxAgeMs = PENDING_LOGIN_MAX_AGE_MS,
+): boolean {
+  if (typeof window === 'undefined') return false
+  const raw = window.sessionStorage.getItem(PENDING_LOGIN_ATTEMPT_KEY)
+  if (!raw) return false
+
+  try {
+    const parsed = JSON.parse(raw) as PendingLoginPayload
+    const transactionPayload = parsed.loginTransaction ?? parsed.transaction
+    const createdAt = transactionPayload
+      && typeof transactionPayload === 'object'
+      && !Array.isArray(transactionPayload)
+      && typeof (transactionPayload as { createdAt?: unknown }).createdAt === 'number'
+        ? (transactionPayload as { createdAt: number }).createdAt
+        : typeof parsed.createdAt === 'number' ? parsed.createdAt : null
+    if (createdAt && createdAt <= now && now - createdAt <= maxAgeMs) {
+      return false
+    }
+  } catch {
+    // Malformed transient auth state is never useful for a future login.
+  }
+
+  clearPendingLoginAttempt()
+  return true
+}
+
+/** Prepare a user-initiated login without deleting remembered account data. */
+export function prepareFreshLoginAttempt(): void {
+  cleanupExpiredLoginTransaction()
+  clearPendingLoginAttempt()
+  clearPendingCallbackError()
+  clearUnrestorableSolidAuthState()
 }
 
 function normalizeStoredUrl(url?: string | null): string | null {

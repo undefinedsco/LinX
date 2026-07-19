@@ -33,14 +33,20 @@ Local 默认由 Cloud 分配 canonical domain。用户不需要填写平台生�
 CSS_PORT=5737
 CSS_BASE_URL=https://node-0000.undefineds.co
 CSS_ROOT_FILE_PATH=/path/to/pod
-CSS_SPARQL_ENDPOINT=sqlite:/path/to/quadstore.sqlite
-CSS_IDENTITY_DB_URL=sqlite:/path/to/identity.sqlite
+CSS_SPARQL_ENDPOINT=postgresql://postgres:postgres@host.docker.internal:5432/xpod_local
+CSS_IDENTITY_DB_URL=postgresql://postgres:postgres@host.docker.internal:5432/xpod_local
+CSS_USAGE_DB_URL=postgresql://postgres:postgres@host.docker.internal:5432/xpod_local
 oidcIssuer=https://id.undefineds.co
 XPOD_NODE_ID=...
 XPOD_NODE_TOKEN=...
 XPOD_SERVICE_TOKEN=...
 LINX_PROVISION_CODE=...
 ```
+
+本地 Docker 开发默认使用 Postgres。`LINX_EXTERNAL_XPOD=true` 时，Service 只连接外部
+Docker xpod，不再自己启动一套嵌入式 xpod；重新保存 setup 配置时会保留已有的
+`CSS_SPARQL_ENDPOINT`、`CSS_IDENTITY_DB_URL` 和 `CSS_USAGE_DB_URL`。SQLite 只作为没有显式
+存储配置时的嵌入式 fallback。
 
 `oidcIssuer` 是 xpod/CSS 组件配置的 canonical key。不要重新引入 `CSS_IDP_URL`、`XPOD_OIDC_ISSUER` 或 `idpUrl`。
 
@@ -57,10 +63,11 @@ LINX_PROVISION_CODE=...
 
 ```bash
 yarn install
-yarn build:service
-yarn build:web
-yarn start:service
+yarn dev:service
 ```
+
+`dev:service` 会先重新构建 Web，再编译并启动 Service，避免 `apps/web/dist` 残留旧 bundle。
+Service 使用静态集成模式；运行期间修改 Web 源码后，需要重新执行 `yarn dev:service`。
 
 ## 端口
 

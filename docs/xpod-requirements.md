@@ -28,11 +28,14 @@ LinX 会为本地 xpod 写入基础配置：
 | `CSS_PORT` | 监听端口 | `5737` |
 | `CSS_BASE_URL` | xpod canonical 对外 URL | `https://node-0000.undefineds.co/` 或 `https://pod.example.com/` |
 | `CSS_ROOT_FILE_PATH` | 数据目录 | `/Users/alice/Library/Application Support/LinX/pod` |
-| `CSS_SPARQL_ENDPOINT` | SPARQL 存储 | `sqlite:/path/to/quadstore.sqlite` |
-| `CSS_IDENTITY_DB_URL` | 身份数据库 | `sqlite:/path/to/identity.sqlite` |
+| `CSS_SPARQL_ENDPOINT` | SPARQL 存储 | `postgresql://postgres:postgres@host.docker.internal:5432/xpod_local` |
+| `CSS_IDENTITY_DB_URL` | 身份数据库 | `postgresql://postgres:postgres@host.docker.internal:5432/xpod_local` |
+| `CSS_USAGE_DB_URL` | 使用量数据库 | `postgresql://postgres:postgres@host.docker.internal:5432/xpod_local` |
 
 `CSS_BASE_URL` 是 xpod 的 canonical 对外入口。它在 Local 和
 Standalone 下的取值规则以 `docs/local-sp-domain-and-tunnel.md` 为准。
+本地 Docker 开发以 Postgres 为准；SQLite 只保留为未配置数据库 URL 时的嵌入式
+runtime fallback，不能作为 Docker PG 模式的排查依据。
 
 ### 2. Local + Cloud-managed Canonical Domain
 

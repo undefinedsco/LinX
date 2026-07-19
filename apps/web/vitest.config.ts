@@ -30,10 +30,23 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@linx/agent-runtime/chat-reconciler': path.resolve(
+        repoRoot,
+        'packages/agent-runtime/src/chat-reconciler.ts',
+      ),
+      '@linx/agent-runtime/matrix-client': path.resolve(
+        repoRoot,
+        'packages/agent-runtime/src/matrix-client.ts',
+      ),
       '@linx/agent-runtime/pod-resource-identity': path.resolve(
         repoRoot,
         'packages/agent-runtime/src/pod-resource-identity.ts',
       ),
+      '@linx/agent-runtime/thread-reconciler-controller': path.resolve(
+        repoRoot,
+        'packages/agent-runtime/src/thread-reconciler-controller.ts',
+      ),
+      '@linx/agent-runtime': path.resolve(repoRoot, 'packages/agent-runtime/src'),
       '@linx/stores/current-pod-base': path.resolve(repoRoot, 'packages/stores/src/current-pod-base.ts'),
       '@linx/stores/exact-records': path.resolve(repoRoot, 'packages/stores/src/exact-records.ts'),
       '@linx/stores/pod-db': path.resolve(repoRoot, 'packages/stores/src/pod-collection.ts'),

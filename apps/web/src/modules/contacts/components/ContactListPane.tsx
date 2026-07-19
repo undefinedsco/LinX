@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef, useEffect } from 'react'
+import { useMemo, useCallback, useRef } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useContactStore } from '../store'
@@ -225,21 +225,6 @@ export function ContactListPane({}: MicroAppPaneProps) {
   const setListFilter = useContactStore((state) => state.setListFilter)
 
   const { db } = useSolidDatabase()
-
-  // Subscribe to Pod notifications for real-time updates
-  useEffect(() => {
-    if (!db) return
-    
-    let cleanup: (() => void) | undefined
-    
-    contactOps.subscribeToPod().then((unsubscribe) => {
-      cleanup = unsubscribe
-    })
-    
-    return () => {
-      cleanup?.()
-    }
-  }, [db])
 
   // Use TanStack Query with contactOps for reactive updates
   const { data: rawContacts = [], isLoading } = useQuery({

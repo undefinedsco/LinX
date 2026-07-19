@@ -2,37 +2,43 @@ import { useMemo } from 'react'
 import { Switch } from '@/components/ui/switch'
 import type { MicroAppLayoutConfig } from '@/modules/layout/micro-app-registry'
 import { useModelServicesStore } from './store'
-import { MODEL_PROVIDERS } from './constants'
 import { useModelServices } from './hooks/useModelServices'
+import { resolveSelectedProviderId } from './selection'
 
 export function useModelServicesLayoutConfig(): MicroAppLayoutConfig {
   const selectedId = useModelServicesStore((state) => state.selectedProviderId)
   const { providers, updateProvider } = useModelServices()
 
-  const provider = useMemo(() => 
-    MODEL_PROVIDERS.find(p => p.id === selectedId), 
-  [selectedId])
-  const providerState = selectedId ? providers[selectedId] : null
+  const selectedProviderId = resolveSelectedProviderId(providers, selectedId)
+  const providerState = selectedProviderId ? providers[selectedProviderId] : null
+  const providerName = providerState?.name
+  const providerEnabled = Boolean(providerState?.enabled)
 
   return useMemo(
     () => ({
-      mainTitle: provider ? (
+      mainTitle: providerState ? (
         <div className="flex items-center gap-3">
-          <span>{provider.name}</span>
+          <span>{providerName}</span>
           <div onClick={(e) => e.stopPropagation()}>
             <Switch
               id="header-enable"
-              checked={providerState?.enabled || false}
-              onCheckedChange={(checked) => updateProvider(provider.id, { enabled: checked })}
+              aria-label={providerEnabled ? '停用服务' : '启用服务'}
+              title={providerEnabled ? '停用服务' : '启用服务'}
+              checked={providerEnabled}
+              onCheckedChange={(checked) => {
+                if (selectedProviderId) {
+                  updateProvider(selectedProviderId, { enabled: checked })
+                }
+              }}
               className="scale-90"
             />
           </div>
         </div>
       ) : '模型服务',
-      subtitle: provider ? '' : '配置 AI 提供商及模型',
+      subtitle: providerState ? '' : '配置 AI 提供商及模型',
       topActions: undefined,
       hideIcon: true,
     }),
-    [provider, providerState?.enabled, updateProvider],
+    [providerEnabled, providerName, providerState, selectedProviderId, updateProvider],
   )
 }

@@ -1395,10 +1395,10 @@ CSS_ACME_RENEW_BEFORE_DAYS=15
 
 #### 存储后端配置
 ```bash
-# SPARQL 存储
-CSS_SPARQL_ENDPOINT=sqlite:./data/quadstore.sqlite
-# 或
-CSS_SPARQL_ENDPOINT=postgres://user:pass@host/db
+# 本地 Docker 开发默认使用 PostgreSQL
+CSS_SPARQL_ENDPOINT=postgresql://postgres:postgres@host.docker.internal:5432/xpod_local
+CSS_IDENTITY_DB_URL=postgresql://postgres:postgres@host.docker.internal:5432/xpod_local
+CSS_USAGE_DB_URL=postgresql://postgres:postgres@host.docker.internal:5432/xpod_local
 
 # MinIO 对象存储
 CSS_MINIO_ENDPOINT=http://localhost:9000
@@ -1408,9 +1408,6 @@ CSS_MINIO_BUCKET=pods
 
 # Redis（缓存/锁）
 CSS_REDIS_URL=redis://localhost:6379
-
-# PostgreSQL（身份数据库）
-CSS_IDENTITY_DB_URL=postgres://user:pass@host/db
 ```
 
 ### 节点能力检测

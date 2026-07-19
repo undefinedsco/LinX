@@ -1,11 +1,11 @@
-// Provider definitions for the model-services surface.
-// Shared provider metadata comes from @undefineds.co/models/discovery; this file only
-// keeps web-specific presentation and docs links.
+// Provider templates for the model-services surface.
+// These are not auto-created as user providers; they only prefill the add-service flow.
 import type React from 'react'
 import { getBuiltinProvider } from '@undefineds.co/models'
 import { Globe } from 'lucide-react'
 import LinXLogoImage from '@/assets/linx-logo.png'
 import OpenAIImage from '@/assets/images/providers/openai.png'
+import AnthropicImage from '@/assets/images/providers/anthropic.png'
 import GoogleImage from '@/assets/images/providers/google.png'
 import DeepSeekImage from '@/assets/images/providers/deepseek.png'
 import OllamaImage from '@/assets/images/providers/ollama.png'
@@ -86,7 +86,7 @@ const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
   anthropic: {
     name: 'Anthropic',
     description: 'Claude 系列',
-    avatar: 'https://console.anthropic.com/static/favicon-32x32.png',
+    avatar: AnthropicImage,
     apiKeyUrl: 'https://console.anthropic.com/settings/keys',
     docsUrl: 'https://docs.anthropic.com/en/docs',
     modelsUrl: 'https://docs.anthropic.com/en/docs/about-claude/models',
@@ -216,7 +216,7 @@ function buildProviderDef(id: string): ProviderDef {
     id,
     name: extras.name || discoveryProvider?.displayName || id,
     description: extras.description ?? discoveryProvider?.description,
-    avatar: extras.avatar ?? discoveryProvider?.logoUrl,
+    avatar: extras.avatar,
     icon: extras.icon,
     homeUrl: extras.homeUrl ?? discoveryProvider?.homepage,
     docsUrl: extras.docsUrl,
@@ -229,4 +229,12 @@ function buildProviderDef(id: string): ProviderDef {
   }
 }
 
-export const MODEL_PROVIDERS: ProviderDef[] = MODEL_PROVIDER_ORDER.map((id) => buildProviderDef(id))
+export const MODEL_PROVIDER_TEMPLATES: ProviderDef[] = MODEL_PROVIDER_ORDER.map((id) => buildProviderDef(id))
+
+// Compatibility export for tests and older call sites. The UI treats these as templates,
+// not as providers that should be initialized automatically.
+export const MODEL_PROVIDERS = MODEL_PROVIDER_TEMPLATES
+
+export function getModelProviderTemplate(id: string): ProviderDef | undefined {
+  return MODEL_PROVIDER_TEMPLATES.find((provider) => provider.id === id)
+}

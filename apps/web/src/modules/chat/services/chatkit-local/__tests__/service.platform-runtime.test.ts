@@ -667,6 +667,122 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '用户模型')).toBe(true)
   })
 
+  it('proxies non-platform provider requests through the service in service mode', async () => {
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'openai',
+      model: 'gpt-5.4-mini',
+    }, [{
+      id: 'credentials.ttl#openai-default',
+      provider: '/settings/providers/openai.ttl',
+      service: 'ai',
+      status: 'active',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.openai.example/v1',
+    }])
+    const providerFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/runtime/threads')) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/api/model-services/chat/completions') {
+        return createSseResponse([
+          'data: {"choices":[{"delta":{"content":"服务代理"}}]}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', providerFetch)
+    const authFetch = vi.fn(async () => new Response('', { status: 404 }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(providerFetch).toHaveBeenCalledWith(
+      '/api/model-services/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Accept: 'text/event-stream, text/plain, application/json',
+          'Content-Type': 'application/json',
+        }),
+      }),
+    )
+    const proxyCall = providerFetch.mock.calls.find(([input]) => input === '/api/model-services/chat/completions')
+    expect(proxyCall).toBeTruthy()
+    const body = JSON.parse((proxyCall?.[1] as RequestInit).body as string)
+    expect(body).toEqual(expect.objectContaining({
+      providerId: 'openai',
+      endpoint: 'https://api.openai.example/v1/chat/completions',
+      apiKey: 'sk-test',
+    }))
+    expect(body.body).toEqual(expect.objectContaining({
+      model: 'gpt-5.4-mini',
+      stream: true,
+    }))
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '服务代理')).toBe(true)
+  })
+
+  it('stops when the bound local model service is disabled', async () => {
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({
+      provider: 'openai22',
+      model: 'gpt-5.4-mini',
+    }, 'http://localhost:5737/cuilinsu/')
+    const providerFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/model-services/local-config')) {
+        return new Response(JSON.stringify({
+          providers: [{
+            id: 'openai22',
+            name: 'OpenAI22',
+            enabled: false,
+            baseUrl: 'https://api.openai.example/v1',
+            apiKey: 'sk-test',
+          }],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.startsWith('/api/runtime/threads')) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', providerFetch)
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: vi.fn() as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(providerFetch).not.toHaveBeenCalledWith('/api/model-services/chat/completions', expect.anything())
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({
+        message: '当前模型服务已停用，请重新选择模型。',
+      }),
+    }))
+  })
+
   it('does not raw-fetch credentials.ttl when shared credential lookup has no match', async () => {
     const store = createMockStore()
     const db = createMockDb({

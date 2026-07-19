@@ -136,8 +136,10 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(db)
-    expect(subscribeToPodMock).toHaveBeenCalledTimes(1)
-    expect(subscribeSymphonyControlToPodMock).toHaveBeenCalledTimes(1)
+    expect(subscribeToPodMock).not.toHaveBeenCalled()
+    // Symphony control data is loaded on demand. Eight global SSE subscriptions
+    // would exhaust the browser's HTTP/1.1 connection pool for the local Pod.
+    expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })
     expect(selectChatMock).toHaveBeenCalledWith('__secretary__/index.ttl#this')

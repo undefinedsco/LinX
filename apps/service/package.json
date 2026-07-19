@@ -5,8 +5,9 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/main.js",
-    "dev": "tsx watch src/main.ts",
+    "start": "electron .",
+    "predev": "yarn workspace @linx/web build",
+    "dev": "yarn build && electron .",
     "dev:setup": "tsx src/setup/server.ts"
   },
   "dependencies": {

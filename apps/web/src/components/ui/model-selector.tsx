@@ -26,8 +26,10 @@ export interface ModelOption {
 
 interface ModelSelectorProps {
   value?: string
-  onChange?: (value: string) => void
+  selectedProviderId?: string
+  onChange?: (value: string, option?: ModelOption) => void
   type?: 'chat' | 'voice' | 'video'
+  options?: ModelOption[]
   placeholder?: string
   className?: string
 }
@@ -100,14 +102,19 @@ const ProviderIcon = ({ name }: { name: string }) => {
   )
 }
 
-export function ModelSelector({ value, onChange, type = 'chat', placeholder, className }: ModelSelectorProps) {
+export function ModelSelector({ value, selectedProviderId, onChange, type = 'chat', options, placeholder, className }: ModelSelectorProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const [selectedTags, setSelectedTags] = React.useState<ModelCapability[]>([])
   
-  const models = React.useMemo(() => MOCK_MODELS[type] || [], [type])
+  const models = React.useMemo(() => options ?? MOCK_MODELS[type] ?? [], [options, type])
   const selectedValue = React.useMemo(() => normalizeChatModelId(value ?? ""), [value])
-  const selectedModel = React.useMemo(() => models.find(m => m.id === selectedValue), [models, selectedValue])
+  const selectedModel = React.useMemo(
+    () =>
+      models.find(m => m.id === selectedValue && (!selectedProviderId || m.providerId === selectedProviderId))
+      ?? models.find(m => m.id === selectedValue),
+    [models, selectedProviderId, selectedValue],
+  )
 
   const availableTags = React.useMemo(() => {
     const set = new Set<ModelCapability>()
@@ -206,11 +213,11 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
                   </div>
                   {items.map((model) => (
                     <div
-                      key={model.id}
-                      onClick={() => { onChange?.(model.id); setOpen(false); }}
+                      key={`${model.providerId}:${model.id}`}
+                      onClick={() => { onChange?.(model.id, model); setOpen(false); }}
                       className={cn(
                         "relative flex items-center justify-between px-2 py-2 rounded-lg border border-transparent transition-all cursor-pointer group",
-                        selectedValue === model.id 
+                        selectedValue === model.id && (!selectedProviderId || selectedProviderId === model.providerId)
                           ? "bg-primary/5 border-primary/10" 
                           : "hover:bg-muted/50"
                       )}
@@ -219,7 +226,7 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
                         <ProviderIcon name={model.providerName} />
                         <div className="flex flex-col min-w-0 gap-0">
                           <div className="flex items-center gap-1.5">
-                            <span className={cn("font-medium text-sm", selectedValue === model.id ? "text-primary" : "text-foreground")}>
+                            <span className={cn("font-medium text-sm", selectedValue === model.id && (!selectedProviderId || selectedProviderId === model.providerId) ? "text-primary" : "text-foreground")}>
                               {model.name}
                             </span>
                             <div className="flex gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
@@ -231,7 +238,7 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
                           </span>
                         </div>
                       </div>
-                      {selectedValue === model.id && <Check className="w-4 h-4 text-primary shrink-0 ml-2" />}
+                      {selectedValue === model.id && (!selectedProviderId || selectedProviderId === model.providerId) && <Check className="w-4 h-4 text-primary shrink-0 ml-2" />}
                     </div>
                   ))}
                 </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Plus, Search, User, UserPlus } from 'lucide-react'
 import { ModelSelector } from '@/components/ui/model-selector'
 import { Button } from '@/components/ui/button'
@@ -15,9 +15,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { CHAT_AGENT_PROVIDERS } from '@/lib/agent-providers'
+import { useModelServices } from '@/modules/model-services/hooks/useModelServices'
 import { useChatStore } from '../store'
 import { useChatMutations } from '../collections'
+import { buildChatModelOptions, findProviderForModel, resolveDefaultChatModelSelection } from '../model-options'
 import { CreateGroupDialog } from '@/modules/contacts/components/CreateGroupDialog'
 import { contactOps } from '@/modules/contacts/collections'
 import {
@@ -33,6 +34,8 @@ import { formatErrorForUser } from '@/lib/user-facing-errors'
 interface AddChatDialogProps {
   onCreated?: (id: string) => void
 }
+
+const CREATE_CHAT_STEP_TIMEOUT_MS = 15_000
 
 interface FriendSearchState {
   webId: string
@@ -53,8 +56,12 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const selectThread = useChatStore((state) => state.selectThread)
   const { toast } = useToast()
 
-  const agentProviders = CHAT_AGENT_PROVIDERS
   const mutations = useChatMutations()
+  const { providers: modelServiceProviders } = useModelServices()
+  const modelOptions = useMemo(
+    () => buildChatModelOptions(modelServiceProviders),
+    [modelServiceProviders],
+  )
   const runtimeAvailable = isRuntimeSessionMode()
 
   // AI Agent form state
@@ -97,22 +104,16 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
       error: '',
     })
 
-    const defaultProvider = agentProviders[0]?.slug ?? 'openai'
-    setProvider(defaultProvider)
+    const defaultSelection = resolveDefaultChatModelSelection(modelServiceProviders, modelOptions)
+    setProvider(defaultSelection.provider)
+    setModel(defaultSelection.model)
+  }, [isOpen, modelOptions, modelServiceProviders])
 
-    const models = agentProviders.find((item) => item.slug === defaultProvider)?.models
-    if (models && models.length > 0) {
-      setModel(models[0].id)
-    } else {
-      setModel('gpt-4o-mini')
-    }
-  }, [isOpen, agentProviders])
-
-  const handleModelChange = (newModelId: string) => {
+  const handleModelChange = (newModelId: string, option?: { providerId: string }) => {
     setModel(newModelId)
-    const foundProvider = agentProviders.find(p => p.models.some(m => m.id === newModelId))
+    const foundProvider = option?.providerId ?? findProviderForModel(modelOptions, newModelId, provider)
     if (foundProvider) {
-      setProvider(foundProvider.slug)
+      setProvider(foundProvider)
     }
   }
 
@@ -136,12 +137,21 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
     try {
       setIsSubmitting(true)
       const name = agentName.trim() || `${provider}/${model}`
-      
-      const chat = await mutations.createAIChat.mutateAsync({
+
+      console.info('[AddChatDialog] create_ai_chat:start', {
+        title: name,
+        provider: provider.trim(),
+        model: model.trim(),
+        createRuntime: shouldCreateRuntime,
+      })
+      const chat = await runCreateStep('createAIChat', () => mutations.createAIChat.mutateAsync({
         title: name,
         provider: provider.trim(),
         model: model.trim(),
         systemPrompt: instructions.trim() || undefined,
+      }))
+      console.info('[AddChatDialog] create_ai_chat:created', {
+        chatId: chat.id,
       })
 
       const id = chat.id
@@ -150,9 +160,14 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
         let threadId: string | null = null
 
         try {
-          const thread = await mutations.createThread.mutateAsync({
+          console.info('[AddChatDialog] create_thread:start', { chatId: id })
+          const thread = await runCreateStep('createThread', () => mutations.createThread.mutateAsync({
             chatId: id,
             title: '默认话题',
+          }))
+          console.info('[AddChatDialog] create_thread:created', {
+            chatId: id,
+            threadId: thread.id,
           })
           if (thread.id) {
             threadId = thread.id
@@ -171,8 +186,15 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
 
         if (shouldCreateRuntime && threadId) {
           try {
+            console.info('[AddChatDialog] create_runtime:start', {
+              chatId: id,
+              threadId,
+              repoPath: normalizedRepoPath,
+              folderPath: normalizedFolderPath,
+              tool: runtimeTool,
+            })
             const requestedWorkspaceUri = await resolveLocalContainer(normalizedFolderPath)
-            const workspaceUri = await mutations.ensureThreadWorkspace.mutateAsync({
+            const workspaceUri = await runCreateStep('ensureThreadWorkspace', () => mutations.ensureThreadWorkspace.mutateAsync({
               threadId,
               workspaceUri: requestedWorkspaceUri,
               title: '默认话题',
@@ -180,8 +202,8 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
               folderPath: normalizedFolderPath,
               baseRef: normalizedBaseRef,
               branch: normalizedBranch || undefined,
-            })
-            await createAndStartRuntimeSession({
+            }))
+            await runCreateStep('createAndStartRuntimeSession', () => createAndStartRuntimeSession({
               threadId,
               container: workspaceUri,
               title: '默认话题',
@@ -190,6 +212,10 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
               tool: runtimeTool,
               baseRef: normalizedBaseRef,
               branch: normalizedBranch || undefined,
+            }))
+            console.info('[AddChatDialog] create_runtime:created', {
+              chatId: id,
+              threadId,
             })
           } catch (runtimeError: any) {
             console.error('Create runtime session failed:', runtimeError)
@@ -203,9 +229,17 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
           }
         } else if (threadId) {
           try {
-            await mutations.ensureThreadWorkspace.mutateAsync({
+            console.info('[AddChatDialog] ensure_default_workspace:start', {
+              chatId: id,
+              threadId,
+            })
+            await runCreateStep('ensureThreadWorkspace', () => mutations.ensureThreadWorkspace.mutateAsync({
               threadId,
               title: '默认话题',
+            }))
+            console.info('[AddChatDialog] ensure_default_workspace:done', {
+              chatId: id,
+              threadId,
             })
           } catch (workspaceError: any) {
             console.error('Bind default Pod workspace failed:', workspaceError)
@@ -220,8 +254,12 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
         }
         onCreated?.(id)
       }
+      console.info('[AddChatDialog] create_ai_chat:done', {
+        chatId: id,
+      })
       closeAddDialog()
     } catch (err: any) {
+      console.error('[AddChatDialog] create_ai_chat:failed', err)
       setError(formatErrorForUser(err, '创建失败。请确认当前空间可写后再试。'))
     } finally {
       setIsSubmitting(false)
@@ -335,6 +373,8 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
         <ModelSelector
           type="chat"
           value={model}
+          selectedProviderId={provider}
+          options={modelOptions}
           onChange={handleModelChange}
           className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground"
         />
@@ -559,4 +599,29 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
       </DialogContent>
     </Dialog>
   )
+}
+
+async function runCreateStep<T>(label: string, action: () => Promise<T>): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const operation = Promise.resolve()
+    .then(action)
+
+  operation.catch(() => {
+    // The caller observes the raced promise. If the original operation rejects
+    // after the timeout wins, keep it from surfacing as an unhandled rejection.
+  })
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`创建聊天超时：${label}。请检查当前空间是否可写，然后重试。`))
+    }, CREATE_CHAT_STEP_TIMEOUT_MS)
+  })
+
+  try {
+    return await Promise.race([operation, timeout])
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
+  }
 }

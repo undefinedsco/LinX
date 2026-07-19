@@ -346,6 +346,115 @@ describe('useLoginController', () => {
     expect(startLocalMock).not.toHaveBeenCalled()
   })
 
+  it('uses browser-window authorization for Standalone login outside the desktop shell', async () => {
+    connectMock.mockResolvedValueOnce(undefined)
+    providersState.providers = [
+      {
+        id: 'standalone',
+        url: 'http://localhost:5737',
+        label: 'Standalone',
+        source: 'standalone',
+      },
+    ]
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('standalone')
+    })
+
+    expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', expect.objectContaining({
+      authorizationSurface: 'window',
+      route: 'standalone',
+      accountIssuerUrl: 'http://localhost:5737/',
+      storageProviderUrl: 'http://localhost:5737/',
+      storageProviderLabel: 'Standalone',
+    }))
+  })
+
+  it('resets a failed in-memory auth session before retrying Standalone login', async () => {
+    connectMock.mockResolvedValueOnce(undefined)
+    providersState.providers = [{
+      id: 'standalone',
+      url: 'http://localhost:5737',
+      label: 'Standalone',
+      source: 'standalone',
+    }]
+    useLoginStore.setState({
+      state: 'idle',
+      error: '登录页面暂时打不开。请检查网络，或回到“选择空间”重试。',
+    })
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('standalone')
+    })
+
+    expect(logoutMock).toHaveBeenCalledTimes(1)
+    expect(connectMock).toHaveBeenCalledWith(
+      'http://localhost:5737/',
+      expect.objectContaining({ route: 'standalone' }),
+    )
+    expect(useLoginStore.getState().error).toBeNull()
+  })
+
+  it('keeps rapid Standalone clicks on a single OIDC transaction', async () => {
+    vi.useFakeTimers()
+    connectMock.mockImplementationOnce(() => new Promise<void>(() => {}))
+    providersState.providers = [{
+      id: 'standalone',
+      url: 'http://localhost:5737',
+      label: 'Standalone',
+      source: 'standalone',
+    }]
+
+    const { result } = renderHook(() => useLoginController())
+    let first!: Promise<void>
+    act(() => {
+      first = result.current.connect('standalone')
+      void result.current.connect('standalone')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(startLocalMock).toHaveBeenCalledTimes(1)
+    expect(connectMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000)
+      await first
+    })
+  })
+
+  it('cancels a stalled Standalone login handoff and restores a retryable state', async () => {
+    vi.useFakeTimers()
+    connectMock.mockImplementationOnce(() => new Promise<void>(() => {}))
+    providersState.providers = [{
+      id: 'standalone',
+      url: 'http://localhost:5737',
+      label: 'Standalone',
+      source: 'standalone',
+    }]
+
+    const { result } = renderHook(() => useLoginController())
+    let connectPromise!: Promise<void>
+    act(() => {
+      connectPromise = result.current.connect('standalone')
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000)
+      await connectPromise
+    })
+
+    expect(cancelMock).toHaveBeenCalledTimes(1)
+    expect(useLoginStore.getState().state).toBe('idle')
+    expect(useLoginStore.getState().error).toContain('登录页打开超时')
+    vi.useRealTimers()
+  })
+
   it('can cancel an active Desktop authorization and return to provider selection', async () => {
     window.xpodDesktop = {
       auth: {},
@@ -721,7 +830,7 @@ describe('useLoginController', () => {
     expect(connectMock).not.toHaveBeenCalled()
   })
 
-  it('starts Local, tries stored session restore, then opens auth when restore does not complete outside Desktop', async () => {
+  it('starts Local and clears stale stored auth before opening interactive auth outside Desktop', async () => {
     providersState.providers = [
       {
         id: 'local',
@@ -764,10 +873,9 @@ describe('useLoginController', () => {
     })
 
     expect(startLocalMock).toHaveBeenCalledTimes(1)
-    expect(handleIncomingRedirectMock).toHaveBeenCalledWith({
-      url: window.location.href,
-      restorePreviousSession: true,
-    })
+    expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:session-1')).toBeNull()
     expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', expect.objectContaining({
       route: 'standalone',
       accountIssuerUrl: 'http://localhost:5737/',
@@ -1293,7 +1401,7 @@ describe('useLoginController', () => {
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
-  it('keeps Solid auth storage before continuing a remembered Local account', async () => {
+  it('clears unrestorable Solid auth storage before continuing a remembered Local account', async () => {
     providersState.providers = [
       {
         id: 'local',
@@ -1331,7 +1439,7 @@ describe('useLoginController', () => {
       result.current.continueStoredAccount()
     })
 
-    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('session-1')
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
     expect(startLocalMock).toHaveBeenCalledTimes(1)
   })
 
@@ -1441,7 +1549,7 @@ describe('useLoginController', () => {
 
     expect(startLocalMock).not.toHaveBeenCalled()
     expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
-      authorizationSurface: 'embedded',
+      authorizationSurface: 'window',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
       storageProviderUrl: 'https://pod.example.com/',
@@ -1556,6 +1664,61 @@ describe('useLoginController', () => {
         authorizationQuery: {
           provisionCode: 'pc-123',
         },
+      }),
+    ])
+  })
+
+  it('retries Standalone login when the browser stays on the ready screen after OIDC setup', async () => {
+    providersState.providers = [
+      {
+        id: 'standalone',
+        url: 'http://localhost:5737',
+        label: 'Standalone',
+        source: 'standalone',
+      },
+    ]
+    providersState.localOnboarding = {
+      state: 'ready',
+      spaceKind: 'standalone',
+      localUrl: 'http://localhost:5737/',
+      baseUrl: 'http://localhost:5737/',
+      publicUrl: null,
+      tunnel: null,
+      connectivity: null,
+      capabilities: null,
+      cloudIdentityUrl: null,
+      provisionCode: null,
+      provisionUrl: null,
+      nodeId: null,
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    }
+    connectMock.mockResolvedValue(undefined)
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('standalone')
+    })
+    act(() => {
+      useLoginStore.setState({ state: 'idle' })
+    })
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(connectMock).toHaveBeenCalledTimes(2)
+    expect(connectMock.mock.calls[1]).toEqual([
+      'http://localhost:5737/',
+      expect.objectContaining({
+        authorizationSurface: 'window',
+        route: 'standalone',
+        accountIssuerUrl: 'http://localhost:5737/',
+        accountIssuerLabel: 'Standalone',
+        storageProviderUrl: 'http://localhost:5737/',
+        storageProviderLabel: 'Standalone',
       }),
     ])
   })
@@ -1759,7 +1922,7 @@ describe('useLoginController', () => {
     }))
   })
 
-  it('falls back to interactive auth when a desktop silent Local attempt returns login_required', async () => {
+  it('leaves silent callback fallback to the callback owner', async () => {
     window.xpodDesktop = {
       auth: {},
     } as any
@@ -1785,22 +1948,8 @@ describe('useLoginController', () => {
 
     renderHook(() => useLoginController())
 
-    await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
-        authorizationSurface: 'embedded',
-        returnToMicroAppId: 'chat',
-        route: 'local',
-        accountIssuerUrl: 'https://id.undefineds.co',
-        accountIssuerLabel: 'Cloud',
-        storageProviderUrl: 'https://node-0000.undefineds.co',
-        storageProviderLabel: 'Local',
-        authorizationQuery: {
-          provisionCode: 'pc-123',
-        },
-      }))
-    })
-    expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('strictDiscovery')
-    expect(useLoginStore.getState().error).toBeNull()
+    await waitFor(() => expect(useLoginStore.getState().state).toBe('idle'))
+    expect(connectMock).not.toHaveBeenCalled()
   })
 
   it('does not treat Standalone as Local when continuing a Local login', async () => {
@@ -2573,6 +2722,33 @@ describe('useLoginController', () => {
     // Non-callback path: no error shown, user can retry manually
     expect(useLoginStore.getState().error).toBeNull()
     expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('does not auto-start interactive login when stored-session restore fails', async () => {
+    restoreState.restoreFailed = true
+    window.history.replaceState({}, '', '/chat')
+    useLoginStore.setState({
+      state: 'restoring',
+      error: null,
+      storedAccount: {
+        displayName: 'LinX 用户',
+        issuerUrl: 'http://localhost:5737/',
+        issuerLabel: 'Standalone',
+        storageProviderUrl: 'http://localhost:5737/',
+        storageProviderLabel: 'Standalone',
+        webId: 'http://localhost:5737/cuilinsu/profile/card#me',
+      },
+      customProviders: [],
+    })
+
+    renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(useLoginStore.getState().state).toBe('idle')
+    })
+    expect(startLocalMock).not.toHaveBeenCalled()
+    expect(connectMock).not.toHaveBeenCalled()
+    expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
   })
 
   it('does not auto-redirect away from callback when the provider returned an explicit error', async () => {

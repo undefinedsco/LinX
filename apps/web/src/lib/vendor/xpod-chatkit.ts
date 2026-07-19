@@ -44,11 +44,32 @@ export interface InputTextContentPart {
   text: string
 }
 
+export interface InputImageContentPart {
+  type: 'input_image'
+  image_url?: string
+  imageUrl?: string
+  url?: string
+  detail?: string
+  [key: string]: unknown
+}
+
+export interface InputFileContentPart {
+  type: 'input_file'
+  file_id?: string
+  fileId?: string
+  file_data?: string
+  fileData?: string
+  filename?: string
+  [key: string]: unknown
+}
+
 export interface OutputTextContentPart {
   type: 'output_text'
   text: string
   annotations?: unknown[]
 }
+
+export type UserMessageContentPart = InputTextContentPart | InputImageContentPart | InputFileContentPart | Record<string, unknown>
 
 export interface ClientToolCallItem {
   id: string
@@ -66,7 +87,7 @@ export interface UserMessageItem {
   id: string
   thread_id: string
   type: 'user_message'
-  content: InputTextContentPart[]
+  content: UserMessageContentPart[]
   attachments?: Attachment[]
   created_at: number
 }
@@ -127,7 +148,7 @@ export interface ThreadItemUpdatedEvent {
   item_id: string
   update: {
     type: string
-    part_index?: number
+    content_index?: number
     delta?: string
     [key: string]: unknown
   }

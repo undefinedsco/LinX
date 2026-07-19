@@ -55,6 +55,10 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
     return '密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。'
   }
 
+  if (/当前模型服务已停用|model service.*disabled/.test(normalized)) {
+    return '当前模型服务已停用，请重新选择模型。'
+  }
+
   if (/ai error|anthropic error|openai error|model error|模型服务/.test(normalized)) {
     return '模型服务暂时不可用。请检查密钥、服务地址或网络后重试。'
   }

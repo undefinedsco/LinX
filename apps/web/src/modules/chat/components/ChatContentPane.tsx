@@ -55,6 +55,8 @@ import { restoreChatMessageAnchor } from '../message-anchor'
 
 export interface ChatContentPaneProps extends MicroAppPaneProps {}
 
+const DEFAULT_SECRETARY_BOOTSTRAP_GRACE_MS = 3_000
+
 function EmptyState({ title, description }: { title: string; description: string }) {
   return (
     <div className="flex flex-1 items-center justify-center bg-muted/30">
@@ -614,15 +616,52 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   const isCreatingThreadRef = useRef(false)
   const lastAutoCreateThreadChatRef = useRef<string | null>(null)
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
+  const [defaultSecretaryGraceExpired, setDefaultSecretaryGraceExpired] = useState(false)
 
   useEffect(() => {
     lastAutoCreateThreadChatRef.current = null
   }, [selectedChatId])
 
+  useEffect(() => {
+    if (
+      selectedChatId !== LINX_DEFAULT_SECRETARY.chatId
+      || !isDefaultSecretarySettling
+      || selectedThreadId
+    ) {
+      setDefaultSecretaryGraceExpired(false)
+      return
+    }
+
+    setDefaultSecretaryGraceExpired(false)
+    const timer = window.setTimeout(() => {
+      console.warn('[ChatContentPane] default_secretary_bootstrap_timeout', {
+        chatId: selectedChatId,
+        timeoutMs: DEFAULT_SECRETARY_BOOTSTRAP_GRACE_MS,
+      })
+      setDefaultSecretaryGraceExpired(true)
+    }, DEFAULT_SECRETARY_BOOTSTRAP_GRACE_MS)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [isDefaultSecretarySettling, selectedChatId, selectedThreadId])
+
   const activeChat = useMemo(() => {
     if (!selectedChatId || !chats) return null
     return chats.find((chat) => chat.id === selectedChatId) ?? null
   }, [chats, selectedChatId])
+  const fallbackActiveChat = useMemo(() => {
+    if (selectedChatId !== LINX_DEFAULT_SECRETARY.chatId) return null
+    const now = new Date()
+    return {
+      id: LINX_DEFAULT_SECRETARY.chatId,
+      title: LINX_DEFAULT_SECRETARY.title,
+      createdAt: now,
+      updatedAt: now,
+      lastActiveAt: now,
+    }
+  }, [selectedChatId])
+  const effectiveActiveChat = activeChat ?? fallbackActiveChat
 
   const activeThread = useMemo(() => {
     if (!selectedThreadId) return null
@@ -630,7 +669,20 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   }, [selectedThreadId, threads])
 
   useEffect(() => {
-    if (!selectedChatId || !isReady || isThreadsLoading) return
+    if (!selectedChatId || !isReady) return
+
+    const canRecoverDefaultSecretaryWithoutThreadList =
+      selectedChatId === LINX_DEFAULT_SECRETARY.chatId
+      && defaultSecretaryGraceExpired
+
+    if (isThreadsLoading && !canRecoverDefaultSecretaryWithoutThreadList) {
+      console.info('[ChatContentPane] wait_thread_list_before_auto_create', {
+        chatId: selectedChatId,
+        isDefaultSecretarySettling,
+        defaultSecretaryGraceExpired,
+      })
+      return
+    }
 
     const normalizedThreads = threads
       .map((thread) => ({ ...thread, _id: thread.id }))
@@ -645,28 +697,45 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       return
     }
 
-    if (selectedChatId === LINX_DEFAULT_SECRETARY.chatId && isDefaultSecretarySettling) {
-      return
-    }
-
     if (
       isCreatingThreadRef.current
       || mutations.createThread.isPending
       || lastAutoCreateThreadChatRef.current === selectedChatId
     ) {
+      console.info('[ChatContentPane] skip_auto_create_thread', {
+        chatId: selectedChatId,
+        isCreating: isCreatingThreadRef.current,
+        isPending: mutations.createThread.isPending,
+        lastChatId: lastAutoCreateThreadChatRef.current,
+      })
       return
     }
 
+    console.info('[ChatContentPane] auto_create_thread_started', {
+      chatId: selectedChatId,
+      title: '默认话题',
+      defaultSecretaryGraceExpired,
+    })
     isCreatingThreadRef.current = true
     lastAutoCreateThreadChatRef.current = selectedChatId
+    const shouldCreateDefaultSecretaryOptimistically =
+      selectedChatId === LINX_DEFAULT_SECRETARY.chatId
+      && (isDefaultSecretarySettling || defaultSecretaryGraceExpired)
     mutations.createThread.mutate(
       {
         chatId: selectedChatId,
+        ...(shouldCreateDefaultSecretaryOptimistically
+          ? { optimistic: true }
+          : {}),
         title: '默认话题',
       },
       {
         onSuccess: (thread) => {
           const threadId = thread.id
+          console.info('[ChatContentPane] auto_create_thread_succeeded', {
+            chatId: selectedChatId,
+            threadId,
+          })
           if (threadId) {
             selectThread(threadId)
             void mutations.ensureThreadWorkspace.mutateAsync({
@@ -693,6 +762,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     selectedChatId,
     selectedThreadId,
     selectThread,
+    defaultSecretaryGraceExpired,
     threads,
   ])
 
@@ -712,7 +782,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     return <EmptyState title="数据还没准备好" description="正在准备当前空间的数据访问。" />
   }
 
-  if (!activeChat) {
+  if (!effectiveActiveChat) {
     return <EmptyState title="正在加载聊天" description="正在从当前空间读取聊天内容。" />
   }
 

@@ -135,7 +135,9 @@ export class TrayModule {
       {
         label: '重启服务',
         click: async () => {
-          await getXpodModule().restart()
+          if (!getWebServerModule().isExternalXpodEnabled()) {
+            await getXpodModule().restart()
+          }
           this.updateMenu()
         },
       },

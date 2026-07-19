@@ -45,6 +45,31 @@ describe('ModelSelector', () => {
       render(<ModelSelector value="undefineds/linx-lite" />)
       expect(screen.getByText('LinX Lite')).toBeInTheDocument()
     })
+
+    it('renders custom options and keeps same model ids scoped by provider', async () => {
+      const onChange = vi.fn()
+      render(
+        <ModelSelector
+          value="gpt-4o"
+          selectedProviderId="openai22"
+          options={[
+            { id: 'gpt-4o', name: 'GPT-4o A', providerId: '111', providerName: '111', capabilities: [] },
+            { id: 'gpt-4o', name: 'GPT-4o B', providerId: 'openai22', providerName: 'OpenAI22', capabilities: [] },
+          ]}
+          onChange={onChange}
+        />,
+      )
+
+      expect(screen.getByText('GPT-4o B')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button'))
+      await waitFor(() => {
+        expect(screen.getByText('GPT-4o A')).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByText('GPT-4o A'))
+
+      expect(onChange).toHaveBeenCalledWith('gpt-4o', expect.objectContaining({ providerId: '111' }))
+    })
   })
 
   describe('Dialog Interaction', () => {

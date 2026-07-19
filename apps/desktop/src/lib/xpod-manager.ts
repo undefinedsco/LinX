@@ -361,6 +361,23 @@ export class XpodManager {
   }
 
   async start(options: XpodStartOptions, onProgress?: XpodStartProgressHandler): Promise<void> {
+    if (this.isExternalXpodEnabled()) {
+      const external = await this.detectExternalService(options);
+      if (!external?.running) {
+        throw new Error(`外部本地空间未运行：${this.resolveExternalLocalUrl(options.port)}`);
+      }
+      this.reportStartProgress(onProgress, {
+        phase: 'ready',
+        label: '本地空间已运行',
+        detail: external.localUrl,
+      });
+      if (options.providerId) {
+        this.currentProviderId = options.providerId;
+        this.providerManager.updateManagedStatus(options.providerId, 'running');
+      }
+      return;
+    }
+
     const existing = this.readState();
     if (existing) {
       const existingHealthy = await this.isServiceReady(existing.localUrl);
@@ -651,6 +668,13 @@ export class XpodManager {
   }
 
   async getStatus(): Promise<XpodStatus> {
+    if (this.isExternalXpodEnabled()) {
+      const external = await this.detectExternalService();
+      if (external) {
+        return external;
+      }
+    }
+
     const state = this.readState();
     if (!state) {
       const external = await this.detectExternalService();
@@ -732,7 +756,7 @@ export class XpodManager {
     };
   }
 
-  private async detectExternalService(): Promise<XpodStatus | null> {
+  private async detectExternalService(options?: Pick<XpodStartOptions, 'providerId' | 'port'>): Promise<XpodStatus | null> {
     const candidates: Array<
       Required<Pick<XpodStatus, 'port' | 'baseUrl' | 'localUrl'>>
       & Pick<XpodStatus, 'providerId' | 'provisioning'>
@@ -767,6 +791,17 @@ export class XpodManager {
         provisioning: candidate.provisioning,
       });
     };
+
+    if (this.isExternalXpodEnabled()) {
+      const configuredPort = options?.port ?? this.resolveExternalPort();
+      const localUrl = this.resolveExternalLocalUrl(configuredPort);
+      addCandidate({
+        providerId: options?.providerId,
+        port: configuredPort,
+        baseUrl: this.resolveConfiguredLocalBaseUrl() ?? localUrl,
+        localUrl,
+      });
+    }
 
     for (const provider of this.providerManager.getManagedPods()) {
       if (!provider.managed) {
@@ -825,6 +860,11 @@ export class XpodManager {
   }
 
   async healthCheck(): Promise<boolean> {
+    if (this.isExternalXpodEnabled()) {
+      const external = await this.detectExternalService();
+      return Boolean(external?.running);
+    }
+
     const state = this.readState();
     if (!state) {
       const external = await this.detectExternalService();
@@ -966,6 +1006,20 @@ export class XpodManager {
     } catch {
       return null;
     }
+  }
+
+  private isExternalXpodEnabled(): boolean {
+    const config = this.configManager.getAll();
+    return process.env.LINX_EXTERNAL_XPOD === 'true' || config.LINX_EXTERNAL_XPOD === 'true';
+  }
+
+  private resolveExternalPort(): number {
+    const configured = Number.parseInt(this.configManager.getAll().CSS_PORT ?? '', 10);
+    return Number.isFinite(configured) && configured > 0 ? configured : 5737;
+  }
+
+  private resolveExternalLocalUrl(port: number): string {
+    return this.ensureTrailingSlash(`http://localhost:${port}`);
   }
 
   private buildLaunchSpec(
