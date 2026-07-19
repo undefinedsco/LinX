@@ -7,6 +7,7 @@ import {
 } from '@undefineds.co/models'
 import {
   buildModelServiceExactUpdate,
+  buildHydratedModelServiceExactUpdate,
   collectKnownModelServiceProviderIds,
   buildModelServiceInsertRows,
   buildCredentialVerificationUpdate,
@@ -35,6 +36,28 @@ describe('buildModelServiceExactUpdate', () => {
       id: 'timecc.ttl',
       displayName: 'Timecc',
       baseUrl: 'https://timicc.com/v2',
+    })
+  })
+
+  it('hydrates omitted predicates immediately before a replacement-style update', async () => {
+    const db = {
+      findById: async () => ({
+        id: 'timecc-default',
+        apiKey: 'secret-test-key',
+        provider: 'timecc',
+      }),
+    }
+
+    await expect(buildHydratedModelServiceExactUpdate(
+      db as any,
+      credentialResource as any,
+      { id: 'timecc-default', failCount: 0 },
+      { failCount: 1 },
+    )).resolves.toEqual({
+      id: 'timecc-default',
+      apiKey: 'secret-test-key',
+      provider: 'timecc',
+      failCount: 1,
     })
   })
 })

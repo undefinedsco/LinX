@@ -12,7 +12,7 @@ import {
   sameAIConfigProviderFamily,
   selectAIConfigCredential,
 } from '@undefineds.co/models'
-import { deleteExactRecord, updateExactRecord } from '@linx/stores/exact-records'
+import { deleteExactRecord, findExactRecord, updateExactRecord } from '@linx/stores/exact-records'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import {
   credentialCollection,
@@ -127,6 +127,16 @@ export function buildModelServiceExactUpdate(
   // plans intentionally contain only changed fields, so sending a plan payload
   // directly would erase every unchanged RDF predicate on that subject.
   return { ...current, ...updates }
+}
+
+export async function buildHydratedModelServiceExactUpdate(
+  db: Parameters<typeof findExactRecord>[0],
+  resource: Parameters<typeof findExactRecord>[1],
+  current: AnyRow,
+  updates: AnyRow,
+): Promise<AnyRow> {
+  const exact = await findExactRecord<AnyRow>(db, resource, current)
+  return buildModelServiceExactUpdate({ ...current, ...(exact ?? {}) }, updates)
 }
 
 export function collectKnownModelServiceProviderIds(
@@ -519,12 +529,18 @@ export function useModelServices() {
         mode: existingProvider ? 'update' : 'insert',
       })
       if (existingProvider) {
+        const update = await buildHydratedModelServiceExactUpdate(
+          db,
+          aiProviderResource as any,
+          existingProvider,
+          plan.providerPayload as AnyRow,
+        )
         await withTimeout(
           updateExactRecord(
             db as any,
             aiProviderResource as any,
             existingProvider,
-            buildModelServiceExactUpdate(existingProvider, plan.providerPayload as AnyRow),
+            update,
           ),
           PERSIST_OPERATION_TIMEOUT_MS,
           '供应商配置保存超时，请重试。',
@@ -548,12 +564,18 @@ export function useModelServices() {
         mode: credentialTarget ? 'update' : 'insert',
       })
       if (credentialTarget) {
+        const update = await buildHydratedModelServiceExactUpdate(
+          db,
+          credentialResource as any,
+          credentialTarget,
+          insertRows.credentialPayload as AnyRow,
+        )
         await withTimeout(
           updateExactRecord(
             db as any,
             credentialResource as any,
             credentialTarget,
-            buildModelServiceExactUpdate(credentialTarget, insertRows.credentialPayload as AnyRow),
+            update,
           ),
           PERSIST_OPERATION_TIMEOUT_MS,
           '访问密钥保存超时，请重试。',
@@ -601,12 +623,18 @@ export function useModelServices() {
           mode: existing ? 'update' : 'insert',
         })
         if (existing) {
+          const update = await buildHydratedModelServiceExactUpdate(
+            db,
+            aiModelResource as any,
+            existing,
+            modelPayload as AnyRow,
+          )
           await withTimeout(
             updateExactRecord(
               db as any,
               aiModelResource as any,
               existing,
-              buildModelServiceExactUpdate(existing, modelPayload as AnyRow),
+              update,
             ),
             PERSIST_OPERATION_TIMEOUT_MS,
             `模型 ${modelPayload.id} 保存超时，请重试。`,
@@ -698,7 +726,11 @@ export function useModelServices() {
     const credential = selectAIConfigCredential(id, currentCredentialRows, currentProviderRows)?.credential
     if (!credential) return
 
-    const update = buildCredentialVerificationUpdate(credential, error)
+    const exactCredential = await findExactRecord<AnyRow>(db, credentialResource as any, credential)
+    const update = buildCredentialVerificationUpdate(
+      { ...credential, ...(exactCredential ?? {}) },
+      error,
+    )
     await updateExactRecord(db as any, credentialResource as any, credential, update as AnyRow)
     await refetchCollection(credentialCollection, 'ai-credentials')
   }, [db, effectiveCredentialRows, exactCredentialRows, exactProviderRows, mergedProviderRows])
