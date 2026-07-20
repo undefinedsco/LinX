@@ -3,7 +3,7 @@ import {
   type FileDetailShellTab,
 } from '../../domain/detail/file-detail-shell-model'
 import { getFilesDetailErrorState } from '../../domain/resource/files-error-state'
-import type { FilesDetail } from '../../domain/resource/resource-model'
+import type { FilesDetail, FilesEntry } from '../../domain/resource/resource-model'
 
 type FavoriteSource = {
   sourceId: string
@@ -22,7 +22,7 @@ export function projectFileDetailFavoriteState({
   file,
   favorites,
 }: {
-  file: FilesDetail | null | undefined
+  file: FilesEntry | null | undefined
   favorites: FavoriteSource[]
 }) {
   return !!file && favorites.some((favorite) => favorite.sourceId === file.uri)
@@ -33,11 +33,14 @@ export function planFileDetailFavoriteToggle({
   isFavorite,
   selectedTreeNodeId,
 }: {
-  file: FilesDetail | null | undefined
+  file: FilesEntry | null | undefined
   isFavorite: boolean
   selectedTreeNodeId: string | null | undefined
 }) {
   if (!file) return null
+  const snapshotContent = 'previewText' in file && typeof file.previewText === 'string'
+    ? file.previewText
+    : undefined
   return {
     sourceModule: 'files' as const,
     sourceId: file.uri,
@@ -45,7 +48,7 @@ export function planFileDetailFavoriteToggle({
     metadata: {
       title: file.name,
       searchText: file.name,
-      snapshotContent: file.previewText ?? undefined,
+      snapshotContent,
       snapshotMeta: JSON.stringify({
         fileId: file.uri,
         treeNodeId: selectedTreeNodeId ?? null,

@@ -77,6 +77,9 @@ export function useLoginController() {
   const desktopAuthPendingRef = useRef(false)
   const desktopAuthSurfaceOpenedRef = useRef(false)
   const silentLocalFallbackStartedRef = useRef(false)
+  const desktopAutoRestoreAttemptedRef = useRef(false)
+  const webSilentRestoreAttemptedRef = useRef(false)
+  const desktopRememberedAccountHydratedRef = useRef(false)
   const loginFinalizeGenerationRef = useRef(0)
   const restore = useSessionRestore()
   const oidc = useOidcConnect()
@@ -212,11 +215,25 @@ export function useLoginController() {
   }, [isDesktop, restore.hasStoredSession, session.info.isLoggedIn, setState])
 
   useEffect(() => {
-    if (storedAccount || session.info.isLoggedIn) return
+    if (session.info.isLoggedIn) return
+
+    if (storedAccount) {
+      const isLocalAccount = storedAccount.issuerLabel === 'Local'
+        || storedAccount.issuerLabel === 'Standalone'
+        || storedAccount.storageProviderLabel === 'Local'
+        || storedAccount.storageProviderLabel === 'Standalone'
+        || isLocalAccessUrl(storedAccount.issuerUrl)
+        || isLocalAccessUrl(storedAccount.storageProviderUrl)
+      // Cloud accounts can resume directly from the persisted Zustand store.
+      // Local accounts must go through their startup/conflict checks first.
+      desktopRememberedAccountHydratedRef.current = !isLocalAccount
+      return
+    }
 
     const rememberedAccount = getRememberedAccount()
     if (!rememberedAccount) return
 
+    desktopRememberedAccountHydratedRef.current = true
     setStoredAccount(rememberedAccount)
   }, [session.info.isLoggedIn, setStoredAccount, storedAccount])
 
@@ -604,7 +621,7 @@ export function useLoginController() {
     }
   }, [connectReadyLocalSnapshot, isDesktop, logout, providers, resetDesktopAuthState, session, setError, setState, startLocal, storedAccount])
 
-  const connect = useCallback(async (providerKey: string) => {
+  const connect = useCallback(async (providerKey: string, options?: { prompt?: 'none' | 'consent' }) => {
     loginFinalizeGenerationRef.current += 1
     suppressAutoLoginRef.current = false
     setStorageConflict(null)
@@ -643,6 +660,7 @@ export function useLoginController() {
         storageProviderUrl,
         storageProviderLabel: provider?.storageProvider?.label ?? provider?.label,
         issuerLabel: provider?.oidcProvider?.label ?? resolveProviderDisplayName(provider, issuerUrl),
+        ...(options?.prompt ? { prompt: options.prompt } : {}),
       })
     } catch (err: any) {
       resetDesktopAuthState()
@@ -655,7 +673,7 @@ export function useLoginController() {
     }
   }, [oidc, providers, resetDesktopAuthState, setError, setState, startLocalLogin, storedAccount])
 
-  const continueStoredAccount = useCallback(() => {
+  const continueStoredAccount = useCallback(async () => {
     suppressAutoLoginRef.current = false
     setStorageConflict(null)
     setError(null)
@@ -688,7 +706,30 @@ export function useLoginController() {
       return
     }
 
-    const storedSolidSession = getStoredSolidSession()
+    let storedSolidSession = getStoredSolidSession()
+    if (isDesktop && storedSolidSession) {
+      setState('restoring')
+      try {
+        const restored = await restoreStoredSolidSession(session)
+        if (restored?.isLoggedIn || session.info.isLoggedIn) {
+          return
+        }
+      } catch (restoreError) {
+        if (isInvalidClientError(restoreError)) {
+          clearStoredSolidSession()
+          storedSolidSession = null
+        }
+      }
+    }
+
+    const isRememberedCloudAccount = Boolean(storedAccount?.webId)
+      && !isLocalAccessUrl(targetStorageProviderUrl)
+      && storedAccount?.issuerLabel !== 'Local'
+      && storedAccount?.issuerLabel !== 'Standalone'
+    const shouldTrySilentDesktopAuth = isDesktop
+      && (isRememberedCloudAccount
+        || hasRestorableSessionForStoredAccount(storedAccount, session.info.webId, storedSolidSession))
+    const connectOptions = shouldTrySilentDesktopAuth ? { prompt: 'none' as const } : undefined
     if (!isDesktop && storedSolidSession) {
       setState('restoring')
       void session.handleIncomingRedirect({
@@ -708,7 +749,7 @@ export function useLoginController() {
             void startLocalLogin(matchedSource)
             return
           }
-          void connect(matched.id)
+          void connect(matched.id, connectOptions)
           return
         }
 
@@ -717,7 +758,7 @@ export function useLoginController() {
           return
         }
 
-        void connect(targetStorageProviderUrl)
+        void connect(targetStorageProviderUrl, connectOptions)
       }).catch((restoreError) => {
         if (isInvalidClientError(restoreError)) {
           clearStoredSolidSession()
@@ -734,7 +775,7 @@ export function useLoginController() {
         void startLocalLogin(matchedSource)
         return
       }
-      void connect(matched.id)
+      void connect(matched.id, connectOptions)
       return
     }
 
@@ -743,8 +784,53 @@ export function useLoginController() {
       return
     }
 
-    void connect(targetStorageProviderUrl)
+    void connect(targetStorageProviderUrl, connectOptions)
   }, [connect, isDesktop, providers, session, setError, setState, startLocalLogin, storedAccount])
+
+  // Desktop cannot rely on the SessionProvider iframe restore path because
+  // the identity provider callback must return through Electron's loopback
+  // window. Re-enter the existing top-level restore flow once after the
+  // remembered account has been hydrated instead.
+  useEffect(() => {
+    if (!isDesktop || desktopAutoRestoreAttemptedRef.current) return
+    if (!desktopRememberedAccountHydratedRef.current) return
+    if (!storedAccount || session.info.isLoggedIn || sessionRequestInProgress) return
+
+    desktopAutoRestoreAttemptedRef.current = true
+    continueStoredAccount()
+  }, [continueStoredAccount, isDesktop, session.info.isLoggedIn, sessionRequestInProgress, storedAccount])
+
+  // Browser session restore uses a cross-site hidden iframe. Modern browsers
+  // may withhold the IdP account cookie there even while its first-party SSO
+  // session is still valid. Retry once as a top-level prompt=none flow so a
+  // remembered account can resume without asking for credentials.
+  useEffect(() => {
+    if (isDesktop || !restore.restoreFailed || webSilentRestoreAttemptedRef.current) return
+    if (!storedAccount || session.info.isLoggedIn || sessionRequestInProgress) return
+    if (window.location.pathname.startsWith('/auth/callback')) return
+    if (
+      storedAccount.issuerLabel === 'Local'
+      || storedAccount.issuerLabel === 'Standalone'
+      || isLocalAccessUrl(storedAccount.issuerUrl)
+    ) {
+      return
+    }
+
+    const issuerUrl = normalizeRememberedUrl(storedAccount.issuerUrl)
+    if (!issuerUrl) return
+
+    webSilentRestoreAttemptedRef.current = true
+    const provider = resolveProviderByKey(issuerUrl, providers)
+    void connect(provider?.id ?? issuerUrl, { prompt: 'none' })
+  }, [
+    connect,
+    isDesktop,
+    providers,
+    restore.restoreFailed,
+    session.info.isLoggedIn,
+    sessionRequestInProgress,
+    storedAccount,
+  ])
 
   const signInLocalOnboarding = useCallback(async () => {
     if (!localOnboarding || localOnboarding.state !== 'ready') {

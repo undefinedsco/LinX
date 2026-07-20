@@ -28,6 +28,20 @@ const plainTextContent: RichTextEditorContent = {
 function revealRichTextToolbar(editor: Element | null) {
   expect(editor).toBeTruthy()
   fireEvent.focus(editor as Element)
+  const walker = document.createTreeWalker(editor as Node, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => node.textContent?.trim()
+      ? NodeFilter.FILTER_ACCEPT
+      : NodeFilter.FILTER_REJECT,
+  })
+  const textNode = walker.nextNode()
+  if (textNode) {
+    const range = document.createRange()
+    range.selectNodeContents(textNode)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }
+  fireEvent.mouseUp(editor as Element)
 }
 
 describe('RichTextFileEditor serialization', () => {
@@ -108,6 +122,29 @@ describe('RichTextFileEditor serialization', () => {
         },
       ],
     })).toBe('1. first\n2. second')
+  })
+
+  it('round-trips real task list checked state when saving markdown', () => {
+    expect(serializeTiptapJsonToMarkdown({
+      type: 'doc',
+      content: [
+        {
+          type: 'taskList',
+          content: [
+            {
+              type: 'taskItem',
+              attrs: { checked: true },
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Done' }] }],
+            },
+            {
+              type: 'taskItem',
+              attrs: { checked: false },
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Next' }] }],
+            },
+          ],
+        },
+      ],
+    })).toBe('- [x] Done\n- [ ] Next')
   })
 
   it('serializes link marks as markdown links', () => {
@@ -251,7 +288,7 @@ describe('RichTextFileEditor serialization', () => {
     expect(screen.getByRole('button', { name: '代码块' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '插入段落块' }))
-    fireEvent.click(screen.getByRole('button', { name: '代码块' }))
+    expect(screen.queryByRole('toolbar', { name: '富文本块工具' })).not.toBeInTheDocument()
   })
 
   it('renders editable notes as a borderless sheet with contextual byline controls', () => {
@@ -269,7 +306,7 @@ describe('RichTextFileEditor serialization', () => {
 
     const editor = document.querySelector('.ProseMirror')
     expect(editor).toBeTruthy()
-    fireEvent.focus(editor as Element)
+    revealRichTextToolbar(editor)
 
     const formattingToolbar = screen.getByRole('toolbar', { name: '富文本块工具' })
     expect(formattingToolbar).toHaveAttribute('data-toolbar-density', 'compact')
@@ -291,10 +328,36 @@ describe('RichTextFileEditor serialization', () => {
 
     const editor = document.querySelector('.ProseMirror')
     expect(editor).toBeTruthy()
-    fireEvent.focus(editor as Element)
+    revealRichTextToolbar(editor)
     const formattingToolbar = screen.getByRole('toolbar', { name: '富文本块工具' })
 
     expect(formattingToolbar.compareDocumentPosition(editor as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows the formatting toolbar only after text is selected', () => {
+    const { container } = render(createElement(RichTextFileEditor, {
+      content: markdownContent('Open source for context.'),
+      editable: true,
+    }))
+    const editor = container.querySelector('.ProseMirror')
+    expect(editor).toBeTruthy()
+
+    fireEvent.focus(editor as Element)
+
+    expect(screen.queryByRole('toolbar', { name: '富文本块工具' })).not.toBeInTheDocument()
+
+    const textNode = screen.getByText('Open source for context.').firstChild
+    expect(textNode).toBeTruthy()
+    const range = document.createRange()
+    range.setStart(textNode as ChildNode, 'Open '.length)
+    range.setEnd(textNode as ChildNode, 'Open source'.length)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+
+    fireEvent.mouseUp(editor as Element)
+
+    expect(screen.getByRole('toolbar', { name: '富文本块工具' })).toBeInTheDocument()
   })
 
   it('moves the current block from the byline block handle and saves markdown order', async () => {
@@ -401,9 +464,11 @@ describe('RichTextFileEditor serialization', () => {
 
     fireEvent.keyDown(editor as Element, { key: '/' })
     fireEvent.click(screen.getByRole('menuitem', { name: '待办' }))
+    revealRichTextToolbar(editor)
     await waitFor(() => expect(screen.getByText('未保存')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
+    revealRichTextToolbar(editor)
     fireEvent.blur(editor as Element)
     revealRichTextToolbar(editor)
 
@@ -422,13 +487,16 @@ describe('RichTextFileEditor serialization', () => {
 
     fireEvent.keyDown(editor as Element, { key: '/' })
     fireEvent.click(screen.getByRole('menuitem', { name: '待办' }))
+    revealRichTextToolbar(editor)
     await waitFor(() => expect(screen.getByText('未保存')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
+    revealRichTextToolbar(editor)
 
     await waitFor(() => expect(screen.getByText('已保存')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: '重做' }))
+    revealRichTextToolbar(editor)
 
     await waitFor(() => expect(screen.getByText('未保存')).toBeInTheDocument())
   })
@@ -445,6 +513,7 @@ describe('RichTextFileEditor serialization', () => {
 
     fireEvent.keyDown(editor as Element, { key: '/' })
     fireEvent.click(screen.getByRole('menuitem', { name: '待办' }))
+    revealRichTextToolbar(editor)
     await waitFor(() => expect(screen.getByText('未保存')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
@@ -506,6 +575,66 @@ describe('RichTextFileEditor serialization', () => {
     expect(onSaveText).toHaveBeenCalledWith(expect.not.stringContaining('/'))
   })
 
+  it('filters slash block commands by the typed query', () => {
+    const { container } = render(createElement(RichTextFileEditor, {
+      content: markdownContent(''),
+      editable: true,
+    }))
+    const editor = container.querySelector('.ProseMirror')
+    expect(editor).toBeTruthy()
+
+    fireEvent.keyDown(editor as Element, { key: '/' })
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索块命令' }), { target: { value: '表' } })
+
+    expect(screen.getByRole('menuitem', { name: '表格' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '段落' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '待办' })).not.toBeInTheDocument()
+  })
+
+  it('projects table image and resource reference slash commands', () => {
+    const { container } = render(createElement(RichTextFileEditor, {
+      content: markdownContent(''),
+      editable: true,
+    }))
+    const editor = container.querySelector('.ProseMirror')
+    expect(editor).toBeTruthy()
+
+    fireEvent.keyDown(editor as Element, { key: '/' })
+
+    expect(screen.getByRole('menuitem', { name: '表格' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '图片' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '引用资源' })).toBeInTheDocument()
+  })
+
+  it('inserts image and resource reference commands as editable rich content', async () => {
+    const onSaveText = vi.fn()
+    const { container } = render(createElement(RichTextFileEditor, {
+      content: markdownContent(''),
+      editable: true,
+      onSaveText,
+    }))
+    const editor = container.querySelector('.ProseMirror')
+    expect(editor).toBeTruthy()
+
+    fireEvent.keyDown(editor as Element, { key: '/' })
+    fireEvent.click(screen.getByRole('menuitem', { name: '图片' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '图片地址' }), { target: { value: 'https://cdn.example/photo.png' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '图片说明' }), { target: { value: '项目截图' } })
+    fireEvent.click(screen.getByRole('button', { name: '插入' }))
+
+    expect(screen.getByRole('img', { name: '项目截图' })).toHaveAttribute('src', 'https://cdn.example/photo.png')
+
+    fireEvent.keyDown(editor as Element, { key: '/' })
+    fireEvent.click(screen.getByRole('menuitem', { name: '引用资源' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '资源地址' }), { target: { value: 'https://pod.example/brief.md' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '资源名称' }), { target: { value: '项目简报' } })
+    fireEvent.click(screen.getByRole('button', { name: '插入' }))
+    fireEvent.blur(editor as Element)
+
+    await waitFor(() => expect(onSaveText).toHaveBeenCalledWith(expect.stringContaining('![项目截图](https://cdn.example/photo.png)')))
+    expect(onSaveText).toHaveBeenCalledWith(expect.stringContaining('@[项目简报](https://pod.example/brief.md)'))
+  })
+
   it('supports keyboard selection in the slash block menu', async () => {
     const onSaveText = vi.fn()
     const { container } = render(createElement(RichTextFileEditor, {
@@ -520,11 +649,9 @@ describe('RichTextFileEditor serialization', () => {
     const menu = screen.getByRole('menu', { name: '块命令' })
     expect(menu).toHaveAttribute('aria-activedescendant', 'rich-text-block-command-paragraph')
 
-    fireEvent.keyDown(editor as Element, { key: 'ArrowDown' })
-    fireEvent.keyDown(editor as Element, { key: 'ArrowDown' })
-    fireEvent.keyDown(editor as Element, { key: 'ArrowDown' })
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索块命令' }), { target: { value: '待办' } })
 
-    expect(menu).toHaveAttribute('aria-activedescendant', 'rich-text-block-command-todo')
+    expect(menu).toHaveAttribute('aria-activedescendant', 'rich-text-block-command-task')
 
     fireEvent.keyDown(editor as Element, { key: 'Enter' })
     await waitFor(() => expect(screen.queryByRole('menu', { name: '块命令' })).not.toBeInTheDocument())

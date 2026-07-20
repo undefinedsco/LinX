@@ -20,6 +20,8 @@ import { useMemo, useState, useCallback } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
 import {
+  LINX_DEFAULT_SECRETARY,
+  isLinxDefaultSecretaryChat,
   useChatList,
   useChatMutations,
   useChatInit,
@@ -294,7 +296,7 @@ function ChatItem({
               <Avatar className="h-12 w-12 border border-border/30 rounded-sm">
                 <AvatarImage src={chat.providerLogo} className="rounded-sm object-cover" />
                 <AvatarFallback className="rounded-sm bg-primary/10 text-primary text-sm">
-                  {chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatIcon(chat)}
+                  {chat.isProtected ? <Bot strokeWidth={1.5} className="h-5 w-5" /> : chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatIcon(chat)}
                 </AvatarFallback>
               </Avatar>
             )}
@@ -633,7 +635,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   // 格式化 Chat 列表 - 添加标星排序
   const chats: ChatItemData[] = useMemo(() => {
-    if (!rawChats) return []
+    const sourceChats = rawChats ?? []
 
     const threadsByChatId = new Map<string, string[]>()
     const workspaceBackedChatIds = new Set<string>()
@@ -657,7 +659,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
       }
     }
 
-    return orderChatItems(rawChats).map((chat): ChatItemData => {
+    const projectedChats = orderChatItems(sourceChats).map((chat): ChatItemData => {
       const id = chat.id ?? 'unknown'
       const capabilities = projectSecretaryListCapabilities(chat)
       const pendingItems = inboxItems.filter((item) => item.chatId === id)
@@ -676,7 +678,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
       return {
         id,
-        title: chat.title ?? '未命名聊天',
+        title: capabilities.isProtected ? LINX_DEFAULT_SECRETARY.title : chat.title ?? '未命名聊天',
         preview: chat.lastMessagePreview ?? '暂无消息',
         timestamp: formatTimestamp(chat.lastActiveAt ?? chat.updatedAt),
         starred: capabilities.isPinned,
@@ -697,7 +699,33 @@ export function ChatListPane(_props: ChatListPaneProps) {
         canDelete: capabilities.canDelete,
       }
     })
-  }, [inboxItems, rawChats, runtimeSessions, threads])
+
+    const hasSecretary = sourceChats.some((chat) => (
+      chat.id === LINX_DEFAULT_SECRETARY.chatId || isLinxDefaultSecretaryChat(chat)
+    ))
+    const normalizedSearch = search.trim().toLocaleLowerCase()
+    const matchesSecretary = normalizedSearch.length === 0
+      || LINX_DEFAULT_SECRETARY.title.toLocaleLowerCase().includes(normalizedSearch)
+
+    if (hasSecretary || !matchesSecretary) return projectedChats
+
+    // The Secretary is a built-in entry point. Keep it visible while Pod bootstrap
+    // or a remote refresh is pending; persistence remains owned by collections.
+    return [{
+      id: LINX_DEFAULT_SECRETARY.chatId,
+      title: LINX_DEFAULT_SECRETARY.title,
+      preview: '暂无消息',
+      timestamp: '',
+      starred: true,
+      muted: false,
+      unreadCount: 0,
+      conversationKind: 'one',
+      threadMode: 'chat',
+      isProtected: true,
+      canTogglePin: false,
+      canDelete: false,
+    }, ...projectedChats]
+  }, [inboxItems, rawChats, runtimeSessions, search, threads])
 
   // Handlers
   const handleAddChat = useCallback(() => {
@@ -811,7 +839,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
       />
       
       <ScrollArea className="flex-1">
-        {isChatsLoading ? (
+        {isChatsLoading && chats.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...

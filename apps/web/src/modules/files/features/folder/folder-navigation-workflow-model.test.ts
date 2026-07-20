@@ -59,7 +59,7 @@ describe('folder navigation workflow model', () => {
 
   it('plans folder child open effects without coupling controller to open-mode semantics', () => {
     expect(planFolderChildOpenEffect(entry(), 'click')).toEqual({
-      type: 'select-local-preview',
+      type: 'select-file-preview',
       fileUri: 'https://pod.example/files/readme.md',
     })
     expect(planFolderChildOpenEffect(entry({

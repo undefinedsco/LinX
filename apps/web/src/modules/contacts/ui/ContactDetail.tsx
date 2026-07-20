@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { ModelSelector } from '@/components/ui/model-selector'
+import type { ModelOption } from '@/components/ui/model-selector'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -96,6 +97,7 @@ export interface ContactDetailProps {
     open: boolean
     type: CreateType
     form: CreateForm
+    availableAgentModels: ModelOption[]
     friendSearch: FriendSearch
     onUpdateForm(patch: Partial<CreateForm>): void
     onFriendWebIdChange(webId: string): void
@@ -119,7 +121,7 @@ export interface ContactDetailProps {
   }
 }
 
-const CALLING_ACTIONS_ENABLED = false
+const CALLING_ACTIONS_ENABLED = true
 const SHARED_GROUPS_ENABLED = false
 const REFERENCE_PERMISSION_EDITOR_ENABLED = false
 
@@ -324,7 +326,7 @@ export function ContactDetail({ detail, sync, group, editing, creation, actions 
       </Dialog>
 
       <Dialog open={creation.open && creation.type === 'agent'} onOpenChange={(open) => !open && creation.onClose()}>
-        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle className="flex items-center gap-2"><Bot className="w-5 h-5" />新建助手</DialogTitle><DialogDescription>创建一个新的 AI 联系人与默认会话。</DialogDescription></DialogHeader><div className="space-y-4 mt-2"><div className="space-y-2"><label className="text-sm font-medium">名称 *</label><Input placeholder="给助手起个名字" value={creation.form.name} onChange={(event) => creation.onUpdateForm({ name: event.target.value })} autoFocus /></div><div className="space-y-2"><label className="text-sm font-medium">系统提示词</label><Textarea placeholder="描述助手的角色和能力..." value={creation.form.instructions} onChange={(event) => creation.onUpdateForm({ instructions: event.target.value })} className="min-h-[100px] resize-none" /></div><div className="space-y-2"><label className="text-sm font-medium">聊天模型</label><ModelSelector type="chat" value={creation.form.model} onChange={(model) => creation.onUpdateForm({ model })} className="w-full" /></div></div><DialogFooter className="mt-4"><Button variant="outline" onClick={creation.onClose} disabled={editing.isSaving}>取消</Button><Button onClick={creation.onCreateAgent} disabled={editing.isSaving}>{editing.isSaving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}创建</Button></DialogFooter></DialogContent>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle className="flex items-center gap-2"><Bot className="w-5 h-5" />新建助手</DialogTitle><DialogDescription>创建一个新的 AI 联系人与默认会话。</DialogDescription></DialogHeader><div className="space-y-4 mt-2"><div className="space-y-2"><label className="text-sm font-medium">名称 *</label><Input placeholder="给助手起个名字" value={creation.form.name} onChange={(event) => creation.onUpdateForm({ name: event.target.value })} autoFocus /></div><div className="space-y-2"><label className="text-sm font-medium">系统提示词</label><Textarea placeholder="描述助手的角色和能力..." value={creation.form.instructions} onChange={(event) => creation.onUpdateForm({ instructions: event.target.value })} className="min-h-[100px] resize-none" /></div><div className="space-y-2"><label className="text-sm font-medium">聊天模型</label><ModelSelector type="chat" models={creation.availableAgentModels} value={creation.form.model} onChange={(model) => creation.onUpdateForm({ model })} className="w-full" /></div></div><DialogFooter className="mt-4"><Button variant="outline" onClick={creation.onClose} disabled={editing.isSaving}>取消</Button><Button onClick={creation.onCreateAgent} disabled={editing.isSaving}>{editing.isSaving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}创建</Button></DialogFooter></DialogContent>
       </Dialog>
       <Dialog open={creation.open && creation.type === 'friend'} onOpenChange={(open) => !open && creation.onClose()}>
         <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle className="flex items-center gap-2"><User className="w-5 h-5" />添加朋友</DialogTitle><DialogDescription>通过用户地址搜索并添加新的联系人。</DialogDescription></DialogHeader><div className="space-y-4 mt-2"><div className="space-y-2"><label className="text-sm font-medium">用户地址</label><div className="flex gap-2"><Input placeholder="https://alice.solidcommunity.net/profile/card#me" value={creation.friendSearch.webId} onChange={(event) => creation.onFriendWebIdChange(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && creation.onSearchWebId()} autoFocus /><Button onClick={creation.onSearchWebId} disabled={creation.friendSearch.isSearching}>{creation.friendSearch.isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}</Button></div>{creation.friendSearch.error && <p className="text-xs text-destructive">{creation.friendSearch.error}</p>}</div>{creation.friendSearch.searchResult && <div className="p-4 rounded-xl bg-muted/30 border border-border/40 space-y-4"><div className="flex items-center gap-4"><Avatar className="w-14 h-14 rounded-xl"><AvatarImage src={creation.friendSearch.searchResult.avatarUrl} /><AvatarFallback>{creation.friendSearch.searchResult.name.slice(0, 1).toUpperCase()}</AvatarFallback></Avatar><div className="flex-1 min-w-0"><h3 className="text-base font-semibold">{creation.friendSearch.searchResult.name}</h3><p className="text-xs text-muted-foreground truncate">{creation.friendSearch.searchResult.webId}</p></div></div><Button className="w-full" onClick={creation.onAddFriend} disabled={editing.isSaving}>{editing.isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <UserPlus className="w-4 h-4 mr-2" />}添加为好友</Button></div>}{!creation.friendSearch.searchResult && !creation.friendSearch.isSearching && <div className="py-8 text-center text-muted-foreground"><User className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm">输入对方的用户地址搜索用户</p></div>}</div></DialogContent>

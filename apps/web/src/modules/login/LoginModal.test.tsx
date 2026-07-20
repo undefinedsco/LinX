@@ -214,19 +214,19 @@ describe('LoginModal', () => {
 
     expect(screen.getByText('Ganlu')).toBeTruthy()
     expect(screen.getByText('Cloud · 云端空间')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '重新登录 Ganlu' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重新登录' })).toBeTruthy()
     expect(screen.queryByText('数据保存位置')).toBeNull()
     expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /本机/ })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: '重新登录 Ganlu' }))
+    fireEvent.click(screen.getByRole('button', { name: '重新登录' }))
     expect(props.onContinueStoredAccount).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: '切换账号' }))
     expect(props.onSwitchAccount).toHaveBeenCalledTimes(1)
   })
 
-  it('shows continue action when a restorable remembered session exists', () => {
+  it('keeps the remembered-account primary action labeled as relogin', () => {
     const props = createProps({
       hasRestorableSession: true,
       state: 'idle',
@@ -241,7 +241,7 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByRole('button', { name: '继续使用 Ganlu' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重新登录' })).toBeTruthy()
   })
 
   it('does not expose raw internal login errors in the provider selection banner', () => {
@@ -409,7 +409,7 @@ describe('LoginModal', () => {
 
     expect(screen.getByText('Alice')).toBeTruthy()
     expect(screen.getByText('undefineds · 本机空间')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '重新登录 Alice' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重新登录' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '切换账号' })).toBeTruthy()
     expect(screen.queryByText('数据保存位置')).toBeNull()
     expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
@@ -434,7 +434,7 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('undefineds · 云端空间')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '继续使用 Bob' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重新登录' })).toBeTruthy()
   })
 
   it('marks remembered Standalone accounts with the standalone avatar badge', () => {

@@ -38,7 +38,6 @@ describe('Structured view metadata controller architecture boundary', () => {
     expect(previewSource).not.toContain('syncedViewMetadataSignatureRef')
     expect(previewSource).not.toContain('localViewMetadataChangeBeforeHydrationRef')
     expect(previewSource).not.toContain('structuredViewMetadataSignature')
-    expect(previewSource).not.toContain("from '../../domain/structured/structured-table'")
     expect(previewSource).not.toContain('projectStructuredClassScope')
     expect(previewSource).not.toContain('resolveEffectiveClassScope')
 

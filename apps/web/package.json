@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "benchmark:files-read": "node scripts/benchmark-files-read-cloud.mjs",
+    "benchmark:files-read:model": "node scripts/benchmark-files-read-path.mjs",
     "dev": "vite",
     "build": "yarn workspace @linx/stores build && vite build",
     "build:check": "yarn workspace @linx/stores build && tsc && vite build",
@@ -12,13 +14,13 @@
     "lint": "eslint src --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@inrupt/solid-client": "^3.0.0",
     "@inrupt/solid-client-authn-browser": "^4.0.0",
     "@inrupt/vocab-common-rdf": "^1.0.5",
     "@linx/agent-runtime": "*",
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
     "@linx/stores": "^0.1.0",
     "@lobehub/icons": "^5.8.0",
     "@openai/chatkit-react": "^1.5.1",
@@ -40,6 +42,13 @@
     "@tanstack/react-query": "^5.100.11",
     "@tanstack/react-router": "^1.170.6",
     "@tanstack/react-table": "^8.21.3",
+    "@tiptap/core": "3.27.1",
+    "@tiptap/extension-image": "3.27.1",
+    "@tiptap/extension-list": "3.27.1",
+    "@tiptap/extension-table": "3.27.1",
+    "@tiptap/extension-task-item": "3.27.1",
+    "@tiptap/extension-task-list": "3.27.1",
+    "@tiptap/pm": "3.27.1",
     "@tiptap/react": "^3.26.1",
     "@tiptap/starter-kit": "^3.26.1",
     "@undefineds.co/drizzle-solid": "0.3.17",
@@ -60,6 +69,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "tailwind-merge": "^3.6.0",
+    "tldraw": "5.2.5",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
@@ -81,7 +91,7 @@
     "postcss": "^8.5.15",
     "tailwindcss": "^4.3.0",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vite": "^8.0.14",
     "vitest": "^4.1.7"
   },

@@ -32,6 +32,7 @@ import {
   resolveManagedDomainFromEnv,
 } from './lib/local-provider-config';
 import {
+  AUTH_SESSION_PARTITION,
   installLocalSpSessionRoutes,
   resolveLocalSpOidcIssuer,
   updateLocalSpSessionRouteFromSnapshot,
@@ -462,7 +463,7 @@ async function openAuthorizationWindow(url: string, options?: AuthorizationWindo
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      partition: 'persist:linx-auth',
+      partition: AUTH_SESSION_PARTITION,
     },
   });
 

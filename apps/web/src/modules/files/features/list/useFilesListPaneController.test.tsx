@@ -5,14 +5,18 @@ import { useFilesStore } from '../../app/store'
 import type { FilesEntry } from '../../domain/resource/resource-model'
 import { useFilesListPaneController } from './useFilesListPaneController'
 
-const { mockUseFilesEntries, mockUseSelectedFilesLocation } = vi.hoisted(() => ({
+const { mockUseFilesEntries, mockUseSelectedFilesLocation, mockUseFilesFavoriteList, mockFavoriteChange } = vi.hoisted(() => ({
   mockUseFilesEntries: vi.fn(),
   mockUseSelectedFilesLocation: vi.fn(),
+  mockUseFilesFavoriteList: vi.fn(),
+  mockFavoriteChange: vi.fn(),
 }))
 
 vi.mock('../../data/queries', () => ({
   useFilesEntries: (...args: unknown[]) => mockUseFilesEntries(...args),
+  useFilesFavoriteList: (...args: unknown[]) => mockUseFilesFavoriteList(...args),
   useSelectedFilesLocation: () => mockUseSelectedFilesLocation(),
+  filesFavoriteHooks: { onStarredChange: (...args: unknown[]) => mockFavoriteChange(...args) },
 }))
 
 vi.mock('../../app/platform-actions', () => ({
@@ -52,6 +56,7 @@ describe('useFilesListPaneController', () => {
       folderHistory: [],
     })
     mockUseSelectedFilesLocation.mockReturnValue({ kind: 'all' })
+    mockUseFilesFavoriteList.mockReturnValue({ data: [] })
     mockUseFilesEntries.mockReturnValue({
       data: [
         entry({
@@ -84,7 +89,7 @@ describe('useFilesListPaneController', () => {
     })
   })
 
-  it('enters folders through browser history and exposes the current path', () => {
+  it('enters folders and exposes the current explorer path', () => {
     useFilesStore.setState({
       selectedTreeNodeId: 'container:https://pod.example/public/',
       selectedFileId: 'https://pod.example/public/report.md',
@@ -102,15 +107,16 @@ describe('useFilesListPaneController', () => {
     })
 
     const { result } = renderHook(() => useFilesListPaneController())
-    expect(result.current.currentPathLabel).toBe('/public')
     expect(result.current.canGoBack).toBe(false)
 
     act(() => result.current.openFile(folder, 'double-click'))
 
     expect(useFilesStore.getState()).toMatchObject({
-      selectedTreeNodeId: 'container:https://pod.example/public/docs/',
       selectedFileId: 'https://pod.example/public/docs/',
     })
+    expect(useFilesStore.getState().selectedTreeNodeId).toBe('container:https://pod.example/public/docs/')
     expect(useFilesStore.getState().folderHistory).toHaveLength(1)
+    expect(result.current.canGoBack).toBe(true)
+    expect(result.current.explorerRows.map((row) => row.entry?.name)).toEqual(['report.md'])
   })
 })

@@ -120,6 +120,25 @@ describe('file detail shell model', () => {
     })
   })
 
+  it('uses the folder browser itself instead of preview and source tabs', () => {
+    const state = projectFileDetailShellState({
+      detailTab: 'preview',
+      file: filesDetail({
+        uri: 'https://pod.example/public/',
+        name: 'public',
+        kind: 'container',
+        semanticKind: 'container',
+        mimeType: 'inode/container',
+      }),
+      hasSystemOpen: false,
+    })
+
+    expect(state).toMatchObject({
+      openMode: 'browse-container',
+      showTabs: false,
+    })
+  })
+
   it('projects sidecar owner targets back to the canonical file resource', () => {
     const state = projectFileDetailShellState({
       detailTab: 'preview',

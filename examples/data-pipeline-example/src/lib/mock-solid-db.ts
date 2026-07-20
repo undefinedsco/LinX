@@ -128,6 +128,7 @@ class MockSolidDatabase {
       lastMessageAt: null,
       status: 'active',
       ...data,
+      description: data.description ?? null,
     }
 
     this.mockChats.unshift(newChat)

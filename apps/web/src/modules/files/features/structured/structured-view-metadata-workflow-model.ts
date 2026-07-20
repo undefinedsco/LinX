@@ -1,11 +1,20 @@
 import type { FilesStructuredViewMetadataSidecar } from '../../domain/resource/resource-model'
-import type { StructuredViewMetadata } from '../../domain/structured/structured-view-metadata'
+import {
+  normalizeStructuredKanbanBoardMetadata,
+  normalizeStructuredWhiteboardSnapshotMetadata,
+  type StructuredViewMetadata,
+} from '../../domain/structured/structured-view-metadata'
 
 function sortedRecordEntries<T>(record: Record<string, T>) {
   return Object.entries(record).sort(([left], [right]) => left.localeCompare(right))
 }
 
 export function structuredViewMetadataSignature(metadata: StructuredViewMetadata) {
+  const kanbanBoard = normalizeStructuredKanbanBoardMetadata(metadata.kanbanBoard, metadata.kanbanOrder)
+  const whiteboardSnapshot = normalizeStructuredWhiteboardSnapshotMetadata(metadata.whiteboard.snapshot, {
+    positions: metadata.whiteboard.positions,
+    visualRelations: metadata.whiteboard.visualRelations ?? [],
+  })
   return JSON.stringify({
     documentUri: metadata.documentUri,
     viewMode: metadata.viewMode,
@@ -16,11 +25,20 @@ export function structuredViewMetadataSignature(metadata: StructuredViewMetadata
     hiddenPredicates: [...metadata.hiddenPredicates].sort(),
     kanbanGroupPredicate: metadata.kanbanGroupPredicate,
     kanbanOrder: sortedRecordEntries(metadata.kanbanOrder ?? {}).map(([columnId, subjects]) => [columnId, [...subjects]]),
+    kanbanBoard: {
+      ...kanbanBoard,
+      cardOrder: sortedRecordEntries(kanbanBoard.cardOrder).map(([columnId, subjects]) => [columnId, [...subjects]]),
+    },
     columnSizing: sortedRecordEntries(metadata.columnSizing),
     whiteboard: {
       selectedSubjects: [...metadata.whiteboard.selectedSubjects],
       positions: sortedRecordEntries(metadata.whiteboard.positions),
       visualRelations: [...(metadata.whiteboard.visualRelations ?? [])].sort((left, right) => left.id.localeCompare(right.id)),
+      snapshot: {
+        ...whiteboardSnapshot,
+        groups: [...whiteboardSnapshot.groups].sort((left, right) => left.id.localeCompare(right.id)),
+        visualRelations: [...whiteboardSnapshot.visualRelations].sort((left, right) => left.id.localeCompare(right.id)),
+      },
     },
     writesCanonicalData: false,
   })

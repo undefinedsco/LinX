@@ -3,6 +3,7 @@ import { EVENTS } from '@inrupt/solid-client-authn-browser'
 import { useSession } from '@inrupt/solid-ui-react'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
+import { useLoginStore, type StoredAccount } from '@linx/stores/login'
 import { createLinxSolidDatabase } from '@/lib/data/linx-solid-database'
 import { isLocalAccessUrl } from '@/lib/local-access-url'
 import {
@@ -42,6 +43,7 @@ const SolidDatabaseContext = createContext<SolidDatabaseContextValue>({
 
 export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
   const { session, sessionRequestInProgress } = useSession()
+  const storedAccount = useLoginStore((state) => state.storedAccount)
   const [sessionVersion, setSessionVersion] = useState(0)
 
   const dbInstanceRef = useRef<SolidDatabase | null>(null)
@@ -110,13 +112,15 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
   // session.info.isLoggedIn is NOT React state — it's a mutable property
   // on a stable object reference, so we can't use it as an effect dependency.
   useEffect(() => {
-    // Still waiting for session provider to finish
-    if (sessionRequestInProgress) return
-
     const isLoggedIn = session.info.isLoggedIn
     const webId = session.info.webId
+
+    // Redirect progress can remain stale after a restored session is already
+    // usable. Only wait when the provider has not resolved an identity yet.
+    if (sessionRequestInProgress && !(isLoggedIn && webId)) return
+
     const sessionKey = isLoggedIn && webId ? getSessionKey(session.info.sessionId, webId) : null
-    const podContextResolution = webId ? resolveLoginPodContext(webId) : { context: null }
+    const podContextResolution = webId ? resolveLoginPodContext(webId, storedAccount) : { context: null }
     const databasePodKey = getDatabasePodKey(podContextResolution)
     const databaseKey = sessionKey ? getDatabaseKey(sessionKey, databasePodKey) : null
     const databaseScopeKey = databaseKey ?? 'logged-out'
@@ -259,12 +263,12 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     }
 
     initDatabase()
-  }, [sessionRequestInProgress, sessionVersion, session])
+  }, [sessionRequestInProgress, sessionVersion, session, storedAccount])
 
   const retry = useCallback(() => {
     setSessionVersion((current) => current + 1)
   }, [])
-  const activeScopeKey = getActiveDatabaseScopeKey(session.info)
+  const activeScopeKey = getActiveDatabaseScopeKey(session.info, storedAccount)
   const contextValue = useMemo(() => {
     const scopedValue = value.scopeKey === activeScopeKey
       ? value
@@ -333,9 +337,10 @@ function getDatabaseKey(sessionKey: string, podUrl: string | null): string {
 
 function getActiveDatabaseScopeKey(
   info: { isLoggedIn: boolean; sessionId?: string; webId?: string },
+  storedAccount: StoredAccount | null,
 ): string {
   if (!info.isLoggedIn || !info.webId) return 'logged-out'
-  const podContextResolution = resolveLoginPodContext(info.webId)
+  const podContextResolution = resolveLoginPodContext(info.webId, storedAccount)
   return getDatabaseKey(
     getSessionKey(info.sessionId, info.webId),
     getDatabasePodKey(podContextResolution),
@@ -392,7 +397,10 @@ interface LoginPodContextResolution {
   }
 }
 
-function resolveLoginPodContext(webId: string): LoginPodContextResolution {
+function resolveLoginPodContext(
+  webId: string,
+  storedAccount: StoredAccount | null,
+): LoginPodContextResolution {
   const pendingTransaction = getPendingLoginTransaction()
   if (pendingTransaction) {
     const resolved = resolveCandidatePodContext(
@@ -436,12 +444,30 @@ function resolveLoginPodContext(webId: string): LoginPodContextResolution {
     return resolved
   }
 
+  if (storedAccount && matchesStoredAccountWebId(storedAccount, webId)) {
+    const restored = resolveCandidatePodContext(
+      webId,
+      {
+        storageProviderUrl: storedAccount.storageProviderUrl,
+        storageProviderLabel: storedAccount.storageProviderLabel,
+        issuerUrl: storedAccount.issuerUrl,
+      },
+    )
+    if (restored.context || restored.error || restored.profileStorageProvider) {
+      return restored
+    }
+  }
+
   return {
     context: null,
     profileStorageProvider: {
       enforceProviderBase: false,
     },
   }
+}
+
+function matchesStoredAccountWebId(storedAccount: StoredAccount, webId: string): boolean {
+  return !storedAccount.webId || storedAccount.webId === webId
 }
 
 async function resolveRuntimePodContext(

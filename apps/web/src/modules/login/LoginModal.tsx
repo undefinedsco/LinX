@@ -48,7 +48,6 @@ export function LoginModal(props: LoginModalProps) {
       ) : props.storedAccount ? (
         <AccountView
           storedAccount={props.storedAccount}
-          hasRestorableSession={props.hasRestorableSession}
           onContinueStoredAccount={props.onContinueStoredAccount}
           onSwitchAccount={props.onSwitchAccount}
           error={props.error}
@@ -161,14 +160,12 @@ function RestoringView({ storedAccount }: Pick<LoginModalProps, 'storedAccount'>
 
 function AccountView({
   storedAccount,
-  hasRestorableSession,
   onContinueStoredAccount,
   onSwitchAccount,
   error,
   onClearError,
 }: {
   storedAccount: NonNullable<LoginModalProps['storedAccount']>
-  hasRestorableSession: boolean
   onContinueStoredAccount: () => void
   onSwitchAccount: () => void
   error: string | null
@@ -196,7 +193,7 @@ function AccountView({
           onClick={onContinueStoredAccount}
           className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
         >
-          {hasRestorableSession ? `继续使用 ${storedAccount.displayName}` : `重新登录 ${storedAccount.displayName}`}
+          重新登录
         </button>
         <button
           onClick={onSwitchAccount}

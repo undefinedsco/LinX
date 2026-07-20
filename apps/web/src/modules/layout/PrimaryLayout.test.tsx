@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 
 const mockNavigate = vi.fn()
 const mockSessionState = vi.hoisted(() => ({
@@ -134,6 +134,20 @@ describe('PrimaryLayout', () => {
     expect(listPanel.className).toContain('overflow-hidden')
   })
 
+  it('applies the Files module list panel width contract from layout config', async () => {
+    render(<PrimaryLayout microAppId="files" />)
+
+    const listPanel = await screen.findByTestId('micro-app-list-panel')
+    await waitFor(() => {
+      expect(listPanel.style.minWidth).toBe('232px')
+    })
+    expect(listPanel.style.width).toBe('100%')
+    expect(listPanel.style.maxWidth).toBe('360px')
+    expect(listPanel.parentElement?.style.minWidth).toBe('232px')
+    expect(listPanel.parentElement?.style.width).toBe('240px')
+    expect(listPanel.parentElement?.style.maxWidth).toBe('360px')
+  })
+
   it('allocates the main workspace as a percentage instead of an 80px panel', () => {
     expect(getMainPanelDefaultSize(false)).toBe('80%')
     expect(getMainPanelDefaultSize(true)).toBe('100%')
@@ -144,7 +158,7 @@ describe('PrimaryLayout', () => {
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation((query: string) => ({
-        matches: query.includes('max-width: 767px'),
+        matches: query.includes('max-width: 559px'),
         media: query,
         onchange: null,
         addListener: vi.fn(),

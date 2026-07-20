@@ -85,7 +85,60 @@ function createDb(overrides?: {
 }
 
 describe('files browser', () => {
-  it('lists container entries using real container resources and metadata', async () => {
+  it('coalesces concurrent reads of the same container without sharing presentation labels', async () => {
+    const listingResolvers: Array<(uris: string[]) => void> = []
+    const listContainerResources = vi.fn(() => new Promise<string[]>((resolve) => {
+      listingResolvers.push(resolve)
+    }))
+    const db = createDb({ listContainerResources })
+
+    const currentTopic = listContainerEntries(db, 'https://pod.example/public/', '当前话题')
+    const podRoot = listContainerEntries(db, 'https://pod.example/public/', 'Pod 根目录')
+    await Promise.resolve()
+    for (const resolve of listingResolvers) resolve(['https://pod.example/public/README.md'])
+
+    const [currentTopicEntries, podRootEntries] = await Promise.all([currentTopic, podRoot])
+
+    expect(listContainerResources).toHaveBeenCalledTimes(1)
+    expect(currentTopicEntries[0]?.sourceLabel).toBe('当前话题')
+    expect(podRootEntries[0]?.sourceLabel).toBe('Pod 根目录')
+  })
+
+  it('shares one container listing between tree/list projection and folder detail', async () => {
+    const listingResolvers: Array<(uris: string[]) => void> = []
+    const listContainerResources = vi.fn(() => new Promise<string[]>((resolve) => {
+      listingResolvers.push(resolve)
+    }))
+    const db = createDb({ listContainerResources })
+
+    const treeListing = listContainerEntries(db, 'https://pod.example/public/')
+    const folderDetail = readFileDetail(db, 'https://pod.example/public/')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(listContainerResources).toHaveBeenCalledTimes(1)
+    for (const resolve of listingResolvers) resolve(['https://pod.example/public/README.md'])
+
+    const [entries, detail] = await Promise.all([treeListing, folderDetail])
+
+    expect(entries).toHaveLength(1)
+    expect(detail.childEntries).toHaveLength(1)
+    expect(listContainerResources).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not wait for per-child metadata before returning a container listing', async () => {
+    const metadataFetch = vi.fn(() => new Promise<Response>(() => {})) as typeof fetch
+    const db = createDb({ fetch: metadataFetch })
+
+    const result = await Promise.race([
+      listContainerEntries(db, 'https://pod.example/public/'),
+      new Promise<'timed-out'>((resolve) => setTimeout(() => resolve('timed-out'), 50)),
+    ])
+
+    expect(result).not.toBe('timed-out')
+    expect(metadataFetch).not.toHaveBeenCalled()
+  })
+
+  it('lists container entries from resource identities without eager metadata', async () => {
     const db = createDb()
 
     const entries = await listContainerEntries(db, 'https://pod.example/public/', '当前话题')
@@ -150,7 +203,8 @@ describe('files browser', () => {
     })
   })
 
-  it('keeps container entries visible when one child metadata read fails', async () => {
+  it('keeps container entries visible without probing child metadata', async () => {
+    const metadataFetch = vi.fn(async () => new Response('', { status: 403 })) as typeof fetch
     const db = createDb({
       listContainerResources: async (containerUrl: string) => {
         if (containerUrl === 'https://pod.example/public/') {
@@ -162,18 +216,7 @@ describe('files browser', () => {
         }
         return []
       },
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method === 'HEAD' && url.endsWith('/private.md')) {
-          throw new Error('Forbidden')
-        }
-
-        return createResponse('', {
-          'content-type': url.endsWith('/') ? 'text/turtle' : 'text/markdown',
-          'content-length': url.endsWith('/') ? '0' : '17',
-          'last-modified': 'Sat, 01 Mar 2026 10:00:00 GMT',
-        })
-      }) as typeof fetch,
+      fetch: metadataFetch,
     })
 
     const entries = await listContainerEntries(db, 'https://pod.example/public/')
@@ -189,11 +232,11 @@ describe('files browser', () => {
       mimeType: 'text/markdown',
       size: null,
       modifiedAt: null,
-      metadataState: 'unavailable',
     })
+    expect(metadataFetch).not.toHaveBeenCalled()
   })
 
-  it('keeps permission metadata failures explicit on container entries', async () => {
+  it('defers permission failures until the resource detail is selected', async () => {
     const db = createDb({
       listContainerResources: async (containerUrl: string) => {
         if (containerUrl === 'https://pod.example/public/') {
@@ -203,7 +246,7 @@ describe('files browser', () => {
       },
       fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
-        if (init?.method === 'HEAD' && url.endsWith('/private.md')) {
+        if (url.endsWith('/private.md')) {
           return new Response('', { status: 403 })
         }
 
@@ -217,9 +260,8 @@ describe('files browser', () => {
 
     expect(entries[0]).toMatchObject({
       uri: 'https://pod.example/public/private.md',
-      metadataState: 'unavailable',
-      metadataErrorKind: 'forbidden',
     })
+    await expect(readFileDetail(db, entries[0].uri)).rejects.toMatchObject({ kind: 'forbidden' })
   })
 
   it('keeps .meta and access policy sidecars out of browsable container entries and counts', async () => {
@@ -314,7 +356,7 @@ describe('files browser', () => {
     expect(parseTreeNodeId('smart-root:recent')).toEqual({ kind: 'recent' })
   })
 
-  it('uses fetched RDF content type to classify extensionless data and generic vocab resources', async () => {
+  it('classifies extensionless RDF after its detail metadata is fetched', async () => {
     const db = createDb({
       listContainerResources: async (containerUrl: string) => {
         if (containerUrl === 'https://pod.example/.data/workspaces/ws-1/') {
@@ -338,13 +380,13 @@ describe('files browser', () => {
 
     expect(dataEntries[0]).toMatchObject({
       uri: 'https://pod.example/.data/workspaces/ws-1/state',
-      semanticKind: 'structured-data',
-      mimeType: 'text/turtle',
+      semanticKind: 'file',
+      mimeType: null,
     })
     expect(vocabEntries[0]).toMatchObject({
       uri: 'https://pod.example/.vocab/domain',
-      semanticKind: 'structured-data',
-      mimeType: 'text/turtle',
+      semanticKind: 'file',
+      mimeType: null,
     })
     expect(detail.semanticKind).toBe('structured-data')
   })
@@ -1475,6 +1517,11 @@ describe('files browser', () => {
         count: 2,
       }),
     ])
+    expect(rootData.entries?.map((entry) => entry.uri)).toEqual([
+      'https://pod.example/private/',
+      'https://pod.example/public/',
+      'https://pod.example/.data/workspaces/ws-1/session.log',
+    ])
   })
 
   it('does not recursively scan or fetch metadata while building the visible root', async () => {
@@ -1510,18 +1557,18 @@ describe('files browser', () => {
     expect(parseTreeNodeId('smart-root:repositories')).toEqual({ kind: 'repositories-root' })
   })
 
-  it('reads metadata without body preview for a selected ordinary editable text file', async () => {
+  it('reads metadata and a bounded body preview for a selected ordinary editable text file', async () => {
     const db = createDb()
 
     const detail = await readFileDetail(db, 'https://pod.example/public/README.md')
 
     expect(detail.name).toBe('README.md')
     expect(detail.semanticKind).toBe('file')
-    expect(detail.previewText).toBeNull()
+    expect(detail.previewText).toBe('# LinX\n真实预览')
     expect(detail.parentUri).toBe('https://pod.example/public/')
   })
 
-  it('does not body GET ordinary editable text file detail on selection', async () => {
+  it('loads metadata and a body preview with one GET for an ordinary editable text file detail', async () => {
     const authFetch = vi.fn(async () => createResponse('body must not be read on selection', {
       'content-type': 'text/css',
       'content-length': '34',
@@ -1533,16 +1580,56 @@ describe('files browser', () => {
 
     expect(detail.semanticKind).toBe('file')
     expect(detail.mimeType).toBe('text/css')
-    expect(detail.previewText).toBeNull()
+    expect(detail.previewText).toBe('body must not be read on selection')
     expect(authFetch).toHaveBeenCalledTimes(1)
-    expect(authFetch).toHaveBeenCalledWith('https://pod.example/public/site.css', { method: 'HEAD' })
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://pod.example/public/site.css',
+      expect.objectContaining({ method: 'GET' }),
+    )
+  })
+
+  it('does not probe metadata with HEAD before reading a text resource', async () => {
+    const authFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        return new Response('', { status: 500 })
+      }
+
+      return createResponse('# Notes', {
+        'content-type': 'text/markdown',
+        'content-length': '7',
+        'last-modified': 'Sat, 01 Mar 2026 10:00:00 GMT',
+      })
+    }) as typeof fetch
+    const db = createDb({ fetch: authFetch })
+
+    const detail = await readFileDetail(db, 'https://pod.example/public/notes.md')
+
+    expect(detail).toMatchObject({
+      name: 'notes.md',
+      mimeType: 'text/markdown',
+      size: 7,
+    })
+    expect(authFetch.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual(['GET'])
+    expect(detail.previewText).toBe('# Notes')
+  })
+
+  it('uses the filename type when the Pod reports a generic binary MIME type', async () => {
+    const authFetch = vi.fn(async () => createResponse('', {
+      'content-type': 'application/octet-stream',
+    })) as typeof fetch
+    const db = createDb({ fetch: authFetch })
+
+    const detail = await readFileDetail(db, 'https://pod.example/public/notes.md')
+
+    expect(detail.mimeType).toBe('text/markdown')
+    expect(getFilesEntryOpenMode(detail)).toBe('editable-file-sheet')
   })
 
   it('rejects inaccessible file metadata instead of rendering a fake detail', async () => {
     const db = createDb({
       fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
-        if (init?.method === 'HEAD' && url.endsWith('/private.md')) {
+        if (url.endsWith('/private.md')) {
           return new Response('', { status: 403 })
         }
 
@@ -1620,7 +1707,7 @@ describe('files browser', () => {
     expect(detail.previewText).toContain('@prefix')
   })
 
-  it('does not surface body transport preview errors for ordinary editable text detail', async () => {
+  it('surfaces a failed resource GET instead of rendering metadata from a separate probe', async () => {
     const db = createDb({
       fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
@@ -1636,11 +1723,9 @@ describe('files browser', () => {
       }) as typeof fetch,
     })
 
-    const detail = await readFileDetail(db, 'https://pod.example/public/README.md')
-
-    expect(detail.previewText).toBeNull()
-    expect(detail.previewUnavailableReason).toBe('当前文件类型暂不提供内联预览。')
-    expect(detail.previewUnavailableReason).not.toMatch(/HTTP|500|https?:\/\//i)
+    await expect(readFileDetail(db, 'https://pod.example/public/README.md')).rejects.toMatchObject({
+      status: 500,
+    })
   })
 
   it('reads complete raw text with etag through explicit raw text open', async () => {
@@ -1666,7 +1751,7 @@ describe('files browser', () => {
     const detail = await readFileDetail(db, 'https://pod.example/public/README.md')
     const raw = await readRawTextResource(db, 'https://pod.example/public/README.md')
 
-    expect(detail.previewText).toBeNull()
+    expect(detail.previewText).toBe(`${'a'.repeat(12000)}\n\n…`)
     expect(raw.content).toBe(fullText)
     expect(raw.etag).toBe('"raw-1"')
     expect(raw.mimeType).toBe('text/markdown')
@@ -1738,7 +1823,7 @@ describe('files browser', () => {
       expect(String(input)).toBe('https://pod.example/private/diagram.png')
       expect(init?.method).toBe('GET')
       expect(init?.headers).toEqual({
-        Accept: 'image/*, application/octet-stream;q=0.8, */*;q=0.1',
+        Accept: 'image/*, application/pdf, audio/*, video/*, application/octet-stream;q=0.8, */*;q=0.1',
       })
       return new Response(imageBytes, {
         status: 200,
@@ -1984,7 +2069,7 @@ describe('files browser', () => {
       { url: 'https://pod.example/public/report-renamed.md', method: 'PUT' },
       { url: 'https://pod.example/public/report.md.meta', method: 'GET' },
       { url: 'https://pod.example/public/report.md', method: 'DELETE' },
-      { url: 'https://pod.example/public/report-renamed.md', method: 'HEAD' },
+      { url: 'https://pod.example/public/report-renamed.md', method: 'GET' },
     ])
     expect(calls[2].init).toEqual(expect.objectContaining({
       method: 'PUT',
@@ -2045,7 +2130,7 @@ describe('files browser', () => {
       { url: 'https://pod.example/public/report.md', method: 'GET' },
       { url: 'https://pod.example/public/report-copy.md', method: 'PUT' },
       { url: 'https://pod.example/public/report.md.meta', method: 'GET' },
-      { url: 'https://pod.example/public/report-copy.md', method: 'HEAD' },
+      { url: 'https://pod.example/public/report-copy.md', method: 'GET' },
     ])
     expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(false)
     await expect(new Response(calls[2].init?.body as BodyInit).text()).resolves.toBe('copied body')
@@ -2164,7 +2249,7 @@ describe('files browser', () => {
       { url: 'https://pod.example/public/archive/report.md', method: 'PUT' },
       { url: 'https://pod.example/public/report.md.meta', method: 'GET' },
       { url: 'https://pod.example/public/report.md', method: 'DELETE' },
-      { url: 'https://pod.example/public/archive/report.md', method: 'HEAD' },
+      { url: 'https://pod.example/public/archive/report.md', method: 'GET' },
     ])
     await expect(new Response(calls[2].init?.body as BodyInit).text()).resolves.toBe('moved body')
   })

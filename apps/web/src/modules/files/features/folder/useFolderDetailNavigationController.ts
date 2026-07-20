@@ -14,11 +14,9 @@ import type { FilesDetail, FilesEntry } from '../../domain/resource/resource-mod
 export function useFolderDetailNavigationController({
   childUriSet,
   selectedChildren,
-  selectChildUri,
 }: {
   childUriSet: Set<string>
   selectedChildren: FilesEntry[]
-  selectChildUri: (uri: string) => void
 }) {
   const selectTreeNode = useFilesStore((state) => state.selectTreeNode)
   const selectFile = useFilesStore((state) => state.selectFile)
@@ -40,7 +38,7 @@ export function useFolderDetailNavigationController({
     const effect = planFolderChildOpenEffect(child, trigger)
     switch (effect.type) {
       case 'browse-container':
-        selectTreeNode(effect.treeNodeId)
+        selectTreeNode(effect.treeNodeId, child.uri)
         break
       case 'open-editable-sheet':
         setSheetChild(effect.file)
@@ -48,9 +46,6 @@ export function useFolderDetailNavigationController({
       case 'select-file-preview':
         selectFile(effect.fileUri)
         setDetailTab('preview')
-        break
-      case 'select-local-preview':
-        selectChildUri(effect.fileUri)
         break
       case 'noop':
         break

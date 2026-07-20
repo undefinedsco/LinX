@@ -15,6 +15,7 @@ import {
 } from './micro-app-registry'
 import { linxLayout } from '@/theme/spacing'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { useDefaultLayout } from 'react-resizable-panels'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,7 +61,8 @@ function PaneFallback() {
   return <div className="h-full w-full animate-pulse bg-muted/10" />
 }
 
-const compactViewportQuery = '(max-width: 767px)'
+// Preserve the desktop two-pane workflow in narrow side-by-side windows.
+const compactViewportQuery = '(max-width: 559px)'
 
 function readCompactViewport() {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -114,9 +116,14 @@ function MicroAppContentRenderer({
   )
 
   const rightSidebarWidth = layoutConfig?.rightSidebar ? layoutConfig.rightSidebarWidth ?? 320 : 0
-  const listPanelWidth = linxLayout.listPanel.defaultWidth
-  const listPanelMinWidth = linxLayout.listPanel.minWidth
-  const listPanelMaxWidth = linxLayout.listPanel.maxWidth
+  const listPanelWidth = layoutConfig?.listPanel?.defaultWidth ?? linxLayout.listPanel.defaultWidth
+  const listPanelMinWidth = layoutConfig?.listPanel?.minWidth ?? linxLayout.listPanel.minWidth
+  const listPanelMaxWidth = layoutConfig?.listPanel?.maxWidth ?? linxLayout.listPanel.maxWidth
+  const panelIds = isCompactViewport ? ['main'] : ['list', 'main']
+  const persistedLayout = useDefaultLayout({
+    id: `linx-primary-layout-${microAppId}-${isCompactViewport ? 'compact' : 'desktop'}`,
+    panelIds,
+  })
 
   return (
     <>
@@ -125,10 +132,17 @@ function MicroAppContentRenderer({
           <LayoutConfigBridge onConfigChange={handleLayoutConfigChange} />
         </Suspense>
       ) : null}
-      <ResizablePanelGroup direction="horizontal" className="h-full w-full">
+      <ResizablePanelGroup
+        direction="horizontal"
+        id={`linx-primary-layout-${microAppId}`}
+        defaultLayout={persistedLayout.defaultLayout}
+        onLayoutChanged={persistedLayout.onLayoutChanged}
+        className="h-full w-full"
+      >
         {!isCompactViewport ? (
           <>
             <ResizablePanel
+              id="list"
               defaultSize={listPanelWidth}
               minSize={listPanelMinWidth}
               maxSize={listPanelMaxWidth}
@@ -140,7 +154,7 @@ function MicroAppContentRenderer({
               }}
             >
               <section
-                className="flex h-full min-w-0 flex-col overflow-hidden border-r border-border/40 bg-layout-list-item"
+                className="flex h-full min-w-0 flex-col overflow-hidden bg-layout-list-item"
                 data-testid="micro-app-list-panel"
                 style={{
                   minWidth: listPanelMinWidth,
@@ -158,44 +172,33 @@ function MicroAppContentRenderer({
           </>
         ) : null}
 
-        <ResizablePanel defaultSize={getMainPanelDefaultSize(isCompactViewport)} className="min-w-0 overflow-hidden">
+        <ResizablePanel id="main" defaultSize={getMainPanelDefaultSize(isCompactViewport)} className="min-w-0 overflow-hidden">
           <section className="h-full flex bg-layout-content">
             <div className="flex-1 flex flex-col min-h-0">
               {!layoutConfig?.hideHeader && !(isCompactViewport && activeMicroApp.hideContentHeaderOnCompact) && (
                 <div data-testid="micro-app-content-head" className="h-12 flex items-center border-b border-border bg-layout-content">
-                  {layoutConfig?.header ? (
-                    <div className="flex-1 h-full">
-                      {layoutConfig.header}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2 min-w-[100px] px-4">
-                        {!layoutConfig?.hideIcon && (
-                          <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
-                            <activeMicroApp.icon className="w-3.5 h-3.5 text-primary" />
-                          </div>
-                        )}
+                  <div className="flex h-full min-w-0 flex-1 items-center">
+                    {layoutConfig?.header ? layoutConfig.header : (
+                      <div className="min-w-0 px-4 text-left" data-micro-app-title-slot="true">
+                        <h3 className="text-sm font-medium truncate" data-default-micro-app-title="true">
+                          {layoutConfig?.mainTitle ?? activeMicroApp.header.moduleTitle}
+                        </h3>
                       </div>
-
-                      <div className="flex-1 text-center">
-                        <h3 className="text-sm font-medium truncate">{layoutConfig?.mainTitle ?? activeMicroApp.header.moduleTitle}</h3>
-                      </div>
-
-                      <div className="flex items-center gap-1 min-w-[100px] justify-end px-4">
-                        {layoutConfig?.topActions}
-                        <InboxBellButton />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={onToggleTheme}
-                          title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-                        >
-                          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                        </Button>
-                      </div>
-                    </>
-                  )}
+                    )}
+                  </div>
+                  <div className="flex h-full shrink-0 items-center gap-1 px-4">
+                    {layoutConfig?.topActions}
+                    <InboxBellButton />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={onToggleTheme}
+                      title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+                    >
+                      {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                    </Button>
+                  </div>
                 </div>
               )}
               <div className="flex-1 min-h-0 flex flex-col">

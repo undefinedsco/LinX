@@ -125,11 +125,37 @@ describe('file detail preview model', () => {
 
     expect(projectReadonlyFilePreviewModel(detail({
       mimeType: 'application/pdf',
+      name: 'report.pdf',
       previewText: null,
+      uri: 'https://pod.example/files/report.pdf',
     }))).toEqual({
-      kind: 'unsupported',
+      alt: 'report.pdf',
+      kind: 'document',
+      loadingMessage: '正在加载预览...',
+      mimeType: 'application/pdf',
       mimeTypeLabel: 'application/pdf',
-      reason: '当前资源暂不支持内联预览。',
+      unavailableReason: '当前资源暂不支持内联预览。',
+      uri: 'https://pod.example/files/report.pdf',
+    })
+
+    expect(projectReadonlyFilePreviewModel(detail({
+      mimeType: 'application/octet-stream',
+      name: 'recording.m4a',
+      previewText: null,
+      uri: 'https://pod.example/files/recording.m4a',
+    }))).toMatchObject({
+      kind: 'audio',
+      mimeType: 'audio/mp4',
+    })
+
+    expect(projectReadonlyFilePreviewModel(detail({
+      mimeType: null,
+      name: 'demo.mp4',
+      previewText: null,
+      uri: 'https://pod.example/files/demo.mp4',
+    }))).toMatchObject({
+      kind: 'video',
+      mimeType: 'video/mp4',
     })
   })
 

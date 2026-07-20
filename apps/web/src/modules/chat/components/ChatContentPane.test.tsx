@@ -252,10 +252,10 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    expect(screen.getByRole('heading', { name: '你好，我是 LinX Secretary' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toBeEnabled()
+    expect(screen.getByRole('heading', { name: '你好，我是 LinX 主理人' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: /整理今天的工作/ }))
-    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toHaveValue('帮我整理今天需要推进的工作')
+    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toHaveValue('帮我整理今天需要推进的工作')
     expect(screen.queryByText('正在准备话题...')).not.toBeInTheDocument()
     expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
   })
@@ -355,6 +355,28 @@ describe('ChatContentPane', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试同步' }))
     expect(mockChatRefetch).toHaveBeenCalledTimes(1)
     expect(mockThreadRefetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not turn a staged Secretary welcome into a chat-sync failure banner', () => {
+    storeState.selectedChatId = '__secretary__/index.ttl#this'
+    storeState.selectedThreadId = null
+    mockUseChatList.mockReturnValue({
+      data: [{ id: '__secretary__/index.ttl#this', title: 'AI Secretary' }],
+      isLoading: false,
+      error: Object.assign(new Error('HTTP 403'), { status: 403 }),
+      refetch: mockChatRefetch,
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: Object.assign(new Error('request timed out'), { name: 'TimeoutError' }),
+      refetch: mockThreadRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByTestId('secretary-welcome')).toBeInTheDocument()
+    expect(screen.queryByText('聊天同步失败，当前显示缓存内容')).not.toBeInTheDocument()
   })
 
   it('keeps cached content visible but disables sending while the database is invalid', () => {
@@ -540,7 +562,7 @@ describe('ChatContentPane', () => {
     })
     view.rerender(<ChatContentPane theme="light" />)
 
-    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toHaveValue('')
     expect(screen.getByRole('button', { name: '开始对话' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: '重试创建话题' })).not.toBeInTheDocument()
     expect(screen.queryByText(/old account thread failure/)).not.toBeInTheDocument()

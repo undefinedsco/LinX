@@ -4,7 +4,11 @@ import { FilesListPane } from './FilesListPane'
 import { createContainerNodeId, FilesResourceReadError } from '../browser'
 import { useFilesStore } from '../app/store'
 
+const { mockUseExplorerChildQueries } = vi.hoisted(() => ({
+  mockUseExplorerChildQueries: vi.fn(),
+}))
 const mockUseFilesEntries = vi.fn()
+const mockRefetchEntries = vi.fn()
 const mockUseSelectedFilesLocation = vi.fn()
 const mockUseDeleteFileResource = vi.fn()
 const mockDeleteFileResource = vi.fn()
@@ -21,10 +25,35 @@ const mockCreateBlobResource = vi.fn()
 const mockUseCreateFolderResource = vi.fn()
 const mockCreateFolderResource = vi.fn()
 const mockToast = vi.fn()
+const mockRetryContainer = vi.fn()
 
 vi.mock('../data/queries', () => ({
   useFilesEntries: (...args: unknown[]) => mockUseFilesEntries(...args),
+  useFilesExpandedContainerEntries: ({ expandedContainerUris }: { expandedContainerUris: string[] }) => {
+    const results = mockUseExplorerChildQueries(expandedContainerUris.map((uri) => ({
+      queryKey: ['files', 'expanded-container', uri],
+    }))) as Array<{ data?: unknown[]; isLoading?: boolean; error?: unknown }>
+    return {
+      childEntriesByContainerUri: Object.fromEntries(expandedContainerUris.map((uri, index) => [
+        uri,
+        results[index]?.data ?? [],
+      ])),
+      loadingContainerUris: new Set(expandedContainerUris.filter((_, index) => results[index]?.isLoading)),
+      errorByContainerUri: Object.fromEntries(expandedContainerUris.flatMap((uri, index) => (
+        results[index]?.error ? [[uri, results[index]?.error]] : []
+      ))),
+      retryContainer: mockRetryContainer,
+    }
+  },
+  useFilesFavoriteList: () => ({ data: [] }),
+  filesFavoriteHooks: { onStarredChange: vi.fn() },
   useSelectedFilesLocation: () => mockUseSelectedFilesLocation(),
+  useActiveFilesWorkspaceContext: () => ({
+    chatId: null,
+    threadId: null,
+    workspaceUri: 'https://pod.example/',
+  }),
+  useFilesChatMessages: () => ({ data: [], isLoading: false, error: null }),
   useDeleteFileResource: () => mockUseDeleteFileResource(),
   useCopyFileResource: () => mockUseCopyFileResource(),
   useMoveFileResource: () => mockUseMoveFileResource(),
@@ -32,6 +61,15 @@ vi.mock('../data/queries', () => ({
   useCreateRawTextResource: () => mockUseCreateRawTextResource(),
   useCreateBlobResource: () => mockUseCreateBlobResource(),
   useCreateFolderResource: () => mockUseCreateFolderResource(),
+}))
+
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueries: ({ queries }: { queries: unknown[] }) => mockUseExplorerChildQueries(queries),
+}))
+
+vi.mock('@/providers/solid-database-provider', () => ({
+  useSolidDatabase: () => ({ db: {} }),
 }))
 
 vi.mock('@/components/ui/use-toast', () => ({
@@ -52,6 +90,7 @@ beforeEach(() => {
     tagFilter: null,
     detailTab: 'preview',
     editableFileSheetOpenRequestUri: null,
+    sidecarActionRequest: null,
     folderHistory: [],
   })
   Object.assign(navigator, {
@@ -60,6 +99,9 @@ beforeEach(() => {
     },
   })
   mockUseSelectedFilesLocation.mockReturnValue({ kind: 'all' })
+  mockUseExplorerChildQueries.mockReturnValue([])
+  mockRetryContainer.mockClear()
+  mockRefetchEntries.mockClear()
   mockDeleteFileResource.mockResolvedValue(undefined)
   mockUseDeleteFileResource.mockReturnValue({
     mutateAsync: mockDeleteFileResource,
@@ -152,13 +194,14 @@ beforeEach(() => {
     ],
     isLoading: false,
     error: null,
+    refetch: mockRefetchEntries,
   })
 })
 
 const defaultProps = { paneId: 'list', appId: 'files' }
 
 describe('FilesListPane', () => {
-  it('shows the current path and restores the previous folder from the head', () => {
+  it('renders folder back navigation and the current path', () => {
     useFilesStore.setState({
       selectedTreeNodeId: createContainerNodeId('https://pod.example/public/docs/'),
       selectedFileId: 'https://pod.example/public/docs/',
@@ -176,10 +219,33 @@ describe('FilesListPane', () => {
     render(<FilesListPane {...defaultProps} />)
 
     expect(screen.getByLabelText('当前文件夹路径')).toHaveTextContent('/public/docs')
-    fireEvent.click(screen.getByRole('button', { name: '返回上一个文件夹' }))
+    expect(screen.getByRole('button', { name: '返回上一级文件夹' })).toBeInTheDocument()
+    expect(screen.getByRole('tree', { name: '文件资源树' })).toBeInTheDocument()
+  })
+
+  it('returns to the previous folder from the list head', () => {
+    useFilesStore.setState({
+      selectedTreeNodeId: createContainerNodeId('https://pod.example/public/docs/'),
+      selectedFileId: 'https://pod.example/public/docs/',
+      folderHistory: [{
+        treeNodeId: createContainerNodeId('https://pod.example/public/'),
+        selectedFileId: 'https://pod.example/public/',
+        scrollKey: null,
+      }],
+    })
+    mockUseSelectedFilesLocation.mockReturnValue({
+      kind: 'container',
+      containerUri: 'https://pod.example/public/docs/',
+    })
+
+    render(<FilesListPane {...defaultProps} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '返回上一级文件夹' }))
+
     expect(useFilesStore.getState()).toMatchObject({
       selectedTreeNodeId: createContainerNodeId('https://pod.example/public/'),
       selectedFileId: 'https://pod.example/public/',
+      folderHistory: [],
     })
   })
 
@@ -189,17 +255,98 @@ describe('FilesListPane', () => {
     expect(screen.getByText('public')).toBeInTheDocument()
     expect(screen.getByText('README.md')).toBeInTheDocument()
     expect(screen.getByText('config.json')).toBeInTheDocument()
-    expect(screen.getByText('1.0 KB')).toBeInTheDocument()
-    expect(screen.getByText('512 B')).toBeInTheDocument()
-    expect(screen.getByText('text/markdown')).toBeInTheDocument()
-    expect(screen.getByText('application/json')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '名称' })).toBeInTheDocument()
+    expect(screen.queryByText('1.0 KB')).not.toBeInTheDocument()
+    expect(screen.queryByText('512 B')).not.toBeInTheDocument()
+    expect(screen.queryByText('text/markdown')).not.toBeInTheDocument()
+    expect(screen.queryByText('application/json')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '名称' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '类别' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '修改时间' })).not.toBeInTheDocument()
     expect(screen.queryByText('来源')).not.toBeInTheDocument()
     expect(screen.queryByText('当前话题')).not.toBeInTheDocument()
     expect(screen.queryByText('Pod 根目录')).not.toBeInTheDocument()
     expect(screen.queryByText('/public/')).not.toBeInTheDocument()
+  })
+
+  it('renders a compact tree explorer with folder navigation in the head', () => {
+    useFilesStore.setState({
+      selectedTreeNodeId: createContainerNodeId('https://pod.example/public/docs/'),
+      selectedFileId: 'https://pod.example/public/docs/',
+      folderHistory: [{
+        treeNodeId: createContainerNodeId('https://pod.example/public/'),
+        selectedFileId: 'https://pod.example/public/',
+        scrollKey: null,
+      }],
+    })
+    mockUseSelectedFilesLocation.mockReturnValue({
+      kind: 'container',
+      containerUri: 'https://pod.example/public/docs/',
+    })
+
+    render(<FilesListPane {...defaultProps} />)
+
+    expect(screen.getByRole('button', { name: '返回上一级文件夹' })).toBeInTheDocument()
+    expect(screen.getByLabelText('当前文件夹路径')).toHaveTextContent('/public/docs')
+    expect(screen.getByRole('tree', { name: '文件资源树' })).toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: 'public' })).toHaveAttribute('aria-level', '1')
+    expect(screen.getByRole('treeitem', { name: 'README.md' }).className).toContain('h-7')
+  })
+
+  it('expands folders inline and lazily without changing current detail', async () => {
+    mockUseExplorerChildQueries.mockImplementation((queries: unknown[]) => queries.map(() => ({
+      data: [{
+        id: 'https://pod.example/public/guide.md',
+        uri: 'https://pod.example/public/guide.md',
+        name: 'guide.md',
+        kind: 'resource',
+        semanticKind: 'file',
+        parentUri: 'https://pod.example/public/',
+        mimeType: 'text/markdown',
+        size: 2048,
+        modifiedAt: '2026-03-02T10:00:00Z',
+      }],
+      isLoading: false,
+      error: null,
+    })))
+    useFilesStore.setState({ selectedFileId: 'https://pod.example/public/README.md' })
+
+    render(<FilesListPane {...defaultProps} />)
+
+    expect(mockUseExplorerChildQueries).toHaveBeenLastCalledWith([])
+    fireEvent.click(screen.getByRole('button', { name: '展开 public' }))
+
+    expect(await screen.findByRole('treeitem', { name: 'guide.md' })).toHaveAttribute('aria-level', '2')
+    expect(mockUseExplorerChildQueries).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ queryKey: expect.any(Array) }),
+    ]))
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
+    expect(useFilesStore.getState().folderHistory).toEqual([])
+  })
+
+  it('opens files from explorer rows through the existing editable sheet workflow', () => {
+    render(<FilesListPane {...defaultProps} />)
+
+    const readmeRow = screen.getByRole('treeitem', { name: 'README.md' })
+    fireEvent.click(readmeRow)
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
+    expect(useFilesStore.getState().editableFileSheetOpenRequestUri).toBeNull()
+
+    fireEvent.doubleClick(readmeRow)
+    expect(useFilesStore.getState().editableFileSheetOpenRequestUri).toBe('https://pod.example/public/README.md')
+  })
+
+  it('keeps scope and sorting in one compact list toolbar', () => {
+    render(<FilesListPane {...defaultProps} />)
+
+    const toolbar = screen.getByLabelText('资源工具栏')
+    expect(toolbar).toHaveClass('h-12')
+    expect(screen.queryByLabelText('当前文件夹路径')).not.toBeInTheDocument()
+    expect(screen.queryByText('全部文件')).not.toBeInTheDocument()
+
+    fireEvent.pointerDown(within(toolbar).getByRole('button', { name: '筛选和排序' }))
+    expect(screen.getByText('范围')).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: '全部文件' })).toBeInTheDocument()
+    expect(screen.getByText('排序')).toBeInTheDocument()
   })
 
   it('opens web ingestion through the user-facing add menu', async () => {
@@ -386,7 +533,7 @@ describe('FilesListPane', () => {
     ))
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '文件范围：全部文件' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: '最近文件' }))
 
     expect(useFilesStore.getState()).toMatchObject({
@@ -394,7 +541,7 @@ describe('FilesListPane', () => {
       selectedTreeNodeId: 'smart-root:recent',
     })
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '文件范围：最近文件' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: '聊天文件' }))
 
     expect(useFilesStore.getState()).toMatchObject({
@@ -402,7 +549,7 @@ describe('FilesListPane', () => {
       selectedTreeNodeId: 'all',
     })
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '文件范围：聊天文件' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: '全部文件' }))
 
     expect(useFilesStore.getState()).toMatchObject({
@@ -411,7 +558,7 @@ describe('FilesListPane', () => {
     })
   })
 
-  it('renders recent files scope as modified entries with parent paths', () => {
+  it('renders recent files as compact tree rows without secondary path lines', () => {
     useFilesStore.setState({ selectedTreeNodeId: 'smart-root:recent' })
     mockUseSelectedFilesLocation.mockReturnValue({ kind: 'recent' })
     mockUseFilesEntries.mockReturnValue({
@@ -460,8 +607,8 @@ describe('FilesListPane', () => {
     expect(screen.getByText('old.md')).toBeInTheDocument()
     expect(screen.getByText('public')).toBeInTheDocument()
     expect(screen.getByText('最近文件')).toBeInTheDocument()
-    expect(screen.getByText('/')).toBeInTheDocument()
-    expect(screen.getAllByText('/public/')).toHaveLength(2)
+    expect(screen.queryByText('/')).not.toBeInTheDocument()
+    expect(screen.queryByText('/public/')).not.toBeInTheDocument()
   })
 
   it('marks entries whose metadata could not be read', () => {
@@ -553,8 +700,8 @@ describe('FilesListPane', () => {
 
     expect(screen.getByText('state.ttl')).toBeInTheDocument()
     expect(screen.getByText('terms.ttl')).toBeInTheDocument()
-    expect(screen.getByText('.data 表')).toBeInTheDocument()
-    expect(screen.getByText('vocab terms')).toBeInTheDocument()
+    expect(screen.queryByText('.data 表')).not.toBeInTheDocument()
+    expect(screen.queryByText('vocab terms')).not.toBeInTheDocument()
     expect(screen.queryByText('text/turtle')).not.toBeInTheDocument()
   })
 
@@ -790,21 +937,45 @@ describe('FilesListPane', () => {
       data: [],
       isLoading: false,
       error: new FilesResourceReadError('https://pod.example/private/', { status: 403 }),
+      refetch: mockRefetchEntries,
     })
 
     render(<FilesListPane {...defaultProps} />)
 
     expect(screen.getByText('没有权限读取这个容器')).toBeInTheDocument()
-    expect(screen.getByText('可以检查 ACL/ACR 权限，或切换到其它可浏览范围。')).toBeInTheDocument()
+    expect(screen.getByText('当前账号没有读取权限，可以申请授权或切换到其它可浏览范围。')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '重新读取' }))
+    expect(mockRefetchEntries).toHaveBeenCalledTimes(1)
   })
 
-  it('double-clicking a container enters that container', () => {
+  it('retries a failed expanded container from both the error row and its icon', () => {
+    mockUseExplorerChildQueries.mockImplementation((queries: unknown[]) => queries.map(() => ({
+      data: [],
+      isLoading: false,
+      error: new Error('temporary child read failure'),
+    })))
+
+    render(<FilesListPane {...defaultProps} />)
+    fireEvent.click(screen.getByRole('button', { name: '展开 public' }))
+
+    const retryButton = screen.getByRole('button', { name: '重试读取 https://pod.example/public/' })
+    fireEvent.click(retryButton)
+    expect(mockRetryContainer).toHaveBeenCalledWith('https://pod.example/public/')
+
+    fireEvent.keyDown(retryButton.closest('[role="treeitem"]')!, { key: 'Enter' })
+    expect(mockRetryContainer).toHaveBeenCalledTimes(2)
+  })
+
+  it('double-clicking a container expands it inline and selects its detail', () => {
     render(<FilesListPane {...defaultProps} />)
 
     fireEvent.doubleClick(screen.getByText('public'))
 
     expect(useFilesStore.getState().selectedTreeNodeId).toBe(createContainerNodeId('https://pod.example/public/'))
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
+    expect(useFilesStore.getState().folderHistory).toHaveLength(1)
+    expect(screen.getByRole('treeitem', { name: 'public' })).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('single-clicking a container selects it for folder detail without entering it', () => {
@@ -836,7 +1007,7 @@ describe('FilesListPane', () => {
     })
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }))
 
     expect(Array.from(useFilesStore.getState().selectedFileIds)).toEqual([
       'https://pod.example/public/README.md',
@@ -847,7 +1018,7 @@ describe('FilesListPane', () => {
   it('single-clicking an editable file selects it and double-clicking requests its editor sheet', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    const readmeRow = screen.getByRole('button', { name: 'README.md' })
+    const readmeRow = screen.getByRole('treeitem', { name: 'README.md' })
     fireEvent.click(readmeRow)
 
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
@@ -859,11 +1030,33 @@ describe('FilesListPane', () => {
     expect(useFilesStore.getState().editableFileSheetOpenRequestUri).toBe('https://pod.example/public/README.md')
   })
 
+  it('keeps ordinary files in read-only preview on single click and opens the editor only from Enter or explicit Edit', () => {
+    render(<FilesListPane {...defaultProps} />)
+
+    const readmeRow = screen.getByRole('treeitem', { name: 'README.md' })
+    fireEvent.click(readmeRow)
+
+    expect(useFilesStore.getState()).toMatchObject({
+      selectedFileId: 'https://pod.example/public/README.md',
+      detailTab: 'preview',
+      editableFileSheetOpenRequestUri: null,
+    })
+
+    fireEvent.keyDown(readmeRow, { key: 'Enter' })
+    expect(useFilesStore.getState().editableFileSheetOpenRequestUri).toBe('https://pod.example/public/README.md')
+
+    useFilesStore.setState({ editableFileSheetOpenRequestUri: null })
+    fireEvent.click(within(readmeRow).getByRole('button', { name: '更多 README.md 操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '编辑' }))
+
+    expect(useFilesStore.getState().editableFileSheetOpenRequestUri).toBe('https://pod.example/public/README.md')
+  })
+
   it('tracks Cmd/Ctrl multi-selection in the main file list', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('button', { name: 'config.json' }), { ctrlKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { ctrlKey: true })
 
     expect(Array.from(useFilesStore.getState().selectedFileIds)).toEqual([
       'https://pod.example/public/README.md',
@@ -875,7 +1068,7 @@ describe('FilesListPane', () => {
   it('tracks Shift range selection in the main file list', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    const rows = screen.getAllByRole('button', { name: /public|README\.md|config\.json/ })
+    const rows = screen.getAllByRole('treeitem', { name: /public|README.md|config.json/ })
     fireEvent.click(rows[0])
     fireEvent.click(rows[rows.length - 1], { shiftKey: true })
 
@@ -901,7 +1094,7 @@ describe('FilesListPane', () => {
     })
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }))
 
     expect(Array.from(useFilesStore.getState().selectedFileIds)).toEqual([
       'https://pod.example/public/README.md',
@@ -912,23 +1105,23 @@ describe('FilesListPane', () => {
   it('copies selected main list file URIs from the batch toolbar', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('button', { name: 'config.json' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { metaKey: true })
 
     expect(screen.getByText('已选择 2 项')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '复制所选 URI' }))
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith([
-      'https://pod.example/public/README.md',
       'https://pod.example/public/config.json',
+      'https://pod.example/public/README.md',
     ].join('\n'))
   })
 
   it('deletes selected main list files from the batch toolbar', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('button', { name: 'config.json' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { metaKey: true })
     fireEvent.click(screen.getByRole('button', { name: '删除所选项' }))
 
     expect(screen.getByRole('dialog', { name: '删除 2 项' })).toBeInTheDocument()
@@ -936,8 +1129,8 @@ describe('FilesListPane', () => {
     await waitFor(() => {
       expect(mockDeleteFileResource).toHaveBeenCalledTimes(2)
     })
-    expect(mockDeleteFileResource).toHaveBeenNthCalledWith(1, 'https://pod.example/public/README.md')
-    expect(mockDeleteFileResource).toHaveBeenNthCalledWith(2, 'https://pod.example/public/config.json')
+    expect(mockDeleteFileResource).toHaveBeenNthCalledWith(1, 'https://pod.example/public/config.json')
+    expect(mockDeleteFileResource).toHaveBeenNthCalledWith(2, 'https://pod.example/public/README.md')
     expect(useFilesStore.getState().selectedFileIds.size).toBe(0)
     expect(useFilesStore.getState().selectedFileId).toBeNull()
     expect(mockToast).toHaveBeenCalledWith({ description: '已删除 2 项' })
@@ -947,8 +1140,8 @@ describe('FilesListPane', () => {
     mockDeleteFileResource.mockRejectedValueOnce(new Error('HTTP 403'))
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('button', { name: 'config.json' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { metaKey: true })
     fireEvent.click(screen.getByRole('button', { name: '删除所选项' }))
     fireEvent.click(screen.getByRole('button', { name: '删除' }))
 
@@ -965,8 +1158,8 @@ describe('FilesListPane', () => {
   it('opens a single-item context menu from an unselected main list row', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'README.md' }), { metaKey: true })
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'public' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'public' }))
 
     expect(await screen.findByRole('menuitem', { name: '复制 URI' })).toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
@@ -981,6 +1174,23 @@ describe('FilesListPane', () => {
     })
   })
 
+  it('moves file-level meta and access commands into the row hover menu', async () => {
+    render(<FilesListPane {...defaultProps} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '更多 README.md 操作' }))
+
+    expect(await screen.findByRole('menuitem', { name: '查看 .meta' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看 .meta' }))
+
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
+    expect(useFilesStore.getState().sidecarActionRequest).toEqual({
+      uri: 'https://pod.example/public/README.md',
+      action: 'meta',
+    })
+  })
+
   it('opens a rename operation for the right-click target without rewriting the active selection', async () => {
     useFilesStore.setState({
       selectedFileId: 'https://pod.example/public/README.md',
@@ -988,7 +1198,7 @@ describe('FilesListPane', () => {
     })
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'config.json' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'config.json' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '重命名' }))
 
     expect(await screen.findByLabelText('新名称')).toHaveValue('config.json')
@@ -1005,7 +1215,7 @@ describe('FilesListPane', () => {
     })
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'config.json' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'config.json' }))
 
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
     expect(useFilesStore.getState().selectedFileIds).toEqual(new Set(['https://pod.example/public/README.md']))
@@ -1026,7 +1236,7 @@ describe('FilesListPane', () => {
     })
     render(<FilesListPane {...defaultProps} />)
 
-    const configRow = screen.getByRole('button', { name: 'config.json' })
+    const configRow = screen.getByRole('treeitem', { name: 'config.json' })
     fireEvent.pointerDown(configRow, { button: 2, buttons: 2 })
 
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
@@ -1048,19 +1258,19 @@ describe('FilesListPane', () => {
   it('keeps multi-selection when opening a context menu on a selected main list row', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('button', { name: 'config.json' }), { metaKey: true })
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { metaKey: true })
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
 
     expect(screen.getByText('已选择 2 项')).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('menuitem', { name: '复制所选 URI' }))
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith([
-      'https://pod.example/public/README.md',
       'https://pod.example/public/config.json',
+      'https://pod.example/public/README.md',
     ].join('\n'))
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '删除所选项' }))
     fireEvent.click(await screen.findByRole('button', { name: '删除' }))
 
@@ -1072,7 +1282,7 @@ describe('FilesListPane', () => {
   it('renames a single main list row from its context menu', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '重命名' }))
     const input = await screen.findByLabelText('新名称')
     fireEvent.change(input, { target: { value: 'README-renamed.md' } })
@@ -1094,7 +1304,7 @@ describe('FilesListPane', () => {
     })
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '重命名' }))
     fireEvent.change(await screen.findByLabelText('新名称'), {
       target: { value: 'README-renamed.md' },
@@ -1119,7 +1329,7 @@ describe('FilesListPane', () => {
     })
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
 
     expect(await screen.findByRole('menuitem', { name: '重命名' })).toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
@@ -1129,7 +1339,7 @@ describe('FilesListPane', () => {
   it('confirms a rename operation with Enter from the operation input', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '重命名' }))
     const input = await screen.findByLabelText('新名称')
 
@@ -1147,7 +1357,7 @@ describe('FilesListPane', () => {
   it('validates main list rename input before moving the resource', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '重命名' }))
     const input = await screen.findByLabelText('新名称')
 
@@ -1169,7 +1379,7 @@ describe('FilesListPane', () => {
   it('closes the operation sheet with Escape without running the operation', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '移动到...' }))
     const dialog = await screen.findByRole('dialog', { name: '移动到' })
 
@@ -1182,7 +1392,7 @@ describe('FilesListPane', () => {
   it('copies and moves a single main list row from its context menu with Finder-style target paths', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '复制到...' }))
     expect(await screen.findByLabelText('目标路径')).toHaveValue('README copy.md')
     fireEvent.click(screen.getByRole('button', { name: '复制' }))
@@ -1193,7 +1403,7 @@ describe('FilesListPane', () => {
       })
     })
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '移动到...' }))
     fireEvent.change(await screen.findByLabelText('目标路径'), {
       target: { value: 'archive/' },
@@ -1212,7 +1422,7 @@ describe('FilesListPane', () => {
   it('keeps main list copy and move inside the same Pod with sheet validation', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'README.md' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '移动到...' }))
     const input = await screen.findByLabelText('目标路径')
 
@@ -1236,25 +1446,28 @@ describe('FilesListPane', () => {
   it('selects a row with keyboard Space without entering containers', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.keyDown(screen.getByRole('button', { name: /public/ }), { key: ' ' })
+    fireEvent.keyDown(screen.getByRole('treeitem', { name: /public/ }), { key: ' ' })
 
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
     expect(useFilesStore.getState().selectedTreeNodeId).toBe('all')
   })
 
-  it('opens a row with keyboard Enter using the same path as double click', () => {
+  it('expands a container inline with keyboard Enter using the same path as double click', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.keyDown(screen.getByRole('button', { name: /public/ }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('treeitem', { name: /public/ }), { key: 'Enter' })
 
     expect(useFilesStore.getState().selectedTreeNodeId).toBe(createContainerNodeId('https://pod.example/public/'))
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
+    expect(useFilesStore.getState().folderHistory).toHaveLength(1)
+    expect(screen.getByRole('treeitem', { name: 'public' })).toHaveAttribute('aria-expanded', 'true')
   })
 
-  it('clicking the name header updates sort field', () => {
+  it('selecting a sort field from the compact toolbar updates list sorting', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByText('名称'))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '筛选和排序' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '名称' }))
 
     expect(useFilesStore.getState().sortField).toBe('name')
   })

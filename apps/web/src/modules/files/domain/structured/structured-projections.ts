@@ -121,13 +121,13 @@ export function projectStructuredCards(projection: ProjectionWithScope): Structu
     const className = firstValue(row, CLASS_PREDICATES) ?? projection.className ?? null
     const tags = TAG_PREDICATES.flatMap((predicate) => valuesFor(row, predicate)).map(localName)
 
-    const summary = firstValue(row, SUMMARY_PREDICATES) ?? className ?? row.subject
+    const summary = firstValue(row, SUMMARY_PREDICATES)
 
     return {
       subject: row.subject,
       title: cleanLiteral(title),
       className: className ? localName(className) : null,
-      summary: cleanLiteral(summary),
+      summary: summary ? cleanLiteral(summary) : '',
       tags,
     }
   })

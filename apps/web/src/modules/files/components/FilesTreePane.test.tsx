@@ -6,11 +6,16 @@ import { useFilesStore } from '../app/store'
 const mockUseFilesRootNodes = vi.fn()
 const mockUseContainerChildTreeNodes = vi.fn()
 const mockUseActiveFilesWorkspaceContext = vi.fn()
+const mockFavoriteChange = vi.fn()
 
 vi.mock('../data/queries', () => ({
   useFilesRootNodes: () => mockUseFilesRootNodes(),
   useContainerChildTreeNodes: (node: unknown) => mockUseContainerChildTreeNodes(node),
   useActiveFilesWorkspaceContext: () => mockUseActiveFilesWorkspaceContext(),
+  useFilesFavoriteList: () => ({ data: [] }),
+  filesFavoriteHooks: {
+    onStarredChange: (...args: unknown[]) => mockFavoriteChange(...args),
+  },
 }))
 
 beforeEach(() => {
@@ -26,6 +31,7 @@ beforeEach(() => {
     mimeTypeFilter: null,
     tagFilter: null,
     detailTab: 'preview',
+    editableFileSheetOpenRequestUri: null,
   })
 
   mockUseActiveFilesWorkspaceContext.mockReturnValue({
@@ -164,12 +170,13 @@ describe('FilesTreePane', () => {
     expect(screen.getByText('当前话题：代码审阅')).toBeInTheDocument()
   })
 
-  it('selects a root node on click', () => {
+  it('selects a root container and its right-side folder preview on click', () => {
     render(<FilesTreePane {...defaultProps} />)
 
     fireEvent.click(screen.getByText('当前话题容器'))
 
     expect(useFilesStore.getState().selectedTreeNodeId).toBe('workspace:https://pod.example/.data/workspaces/ws-1/')
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/.data/workspaces/ws-1/')
   })
 
   it('selects root nodes with keyboard activation', () => {
@@ -220,6 +227,42 @@ describe('FilesTreePane', () => {
     fireEvent.click(expandButton!)
 
     expect(screen.getByText('public')).toBeInTheDocument()
+  })
+
+  it('selects an expanded child folder for the right-side preview', () => {
+    render(<FilesTreePane {...defaultProps} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '展开 Pod 根目录' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'public' }))
+
+    expect(useFilesStore.getState()).toMatchObject({
+      selectedTreeNodeId: 'container:https://pod.example/public/',
+      selectedFileId: 'https://pod.example/public/',
+    })
+    expect(useFilesStore.getState().editableFileSheetOpenRequestUri).toBeNull()
+  })
+
+  it('keeps resource actions on the selected tree row and opens sidecars from its menu', () => {
+    render(<FilesTreePane {...defaultProps} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '展开 Pod 根目录' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'public' }))
+
+    expect(screen.getByRole('button', { name: '收藏 public' })).toBeInTheDocument()
+    fireEvent.pointerDown(screen.getByRole('button', { name: '更多 public 操作' }), { button: 0 })
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看 .meta' }))
+
+    expect(useFilesStore.getState().sidecarActionRequest).toEqual({
+      uri: 'https://pod.example/public/',
+      action: 'meta',
+    })
+  })
+
+  it('renders resource tree rows at the compact 28px shell rhythm', () => {
+    render(<FilesTreePane {...defaultProps} />)
+
+    expect(screen.getByRole('treeitem', { name: /全部可浏览资源/ }).className).toContain('h-7')
+    expect(screen.getByRole('treeitem', { name: /当前话题容器/ }).className).toContain('h-7')
   })
 
   it('expands containers with an accessible keyboard toggle', () => {

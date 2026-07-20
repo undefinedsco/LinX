@@ -15,6 +15,7 @@ const initializeModelCollectionsMock = vi.fn()
 const initializeSymphonyControlCollectionsMock = vi.fn()
 const subscribeSymphonyControlToPodMock = vi.fn()
 const ensureLinxWelcomeMock = vi.fn()
+const stageLinxDefaultSecretaryMock = vi.fn()
 const subscribeToPodMock = vi.fn()
 const invalidateQueriesMock = vi.fn()
 const toastMock = vi.fn()
@@ -39,6 +40,7 @@ vi.mock('@/modules/chat/collections', () => ({
   },
   chatOps: {
     ensureLinxWelcome: (...args: unknown[]) => ensureLinxWelcomeMock(...args),
+    stageLinxDefaultSecretary: (...args: unknown[]) => stageLinxDefaultSecretaryMock(...args),
     subscribeToPod: (...args: unknown[]) => subscribeToPodMock(...args),
   },
 }))
@@ -201,6 +203,8 @@ describe('PodCollectionsBootstrap', () => {
     expect(subscribeSymphonyControlToPodMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })
+    expect(stageLinxDefaultSecretaryMock).toHaveBeenCalledTimes(1)
+    expect(stageLinxDefaultSecretaryMock).toHaveBeenCalledWith(db)
     expect(selectChatMock).toHaveBeenCalledWith('__secretary__/index.ttl#this')
     expect(selectThreadMock).not.toHaveBeenCalled()
     expect(screen.queryByText('正在准备默认助手')).toBeNull()
@@ -253,9 +257,7 @@ describe('PodCollectionsBootstrap', () => {
     expect(screen.queryByText('默认助手准备失败')).toBeNull()
     expect(screen.queryByText('Pod write failed')).toBeNull()
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
-    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
-      variant: 'destructive',
-    }))
+    expect(toastMock).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 
@@ -342,11 +344,8 @@ describe('PodCollectionsBootstrap', () => {
 
     render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
 
-    await waitFor(() => {
-      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
-        variant: 'destructive',
-      }))
-    })
+    await waitFor(() => expect(warnSpy).toHaveBeenCalled())
+    expect(toastMock).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(localAuthKey)).toBe('local-token')
     expect(window.sessionStorage.getItem(sessionAuthKey)).toBe('session-token')
 

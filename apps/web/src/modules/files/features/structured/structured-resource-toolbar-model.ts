@@ -15,6 +15,36 @@ export type StructuredToolbarClassProposal = {
 }
 
 export type StructuredToolbarSubjectFilterId = 'warningRowsOnly' | 'pendingWritesOnly' | 'sourceUpdatesOnly'
+export type StructuredViewMetadataSaveStatus = 'synced' | 'dirty' | 'saving' | 'error'
+
+export function projectStructuredViewSaveIndicator(
+  status: StructuredViewMetadataSaveStatus,
+  error: string | null,
+) {
+  if (status === 'synced') return null
+  if (status === 'saving') {
+    return {
+      ariaLabel: '正在同步视图配置',
+      kind: 'saving' as const,
+      retryable: false,
+      title: '正在同步 .meta',
+    }
+  }
+  if (status === 'error') {
+    return {
+      ariaLabel: '视图配置未同步，点击重试',
+      kind: 'error' as const,
+      retryable: true,
+      title: error || '视图配置未同步',
+    }
+  }
+  return {
+    ariaLabel: '视图配置尚未同步',
+    kind: 'dirty' as const,
+    retryable: false,
+    title: '等待同步 .meta',
+  }
+}
 
 const EXTRA_VIEW_OPTIONS: Exclude<StructuredResourceViewMode, 'table'>[] = ['kanban', 'whiteboard', 'raw']
 const PREDICATE_TYPE_FILTER_OPTIONS: StructuredPredicateTypeFilter[] = ['all', 'enum', 'boolean', 'number', 'date', 'relation', 'text']

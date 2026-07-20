@@ -843,6 +843,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     if (!selectedThreadId) return null
     return threads.find((thread) => thread.id === selectedThreadId) ?? null
   }, [selectedThreadId, threads])
+  const isStagedSecretaryWelcome = isSecretary && !activeThread
 
   useEffect(() => {
     if (
@@ -958,7 +959,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     isChatLoading: !db || databaseStatus === 'initializing' || isChatsLoading,
     error: databaseStatus === 'error'
       ? databaseError ?? new Error('Solid database initialization failed.')
-      : chatError ?? threadError,
+      : isStagedSecretaryWelcome ? null : chatError ?? threadError,
     activeChat,
     isSecretary,
     hasThread: Boolean(selectedThreadId && activeThread),
@@ -975,7 +976,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
           description: '当前显示缓存内容。空间连接恢复前暂时不能发送。',
           actionLabel: '重试连接',
         }
-      : contentState.kind === 'ready' && (chatError || threadError)
+      : contentState.kind === 'ready' && (chatError || threadError) && !isStagedSecretaryWelcome
       ? {
           title: '聊天同步失败，当前显示缓存内容',
           description: '可以继续查看和输入；重试后会刷新当前聊天。',

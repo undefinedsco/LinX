@@ -18,7 +18,7 @@ export function getFilesListErrorState(error: unknown): FilesErrorState {
       case 'forbidden':
         return {
           title: '没有权限读取这个容器',
-          description: '可以检查 ACL/ACR 权限，或切换到其它可浏览范围。',
+          description: '当前账号没有读取权限，可以申请授权或切换到其它可浏览范围。',
         }
       case 'missing':
         return {
@@ -48,7 +48,7 @@ export function getFilesDetailErrorState(error: unknown): FilesErrorState {
       case 'forbidden':
         return {
           title: '没有权限读取这个文件',
-          description: '可以检查 ACL/ACR 权限，或从文件夹中选择其它文件。',
+          description: '当前账号没有读取权限，可以申请授权或从文件夹中选择其它文件。',
         }
       case 'missing':
         return {

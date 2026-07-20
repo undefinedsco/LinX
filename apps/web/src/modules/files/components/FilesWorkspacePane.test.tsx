@@ -200,13 +200,19 @@ describe('FilesWorkspacePane', () => {
     })
   })
 
-  it('renders only the resource detail in the desktop workspace', () => {
+  it('renders the resource detail in the desktop content pane', () => {
     render(<FilesWorkspacePane theme="light" />)
 
-    expect(screen.queryByText('files list')).not.toBeInTheDocument()
     expect(screen.getByText('file detail')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ingest 来源' })).not.toBeInTheDocument()
     expect(document.querySelector('[data-files-ingest-action="true"]')).toBeNull()
+  })
+
+  it('renders the Files list through the shared compact workspace path', () => {
+    render(<FilesWorkspacePane theme="light" compact />)
+
+    expect(screen.getByLabelText('文件列表')).toBeInTheDocument()
+    expect(screen.getByText('files list')).toBeInTheDocument()
   })
 
   it('shows the file list first in the compact Files workspace when no file is selected', () => {

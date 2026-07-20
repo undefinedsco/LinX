@@ -13,13 +13,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { ContactListFilter, ContactSection, UnifiedContact } from '../domain/types'
 
-const FILTER_OPTIONS: Array<{ value: ContactListFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'personal', label: '个人' },
-  { value: 'agents', label: 'AI' },
-  { value: 'groups', label: '群组' },
-]
-
 export interface ContactListProps {
   search: string
   onSearchChange: (value: string) => void
@@ -33,35 +26,6 @@ export interface ContactListProps {
   onRetry: () => void
   onSelect: (id: string) => void
   onCreate: (type: 'agent' | 'friend' | 'group') => void
-}
-
-function FilterTabs({
-  value,
-  onChange,
-}: {
-  value: ContactListFilter
-  onChange: (value: ContactListFilter) => void
-}) {
-  return (
-    <div className="flex gap-0.5 p-0.5 bg-muted/40 rounded-md" aria-label="联系人类型">
-      {FILTER_OPTIONS.map((option) => (
-        <button
-          type="button"
-          key={option.value}
-          aria-pressed={value === option.value}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            'flex-1 text-xs py-1 px-2 rounded-sm transition-colors',
-            value === option.value
-              ? 'bg-background text-foreground shadow-sm font-medium'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  )
 }
 
 function GroupAvatarGrid({ name }: { name: string }) {
@@ -133,6 +97,10 @@ function ContactItem({
           <div className="text-[11px] text-muted-foreground/60 truncate mt-0.5">{contact.subtitle}</div>
         )}
       </div>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-0 left-16 right-0 h-px bg-border/70"
+      />
     </button>
   )
 }
@@ -140,8 +108,8 @@ function ContactItem({
 export function ContactList({
   search,
   onSearchChange,
-  filter,
-  onFilterChange,
+  filter: _filter,
+  onFilterChange: _onFilterChange,
   selectedId,
   sections,
   letters,
@@ -163,39 +131,41 @@ export function ContactList({
           : letter
     if (target) sectionRefs.current.get(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
+  const openCreateAfterMenuClose = useCallback((type: 'agent' | 'friend' | 'group') => {
+    window.setTimeout(() => onCreate(type), 0)
+  }, [onCreate])
 
   return (
-    <div className="flex h-full flex-col bg-layout-list-item border-r border-border/50 relative">
-      <div className="h-16 flex items-center gap-2 px-3 shrink-0">
+    <div className="relative flex h-full flex-col bg-layout-list-item">
+      <div className="h-12 flex items-center gap-2 px-3 shrink-0 border-b border-border">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
           <Input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="搜索联系人"
-            className="pl-9 h-9 bg-muted/30 rounded-md border-transparent focus-visible:ring-1"
+            className="h-7 rounded-sm border-transparent bg-muted/30 pl-8 text-xs focus-visible:ring-1"
           />
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button aria-label="添加联系人" size="icon" variant="ghost" className="h-9 w-9 rounded-md">
-              <Plus className="w-5 h-5 text-muted-foreground" />
+            <Button aria-label="添加联系人" size="icon" variant="ghost" className="h-7 w-7 rounded-sm">
+              <Plus className="w-4 h-4 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-36">
-            <DropdownMenuItem onClick={() => onCreate('agent')} className="gap-2">
+            <DropdownMenuItem onSelect={() => openCreateAfterMenuClose('agent')} className="gap-2">
               <Bot className="w-4 h-4" /><span>新建助手</span>
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onCreate('friend')} className="gap-2">
+            <DropdownMenuItem onSelect={() => openCreateAfterMenuClose('friend')} className="gap-2">
               <User className="w-4 h-4" /><span>添加朋友</span>
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onCreate('group')} className="gap-2">
+            <DropdownMenuItem onSelect={() => openCreateAfterMenuClose('group')} className="gap-2">
               <Users className="w-4 h-4" /><span>创建群组</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {!search && <div className="px-3 pb-2 shrink-0"><FilterTabs value={filter} onChange={onFilterChange} /></div>}
       <ScrollArea className="flex-1">
         <div className="pb-10">
           {isLoading ? (

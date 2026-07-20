@@ -12,7 +12,7 @@ const accessDialogModelPath = 'src/modules/files/domain/resource/access-policy-d
 const accessDialogModelRootShimPath = 'src/modules/files/access-policy-dialog-model.ts'
 const sidecarsConsumers = [
   ['src/modules/files/features/detail/FileDetailPane.tsx', '../sidecars/ResourceSidecars'],
-  ['src/modules/files/features/editor/FileEditorSheet.tsx', '../sidecars/ResourceSidecars'],
+  ['src/modules/files/features/editor/DocumentEditorModal.tsx', '../sidecars/ResourceSidecars'],
   ['src/modules/files/features/folder/FolderChildPreview.tsx', '../sidecars/ResourceSidecars'],
   ['src/modules/files/features/structured/StructuredSubjectPeekActions.tsx', '../sidecars/ResourceSidecars'],
 ] as const

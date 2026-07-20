@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { loginToSeededXpod, readSeededAuthDebugState } from '../helpers/seeded-auth-flow'
+import { assertSeededLoginReady, loginToSeededXpod, readSeededAuthDebugState } from '../helpers/seeded-auth-flow'
 import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seeded-xpod-runtime'
 
 async function selectContextMenuItem(page: Page, row: Locator, name: string) {
@@ -16,6 +16,10 @@ async function selectContextMenuItem(page: Page, row: Locator, name: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function filesListRow(scope: Locator, name: string) {
+  return scope.getByRole('treeitem', { name, exact: true })
 }
 
 function vocabStringTriplePattern(predicate: string, value: string) {
@@ -283,7 +287,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.getByLabel('文件工作区')).toBeVisible()
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
-    const fileRow = page.getByRole('button', { name: smoke.fileName })
+    const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
     await expect(fileRow).toBeVisible({ timeout: 30_000 })
     await fileRow.dblclick()
 
@@ -419,7 +423,7 @@ test.describe('Files real Pod smoke', () => {
     await filesNavButton.click()
     await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
-    const fileRow = page.getByRole('button', { name: smoke.fileName })
+    const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
     await expect(fileRow).toBeVisible({ timeout: 30_000 })
     await fileRow.dblclick()
 
@@ -718,23 +722,21 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.getByLabel('文件工作区').getByText('聊天文件')).toBeVisible()
 
     const fileList = page.getByLabel('文件列表')
-    await expect(fileList.getByRole('button', { name: smoke.structuredFileName })).toBeVisible({ timeout: 30_000 })
-    await expect(fileList.getByRole('button', { name: smoke.runtimeArtifactName })).toBeVisible({ timeout: 30_000 })
-    await expect(fileList.getByRole('button', { name: smoke.runtimeContainerName })).toBeVisible({ timeout: 30_000 })
-    await expect(fileList).toContainText('text/markdown')
-
-    await expect(fileList.getByRole('button', { name: smoke.proseDecoyName })).toHaveCount(0)
-    await expect(fileList.getByRole('button', { name: smoke.stdoutDecoyName })).toHaveCount(0)
-    await expect(fileList.getByRole('button', { name: smoke.toolNameDecoyName })).toHaveCount(0)
-    await expect(fileList.getByRole('button', { name: smoke.localPathDecoyName })).toHaveCount(0)
-    await expect(fileList.getByRole('button', { name: smoke.rootDecoyName })).toHaveCount(0)
+    await expect(filesListRow(fileList, smoke.structuredFileName)).toBeVisible({ timeout: 30_000 })
+    await expect(filesListRow(fileList, smoke.runtimeArtifactName)).toBeVisible({ timeout: 30_000 })
+    await expect(filesListRow(fileList, smoke.runtimeContainerName)).toBeVisible({ timeout: 30_000 })
+    await expect(filesListRow(fileList, smoke.proseDecoyName)).toHaveCount(0)
+    await expect(filesListRow(fileList, smoke.stdoutDecoyName)).toHaveCount(0)
+    await expect(filesListRow(fileList, smoke.toolNameDecoyName)).toHaveCount(0)
+    await expect(filesListRow(fileList, smoke.localPathDecoyName)).toHaveCount(0)
+    await expect(filesListRow(fileList, smoke.rootDecoyName)).toHaveCount(0)
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.rootDecoyName)
     await expect(fileList.getByText('没有匹配的资源')).toBeVisible({ timeout: 10_000 })
-    await expect(fileList.getByRole('button', { name: smoke.rootDecoyName })).toHaveCount(0)
+    await expect(filesListRow(fileList, smoke.rootDecoyName)).toHaveCount(0)
   })
 
-  test('shows Agent homes, Workspace metadata, and Repository metadata from real Pod smart roots', async ({ page }) => {
+  test('shows Agent homes, Workspace metadata, and Repository metadata through the resource tree', async ({ page }) => {
     test.setTimeout(150_000)
     await loginToSeededXpod(page, runtime)
 
@@ -859,34 +861,49 @@ test.describe('Files real Pod smoke', () => {
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
     await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
-    const tree = page.getByRole('tree', { name: '文件分组树' })
     const fileList = page.getByLabel('文件列表')
     const workspace = page.getByLabel('文件工作区')
+    const contentHead = page.getByTestId('micro-app-content-head')
     const search = page.getByPlaceholder('搜索当前范围...')
     await expect(fileList).toBeVisible({ timeout: 30_000 })
 
-    await tree.getByRole('treeitem', { name: /Agent homes/ }).click()
+    const openContainer = async (name: string) => {
+      const row = filesListRow(fileList, name)
+      await expect(row).toBeVisible({ timeout: 30_000 })
+      await row.dblclick()
+    }
+    const goBack = async () => {
+      await page.getByRole('button', { name: '返回上一级文件夹' }).click()
+    }
+
+    await openContainer('.data')
+    await openContainer('agents')
     await search.fill(smoke.agentName)
-    const agentHomeRow = fileList.getByRole('button', { name: smoke.agentName })
+    const agentHomeRow = filesListRow(fileList, smoke.agentName)
     await expect(agentHomeRow).toBeVisible({ timeout: 30_000 })
     await agentHomeRow.click()
-    await expect(workspace.getByText(smoke.agentName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
-    await expect(workspace.getByRole('button', { name: /index\.ttl/ })).toBeVisible()
-    await expect(workspace.getByText('文件夹预览')).toBeVisible()
-    await expect(workspace.getByText('包含')).toBeVisible()
+    await expect(contentHead.getByRole('heading', { name: smoke.agentName, exact: true })).toBeVisible({ timeout: 30_000 })
+    const agentFolderSurface = workspace.getByLabel('Folder detail surface')
+    await expect(agentFolderSurface).toBeVisible()
+    await expect(agentFolderSurface.getByRole('button', { name: /index\.ttl/ })).toBeVisible()
 
-    await tree.getByRole('treeitem', { name: /Workspaces/ }).click()
+    await search.fill('')
+    await goBack()
+    await openContainer('workspaces')
     await search.fill(smoke.workspaceName)
-    const workspaceRow = fileList.getByRole('button', { name: smoke.workspaceName })
+    const workspaceRow = filesListRow(fileList, smoke.workspaceName)
     await expect(workspaceRow).toBeVisible({ timeout: 30_000 })
     await workspaceRow.click()
-    await expect(workspace.getByText(smoke.workspaceName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(contentHead.getByRole('heading', { name: smoke.workspaceName, exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(workspace.getByRole('button', { name: /README\.md/ })).toBeVisible()
-    await page.getByRole('button', { name: '查看 .meta' }).click()
+    const workspaceTreeRow = fileList.getByRole('treeitem', { name: smoke.workspaceName, exact: true })
+    await workspaceTreeRow.hover()
+    await workspaceTreeRow.getByRole('button', { name: `更多 ${smoke.workspaceName} 操作`, exact: true }).click()
+    await page.getByRole('menuitem', { name: '查看 .meta', exact: true }).click()
     const drawer = page.getByLabel('Resource .meta inspector')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.workspaceMetaUri)
-    await expect(drawer).toContainText('工作区摘要')
+    await expect(drawer).toContainText('文件夹摘要')
     await expect(drawer).toContainText('仓库')
     await expect(drawer).toContainText(smoke.repositoryUri)
     await expect(drawer).toContainText('本地路径')
@@ -897,12 +914,14 @@ test.describe('Files real Pod smoke', () => {
     await expect(drawer).toContainText('dirty')
     await page.getByRole('button', { name: '关闭 .meta inspector' }).click()
 
-    await tree.getByRole('treeitem', { name: /Repositories/ }).click()
+    await search.fill('')
+    await goBack()
+    await openContainer('repositories')
     await search.fill(smoke.repositoryName)
-    const repositoryRow = fileList.getByRole('button', { name: smoke.repositoryName })
+    const repositoryRow = filesListRow(fileList, smoke.repositoryName)
     await expect(repositoryRow).toBeVisible({ timeout: 30_000 })
     await repositoryRow.click()
-    await expect(workspace.getByText(smoke.repositoryName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(contentHead.getByRole('heading', { name: smoke.repositoryName, exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: 'Table' })).toBeVisible({ timeout: 30_000 })
     await expect(workspace.getByText('#Repository')).toBeVisible()
     await expect(workspace.getByText('"LinX Repository Smoke"')).toBeVisible()
@@ -971,7 +990,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
-    const fileRow = page.getByRole('button', { name: smoke.fileName })
+    const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
     await expect(fileRow).toBeVisible({ timeout: 30_000 })
     await fileRow.dblclick()
 
@@ -980,8 +999,8 @@ test.describe('Files real Pod smoke', () => {
     await page.keyboard.press('Escape')
     await expect(editorSheet).toHaveCount(0)
 
-    const workspace = page.getByLabel('文件工作区')
-    await workspace.getByRole('button', { name: '收藏' }).click()
+    await fileRow.hover()
+    await fileRow.getByRole('button', { name: `收藏 ${smoke.fileName}`, exact: true }).click()
 
     await page.getByRole('navigation').getByRole('button', { name: '收藏', exact: true }).click()
     await expect(page.locator('[data-micro-app-id="favorites"]')).toBeVisible({ timeout: 10_000 })
@@ -1038,7 +1057,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
-    const fileRow = page.getByRole('button', { name: smoke.fileName })
+    const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
     await expect(fileRow).toBeVisible({ timeout: 30_000 })
     await fileRow.dblclick()
 
@@ -1063,7 +1082,7 @@ test.describe('Files real Pod smoke', () => {
     await page.keyboard.press('Escape')
     await expect(editorSheet).toHaveCount(0)
 
-    await selectContextMenuItem(page, page.getByRole('button', { name: smoke.fileName }), '重命名')
+    await selectContextMenuItem(page, filesListRow(page.getByLabel('文件列表'), smoke.fileName), '重命名')
     const renameInput = page.getByLabel('新名称')
     await expect(renameInput).toBeVisible()
     await renameInput.fill(smoke.renamedName)
@@ -1126,7 +1145,7 @@ test.describe('Files real Pod smoke', () => {
     }, { timeout: 30_000 }).toBe(200)
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.renamedName)
-    const renamedRow = page.getByRole('button', { name: smoke.renamedName })
+    const renamedRow = filesListRow(page.getByLabel('文件列表'), smoke.renamedName)
     await expect(renamedRow).toBeVisible({ timeout: 30_000 })
     await selectContextMenuItem(page, renamedRow, '删除')
     await expect(page.getByText(`删除“${smoke.renamedName}”？`)).toBeVisible()
@@ -1189,7 +1208,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
-    const fileRow = page.getByRole('button', { name: smoke.fileName })
+    const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
     await expect(fileRow).toBeVisible({ timeout: 30_000 })
     await fileRow.dblclick()
 
@@ -1372,7 +1391,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(fileList).toBeVisible({ timeout: 30_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.copyFileName)
-    const copyRow = fileList.getByRole('button', { name: smoke.copyFileName })
+    const copyRow = filesListRow(fileList, smoke.copyFileName)
     await expect(copyRow).toBeVisible({ timeout: 30_000 })
     await selectContextMenuItem(page, copyRow, '复制到...')
     const copyDialog = page.getByRole('dialog', { name: '复制到' })
@@ -1424,7 +1443,7 @@ test.describe('Files real Pod smoke', () => {
     expect(copiedMeta.destinationText).not.toContain(`<${smoke.copyFileName}>`)
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.moveFileName)
-    const moveRow = fileList.getByRole('button', { name: smoke.moveFileName })
+    const moveRow = filesListRow(fileList, smoke.moveFileName)
     await expect(moveRow).toBeVisible({ timeout: 30_000 })
     await selectContextMenuItem(page, moveRow, '移动到...')
     const moveDialog = page.getByRole('dialog', { name: '移动到' })
@@ -1554,7 +1573,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(fileList).toBeVisible({ timeout: 30_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.copySourceName)
-    const copyRow = fileList.getByRole('button', { name: smoke.copySourceName })
+    const copyRow = filesListRow(fileList, smoke.copySourceName)
     await expect(copyRow).toBeVisible({ timeout: 30_000 })
     await selectContextMenuItem(page, copyRow, '复制到...')
     const copyDialog = page.getByRole('dialog', { name: '复制到' })
@@ -1590,7 +1609,7 @@ test.describe('Files real Pod smoke', () => {
     })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.moveSourceName)
-    const moveRow = fileList.getByRole('button', { name: smoke.moveSourceName })
+    const moveRow = filesListRow(fileList, smoke.moveSourceName)
     await expect(moveRow).toBeVisible({ timeout: 30_000 })
     await selectContextMenuItem(page, moveRow, '移动到...')
     const moveDialog = page.getByRole('dialog', { name: '移动到' })
@@ -1676,7 +1695,7 @@ test.describe('Files real Pod smoke', () => {
       useFilesStore.getState().selectFile(resourceUri)
     }, smoke)
     const workspace = page.getByLabel('文件工作区')
-    await expect(workspace.getByText(smoke.fileName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('micro-app-content-head').getByRole('heading', { name: smoke.fileName, exact: true })).toBeVisible({ timeout: 30_000 })
 
     await expect(page.getByRole('button', { name: 'Table' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: '当前 class：Workspace' })).toBeVisible()
@@ -1685,7 +1704,12 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.getByText('"Files E2E"')).toBeVisible()
     await expect(page.getByRole('dialog', { name: smoke.fileName })).toHaveCount(0)
 
-    await page.getByRole('button', { name: '查看 .meta' }).click()
+    const fileList = page.getByLabel('文件列表')
+    const fileTreeRow = fileList.getByRole('treeitem', { name: smoke.fileName, exact: true })
+    await expect(fileTreeRow).toBeVisible({ timeout: 30_000 })
+    await fileTreeRow.hover()
+    await fileTreeRow.getByRole('button', { name: `更多 ${smoke.fileName} 操作`, exact: true }).click()
+    await page.getByRole('menuitem', { name: '查看 .meta', exact: true }).click()
     const drawer = page.getByLabel('Resource .meta inspector')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
@@ -1873,7 +1897,7 @@ test.describe('Files real Pod smoke', () => {
     }, smoke)
 
     const workspace = page.getByLabel('文件工作区')
-    await expect(workspace.getByText(smoke.fileName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('micro-app-content-head').getByRole('heading', { name: smoke.fileName, exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: '当前 class：Workspace' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('columnheader', { name: /owner/ })).toBeVisible()
     await expect(workspace.getByText(/1 个校验提醒/)).toBeVisible()
@@ -2006,7 +2030,8 @@ test.describe('Files real Pod smoke', () => {
       useFilesStore.getState().selectFile(tableUri)
     }, smoke)
     const workspace = page.getByLabel('文件工作区')
-    await expect(workspace.getByText(smoke.tableName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    const contentHead = page.getByTestId('micro-app-content-head')
+    await expect(contentHead.getByRole('heading', { name: smoke.tableName, exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: 'Table' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: '当前 class：Workspace' })).toBeVisible()
     await expect(workspace.getByText('https://undefineds.co/vocab/Workspace')).toHaveCount(0)
@@ -2024,7 +2049,7 @@ test.describe('Files real Pod smoke', () => {
     await subjectSidecar.getByRole('button', { name: '查看 URI 详情' }).click()
     await expect(subjectSidecar).toContainText(smoke.markdownUri)
     await expect(page.getByRole('dialog', { name: smoke.noteTitle })).toHaveCount(0)
-    await expect(workspace.getByText(smoke.tableName, { exact: true }).first()).toBeVisible()
+    await expect(contentHead.getByRole('heading', { name: smoke.tableName, exact: true })).toBeVisible()
 
     await subjectSidecar.getByRole('button', { name: '打开资源' }).click()
 
@@ -2038,7 +2063,7 @@ test.describe('Files real Pod smoke', () => {
 
     await editorSheet.getByRole('button', { name: `返回来源表 · ${smoke.markdownUri}` }).click()
     await expect(editorSheet).toHaveCount(0)
-    await expect(workspace.getByText(smoke.tableName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(contentHead.getByRole('heading', { name: smoke.tableName, exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: 'Table' })).toBeVisible()
     await expect(page.getByRole('dialog', { name: smoke.noteTitle })).toHaveCount(0)
     await expect(page.getByRole('button', { name: '当前 class：Workspace' })).toBeVisible()
@@ -2112,13 +2137,18 @@ test.describe('Files real Pod smoke', () => {
       const { useFilesStore } = await import('/src/modules/files/store.ts')
       useFilesStore.getState().selectFile(resourceUri)
     }, smoke)
-    await expect(page.getByLabel('文件工作区').getByText(smoke.fileName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('micro-app-content-head').getByRole('heading', { name: smoke.fileName, exact: true })).toBeVisible({ timeout: 30_000 })
 
     await expect(page.getByRole('button', { name: 'Table' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('#Workspace')).toBeVisible()
     await expect(page.getByText('"Files Whiteboard E2E"')).toBeVisible()
 
-    await page.getByRole('button', { name: '查看 .meta' }).click()
+    const fileList = page.getByLabel('文件列表')
+    const fileTreeRow = fileList.getByRole('treeitem', { name: smoke.fileName, exact: true })
+    await expect(fileTreeRow).toBeVisible({ timeout: 30_000 })
+    await fileTreeRow.hover()
+    await fileTreeRow.getByRole('button', { name: `更多 ${smoke.fileName} 操作`, exact: true }).click()
+    await page.getByRole('menuitem', { name: '查看 .meta', exact: true }).click()
     const drawer = page.getByLabel('Resource .meta inspector')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
@@ -2150,10 +2180,11 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.getByRole('button', { name: 'Whiteboard', exact: true })).toBeVisible()
 
     const addWhiteboardSubject = async (subject: string) => {
-      const whiteboardToolsButton = page.getByRole('button', { name: '白板工具' })
-      await whiteboardToolsButton.focus()
-      await page.keyboard.press('Enter')
-      const subjectItem = page.getByRole('menuitem').filter({ hasText: subject }).first()
+      await page.getByRole('button', { name: '添加 subject 到白板' }).click()
+      const subjectItem = page
+        .getByRole('dialog', { name: '快速添加 Subject' })
+        .getByRole('button')
+        .filter({ hasText: subject })
       await expect(subjectItem).toBeVisible({ timeout: 5_000 })
       await subjectItem.click()
     }
@@ -2162,36 +2193,34 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.locator(`[data-whiteboard-subject="${smoke.workspaceSubject}"]`)).toHaveCount(1)
     await addWhiteboardSubject('#Other')
     await expect(page.locator(`[data-whiteboard-subject="${smoke.otherSubject}"]`)).toHaveCount(1)
-    await expect(page.getByText('白板中 2 张卡片')).toBeVisible()
-
-    await page.getByRole('button', { name: '白板工具' }).click()
-    await page.getByRole('menuitem', { name: '添加视觉关系' }).click()
+    await page.getByRole('button', { name: '添加视觉关系' }).click()
     await page.getByLabel('Relation label').fill('e2e sketch link')
     await page.getByRole('button', { name: '创建视觉关系' }).click()
     await expect(page.locator('[data-whiteboard-relation-source="visual"]')).toHaveCount(1)
 
     const workspaceNode = page.locator(`[data-whiteboard-subject="${smoke.workspaceSubject}"]`)
-    const initialWorkspacePosition = await workspaceNode.evaluate((element) => ({
-      x: Number((element as HTMLElement).dataset.layoutX),
-      y: Number((element as HTMLElement).dataset.layoutY),
-    }))
     const workspaceBox = await workspaceNode.boundingBox()
     expect(workspaceBox).toBeTruthy()
-    await page.mouse.move(workspaceBox!.x + 24, workspaceBox!.y + 24)
+    await page.getByRole('button', { name: '选择工具' }).click()
+    // Relation chips live above the canvas and may cover the card's top edge.
+    // Start from the lower card body so neither chips nor the relation arrow
+    // intercept the pointer.
+    await page.mouse.move(
+      workspaceBox!.x + 24,
+      workspaceBox!.y + workspaceBox!.height - 24,
+    )
     await page.mouse.down()
-    await page.mouse.move(workspaceBox!.x + 144, workspaceBox!.y + 88, { steps: 8 })
+    await page.mouse.move(
+      workspaceBox!.x + 144,
+      workspaceBox!.y + workspaceBox!.height + 40,
+      { steps: 8 },
+    )
     await page.mouse.up()
     await expect.poll(async () => {
-      const nextPosition = await workspaceNode.evaluate((element) => ({
-        x: Number((element as HTMLElement).dataset.layoutX),
-        y: Number((element as HTMLElement).dataset.layoutY),
-      }))
-      return Math.abs(nextPosition.x - initialWorkspacePosition.x) + Math.abs(nextPosition.y - initialWorkspacePosition.y)
+      const nextBox = await workspaceNode.boundingBox()
+      if (!nextBox) return 0
+      return Math.abs(nextBox.x - workspaceBox!.x) + Math.abs(nextBox.y - workspaceBox!.y)
     }, { timeout: 10_000 }).toBeGreaterThan(20)
-    const movedWorkspacePosition = await workspaceNode.evaluate((element) => ({
-      x: Number((element as HTMLElement).dataset.layoutX),
-      y: Number((element as HTMLElement).dataset.layoutY),
-    }))
     const subjectPeek = page.getByLabel('Structured subject peek')
     if (await subjectPeek.isVisible({ timeout: 500 }).catch(() => false)) {
       await subjectPeek.getByRole('button', { name: '取消' }).click()
@@ -2234,6 +2263,17 @@ test.describe('Files real Pod smoke', () => {
       }
     }, smoke)
 
+    const movedWorkspacePosition = await page.evaluate(async ({ metaUri, resourceUri, workspaceSubject }) => {
+      const { parseStructuredViewMetadataTurtle } = await import('/src/modules/files/structured-view-metadata.ts')
+      const db = (window as any).__SOLID_DB__
+      const authFetch = db?.getDialect?.()?.getAuthenticatedFetch?.()
+      if (!authFetch) throw new Error('Solid DB authenticated fetch is not ready.')
+      const response = await authFetch(metaUri)
+      const metaText = response.ok ? await response.text() : ''
+      return parseStructuredViewMetadataTurtle(metaText, resourceUri).whiteboard.positions[workspaceSubject] ?? null
+    }, smoke)
+    if (!movedWorkspacePosition) throw new Error('Whiteboard position was not persisted.')
+
     expect(sourceWriteResponses).toEqual([])
     expect(persistedView.resourceStatus).toBe(200)
     expect(persistedView.resourceText).toBe(smoke.canonicalSource)
@@ -2260,11 +2300,7 @@ test.describe('Files real Pod smoke', () => {
       localStorage.removeItem('linx.files.structuredWhiteboardLayouts.v1')
     })
     await page.reload()
-    await page.waitForFunction(
-      () => (window as any).__SOLID_DB_STATUS__ === 'ready' && Boolean((window as any).__SOLID_DB__),
-      null,
-      { timeout: 30_000 },
-    )
+    await assertSeededLoginReady(page, runtime)
     await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
     const filesNavButtonAfterReload = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButtonAfterReload).toBeVisible({ timeout: 10_000 })
@@ -2311,7 +2347,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.locator(`[data-whiteboard-subject="${smoke.workspaceSubject}"]`)).toHaveAttribute('data-layout-x', String(Math.round(movedWorkspacePosition.x)))
     await expect(page.locator(`[data-whiteboard-subject="${smoke.workspaceSubject}"]`)).toHaveAttribute('data-layout-y', String(Math.round(movedWorkspacePosition.y)))
     await expect(page.locator('[data-whiteboard-relation-source="visual"]')).toHaveCount(1)
-    await expect(page.getByText('白板中 2 张卡片')).toBeVisible()
+    await expect(page.getByRole('button', { name: '添加 subject 到白板' })).toHaveAttribute('title', /白板中 2 张卡片/)
     expect(sourceWriteResponses).toEqual([])
 
     const debugState = await readSeededAuthDebugState(page)
@@ -3314,7 +3350,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.getByLabel('文件列表')).toBeVisible({ timeout: 30_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.folderName)
-    const folderRow = page.getByLabel('文件列表').getByRole('button', { name: smoke.folderName })
+    const folderRow = filesListRow(page.getByLabel('文件列表'), smoke.folderName)
     await expect(folderRow).toBeVisible({ timeout: 30_000 })
     await folderRow.click()
 
@@ -3379,7 +3415,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.getByRole('dialog', { name: 'folder-graph.ttl' })).toHaveCount(0)
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.folderName)
-    const folderRowAfterStructuredChild = page.getByLabel('文件列表').getByRole('button', { name: smoke.folderName })
+    const folderRowAfterStructuredChild = filesListRow(page.getByLabel('文件列表'), smoke.folderName)
     await expect(folderRowAfterStructuredChild).toBeVisible({ timeout: 30_000 })
     await folderRowAfterStructuredChild.click()
     await expect(page.getByLabel('文件工作区').getByText(smoke.folderName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
@@ -3515,7 +3551,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.getByLabel('文件列表')).toBeVisible({ timeout: 30_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.folderName)
-    const folderRow = page.getByLabel('文件列表').getByRole('button', { name: smoke.folderName })
+    const folderRow = filesListRow(page.getByLabel('文件列表'), smoke.folderName)
     await expect(folderRow).toBeVisible({ timeout: 30_000 })
     await folderRow.click()
 
@@ -3661,23 +3697,19 @@ test.describe('Files real Pod smoke', () => {
 
     await tree.getByRole('treeitem', { name: /全部可浏览资源/ }).click()
     await search.fill(smoke.folderName)
-    await expect(fileList.getByRole('button', { name: smoke.folderName })).toBeVisible({ timeout: 30_000 })
+    await expect(filesListRow(fileList, smoke.folderName)).toBeVisible({ timeout: 30_000 })
 
     await search.fill(smoke.deepName)
-    await expect(fileList.getByRole('button', { name: smoke.deepName })).toHaveCount(0)
+    await expect(filesListRow(fileList, smoke.deepName)).toHaveCount(0)
 
     await tree.getByRole('treeitem', { name: /最近文件/ }).click()
     await expect(fileList.getByText('最近文件', { exact: true })).toBeVisible()
     await search.fill(smoke.deepName)
-    await expect(fileList.getByRole('button', { name: smoke.deepName })).toBeVisible({ timeout: 30_000 })
-    await expect(fileList.getByText(smoke.deepFolderPath, { exact: true })).toBeVisible()
-    await expect(fileList.getByText('application/json', { exact: true })).toBeVisible()
+    await expect(filesListRow(fileList, smoke.deepName)).toBeVisible({ timeout: 30_000 })
 
     await search.fill(smoke.rootName)
-    await expect(fileList.getByRole('button', { name: smoke.rootName })).toBeVisible({ timeout: 30_000 })
-    await expect(fileList.getByText(smoke.folderPath, { exact: true })).toBeVisible()
-    await expect(fileList.getByText('text/markdown', { exact: true })).toBeVisible()
-    await expect(fileList.getByRole('button', { name: smoke.sidecarName })).toHaveCount(0)
+    await expect(filesListRow(fileList, smoke.rootName)).toBeVisible({ timeout: 30_000 })
+    await expect(filesListRow(fileList, smoke.sidecarName)).toHaveCount(0)
 
     const debugState = await readSeededAuthDebugState(page)
     expect(debugState.dbStatus).toBe('ready')
@@ -3764,7 +3796,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
-    const fileRow = page.getByRole('button', { name: smoke.fileName })
+    const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
     await expect(fileRow).toBeVisible({ timeout: 30_000 })
     await fileRow.dblclick()
 

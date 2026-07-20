@@ -3,7 +3,7 @@ import dotenv from 'dotenv'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomInt } from 'node:crypto'
 import { createWriteStream, existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -788,11 +788,15 @@ async function createAuthenticatedContext<TSchema extends Record<string, unknown
 async function createLocalSeededContext<TSchema extends Record<string, unknown>>(
   options: XpodIntegrationOptions<TSchema>,
 ): Promise<XpodIntegrationContext<TSchema>> {
-  const runtimeRoot = await mkdtemp(join(tmpdir(), 'linx-xpod-runtime-'))
+  // startXpodRuntime recreates its runtime root. Keep the seed file in the
+  // parent test directory so the CSS seed initializer can still read it.
+  const testRoot = await mkdtemp(join(tmpdir(), 'linx-xpod-runtime-'))
+  const runtimeRoot = join(testRoot, 'runtime')
+  await mkdir(runtimeRoot, { recursive: true })
   let runtime: { child: ChildProcess; baseUrl: string } | null = null
 
   try {
-    const seed = await prepareLocalSeedConfig(runtimeRoot)
+    const seed = await prepareLocalSeedConfig(testRoot)
     let lastStartError: unknown
 
     for (let attempt = 0; attempt < LOCAL_RUNTIME_START_RETRIES; attempt += 1) {
@@ -890,14 +894,14 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
         if (runtime) {
           await stopLocalRuntimeProcess(runtime.child).catch(() => undefined)
         }
-        await rm(runtimeRoot, { recursive: true, force: true })
+        await rm(testRoot, { recursive: true, force: true })
       },
     }
   } catch (error) {
     if (runtime) {
       await stopLocalRuntimeProcess(runtime.child).catch(() => undefined)
     }
-    await rm(runtimeRoot, { recursive: true, force: true }).catch(() => undefined)
+    await rm(testRoot, { recursive: true, force: true }).catch(() => undefined)
     throw error
   }
 }

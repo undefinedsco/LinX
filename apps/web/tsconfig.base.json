@@ -22,7 +22,6 @@
 
     /* Path mapping */
     "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
       "@linx/stores": ["../../packages/stores/src/index.ts"],

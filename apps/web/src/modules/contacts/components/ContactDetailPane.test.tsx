@@ -121,6 +121,10 @@ vi.mock('@/components/ui/model-selector', () => ({
   ModelSelector: ({ value }: { value: string }) => <div data-testid="model-selector">{value}</div>,
 }))
 
+vi.mock('@/modules/model-services/data/use-model-services', () => ({
+  useModelServices: () => ({ providers: {} }),
+}))
+
 vi.mock('./CreateGroupDialog', () => ({
   CreateGroupDialog: ({ open }: { open: boolean }) => open ? <div data-testid="group-dialog" /> : null,
 }))
@@ -321,6 +325,18 @@ describe('ContactDetailPane', () => {
       to: '/$microAppId',
       params: { microAppId: 'chat' },
     })
+  })
+
+  it('shows chat, voice, and video as the primary contact actions', () => {
+    const contact = makeContact({ id: 'contact-solid-1', name: 'Alice' })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    expect(screen.getByRole('button', { name: '聊天' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '语音' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '视频' })).toBeInTheDocument()
   })
 
   it('renders local agent configuration and allows opening tools editor', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useLiveQuery } from '@tanstack/react-db'
 import type { ContactRow } from '@undefineds.co/models'
@@ -15,7 +15,8 @@ import { ContactList } from '../../ui/ContactList'
 
 export function ContactListPane({}: MicroAppPaneProps) {
   const { session } = useSession()
-  const { db } = useSolidDatabase()
+  const { db, status: databaseStatus, error: databaseError, retry: retryDatabase } = useSolidDatabase()
+  const [fetchError, setFetchError] = useState<Error | null>(null)
   const search = useContactStore((state) => state.search)
   const setSearch = useContactStore((state) => state.setSearch)
   const selectedId = useContactStore((state) => state.selectedId)
@@ -25,10 +26,19 @@ export function ContactListPane({}: MicroAppPaneProps) {
   const setListFilter = useContactStore((state) => state.setListFilter)
 
   useEffect(() => {
-    if (!db) return
+    if (!db) {
+      setFetchError(null)
+      return
+    }
     contactCollection.startSyncImmediate()
     let active = true
     let cleanup: (() => void) | undefined
+    setFetchError(null)
+    void contactOps.fetch().catch((error) => {
+      if (active) {
+        setFetchError(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
     void contactOps.subscribeToPod().then((unsubscribe) => {
       if (active) {
         cleanup = unsubscribe
@@ -41,6 +51,17 @@ export function ContactListPane({}: MicroAppPaneProps) {
       cleanup?.()
     }
   }, [db])
+
+  const retryContacts = useCallback(() => {
+    if (!db) {
+      retryDatabase()
+      return
+    }
+    setFetchError(null)
+    void contactOps.fetch().catch((error) => {
+      setFetchError(error instanceof Error ? error : new Error(String(error)))
+    })
+  }, [db, retryDatabase])
 
   const liveQuery = useLiveQuery((query) => (
     query.from({ contact: contactCollection }).select(({ contact }) => contact)
@@ -70,6 +91,17 @@ export function ContactListPane({}: MicroAppPaneProps) {
     () => buildContactListProjection(visibleContacts, { filter: listFilter, groupInfoById }),
     [visibleContacts, listFilter, groupInfoById],
   )
+  const connectionError = !db && databaseStatus === 'error'
+    ? databaseError?.message ?? '空间连接失败，请重试。'
+    : !db && databaseStatus === 'idle' && !session.info.isLoggedIn
+      ? '当前空间未连接，请先完成登录。'
+      : !db && databaseStatus === 'idle'
+        ? '空间数据尚未就绪，请重试。'
+        : null
+
+  const listError = connectionError
+    ?? (fetchError ? '联系人加载失败，请重试。' : null)
+    ?? (db && liveQuery.isError ? '联系人加载失败，请重试。' : null)
 
   return (
     <ContactList
@@ -80,9 +112,9 @@ export function ContactListPane({}: MicroAppPaneProps) {
       selectedId={selectedId}
       sections={projection.sections}
       letters={projection.letters}
-      isLoading={!!db && liveQuery.isLoading}
-      error={db && liveQuery.isError ? '联系人加载失败，请重试。' : null}
-      onRetry={() => { void contactOps.fetch() }}
+      isLoading={databaseStatus === 'initializing' || (!!db && liveQuery.isLoading)}
+      error={listError}
+      onRetry={retryContacts}
       onSelect={select}
       onCreate={openCreateDialog}
     />

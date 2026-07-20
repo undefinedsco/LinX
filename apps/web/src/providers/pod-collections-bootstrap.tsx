@@ -13,7 +13,6 @@ import {
 } from '@/modules/chat/collections'
 import { createMatrixGroupRoom, loadMatrixChatRow, loadMatrixThreadRow } from '@/modules/chat/matrix-service'
 import { useChatStore } from '@/modules/chat/store'
-import { useToast } from '@/components/ui/use-toast'
 import {
   agentCollection,
   configureContactsChatPort,
@@ -23,7 +22,6 @@ import {
 import { initializeFavoriteCollections } from '@/modules/favorites/collections'
 import { filesOps, initializeFilesCollections } from '@/modules/files/collections'
 import { initializeInboxCollections } from '@/modules/inbox/collections'
-import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { initializeModelCollections } from '@/modules/model-services/data/collections'
 import { initializeSymphonyControlCollections, symphonyControlOps } from '@/modules/symphony/collections'
 
@@ -37,7 +35,6 @@ function useSelectChat() {
 
 export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapProps) {
   const { db } = useSolidDatabase()
-  const { toast } = useToast()
   const lastStartedRef = useRef<SolidDatabase | null>(null)
 
   configureChatContactsPort({ agentCollection, contactCollection })
@@ -73,6 +70,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     const force = !!started && started !== db
 
     lastStartedRef.current = db
+    chatOps.stageLinxDefaultSecretary(db)
 
     void chatOps.subscribeToPod()
       .then((nextUnsubscribe) => {
@@ -142,10 +140,6 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
         void queryClient.invalidateQueries({ queryKey: ['chats'] }).catch((error) => {
           console.warn('[PodCollectionsBootstrap] Failed to refresh chats after LinX welcome failure:', error)
         })
-        toast({
-          description: formatLoginErrorForUser(nextError, '默认助手暂时无法保存到当前空间。请稍后重试。'),
-          variant: 'destructive',
-        })
       })
 
     return () => {
@@ -154,7 +148,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
       unsubscribeFiles?.()
       unsubscribeSymphony?.()
     }
-  }, [db, toast])
+  }, [db])
 
   return <>{children}</>
 }

@@ -250,6 +250,154 @@ describe('useLoginController', () => {
     })
   })
 
+  it('automatically restores a remembered Desktop account once on startup', async () => {
+    window.xpodDesktop = { auth: {} } as any
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+    ]
+    window.localStorage.setItem('linx-remembered-account', JSON.stringify({
+      displayName: 'Ganlu',
+      issuerUrl: 'https://cloud.example.com',
+      issuerLabel: 'Cloud',
+      storageProviderUrl: 'https://cloud.example.com',
+      storageProviderLabel: 'Cloud',
+      webId: 'https://alice.example/profile/card#me',
+    }))
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-1', JSON.stringify({
+      issuer: 'https://cloud.example.com',
+      redirectUrl: 'http://127.0.0.1:43123/auth/callback',
+      isLoggedIn: 'true',
+      webId: 'https://alice.example/profile/card#me',
+    }))
+    connectMock.mockResolvedValue(undefined)
+
+    renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('cloud', expect.objectContaining({
+        authorizationSurface: 'embedded',
+        route: 'cloud',
+        issuerLabel: 'Cloud',
+        prompt: 'none',
+      }))
+    })
+    expect(connectMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('automatically restores a Desktop account already hydrated by the persisted login store', async () => {
+    window.xpodDesktop = { auth: {} } as any
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+    ]
+    const storedAccount = {
+      displayName: 'Ganlu',
+      issuerUrl: 'https://cloud.example.com',
+      issuerLabel: 'Cloud',
+      storageProviderUrl: 'https://cloud.example.com',
+      storageProviderLabel: 'Cloud',
+      webId: 'https://alice.example/profile/card#me',
+    }
+    useLoginStore.setState({ storedAccount })
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-1', JSON.stringify({
+      issuer: 'https://cloud.example.com',
+      redirectUrl: 'http://127.0.0.1:43123/auth/callback',
+      isLoggedIn: 'true',
+      webId: storedAccount.webId,
+    }))
+    connectMock.mockResolvedValue(undefined)
+
+    renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('cloud', expect.objectContaining({
+        authorizationSurface: 'embedded',
+        route: 'cloud',
+        prompt: 'none',
+      }))
+    })
+  })
+
+  it('tries a silent Desktop restore for a remembered Cloud account without a persisted token record', async () => {
+    window.xpodDesktop = { auth: {} } as any
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+    ]
+    useLoginStore.setState({
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://cloud.example.com',
+        issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://cloud.example.com',
+        storageProviderLabel: 'Cloud',
+        webId: 'https://alice.example/profile/card#me',
+      },
+    })
+    connectMock.mockResolvedValue(undefined)
+
+    renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('cloud', expect.objectContaining({
+        authorizationSurface: 'embedded',
+        route: 'cloud',
+        prompt: 'none',
+      }))
+    })
+  })
+
+  it('falls back to a top-level silent restore for a remembered Web account', async () => {
+    restoreState.restoreFailed = true
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+    ]
+    useLoginStore.setState({
+      state: 'restoring',
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://cloud.example.com',
+        issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://cloud.example.com',
+        storageProviderLabel: 'Cloud',
+        webId: 'https://alice.example/profile/card#me',
+      },
+    })
+    window.history.replaceState({}, '', '/files')
+    connectMock.mockResolvedValue(undefined)
+
+    renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('cloud', expect.objectContaining({
+        authorizationSurface: 'window',
+        route: 'cloud',
+        prompt: 'none',
+      }))
+    })
+    expect(connectMock).toHaveBeenCalledTimes(1)
+  })
+
   it('only marks a remembered account restorable when the stored Solid session matches its WebID', () => {
     window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
     window.localStorage.setItem('solidClientAuthenticationUser:session-1', JSON.stringify({
@@ -836,6 +984,44 @@ describe('useLoginController', () => {
       strictDiscovery: true,
     }))
     expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('session-1')
+  })
+
+  it('restores a remembered Desktop Cloud session before opening silent authorization', async () => {
+    window.xpodDesktop = {
+      auth: {},
+    } as any
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-1', JSON.stringify({
+      issuer: 'https://id.undefineds.co',
+      redirectUrl: 'http://127.0.0.1:43123/auth/callback',
+      refreshToken: 'refresh-token',
+      webId: 'https://id.undefineds.co/ganlu/profile/card#me',
+    }))
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://pod.example.com/',
+        storageProviderLabel: 'Cloud',
+        webId: 'https://id.undefineds.co/ganlu/profile/card#me',
+      },
+      customProviders: [],
+    })
+    handleIncomingRedirectMock.mockResolvedValueOnce({ isLoggedIn: true })
+
+    renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(handleIncomingRedirectMock).toHaveBeenCalledWith({
+        url: window.location.href,
+        restorePreviousSession: true,
+      })
+    })
+
+    expect(connectMock).not.toHaveBeenCalled()
   })
 
   it('does not use silent Local auth when the stored Solid session belongs to another Cloud account', async () => {

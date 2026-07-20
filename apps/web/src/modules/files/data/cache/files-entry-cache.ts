@@ -20,6 +20,7 @@ export type FilesEntryCacheSnapshot = Array<[QueryKey, FilesEntry[] | undefined]
 
 export type FilesEntryCacheQueryRoots = {
   entries: QueryKey
+  containerEntries: QueryKey
   children: QueryKey
   detail: QueryKey
   rawText: QueryKey
@@ -120,6 +121,7 @@ export function createFilesEntryCacheCollection(
       const parentContainerUri = getParentContainerUri(resourceUri)
       await Promise.all([
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, resourceUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, resourceUri] }),
@@ -176,6 +178,7 @@ export function createFilesEntryCacheCollection(
       const parentContainerUri = getParentContainerUri(resourceUri)
       await Promise.all([
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
         options.includeRawText
           ? cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, resourceUri] })
@@ -216,6 +219,7 @@ export function createFilesEntryCacheCollection(
     async invalidateTransfer(cacheClient: QueryClient, input: FilesResourceTransferInput) {
       await Promise.all([
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, input.sourceUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, input.destinationUri] }),
@@ -236,6 +240,7 @@ export function createFilesEntryCacheCollection(
       const parentContainerUri = getParentContainerUri(resourceUri)
       await Promise.all([
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, resourceUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, resourceUri] }),
@@ -277,6 +282,7 @@ export function createFilesEntryCacheCollection(
     ) {
       await Promise.all([
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.detail }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, input.containerUri] }),

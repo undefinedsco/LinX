@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { VocabTermProposal } from '../../domain/structured/structured-table'
-import { projectStructuredResourceToolbarModel } from './structured-resource-toolbar-model'
+import {
+  projectStructuredResourceToolbarModel,
+  projectStructuredViewSaveIndicator,
+} from './structured-resource-toolbar-model'
 
 function vocabTermProposal(overrides: Partial<VocabTermProposal> = {}): VocabTermProposal {
   return {
@@ -27,6 +30,21 @@ function vocabTermProposal(overrides: Partial<VocabTermProposal> = {}): VocabTer
 }
 
 describe('projectStructuredResourceToolbarModel', () => {
+  it('projects compact durable view metadata save states', () => {
+    expect(projectStructuredViewSaveIndicator('synced', null)).toBeNull()
+    expect(projectStructuredViewSaveIndicator('saving', null)).toEqual({
+      ariaLabel: '正在同步视图配置',
+      kind: 'saving',
+      retryable: false,
+      title: '正在同步 .meta',
+    })
+    expect(projectStructuredViewSaveIndicator('error', 'network unavailable')).toEqual({
+      ariaLabel: '视图配置未同步，点击重试',
+      kind: 'error',
+      retryable: true,
+      title: 'network unavailable',
+    })
+  })
   it('projects toolbar filters, views, sort rows, class options, and pending class proposals outside the renderer', () => {
     const approvalProposal = vocabTermProposal({
       proposalResourceUri: 'https://pod.example/.data/proposals/accepted.ttl#proposal',

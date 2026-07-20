@@ -4,6 +4,10 @@ import type {
   FilesStructuredViewMetadataSidecar,
 } from '../../domain/resource/resource-model'
 import type { StructuredViewMetadata } from '../../domain/structured/structured-view-metadata'
+import {
+  normalizeStructuredKanbanBoardMetadata,
+  normalizeStructuredWhiteboardSnapshotMetadata,
+} from '../../domain/structured/structured-view-metadata'
 import { restoreQuerySnapshot } from './resource-query-cache'
 
 export type FilesStructuredViewMetadataCacheSnapshot = {
@@ -31,11 +35,20 @@ function completeStructuredViewMetadata(metadata: StructuredViewMetadata): Requi
     hiddenPredicates: metadata.hiddenPredicates,
     kanbanGroupPredicate: metadata.kanbanGroupPredicate,
     kanbanOrder: metadata.kanbanOrder ?? {},
+    kanbanBoard: metadata.kanbanBoard
+      ? normalizeStructuredKanbanBoardMetadata(metadata.kanbanBoard, metadata.kanbanOrder ?? {})
+      : null,
     columnSizing: metadata.columnSizing,
     whiteboard: {
       selectedSubjects: metadata.whiteboard.selectedSubjects,
       positions: metadata.whiteboard.positions,
       visualRelations: metadata.whiteboard.visualRelations ?? [],
+      snapshot: metadata.whiteboard.snapshot
+        ? normalizeStructuredWhiteboardSnapshotMetadata(metadata.whiteboard.snapshot, {
+          positions: metadata.whiteboard.positions,
+          visualRelations: metadata.whiteboard.visualRelations ?? [],
+        })
+        : null,
     },
     writesCanonicalData: false,
   }

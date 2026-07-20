@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useToast } from '@/components/ui/use-toast'
 import { FilesSaveConflictError, type FilesDetail } from '../../domain/resource/resource-model'
 import { useSaveStructuredViewMetadata, useStructuredViewMetadata } from '../../data/queries'
 import type { StructuredViewMetadata } from '../../domain/structured/structured-view-metadata'
 import {
+  isSameStructuredDocumentUri,
   projectStructuredViewMetadataHydration,
   structuredViewMetadataSignature,
 } from './structured-view-metadata-workflow-model'
@@ -33,9 +34,15 @@ export function useStructuredViewMetadataController({
   const autosaveReadyRef = useRef(false)
   const skipNextStructuredViewAutosaveRef = useRef(false)
   const localViewMetadataChangeBeforeHydrationRef = useRef(false)
+  const failedViewMetadataSignatureRef = useRef<string | null>(null)
+  const [viewMetadataSaveStatus, setViewMetadataSaveStatus] = useState<'synced' | 'dirty' | 'saving' | 'error'>('synced')
+  const [viewMetadataSaveError, setViewMetadataSaveError] = useState<string | null>(null)
+  const [retryToken, setRetryToken] = useState(0)
 
   const markLocalViewMetadataChange = useCallback(() => {
     markStructuredViewMetadataDirty(file.uri)
+    setViewMetadataSaveStatus('dirty')
+    setViewMetadataSaveError(null)
     if (!hydratedViewMetadataKeyRef.current) {
       localViewMetadataChangeBeforeHydrationRef.current = true
     }
@@ -47,6 +54,9 @@ export function useStructuredViewMetadataController({
     autosaveReadyRef.current = false
     skipNextStructuredViewAutosaveRef.current = false
     localViewMetadataChangeBeforeHydrationRef.current = false
+    failedViewMetadataSignatureRef.current = null
+    setViewMetadataSaveStatus('synced')
+    setViewMetadataSaveError(null)
   }, [file.uri])
 
   useEffect(() => {
@@ -82,6 +92,7 @@ export function useStructuredViewMetadataController({
 
   useEffect(() => {
     if (!structuredViewMetadataQuery.data) return
+    if (!isSameStructuredDocumentUri(currentViewMetadata.documentUri, file.uri)) return
 
     const currentSignature = structuredViewMetadataSignature(currentViewMetadata)
     if (skipNextStructuredViewAutosaveRef.current) {
@@ -93,8 +104,12 @@ export function useStructuredViewMetadataController({
       autosaveReadyRef.current = true
     }
     if (currentSignature === syncedViewMetadataSignatureRef.current) return
+    if (currentSignature === failedViewMetadataSignatureRef.current) return
+    setViewMetadataSaveStatus('dirty')
 
     const timeoutId = window.setTimeout(() => {
+      setViewMetadataSaveStatus('saving')
+      setViewMetadataSaveError(null)
       void saveStructuredViewMetadata.mutateAsync({
         file: {
           uri: file.uri,
@@ -103,14 +118,20 @@ export function useStructuredViewMetadataController({
         metadata: currentViewMetadata,
       }).then(() => {
         syncedViewMetadataSignatureRef.current = currentSignature
+        failedViewMetadataSignatureRef.current = null
         localViewMetadataChangeBeforeHydrationRef.current = false
         clearStructuredViewMetadataDirty(file.uri)
+        setViewMetadataSaveStatus('synced')
+        setViewMetadataSaveError(null)
       }).catch((error) => {
         const description = error instanceof FilesSaveConflictError
           ? '视图配置保存冲突：远端 .meta 已变化，请重新打开后再调整视图。'
           : error instanceof Error
             ? error.message
             : '保存视图配置失败'
+        setViewMetadataSaveStatus('error')
+        setViewMetadataSaveError(description)
+        failedViewMetadataSignatureRef.current = currentSignature
         toast({ description, variant: 'destructive' })
       })
     }, 800)
@@ -124,7 +145,20 @@ export function useStructuredViewMetadataController({
     saveStructuredViewMetadata,
     structuredViewMetadataQuery.data,
     toast,
+    retryToken,
   ])
 
-  return { markLocalViewMetadataChange }
+  const retryViewMetadataSave = useCallback(() => {
+    failedViewMetadataSignatureRef.current = null
+    setViewMetadataSaveStatus('dirty')
+    setViewMetadataSaveError(null)
+    setRetryToken((current) => current + 1)
+  }, [])
+
+  return {
+    markLocalViewMetadataChange,
+    retryViewMetadataSave,
+    viewMetadataSaveError,
+    viewMetadataSaveStatus,
+  }
 }

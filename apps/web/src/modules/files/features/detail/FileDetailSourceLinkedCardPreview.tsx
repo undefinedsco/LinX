@@ -3,7 +3,7 @@ import { ExternalLink, FileText, GitBranch, Pencil, RefreshCw } from 'lucide-rea
 import { Button } from '@/components/ui/button'
 
 import type { FilesDetail } from '../../domain/resource/resource-model'
-import { FileEditorSheet } from '../editor/FileEditorSheet'
+import { DocumentEditorModal } from '../editor/DocumentEditorModal'
 import {
   DetailRows,
   ModeCard,
@@ -139,7 +139,7 @@ export function SourceLinkedCardPreview({ file }: { file: FilesDetail }) {
         </ModeCard>
       ) : null}
       {preview.editorSheet ? (
-        <FileEditorSheet
+        <DocumentEditorModal
           file={preview.editorSheet.file}
           open={preview.editorSheet.open}
           onOpenChange={preview.setSheetOpen}

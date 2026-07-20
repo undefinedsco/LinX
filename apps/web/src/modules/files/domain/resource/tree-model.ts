@@ -17,6 +17,10 @@ export function createContainerNodeId(uri: string): string {
   return `container:${normalizeContainerUri(uri)}`
 }
 
+export function createResourceNodeId(uri: string): string {
+  return `resource:${uri}`
+}
+
 export function createWorkspaceNodeId(workspaceUri: string): string {
   return `workspace:${workspaceUri}`
 }
@@ -48,6 +52,9 @@ export function parseTreeNodeId(nodeId?: string | null): {
   }
   if (nodeId.startsWith('container:')) {
     return { kind: 'container', uri: nodeId.slice('container:'.length) }
+  }
+  if (nodeId.startsWith('resource:')) {
+    return { kind: 'resource', uri: nodeId.slice('resource:'.length) }
   }
   return null
 }

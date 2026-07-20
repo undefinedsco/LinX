@@ -39,6 +39,8 @@ export default defineConfig({
   resolve: {
     preserveSymlinks: true,
     alias: {
+      'tldraw/tldraw.css': path.resolve(__dirname, './src/test/empty.css'),
+      'tldraw': path.resolve(__dirname, './src/test/tldraw-test-double.tsx'),
       '@': path.resolve(__dirname, './src'),
       '@linx/agent-runtime': path.resolve(repoRoot, 'packages/agent-runtime/src'),
       '@linx/agent-runtime/pod-resource-identity': path.resolve(

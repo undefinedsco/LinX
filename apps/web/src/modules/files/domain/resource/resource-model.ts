@@ -29,6 +29,7 @@ export type FilesTreeNodeType =
   | 'workspaces-root'
   | 'repositories-root'
   | 'container'
+  | 'resource'
 
 export type FilesResourceReadErrorKind = 'unauthorized' | 'forbidden' | 'missing' | 'network' | 'unknown'
 
@@ -190,6 +191,7 @@ export interface FilesAccessPolicySummary {
 export interface FilesRootData {
   nodes: FilesTreeNode[]
   podRootUri: string
+  entries?: FilesEntry[]
 }
 
 export interface FilesResourceTransferInput {

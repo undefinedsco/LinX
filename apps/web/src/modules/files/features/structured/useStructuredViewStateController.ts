@@ -7,12 +7,22 @@ import {
 import type { StructuredWhiteboardVisualRelation } from '../../domain/structured/structured-projections'
 import type { StructuredTableProjection } from '../../domain/structured/structured-table'
 import type { StructuredViewMetadata } from '../../domain/structured/structured-view-metadata'
+import {
+  normalizeStructuredKanbanBoardMetadata,
+  normalizeStructuredWhiteboardSnapshotMetadata,
+  type StructuredKanbanBoardMetadataV1,
+  type StructuredWhiteboardSnapshotV1,
+} from '../../domain/structured/structured-view-metadata'
 import type {
   StructuredResourceViewMode,
   StructuredSortDirection,
   StructuredWhiteboardPosition,
 } from '../../domain/structured/structured-view-metadata'
-import { resolveStructuredEffectiveClassScope } from './structured-view-state-model'
+import {
+  projectStructuredWhiteboardVisualRelations,
+  projectStructuredReconciledKanbanBoard,
+  resolveStructuredEffectiveClassScope,
+} from './structured-view-state-model'
 import { useStructuredViewMetadataController } from './useStructuredViewMetadataController'
 
 const EMPTY_COLUMN_SIZING: Record<string, number> = {}
@@ -46,15 +56,19 @@ export function useStructuredViewStateController({
   const setKanbanGroupPredicate = useFilesStore((state) => state.setStructuredKanbanGroupPredicate)
   const kanbanOrder = useFilesStore((state) => state.structuredKanbanOrderByDocument[file.uri] ?? EMPTY_KANBAN_ORDER)
   const setKanbanColumnOrder = useFilesStore((state) => state.setStructuredKanbanColumnOrder)
+  const storedKanbanBoard = useFilesStore((state) => state.structuredKanbanBoardByDocument[file.uri])
+  const setKanbanBoard = useFilesStore((state) => state.setStructuredKanbanBoard)
   const whiteboardSubjects = useFilesStore((state) => state.structuredWhiteboardSubjectsByDocument[file.uri] ?? EMPTY_WHITEBOARD_SUBJECTS)
   const whiteboardLayoutKey = file.uri
   const whiteboardPositions = useFilesStore((state) => state.structuredWhiteboardLayoutsByDocument[whiteboardLayoutKey] ?? EMPTY_WHITEBOARD_LAYOUT)
-  const whiteboardVisualRelations = useFilesStore((state) => state.structuredWhiteboardRelationsByDocument[file.uri] ?? EMPTY_WHITEBOARD_VISUAL_RELATIONS)
+  const legacyWhiteboardVisualRelations = useFilesStore((state) => state.structuredWhiteboardRelationsByDocument[file.uri] ?? EMPTY_WHITEBOARD_VISUAL_RELATIONS)
+  const storedWhiteboardSnapshot = useFilesStore((state) => state.structuredWhiteboardSnapshotByDocument[file.uri])
   const addWhiteboardSubject = useFilesStore((state) => state.addStructuredWhiteboardSubject)
   const removeWhiteboardSubject = useFilesStore((state) => state.removeStructuredWhiteboardSubject)
   const clearWhiteboardSubjects = useFilesStore((state) => state.clearStructuredWhiteboardSubjects)
   const setWhiteboardNodePosition = useFilesStore((state) => state.setStructuredWhiteboardNodePosition)
   const setWhiteboardVisualRelations = useFilesStore((state) => state.setStructuredWhiteboardVisualRelations)
+  const setWhiteboardSnapshot = useFilesStore((state) => state.setStructuredWhiteboardSnapshot)
   const hydrateStructuredViewMetadata = useFilesStore((state) => state.hydrateStructuredViewMetadata)
   const localViewMetadataDirty = useFilesStore((state) => state.structuredViewDirtyDocuments.has(file.uri))
   const markStructuredViewMetadataDirty = useFilesStore((state) => state.markStructuredViewMetadataDirty)
@@ -64,6 +78,30 @@ export function useStructuredViewStateController({
   const effectiveClassScope = useMemo(
     () => resolveStructuredEffectiveClassScope(projection, classScope),
     [classScope, projection],
+  )
+  const persistedKanbanBoard = useMemo(
+    () => normalizeStructuredKanbanBoardMetadata(storedKanbanBoard, kanbanOrder),
+    [kanbanOrder, storedKanbanBoard],
+  )
+  const kanbanBoard = useMemo(
+    () => projectStructuredReconciledKanbanBoard({
+      groupPredicate: kanbanGroupPredicate,
+      kanbanOrder,
+      projection,
+      saved: persistedKanbanBoard,
+    }),
+    [kanbanGroupPredicate, kanbanOrder, persistedKanbanBoard, projection],
+  )
+  const whiteboardSnapshot = useMemo(
+    () => normalizeStructuredWhiteboardSnapshotMetadata(storedWhiteboardSnapshot, {
+      positions: whiteboardPositions,
+      visualRelations: legacyWhiteboardVisualRelations,
+    }),
+    [legacyWhiteboardVisualRelations, storedWhiteboardSnapshot, whiteboardPositions],
+  )
+  const whiteboardVisualRelations = useMemo(
+    () => projectStructuredWhiteboardVisualRelations(whiteboardSnapshot, legacyWhiteboardVisualRelations),
+    [legacyWhiteboardVisualRelations, whiteboardSnapshot],
   )
   const currentViewMetadata = useMemo<StructuredViewMetadata>(() => ({
     documentUri: file.uri,
@@ -75,11 +113,13 @@ export function useStructuredViewStateController({
     hiddenPredicates: Array.from(hiddenPredicates),
     kanbanGroupPredicate,
     kanbanOrder,
+    kanbanBoard: persistedKanbanBoard,
     columnSizing,
     whiteboard: {
       selectedSubjects: whiteboardSubjects,
       positions: whiteboardPositions,
       visualRelations: whiteboardVisualRelations,
+      snapshot: whiteboardSnapshot,
     },
     writesCanonicalData: false,
   }), [
@@ -89,6 +129,7 @@ export function useStructuredViewStateController({
     hiddenPredicates,
     kanbanGroupPredicate,
     kanbanOrder,
+    persistedKanbanBoard,
     structuredSearchText,
     structuredSortDirection,
     structuredSortKey,
@@ -96,8 +137,14 @@ export function useStructuredViewStateController({
     whiteboardPositions,
     whiteboardSubjects,
     whiteboardVisualRelations,
+    whiteboardSnapshot,
   ])
-  const { markLocalViewMetadataChange } = useStructuredViewMetadataController({
+  const {
+    markLocalViewMetadataChange,
+    retryViewMetadataSave,
+    viewMetadataSaveError,
+    viewMetadataSaveStatus,
+  } = useStructuredViewMetadataController({
     currentViewMetadata,
     file,
     hydrateStructuredViewMetadata,
@@ -142,7 +189,18 @@ export function useStructuredViewStateController({
   const setKanbanColumnOrderFromUi = useCallback((columnId: string, subjects: string[]) => {
     markLocalViewMetadataChange()
     setKanbanColumnOrder(file.uri, columnId, subjects)
-  }, [file.uri, markLocalViewMetadataChange, setKanbanColumnOrder])
+    setKanbanBoard(file.uri, {
+      ...kanbanBoard,
+      cardOrder: {
+        ...kanbanBoard.cardOrder,
+        [columnId]: subjects,
+      },
+    })
+  }, [file.uri, kanbanBoard, markLocalViewMetadataChange, setKanbanBoard, setKanbanColumnOrder])
+  const setKanbanBoardFromUi = useCallback((board: StructuredKanbanBoardMetadataV1) => {
+    markLocalViewMetadataChange()
+    setKanbanBoard(file.uri, board)
+  }, [file.uri, markLocalViewMetadataChange, setKanbanBoard])
   const addWhiteboardSubjectFromUi = useCallback((subject: string) => {
     markLocalViewMetadataChange()
     addWhiteboardSubject(file.uri, subject)
@@ -162,7 +220,15 @@ export function useStructuredViewStateController({
   const setWhiteboardVisualRelationsFromUi = useCallback((relations: StructuredWhiteboardVisualRelation[]) => {
     markLocalViewMetadataChange()
     setWhiteboardVisualRelations(file.uri, relations)
-  }, [file.uri, markLocalViewMetadataChange, setWhiteboardVisualRelations])
+    setWhiteboardSnapshot(file.uri, {
+      ...whiteboardSnapshot,
+      visualRelations: relations.map((relation) => ({ ...relation })),
+    })
+  }, [file.uri, markLocalViewMetadataChange, setWhiteboardSnapshot, setWhiteboardVisualRelations, whiteboardSnapshot])
+  const setWhiteboardSnapshotFromUi = useCallback((snapshot: StructuredWhiteboardSnapshotV1) => {
+    markLocalViewMetadataChange()
+    setWhiteboardSnapshot(file.uri, snapshot)
+  }, [file.uri, markLocalViewMetadataChange, setWhiteboardSnapshot])
 
   return {
     addWhiteboardSubjectFromUi,
@@ -173,8 +239,10 @@ export function useStructuredViewStateController({
     hiddenPredicates,
     kanbanGroupPredicate,
     kanbanOrder,
+    kanbanBoard,
     removeWhiteboardSubjectFromUi,
     setKanbanColumnOrderFromUi,
+    setKanbanBoardFromUi,
     setKanbanGroupPredicateFromUi,
     setStructuredClassScopeFromUi,
     setStructuredColumnSizingFromUi,
@@ -184,13 +252,18 @@ export function useStructuredViewStateController({
     setStructuredViewModeFromUi,
     setWhiteboardNodePositionFromUi,
     setWhiteboardVisualRelationsFromUi,
+    setWhiteboardSnapshotFromUi,
     structuredSearchText,
     structuredSortDirection,
     structuredSortKey,
     togglePredicateVisibilityFromUi,
+    retryViewMetadataSave,
     viewMode,
+    viewMetadataSaveError,
+    viewMetadataSaveStatus,
     whiteboardPositions,
     whiteboardSubjects,
     whiteboardVisualRelations,
+    whiteboardSnapshot,
   }
 }

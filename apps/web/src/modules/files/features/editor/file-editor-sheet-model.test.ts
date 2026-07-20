@@ -24,7 +24,7 @@ import {
 
 const editorModelPath = 'src/modules/files/features/editor/file-editor-sheet-model.ts'
 const editorControllerPath = 'src/modules/files/features/editor/useFileEditorSheetController.ts'
-const editorFeaturePath = 'src/modules/files/features/editor/FileEditorSheet.tsx'
+const editorFeaturePath = 'src/modules/files/features/editor/DocumentEditorModal.tsx'
 
 function file(overrides: Partial<FilesDetail> = {}): FilesDetail {
   return {

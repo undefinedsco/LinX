@@ -1,5 +1,4 @@
 import { act, renderHook } from '@testing-library/react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { StructuredTableProjection } from '../../domain/structured/structured-table'
@@ -7,7 +6,7 @@ import { useStructuredWhiteboardViewController } from './useStructuredWhiteboard
 
 const documentUri = 'https://pod.example/.data/workspaces/state.ttl'
 const projection: StructuredTableProjection = {
-  predicates: ['schema:name', 'rdf:type', 'summary'],
+  predicates: ['schema:name', 'rdf:type', 'summary', 'related'],
   rows: [
     {
       subject: '#a',
@@ -15,6 +14,7 @@ const projection: StructuredTableProjection = {
         { predicate: 'schema:name', values: ['"Alpha"'] },
         { predicate: 'rdf:type', values: ['udfs:Card'] },
         { predicate: 'summary', values: ['"First card"'] },
+        { predicate: 'related', values: ['<#c>'] },
       ],
     },
     {
@@ -33,24 +33,8 @@ const projection: StructuredTableProjection = {
   ],
 }
 
-function pointerEvent(init: Partial<PointerEvent> & { currentTarget?: { setPointerCapture?: (pointerId: number) => void } }) {
-  return {
-    pointerId: init.pointerId ?? 1,
-    clientX: init.clientX ?? 0,
-    clientY: init.clientY ?? 0,
-    currentTarget: init.currentTarget ?? { setPointerCapture: vi.fn() },
-  } as unknown as ReactPointerEvent<HTMLDivElement>
-}
-
-function dispatchPointer(type: string, clientX: number, clientY: number) {
-  const event = new Event(type) as Event & { clientX: number; clientY: number }
-  event.clientX = clientX
-  event.clientY = clientY
-  window.dispatchEvent(event)
-}
-
 describe('useStructuredWhiteboardViewController', () => {
-  it('owns whiteboard projection, layout merge, available subjects, relation options, and node open state', () => {
+  it('owns whiteboard projection, layout merge, available subjects, relation options, and node open routing', () => {
     const onOpenSubject = vi.fn()
     const { result } = renderHook(() => useStructuredWhiteboardViewController({
       documentUri,
@@ -87,57 +71,118 @@ describe('useStructuredWhiteboardViewController', () => {
     expect(result.current.relationCountLabel).toBe('1 条关系线')
     expect(result.current.hasVisualRelationChips).toBe(true)
 
-    act(() => result.current.handleNodeKeyDown({
-      key: 'Enter',
-      preventDefault: vi.fn(),
-    } as never, '#a'))
-
+    act(() => result.current.openSubject('#a', { navigate: true }))
     expect(onOpenSubject).toHaveBeenCalledWith('#a', { navigate: true })
-
-    act(() => result.current.handleNodeClick('#b'))
-    expect(onOpenSubject).toHaveBeenCalledWith('#b', undefined)
   })
 
-  it('owns pointer drag state, clamped position updates, and click suppression after a drag', () => {
-    const onNodePositionChange = vi.fn()
-    const onOpenSubject = vi.fn()
+  it('keeps visual relation creation in the relation workflow while the canvas owns geometry', () => {
+    const onVisualRelationsChange = vi.fn()
     const { result } = renderHook(() => useStructuredWhiteboardViewController({
       documentUri,
       projection,
-      selectedSubjects: ['#a'],
-      layout: { '#a': { x: 32, y: 32 } },
-      onNodePositionChange,
-      onOpenSubject,
+      selectedSubjects: ['#a', '#b'],
+      visualRelations: [],
+      onVisualRelationsChange,
     }))
-    const frame = document.createElement('div')
-    Object.defineProperty(frame, 'clientWidth', { configurable: true, value: 260 })
-    Object.defineProperty(frame, 'clientHeight', { configurable: true, value: 180 })
-    result.current.frameRef.current = frame
 
-    act(() => result.current.startNodeDrag(pointerEvent({
-      pointerId: 7,
-      clientX: 10,
-      clientY: 20,
-    }), '#a'))
+    act(() => result.current.openRelationEditor())
+    act(() => result.current.updateRelationLabel('supports'))
+    act(() => result.current.saveVisualRelation())
 
-    expect(result.current.isNodeDragging('#a')).toBe(true)
+    expect(onVisualRelationsChange).toHaveBeenCalledWith([{
+      id: 'visual-a-b',
+      from: '#a',
+      to: '#b',
+      label: 'supports',
+    }])
+  })
 
-    act(() => dispatchPointer('pointermove', 500, 500))
+  it('preserves an existing visual relation identity when saving the same endpoints', () => {
+    const onVisualRelationsChange = vi.fn()
+    const { result } = renderHook(() => useStructuredWhiteboardViewController({
+      documentUri,
+      projection,
+      selectedSubjects: ['#a', '#b'],
+      visualRelations: [{ id: 'stable-a-b', from: '#a', to: '#b', label: 'old' }],
+      onVisualRelationsChange,
+    }))
 
-    expect(onNodePositionChange).toHaveBeenCalledWith('#a', {
-      x: 68,
-      y: 96,
+    act(() => result.current.openRelationEditor())
+    act(() => result.current.updateRelationLabel('updated'))
+    act(() => result.current.saveVisualRelation())
+
+    expect(onVisualRelationsChange).toHaveBeenCalledWith([
+      { id: 'stable-a-b', from: '#a', to: '#b', label: 'updated' },
+    ])
+  })
+
+  it('opens relation creation with endpoints supplied by a canvas connection gesture', () => {
+    const { result } = renderHook(() => useStructuredWhiteboardViewController({
+      documentUri,
+      projection,
+      selectedSubjects: ['#a', '#b', '#c'],
+    }))
+
+    act(() => result.current.openRelationEditorBetween('#b', '#c'))
+
+    expect(result.current.relationEditorOpen).toBe(true)
+    expect(result.current.relationFrom).toBe('#b')
+    expect(result.current.relationTo).toBe('#c')
+  })
+
+  it('stages predicate-bound relations through the shared cell write proposal path', async () => {
+    const onCommitCellWriteProposal = vi.fn(async () => true)
+    const { result } = renderHook(() => useStructuredWhiteboardViewController({
+      documentUri,
+      projection,
+      selectedSubjects: ['#a', '#b'],
+      visualRelations: [],
+      relationPredicateOptions: ['related'],
+      onCommitCellWriteProposal,
+    }))
+
+    act(() => result.current.openRelationEditor())
+    expect(result.current.relationPredicateOptions).toEqual(['related'])
+
+    act(() => result.current.updateRelationPredicate('related'))
+    await act(async () => result.current.saveRelation())
+
+    expect(onCommitCellWriteProposal).toHaveBeenCalledWith({
+      id: `${documentUri}|#a|related`,
+      kind: 'cell-write',
+      status: 'pending-write',
+      documentUri,
+      subject: '#a',
+      predicate: 'related',
+      previousValues: ['<#c>'],
+      nextValues: ['<#c>', '<#b>'],
+      writesCanonicalResource: true,
     })
+    expect(result.current.relationEditorOpen).toBe(false)
+  })
 
-    act(() => dispatchPointer('pointerup', 500, 500))
+  it('keeps a failed predicate-bound relation visible and retryable', async () => {
+    const onCommitCellWriteProposal = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+    const { result } = renderHook(() => useStructuredWhiteboardViewController({
+      documentUri,
+      projection,
+      selectedSubjects: ['#a', '#b'],
+      relationPredicateOptions: ['related'],
+      onCommitCellWriteProposal,
+    }))
 
-    expect(result.current.isNodeDragging('#a')).toBe(false)
+    act(() => result.current.openRelationEditorBetween('#a', '#b'))
+    act(() => result.current.updateRelationPredicate('related'))
+    await act(async () => result.current.saveRelation())
 
-    act(() => result.current.handleNodeClick('#a'))
-    expect(onOpenSubject).not.toHaveBeenCalled()
+    expect(result.current.relationEditorOpen).toBe(true)
+    expect(result.current.relationSaveError).toBe('关系写入失败，请重试')
 
-    act(() => result.current.handleNodeClick('#a'))
-    expect(onOpenSubject).toHaveBeenCalledWith('#a', undefined)
+    await act(async () => result.current.saveRelation())
+    expect(result.current.relationSaveError).toBeNull()
+    expect(result.current.relationEditorOpen).toBe(false)
   })
 
   it('projects whiteboard toolbar and content availability instead of leaving raw length checks in the renderer', () => {

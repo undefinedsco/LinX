@@ -49,6 +49,16 @@ function CloudTestComponent() {
   )
 }
 
+function SilentWebTestComponent() {
+  const { connect } = useOidcConnect()
+
+  return (
+    <button onClick={() => void connect('https://id.undefineds.co/', { prompt: 'none' })}>
+      restore cloud
+    </button>
+  )
+}
+
 function EmbeddedTestComponent() {
   const { connect } = useOidcConnect()
 
@@ -577,6 +587,31 @@ describe('useOidcConnect', () => {
     })
     expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
     expect(window.localStorage.getItem('solidClientAuthenticationUser:stale-session')).toBeNull()
+  })
+
+  it('preserves the registered client while attempting a silent Web restore', async () => {
+    delete window.xpodDesktop
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'remembered-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:remembered-session',
+      JSON.stringify({
+        issuer: 'https://id.undefineds.co/',
+        redirectUrl: 'http://127.0.0.1:5173/auth/callback',
+        clientId: 'remembered-client-id',
+        isLoggedIn: true,
+        webId: 'https://id.undefineds.co/gcloud/profile/card#me',
+      }),
+    )
+
+    render(<SilentWebTestComponent />)
+    fireEvent.click(screen.getByRole('button', { name: 'restore cloud' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+    expect(loginMock.mock.calls[0][0]).toMatchObject({ prompt: 'none' })
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('remembered-session')
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:remembered-session')).not.toBeNull()
   })
 
   it('always clears Solid client metadata before a fresh login, even when the Inrupt session reports logged in', async () => {

@@ -24,6 +24,15 @@ describe('structured view metadata turtle', () => {
         'https://schema.org/name': 132,
         'https://pod.example/.vocab/terms.ttl#mode': 120,
       },
+      kanbanBoard: {
+        version: 1,
+        laneOrder: [],
+        collapsedLaneIds: [],
+        scrollLeft: 0,
+        cardOrder: {
+          'read/write': ['#FolderResource', '#FileResource'],
+        },
+      },
       whiteboard: {
         selectedSubjects: ['#FileResource', '#FolderResource'],
         positions: {
@@ -38,6 +47,23 @@ describe('structured view metadata turtle', () => {
             label: 'depends on',
           },
         ],
+        snapshot: {
+          version: 1,
+          camera: { x: 0, y: 0, z: 1 },
+          nodes: [
+            { resourceUri: '#FileResource', kind: 'subject', x: 42, y: 97, w: 288, h: 160, z: 0 },
+            { resourceUri: '#FolderResource', kind: 'subject', x: 320, y: 144, w: 288, h: 160, z: 1 },
+          ],
+          groups: [],
+          visualRelations: [
+            {
+              id: 'visual-depends-on',
+              from: '#FileResource',
+              to: '#FolderResource',
+              label: 'depends on',
+            },
+          ],
+        },
       },
     }
 
@@ -75,6 +101,23 @@ describe('structured view metadata turtle', () => {
             label: 'depends on',
           },
         ],
+        snapshot: {
+          version: 1,
+          camera: { x: 0, y: 0, z: 1 },
+          nodes: [
+            { resourceUri: '#FileResource', kind: 'subject', x: 42, y: 97, w: 288, h: 160, z: 0 },
+            { resourceUri: '#FolderResource', kind: 'subject', x: 320, y: 144, w: 288, h: 160, z: 1 },
+          ],
+          groups: [],
+          visualRelations: [
+            {
+              id: 'visual-depends-on',
+              from: '#FileResource',
+              to: '#FolderResource',
+              label: 'depends on',
+            },
+          ],
+        },
       },
       writesCanonicalData: false,
     })
@@ -107,11 +150,25 @@ describe('structured view metadata turtle', () => {
       hiddenPredicates: ['https://schema.org/description'],
       kanbanGroupPredicate: null,
       kanbanOrder: {},
+      kanbanBoard: {
+        version: 1,
+        laneOrder: [],
+        collapsedLaneIds: [],
+        scrollLeft: 0,
+        cardOrder: {},
+      },
       columnSizing: {},
       whiteboard: {
         selectedSubjects: [],
         positions: {},
         visualRelations: [],
+        snapshot: {
+          version: 1,
+          camera: { x: 0, y: 0, z: 1 },
+          nodes: [],
+          groups: [],
+          visualRelations: [],
+        },
       },
       writesCanonicalData: false,
     })

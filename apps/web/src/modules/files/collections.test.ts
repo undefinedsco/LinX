@@ -1462,7 +1462,9 @@ describe('files collections', () => {
     expect(mocks.listContainerChildNodes).toHaveBeenCalledWith(db, 'https://pod.example/public/', 'container:https://pod.example/public/', 'https://pod.example/')
     expect(mocks.listAllBrowsableEntries).toHaveBeenCalledWith(db, 'https://pod.example/public/', { recursive: true })
     expect(mocks.listContainerEntries).toHaveBeenCalledWith(db, 'https://pod.example/public/', 'Workspace')
-    expect(mocks.readFileDetail).toHaveBeenCalledWith(db, 'https://pod.example/public/report.md')
+    expect(mocks.readFileDetail).toHaveBeenCalledWith(db, 'https://pod.example/public/report.md', {
+      includeContainerEntries: false,
+    })
     expect(mocks.readRawTextResource).toHaveBeenCalledWith(db, 'https://pod.example/public/report.md')
     expect(mocks.readBlobResource).toHaveBeenCalledWith(db, 'https://pod.example/public/image.png')
     expect(mocks.readFilesAccessBasics).toHaveBeenCalledWith(db, file)
@@ -1488,6 +1490,7 @@ describe('files collections', () => {
     })
     expect(roots.queryKey).toEqual(['files', 'roots', 'https://pod.example/public/'])
     expect(roots.enabled).toBe(true)
+    expect(roots.staleTime).toBe(30_000)
     await expect(roots.queryFn()).resolves.toEqual({ nodes: [], podRootUri: 'https://pod.example/' })
     expect(mocks.buildRootNodes).toHaveBeenCalledWith(db, 'https://pod.example/public/')
 
@@ -1498,6 +1501,7 @@ describe('files collections', () => {
     })
     expect(children.queryKey).toEqual(['files', 'children', 'container:https://pod.example/public/', 'https://pod.example/public/'])
     expect(children.enabled).toBe(true)
+    expect(children.staleTime).toBe(30_000)
     await expect(children.queryFn()).resolves.toEqual([])
     expect(mocks.listContainerChildNodes).toHaveBeenCalledWith(db, 'https://pod.example/public/', 'container:https://pod.example/public/', 'https://pod.example/')
 
@@ -1522,12 +1526,15 @@ describe('files collections', () => {
       'messages-v1',
     ])
     expect(entries.enabled).toBe(true)
+    expect(entries.staleTime).toBe(30_000)
     await expect(entries.queryFn()).resolves.toEqual([])
 
-    await expect(filesResourceQueryCollection.detail({
+    const detail = filesResourceQueryCollection.detail({
       fileUri: 'https://pod.example/public/report.md',
       db,
-    }).queryFn()).resolves.toEqual(expect.objectContaining({ uri: 'https://pod.example/public/report.md' }))
+    })
+    expect(detail.staleTime).toBe(30_000)
+    await expect(detail.queryFn()).resolves.toEqual(expect.objectContaining({ uri: 'https://pod.example/public/report.md' }))
     await expect(filesResourceQueryCollection.rawText({
       fileUri: 'https://pod.example/public/report.md',
       db,
@@ -1559,6 +1566,28 @@ describe('files collections', () => {
       enabled: false,
       db,
     }).enabled).toBe(false)
+  })
+
+  it('uses one canonical query identity for every projection of a container', async () => {
+    const db = { id: 'override-db' } as never
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const containerUri = 'https://pod.example/public/'
+
+    const treeProjection = filesResourceQueryCollection.containerEntries({ containerUri, db })
+    const listProjection = filesResourceQueryCollection.containerEntries({ containerUri, db })
+
+    expect(treeProjection.queryKey).toEqual(['files', 'container-entries', containerUri])
+    expect(listProjection.queryKey).toEqual(treeProjection.queryKey)
+
+    await Promise.all([
+      queryClient.fetchQuery(treeProjection),
+      queryClient.fetchQuery(listProjection),
+    ])
+
+    expect(mocks.listContainerEntries).toHaveBeenCalledTimes(1)
+    expect(mocks.listContainerEntries).toHaveBeenCalledWith(db, containerUri, undefined)
   })
 
   it('centralizes Files entry listing strategy in the resource collection', async () => {

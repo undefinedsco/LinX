@@ -104,6 +104,79 @@ describe('structured-view-metadata-workflow-model', () => {
     }))
   })
 
+  it('changes the signature when board chrome or whiteboard camera changes', () => {
+    const base = metadata({
+      kanbanBoard: {
+        version: 1,
+        laneOrder: ['Todo', 'Done'],
+        collapsedLaneIds: [],
+        scrollLeft: 0,
+        cardOrder: { Todo: ['#a'], Done: ['#b'] },
+      },
+      whiteboard: {
+        ...metadata().whiteboard,
+        snapshot: {
+          version: 1,
+          camera: { x: 0, y: 0, z: 1 },
+          nodes: [],
+          groups: [],
+          visualRelations: [],
+        },
+      },
+    })
+    const changed = metadata({
+      ...base,
+      kanbanBoard: { ...base.kanbanBoard!, collapsedLaneIds: ['Done'] },
+      whiteboard: {
+        ...base.whiteboard,
+        snapshot: { ...base.whiteboard.snapshot!, camera: { x: 40, y: 20, z: 1.5 } },
+      },
+    })
+
+    expect(structuredViewMetadataSignature(changed)).not.toBe(structuredViewMetadataSignature(base))
+  })
+
+  it('treats legacy board and whiteboard fields as equal to their normalized snapshots', () => {
+    const legacy = metadata({
+      kanbanOrder: { Todo: ['#a'] },
+      whiteboard: {
+        selectedSubjects: ['#a'],
+        positions: { '#a': { x: 10, y: 20 } },
+        visualRelations: [{ id: 'rel-a', from: '#a', to: '#b', label: 'relates' }],
+      },
+    })
+    const normalized = metadata({
+      ...legacy,
+      kanbanBoard: {
+        version: 1,
+        laneOrder: [],
+        collapsedLaneIds: [],
+        scrollLeft: 0,
+        cardOrder: { Todo: ['#a'] },
+      },
+      whiteboard: {
+        ...legacy.whiteboard,
+        snapshot: {
+          version: 1,
+          camera: { x: 0, y: 0, z: 1 },
+          nodes: [{
+            resourceUri: '#a',
+            x: 10,
+            y: 20,
+            w: 288,
+            h: 160,
+            z: 0,
+            kind: 'subject',
+          }],
+          groups: [],
+          visualRelations: [{ id: 'rel-a', from: '#a', to: '#b', label: 'relates' }],
+        },
+      },
+    })
+
+    expect(structuredViewMetadataSignature(legacy)).toBe(structuredViewMetadataSignature(normalized))
+  })
+
   it('normalizes comparable document URIs and rejects unrelated metadata sidecars', () => {
     expect(isSameStructuredDocumentUri(`${documentUri}#view`, `${documentUri}#view`)).toBe(true)
     expect(isSameStructuredDocumentUri('not a url', documentUri)).toBe(false)

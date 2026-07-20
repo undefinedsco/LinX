@@ -188,40 +188,13 @@ describe('FavoriteListPane', () => {
     })
   })
 
-  describe('Source Filter', () => {
-    it('passes sourceModule filter to useFavoriteList', () => {
-      mockUseFavoriteStore.mockImplementation((selector: (state: unknown) => unknown) => {
-        return selector(createDefaultStoreState({ sourceFilter: 'chat' }))
-      })
-
+  describe('List Chrome', () => {
+    it('does not render a second source filter row', () => {
       render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(mockUseFavoriteList).toHaveBeenCalledWith(
-        expect.objectContaining({ sourceModule: 'chat' })
-      )
-    })
-
-    it('passes undefined sourceModule when filter is "all"', () => {
-      mockUseFavoriteStore.mockImplementation((selector: (state: unknown) => unknown) => {
-        return selector(createDefaultStoreState({ sourceFilter: 'all' }))
-      })
-
-      render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
-
-      expect(mockUseFavoriteList).toHaveBeenCalledWith(
-        expect.objectContaining({ sourceModule: undefined })
-      )
-    })
-
-    it('renders all source filter tabs', () => {
-      render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
-
-      expect(screen.getByText('全部')).toBeInTheDocument()
-      expect(screen.getByText('聊天')).toBeInTheDocument()
-      expect(screen.getByText('联系人')).toBeInTheDocument()
-      expect(screen.getByText('文件')).toBeInTheDocument()
-      expect(screen.getByText('消息')).toBeInTheDocument()
-      expect(screen.getByText('话题')).toBeInTheDocument()
+      expect(screen.queryByText('全部')).not.toBeInTheDocument()
+      expect(screen.queryByText('消息')).not.toBeInTheDocument()
+      expect(mockUseFavoriteList).toHaveBeenCalledWith({ search: undefined })
     })
   })
 })

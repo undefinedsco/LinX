@@ -102,6 +102,7 @@ const mocks = vi.hoisted(() => ({
   filesResourceQueryResolveCurrentPodRootUri: vi.fn(),
   filesResourceQueryRoots: vi.fn(),
   filesResourceQueryChildren: vi.fn(),
+  filesResourceQueryContainerEntries: vi.fn(),
   filesResourceQueryEntries: vi.fn(),
   filesResourceQueryDetail: vi.fn(),
   filesResourceQueryRawText: vi.fn(),
@@ -458,6 +459,7 @@ vi.mock('./data/collections', async (importOriginal) => {
       resolveCurrentPodRootUri: mocks.filesResourceQueryResolveCurrentPodRootUri,
       roots: mocks.filesResourceQueryRoots,
       children: mocks.filesResourceQueryChildren,
+      containerEntries: mocks.filesResourceQueryContainerEntries,
       entries: mocks.filesResourceQueryEntries,
       detail: mocks.filesResourceQueryDetail,
       rawText: mocks.filesResourceQueryRawText,
@@ -1001,6 +1003,17 @@ describe('files queries', () => {
         },
       }
     })
+    mocks.filesResourceQueryContainerEntries.mockImplementation(({ containerUri, db }: {
+      containerUri?: string | null
+      db?: unknown
+    }) => ({
+      queryKey: ['files', 'container-entries', containerUri ?? ''],
+      enabled: !!db && !!containerUri,
+      queryFn: async () => {
+        if (!db || !containerUri) return []
+        return mocks.filesListContainerEntries(containerUri, undefined, db)
+      },
+    }))
     mocks.filesResourceQueryEntries.mockImplementation((input: {
       entryScope: string
       selectedTreeNodeId: string
@@ -2092,7 +2105,7 @@ describe('files queries', () => {
     })
     expect(plan.targetResourceUri).toBe(targetResourceUri)
     mocks.sourceIngestCreate.mockResolvedValueOnce(plan)
-    mocks.filesListEntries
+    mocks.filesListContainerEntries
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{
         id: targetResourceUri,
@@ -2126,7 +2139,7 @@ describe('files queries', () => {
       })
     })
 
-    await waitFor(() => expect(mocks.filesListEntries).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(mocks.filesListContainerEntries).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(entries.result.current.data).toEqual([
       expect.objectContaining({
         uri: targetResourceUri,

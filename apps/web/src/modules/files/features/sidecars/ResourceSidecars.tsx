@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react'
-import { FileCog, Shield, ExternalLink, InfoIcon } from 'lucide-react'
+import { ChevronDown, FileCog, Shield, ExternalLink, InfoIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { SidecarDrawer } from '@/components/ui/sidecar-drawer'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import {
   Dialog,
   DialogContent,
@@ -146,25 +147,27 @@ export function ResourceMetaTail({
   const [expanded, setExpanded] = useState(true)
 
   return (
-    <section id={id} className="border-t border-border/30 bg-background px-8 py-5" aria-label="文件 meta">
-      <div className="mx-auto flex w-full max-w-[760px] items-center justify-between border-b border-border/30 pb-3">
-        <div className="flex items-center gap-2 text-base font-medium text-foreground/70">
+    <section id={id} className="border-t border-border/40 bg-background px-8 py-5" aria-label="文件 meta">
+      <div className="mx-auto flex w-full max-w-[800px] items-center justify-between border-b border-border/25 pb-3">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
           <InfoIcon className="h-4 w-4" />
           Info
         </div>
         <button
           type="button"
           aria-expanded={expanded}
-          className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground/75 transition-colors hover:bg-muted/80"
+          aria-label={expanded ? '收起 Info' : '展开 Info'}
+          title={expanded ? '收起 Info' : '展开 Info'}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
           data-resource-meta-tail-toggle="true"
           onClick={() => setExpanded((current) => !current)}
         >
-          {expanded ? 'Hide' : 'Show'}
+          <ChevronDown className={expanded ? 'h-4 w-4' : 'h-4 w-4 -rotate-90'} aria-hidden="true" />
         </button>
       </div>
       {expanded ? (
-        <div className="mx-auto mt-4 w-full max-w-[760px] space-y-3">
-          <div className="rounded-md border border-border/30 bg-background px-3 py-2">
+        <div className="mx-auto mt-3 w-full max-w-[800px] space-y-3">
+          <div className="border-b border-border/20 pb-3">
             <p className="mb-1.5 text-[11px] font-medium text-foreground/80">文件</p>
             <MetaRows rows={content.fileRows} compact />
           </div>
@@ -525,5 +528,41 @@ export function ResourceSidecarActions({
         onOpenChange={sidecarActions.setAccessDialogOpen}
       />
     </div>
+  )
+}
+
+export function ResourceSidecarMenuItems({
+  file,
+  onMeta,
+  onAccess,
+  showMeta = true,
+}: {
+  file: ResourceSidecarActionTarget
+  onMeta?: () => void
+  onAccess?: () => void
+  showMeta?: boolean
+}) {
+  const sidecarActions = useResourceSidecarActionsController(file)
+
+  return (
+    <>
+      {showMeta ? (
+        <DropdownMenuItem onSelect={onMeta}>
+          <FileCog className="mr-2 h-3.5 w-3.5" />
+          查看 .meta
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem onSelect={onAccess ?? sidecarActions.openAccessDialog}>
+        <Shield className="mr-2 h-3.5 w-3.5" />
+        查看 Access 来源
+      </DropdownMenuItem>
+      {onAccess ? null : (
+        <AccessPolicyDialog
+          file={file}
+          open={sidecarActions.accessOpen}
+          onOpenChange={sidecarActions.setAccessDialogOpen}
+        />
+      )}
+    </>
   )
 }

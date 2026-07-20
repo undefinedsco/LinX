@@ -8,8 +8,18 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Clock3,
+  MoreHorizontal,
+  Star,
+  FileText,
 } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import type { FilesTreeChromeModel } from '../../domain/resource/tree-model'
@@ -28,6 +38,7 @@ const ICON_MAP: Record<FilesTreeNode['type'], typeof FolderOpen> = {
   'workspaces-root': FolderOpen,
   'repositories-root': FolderOpen,
   container: FolderOpen,
+  resource: FileText,
 }
 
 // ============================================================================
@@ -44,6 +55,9 @@ interface TreeNodeItemProps {
   toggleLabel: string
   onSelect: () => void
   onToggle: () => void
+  isFavorite: boolean
+  onToggleFavorite: (() => void) | null
+  onOpenSidecar: ((action: 'meta' | 'access') => void) | null
 }
 
 function TreeNodeItem({
@@ -56,6 +70,9 @@ function TreeNodeItem({
   toggleLabel,
   onSelect,
   onToggle,
+  isFavorite,
+  onToggleFavorite,
+  onOpenSidecar,
 }: TreeNodeItemProps) {
   const Icon = ICON_MAP[node.type] ?? FolderOpen
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -79,7 +96,7 @@ function TreeNodeItem({
       onClick={onSelect}
       onKeyDown={handleKeyDown}
       className={cn(
-        'flex min-w-0 items-center gap-2 overflow-hidden px-3 py-1.5 cursor-pointer select-none transition-colors text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+        'group relative flex h-7 min-w-0 cursor-pointer select-none items-center gap-1.5 overflow-hidden px-3 pr-12 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
         isSelected
           ? 'bg-layout-list-selected text-foreground'
           : 'text-foreground/80 hover:bg-layout-list-hover',
@@ -101,11 +118,11 @@ function TreeNodeItem({
           className="shrink-0 p-0.5 rounded hover:bg-muted/60"
         >
           {isLoading ? (
-            <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground motion-reduce:animate-none" />
           ) : (
             <ChevronRight
               className={cn(
-                'w-3.5 h-3.5 text-muted-foreground transition-transform',
+                'h-3.5 w-3.5 text-muted-foreground transition-transform',
                 isExpanded && 'rotate-90',
               )}
             />
@@ -115,12 +132,56 @@ function TreeNodeItem({
         <span className="w-4.5" />
       )}
 
-      <Icon strokeWidth={1.5} className="w-4 h-4 shrink-0 text-muted-foreground" />
+      <Icon strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{node.label}</span>
 
       {node.count != null && (
         <span className="text-[11px] text-muted-foreground shrink-0">{node.count}</span>
       )}
+      {onToggleFavorite || onOpenSidecar ? (
+        <span
+          className={cn(
+            'absolute right-2 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+            isFavorite || isSelected ? 'opacity-100' : 'opacity-0',
+          )}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {onToggleFavorite ? (
+            <button
+              type="button"
+              aria-label={`${isFavorite ? '取消收藏' : '收藏'} ${node.label}`}
+              title={isFavorite ? '取消收藏' : '收藏'}
+              className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+              onClick={(event) => {
+                event.stopPropagation()
+                onToggleFavorite()
+              }}
+            >
+              <Star className={cn('h-3.5 w-3.5', isFavorite && 'fill-primary text-primary')} strokeWidth={1.6} />
+            </button>
+          ) : null}
+          {onOpenSidecar ? (
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`更多 ${node.label} 操作`}
+                  title="更多"
+                  className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.6} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onSelect={() => onOpenSidecar('meta')}>查看 .meta</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => onOpenSidecar('access')}>查看 Access 来源</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -284,6 +345,9 @@ function TreeChildren({
           toggleLabel={nodeState.toggleLabel}
           onSelect={nodeState.onSelect}
           onToggle={nodeState.onToggle}
+          isFavorite={nodeState.isFavorite}
+          onToggleFavorite={nodeState.onToggleFavorite}
+          onOpenSidecar={nodeState.onOpenSidecar}
         />
         {nodeState.canExpand && nodeState.isExpanded ? (
           <TreeChildren parentNode={childNode} depth={depth + 1} />
@@ -338,6 +402,9 @@ export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { f
                   toggleLabel={nodeState.toggleLabel}
                   onSelect={nodeState.onSelect}
                   onToggle={nodeState.onToggle}
+                  isFavorite={nodeState.isFavorite}
+                  onToggleFavorite={nodeState.onToggleFavorite}
+                  onOpenSidecar={nodeState.onOpenSidecar}
                 />
                 {nodeState.canExpand && nodeState.isExpanded ? (
                   <TreeChildren parentNode={node} depth={1} />

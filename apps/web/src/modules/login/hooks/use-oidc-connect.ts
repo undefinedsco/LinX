@@ -99,10 +99,12 @@ export function useOidcConnect() {
     const generation = ++generationRef.current
 
     try {
-      // Always begin a fresh login from a clean Solid auth state. A stale
-      // dynamically-registered client (e.g. deleted on the provider) would
-      // otherwise be reused and rejected with "unknown client".
-      clearSolidAuthClientState()
+      // A silent restore must reuse the previously registered client so the
+      // provider can honor "Remember this client". Explicit login still
+      // starts clean; invalid_client handling below also purges stale state.
+      if (options?.prompt !== 'none') {
+        clearSolidAuthClientState()
+      }
 
       const requestedEntryUrl = issuerUrl.replace(/\/$/, '')
       const explicitAccountIssuerUrl = normalizeLoginUrl(options?.accountIssuerUrl)

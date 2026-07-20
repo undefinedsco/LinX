@@ -5,14 +5,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   contactCollection: null as any,
+  database: {
+    db: {} as any,
+    status: 'ready' as 'idle' | 'initializing' | 'ready' | 'error',
+    error: null as Error | null,
+    retry: vi.fn(),
+  },
+  fetchContacts: vi.fn(async () => []),
+  session: {
+    info: { webId: null as string | null, isLoggedIn: true },
+  },
 }))
 
 vi.mock('@inrupt/solid-ui-react', () => ({
-  useSession: () => ({ session: { info: { webId: null } } }),
+  useSession: () => ({ session: mocks.session }),
 }))
 
 vi.mock('@/providers/solid-database-provider', () => ({
-  useSolidDatabase: () => ({ db: {} }),
+  useSolidDatabase: () => mocks.database,
 }))
 
 vi.mock('../../data/collections', async () => {
@@ -28,7 +38,7 @@ vi.mock('../../data/collections', async () => {
     contactOps: {
       subscribeToPod: vi.fn(async () => () => {}),
       getGroupDisplayInfo: vi.fn(),
-      fetch: vi.fn(async () => []),
+      fetch: mocks.fetchContacts,
       getAll: vi.fn(() => []),
       search: vi.fn(async () => []),
     },
@@ -63,9 +73,31 @@ function createWrapper() {
 
 describe('ContactListPane collection reactivity', () => {
   beforeEach(() => {
+    mocks.database.db = {}
+    mocks.database.status = 'ready'
+    mocks.database.error = null
+    mocks.session.info.isLoggedIn = true
+    mocks.fetchContacts.mockClear()
     for (const row of contactCollection.toArray) {
       contactCollection.delete(row.id)
     }
+  })
+
+  it('fetches the first contact page when the Pod database is ready', async () => {
+    render(<ContactListPane />, { wrapper: createWrapper() })
+
+    await waitFor(() => expect(mocks.fetchContacts).toHaveBeenCalledOnce())
+  })
+
+  it('does not present an unavailable Pod as an empty contact list', () => {
+    mocks.database.db = null
+    mocks.database.status = 'idle'
+    mocks.session.info.isLoggedIn = false
+
+    render(<ContactListPane />, { wrapper: createWrapper() })
+
+    expect(screen.getByRole('alert')).toHaveTextContent('当前空间未连接，请先完成登录。')
+    expect(screen.queryByText('暂无联系人')).not.toBeInTheDocument()
   })
 
   it('renders local Contact collection mutations without query invalidation', async () => {

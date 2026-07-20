@@ -22,7 +22,7 @@ const sourceLinkedCardPreviewControllerFeaturePath = 'src/modules/files/features
 const sourceLinkedCardPreviewModelFeaturePath = 'src/modules/files/features/detail/source-linked-card-preview-model.ts'
 const sourceLinkedCardWorkflowControllerFeaturePath = 'src/modules/files/features/detail/useSourceLinkedCardWorkflowController.ts'
 const sourceLinkedCardWorkflowModelFeaturePath = 'src/modules/files/features/detail/source-linked-card-workflow-model.ts'
-const editorFeaturePath = 'src/modules/files/features/editor/FileEditorSheet.tsx'
+const editorFeaturePath = 'src/modules/files/features/editor/DocumentEditorModal.tsx'
 const editorControllerFeaturePath = 'src/modules/files/features/editor/useFileEditorSheetController.ts'
 const editorModelFeaturePath = 'src/modules/files/features/editor/file-editor-sheet-model.ts'
 const editorMetaTailFeaturePath = 'src/modules/files/features/editor/FileEditorSheetMetaTail.tsx'
@@ -54,6 +54,8 @@ const structuredFeaturePath = 'src/modules/files/features/structured/StructuredT
 const structuredResourcePreviewControllerFeaturePath = 'src/modules/files/features/structured/useStructuredResourcePreviewController.ts'
 const structuredResourcePreviewModelFeaturePath = 'src/modules/files/features/structured/structured-resource-preview-model.ts'
 const structuredKanbanViewFeaturePath = 'src/modules/files/features/structured/StructuredKanbanView.tsx'
+const structuredKanbanLaneFeaturePath = 'src/modules/files/features/structured/StructuredKanbanLane.tsx'
+const structuredKanbanCardFeaturePath = 'src/modules/files/features/structured/StructuredKanbanCard.tsx'
 const structuredKanbanViewControllerFeaturePath = 'src/modules/files/features/structured/useStructuredKanbanViewController.ts'
 const structuredKanbanViewModelFeaturePath = 'src/modules/files/features/structured/structured-kanban-view-model.ts'
 const structuredKanbanMoveControllerFeaturePath = 'src/modules/files/features/structured/useStructuredKanbanMoveController.ts'
@@ -75,6 +77,7 @@ const structuredSubjectPeekBodyControllerFeaturePath = 'src/modules/files/featur
 const structuredSubjectPeekBodyModelFeaturePath = 'src/modules/files/features/structured/structured-subject-peek-body-model.ts'
 const structuredSubjectPeekDrawerModelFeaturePath = 'src/modules/files/features/structured/structured-subject-peek-drawer-model.ts'
 const structuredWhiteboardViewFeaturePath = 'src/modules/files/features/structured/StructuredWhiteboardView.tsx'
+const linxWhiteboardCanvasFeaturePath = 'src/modules/files/features/structured/whiteboard/LinxWhiteboardCanvas.tsx'
 const structuredWhiteboardViewControllerFeaturePath = 'src/modules/files/features/structured/useStructuredWhiteboardViewController.ts'
 const structuredWhiteboardViewModelFeaturePath = 'src/modules/files/features/structured/structured-whiteboard-view-model.ts'
 const structuredWhiteboardRelationControllerFeaturePath = 'src/modules/files/features/structured/useStructuredWhiteboardRelationController.ts'
@@ -701,7 +704,7 @@ describe('Files features boundary', () => {
     const rawSourceModelSource = readFileSync(editorRawSourceModelFeaturePath, 'utf8')
     const shimSource = readFileSync(editorComponentShimPath, 'utf8')
 
-    expect(featureSource).toContain('export function FileEditorSheet')
+    expect(featureSource).toContain('export function DocumentEditorModal')
     expect(featureSource).toContain("from './useFileEditorSheetController'")
     expect(featureSource).toContain("from './FileEditorSheetMetaTail'")
     expect(featureSource).toContain("from './FileEditorRawSourceEditor'")
@@ -1397,7 +1400,6 @@ describe('Files features boundary', () => {
     expect(stateModelSource).toContain('projectStructuredClassScope')
     expect(stateControllerSource).toContain('useStructuredViewMetadataController')
     expect(stateControllerSource).toContain('currentViewMetadata')
-    expect(previewSource).not.toContain("from '../../domain/structured/structured-table'")
     expect(previewSource).not.toContain('projectStructuredClassScope')
     expect(previewSource).not.toContain('resolveEffectiveClassScope')
     expect(metadataControllerShimSource).toMatch(/^export \* from '..\/features\/structured\/useStructuredViewMetadataController'\n?$/)
@@ -1915,6 +1917,8 @@ describe('Files features boundary', () => {
     if (featurePaths.some((featurePath) => !existsSync(featurePath)) || shimPaths.some((shimPath) => !existsSync(shimPath))) return
 
     const kanbanSource = readFileSync(structuredKanbanViewFeaturePath, 'utf8')
+    const kanbanLaneSource = readFileSync(structuredKanbanLaneFeaturePath, 'utf8')
+    const kanbanCardSource = readFileSync(structuredKanbanCardFeaturePath, 'utf8')
     const kanbanViewControllerSource = readFileSync(structuredKanbanViewControllerFeaturePath, 'utf8')
     const kanbanViewModelSource = readFileSync(structuredKanbanViewModelFeaturePath, 'utf8')
     const kanbanMoveControllerSource = readFileSync(structuredKanbanMoveControllerFeaturePath, 'utf8')
@@ -1923,6 +1927,7 @@ describe('Files features boundary', () => {
     const classScopeMenuModelSource = readFileSync(structuredClassScopeMenuModelFeaturePath, 'utf8')
     const toolbarSource = readFileSync(structuredResourceToolbarFeaturePath, 'utf8')
     const whiteboardSource = readFileSync(structuredWhiteboardViewFeaturePath, 'utf8')
+    const linxWhiteboardCanvasSource = readFileSync(linxWhiteboardCanvasFeaturePath, 'utf8')
     const whiteboardViewControllerSource = readFileSync(structuredWhiteboardViewControllerFeaturePath, 'utf8')
     const whiteboardViewModelSource = readFileSync(structuredWhiteboardViewModelFeaturePath, 'utf8')
     const whiteboardRelationControllerSource = readFileSync(structuredWhiteboardRelationControllerFeaturePath, 'utf8')
@@ -1942,12 +1947,12 @@ describe('Files features boundary', () => {
     expect(kanbanSource).not.toContain('projection.predicates.length')
     expect(kanbanSource).not.toContain('items={column.cards.map((card) => card.subject)}')
     expect(kanbanSource).toContain('kanban.chrome')
-    expect(kanbanSource).toContain('column.ariaLabel')
-    expect(kanbanSource).toContain('card.openAriaLabel')
-    expect(kanbanSource).toContain('card.moveButtonAriaLabel')
-    expect(kanbanSource).toContain('card.visibleTags')
+    expect(kanbanSource).toContain('<StructuredKanbanLane')
+    expect(kanbanLaneSource).toContain('aria-label={column.ariaLabel}')
+    expect(kanbanCardSource).toContain('card.moveButtonAriaLabel')
+    expect(kanbanCardSource).toContain('card.visibleTags')
     expect(kanbanSource).not.toContain('card.tags.slice(0, 3)')
-    expect(kanbanSource).toContain('column.moveMenuItemLabel')
+    expect(kanbanCardSource).toContain('column.moveMenuItemLabel')
     expect(kanbanSource).not.toContain('移动到 {column.label}')
     expect(kanbanSource).not.toContain('没有可投影到 Kanban 的 subject。')
     expect(kanbanSource).not.toContain('aria-label="Kanban 分组 predicate"')
@@ -1962,11 +1967,11 @@ describe('Files features boundary', () => {
     expect(kanbanViewControllerSource).toContain('projectStructuredKanbanDndDragEndPlan')
     expect(kanbanViewControllerSource).toContain('findStructuredKanbanColumnForSubject')
     expect(kanbanViewControllerSource).not.toContain('findStructuredKanbanTargetColumnForDndOverId')
-    expect(kanbanViewControllerSource).toContain('createStructuredKanbanNativeDragState')
-    expect(kanbanViewControllerSource).toContain('projectStructuredKanbanNativeDragStarted')
-    expect(kanbanViewControllerSource).toContain('projectStructuredKanbanNativeDragOverColumn')
-    expect(kanbanViewControllerSource).toContain('projectStructuredKanbanNativeDragLeftColumn')
-    expect(kanbanViewControllerSource).toContain('projectStructuredKanbanNativeDragCleared')
+    expect(kanbanViewControllerSource).not.toContain('createStructuredKanbanNativeDragState')
+    expect(kanbanViewControllerSource).not.toContain('projectStructuredKanbanNativeDragStarted')
+    expect(kanbanViewControllerSource).not.toContain('projectStructuredKanbanNativeDragOverColumn')
+    expect(kanbanViewControllerSource).not.toContain('projectStructuredKanbanNativeDragLeftColumn')
+    expect(kanbanViewControllerSource).not.toContain('projectStructuredKanbanNativeDragCleared')
     expect(kanbanViewControllerSource).toContain('projectStructuredKanbanMoveTargets')
     expect(kanbanViewControllerSource).toContain('hasStructuredKanbanMoveTargets')
     expect(kanbanViewControllerSource).toContain('useStructuredKanbanMoveController')
@@ -2020,7 +2025,7 @@ describe('Files features boundary', () => {
     expect(kanbanMoveControllerSource).toContain('projectStructuredKanbanPendingMoveView')
     expect(kanbanMoveControllerSource).toContain('projectStructuredKanbanColumnSubjectReorder')
     expect(kanbanMoveControllerSource).toContain('projectStructuredStagedKanbanPendingMoves')
-    expect(kanbanMoveControllerSource).toContain('projectStructuredDiscardedKanbanPendingMoves')
+    expect(kanbanMoveControllerSource).not.toContain('projectStructuredDiscardedKanbanPendingMoves')
     expect(kanbanMoveControllerSource).toContain('projectStructuredApprovalStagedKanbanPendingMoves')
     expect(kanbanMoveControllerSource).toContain('useStructuredCellCommitController')
     expect(kanbanMoveControllerSource).toContain('commitKanbanMove')
@@ -2097,13 +2102,17 @@ describe('Files features boundary', () => {
     expect(whiteboardSource).not.toContain('nodes.length === 0')
     expect(whiteboardSource).not.toContain('relations.length > 0')
     expect(whiteboardSource).not.toContain('visualRelationChips.length')
-    expect(whiteboardSource).toContain('hasVisualRelationChips')
-    expect(whiteboardSource).toContain('whiteboard.chrome')
-    expect(whiteboardSource).toContain('relationEditorChrome')
-    expect(whiteboardSource).toContain('strokeDasharray={relation.strokeDasharray}')
+    expect(whiteboardSource).toContain('<LinxWhiteboardCanvas')
+    expect(whiteboardSource).not.toContain('hasVisualRelationChips')
+    expect(linxWhiteboardCanvasSource).toContain('relation?.hasVisualRelationChips')
+    expect(linxWhiteboardCanvasSource).toContain('model.chrome')
+    expect(linxWhiteboardCanvasSource).toContain('relationEditorChrome')
+    expect(whiteboardViewModelSource).toContain('strokeDasharray')
     expect(whiteboardSource).not.toContain("relation.source === 'visual' ?")
-    expect(whiteboardSource).toContain('node.openAriaLabel')
-    expect(whiteboardSource).toContain('node.removeAriaLabel')
+    expect(whiteboardSource).not.toContain('node.openAriaLabel')
+    expect(whiteboardSource).not.toContain('node.removeAriaLabel')
+    expect(whiteboardViewModelSource).toContain('openAriaLabel')
+    expect(whiteboardViewModelSource).toContain('removeAriaLabel')
     expect(whiteboardSource).not.toContain('aria-label="添加 subject 到白板"')
     expect(whiteboardSource).not.toContain('>Subject<')
     expect(whiteboardSource).not.toContain('可见 subject 已全部加入白板')
@@ -2123,14 +2132,14 @@ describe('Files features boundary', () => {
     expect(whiteboardViewControllerSource).toContain('export function useStructuredWhiteboardViewController')
     expect(whiteboardViewControllerSource).toContain("from './structured-whiteboard-view-model'")
     expect(whiteboardViewControllerSource).toContain('projectStructuredWhiteboardViewModel')
-    expect(whiteboardViewControllerSource).toContain('projectStructuredWhiteboardClampedPosition')
+    expect(whiteboardViewControllerSource).not.toContain('projectStructuredWhiteboardClampedPosition')
     expect(whiteboardViewControllerSource).toContain('useStructuredWhiteboardRelationController')
-    expect(whiteboardViewControllerSource).toContain('startNodeDrag')
-    expect(whiteboardViewControllerSource).toContain('canCreateVisualRelation')
-    expect(whiteboardViewControllerSource).toContain('canClearSubjects')
-    expect(whiteboardViewControllerSource).toContain('hasAvailableSubjectOptions')
-    expect(whiteboardViewControllerSource).toContain('isCanvasEmpty')
-    expect(whiteboardViewControllerSource).toContain('showRelationCount')
+    expect(whiteboardViewControllerSource).not.toContain('startNodeDrag')
+    expect(whiteboardViewControllerSource).not.toContain('canCreateVisualRelation')
+    expect(whiteboardViewControllerSource).not.toContain('canClearSubjects')
+    expect(whiteboardViewControllerSource).not.toContain('hasAvailableSubjectOptions')
+    expect(whiteboardViewControllerSource).not.toContain('isCanvasEmpty')
+    expect(whiteboardViewControllerSource).not.toContain('showRelationCount')
     expect(whiteboardViewControllerSource).not.toContain("from '../../domain/structured/structured-projections'")
     expect(whiteboardViewControllerSource).not.toContain('projection.rows.filter((row) => !selectedSubjects.includes(row.subject))')
     expect(whiteboardViewControllerSource).not.toContain('new Map(nodes.map((node) => [node.subject, node]))')
@@ -2144,6 +2153,11 @@ describe('Files features boundary', () => {
     expect(whiteboardViewModelSource).toContain('projectStructuredWhiteboard')
     expect(whiteboardViewModelSource).toContain('relationSegments')
     expect(whiteboardViewModelSource).toContain('strokeDasharray')
+    expect(whiteboardViewModelSource).toContain('canCreateVisualRelation')
+    expect(whiteboardViewModelSource).toContain('canClearSubjects')
+    expect(whiteboardViewModelSource).toContain('hasAvailableSubjectOptions')
+    expect(whiteboardViewModelSource).toContain('isCanvasEmpty')
+    expect(whiteboardViewModelSource).toContain('showRelationCount')
     expect(whiteboardViewModelSource).not.toContain('useStructuredWhiteboardRelationController')
     expect(whiteboardViewModelSource).not.toContain('useState')
     expect(whiteboardViewModelSource).not.toContain('useMemo')

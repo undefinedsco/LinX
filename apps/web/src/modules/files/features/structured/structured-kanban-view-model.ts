@@ -52,7 +52,7 @@ export type StructuredKanbanNativeDragState = {
 export type StructuredKanbanDndDragEndPlan =
   | { kind: 'none' }
   | { kind: 'reorder'; columnId: string; subject: string; overSubject: string }
-  | { kind: 'cross-column'; subject: string; targetColumn: StructuredKanbanDisplayColumn }
+  | { kind: 'cross-column'; subject: string; targetColumn: StructuredKanbanDisplayColumn; overSubject?: string }
 
 const STRUCTURED_KANBAN_VISIBLE_TAG_LIMIT = 3
 
@@ -238,6 +238,7 @@ export function projectStructuredKanbanDndDragEndPlan({
     kind: 'cross-column',
     subject,
     targetColumn,
+    ...(overId === targetColumn.id ? {} : { overSubject: overId }),
   }
 }
 

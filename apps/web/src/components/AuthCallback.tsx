@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
+import { EVENTS, type ISessionEventListener } from '@inrupt/solid-client-authn-browser'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useOidcConnect } from '@/modules/login/hooks/use-oidc-connect'
@@ -12,6 +13,7 @@ import {
   getPendingCallbackError,
   getPendingLoginAttempt,
   getPendingLoginTransaction,
+  isInvalidClientError,
   isInvalidClientErrorCode,
 } from '@/modules/login/login-utils'
 import {
@@ -20,7 +22,9 @@ import {
 } from '@/modules/login/login-transaction'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import {
+  clearRememberedDesktopAuthRedirectUrl,
   getCurrentLocationCallbackRedirectUrl,
+  getRememberedDesktopAuthRedirectUrl,
   isCallbackErrorRedirect,
   normalizeDesktopAuthRedirectUrl,
 } from '@/modules/login/desktop-auth-redirect'
@@ -141,21 +145,23 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
           '登录请求被拒绝。请返回登录页后重试。',
         ))
       }
+      clearRememberedDesktopAuthRedirectUrl()
       return
     }
 
     desktopRedirectRestoreInProgressRef.current = true
     try {
-      // Preserve the exact redirect URL that was registered with the OIDC
-      // authorization request. Desktop loopback callbacks use
-      // http://127.0.0.1:<port>/auth/callback; rewriting that to the renderer
-      // origin before Inrupt restores the session can make the token exchange
-      // use a different redirect_uri from the one Cloud issued the code for.
+      // The SDK reads the registered redirect URI from the stored OIDC state
+      // for its token exchange. It must receive a renderer-origin callback
+      // URL here because it waits for window.location.href to equal this URL
+      // after cleaning up the callback route.
       const restored = await restoreDesktopRedirectOnce(redirectUrl, () => (
-        handleIncomingRedirectWithRetry(() => session.handleIncomingRedirect({
-          url: redirectUrl,
-          restorePreviousSession: false,
-        }))
+        captureDesktopCallbackFailure(session.events, () => (
+          handleIncomingRedirectWithRetry(() => session.handleIncomingRedirect({
+            url: normalizedRedirectUrl,
+            restorePreviousSession: false,
+          }))
+        ))
       ))
       if (navigatedRef.current) return
 
@@ -172,6 +178,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
           console.warn('[auth-callback] continuing after desktop redirect before currentSession was persisted')
         }
         navigatedRef.current = true
+        clearRememberedDesktopAuthRedirectUrl()
         onSuccess?.()
         return
       }
@@ -179,9 +186,15 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
       setError('登录未完成，请重试。')
     } catch (restoreError) {
       console.warn('[auth-callback] failed to restore desktop redirect', restoreError)
+      if (isInvalidClientError(restoreError)) {
+        clearStoredSolidSession()
+        setError('登录凭据已失效，请重新登录。')
+        return
+      }
       if (!session.info.isLoggedIn) {
         setError(formatLoginErrorForUser(restoreError, '登录未完成，请重试。'))
       }
+      clearRememberedDesktopAuthRedirectUrl()
     } finally {
       desktopRedirectRestoreInProgressRef.current = false
     }
@@ -189,18 +202,31 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
 
   useEffect(() => {
     if (error || navigatedRef.current || session.info.isLoggedIn) return
-    if (sessionRequestInProgress) return
+    const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
+    const rememberedDesktopRedirectUrl = desktopAuth
+      ? getRememberedDesktopAuthRedirectUrl()
+      : null
+    // Keep the OAuth parameters out of the renderer route. SessionProvider
+    // always attempts its own callback handling on mount, while the desktop
+    // exchange must use the original loopback redirect URI.
+    if (desktopAuth && rememberedDesktopRedirectUrl && !desktopRedirectRestoreStartedRef.current) {
+      desktopRedirectRestoreStartedRef.current = true
+      void restoreDesktopRedirect(rememberedDesktopRedirectUrl)
+      return
+    }
+    // The provider's initial callback work targets the renderer URL. In
+    // Electron, the registered loopback URL is handed off separately and must
+    // be consumed even while that background work is still pending.
+    if (sessionRequestInProgress && !desktopAuth) return
     const currentRedirectUrl = getCurrentLocationCallbackRedirectUrl()
     if (currentRedirectUrl) {
-      const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
       if (desktopAuth && !desktopRedirectRestoreStartedRef.current) {
         desktopRedirectRestoreStartedRef.current = true
-        void restoreDesktopRedirect(currentRedirectUrl)
+        void restoreDesktopRedirect(getRememberedDesktopAuthRedirectUrl() ?? currentRedirectUrl)
       }
       return
     }
 
-    const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
     if (!desktopAuth?.consumePendingRedirect) return
     if (desktopRedirectRestoreStartedRef.current) return
     desktopRedirectRestoreStartedRef.current = true
@@ -222,10 +248,10 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
 
   useEffect(() => {
     if (error || navigatedRef.current || session.info.isLoggedIn) return
-    if (sessionRequestInProgress) return
+    const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
+    if (sessionRequestInProgress && !desktopAuth) return
     if (getCurrentLocationCallbackRedirectUrl()) return
 
-    const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
     if (!desktopAuth?.onRedirect || !desktopAuth.consumePendingRedirect) return
 
     return desktopAuth.onRedirect(() => {
@@ -276,6 +302,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
           console.warn('[auth-callback] continuing after login before currentSession was persisted')
         }
         navigatedRef.current = true
+        clearRememberedDesktopAuthRedirectUrl()
         onSuccess?.()
         return
       }
@@ -355,7 +382,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
                 </Button>
               ) : null}
               <Button variant={pendingAttempt ? 'outline' : 'default'} onClick={handleBack}>
-                返回登录
+                重新登录
               </Button>
             </div>
           </div>
@@ -482,4 +509,38 @@ function hasStoredSolidSessionRecord(sessionId: string): boolean {
   } catch {
     return false
   }
+}
+
+async function captureDesktopCallbackFailure<T>(
+  events: ISessionEventListener,
+  operation: () => Promise<T>,
+): Promise<T> {
+  let callbackFailure: { error: string | null; description?: unknown } | null = null
+  const onError = (error: string | null, description?: unknown) => {
+    callbackFailure = { error, description }
+  }
+
+  events.on(EVENTS.ERROR, onError)
+  try {
+    const result = await operation()
+    if (callbackFailure) {
+      throw new Error(describeDesktopCallbackFailure(callbackFailure))
+    }
+    return result
+  } finally {
+    events.removeListener(EVENTS.ERROR, onError)
+  }
+}
+
+function describeDesktopCallbackFailure(failure: { error: string | null; description?: unknown }): string {
+  if (failure.description instanceof Error && failure.description.message) {
+    return failure.description.message
+  }
+  if (typeof failure.description === 'string' && failure.description.trim()) {
+    return failure.description
+  }
+  if (failure.error && failure.error !== 'redirect') {
+    return failure.error
+  }
+  return '身份服务未能完成登录回调。'
 }

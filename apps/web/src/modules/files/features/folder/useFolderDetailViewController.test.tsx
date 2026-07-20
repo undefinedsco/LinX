@@ -33,9 +33,8 @@ describe('useFolderDetailViewController', () => {
 
     expect(result.current.viewMode).toBe('list')
     expect(result.current.viewModeOptions).toEqual([
-      { mode: 'list', label: '列表视图', iconKind: 'list', active: true },
-      { mode: 'columns', label: '分栏视图', iconKind: 'columns', active: false },
-      { mode: 'icons', label: '图标视图', iconKind: 'icons', active: false },
+      { mode: 'list', label: '列表', iconKind: 'list', active: true },
+      { mode: 'icons', label: '网格', iconKind: 'icons', active: false },
     ])
     expect(result.current.toolbarChrome).toEqual({
       createFolderLabel: '新建文件夹',
@@ -66,20 +65,33 @@ describe('useFolderDetailViewController', () => {
     expect(result.current.sort).toEqual({ key: 'modified', direction: 'asc' })
     expect(result.current.sortedChildren.map((entry) => entry.name)).toEqual(['alpha.md', 'beta.md'])
 
-    act(() => result.current.setViewMode('columns'))
-    expect(result.current.viewMode).toBe('columns')
+    act(() => result.current.setViewMode('icons'))
+    expect(result.current.viewMode).toBe('icons')
     expect(result.current.viewModeOptions).toEqual([
-      { mode: 'list', label: '列表视图', iconKind: 'list', active: false },
-      { mode: 'columns', label: '分栏视图', iconKind: 'columns', active: true },
-      { mode: 'icons', label: '图标视图', iconKind: 'icons', active: false },
+      { mode: 'list', label: '列表', iconKind: 'list', active: false },
+      { mode: 'icons', label: '网格', iconKind: 'icons', active: true },
     ])
-    expect(result.current.contentState).toEqual({ kind: 'columns' })
+    expect(result.current.contentState).toEqual({ kind: 'collection', viewMode: 'icons' })
 
     rerender({ children: [folderEntry('gamma.md'), sidecar] })
-    expect(result.current.viewMode).toBe('columns')
+    expect(result.current.viewMode).toBe('icons')
     expect(result.current.visibleChildren.map((entry) => entry.name)).toEqual(['gamma.md'])
     expect(result.current.visibleChildCount).toBe(1)
     expect(result.current.hasVisibleChildren).toBe(true)
+  })
+
+  it('does not expose or enter the removed Folder Columns view', () => {
+    const { result } = renderHook(
+      () => useFolderDetailViewController({ children: [alpha] }),
+    )
+
+    expect(result.current.viewModeOptions.map((option) => option.mode)).toEqual(['list', 'icons'])
+    expect(result.current.viewModeOptions.map((option) => option.label)).toEqual(['列表', '网格'])
+
+    act(() => result.current.setViewMode('columns' as never))
+
+    expect(result.current.viewMode).toBe('list')
+    expect(result.current.contentState).toEqual({ kind: 'collection', viewMode: 'list' })
   })
 
   it('projects visible child availability after sidecar filtering', () => {

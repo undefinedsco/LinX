@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { StructuredWhiteboardVisualRelation } from '../../domain/structured/structured-projections'
+import type { StructuredTableProjection } from '../../domain/structured/structured-table'
 import { useStructuredWhiteboardRelationController } from './useStructuredWhiteboardRelationController'
 
 const existingRelations: StructuredWhiteboardVisualRelation[] = [
@@ -9,6 +10,16 @@ const existingRelations: StructuredWhiteboardVisualRelation[] = [
 ]
 
 describe('useStructuredWhiteboardRelationController', () => {
+  const projection: StructuredTableProjection = {
+    prefixes: {},
+    predicates: ['related'],
+    rows: [
+      { subject: '#a', cells: [{ predicate: 'related', values: [] }] },
+      { subject: '#b', cells: [] },
+    ],
+    warnings: [],
+  }
+
   it('owns relation editor draft, create, update, remove, and cancel workflow outside the whiteboard renderer', () => {
     const onVisualRelationsChange = vi.fn()
     const { result, rerender } = renderHook(
@@ -109,6 +120,22 @@ describe('useStructuredWhiteboardRelationController', () => {
     expect(result.current.canSaveVisualRelation).toBe(false)
   })
 
+  it('preserves the edited relation identity when edit and save happen before React rerenders', () => {
+    const onVisualRelationsChange = vi.fn()
+    const { result } = renderHook(() => useStructuredWhiteboardRelationController({
+      relationSubjectOptions: ['#a', '#b', '#c'],
+      visualRelations: existingRelations,
+      onVisualRelationsChange,
+    }))
+
+    act(() => {
+      result.current.openRelationEditorFor(existingRelations[0])
+      result.current.saveVisualRelation()
+    })
+
+    expect(onVisualRelationsChange).toHaveBeenCalledWith(existingRelations)
+  })
+
   it('projects visual relation chip fallback labels for the renderer', () => {
     const relationWithoutLabel: StructuredWhiteboardVisualRelation = {
       id: 'visual-without-label',
@@ -129,5 +156,88 @@ describe('useStructuredWhiteboardRelationController', () => {
       relation: relationWithoutLabel,
     }])
     expect(result.current.hasVisualRelationChips).toBe(true)
+  })
+
+  it('rolls back an optimistic visual arrow when an RDF-bound relation proposal is rejected', async () => {
+    const onVisualRelationsChange = vi.fn()
+    const onCommitCellWriteProposal = vi.fn().mockResolvedValue(false)
+    const { result } = renderHook(() => useStructuredWhiteboardRelationController({
+      documentUri: 'https://pod.example/data.ttl',
+      projection,
+      relationPredicateOptions: ['related'],
+      relationSubjectOptions: ['#a', '#b'],
+      visualRelations: [],
+      onCommitCellWriteProposal,
+      onVisualRelationsChange,
+    }))
+
+    act(() => {
+      result.current.openRelationEditorBetween('#a', '#b')
+      result.current.updateRelationPredicate('related')
+    })
+    await act(async () => {
+      expect(await result.current.saveRelation()).toBe(false)
+    })
+
+    expect(onVisualRelationsChange).toHaveBeenNthCalledWith(1, [
+      expect.objectContaining({ from: '#a', to: '#b', label: 'related' }),
+    ])
+    expect(onVisualRelationsChange).toHaveBeenLastCalledWith([])
+    expect(result.current.relationEditorOpen).toBe(true)
+    expect(result.current.relationSaveError).toBe('关系写入失败，请重试')
+  })
+
+  it('rolls back an optimistic visual arrow when an RDF-bound relation proposal throws', async () => {
+    const onVisualRelationsChange = vi.fn()
+    const onCommitCellWriteProposal = vi.fn().mockRejectedValue(new Error('offline'))
+    const { result } = renderHook(() => useStructuredWhiteboardRelationController({
+      documentUri: 'https://pod.example/data.ttl',
+      projection,
+      relationPredicateOptions: ['related'],
+      relationSubjectOptions: ['#a', '#b'],
+      visualRelations: existingRelations,
+      onCommitCellWriteProposal,
+      onVisualRelationsChange,
+    }))
+
+    act(() => {
+      result.current.openRelationEditorBetween('#a', '#b')
+      result.current.updateRelationPredicate('related')
+    })
+    await act(async () => {
+      expect(await result.current.saveRelation()).toBe(false)
+    })
+
+    expect(onVisualRelationsChange).toHaveBeenLastCalledWith(existingRelations)
+    expect(result.current.relationEditorOpen).toBe(true)
+    expect(result.current.relationSaveError).toBe('关系写入失败，请重试')
+  })
+
+  it('removes the optimistic visual arrow after an RDF-bound relation proposal succeeds', async () => {
+    const onVisualRelationsChange = vi.fn()
+    const onCommitCellWriteProposal = vi.fn().mockResolvedValue(true)
+    const { result } = renderHook(() => useStructuredWhiteboardRelationController({
+      documentUri: 'https://pod.example/data.ttl',
+      projection,
+      relationPredicateOptions: ['related'],
+      relationSubjectOptions: ['#a', '#b'],
+      visualRelations: [],
+      onCommitCellWriteProposal,
+      onVisualRelationsChange,
+    }))
+
+    act(() => {
+      result.current.openRelationEditorBetween('#a', '#b')
+      result.current.updateRelationPredicate('related')
+    })
+    await act(async () => {
+      expect(await result.current.saveRelation()).toBe(true)
+    })
+
+    expect(onVisualRelationsChange).toHaveBeenNthCalledWith(1, [
+      expect.objectContaining({ from: '#a', to: '#b', label: 'related' }),
+    ])
+    expect(onVisualRelationsChange).toHaveBeenLastCalledWith([])
+    expect(result.current.relationEditorOpen).toBe(false)
   })
 })

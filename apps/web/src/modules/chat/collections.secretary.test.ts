@@ -306,6 +306,42 @@ describe('AI Secretary bootstrap', () => {
     })
   })
 
+  it('normalizes legacy Secretary labels in the local projection', () => {
+    const { db, rows } = createSecretaryDb()
+    initializeChatCollections(db as any)
+    collectionStates.get('chats')?.set(LINX_DEFAULT_SECRETARY.chatId, {
+      ...rows.chatRow,
+      title: 'AI Secretary',
+    })
+    collectionStates.get('contacts')?.set(LINX_DEFAULT_SECRETARY.contactId, {
+      ...rows.contactRow,
+      name: 'AI Secretary',
+    })
+
+    chatOps.stageLinxDefaultSecretary(db as any)
+
+    expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
+      title: LINX_DEFAULT_SECRETARY.title,
+    })
+    expect(collectionStates.get('contacts')?.get(LINX_DEFAULT_SECRETARY.contactId)).toMatchObject({
+      name: LINX_DEFAULT_SECRETARY.title,
+    })
+  })
+
+  it('stages the Secretary contact when a persisted chat exists before contacts sync', () => {
+    const { db, rows } = createSecretaryDb()
+    initializeChatCollections(db as any)
+    collectionStates.get('chats')?.set(LINX_DEFAULT_SECRETARY.chatId, rows.chatRow)
+
+    chatOps.stageLinxDefaultSecretary(db as any)
+
+    expect(collectionStates.get('contacts')?.get(LINX_DEFAULT_SECRETARY.contactId)).toMatchObject({
+      id: LINX_DEFAULT_SECRETARY.contactId,
+      name: LINX_DEFAULT_SECRETARY.title,
+      '@id': rows.contactIri,
+    })
+  })
+
   it('does not require full chat collection queries when Secretary resources already exist', async () => {
     const { db, insertedRows } = createSecretaryDb({
       chatSelectError: new Error('SPARQL unavailable'),

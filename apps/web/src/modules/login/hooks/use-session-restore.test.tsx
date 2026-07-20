@@ -91,6 +91,7 @@ describe('useSessionRestore', () => {
     redirectListener = null
     window.history.replaceState({}, '', '/')
     window.localStorage.clear()
+    window.sessionStorage.clear()
   })
 
   it('waits for SolidSessionProvider to restore web callback redirects', async () => {
@@ -203,7 +204,7 @@ describe('useSessionRestore', () => {
     expect(screen.getByTestId('restore-failed').textContent).toBe('true')
   })
 
-  it('normalizes desktop loopback callback and routes to the callback page after redirect event', async () => {
+  it('keeps the desktop loopback callback out of the renderer route after redirect event', async () => {
     window.history.replaceState({}, '', '/chat')
     render(<TestComponent />)
 
@@ -218,12 +219,15 @@ describe('useSessionRestore', () => {
       expect(window.location.pathname).toBe('/auth/callback')
     })
 
-    expect(window.location.search).toBe('?code=abc&state=xyz')
+    expect(window.location.search).toBe('')
+    expect(window.sessionStorage.getItem('linx-desktop-auth-redirect-url')).toBe(
+      'http://127.0.0.1:43123/auth/callback?code=abc&state=xyz',
+    )
     expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
     expect(clearStoredSolidSessionMock).not.toHaveBeenCalled()
   })
 
-  it('maps desktop loopback callback onto the current HTTP renderer origin', async () => {
+  it('routes desktop loopback callbacks to a clean renderer callback URL', async () => {
     window.history.replaceState({}, '', '/settings')
 
     render(<TestComponent />)
@@ -238,7 +242,7 @@ describe('useSessionRestore', () => {
       expect(window.location.pathname).toBe('/auth/callback')
     })
 
-    expect(window.location.search).toBe('?code=abc&state=xyz')
+    expect(window.location.search).toBe('')
     expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
   })
 

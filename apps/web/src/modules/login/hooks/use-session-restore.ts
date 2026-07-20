@@ -7,7 +7,7 @@ import {
 } from '../login-utils'
 import {
   getCurrentLocationCallbackRedirectUrl,
-  normalizeDesktopAuthRedirectUrl,
+  rememberDesktopAuthRedirectUrl,
 } from '../desktop-auth-redirect'
 
 const CALLBACK_RESTORE_TIMEOUT = 15000
@@ -45,18 +45,24 @@ export function useSessionRestore() {
     if (!desktopApi?.auth) return null
     const redirectUrl = await desktopApi.auth.consumePendingRedirect()
     if (!redirectUrl) return null
-    return normalizeDesktopAuthRedirectUrl(redirectUrl)
+    rememberDesktopAuthRedirectUrl(redirectUrl)
+    return redirectUrl
   }, [desktopApi])
 
-  const routeDesktopRedirectToCallback = useCallback((redirectUrl: string) => {
+  const routeDesktopRedirectToCallback = useCallback(() => {
     setIsRestoring(true)
     setRestoreFailed(false)
 
-    if (redirectUrl === window.location.href) {
+    const callbackRoute = `${window.location.origin}/auth/callback`
+    if (callbackRoute === window.location.href) {
       return
     }
 
-    window.history.pushState({}, '', redirectUrl)
+    // Do not put the original loopback callback query into the renderer URL.
+    // Inrupt's SessionProvider automatically processes renderer callbacks on
+    // mount; that competes with the desktop-only exchange, which must retain
+    // the original loopback redirect URI stored in sessionStorage.
+    window.history.pushState({}, '', callbackRoute)
     window.dispatchEvent(new PopStateEvent('popstate'))
   }, [])
 
@@ -72,15 +78,13 @@ export function useSessionRestore() {
     }
     attemptedRef.current = true
 
-    // Desktop cold starts cannot safely run Inrupt's silent restore: it may
-    // navigate the app window to the IdP using a stale loopback redirect URL.
-    // Only actual callback payloads from Electron's loopback bridge are handled here.
-    // If the Desktop renderer itself is on /auth/callback, SolidSessionProvider
-    // owns that restore so there is never a second consumer for the same OAuth code.
+    // Desktop cannot use SolidSessionProvider's iframe-based silent restore:
+    // its loopback callback is a top-level navigation. This branch only
+    // consumes a new callback delivered by Electron.
     if (desktopApi?.auth) {
       void consumeDesktopRedirect().then((redirectUrl) => {
         if (redirectUrl) {
-          routeDesktopRedirectToCallback(redirectUrl)
+          routeDesktopRedirectToCallback()
         } else if (shouldAttemptCurrentLocationRestore()) {
           setIsRestoring(true)
         } else {
@@ -114,7 +118,7 @@ export function useSessionRestore() {
     return desktopApi.auth.onRedirect(() => {
       void consumeDesktopRedirect().then((redirectUrl) => {
         if (redirectUrl) {
-          routeDesktopRedirectToCallback(redirectUrl)
+          routeDesktopRedirectToCallback()
         }
       })
     })

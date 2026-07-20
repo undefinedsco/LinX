@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FocusEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { AlertTriangle, Bold, Code2, GripVertical, Heading1, Italic, Link2, List, Plus, Quote, Redo2, Sparkles, Undo2 } from 'lucide-react'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
+import Image from '@tiptap/extension-image'
+import { TableKit } from '@tiptap/extension-table'
+import { AlertTriangle, Bold, CheckSquare, Code2, FileInput, GripVertical, Heading1, ImageIcon, Italic, Link2, List, ListOrdered, Plus, Quote, Redo2, Search, Sparkles, Table2, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   createRichTextEditorBlockCommandMenuState,
@@ -29,6 +33,10 @@ import {
   type RichTextEditorDocumentSummary,
   type RichTextEditorSaveStatus,
 } from './rich-text-file-editor-model'
+import {
+  projectRichTextCommandSearch,
+  type RichTextCommandId,
+} from './rich-text-editor/command-catalog'
 
 export { extractRichTextEditorDocumentSummary }
 export type { RichTextEditorDocumentNode, RichTextEditorDocumentSummary }
@@ -121,6 +129,24 @@ function serializeBlockNode(node: RichTextEditorDocumentNode): string {
       const content = children.map(serializeBlockNode).filter(Boolean).join('\n').replace(/\n/g, '\n  ')
       return content ? `- ${content}` : '-'
     }
+    case 'taskList':
+      return children.map(serializeBlockNode).filter(Boolean).join('\n')
+    case 'taskItem': {
+      const content = children.map(serializeBlockNode).filter(Boolean).join('\n').replace(/\n/g, '\n  ')
+      return `- [${node.attrs?.checked ? 'x' : ' '}] ${content}`.trimEnd()
+    }
+    case 'table':
+      return children.map(serializeBlockNode).filter(Boolean).join('\n')
+    case 'tableRow':
+      return `| ${children.map(serializeBlockNode).join(' | ')} |`
+    case 'tableHeader':
+    case 'tableCell':
+      return children.map(serializeBlockNode).filter(Boolean).join(' ')
+    case 'image': {
+      const src = typeof node.attrs?.src === 'string' ? node.attrs.src : ''
+      const alt = typeof node.attrs?.alt === 'string' ? node.attrs.alt : ''
+      return src ? `![${escapeMarkdownLinkText(alt)}](${escapeMarkdownLinkHref(src)})` : ''
+    }
     case 'blockquote':
       return children
         .map(serializeBlockNode)
@@ -181,6 +207,14 @@ function markdownishTextToHtml(text: string): string {
     }
 
     if (block.startsWith('- ') || block.startsWith('* ')) {
+      if (lines.every((line) => /^[-*]\s+\[[ xX]\]\s+/.test(line))) {
+        const items = lines.map((line) => {
+          const match = line.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/)
+          if (!match) return ''
+          return `<li data-type="taskItem" data-checked="${match[1].toLowerCase() === 'x'}"><p>${renderInlineMarkdown(match[2])}</p></li>`
+        }).join('')
+        return `<ul data-type="taskList">${items}</ul>`
+      }
       const items = block
         .split('\n')
         .map((line) => line.replace(/^[-*]\s+/, '').trim())
@@ -189,6 +223,9 @@ function markdownishTextToHtml(text: string): string {
         .join('')
       return `<ul>${items}</ul>`
     }
+
+    const image = block.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)
+    if (image) return `<img src="${escapeHtml(image[2])}" alt="${escapeHtml(image[1])}">`
 
     return `<p>${renderInlineMarkdown(block).replace(/\n/g, '<br>')}</p>`
   }).join('')
@@ -244,16 +281,6 @@ type RichTextHistoryState = {
 }
 
 type TiptapEditorInstance = NonNullable<ReturnType<typeof useEditor>>
-
-const BLOCK_COMMANDS = [
-  { id: 'paragraph', label: '段落' },
-  { id: 'heading', label: '一级标题' },
-  { id: 'list', label: '项目列表' },
-  { id: 'todo', label: '待办' },
-  { id: 'code', label: '代码块' },
-] as const
-
-type BlockCommandId = typeof BLOCK_COMMANDS[number]['id']
 
 const EMPTY_HISTORY_STATE: RichTextHistoryState = {
   canUndo: false,
@@ -336,6 +363,10 @@ export function RichTextFileEditor({
   const [saveState, setSaveState] = useState(createRichTextEditorSaveState)
   const [historyState, setHistoryState] = useState<RichTextHistoryState>(EMPTY_HISTORY_STATE)
   const [formattingToolbarVisible, setFormattingToolbarVisible] = useState(false)
+  const [blockCommandQuery, setBlockCommandQuery] = useState('')
+  const [embedDraft, setEmbedDraft] = useState<{ kind: 'image' | 'reference'; url: string; label: string } | null>(null)
+  const commandProjection = projectRichTextCommandSearch(blockCommandQuery)
+  const blockCommands = commandProjection.sections.flatMap((section) => section.commands)
   const blockMenuOpen = blockMenuState.open
   const blockMenuActiveIndex = blockMenuState.activeIndex
   const blockMoveMenuOpen = blockMoveMenuState.open
@@ -375,7 +406,13 @@ export function RichTextFileEditor({
   const editor = useEditor({
     editable,
     immediatelyRender: false,
-    extensions: [StarterKit],
+    extensions: [
+      StarterKit,
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      TableKit.configure({ table: { resizable: true } }),
+      Image.configure({ allowBase64: false, inline: false }),
+    ],
     content: editorHtml,
     onUpdate: ({ editor }) => {
       updateDirtyStateFromEditor(editor)
@@ -386,6 +423,9 @@ export function RichTextFileEditor({
         const next = readRichTextHistoryState(editor)
         return current.canUndo === next.canUndo && current.canRedo === next.canRedo ? current : next
       })
+    },
+    onSelectionUpdate: ({ editor }) => {
+      setFormattingToolbarVisible(!editor.state.selection.empty)
     },
     editorProps: {
       handlePaste: (view, event) => {
@@ -510,20 +550,62 @@ export function RichTextFileEditor({
     setLinkMenuState(projectRichTextEditorLinkMenuAfterApply)
   }
 
-  const runBlockCommand = (command: BlockCommandId) => {
+  const runBlockCommand = (command: RichTextCommandId) => {
     if (!editable || !editor) return
+    if (command === 'image' || command === 'reference') {
+      setEmbedDraft({ kind: command, url: '', label: '' })
+      return
+    }
     const chain = editor.chain()
     if (command === 'paragraph') {
       chain.insertContent('<p></p>').run()
-    } else if (command === 'heading') {
+    } else if (command === 'heading-1') {
       chain.toggleHeading({ level: 1 }).run()
-    } else if (command === 'list') {
+    } else if (command === 'bullet-list') {
       chain.toggleBulletList().run()
-    } else if (command === 'todo') {
-      chain.insertContent('<p>- [ ] Task</p>').run()
-    } else {
+    } else if (command === 'ordered-list') {
+      chain.toggleOrderedList().run()
+    } else if (command === 'task') {
+      chain.insertContent({
+        type: 'taskList',
+        content: [{
+          type: 'taskItem',
+          attrs: { checked: false },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Task' }] }],
+        }],
+      }).run()
+    } else if (command === 'table') {
+      chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+    } else if (command === 'quote') {
+      chain.toggleBlockquote().run()
+    } else if (command === 'code-block') {
       chain.toggleCodeBlock().run()
     }
+    setBlockCommandQuery('')
+    commitBlockCommandMenuState(projectRichTextEditorBlockCommandMenuClosed(currentBlockCommandMenuState()))
+  }
+
+  const insertEmbed = () => {
+    if (!editable || !editor || !embedDraft) return
+    const url = normalizeEditableLinkHref(embedDraft.url)
+    if (!url) return
+    const label = embedDraft.label.trim() || (embedDraft.kind === 'image' ? '图片' : url)
+    if (embedDraft.kind === 'image') {
+      editor.chain().focus('end').insertContent([
+        { type: 'image', attrs: { src: url, alt: label } },
+        { type: 'paragraph' },
+      ]).run()
+    } else {
+      editor.chain().focus('end').insertContent({
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: '@' },
+          { type: 'text', text: label, marks: [{ type: 'link', attrs: { href: url } }] },
+        ],
+      }).run()
+    }
+    setEmbedDraft(null)
+    setBlockCommandQuery('')
     commitBlockCommandMenuState(projectRichTextEditorBlockCommandMenuClosed(currentBlockCommandMenuState()))
   }
 
@@ -566,14 +648,14 @@ export function RichTextFileEditor({
       commitBlockCommandMenuState(projectRichTextEditorBlockCommandMenuMoved(
         currentBlockCommandMenuState(),
         offset,
-        BLOCK_COMMANDS.length,
+        blockCommands.length,
       ))
       return
     }
     if (event.key === 'Enter') {
       event.preventDefault()
       event.stopPropagation()
-      runBlockCommand(BLOCK_COMMANDS[blockMenuActiveIndexRef.current]?.id ?? 'paragraph')
+      runBlockCommand(blockCommands[blockMenuActiveIndexRef.current]?.id ?? 'paragraph')
       return
     }
     if (event.key === 'Escape') {
@@ -594,27 +676,6 @@ export function RichTextFileEditor({
       data-control-surface="byline-contextual"
       className="absolute left-7 top-0 z-10 flex min-h-7 w-fit max-w-[calc(100%-2rem)] flex-wrap items-center justify-start gap-0.5 rounded-md border border-border/40 bg-popover px-1 py-1 text-muted-foreground shadow-sm"
     >
-      <button
-        type="button"
-        aria-label="撤销"
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/70 hover:text-foreground disabled:opacity-40"
-        disabled={!editor || !historyState.canUndo}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={undo}
-      >
-        <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        aria-label="重做"
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/70 hover:text-foreground disabled:opacity-40"
-        disabled={!editor || !historyState.canRedo}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={redo}
-      >
-        <Redo2 className="h-3.5 w-3.5" aria-hidden="true" />
-      </button>
-      <span className="mx-1 h-4 w-px bg-border/50" aria-hidden="true" />
       <button
         type="button"
         aria-label="一级标题"
@@ -763,17 +824,23 @@ export function RichTextFileEditor({
           </button>
         </>
       ) : null}
+    </div>
+  ) : null
+
+  const editorStatusControls = editable ? (
+    <div
+      role="toolbar"
+      aria-label="编辑历史与保存状态"
+      className="absolute right-0 top-0 z-10 flex items-center gap-0.5 rounded-md bg-background/90 px-1 py-0.5 text-muted-foreground opacity-40 transition-opacity group-hover/byline:opacity-100 focus-within:opacity-100"
+    >
+      <button type="button" aria-label="撤销" className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-muted/70 hover:text-foreground disabled:opacity-30" disabled={!editor || !historyState.canUndo} onMouseDown={(event) => event.preventDefault()} onClick={undo}>
+        <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      <button type="button" aria-label="重做" className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-muted/70 hover:text-foreground disabled:opacity-30" disabled={!editor || !historyState.canRedo} onMouseDown={(event) => event.preventDefault()} onClick={redo}>
+        <Redo2 className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
       {onSaveText ? (
-        <span
-          className={cn(
-            'ml-1 rounded-full px-2 py-0.5 text-[11px]',
-            saveState.status === 'saved' && 'bg-success/10 text-success',
-            saveState.status === 'dirty' && 'bg-warning/10 text-warning',
-            saveState.status === 'saving' && 'bg-muted text-muted-foreground',
-            saveState.status === 'error' && 'bg-destructive/10 text-destructive',
-          )}
-          aria-live="polite"
-        >
+        <span className={cn('ml-0.5 px-1.5 py-0.5 text-[11px]', saveState.status === 'saved' && 'text-success', saveState.status === 'dirty' && 'text-warning', saveState.status === 'saving' && 'text-muted-foreground', saveState.status === 'error' && 'text-destructive')} aria-live="polite">
           {getRichTextEditorSaveStatusLabel(saveState.status)}
         </span>
       ) : null}
@@ -790,11 +857,8 @@ export function RichTextFileEditor({
       data-editor-surface="sheet"
       data-testid="rich-text-file-editor"
       onBlur={handleBlur}
-      onFocusCapture={() => {
-        if (editable) setFormattingToolbarVisible(true)
-      }}
       onMouseUpCapture={() => {
-        if (editable) setFormattingToolbarVisible(true)
+        if (editable) setFormattingToolbarVisible(!!window.getSelection()?.toString())
       }}
       onKeyDownCapture={handleEditorShellKeyDownCapture}
     >
@@ -806,19 +870,73 @@ export function RichTextFileEditor({
         </div>
       ) : null}
       <div className={cn('relative', editable && 'group/byline pl-7')}>
+        {editorStatusControls}
         {editable && blockMenuOpen ? (
           <div
             role="menu"
             aria-label="块命令"
-            aria-activedescendant={`rich-text-block-command-${BLOCK_COMMANDS[blockMenuActiveIndex]?.id ?? 'paragraph'}`}
-            className="absolute left-8 top-12 z-20 w-44 rounded-md border border-border/50 bg-popover p-1 text-xs shadow-lg"
+            aria-activedescendant={`rich-text-block-command-${blockCommands[blockMenuActiveIndex]?.id ?? 'paragraph'}`}
+            className="absolute left-8 top-12 z-20 w-72 rounded-md border border-border/50 bg-popover p-1.5 text-xs shadow-lg"
           >
-            {BLOCK_COMMANDS.map((item, index) => (
+            {embedDraft ? (
+              <form className="space-y-2 p-1" onSubmit={(event) => { event.preventDefault(); insertEmbed() }}>
+                <p className="px-1 font-medium text-foreground">{embedDraft.kind === 'image' ? '插入图片' : '引用资源'}</p>
+                <input
+                  autoFocus
+                  aria-label={embedDraft.kind === 'image' ? '图片地址' : '资源地址'}
+                  className="h-8 w-full rounded-md border border-border/50 bg-background px-2 text-xs outline-none focus:border-primary"
+                  placeholder="https://..."
+                  value={embedDraft.url}
+                  onChange={(event) => setEmbedDraft((current) => current ? { ...current, url: event.target.value } : current)}
+                />
+                <input
+                  aria-label={embedDraft.kind === 'image' ? '图片说明' : '资源名称'}
+                  className="h-8 w-full rounded-md border border-border/50 bg-background px-2 text-xs outline-none focus:border-primary"
+                  placeholder={embedDraft.kind === 'image' ? '图片说明（可选）' : '资源名称（可选）'}
+                  value={embedDraft.label}
+                  onChange={(event) => setEmbedDraft((current) => current ? { ...current, label: event.target.value } : current)}
+                />
+                <div className="flex justify-end gap-1">
+                  <button type="button" className="h-7 rounded px-2 text-muted-foreground hover:bg-muted" onClick={() => setEmbedDraft(null)}>返回</button>
+                  <button type="submit" className="h-7 rounded bg-primary px-2 text-primary-foreground disabled:opacity-40" disabled={!normalizeEditableLinkHref(embedDraft.url)}>插入</button>
+                </div>
+              </form>
+            ) : <>
+            <label className="mb-1 flex h-8 items-center gap-2 rounded-md border border-border/45 bg-background px-2 text-muted-foreground">
+              <Search className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="sr-only">搜索块命令</span>
+              <input
+                autoFocus
+                aria-label="搜索块命令"
+                role="searchbox"
+                className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none"
+                placeholder="搜索块类型"
+                value={blockCommandQuery}
+                onChange={(event) => {
+                  setBlockCommandQuery(event.target.value)
+                  commitBlockCommandMenuState(projectRichTextEditorBlockCommandMenuActiveIndexSet(
+                    currentBlockCommandMenuState(), 0, Math.max(blockCommands.length, 1),
+                  ))
+                }}
+              />
+            </label>
+            {blockCommands.map((item, index) => {
+              const CommandIcon = item.id === 'table' ? Table2
+                : item.id === 'image' ? ImageIcon
+                  : item.id === 'reference' ? FileInput
+                    : item.id === 'task' ? CheckSquare
+                      : item.id === 'ordered-list' ? ListOrdered
+                        : item.id === 'code-block' ? Code2
+                          : item.id === 'quote' ? Quote
+                            : item.id === 'heading-1' ? Heading1
+                              : List
+              return (
               <button
                 key={item.id}
                 id={`rich-text-block-command-${item.id}`}
                 type="button"
                 role="menuitem"
+                aria-label={item.label}
                 className={cn(
                   'flex w-full items-center rounded px-2 py-1.5 text-left text-foreground hover:bg-muted/70',
                   index === blockMenuActiveIndex && 'bg-muted/70',
@@ -828,14 +946,19 @@ export function RichTextFileEditor({
                   commitBlockCommandMenuState(projectRichTextEditorBlockCommandMenuActiveIndexSet(
                     currentBlockCommandMenuState(),
                     index,
-                    BLOCK_COMMANDS.length,
+                    blockCommands.length,
                   ))
                 }}
                 onClick={() => runBlockCommand(item.id)}
               >
-                {item.label}
+                <CommandIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                <span className="flex-1">{item.label}</span>
+                <span className="text-[10px] text-muted-foreground">{item.markdownHint}</span>
               </button>
-            ))}
+              )
+            })}
+            {blockCommands.length === 0 ? <p className="px-2 py-3 text-center text-muted-foreground">{commandProjection.emptyLabel}</p> : null}
+            </>}
           </div>
         ) : null}
         {editable && blockMoveMenuOpen ? (

@@ -11,12 +11,10 @@ import {
   renderStructuredViewMetadataTurtle,
   type StructuredViewMetadata,
 } from '../../domain/structured/structured-view-metadata'
-import { PodRequestError, withPodRequestBoundary } from './pod-request-boundary'
 import { summarizeWacAclPolicy } from '../../domain/resource/access-policy-model'
 import {
   classifyFilesEntry,
   getEntryName,
-  getFilesEntryOpenMode,
   getParentContainerUri,
   isFilesSidecarSemanticKind,
   isTextLikeMimeType,
@@ -45,7 +43,6 @@ import {
   type FilesFolderCreateInput,
   type FilesMetaSidecar,
   type FilesRawTextResource,
-  type FilesResourceReadErrorKind,
   type FilesResourceTransferInput,
   type FilesRootData,
   type FilesStructuredViewMetadataSidecar,
@@ -59,6 +56,7 @@ import {
 import {
   createContainerNodeId,
   createLocalWorkspaceNodeId,
+  createResourceNodeId,
   createWorkspaceNodeId,
   getContainerLabel,
   parseTreeNodeId,
@@ -72,6 +70,7 @@ export {
   FilesSaveConflictError,
   createContainerNodeId,
   createLocalWorkspaceNodeId,
+  createResourceNodeId,
   createWorkspaceNodeId,
   getContainerLabel,
   getPodRootUri,
@@ -138,6 +137,7 @@ interface ResourceMetadata {
   mimeType: string | null
   size: number | null
   modifiedAt: string | null
+  bodyText?: string
 }
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -684,7 +684,9 @@ export async function readFilesAccessBasics(
 }
 
 function getMimeTypeFromHeaders(headers: Record<string, string>, fallback?: string | null): string | null {
-  return headers['content-type']?.split(';')[0]?.trim() ?? fallback ?? null
+  const headerMimeType = headers['content-type']?.split(';')[0]?.trim()
+  if (!headerMimeType || headerMimeType === 'application/octet-stream') return fallback ?? headerMimeType ?? null
+  return headerMimeType
 }
 
 function assertRawTextIsSaveable(mimeType: string, content: string): void {
@@ -703,18 +705,36 @@ function toIsoString(value: string | null): string | null {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString()
 }
 
-async function readMetadata(db: SolidDatabase, uri: string): Promise<ResourceMetadata> {
+async function readMetadata(
+  db: SolidDatabase,
+  uri: string,
+  options: { includeBody?: boolean } = {},
+): Promise<ResourceMetadata> {
   const authFetch = getAuthenticatedFetch(db)
   let response: Response | null = null
+  let bodyText: string | undefined
 
   try {
-    response = await authFetch(uri, { method: 'HEAD' })
-    if (response.status === 405) {
-      response = await authFetch(uri, { method: 'GET' })
+    response = await authFetch(uri, options.includeBody ? {
+      method: 'GET',
+      headers: {
+        Accept: `${guessMimeType(uri, false) ?? 'text/plain'}, text/plain;q=0.9, */*;q=0.1`,
+      },
+    } : { method: 'HEAD' })
+    if (options.includeBody && response.ok) {
       try {
-        await response.body?.cancel?.()
+        bodyText = await response.text()
       } catch {
-        // ignore
+        // Keep metadata usable when the body stream cannot be read.
+      }
+    } else if (response.status === 405 || response.status >= 500) {
+      response = await authFetch(uri, { method: 'GET' })
+      if (response.ok) {
+        try {
+          bodyText = await response.text()
+        } catch {
+          // Keep metadata usable when the fallback body stream cannot be read.
+        }
       }
     }
   } catch (error) {
@@ -736,33 +756,7 @@ async function readMetadata(db: SolidDatabase, uri: string): Promise<ResourceMet
     mimeType,
     size: Number.isFinite(parsedSize) ? parsedSize : null,
     modifiedAt: toIsoString(headers['last-modified'] ?? null),
-  }
-}
-
-function createUnavailableMetadata(uri: string, kind: FilesEntryKind, error: unknown): ResourceMetadata & {
-  metadataState: 'unavailable'
-  metadataErrorKind: FilesResourceReadErrorKind
-  metadataError: string
-} {
-  const message = error instanceof Error ? error.message : String(error)
-  const metadataErrorKind = error instanceof FilesResourceReadError
-    ? error.kind
-    : error instanceof PodRequestError
-      ? error.kind === 'unauthorized' || error.kind === 'forbidden' || error.kind === 'missing'
-        ? error.kind
-        : error.kind === 'timeout' || error.kind === 'offline' || error.kind === 'aborted'
-          ? 'network'
-          : 'unknown'
-      : 'unknown'
-
-  return {
-    headers: {},
-    mimeType: guessMimeType(uri, kind === 'container'),
-    size: null,
-    modifiedAt: null,
-    metadataState: 'unavailable',
-    metadataErrorKind,
-    metadataError: message,
+    bodyText,
   }
 }
 
@@ -775,6 +769,31 @@ function sortEntries(entries: FilesEntry[]): FilesEntry[] {
   })
 }
 
+const inFlightContainerListings = new WeakMap<object, Map<string, Promise<string[]>>>()
+
+function listContainerResourceUris(db: SolidDatabase, containerUri: string): Promise<string[]> {
+  const dbKey = db as object
+  const normalizedContainerUri = normalizeContainerUri(containerUri)
+  let listingsByUri = inFlightContainerListings.get(dbKey)
+  if (!listingsByUri) {
+    listingsByUri = new Map()
+    inFlightContainerListings.set(dbKey, listingsByUri)
+  }
+
+  const existing = listingsByUri.get(normalizedContainerUri)
+  if (existing) return existing
+
+  const request = getContainerLister(db)(normalizedContainerUri)
+  listingsByUri.set(normalizedContainerUri, request)
+  const release = () => {
+    if (listingsByUri?.get(normalizedContainerUri) === request) {
+      listingsByUri.delete(normalizedContainerUri)
+    }
+  }
+  void request.then(release, release)
+  return request
+}
+
 async function listContainerEntryStubs(
   db: SolidDatabase,
   containerUri: string,
@@ -782,7 +801,7 @@ async function listContainerEntryStubs(
 ): Promise<FilesEntry[]> {
   const normalizedContainerUri = normalizeContainerUri(containerUri)
   const podRootUri = getPodRootUri(db)
-  const resourceUris = await getContainerLister(db)(normalizedContainerUri)
+  const resourceUris = await listContainerResourceUris(db, normalizedContainerUri)
   const entries = resourceUris.flatMap((uri): FilesEntry[] => {
     const normalizedUri = uri.endsWith('/') ? normalizeContainerUri(uri) : uri
     const kind: FilesEntryKind = normalizedUri.endsWith('/') ? 'container' : 'resource'
@@ -809,47 +828,7 @@ export async function listContainerEntries(
   containerUri: string,
   sourceLabel?: string,
 ): Promise<FilesEntry[]> {
-  const normalizedContainerUri = normalizeContainerUri(containerUri)
-  const podRootUri = getPodRootUri(db)
-  const listContainerResources = getContainerLister(db)
-  const resourceUris = await listContainerResources(normalizedContainerUri)
-
-  const entries = await Promise.all(resourceUris.map(async (uri): Promise<FilesEntry | null> => {
-    const normalizedUri = uri.endsWith('/') ? normalizeContainerUri(uri) : uri
-    const kind: FilesEntryKind = normalizedUri.endsWith('/') ? 'container' : 'resource'
-    const pathSemanticKind = classifyFilesEntry(normalizedUri, kind === 'container', podRootUri)
-    if (isFilesSidecarSemanticKind(pathSemanticKind)) return null
-    const metadata = await withPodRequestBoundary(
-      () => readMetadata(db, normalizedUri),
-      { timeoutMs: 2_500 },
-    )
-      .then((resourceMetadata) => ({
-        ...resourceMetadata,
-        metadataState: 'available' as const,
-        metadataErrorKind: undefined,
-        metadataError: undefined,
-      }))
-      .catch((error) => createUnavailableMetadata(normalizedUri, kind, error))
-    const semanticKind = classifyFilesEntry(normalizedUri, kind === 'container', podRootUri, metadata.mimeType)
-
-    return {
-      id: normalizedUri,
-      uri: normalizedUri,
-      name: getEntryName(normalizedUri),
-      kind,
-      semanticKind,
-      parentUri: normalizedContainerUri,
-      mimeType: metadata.mimeType,
-      size: metadata.size,
-      modifiedAt: metadata.modifiedAt,
-      metadataState: metadata.metadataState,
-      metadataErrorKind: metadata.metadataErrorKind,
-      metadataError: metadata.metadataError,
-      sourceLabel,
-    } satisfies FilesEntry
-  }))
-
-  return sortEntries(entries.filter((entry): entry is FilesEntry => entry !== null))
+  return listContainerEntryStubs(db, containerUri, sourceLabel)
 }
 
 export async function listAllBrowsableEntries(
@@ -1011,7 +990,23 @@ export async function buildRootNodes(
     count: podRootEntries.length,
   })
 
-  return { nodes, podRootUri }
+  return { nodes, podRootUri, entries: sortEntries(allEntries) }
+}
+
+export function projectContainerEntriesToTreeNodes(
+  entries: FilesEntry[],
+  parentId: string,
+  podRootUri?: string | null,
+): FilesTreeNode[] {
+  return entries
+    .filter((entry) => !isFilesSidecarSemanticKind(entry.semanticKind))
+    .map((entry) => ({
+      id: entry.kind === 'container' ? createContainerNodeId(entry.uri) : createResourceNodeId(entry.uri),
+      label: entry.kind === 'container' ? getContainerLabel(entry.uri, podRootUri) : getEntryName(entry.uri),
+      type: entry.kind === 'container' ? 'container' as const : 'resource' as const,
+      uri: entry.uri,
+      parentId,
+    }))
 }
 
 export async function listContainerChildNodes(
@@ -1021,22 +1016,21 @@ export async function listContainerChildNodes(
   podRootUri?: string | null,
 ): Promise<FilesTreeNode[]> {
   const entries = await listContainerEntries(db, containerUri)
-  return entries
-    .filter((entry) => entry.kind === 'container')
-    .map((entry) => ({
-      id: createContainerNodeId(entry.uri),
-      label: getContainerLabel(entry.uri, podRootUri),
-      type: 'container' as const,
-      uri: entry.uri,
-      parentId,
-    }))
+  return projectContainerEntriesToTreeNodes(entries, parentId, podRootUri)
 }
 
-export async function readFileDetail(db: SolidDatabase, resourceUri: string): Promise<FilesDetail> {
+export async function readFileDetail(
+  db: SolidDatabase,
+  resourceUri: string,
+  options: { includeContainerEntries?: boolean } = {},
+): Promise<FilesDetail> {
   const normalizedUri = resourceUri.endsWith('/') ? normalizeContainerUri(resourceUri) : resourceUri
   const kind: FilesEntryKind = normalizedUri.endsWith('/') ? 'container' : 'resource'
   const podRootUri = getPodRootUri(db)
-  const metadata = await readMetadata(db, normalizedUri)
+  const inferredMimeType = guessMimeType(normalizedUri, kind === 'container')
+  const metadata = await readMetadata(db, normalizedUri, {
+    includeBody: kind === 'resource' && isTextLikeMimeType(inferredMimeType),
+  })
   const semanticKind = classifyFilesEntry(normalizedUri, kind === 'container', podRootUri, metadata.mimeType)
   const parentUri = getParentContainerUri(normalizedUri) ?? podRootUri
 
@@ -1044,30 +1038,32 @@ export async function readFileDetail(db: SolidDatabase, resourceUri: string): Pr
   let childEntries: FilesEntry[] | undefined
   let previewUnavailableReason: string | undefined
 
-  if (
-    kind === 'resource' &&
-    isTextLikeMimeType(metadata.mimeType) &&
-    getFilesEntryOpenMode({ kind, semanticKind, mimeType: metadata.mimeType }) !== 'editable-file-sheet'
-  ) {
-    try {
-      const response = await getAuthenticatedFetch(db)(normalizedUri, {
-        method: 'GET',
-        headers: {
-          Accept: `${metadata.mimeType ?? 'text/plain'}, text/plain;q=0.9, */*;q=0.1`,
-        },
-      })
-      if (response.ok) {
-        const text = await response.text()
-        previewText = text.length > 12000 ? `${text.slice(0, 12000)}\n\n…` : text
-      } else {
+  if (kind === 'resource' && isTextLikeMimeType(metadata.mimeType)) {
+    if (metadata.bodyText !== undefined) {
+      previewText = metadata.bodyText.length > 12000 ? `${metadata.bodyText.slice(0, 12000)}\n\n…` : metadata.bodyText
+    } else {
+      try {
+        const response = await getAuthenticatedFetch(db)(normalizedUri, {
+          method: 'GET',
+          headers: {
+            Accept: `${metadata.mimeType ?? 'text/plain'}, text/plain;q=0.9, */*;q=0.1`,
+          },
+        })
+        if (response.ok) {
+          const text = await response.text()
+          previewText = text.length > 12000 ? `${text.slice(0, 12000)}\n\n…` : text
+        } else {
+          previewUnavailableReason = FILE_PREVIEW_ERROR_MESSAGE
+        }
+      } catch (error) {
+        console.warn('[Files] Preview load failed:', error)
         previewUnavailableReason = FILE_PREVIEW_ERROR_MESSAGE
       }
-    } catch (error) {
-      console.warn('[Files] Preview load failed:', error)
-      previewUnavailableReason = FILE_PREVIEW_ERROR_MESSAGE
     }
   } else if (kind === 'container') {
-    childEntries = await listContainerEntries(db, normalizedUri)
+    if (options.includeContainerEntries ?? true) {
+      childEntries = await listContainerEntries(db, normalizedUri)
+    }
     previewUnavailableReason = '容器不提供文本预览，可双击进入继续浏览。'
   } else if (metadata.mimeType?.startsWith('image/')) {
     previewUnavailableReason = '图像资源暂不内联预览，请直接打开原始 URI。'
@@ -1127,7 +1123,7 @@ export async function readBlobResource(db: SolidDatabase, resourceUri: string): 
   const response = await getAuthenticatedFetch(db)(normalizedUri, {
     method: 'GET',
     headers: {
-      Accept: 'image/*, application/octet-stream;q=0.8, */*;q=0.1',
+      Accept: 'image/*, application/pdf, audio/*, video/*, application/octet-stream;q=0.8, */*;q=0.1',
     },
   })
 

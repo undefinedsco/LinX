@@ -188,6 +188,26 @@ describe('SolidDatabaseProvider', () => {
     expect((window as any).__SOLID_DB__).toBe(db)
   })
 
+  it('initializes when a restored session already has a WebID even if redirect progress is stale', async () => {
+    const db = {}
+    sessionState.sessionRequestInProgress = true
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('status').textContent).toBe('ready')
+    expect(screen.getByTestId('has-db').textContent).toBe('true')
+  })
+
   it('uses WebID profile storage when there is no pending login transaction', async () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
@@ -210,6 +230,71 @@ describe('SolidDatabaseProvider', () => {
       initTimeoutMs: 90_000,
       podUrl: 'https://id.example.com/alice/',
     })
+  })
+
+  it('restores the remembered Local storage provider after a desktop restart', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+    sessionState.session.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+    mockSessionProfileStorage('https://node-0000.undefineds.co/alice/')
+    useLoginStore.setState({
+      state: 'authenticated',
+      error: null,
+      storedAccount: {
+        displayName: 'Alice',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://node-0000.undefineds.co/',
+        storageProviderLabel: 'Local',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      },
+      customProviders: [],
+    })
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
+      initTimeoutMs: 90_000,
+      podUrl: 'https://node-0000.undefineds.co/alice/',
+    })
+  })
+
+  it('fails closed when restored Local storage does not match the authenticated profile', async () => {
+    createLinxSolidDatabaseMock.mockResolvedValue({})
+    sessionState.session.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+    mockSessionProfileStorage('https://id.undefineds.co/alice/')
+    useLoginStore.setState({
+      state: 'authenticated',
+      error: null,
+      storedAccount: {
+        displayName: 'Alice',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://node-0000.undefineds.co/',
+        storageProviderLabel: 'Local',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      },
+      customProviders: [],
+    })
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('status').textContent).toBe('error')
+    expect(screen.getByTestId('has-db').textContent).toBe('false')
+    expect((window as any).__SOLID_DB_ERROR__).toContain('账号和当前空间不匹配')
   })
 
   it('does not reuse a remembered Local SP while a Cloud login attempt is pending', async () => {

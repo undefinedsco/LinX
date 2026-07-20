@@ -131,7 +131,7 @@ export const LINX_DEFAULT_SECRETARY = {
   chatKey: '__secretary__',
   chatId: chatResource.buildId({ id: '__secretary__' }),
   chatResourceId: chatResource.buildId({ id: '__secretary__' }),
-  title: 'AI Secretary',
+  title: 'LinX 主理人',
   provider: 'undefineds',
   model: DEFAULT_LINX_PLATFORM_MODEL_ID,
   threadTitle: '默认话题',
@@ -816,6 +816,60 @@ function stageDefaultSecretaryRows(rows: {
   // Agent Home is directory-backed (/agents/{agentKey}/), so it is prepared by
   // ensureAgentHome instead of collection.insert, which writes file resources.
   writeCollectionRow(agentCollection, rows.agent, LINX_DEFAULT_SECRETARY.agentId)
+  writeCollectionRow(_contactCollection, rows.contact, LINX_DEFAULT_SECRETARY.contactId)
+  writeCollectionRow(chatCollection, rows.chat, LINX_DEFAULT_SECRETARY.chatId)
+}
+
+/**
+ * Makes the product-owned Secretary available before any Pod read or write.
+ * Persistence remains the responsibility of ensureLinxWelcome.
+ */
+export function stageLinxDefaultSecretary(db: SolidDatabase): ChatRow | null {
+  const agentIri = resolveAgentIri(db, LINX_DEFAULT_SECRETARY.agentId)
+  const contactIri = resolveResourceIri(db, contactResource, LINX_DEFAULT_SECRETARY.contactResourceId)
+  const chatIri = resolveResourceIri(db, chatResource, LINX_DEFAULT_SECRETARY.chatResourceId)
+  const existing = chatCollection.get(LINX_DEFAULT_SECRETARY.chatId)
+  if (existing) {
+    const normalizedChat = existing.title === LINX_DEFAULT_SECRETARY.title
+      ? existing
+      : { ...existing, title: LINX_DEFAULT_SECRETARY.title }
+    if (normalizedChat !== existing) {
+      writeCollectionRow(chatCollection, normalizedChat, LINX_DEFAULT_SECRETARY.chatId)
+    }
+
+    const existingContact = _contactCollection.get(LINX_DEFAULT_SECRETARY.contactId)
+    if (!existingContact && agentIri && contactIri && chatIri) {
+      const rows = buildDefaultSecretaryContactRows({
+        now: new Date(),
+        agentIri,
+        contactIri,
+        chatIri,
+      })
+      if (!agentCollection.get(LINX_DEFAULT_SECRETARY.agentId)) {
+        writeCollectionRow(agentCollection, rows.agent, LINX_DEFAULT_SECRETARY.agentId)
+      }
+      writeCollectionRow(_contactCollection, rows.contact, LINX_DEFAULT_SECRETARY.contactId)
+    } else if (existingContact && existingContact.name !== LINX_DEFAULT_SECRETARY.title) {
+      writeCollectionRow(_contactCollection, {
+        ...existingContact,
+        name: LINX_DEFAULT_SECRETARY.title,
+      }, LINX_DEFAULT_SECRETARY.contactId)
+    }
+    return normalizedChat
+  }
+
+  if (!agentIri || !contactIri || !chatIri) {
+    return null
+  }
+
+  const rows = buildDefaultSecretaryContactRows({
+    now: new Date(),
+    agentIri,
+    contactIri,
+    chatIri,
+  })
+  stageDefaultSecretaryRows(rows)
+  return rows.chat
 }
 
 function getStagedSecretaryChatRows(): ChatRow[] {
@@ -1332,6 +1386,10 @@ export const chatOps = {
     }
 
     return linxWelcomeInFlight
+  },
+
+  stageLinxDefaultSecretary(db: SolidDatabase): ChatRow | null {
+    return stageLinxDefaultSecretary(db)
   },
 
   /**
@@ -1910,6 +1968,7 @@ export const chatOps = {
       return chatCollection.fetch()
     }
 
+    stageLinxDefaultSecretary(db)
     const fallbackRows = getStagedSecretaryChatRows()
     if (fallbackRows.length > 0 && linxWelcomeInFlight) {
       return fallbackRows

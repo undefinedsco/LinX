@@ -150,7 +150,12 @@ export function createPodCollection<
         const { original, modified } = transaction.mutations[0]
 
         try {
-          await updateExactRecord(db, resource as any, (original ?? modified) as any, modified as any)
+          await updateExactRecord(
+            db,
+            resource as any,
+            (original ?? modified) as any,
+            changedPersistableFields(original as TData | undefined, modified as TData),
+          )
         } catch (error) {
           console.error(`[PodCollection] Update failed for ${queryKey.join('/')}:`, error)
           throw error
@@ -243,4 +248,49 @@ function toPersistableInsert<TData extends { id?: string }>(item: TData, resourc
 
 function looksLikeBaseRelativeResourceId(id: string): boolean {
   return id.includes('/') || id.includes('#') || id.endsWith('.ttl')
+}
+
+function changedPersistableFields<TData extends { id?: string }>(
+  original: TData | undefined,
+  modified: TData,
+): Record<string, unknown> {
+  if (!original) {
+    throw new Error('Pod collection update requires an original row snapshot.')
+  }
+
+  const changed: Record<string, unknown> = {}
+  const keys = new Set([...Object.keys(original), ...Object.keys(modified)])
+  for (const key of keys) {
+    if (key === 'id' || key === '@id') continue
+    const originalValue = original[key as keyof TData]
+    const hasModifiedValue = Object.prototype.hasOwnProperty.call(modified, key)
+    const modifiedValue = modified[key as keyof TData]
+    if (!hasModifiedValue || modifiedValue === undefined) {
+      if (originalValue !== undefined) {
+        changed[key] = null
+      }
+      continue
+    }
+    if (!samePersistedValue(originalValue, modifiedValue)) {
+      changed[key] = modifiedValue
+    }
+  }
+  return changed
+}
+
+function samePersistedValue(left: unknown, right: unknown): boolean {
+  if (left instanceof Date && right instanceof Date) {
+    return left.getTime() === right.getTime()
+  }
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return JSON.stringify(left) === JSON.stringify(right)
+  }
+  if (isPlainRecord(left) && isPlainRecord(right)) {
+    return JSON.stringify(left) === JSON.stringify(right)
+  }
+  return Object.is(left, right)
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof Date)
 }

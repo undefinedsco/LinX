@@ -3,6 +3,7 @@ import type { FilesDetail } from '../../domain/resource/resource-model'
 
 export const FILES_COLLECTION_QUERY_KEYS = {
   roots: ['files', 'roots'] as const,
+  containerEntries: ['files', 'container-entries'] as const,
   children: ['files', 'children'] as const,
   entries: ['files', 'entries'] as const,
   detail: ['files', 'detail'] as const,
@@ -22,6 +23,10 @@ export const FILES_COLLECTION_QUERY_KEYS = {
 export const filesResourceQueryKeys = {
   roots(workspaceUri?: string | null) {
     return [...FILES_COLLECTION_QUERY_KEYS.roots, workspaceUri ?? ''] as const
+  },
+
+  containerEntries(containerUri?: string | null) {
+    return [...FILES_COLLECTION_QUERY_KEYS.containerEntries, containerUri ?? ''] as const
   },
 
   children(parentId?: string | null, containerUri?: string | null) {

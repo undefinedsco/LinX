@@ -8,7 +8,7 @@ import {
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import { LockedVocabTablePreview } from '../structured/LockedVocabTablePreview'
 import { StructuredResourcePreview } from '../structured/StructuredTablePreview'
-import { FileEditorSheet } from '../editor/FileEditorSheet'
+import { DocumentEditorModal } from '../editor/DocumentEditorModal'
 import { SourceLinkedCardPreview } from './FileDetailSourceLinkedCardPreview'
 import { ModeCard, RawTextBlock } from '../../ui/FileDetailPreviewPrimitives'
 import { FolderDetailPreview } from '../folder/FolderDetailPreview'
@@ -20,7 +20,7 @@ import {
   projectFileDetailLineageModel,
   projectFileDetailSidecarPreviewModel,
   projectReadonlyFilePreviewModel,
-  type ImageFilePreviewModel,
+  type MediaFilePreviewModel,
 } from './file-detail-preview-model'
 
 function EditableFilePreview({
@@ -69,20 +69,26 @@ function EditableFilePreview({
             {editablePreview.openLabel}
           </Button>
         </div>
-        <dl className="mt-4 grid gap-2 text-xs">
-          {editablePreview.rows.map((row) => (
-            <div key={row.label} className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
-              <dt className="text-muted-foreground">{row.label}</dt>
-              <dd
-                className={row.kind === 'uri' ? 'truncate text-foreground/80' : 'text-foreground/80'}
-                title={row.kind === 'uri' ? row.value : undefined}
-              >
-                {row.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <FileEditorSheet
+        <div className="mt-4 space-y-3">
+          <RawTextBlock text={file.previewText} />
+          {!file.previewText ? (
+            <ModeCard title="正文暂不可用" description="可以打开文件详情继续编辑，或稍后重试读取。" />
+          ) : null}
+          <dl className="grid gap-2 text-xs">
+            {editablePreview.rows.filter((row) => row.label !== '内容').map((row) => (
+              <div key={row.label} className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
+                <dt className="text-muted-foreground">{row.label}</dt>
+                <dd
+                  className={row.kind === 'uri' ? 'truncate text-foreground/80' : 'text-foreground/80'}
+                  title={row.kind === 'uri' ? row.value : undefined}
+                >
+                  {row.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <DocumentEditorModal
           file={file}
           open={sheetOpen}
           onOpenChange={setSheetOpen}
@@ -132,8 +138,8 @@ function ReadonlyPreview({ file }: { file: FilesDetail }) {
     )
   }
 
-  if (readonlyPreview.kind === 'image') {
-    return <AuthenticatedImagePreview preview={readonlyPreview} />
+  if (readonlyPreview.kind !== 'unsupported') {
+    return <AuthenticatedMediaPreview preview={readonlyPreview} />
   }
 
   return (
@@ -145,10 +151,9 @@ function ReadonlyPreview({ file }: { file: FilesDetail }) {
   )
 }
 
-function AuthenticatedImagePreview({ preview }: { preview: ImageFilePreviewModel }) {
+function AuthenticatedMediaPreview({ preview }: { preview: MediaFilePreviewModel }) {
   const imagePreview = useAuthenticatedImagePreviewController({
     enabled: true,
-    mimeType: preview.mimeType,
     uri: preview.uri,
   })
   const renderState = projectAuthenticatedImagePreviewRenderState(preview, imagePreview)
@@ -171,13 +176,34 @@ function AuthenticatedImagePreview({ preview }: { preview: ImageFilePreviewModel
     )
   }
 
-  return (
+  if (preview.kind === 'image') return (
     <div className="flex h-full min-h-[320px] items-center justify-center bg-muted/15 p-4">
       <img
         src={renderState.objectUrl}
         alt={renderState.alt}
         className="max-h-[70vh] max-w-full rounded-md border border-border/30 bg-background object-contain shadow-sm"
       />
+    </div>
+  )
+
+  if (preview.kind === 'document') return (
+    <iframe
+      aria-label={`${preview.alt} 预览`}
+      className="h-full min-h-[70vh] w-full border-0 bg-background"
+      src={renderState.objectUrl}
+      title={preview.alt}
+    />
+  )
+
+  if (preview.kind === 'audio') return (
+    <div className="flex h-full min-h-[240px] items-center justify-center bg-muted/15 p-6">
+      <audio aria-label={`${preview.alt} 预览`} className="w-full max-w-xl" controls src={renderState.objectUrl} />
+    </div>
+  )
+
+  return (
+    <div className="flex h-full min-h-[320px] items-center justify-center bg-black/95 p-4">
+      <video aria-label={`${preview.alt} 预览`} className="max-h-[75vh] max-w-full" controls src={renderState.objectUrl} />
     </div>
   )
 }

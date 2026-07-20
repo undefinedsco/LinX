@@ -13,7 +13,7 @@ describe('Files list error state', () => {
   it('keeps permission failures distinct from transient failures', () => {
     expect(getFilesListErrorState(new FilesResourceReadError('https://pod.example/private/', { status: 403 }))).toEqual({
       title: '没有权限读取这个容器',
-      description: '可以检查 ACL/ACR 权限，或切换到其它可浏览范围。',
+      description: '当前账号没有读取权限，可以申请授权或切换到其它可浏览范围。',
     })
   })
 

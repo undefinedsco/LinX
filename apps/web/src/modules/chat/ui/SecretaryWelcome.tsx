@@ -42,7 +42,7 @@ export function SecretaryWelcome({
         <div className="w-full max-w-xl">
           <Bot className="mb-5 h-8 w-8 text-primary" aria-hidden="true" />
           <h1 id="secretary-welcome-title" className="text-xl font-semibold text-foreground">
-            你好，我是 LinX Secretary
+            你好，我是 LinX 主理人
           </h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             我可以帮你整理信息、规划工作，并在当前空间中推进任务。
@@ -68,31 +68,33 @@ export function SecretaryWelcome({
       </div>
 
       <form
-        className="border-t border-border/70 bg-background px-4 py-3"
+        className="bg-background px-6 pb-4 pt-4"
         onSubmit={(event) => {
           event.preventDefault()
           if (canSubmit) onSubmit()
         }}
       >
-        <div className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-md border border-input bg-background p-2 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+        <div className="mx-auto w-full max-w-4xl overflow-hidden rounded-xl border border-border bg-card focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
           <textarea
-            aria-label="给 Secretary 发消息"
+            aria-label="给主理人发消息"
             value={composerValue}
             onChange={(event) => onComposerValueChange(event.target.value)}
-            placeholder="告诉 Secretary 你想推进什么"
-            rows={2}
-            className="min-h-12 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground"
+            placeholder="告诉主理人你想推进什么"
+            rows={5}
+            className="block min-h-36 w-full resize-none bg-transparent px-4 py-3 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground"
           />
-          <Button
-            type="submit"
-            size="icon"
-            className="h-9 w-9 shrink-0"
-            disabled={!canSubmit}
-            aria-label="开始对话"
-            title="开始对话"
-          >
-            <SendHorizontal className="h-4 w-4" aria-hidden="true" />
-          </Button>
+          <div className="flex h-11 items-center justify-end border-t border-border/70 px-2">
+            <Button
+              type="submit"
+              size="icon"
+              className="h-8 w-8"
+              disabled={!canSubmit}
+              aria-label="开始对话"
+              title="开始对话"
+            >
+              <SendHorizontal className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
         <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between gap-3">
           <p role="status" className="text-xs text-muted-foreground">

@@ -228,6 +228,15 @@ describe('files store whiteboard layout persistence', () => {
     })
   })
 
+  it('uses a container tree node as the active detail resource', () => {
+    useFilesStore.getState().selectTreeNode('container:https://pod.example/public/')
+
+    expect(useFilesStore.getState()).toMatchObject({
+      selectedTreeNodeId: 'container:https://pod.example/public/',
+      selectedFileId: 'https://pod.example/public/',
+    })
+  })
+
   it('reads only valid whiteboard positions from persisted storage', () => {
     localStorage.setItem(WHITEBOARD_LAYOUT_STORAGE_KEY, JSON.stringify({
       valid: {
@@ -264,6 +273,11 @@ describe('files store whiteboard layout persistence', () => {
       'https://pod.example/.data/state.ttl': ['#Workspace', '#Other', '#Third'],
       'https://pod.example/.data/other.ttl': ['#Workspace'],
     })
+    expect(useFilesStore.getState().structuredWhiteboardLayoutsByDocument['https://pod.example/.data/state.ttl']).toEqual({
+      '#Workspace': { x: 40, y: 40 },
+      '#Other': { x: 360, y: 40 },
+      '#Third': { x: 680, y: 40 },
+    })
 
     useFilesStore.getState().removeStructuredWhiteboardSubject('https://pod.example/.data/state.ttl', '#Workspace')
 
@@ -297,6 +311,13 @@ describe('files store whiteboard layout persistence', () => {
       hiddenPredicates: [],
       kanbanGroupPredicate: null,
       kanbanOrder: {},
+      kanbanBoard: {
+        version: 1,
+        laneOrder: ['Todo', 'Done'],
+        collapsedLaneIds: ['Done'],
+        scrollLeft: 160,
+        cardOrder: { Todo: ['#One'], Done: ['#Two'] },
+      },
       columnSizing: {},
       whiteboard: {
         selectedSubjects: ['#One', '#Two'],
@@ -311,6 +332,13 @@ describe('files store whiteboard layout persistence', () => {
             label: 'sketch link',
           },
         ],
+        snapshot: {
+          version: 1,
+          camera: { x: 20, y: 40, z: 1.5 },
+          nodes: [{ resourceUri: '#One', x: 40, y: 80, w: 288, h: 160, z: 0, kind: 'subject' }],
+          groups: [],
+          visualRelations: [{ id: 'visual-one-two', from: '#One', to: '#Two', label: 'sketch link' }],
+        },
       },
     }, layoutKey)
 
@@ -325,6 +353,13 @@ describe('files store whiteboard layout persistence', () => {
     expect(useFilesStore.getState().structuredWhiteboardSubjectsByDocument[documentUri]).toEqual(['#One', '#Two'])
     expect(useFilesStore.getState().structuredWhiteboardLayoutsByDocument[layoutKey]).toEqual({
       '#One': { x: 40, y: 80 },
+    })
+    expect(useFilesStore.getState().structuredKanbanBoardByDocument[documentUri]).toMatchObject({
+      collapsedLaneIds: ['Done'],
+      scrollLeft: 160,
+    })
+    expect(useFilesStore.getState().structuredWhiteboardSnapshotByDocument[documentUri]).toMatchObject({
+      camera: { x: 20, y: 40, z: 1.5 },
     })
   })
 

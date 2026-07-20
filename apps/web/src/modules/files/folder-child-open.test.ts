@@ -36,7 +36,7 @@ describe('folder child open decisions', () => {
   })
 
   it.each([
-    ['click', { type: 'select-local-preview', fileUri: 'https://pod.example/public/docs/' }],
+    ['click', { type: 'noop' }],
     ['double-click', { type: 'browse-container', treeNodeId: 'container:https://pod.example/public/docs/' }],
     ['enter', { type: 'browse-container', treeNodeId: 'container:https://pod.example/public/docs/' }],
     ['explicit-open', { type: 'browse-container', treeNodeId: 'container:https://pod.example/public/docs/' }],
@@ -53,11 +53,11 @@ describe('folder child open decisions', () => {
     },
   )
 
-  it('keeps editable file click as local preview only but opens a sheet on open triggers', () => {
+  it('opens an editable file in read-only preview on click and a sheet on open triggers', () => {
     const child = entry({ uri: 'https://pod.example/public/README.md', mimeType: 'text/markdown' })
 
     expect(resolveFolderChildOpenDecision(child, 'click')).toEqual({
-      type: 'select-local-preview',
+      type: 'select-file-preview',
       fileUri: 'https://pod.example/public/README.md',
     })
     expect(resolveFolderChildOpenDecision(child, 'double-click')).toEqual({
@@ -74,11 +74,11 @@ describe('folder child open decisions', () => {
     })
   })
 
-  it('keeps readonly file click as local preview only but opens preview on open triggers', () => {
+  it('opens a readonly file preview on click and on explicit open triggers', () => {
     const child = entry({ uri: 'https://pod.example/public/image.png', mimeType: 'image/png' })
 
     expect(resolveFolderChildOpenDecision(child, 'click')).toEqual({
-      type: 'select-local-preview',
+      type: 'select-file-preview',
       fileUri: 'https://pod.example/public/image.png',
     })
     expect(resolveFolderChildOpenDecision(child, 'double-click')).toEqual({
@@ -95,7 +95,7 @@ describe('folder child open decisions', () => {
     })
   })
 
-  it('keeps structured and vocab resource clicks local-only but opens previews on open triggers', () => {
+  it('opens structured and vocab resource previews on click and open triggers', () => {
     const structured = entry({
       uri: 'https://pod.example/.data/state.ttl',
       name: 'state.ttl',
@@ -110,7 +110,7 @@ describe('folder child open decisions', () => {
     })
 
     expect(resolveFolderChildOpenDecision(structured, 'click')).toEqual({
-      type: 'select-local-preview',
+      type: 'select-file-preview',
       fileUri: 'https://pod.example/.data/state.ttl',
     })
     expect(resolveFolderChildOpenDecision(structured, 'double-click')).toEqual({
@@ -126,7 +126,7 @@ describe('folder child open decisions', () => {
       fileUri: 'https://pod.example/.data/state.ttl',
     })
     expect(resolveFolderChildOpenDecision(vocab, 'click')).toEqual({
-      type: 'select-local-preview',
+      type: 'select-file-preview',
       fileUri: 'https://pod.example/.vocab/terms.ttl',
     })
     expect(resolveFolderChildOpenDecision(vocab, 'double-click')).toEqual({

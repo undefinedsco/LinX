@@ -6,6 +6,7 @@ import {
 } from './xpod-auth-enhancer';
 import { installAuthCallbackNavigationInterceptor } from './auth-callback-navigation';
 import { installSingleSurfaceWindowOpenHandler } from './window-open-routing';
+import { AUTH_SESSION_PARTITION } from './local-sp-session-route';
 
 export type EmbeddedAuthorizationCloseReason = 'opened' | 'completed' | 'dismissed';
 
@@ -87,7 +88,7 @@ export class EmbeddedAuthorizationSheet {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
-        partition: 'persist:linx-auth',
+        partition: AUTH_SESSION_PARTITION,
       },
     });
 

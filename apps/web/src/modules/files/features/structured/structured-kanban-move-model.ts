@@ -4,17 +4,21 @@ import { localPredicateLabel } from '../../domain/structured/structured-table-vo
 export type StructuredKanbanMove = {
   columnId: string
   columnLabel: string
+  overSubject?: string
   predicate: string
-  status: 'pending' | 'approval-staged'
+  status: 'pending' | 'approval-staged' | 'error'
 }
 
-export type StructuredKanbanMoveTarget = Pick<StructuredKanbanColumn, 'id' | 'label' | 'value'>
+export type StructuredKanbanMoveTarget = Pick<StructuredKanbanColumn, 'id' | 'label' | 'value'> & {
+  overSubject?: string
+}
 
 export type StructuredKanbanPendingMoveView = {
   predicate: string
   value: string
   statusLabel: string
   label: string
+  retryable?: boolean
 }
 
 export function projectStructuredKanbanPendingMoveView(
@@ -23,12 +27,17 @@ export function projectStructuredKanbanPendingMoveView(
   if (!pendingMove) return undefined
 
   const predicate = localPredicateLabel(pendingMove.predicate)
-  const statusLabel = pendingMove.status === 'approval-staged' ? '待审批' : '提交中'
+  const statusLabel = pendingMove.status === 'approval-staged'
+    ? '待审批'
+    : pendingMove.status === 'error'
+      ? '移动失败'
+      : '提交中'
   return {
     predicate,
     value: pendingMove.columnLabel,
     statusLabel,
     label: `${statusLabel}：${predicate} -> ${pendingMove.columnLabel}`,
+    ...(pendingMove.status === 'error' ? { retryable: true } : {}),
   }
 }
 
@@ -48,6 +57,7 @@ export function projectStructuredStagedKanbanPendingMoves({
     [subject]: {
       columnId: targetColumn.id,
       columnLabel: targetColumn.label,
+      ...(targetColumn.overSubject ? { overSubject: targetColumn.overSubject } : {}),
       predicate,
       status: 'pending' as const,
     },
@@ -65,6 +75,24 @@ export function projectStructuredDiscardedKanbanPendingMoves({
   const next = { ...current }
   delete next[subject]
   return next
+}
+
+export function projectStructuredFailedKanbanPendingMoves({
+  current,
+  subject,
+}: {
+  current: Record<string, StructuredKanbanMove>
+  subject: string
+}) {
+  const pendingMove = current[subject]
+  if (!pendingMove) return current
+  return {
+    ...current,
+    [subject]: {
+      ...pendingMove,
+      status: 'error' as const,
+    },
+  }
 }
 
 export function projectStructuredApprovalStagedKanbanPendingMoves({
@@ -91,12 +119,22 @@ function applyPendingMoves(
 ) {
   const displayColumns = columns.map((column) => ({ ...column, cards: [...column.cards] }))
   for (const [subject, move] of Object.entries(pendingMoves)) {
+    if (move.status === 'error') continue
     const fromColumn = displayColumns.find((column) => column.cards.some((card) => card.subject === subject))
     const card = fromColumn?.cards.find((candidate) => candidate.subject === subject)
     const targetColumn = displayColumns.find((column) => column.id === move.columnId)
     if (!fromColumn || !card || !targetColumn || fromColumn.id === targetColumn.id) continue
     fromColumn.cards = fromColumn.cards.filter((candidate) => candidate.subject !== subject)
-    targetColumn.cards = [...targetColumn.cards, card]
+    const targetIndex = move.overSubject
+      ? targetColumn.cards.findIndex((candidate) => candidate.subject === move.overSubject)
+      : -1
+    targetColumn.cards = targetIndex < 0
+      ? [...targetColumn.cards, card]
+      : [
+        ...targetColumn.cards.slice(0, targetIndex),
+        card,
+        ...targetColumn.cards.slice(targetIndex),
+      ]
   }
   return displayColumns
 }

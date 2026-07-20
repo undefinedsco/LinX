@@ -1,9 +1,20 @@
-import { useRef, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
-import { DndContext, closestCenter, useDroppable } from '@dnd-kit/core'
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import { MoreHorizontal } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Fragment, useCallback, useEffect, useRef } from 'react'
 import {
   type StructuredCellWriteProposal,
   type StructuredTableProjection,
@@ -14,12 +25,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { StructuredKanbanPendingMoveView } from './structured-kanban-move-model'
-import type {
-  StructuredKanbanCardView,
-  StructuredKanbanDisplayColumn,
-  StructuredKanbanMoveTargetColumn,
-} from './structured-kanban-view-model'
+import { StructuredKanbanCard } from './StructuredKanbanCard'
+import { StructuredKanbanLane } from './StructuredKanbanLane'
 import { useStructuredKanbanViewController } from './useStructuredKanbanViewController'
 
 type StructuredSubjectOpenOptions = {
@@ -28,211 +35,86 @@ type StructuredSubjectOpenOptions = {
   scrollTop?: number
 }
 
-function StructuredCard({
-  card,
-  columns = [],
-  canMove,
-  pendingMove,
-  onMove,
-  onOpen,
-  onDragStart,
-  onDragEnd,
-  onNativeDropOnCard,
-}: {
-  card: StructuredKanbanCardView
-  columns?: StructuredKanbanMoveTargetColumn[]
-  canMove: boolean
-  pendingMove?: StructuredKanbanPendingMoveView
-  onMove?: (column: StructuredKanbanMoveTargetColumn) => void
-  onOpen?: (card: StructuredKanbanCardView, options?: StructuredSubjectOpenOptions) => void
-  onDragStart?: (event: DragEvent<HTMLDivElement>, card: StructuredKanbanCardView) => void
-  onDragEnd?: () => void
-  onNativeDropOnCard?: (event: DragEvent<HTMLDivElement>, card: StructuredKanbanCardView) => void
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.subject })
-  const suppressNextOpenRef = useRef(false)
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
-  const openFromCardSurface = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (suppressNextOpenRef.current) {
-      suppressNextOpenRef.current = false
-      return
-    }
-    if ((event.target as HTMLElement).closest('[data-kanban-card-action="true"]')) return
-    onOpen?.(card)
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        'rounded-md border border-border/40 bg-background px-3 py-2 text-xs shadow-sm',
-        onDragStart && 'cursor-grab active:cursor-grabbing',
-        isDragging && 'opacity-70',
-      )}
-      style={style}
-      data-kanban-card-subject={card.subject}
-      data-dnd-kit-sortable="true"
-      aria-label={card.openAriaLabel}
-      draggable={Boolean(onDragStart)}
-      {...attributes}
-      {...listeners}
-      onClick={openFromCardSurface}
-      onDoubleClick={(event) => {
-        event.preventDefault()
-        onOpen?.(card, { navigate: true })
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault()
-          onOpen?.(card, { navigate: true })
-          return
-        }
-        if (event.key === ' ' || event.key === 'Spacebar') {
-          event.preventDefault()
-          onOpen?.(card)
-        }
-      }}
-      onDragStart={(event) => {
-        suppressNextOpenRef.current = true
-        onDragStart?.(event, card)
-      }}
-      onDragEnd={onDragEnd}
-      onDragOver={(event) => {
-        if (!onNativeDropOnCard) return
-        event.preventDefault()
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-      }}
-      onDrop={(event) => onNativeDropOnCard?.(event, card)}
-    >
-      <div className="flex items-start gap-2">
-        <p className="min-w-0 flex-1 truncate font-medium text-foreground/85">{card.title}</p>
-        {canMove && onMove ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                aria-label={card.moveButtonAriaLabel}
-                data-kanban-card-action="true"
-                className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                onPointerDown={(event) => {
-                  suppressNextOpenRef.current = true
-                  event.stopPropagation()
-                }}
-                onClick={(event) => {
-                  suppressNextOpenRef.current = true
-                  event.stopPropagation()
-                }}
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {columns.map((column) => (
-                <DropdownMenuItem
-                  key={column.id}
-                  onSelect={() => {
-                    suppressNextOpenRef.current = true
-                    onMove(column)
-                  }}
-                >
-                  {column.moveMenuItemLabel}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-      </div>
-      <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{card.summary}</p>
-      <div className="mt-2 flex flex-wrap gap-1">
-        {card.className ? <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">{card.className}</span> : null}
-        {card.visibleTags.map((tag) => (
-          <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{tag}</span>
-        ))}
-        {pendingMove ? (
-          <span className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
-            {pendingMove.label}
-          </span>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
-function StructuredKanbanColumnLane({
-  column,
-  isNativeDragOver,
-  children,
-  onNativeDragOver,
-  onNativeDragLeave,
-  onNativeDrop,
-}: {
-  column: StructuredKanbanDisplayColumn
-  isNativeDragOver: boolean
-  children: ReactNode
-  onNativeDragOver: (event: DragEvent<HTMLElement>) => void
-  onNativeDragLeave: (event: DragEvent<HTMLElement>) => void
-  onNativeDrop: (event: DragEvent<HTMLElement>) => void
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id: column.id })
-
-  return (
-    <section
-      ref={setNodeRef}
-      aria-label={column.ariaLabel}
-      className={cn(
-        'rounded-lg border border-border/40 bg-muted/20 p-2 transition-colors',
-        (isNativeDragOver || isOver) && 'border-primary/50 bg-primary/5',
-      )}
-      data-kanban-column={column.id}
-      data-dnd-kit-droppable="true"
-      onDragOver={onNativeDragOver}
-      onDragLeave={onNativeDragLeave}
-      onDrop={onNativeDrop}
-    >
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-xs font-medium text-foreground/80">{column.label}</p>
-        <span className="text-[10px] text-muted-foreground">{column.cardCountLabel}</span>
-      </div>
-      <div className="space-y-2">
-        {children}
-      </div>
-    </section>
-  )
-}
-
 export function StructuredKanbanView({
   documentUri,
   projection,
   groupPredicate,
   kanbanOrder,
+  laneOrder,
+  initialCollapsedLaneIds,
+  initialScrollLeft,
   onGroupPredicateChange,
   onColumnOrderChange,
+  onLaneOrderChange,
+  onCollapsedLaneIdsChange,
+  onHorizontalScrollLeftChange,
   onCommitCellWriteProposal,
+  onCreateSubject,
   onOpenSubject,
 }: {
   documentUri: string
   projection: StructuredTableProjection
   groupPredicate: string | null
   kanbanOrder: Record<string, string[]>
+  laneOrder?: string[]
+  initialCollapsedLaneIds?: string[]
+  initialScrollLeft?: number
   onGroupPredicateChange: (predicate: string | null) => void
   onColumnOrderChange: (columnId: string, subjects: string[]) => void
+  onLaneOrderChange?: (laneOrder: string[]) => void
+  onCollapsedLaneIdsChange?: (collapsedLaneIds: string[]) => void
+  onHorizontalScrollLeftChange?: (scrollLeft: number) => void
   onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCreateSubject?: (input: { columnId: string; columnValue: string | null; subject: string }) => boolean | Promise<boolean>
   onOpenSubject?: (subject: string, options?: StructuredSubjectOpenOptions) => void
 }) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  const horizontalBoardRef = useRef<HTMLDivElement | null>(null)
+  const horizontalScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const kanban = useStructuredKanbanViewController({
     documentUri,
     projection,
     groupPredicate,
     kanbanOrder,
+    laneOrder,
+    initialCollapsedLaneIds,
     onColumnOrderChange,
+    onLaneOrderChange,
+    onCollapsedLaneIdsChange,
     onCommitCellWriteProposal,
+    onCreateSubject,
   })
+  useEffect(() => {
+    const board = horizontalBoardRef.current
+    if (!board || typeof initialScrollLeft !== 'number') return
+    board.scrollLeft = Math.max(0, Math.round(initialScrollLeft))
+  }, [initialScrollLeft])
 
-  if (!kanban.hasColumns) {
-    return <div className="rounded-md border border-border/40 px-3 py-2 text-xs text-muted-foreground">{kanban.chrome.emptyStateMessage}</div>
-  }
+  useEffect(() => () => {
+    if (horizontalScrollTimerRef.current) clearTimeout(horizontalScrollTimerRef.current)
+  }, [])
+
+  const handleHorizontalScroll = useCallback(() => {
+    if (!onHorizontalScrollLeftChange) return
+    if (horizontalScrollTimerRef.current) clearTimeout(horizontalScrollTimerRef.current)
+    horizontalScrollTimerRef.current = setTimeout(() => {
+      horizontalScrollTimerRef.current = null
+      onHorizontalScrollLeftChange(horizontalBoardRef.current?.scrollLeft ?? 0)
+    }, 150)
+  }, [onHorizontalScrollLeftChange])
+
+  const displayColumns = kanban.hasColumns ? kanban.displayColumns : [{
+    id: 'unassigned',
+    label: 'Unassigned',
+    value: null,
+    cards: [],
+    cardSubjects: [],
+    cardCountLabel: '0',
+    ariaLabel: 'Kanban column Unassigned',
+  }]
 
   return (
     <div className="min-w-0 space-y-2">
@@ -240,6 +122,9 @@ export function StructuredKanbanView({
         <p className="min-w-0 truncate text-[11px] text-muted-foreground">
           {kanban.groupLabel}
         </p>
+        {kanban.selectedCardCount > 1 ? (
+          <span className="text-[11px] text-primary">已选 {kanban.selectedCardCount}</span>
+        ) : null}
         {kanban.hasPredicateOptions ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -261,35 +146,82 @@ export function StructuredKanbanView({
           </DropdownMenu>
         ) : null}
       </div>
-      <DndContext collisionDetection={closestCenter} onDragEnd={kanban.handleDndDragEnd}>
-        <div className="grid gap-3 md:grid-cols-3">
-          {kanban.displayColumns.map((column) => (
-            <SortableContext key={column.id} items={column.cardSubjects} strategy={verticalListSortingStrategy}>
-              <StructuredKanbanColumnLane
-                column={column}
-                isNativeDragOver={kanban.isColumnNativeDragOver(column.id)}
-                onNativeDragOver={(event) => kanban.handleColumnDragOver(event, column)}
-                onNativeDragLeave={(event) => kanban.handleColumnDragLeave(event, column)}
-                onNativeDrop={(event) => void kanban.handleColumnDrop(event, column)}
-              >
-                {column.cards.map((card) => (
-                  <StructuredCard
-                    key={card.subject}
-                    card={card}
-                    columns={kanban.moveTargetColumnsFor(column.id)}
-                    canMove={kanban.canMoveCardsInColumn(column.id)}
-                    pendingMove={kanban.pendingMoveViewForSubject(card.subject)}
-                    onMove={kanban.canCommitCrossColumnMoves ? (column) => void kanban.moveCardToColumn(card, column) : undefined}
-                    onOpen={(card, options) => onOpenSubject?.(card.subject, options)}
-                    onDragStart={kanban.handleCardDragStart}
-                    onDragEnd={kanban.clearNativeDragState}
-                    onNativeDropOnCard={(event, card) => void kanban.handleCardDrop(event, card)}
-                  />
-                ))}
-              </StructuredKanbanColumnLane>
-            </SortableContext>
-          ))}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={kanban.handleDndDragStart}
+        onDragOver={kanban.handleDndDragOver}
+        onDragCancel={kanban.clearDragState}
+        onDragEnd={kanban.handleDndDragEnd}
+      >
+        <div
+          ref={horizontalBoardRef}
+          className="flex min-w-0 overflow-x-auto pb-2"
+          data-kanban-board="horizontal"
+          onScroll={handleHorizontalScroll}
+        >
+          <SortableContext
+            items={displayColumns.map((column) => kanban.laneDragIdFor(column.id))}
+            strategy={horizontalListSortingStrategy}
+          >
+            <div className="flex min-w-max items-start gap-3">
+              {displayColumns.map((column) => (
+                <SortableContext key={column.id} items={column.cardSubjects} strategy={verticalListSortingStrategy}>
+                  <StructuredKanbanLane
+                    column={column}
+                    collapsed={kanban.isLaneCollapsed(column.id)}
+                    isDropTarget={kanban.isLaneDropTarget(column.id)}
+                    showEndDropPlaceholder={kanban.isLaneDropTarget(column.id) && !kanban.activeDropSubject}
+                    laneSortableId={kanban.laneDragIdFor(column.id)}
+                    onToggleCollapsed={kanban.toggleLaneCollapsed}
+                    onKeyboardReorder={kanban.reorderLaneByKeyboard}
+                    onQuickCreate={onCreateSubject ? kanban.quickCreateSubject : undefined}
+                  >
+                    {column.cards.map((card) => (
+                      <Fragment key={card.subject}>
+                        {kanban.activeDropSubject === card.subject ? (
+                          <div
+                            aria-label={`将卡片放到 ${card.title} 前`}
+                            className="h-1 rounded-full bg-primary/60"
+                            data-kanban-drop-placeholder="true"
+                            data-kanban-drop-before={card.subject}
+                          />
+                        ) : null}
+                        <StructuredKanbanCard
+                        card={card}
+                        columns={kanban.moveTargetColumnsFor(column.id)}
+                        canMove={kanban.canMoveCardsInColumn(column.id)}
+                        pendingMove={kanban.pendingMoveViewForSubject(card.subject)}
+                        selected={kanban.isCardSelected(card.subject)}
+                        selectionCount={kanban.selectedCardCount}
+                        onMove={kanban.canCommitCrossColumnMoves ? (column) => void kanban.moveSelectionToColumn(card.subject, column) : undefined}
+                        onRetryMove={kanban.pendingMoveViewForSubject(card.subject)?.retryable
+                          ? () => void kanban.retryKanbanMove(card.subject)
+                          : undefined}
+                        onKeyboardMove={(direction) => void kanban.moveCardByKeyboard(card.subject, direction)}
+                        onSelect={(card, options) => kanban.selectCard(card.subject, options)}
+                        onOpen={(card, options) => onOpenSubject?.(card.subject, options)}
+                        />
+                      </Fragment>
+                    ))}
+                  </StructuredKanbanLane>
+                </SortableContext>
+              ))}
+            </div>
+          </SortableContext>
         </div>
+        <DragOverlay>
+          {kanban.activeDragCard ? (
+            <StructuredKanbanCard
+              card={kanban.activeDragCard}
+              canMove={false}
+              overlay
+              pendingMove={kanban.pendingMoveViewForSubject(kanban.activeDragCard.subject)}
+              selected={kanban.isCardSelected(kanban.activeDragCard.subject)}
+              onOpen={(card, options) => onOpenSubject?.(card.subject, options)}
+            />
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </div>
   )

@@ -61,28 +61,28 @@ describe('folder detail model helpers', () => {
       sort: { key: 'name', direction: 'asc' },
     })
 
-    const columnView = projectFolderDetailViewMode({
+    const gridView = projectFolderDetailViewMode({
       current: initial,
-      viewMode: 'columns',
+      viewMode: 'icons',
     })
-    expect(columnView).toEqual({
-      viewMode: 'columns',
+    expect(gridView).toEqual({
+      viewMode: 'icons',
       sort: { key: 'name', direction: 'asc' },
     })
 
     expect(projectFolderDetailSortKey({
-      current: columnView,
+      current: gridView,
       key: 'name',
     })).toEqual({
-      viewMode: 'columns',
+      viewMode: 'icons',
       sort: { key: 'name', direction: 'desc' },
     })
 
     expect(projectFolderDetailSortKey({
-      current: columnView,
+      current: gridView,
       key: 'modified',
     })).toEqual({
-      viewMode: 'columns',
+      viewMode: 'icons',
       sort: { key: 'modified', direction: 'asc' },
     })
   })
@@ -436,9 +436,8 @@ describe('folder detail model helpers', () => {
         uploadLabel: '上传文件',
       },
       viewModeOptions: [
-        { mode: 'list', label: '列表视图', iconKind: 'list', active: true },
-        { mode: 'columns', label: '分栏视图', iconKind: 'columns', active: false },
-        { mode: 'icons', label: '图标视图', iconKind: 'icons', active: false },
+        { mode: 'list', label: '列表', iconKind: 'list', active: true },
+        { mode: 'icons', label: '网格', iconKind: 'icons', active: false },
       ],
       visibleChildCount: 2,
       visibleChildren: [markdownEntry, folderEntry],
@@ -475,7 +474,7 @@ describe('folder detail model helpers', () => {
     })
     expect(model.projectFolderDetailContentState({
       hasVisibleChildren: false,
-      viewMode: 'columns',
+      viewMode: 'icons',
     })).toEqual({
       kind: 'empty',
       emptyState: {
@@ -485,7 +484,7 @@ describe('folder detail model helpers', () => {
     expect(model.projectFolderDetailContentState({
       hasVisibleChildren: true,
       viewMode: 'columns',
-    })).toEqual({ kind: 'columns' })
+    })).toEqual({ kind: 'collection', viewMode: 'list' })
     expect(model.projectFolderDetailContentState({
       hasVisibleChildren: true,
       viewMode: 'list',

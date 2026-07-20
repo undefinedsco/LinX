@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canExpandFilesTreeNode,
   createContainerNodeId,
+  createResourceNodeId,
   getContainerLabel,
   parseTreeNodeId,
   projectFilesTreeChildrenState,
@@ -15,6 +16,11 @@ import {
 describe('Files tree model', () => {
   it('projects and parses tree node ids without Pod transport', () => {
     expect(createContainerNodeId('https://pod.example/public')).toBe('container:https://pod.example/public/')
+    expect(createResourceNodeId('https://pod.example/public/readme.md')).toBe('resource:https://pod.example/public/readme.md')
+    expect(parseTreeNodeId('resource:https://pod.example/public/readme.md')).toEqual({
+      kind: 'resource',
+      uri: 'https://pod.example/public/readme.md',
+    })
     expect(parseTreeNodeId('smart-root:recent')).toEqual({ kind: 'recent' })
     expect(parseTreeNodeId('smart-root:agents')).toEqual({ kind: 'agents-root' })
     expect(parseTreeNodeId('workspace:https://pod.example/ws/')).toEqual({
@@ -31,6 +37,7 @@ describe('Files tree model', () => {
 
   it('identifies tree nodes that can be expanded without UI state', () => {
     expect(canExpandFilesTreeNode({ id: 'all', label: 'All', type: 'all' })).toBe(false)
+    expect(canExpandFilesTreeNode({ id: 'resource:https://pod.example/readme.md', label: 'readme.md', type: 'resource' })).toBe(false)
     expect(canExpandFilesTreeNode({ id: 'smart-root:recent', label: 'Recent', type: 'recent' })).toBe(false)
     expect(canExpandFilesTreeNode({ id: 'pod-root', label: 'Pod 根目录', type: 'container' })).toBe(true)
     expect(canExpandFilesTreeNode({ id: 'smart-root:workspaces', label: 'Workspaces', type: 'workspaces-root' })).toBe(true)

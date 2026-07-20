@@ -119,7 +119,7 @@ export function createResourceCollection(dependencies: ResourceCollectionDepende
     },
 
     async readDetail(resourceUri: string, dbOverride?: SolidDatabase | null): Promise<FilesDetail> {
-      return readFileDetail(requireFilesDb(dbOverride), resourceUri)
+      return readFileDetail(requireFilesDb(dbOverride), resourceUri, { includeContainerEntries: false })
     },
 
     async readRawText(resourceUri: string, dbOverride?: SolidDatabase | null): Promise<FilesRawTextResource> {

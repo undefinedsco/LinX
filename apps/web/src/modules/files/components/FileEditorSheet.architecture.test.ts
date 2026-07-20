@@ -5,6 +5,7 @@ const detailPanePath = 'src/modules/files/features/detail/FileDetailPane.tsx'
 const detailPreviewPath = 'src/modules/files/features/detail/FileDetailPreview.tsx'
 const sourceLinkedCardPreviewPath = 'src/modules/files/features/detail/FileDetailSourceLinkedCardPreview.tsx'
 const editorSheetPath = 'src/modules/files/features/editor/FileEditorSheet.tsx'
+const documentEditorModalPath = 'src/modules/files/features/editor/DocumentEditorModal.tsx'
 const editorSheetControllerPath = 'src/modules/files/features/editor/useFileEditorSheetController.ts'
 const editorSheetModelPath = 'src/modules/files/features/editor/file-editor-sheet-model.ts'
 const editorMetaTailPath = 'src/modules/files/features/editor/FileEditorSheetMetaTail.tsx'
@@ -19,6 +20,7 @@ describe('FileEditorSheet architecture boundary', () => {
 
     expect(existsSync(detailPreviewPath)).toBe(true)
     expect(existsSync(editorSheetPath)).toBe(true)
+    expect(existsSync(documentEditorModalPath)).toBe(true)
     expect(existsSync(editorSheetControllerPath)).toBe(true)
     expect(existsSync(editorSheetModelPath)).toBe(true)
     expect(existsSync(editorMetaTailPath)).toBe(true)
@@ -42,6 +44,7 @@ describe('FileEditorSheet architecture boundary', () => {
 
     const detailPreviewSource = readFileSync(detailPreviewPath, 'utf8')
     const editorSheetSource = readFileSync(editorSheetPath, 'utf8')
+    const documentEditorModalSource = readFileSync(documentEditorModalPath, 'utf8')
     const editorSheetControllerSource = readFileSync(editorSheetControllerPath, 'utf8')
     const editorSheetModelSource = readFileSync(editorSheetModelPath, 'utf8')
     const editorMetaTailSource = readFileSync(editorMetaTailPath, 'utf8')
@@ -57,17 +60,18 @@ describe('FileEditorSheet architecture boundary', () => {
     expect(detailPaneSource).not.toMatch(/\nfunction FileEditorSheet\(/)
     expect(detailPaneSource).not.toMatch(/\nfunction RawSourceEditor\(/)
 
-    expect(detailPreviewSource).toContain("from '../editor/FileEditorSheet'")
-    expect(editorSheetSource).toMatch(/\nexport function FileEditorSheet\(/)
-    expect(editorSheetSource).toContain("from './useFileEditorSheetController'")
-    expect(editorSheetSource).toContain('useFileEditorSheetController')
-    expect(editorSheetSource).toContain("from './FileEditorSheetMetaTail'")
-    expect(editorSheetSource).toContain('<FileEditorSheetMetaTail')
-    expect(editorSheetSource).toContain("from './FileEditorRawSourceEditor'")
-    expect(editorSheetSource).toContain('<FileEditorRawSourceEditor')
-    expect(editorSheetSource).toContain('editor.richContentState')
-    expect(editorSheetSource).toContain('editor.rawSourceEditorState')
-    expect(editorSheetSource).toContain('sourceState={editor.rawSourceEditorState}')
+    expect(detailPreviewSource).toContain("from '../editor/DocumentEditorModal'")
+    expect(editorSheetSource).toContain("DocumentEditorModal as FileEditorSheet")
+    expect(documentEditorModalSource).toMatch(/\nexport function DocumentEditorModal\(/)
+    expect(documentEditorModalSource).toContain("from './useFileEditorSheetController'")
+    expect(documentEditorModalSource).toContain('useFileEditorSheetController')
+    expect(documentEditorModalSource).toContain("from './FileEditorSheetMetaTail'")
+    expect(documentEditorModalSource).toContain('<FileEditorSheetMetaTail')
+    expect(documentEditorModalSource).toContain("from './FileEditorRawSourceEditor'")
+    expect(documentEditorModalSource).toContain('<FileEditorRawSourceEditor')
+    expect(documentEditorModalSource).toContain('editor.richContentState')
+    expect(documentEditorModalSource).toContain('editor.rawSourceEditorState')
+    expect(documentEditorModalSource).toContain('sourceState={editor.rawSourceEditorState}')
     expect(editorSheetSource).not.toContain('rawResource={editor.rawSourceEditorState.rawResource}')
     expect(editorSheetSource).not.toContain('isLoading={editor.rawSourceEditorState.isLoading}')
     expect(editorSheetSource).not.toContain('error={editor.rawSourceEditorState.error}')

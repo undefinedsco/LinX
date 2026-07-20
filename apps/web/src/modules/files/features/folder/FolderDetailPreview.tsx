@@ -1,19 +1,15 @@
-import { Columns3, Copy, FilePlus, FolderPlus, Grid3X3, List, Trash2, Upload } from 'lucide-react'
+import { Copy, FilePlus, FolderPlus, Grid3X3, List, Trash2, Upload } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 import type { FilesDetail } from '../../domain/resource/resource-model'
-import { FileEditorSheet } from '../editor/FileEditorSheet'
-import { FolderChildPreview } from './FolderChildPreview'
+import { FilesEmptyState } from '../../ui/FilesEmptyState'
+import { ResourceViewBar } from '../../ui/ResourceViewBar'
+import { DocumentEditorModal } from '../editor/DocumentEditorModal'
 import { FolderChildCollectionView } from './FolderDetailChildViews'
-import {
-  FolderColumnPanel,
-  FolderDescendantColumn,
-  type FolderColumnChildAction,
-} from './FolderDetailColumnView'
+import { FolderDetailTreeView } from './FolderDetailTreeView'
 import { FolderChildOperationSheet } from './FolderChildOperationSheet'
-import { useFolderDetailColumnController } from './useFolderDetailColumnController'
 import { useFolderDetailNavigationController } from './useFolderDetailNavigationController'
 import { useFolderDetailOperationController } from './useFolderDetailOperationController'
 import { useFolderDetailSelectionController } from './useFolderDetailSelectionController'
@@ -22,7 +18,6 @@ import { type FolderDetailViewModeIconKind, useFolderDetailViewController } from
 
 const folderViewModeIconByKind = {
   list: List,
-  columns: Columns3,
   icons: Grid3X3,
 } satisfies Record<FolderDetailViewModeIconKind, typeof List>
 
@@ -42,7 +37,6 @@ export function FolderDetailPreview({
     sortedChildren,
     sortedCollectionRows,
     toolbarChrome,
-    visibleChildCount,
     visibleChildren,
     viewModeOptions,
   } = useFolderDetailViewController({ children })
@@ -54,7 +48,6 @@ export function FolderDetailPreview({
   const folderNavigation = useFolderDetailNavigationController({
     childUriSet,
     selectedChildren: folderSelection.selectedChildren,
-    selectChildUri: folderSelection.selectChildUri,
   })
   const folderUpload = useFolderDetailUploadController({
     containerUri: file.uri,
@@ -66,32 +59,9 @@ export function FolderDetailPreview({
     visibleChildren,
     onDeletedUris: folderSelection.removeSelectionUris,
   })
-  const folderColumn = useFolderDetailColumnController({
-    file,
-    visibleChildren,
-    childUriSet,
-    selectedChild: folderSelection.selectedChild,
-    selectedChildUri: folderSelection.selectedChildUri,
-    selectOnlyChild: folderSelection.selectOnlyChild,
-    prepareContextMenuSelection: folderSelection.prepareContextMenuSelection,
-  })
   const openDeleteSelectedChildren = () => {
     folderOperation.openDeleteChildren(folderSelection.selectedChildren, { containerUri: file.uri, siblingEntries: visibleChildren })
   }
-
-  const openColumnCopy: FolderColumnChildAction = (parentFile, siblingEntries, child) => {
-    folderOperation.openTransferOperation('copy', child, { containerUri: parentFile.uri, siblingEntries })
-  }
-  const openColumnMove: FolderColumnChildAction = (parentFile, siblingEntries, child) => {
-    folderOperation.openTransferOperation('move', child, { containerUri: parentFile.uri, siblingEntries })
-  }
-  const openColumnRename: FolderColumnChildAction = (parentFile, siblingEntries, child) => {
-    folderOperation.openOperation({ type: 'rename', child, containerUri: parentFile.uri, siblingEntries })
-  }
-  const openColumnDelete: FolderColumnChildAction = (parentFile, siblingEntries, child) => {
-    folderOperation.openDeleteChildren([child], { containerUri: parentFile.uri, siblingEntries })
-  }
-  const columnPreviewChild = folderColumn.columnPreviewChild
 
   return (
     <div
@@ -101,8 +71,18 @@ export function FolderDetailPreview({
       onDragLeave={folderUpload.handleUploadDragLeave}
       onDrop={folderUpload.handleUploadDrop}
     >
-      <div className="flex flex-wrap items-center justify-end gap-3 border-b border-border/35 pb-3">
-        <div className="flex items-center gap-1">
+      <ResourceViewBar
+        ariaLabel="文件夹视图"
+        views={viewModeOptions.map((option) => ({
+          id: option.mode,
+          label: option.label,
+          icon: folderViewModeIconByKind[option.iconKind],
+        }))}
+        activeViewId={viewModeOptions.find((option) => option.active)?.mode ?? 'list'}
+        addViewLabel="添加视图"
+        onSelectView={setViewMode}
+        rightActions={(
+          <>
           <Button
             type="button"
             size="icon"
@@ -147,27 +127,20 @@ export function FolderDetailPreview({
           >
             <Upload className="h-3.5 w-3.5" />
           </Button>
-          <div className="flex rounded-md border border-border/40 bg-background p-0.5">
-            {viewModeOptions.map((option) => {
-              const Icon = folderViewModeIconByKind[option.iconKind]
-              return (
-              <button
-                key={option.mode}
-                aria-label={option.label}
-                title={option.label}
-                className={cn(
-                  'flex h-6 w-6 items-center justify-center rounded transition-colors',
-                  option.active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/70',
-                )}
-                onClick={() => setViewMode(option.mode)}
-              >
-                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              )
-            })}
-          </div>
+          </>
+        )}
+      />
+      {folderUpload.uploadProgress ? (
+        <div role="status" aria-label="文件上传进度" className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+            <span
+              className="block h-full rounded-full bg-primary transition-[width]"
+              style={{ width: `${folderUpload.uploadProgress.total > 0 ? Math.round((folderUpload.uploadProgress.completed / folderUpload.uploadProgress.total) * 100) : 0}%` }}
+            />
+          </span>
+          <span className="truncate">{folderUpload.uploadProgress.completed}/{folderUpload.uploadProgress.total} 上传中 · {folderUpload.uploadProgress.currentName}</span>
         </div>
-      </div>
+      ) : null}
       {folderSelection.hasBatchSelection ? (
         <div className="flex items-center justify-between rounded-md border border-border/35 bg-muted/20 px-3 py-2">
           <span className="text-xs font-medium text-foreground/80">{folderSelection.batchSelectionLabel}</span>
@@ -199,59 +172,56 @@ export function FolderDetailPreview({
         </div>
       ) : null}
       {contentState.kind === 'empty' ? (
-        <div className="rounded-md border border-border/40 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
-          {contentState.emptyState.message}
-        </div>
-      ) : contentState.kind === 'columns' ? (
-          <div
-            className="flex min-h-[320px] overflow-x-auto rounded-md border border-border/40 bg-background/60"
-            aria-label="Folder column view"
-          >
-            <FolderColumnPanel
-              ariaLabel="Folder column current items"
-              title={file.name}
-              parentFile={file}
-              entries={visibleChildren}
-              selectedUri={folderColumn.rootColumnSelectedUri}
+        <FilesEmptyState
+          title="当前容器为空"
+          description={contentState.emptyState.message}
+          action={(
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-xs"
+                onClick={() => folderOperation.openOperation({ type: 'create-markdown' })}
+              >
+                <FilePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                新建文件
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-xs"
+                disabled={folderUpload.uploadPending}
+                onClick={folderUpload.openUploadPicker}
+              >
+                <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                上传文件
+              </Button>
+            </div>
+          )}
+        />
+      ) : (
+          contentState.viewMode === 'list' ? (
+            <FolderDetailTreeView
+              file={file}
+              rows={sortedCollectionRows}
+              selectedUris={folderSelection.selectedChildUris}
               sort={sort}
-              columnDepth={0}
-              onSelect={folderColumn.selectColumnChild}
-              onContextMenuSelect={folderColumn.prepareColumnChildContextMenuSelection}
+              actionMenu={childActionMenu}
+              collectionChrome={collectionChrome}
+              onSortKey={setSortKey}
+              onSelect={folderSelection.selectChild}
+              onKeyboardSelect={folderSelection.selectChildFromKeyboard}
+              onContextMenuSelect={folderSelection.prepareChildContextMenuSelection}
               onOpen={folderNavigation.openChild}
               onCopyUri={folderNavigation.copyChildUri}
-              onCopy={openColumnCopy}
-              onMove={openColumnMove}
-              onRename={openColumnRename}
-              onDelete={openColumnDelete}
+              onRename={(parentFile, siblingEntries, child) => folderOperation.openOperation({ type: 'rename', child, containerUri: parentFile.uri, siblingEntries })}
+              onCopy={(parentFile, siblingEntries, child) => folderOperation.openTransferOperation('copy', child, { containerUri: parentFile.uri, siblingEntries })}
+              onMove={(parentFile, siblingEntries, child) => folderOperation.openTransferOperation('move', child, { containerUri: parentFile.uri, siblingEntries })}
+              onDelete={(parentFile, siblingEntries, child) => folderOperation.openDeleteChildren([child], { containerUri: parentFile.uri, siblingEntries })}
             />
-            {folderColumn.columnContainerPath.map((containerUri, index) => (
-              <FolderDescendantColumn
-                key={containerUri}
-                containerUri={containerUri}
-                selectedUri={folderColumn.columnSelectionByContainer[containerUri]}
-                sort={sort}
-                columnDepth={index + 1}
-                onSelect={folderColumn.selectColumnChild}
-                onContextMenuSelect={folderColumn.prepareColumnChildContextMenuSelection}
-                onOpen={folderNavigation.openChild}
-                onCopyUri={folderNavigation.copyChildUri}
-                onCopy={openColumnCopy}
-                onMove={openColumnMove}
-                onRename={openColumnRename}
-                onDelete={openColumnDelete}
-              />
-            ))}
-            <div className="min-w-[280px] flex-1 bg-background/50 p-3" aria-label="Folder column detail">
-              <FolderChildPreview
-                file={folderColumn.columnPreviewParentFile}
-                child={columnPreviewChild}
-                childCount={folderColumn.columnPreviewChildCount}
-                onOpen={columnPreviewChild ? () => folderNavigation.openChild(columnPreviewChild, 'explicit-open') : undefined}
-              />
-            </div>
-          </div>
-      ) : (
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(220px,0.75fr)]">
+          ) : (
             <FolderChildCollectionView
               viewMode={contentState.viewMode}
               rows={sortedCollectionRows}
@@ -270,16 +240,10 @@ export function FolderDetailPreview({
               onMove={(child) => folderOperation.openTransferOperation('move', child, { containerUri: file.uri, siblingEntries: visibleChildren })}
               onDelete={(child) => folderOperation.openDeleteChildren([child], { containerUri: file.uri, siblingEntries: visibleChildren })}
             />
-            <FolderChildPreview
-              file={file}
-              child={folderSelection.selectedChild}
-              childCount={visibleChildCount}
-              onOpen={folderSelection.selectedChild ? () => folderNavigation.openChild(folderSelection.selectedChild!, 'explicit-open') : undefined}
-            />
-          </div>
+          )
       )}
       {folderNavigation.sheetChild ? (
-        <FileEditorSheet
+        <DocumentEditorModal
           file={folderNavigation.sheetChild}
           open
           onOpenChange={(open) => {

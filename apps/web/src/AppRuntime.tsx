@@ -6,15 +6,13 @@ import { TelemetryProvider } from './lib/telemetry/telemetry-context'
 import { router } from './router'
 
 export function AppRuntime() {
-  const isDesktopRuntime =
-    typeof window !== 'undefined'
-    && Boolean(
-      window.xpodDesktop?.auth?.prepareLoopbackRedirect
-      && window.xpodDesktop?.auth?.consumePendingRedirect,
-    )
+  const isDesktopRuntime = typeof window !== 'undefined' && Boolean(window.xpodDesktop)
   const shouldRestoreInProvider =
     typeof window !== 'undefined'
     && window.location.protocol !== 'file:'
+    // Inrupt restores a browser session through a hidden iframe. Desktop uses
+    // loopback callbacks, and an identity provider may require interaction;
+    // that iframe redirect is rejected by Chromium and leaves the app blank.
     && !isDesktopRuntime
 
   return (

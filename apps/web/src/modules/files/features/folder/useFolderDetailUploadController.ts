@@ -22,21 +22,33 @@ export function useFolderDetailUploadController({
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const uploadFolderInputRef = useRef<HTMLInputElement | null>(null)
   const [isDropTargetActive, setIsDropTargetActive] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{
+    completed: number
+    total: number
+    currentName: string
+  } | null>(null)
 
   const uploadFiles = async (uploadedFiles: File[]) => {
     if (uploadedFiles.length === 0 || !containerUri) return
     try {
       const batchPlan = projectFolderUploadBatchPlan({ uploadedFiles, containerUri })
+      const total = batchPlan.folders.length + batchPlan.resources.length
+      let completed = 0
+      setUploadProgress({ completed, total, currentName: uploadedFiles[0]?.name ?? '文件' })
       let lastResourceUri: string | null = null
       for (const folder of batchPlan.folders) {
+        setUploadProgress({ completed, total, currentName: folder.name })
         await createFolder.mutateAsync({
           containerUri: folder.containerUri,
           name: folder.name,
         })
+        completed += 1
+        setUploadProgress({ completed, total, currentName: folder.name })
       }
       for (const plan of batchPlan.resources) {
         const uploadedFile = uploadedFiles[plan.fileIndex]
         if (!uploadedFile) continue
+        setUploadProgress({ completed, total, currentName: uploadedFile.name })
         if (plan.contentKind === 'text') {
           const created = await createRawText.mutateAsync({
             resource: plan.resource,
@@ -50,12 +62,16 @@ export function useFolderDetailUploadController({
           })
           lastResourceUri = created.uri
         }
+        completed += 1
+        setUploadProgress({ completed, total, currentName: uploadedFile.name })
       }
       if (lastResourceUri) {
         onUploadedResource(lastResourceUri)
         toast({ description: uploadedFiles.length === 1 ? '文件已上传' : `${uploadedFiles.length} 个文件已上传` })
       }
+      setUploadProgress(null)
     } catch (error) {
+      setUploadProgress(null)
       toast({
         description: `上传失败：${error instanceof Error ? error.message : '未知错误'}`,
         variant: 'destructive',
@@ -100,6 +116,7 @@ export function useFolderDetailUploadController({
     uploadFolderInputRef,
     uploadInputRef,
     uploadPending: createFolder.isPending || createRawText.isPending || createBlob.isPending,
+    uploadProgress,
     uploadPickedFolder,
     uploadPickedFiles,
   }

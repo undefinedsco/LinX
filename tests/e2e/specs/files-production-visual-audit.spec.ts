@@ -50,6 +50,15 @@ async function openFiles(page: Page) {
   await expect(page.getByText('正在加载容器...')).toHaveCount(0, { timeout: 30_000 })
 }
 
+async function refreshFilesResources(page: Page) {
+  await page.evaluate(async () => {
+    const { queryClient } = await import('/src/providers/query-provider.tsx')
+    await queryClient.resetQueries({ queryKey: ['files', 'children'] })
+    await queryClient.invalidateQueries({ queryKey: ['files'] })
+    await queryClient.refetchQueries({ queryKey: ['files'], type: 'active' })
+  })
+}
+
 async function selectResource(page: Page, resourceUri: string) {
   await page.evaluate(async ({ uri }) => {
     const { useFilesStore } = await import('/src/modules/files/store.ts')
@@ -63,6 +72,21 @@ async function closeMetaDrawer(page: Page) {
     await closeButton.click()
     await expect(page.getByLabel('Resource .meta inspector')).toHaveCount(0)
   }
+}
+
+async function openResourceAction(
+  page: Page,
+  resourceName: string,
+  actionName: '查看 .meta' | '查看 Access 来源',
+) {
+  const resourceRow = page.getByRole('treeitem', { name: new RegExp(resourceName) })
+  await resourceRow.hover()
+  const actionsButton = page.getByRole('button', { name: `更多 ${resourceName} 操作` })
+  await actionsButton.click()
+  await expect(actionsButton).toHaveAttribute('aria-expanded', 'true', { timeout: 2_000 })
+  const action = page.getByRole('menuitem', { name: actionName })
+  await expect(action).toBeVisible({ timeout: 5_000 })
+  await action.click()
 }
 
 async function seedAuditResources(page: Page): Promise<AuditSeed> {
@@ -305,10 +329,16 @@ async function openStructuredTable(
   seed: AuditSeed,
   options: { requireTitleVisible?: boolean } = {},
 ) {
+  await refreshFilesResources(page)
+  const dataExpandButton = page.getByRole('button', { name: '展开 .data' })
+  if (await dataExpandButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await dataExpandButton.click()
+  }
+  await expect(page.getByRole('treeitem', { name: seed.turtleName })).toBeVisible({ timeout: 30_000 })
   await selectResource(page, seed.turtleUri)
   const workspace = page.getByLabel('文件工作区')
   if (options.requireTitleVisible !== false) {
-    await expect(workspace.getByText(seed.turtleName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(seed.turtleName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
   }
   const tableButton = page.getByRole('button', { name: 'Table' })
   await expect(tableButton).toBeVisible({ timeout: 30_000 })
@@ -338,19 +368,20 @@ test.describe('Files production visual audit', () => {
     await loginToSeededXpod(page, runtime)
     const seed = await seedAuditResources(page)
     await openFiles(page)
+    await refreshFilesResources(page)
 
-    await selectResource(page, seed.folderUri)
-    await expect(page.getByLabel('文件工作区').getByText(seed.folderName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByRole('button', { name: '文件范围：全部文件' })).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByRole('button', { name: '聊天文件' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: seed.folderName, exact: true })).toBeVisible({ timeout: 30_000 })
+    await page.getByRole('button', { name: '展开 Pod 根目录' }).click()
+    const folderTreeItem = page.getByRole('treeitem', { name: new RegExp(seed.folderName) })
+    await folderTreeItem.click()
+    await expect(folderTreeItem).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByText(seed.folderName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
     const folderList = page.getByLabel('Folder list view')
     await expect(folderList).toBeVisible()
     await expect(folderList.getByRole('button', { name: seed.markdownName })).toBeVisible()
     await expect(folderList.getByRole('button', { name: 'folder-graph.ttl' })).toBeVisible()
     await capture(page, '01-folder-finder-detail-1440x900')
 
-    await page.getByRole('button', { name: '查看 .meta' }).click()
+    await openResourceAction(page, seed.folderName, '查看 .meta')
     const folderMetaDrawer = page.getByLabel('Resource .meta inspector')
     await expect(folderMetaDrawer).toContainText(seed.folderMetaUri)
     await expect(folderMetaDrawer).toContainText('Visual audit folder')
@@ -359,7 +390,7 @@ test.describe('Files production visual audit', () => {
     await capture(page, '02-folder-meta-drawer-1440x900')
     await closeMetaDrawer(page)
 
-    await page.getByRole('button', { name: '查看 Access 来源' }).click()
+    await openResourceAction(page, seed.folderName, '查看 Access 来源')
     const accessDialog = page.getByRole('dialog', { name: '权限' })
     await expect(accessDialog).toBeVisible({ timeout: 30_000 })
     await expect(accessDialog.getByText('正在读取权限信息...')).toHaveCount(0, { timeout: 30_000 })
@@ -368,7 +399,7 @@ test.describe('Files production visual audit', () => {
     await expect(page.getByRole('dialog', { name: '权限' })).toHaveCount(0)
 
     await selectResource(page, seed.markdownUri)
-    await expect(page.getByLabel('文件工作区').getByText(seed.markdownName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(seed.markdownName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
     await page.getByRole('button', { name: '打开文件详情' }).click()
     const editorSheet = page.getByRole('dialog', { name: seed.markdownTitle })
     await expect(editorSheet).toBeVisible({ timeout: 30_000 })
@@ -388,13 +419,21 @@ test.describe('Files production visual audit', () => {
     await expect(addPredicateButton).toBeInViewport({ ratio: 1 })
     await capture(page, '05-structured-table-1440x900')
 
-    await page.getByRole('button', { name: '+ predicate' }).click()
-    await expect(page.getByRole('textbox', { name: '选择或创建 predicate' })).toBeVisible()
-    const createPredicateButton = page.getByRole('button', { name: '新建 predicate' })
-    await expect(createPredicateButton).toBeVisible({ timeout: 5_000 })
+    await addPredicateButton.click({ force: true })
+    const predicatePicker = page.getByRole('textbox', { name: '选择或创建 predicate' })
+    if (!await predicatePicker.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await addPredicateButton.click({ force: true })
+    }
+    await expect(predicatePicker).toBeVisible()
+    await expect(page.getByRole('button', { name: '新建 predicate' })).toBeVisible({ timeout: 5_000 })
     await expect(page.getByLabel('predicate term')).toHaveCount(0)
     await capture(page, '06-predicate-picker-1440x900')
-    await createPredicateButton.click()
+    const createPredicateButton = page.getByRole('button', { name: '新建 predicate' })
+    if (!await createPredicateButton.isVisible().catch(() => false)) {
+      await page.getByRole('button', { name: '+ predicate' }).click()
+    }
+    await expect(createPredicateButton).toBeVisible({ timeout: 5_000 })
+    await createPredicateButton.evaluate((button: HTMLButtonElement) => button.click())
     await expect(page.getByLabel('predicate term')).toBeVisible()
     await capture(page, '06-predicate-menu-1440x900')
     await page.keyboard.press('Escape')
@@ -410,7 +449,7 @@ test.describe('Files production visual audit', () => {
     await capture(page, '07-enum-cell-menu-1440x900')
     await page.keyboard.press('Escape')
 
-    await page.getByRole('button', { name: '查看 .meta' }).click()
+    await openResourceAction(page, seed.turtleName, '查看 .meta')
     const turtleMetaDrawer = page.getByLabel('Resource .meta inspector')
     await expect(turtleMetaDrawer).toContainText(seed.turtleMetaUri)
     await expect(turtleMetaDrawer).toContainText('Visual Audit Workspace Table')
@@ -430,20 +469,170 @@ test.describe('Files production visual audit', () => {
     await page.getByRole('button', { name: '+ 视图' }).click()
     await page.getByRole('menuitem', { name: 'Whiteboard' }).click()
     await expect(page.getByRole('button', { name: 'Whiteboard', exact: true })).toBeVisible({ timeout: 30_000 })
-    for (const subject of ['#Workspace', '#Other']) {
-      await page.getByRole('button', { name: '白板工具' }).click()
-      const subjectItem = page.getByRole('menuitem').filter({ hasText: subject }).first()
+    for (const [index, item] of [
+      { subject: seed.workspaceSubject, label: 'Visual Audit Workspace' },
+      { subject: seed.otherSubject, label: 'Visual Audit Peer' },
+    ].entries()) {
+      await page.locator('[data-whiteboard-canvas-scroll="true"]').dblclick({
+        position: index === 0 ? { x: 420, y: 280 } : { x: 820, y: 460 },
+      })
+      await expect(page.getByRole('dialog', { name: '快速添加 Subject' })).toBeVisible({ timeout: 5_000 })
+      const subjectItem = page.getByRole('button', { name: `添加 ${item.label}` })
       await expect(subjectItem).toBeVisible({ timeout: 5_000 })
       await subjectItem.click()
     }
     await expect(page.locator(`[data-whiteboard-subject="${seed.workspaceSubject}"]`)).toHaveCount(1)
     await expect(page.locator(`[data-whiteboard-subject="${seed.otherSubject}"]`)).toHaveCount(1)
-    await page.getByRole('button', { name: '白板工具' }).click()
-    await page.getByRole('menuitem', { name: '添加视觉关系' }).click()
+    const workspaceCard = page.locator(`[data-whiteboard-subject="${seed.workspaceSubject}"]`)
+    const otherCard = page.locator(`[data-whiteboard-subject="${seed.otherSubject}"]`)
+    const clickWhiteboardShape = async (shape: ReturnType<typeof page.locator>, shift = false) => {
+      const box = await shape.boundingBox()
+      expect(box).toBeTruthy()
+      if (shift) await page.keyboard.down('Shift')
+      await page.mouse.click(box!.x + 24, box!.y + box!.height - 24)
+      if (shift) await page.keyboard.up('Shift')
+    }
+
+    await clickWhiteboardShape(workspaceCard)
+    const workspaceBeforeResize = await workspaceCard.boundingBox()
+    expect(workspaceBeforeResize).toBeTruthy()
+    await page.mouse.move(
+      workspaceBeforeResize!.x + workspaceBeforeResize!.width,
+      workspaceBeforeResize!.y + workspaceBeforeResize!.height,
+    )
+    await page.mouse.down()
+    await page.mouse.move(
+      workspaceBeforeResize!.x + workspaceBeforeResize!.width + 72,
+      workspaceBeforeResize!.y + workspaceBeforeResize!.height + 40,
+      { steps: 8 },
+    )
+    await page.mouse.up()
+    await expect.poll(async () => (await workspaceCard.boundingBox())?.width ?? 0).toBeGreaterThan(
+      workspaceBeforeResize!.width + 40,
+    )
+
+    const workspaceAfterResize = await workspaceCard.boundingBox()
+    const otherBeforeMarquee = await otherCard.boundingBox()
+    expect(workspaceAfterResize).toBeTruthy()
+    expect(otherBeforeMarquee).toBeTruthy()
+    const marqueeLeft = Math.min(workspaceAfterResize!.x, otherBeforeMarquee!.x) - 24
+    const marqueeTop = Math.min(workspaceAfterResize!.y, otherBeforeMarquee!.y) - 24
+    const marqueeRight = Math.max(
+      workspaceAfterResize!.x + workspaceAfterResize!.width,
+      otherBeforeMarquee!.x + otherBeforeMarquee!.width,
+    ) + 24
+    const marqueeBottom = Math.max(
+      workspaceAfterResize!.y + workspaceAfterResize!.height,
+      otherBeforeMarquee!.y + otherBeforeMarquee!.height,
+    ) + 24
+    await page.mouse.click(marqueeLeft - 12, marqueeTop - 12)
+    await page.mouse.move(marqueeLeft, marqueeTop)
+    await page.mouse.down()
+    await page.mouse.move(marqueeRight, marqueeBottom, { steps: 12 })
+    await page.mouse.up()
+    await page.mouse.click(workspaceAfterResize!.x + 24, workspaceAfterResize!.y + workspaceAfterResize!.height - 24, {
+      button: 'right',
+    })
+    const selectionMenu = page.getByRole('menu', { name: '白板所选内容操作' })
+    await expect(selectionMenu).toBeVisible()
+    await expect(selectionMenu.getByRole('menuitem', { name: '组合' })).toBeEnabled()
+    await selectionMenu.getByRole('menuitem', { name: '左对齐' }).click()
+    await expect.poll(async () => {
+      const workspaceBox = await workspaceCard.boundingBox()
+      const otherBox = await otherCard.boundingBox()
+      return workspaceBox && otherBox ? Math.abs(workspaceBox.x - otherBox.x) : Number.POSITIVE_INFINITY
+    }).toBeLessThan(2)
+
+    await page.getByRole('button', { name: '添加视觉关系' }).click()
     await page.getByLabel('Relation label').fill('audit relation')
     await page.getByRole('button', { name: '创建视觉关系' }).click()
     await expect(page.locator('[data-whiteboard-relation-source="visual"]')).toHaveCount(1)
     await capture(page, '10-whiteboard-1440x900')
+
+    const workspaceBeforeGroup = await workspaceCard.boundingBox()
+    const otherBeforeGroup = await otherCard.boundingBox()
+    expect(workspaceBeforeGroup).toBeTruthy()
+    expect(otherBeforeGroup).toBeTruthy()
+    await page.mouse.click(workspaceBeforeGroup!.x + 24, workspaceBeforeGroup!.y + 24)
+    await page.keyboard.down('Shift')
+    await page.mouse.click(otherBeforeGroup!.x + 24, otherBeforeGroup!.y + otherBeforeGroup!.height - 24)
+    await page.keyboard.up('Shift')
+    const groupSelectionButton = page.getByRole('button', { name: '组合所选内容' })
+    await expect(groupSelectionButton).toBeEnabled()
+    await groupSelectionButton.click()
+    const section = page.locator('[data-whiteboard-section]')
+    await expect(section).toHaveCount(1)
+    await section.getByLabel('Section title').fill('Audit section')
+    await section.getByRole('button', { name: 'Section color green' }).evaluate((button: HTMLButtonElement) => button.click())
+    await expect(section).toHaveAttribute('data-section-color', 'green')
+    await expect(workspaceCard).toHaveCount(1)
+    await expect(otherCard).toHaveCount(1)
+    await capture(page, '10b-whiteboard-section-1440x900')
+
+    const workspaceBeforeSectionMove = await workspaceCard.boundingBox()
+    const otherBeforeSectionMove = await otherCard.boundingBox()
+    const sectionBox = await section.boundingBox()
+    expect(workspaceBeforeSectionMove).toBeTruthy()
+    expect(otherBeforeSectionMove).toBeTruthy()
+    expect(sectionBox).toBeTruthy()
+    await page.mouse.move(sectionBox!.x + sectionBox!.width / 2, sectionBox!.y + sectionBox!.height - 16)
+    await page.mouse.down()
+    await page.mouse.move(sectionBox!.x + sectionBox!.width / 2 + 80, sectionBox!.y + sectionBox!.height + 24, { steps: 8 })
+    await page.mouse.up()
+    await expect.poll(async () => {
+      const next = await workspaceCard.boundingBox()
+      return next ? Math.abs(next.x - workspaceBeforeSectionMove!.x) + Math.abs(next.y - workspaceBeforeSectionMove!.y) : 0
+    }, { timeout: 10_000 }).toBeGreaterThan(40)
+    await expect.poll(async () => {
+      const next = await otherCard.boundingBox()
+      return next ? Math.abs(next.x - otherBeforeSectionMove!.x) + Math.abs(next.y - otherBeforeSectionMove!.y) : 0
+    }, { timeout: 10_000 }).toBeGreaterThan(40)
+
+    const workspaceBeforeCopy = await workspaceCard.boundingBox()
+    expect(workspaceBeforeCopy).toBeTruthy()
+    await page.mouse.click(workspaceBeforeCopy!.x + 24, workspaceBeforeCopy!.y + 24)
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: new URL(page.url()).origin,
+    })
+    await page.keyboard.press('Meta+c')
+    await page.keyboard.press('Meta+v')
+    await expect(page.locator(`[data-whiteboard-subject="${seed.workspaceSubject}"]`)).toHaveCount(2)
+    await page.keyboard.press('Delete')
+    await expect(page.locator(`[data-whiteboard-subject="${seed.workspaceSubject}"]`)).toHaveCount(1)
+    await page.keyboard.press('Meta+z')
+    await expect(page.locator(`[data-whiteboard-subject="${seed.workspaceSubject}"]`)).toHaveCount(2)
+
+    await expect.poll(async () => page.evaluate(async ({ metaUri }) => {
+      const db = (window as any).__SOLID_DB__
+      const authFetch = db?.getDialect?.()?.getAuthenticatedFetch?.()
+      if (!authFetch) return ''
+      const response = await authFetch(metaUri)
+      return response.ok ? response.text() : ''
+    }, { metaUri: seed.turtleMetaUri }), { timeout: 30_000 }).toContain('Audit section')
+
+    await selectResource(page, seed.folderUri)
+    await page.evaluate(async ({ documentUri }) => {
+      const { useFilesStore } = await import('/src/modules/files/store.ts')
+      useFilesStore.setState((state) => {
+        const withoutDocument = <T,>(records: Record<string, T>) => Object.fromEntries(
+          Object.entries(records).filter(([key]) => key !== documentUri),
+        )
+        return {
+          structuredViewConfigsByDocument: withoutDocument(state.structuredViewConfigsByDocument),
+          structuredWhiteboardLayoutsByDocument: withoutDocument(state.structuredWhiteboardLayoutsByDocument),
+          structuredWhiteboardSubjectsByDocument: withoutDocument(state.structuredWhiteboardSubjectsByDocument),
+          structuredWhiteboardRelationsByDocument: withoutDocument(state.structuredWhiteboardRelationsByDocument),
+          structuredWhiteboardSnapshotByDocument: withoutDocument(state.structuredWhiteboardSnapshotByDocument),
+        }
+      })
+    }, { documentUri: seed.turtleUri })
+    await selectResource(page, seed.turtleUri)
+    await expect(page.getByRole('button', { name: 'Whiteboard', exact: true })).toBeVisible({ timeout: 30_000 })
+    const restoredSection = page.locator('[data-whiteboard-section]')
+    await expect(restoredSection).toHaveCount(1)
+    await expect(restoredSection).toHaveAttribute('data-section-color', 'green')
+    await expect(restoredSection.getByLabel('Section title')).toHaveValue('Audit section')
+    await expect(page.locator(`[data-whiteboard-subject="${seed.workspaceSubject}"]`)).toHaveCount(2)
 
     await page.setViewportSize({ width: 390, height: 844 })
     await selectResource(page, seed.turtleUri)
@@ -455,7 +644,9 @@ test.describe('Files production visual audit', () => {
     await expect(page.locator('[data-structured-toolbar-scroll="view-actions"]')).toBeVisible()
     await expect(page.locator('[data-structured-toolbar-scroll="subject-tools"]')).toBeVisible()
     await expect(page.locator('[data-whiteboard-toolbar-scroll="actions"]')).toBeVisible()
-    await expect(page.locator('[data-whiteboard-canvas-scroll="true"]')).toBeVisible()
+    const mobileWhiteboardCanvas = page.locator('[data-whiteboard-canvas-scroll="true"]')
+    await expect(mobileWhiteboardCanvas).toBeVisible()
+    expect((await mobileWhiteboardCanvas.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(480)
     await capture(page, '11-mobile-current-files-layout-390x844')
   })
 })

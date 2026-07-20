@@ -78,7 +78,7 @@ describe('useStructuredKanbanMoveController', () => {
     expect(onColumnOrderChange).not.toHaveBeenCalled()
   })
 
-  it('rolls back the pending overlay when the move proposal is rejected', async () => {
+  it('rolls back the pending overlay and exposes retry when the move proposal is rejected', async () => {
     const onCommitCellWriteProposal = vi.fn(async () => false)
     const { result } = renderHook(() => useStructuredKanbanMoveController({
       documentUri,
@@ -95,9 +95,43 @@ describe('useStructuredKanbanMoveController', () => {
       await result.current.commitKanbanMove(cardA, doneColumn)
     })
 
-    expect(result.current.pendingMoveForSubject('#a')).toBeUndefined()
+    expect(result.current.pendingMoveForSubject('#a')).toEqual({
+      columnId: 'done',
+      columnLabel: 'Done',
+      predicate: 'status',
+      status: 'error',
+    })
+    expect(result.current.pendingMoveViewForSubject('#a')).toEqual({
+      predicate: 'status',
+      value: 'Done',
+      statusLabel: '移动失败',
+      label: '移动失败：status -> Done',
+      retryable: true,
+    })
     expect(result.current.displayColumns[0]?.cards.map((card) => card.subject)).toEqual(['#a', '#b'])
     expect(result.current.displayColumns[1]?.cards.map((card) => card.subject)).toEqual([])
+
+    onCommitCellWriteProposal.mockResolvedValueOnce(true)
+    await act(async () => result.current.retryKanbanMove('#a'))
+
+    expect(onCommitCellWriteProposal).toHaveBeenCalledTimes(2)
+    expect(result.current.pendingMoveForSubject('#a')?.status).toBe('approval-staged')
+  })
+
+  it('converts thrown proposal failures into the same local retry state', async () => {
+    const onCommitCellWriteProposal = vi.fn(async () => { throw new Error('offline') })
+    const { result } = renderHook(() => useStructuredKanbanMoveController({
+      documentUri,
+      groupPredicate: 'status',
+      columns: [todoColumn, doneColumn],
+      projectionRows: [{ subject: '#a', cells: [{ predicate: 'status', values: ['"Todo"'] }] }],
+      onColumnOrderChange: vi.fn(),
+      onCommitCellWriteProposal,
+    }))
+
+    await act(async () => result.current.commitKanbanMove(cardA, doneColumn))
+
+    expect(result.current.pendingMoveForSubject('#a')?.status).toBe('error')
   })
 
   it('projects pending move display labels in the move workflow owner', async () => {
@@ -129,5 +163,39 @@ describe('useStructuredKanbanMoveController', () => {
       statusLabel: '待审批',
       label: '待审批：status -> Done',
     })
+  })
+
+  it('clears approval-staged state after the refreshed source projection reaches the target lane', async () => {
+    const onCommitCellWriteProposal = vi.fn(async () => true)
+    const { result, rerender } = renderHook(
+      ({ columns, rows }) => useStructuredKanbanMoveController({
+        documentUri,
+        groupPredicate: 'status',
+        columns,
+        projectionRows: rows,
+        onColumnOrderChange: vi.fn(),
+        onCommitCellWriteProposal,
+      }),
+      {
+        initialProps: {
+          columns: [todoColumn, doneColumn],
+          rows: [{ subject: '#a', cells: [{ predicate: 'status', values: ['"Todo"'] }] }],
+        },
+      },
+    )
+
+    await act(async () => result.current.commitKanbanMove(cardA, doneColumn))
+    expect(result.current.pendingMoveForSubject('#a')?.status).toBe('approval-staged')
+
+    rerender({
+      columns: [
+        { ...todoColumn, cards: [cardB] },
+        { ...doneColumn, cards: [cardA] },
+      ],
+      rows: [{ subject: '#a', cells: [{ predicate: 'status', values: ['"Done"'] }] }],
+    })
+
+    expect(result.current.pendingMoveForSubject('#a')).toBeUndefined()
+    expect(result.current.pendingMoveViewForSubject('#a')).toBeUndefined()
   })
 })

@@ -47,7 +47,7 @@ describe('FileDetailPreview architecture boundary', () => {
     expect(detailPreviewSource).toContain('StructuredResourcePreview')
     expect(detailPreviewSource).toContain('LockedVocabTablePreview')
     expect(detailPreviewSource).toContain('FolderDetailPreview')
-    expect(detailPreviewSource).toContain('FileEditorSheet')
+    expect(detailPreviewSource).toContain('DocumentEditorModal')
     expect(detailPreviewSource).toContain('SourceLinkedCardPreview')
     expect(detailPreviewSource).toContain("from './file-detail-preview-model'")
     expect(detailPreviewSource).toContain('projectEditableFilePreviewModel')
