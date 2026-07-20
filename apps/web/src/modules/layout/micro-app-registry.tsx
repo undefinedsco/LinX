@@ -46,6 +46,7 @@ export interface MicroAppLayoutConfig {
   rightSidebarWidth?: number
   hideIcon?: boolean
   hideHeader?: boolean
+  mobileContentActive?: boolean
 }
 
 export interface MicroAppLayoutConfigBridgeProps {

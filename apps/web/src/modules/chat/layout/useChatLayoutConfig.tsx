@@ -32,7 +32,8 @@ export const useChatLayoutConfig = () => {
       subtitle: activeChat?.description ?? '与 AI 助手协作',
       rightSidebar: showRightSidebar ? <ChatRightSidebar /> : null,
       rightSidebarWidth: 320,
+      mobileContentActive: Boolean(selectedChatId),
     }),
-    [activeChat?.description, activeChat?.title, showRightSidebar],
+    [activeChat?.description, activeChat?.title, selectedChatId, showRightSidebar],
   )
 }

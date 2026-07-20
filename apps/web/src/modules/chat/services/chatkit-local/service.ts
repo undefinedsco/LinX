@@ -316,7 +316,7 @@ export class LocalChatKitService {
         thread.updated_at = nowTimestamp()
         await this.store.saveThread(thread, context)
       }
-      yield* this.respond(thread, userMessage, context, params.input.inference_options)
+      yield* this.respond(thread, userMessage, context, params.input.inference_options, threadId)
     }
   }
 
@@ -341,7 +341,7 @@ export class LocalChatKitService {
       thread.updated_at = nowTimestamp()
       await this.store.saveThread(thread, context)
     }
-    yield* this.respond(thread, userMessage, context, params.input.inference_options)
+    yield* this.respond(thread, userMessage, context, params.input.inference_options, params.thread_id)
   }
 
   private async *handleThreadsAddClientToolOutput(
@@ -398,7 +398,7 @@ export class LocalChatKitService {
     }
 
     if (lastUserMessage) {
-      yield* this.respond(thread, lastUserMessage, context)
+      yield* this.respond(thread, lastUserMessage, context, undefined, params.thread_id)
     }
   }
 
@@ -436,12 +436,13 @@ export class LocalChatKitService {
     userMessage: ThreadItem,
     context: StoreContext,
     inferenceOptions?: any,
+    storageThreadId: string = thread.id,
   ): AsyncIterable<ThreadStreamEvent> {
-    const messages = await this.buildConversationHistory(thread.id, context)
+    const messages = await this.buildConversationHistory(storageThreadId, context, userMessage)
 
     const assistantItem = this.createAssistantItem(thread, context) as any
     const assistantItemId = assistantItem.id
-    await this.store.addThreadItem(thread.id, assistantItem, context)
+    await this.store.addThreadItem(storageThreadId, assistantItem, context)
     yield { type: 'thread.item.added', item: assistantItem }
 
     let fullText = ''
@@ -499,7 +500,7 @@ export class LocalChatKitService {
               item_id: assistantItemId,
               update: {
                 type: 'assistant_message.content_part.text_delta',
-                part_index: 0,
+                content_index: 0,
                 delta: chunk,
               },
             } as ThreadStreamEvent
@@ -507,7 +508,7 @@ export class LocalChatKitService {
 
           assistantItem.content = [{ type: 'output_text', text: fullText, annotations: [] }]
           assistantItem.status = 'completed'
-          await this.store.saveItem(thread.id, assistantItem, context)
+          await this.store.saveItem(storageThreadId, assistantItem, context)
           yield { type: 'thread.item.done', item: assistantItem }
           return
         }
@@ -516,7 +517,7 @@ export class LocalChatKitService {
         if (!aiConfig) {
           assistantItem.content = [{ type: 'output_text', text: '请先在设置中配置 AI API Key。', annotations: [] }]
           assistantItem.status = 'completed'
-          await this.store.saveItem(thread.id, assistantItem, context)
+          await this.store.saveItem(storageThreadId, assistantItem, context)
           yield { type: 'thread.item.done', item: assistantItem }
           return
         }
@@ -535,7 +536,7 @@ export class LocalChatKitService {
             item_id: assistantItemId,
             update: {
               type: 'assistant_message.content_part.text_delta',
-              part_index: 0,
+              content_index: 0,
               delta: chunk,
             },
           } as ThreadStreamEvent
@@ -543,7 +544,7 @@ export class LocalChatKitService {
 
         assistantItem.content = [{ type: 'output_text', text: fullText, annotations: [] }]
         assistantItem.status = 'completed'
-        await this.store.saveItem(thread.id, assistantItem, context)
+        await this.store.saveItem(storageThreadId, assistantItem, context)
         yield { type: 'thread.item.done', item: assistantItem }
       }
     } catch (error: any) {
@@ -551,7 +552,7 @@ export class LocalChatKitService {
       const userMessage = formatErrorForUser(error, '消息生成失败。请稍后重试。')
       assistantItem.content = [{ type: 'output_text', text: fullText || userMessage, annotations: [] }]
       assistantItem.status = 'incomplete'
-      await this.store.saveItem(thread.id, assistantItem, context)
+      await this.store.saveItem(storageThreadId, assistantItem, context)
       yield { type: 'thread.item.done', item: assistantItem }
       yield {
         type: 'error',
@@ -759,7 +760,7 @@ export class LocalChatKitService {
             item_id: assistantItemId,
             update: {
               type: 'assistant_message.content_part.text_delta',
-              part_index: 0,
+              content_index: 0,
               delta: event.text,
             },
           } as ThreadStreamEvent
@@ -1251,13 +1252,18 @@ export class LocalChatKitService {
   private async buildConversationHistory(
     threadId: string,
     context: StoreContext,
+    currentUserMessage?: ThreadItem,
   ): Promise<Array<{ role: string; content: string }>> {
     const messages: Array<{ role: string; content: string }> = [
       { role: 'system', content: this.systemPrompt },
     ]
 
     const items = await this.store.loadThreadItems(threadId, undefined, 100, 'asc', context)
+    let includesCurrentUserMessage = false
     for (const item of items.data) {
+      if (item.id === currentUserMessage?.id) {
+        includesCurrentUserMessage = true
+      }
       if (item.type === 'user_message') {
         const text = extractUserMessageText((item as any).content)
         if (text) {
@@ -1272,6 +1278,14 @@ export class LocalChatKitService {
           messages.push({ role: 'assistant', content: text })
         }
       }
+    }
+
+    // Pod writes and indexed reads are not guaranteed to become visible in the
+    // same turn. The current item is already the accepted request source, so it
+    // must be included even when the just-persisted row is not indexed yet.
+    if (currentUserMessage && !includesCurrentUserMessage) {
+      const text = extractUserMessageText((currentUserMessage as any).content)
+      if (text) messages.push({ role: 'user', content: text })
     }
 
     return messages

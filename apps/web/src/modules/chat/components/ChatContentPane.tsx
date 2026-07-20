@@ -619,11 +619,11 @@ function ChatKitPanel({
   }, [clearMessageAnchor, messageAnchorId, selectedThreadId])
 
   return (
-    <div className="h-full flex-1 overflow-hidden">
+    <div className="h-full min-w-0 flex-1 overflow-hidden">
       <ChatKitComponent
         ref={chatKitHostRef as any}
         control={chatkit.control}
-        style={{ display: 'block', width: '100%', height: '100%' }}
+        style={{ display: 'block', width: '100%', maxWidth: '100%', minWidth: 0, height: '100%' }}
       />
     </div>
   )
@@ -841,7 +841,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
 
   return (
     <div className="flex h-full flex-1 overflow-hidden bg-muted/30">
-      <div className="m-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/50 bg-background/80 backdrop-blur-sm">
+      <div className="m-4 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/50 bg-background/80 backdrop-blur-sm">
         <RuntimeSessionToolbar
           threadId={selectedThreadId}
           threadTitle={activeThread?.title ?? '默认话题'}

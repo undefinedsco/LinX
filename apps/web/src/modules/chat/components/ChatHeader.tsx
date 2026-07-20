@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
-import { Bot, ChevronRight, PanelRightClose, PanelRightOpen, Star } from 'lucide-react'
+import { ArrowLeft, Bot, ChevronRight, PanelRightClose, PanelRightOpen, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -42,6 +42,7 @@ export function ChatHeader() {
   const { session } = useSession()
   const { toast } = useToast()
   const selectedChatId = useChatStore((state) => state.selectedChatId)
+  const selectChat = useChatStore((state) => state.selectChat)
   const showRightSidebar = useChatStore((state) => state.showRightSidebar)
   const toggleRightSidebar = useChatStore((state) => state.toggleRightSidebar)
   const [isAgentDialogOpen, setIsAgentDialogOpen] = useState(false)
@@ -254,6 +255,16 @@ export function ChatHeader() {
         <div className="flex-1 flex items-center min-w-0">
           {chat ? (
             <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="mr-1 h-9 w-9 shrink-0 md:hidden"
+                onClick={() => selectChat(null)}
+                aria-label="返回会话列表"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
               <button
                 type="button"
                 className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50 shrink-0"

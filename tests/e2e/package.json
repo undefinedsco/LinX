@@ -10,7 +10,8 @@
     "test:local-onboarding": "playwright test specs/local-onboarding.spec.ts --workers=1",
     "test:real-auth": "playwright test specs/real-seeded-auth.spec.ts --workers=1",
     "test:real-cloud": "playwright test specs/real-cloud-auth.spec.ts --workers=1",
-    "test:chat": "playwright test specs/chat-e2e.spec.ts",
+    "test:chat": "LINX_E2E_USE_SYSTEM_CHROME=1 LINX_E2E_PORT=5175 playwright test specs/chat-full-flow.spec.ts specs/message-formats.spec.ts --workers=1",
+    "test:chat-full-flow": "LINX_E2E_USE_SYSTEM_CHROME=1 LINX_E2E_PORT=5175 playwright test specs/chat-full-flow.spec.ts --workers=1",
     "test:message-formats": "LINX_E2E_USE_SYSTEM_CHROME=1 LINX_E2E_PORT=5174 playwright test specs/message-formats.spec.ts --workers=1",
     "test:model-services": "LINX_E2E_USE_SYSTEM_CHROME=1 playwright test specs/real-seeded-auth.spec.ts --workers=1",
     "report": "playwright show-report"

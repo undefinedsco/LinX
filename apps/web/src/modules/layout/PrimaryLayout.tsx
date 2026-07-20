@@ -131,7 +131,10 @@ function MicroAppContentRenderer({
       ) : null}
       <div ref={layoutContainerRef} className="flex h-full w-full min-w-0 overflow-hidden">
         <div
-          className="shrink-0 overflow-hidden"
+          className={cn(
+            'shrink-0 overflow-hidden',
+            layoutConfig?.mobileContentActive === true && 'max-md:hidden',
+          )}
           style={{
             minWidth: listPanelMinWidth,
             width: listPanelWidth,
@@ -157,16 +160,22 @@ function MicroAppContentRenderer({
           role="separator"
           aria-orientation="vertical"
           aria-label="调整列表宽度"
-          className="group relative z-10 h-full w-1 shrink-0 cursor-col-resize bg-transparent outline-none hover:bg-primary/15 focus-visible:bg-primary/20"
+          className={cn(
+            'group relative z-10 h-full w-1 shrink-0 cursor-col-resize bg-transparent outline-none hover:bg-primary/15 focus-visible:bg-primary/20',
+            layoutConfig?.mobileContentActive !== undefined && 'max-md:hidden',
+          )}
           onPointerDown={handleListResizePointerDown}
           tabIndex={0}
         >
           <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/50 transition-colors group-hover:bg-primary/50" />
         </div>
 
-        <div className="min-w-0 flex-1 overflow-auto">
+        <div className={cn(
+          'min-w-0 flex-1 overflow-auto',
+          layoutConfig?.mobileContentActive === false && 'max-md:hidden',
+        )}>
           <section className="h-full min-w-0 flex bg-layout-content">
-            <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               {!layoutConfig?.hideHeader && (
                 <div className="h-16 flex items-center border-b border-border bg-layout-content">
                   {layoutConfig?.header ? (
@@ -326,7 +335,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
       <div className="flex h-full w-full">
         {/* Leftmost Fixed Application Navigation Sidebar */}
         <aside
-          className="flex h-full flex-col bg-layout-sidebar border-r border-border/50"
+          className="hidden h-full flex-col bg-layout-sidebar border-r border-border/50 md:flex"
           style={{ width: sidebarWidth }}
         >
           {/* Sidebar avatar area - 56px from top to avatar's top edge */}

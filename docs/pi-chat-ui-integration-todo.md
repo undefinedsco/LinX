@@ -146,6 +146,13 @@ Pi / Codex / ChatKit / xpod SSE
 - [x] Follow-up strict Web `build:check` passed (stores typecheck, Web typecheck, production bundle).
 - [x] Pi format-matrix unit coverage passes: interleaved content, streaming identity, text/image tool results, provider/tool/aborted failures and redacted thinking.
 - [x] Deterministic browser format gallery passes in system Chrome at desktop and mobile widths, including expand/collapse interaction, Markdown safety attributes, rich artifacts, runtime states, zero console errors and zero document-level horizontal overflow.
+- [x] The maintained `test:chat` entry now runs both the Pi format matrix and the full authenticated Chat flow instead of the legacy smoke spec.
+- [x] Disposable-xpod Chat E2E creates and enables a provider through the UI, selects its model in ChatKit, sends a real user turn, observes the streamed assistant turn, queries both persisted RDF literals from `/.data/chat/-/sparql`, reloads, and verifies both messages restore.
+- [x] Current-turn provider history includes the accepted user item even before the just-written Pod row is indexed; a regression test also proves it is not duplicated after the index catches up.
+- [x] Assistant writes retain the durable selected Chat scope (`__secretary__`) rather than falling back to the logical `default` thread directory.
+- [x] ChatKit text-delta events use the current `content_index` contract, eliminating the protocol console error during streaming.
+- [x] Mobile Chat switches from the list pane to the active conversation, exposes an explicit back action, and constrains all flex/ChatKit children so message bounding boxes remain inside a 390px viewport.
+- [x] Final Chat suite: 32 files, 222 tests passed. Final Web suite: 117 files, 942 tests passed. Strict production `build:check` passed.
 
 ### Remaining follow-ups
 
@@ -164,6 +171,9 @@ yarn workspace @linx/e2e test:model-services
 
 # Deterministic Pi format and responsive renderer regression in system Chrome.
 yarn workspace @linx/e2e test:message-formats
+
+# Maintained full Chat gate: real local login/xpod persistence plus the Pi format matrix.
+yarn workspace @linx/e2e test:chat
 ```
 
 The local browser command reuses the installed system Chrome, avoiding a separate Playwright browser download; CI keeps the standard Playwright-managed executable. Neither command deletes data from a developer Pod. The isolated runtime is the reset boundary: stopping the test removes its temporary Pod root.
