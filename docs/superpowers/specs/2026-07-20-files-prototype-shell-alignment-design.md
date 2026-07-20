@@ -1,7 +1,7 @@
 # Files Prototype Shell Alignment Design
 
 - Status: Approved
-- Date: 2026-07-20
+- Date: 2026-07-20 (revised 2026-07-20: `.meta` sidebar, folder views, empty states)
 - Scope: `apps/web/src/modules/files`
 - Reference: `apps/prototype/src/files`, Heptabase, Finder, macOS document overlays
 
@@ -19,19 +19,20 @@ Files has three persistent desktop regions:
 2. Resizable resource tree.
 3. Resource workspace.
 
-There is no third persistent preview pane. A compact `.meta` drawer may cover the workspace below the page head when explicitly opened.
+There is no third persistent preview pane. `.meta` lives in a right sidebar that may become a fourth column; **it is collapsed by default** and toggled from the workspace head. It is not an overlay drawer and never covers the workspace.
 
 The resource workspace provides read-only browsing and preview. Full document editing is a modal overlay named `DocumentEditorModal`; it is not a side sheet or an embedded editor.
 
 ## Shell Contract
 
 - The rail, tree head, and workspace head share the same approximately 48px horizontal boundary.
-- The workspace page title is supplied by the selected resource. It must not remain a fixed generic label such as `文件`.
+- The workspace page title is supplied by the selected resource. It must not remain a fixed generic label such as `文件`. The workspace head shows the current resource path beside the title.
 - The resource tree is resizable from 232px to 360px and remembers its width.
+- The tree owns hierarchical navigation and expansion. There is no back button anywhere; the workspace does not add another persistent hierarchy pane.
 - Tree rows are approximately 28px high with consistent icon, disclosure, and text baselines.
 - Row-level favorite and more actions appear only on hover, focus, or selection.
 - Resource actions do not occupy the workspace page head unless they are global application actions.
-- Selection uses one quiet neutral/purple-tinted background. It does not combine a colored fill, outline, and nested selected control.
+- Selection uses one quiet neutral/purple-tinted background. It does not combine a colored fill, outline, and nested selected control. Multi-selection uses the same single background, never fill plus inset outline.
 - Structure is border-led. Page sections and tables are not wrapped in decorative cards.
 
 ## Resource Opening Contract
@@ -39,9 +40,9 @@ The resource workspace provides read-only browsing and preview. Full document ed
 ### Folders
 
 - Single click selects a folder and renders it in the workspace.
-- Folder views use the same `View` concept as structured resources, but expose only `List` and `Grid`.
-- The folder has no `Columns` view.
-- The resource tree owns hierarchical expansion. The workspace does not add another persistent hierarchy pane.
+- Folder views use the same `View` concept as structured resources, but expose only `Table` and `Grid`.
+- `Table` is the sortable column view (name, kind, size, modified, permission). `Grid` is the Finder-style borderless icon tile view. There is no `List` view (it duplicates `Table`) and no `Columns` view.
+- Folder views share the bottom add row with the structured table's add grammar; in `Grid`, the add affordance is the last tile.
 
 ### Ordinary Files
 
@@ -57,7 +58,7 @@ The resource workspace provides read-only browsing and preview. Full document ed
 - TTL/RDF resources render in the workspace rather than a modal.
 - Available projections are `Table`, `Kanban`, `Whiteboard`, and `Raw`.
 - The projection toolbar is one compact row. Existing views appear on the left and a single trailing `+` adds another view.
-- The right side contains compact Class, search, filter, and sort controls. Controls use icons and tooltips where labels are not needed.
+- The right side contains compact Class, search, filter, sort, and column-visibility controls. Controls use icons and tooltips where labels are not needed. The single namespace switch lives inside the column-visibility menu, not as a standalone toolbar control.
 - `Raw` is a normal projection, not a separate oversized command.
 
 ### Subject Links
@@ -80,6 +81,13 @@ The resource workspace provides read-only browsing and preview. Full document ed
   - relation/URL: inline value plus open affordance;
   - enum: one popover containing selected values, search, and create.
 - Pending proposals retain the existing `*` marker and production approval workflow.
+
+## Empty And Guided States
+
+- Every empty state names a specific next action: browse, clear the search, create a document, upload, or add a web page. Plain unexplained text rows are not allowed.
+- An empty structured resource (no class yet) renders a guided state instead of a bare table: create the first class inline from the class menu, then define predicates, then add subjects. For an empty resource the class menu shows only created classes plus the create row; existing unrelated classes are not offered.
+- Denied resources show a centered state with the path, the effective status (for example `403 · authenticated, no read access`), the policy source, and two actions: request access and view the Access source. Authentication failure (401) and authorization failure (403) are distinct states and never trigger token clearing.
+- Retry actions must be real and remain close to the failed content; an error row must never advertise a retry that has no handler.
 
 ## Visual Density
 
@@ -119,20 +127,21 @@ The resource workspace provides read-only browsing and preview. Full document ed
 ## Acceptance Criteria
 
 1. Tree and workspace heads align at approximately 48px.
-2. Tree rows are compact, resizable, and show row actions only contextually.
-3. Folder workspace offers only List and Grid through the shared View grammar.
+2. Tree rows are compact, resizable (232–360px, persisted), and show row actions only contextually.
+3. Folder workspace offers only Table and Grid through the shared View grammar.
 4. Ordinary-file single click shows read-only workspace preview; explicit open/edit shows one centered document modal.
 5. Tree, folder, and subject entry points reuse the same preview and editor implementations.
-6. TTL has one compact toolbar and Table/Kanban/Whiteboard/Raw projections.
+6. TTL has one compact toolbar and Table/Kanban/Whiteboard/Raw projections; the namespace switch lives inside the column-visibility menu.
 7. Table cells retain production type-driven editing and approval behavior with prototype-level density.
 8. Loading keeps layout stable and avoids duplicate blocking reads.
-9. `.meta` stays lazy in workspace previews and appears at the bottom of the document editor.
-10. Desktop and compact browser walkthroughs preserve selection and return context.
+9. `.meta` stays lazy in workspace previews, appears at the bottom of the document editor, and opens as a right sidebar that is collapsed by default.
+10. Empty states always name a next action; an empty structured resource follows the guided create-class flow.
+11. Desktop and compact browser walkthroughs preserve selection and return context.
 
 ## Verification
 
 - Component tests for resource opening decisions and modal reuse.
 - Architecture tests for View-bar and preview/editor ownership boundaries.
 - Interaction tests for tree roving, hover actions, view switching, subject peek, and return context.
-- Visual screenshots at desktop and compact widths for folder, ordinary file, TTL table, Kanban, Whiteboard, Raw, and document modal.
+- Visual screenshots at desktop and compact widths for folder, ordinary file, TTL table, Kanban, Whiteboard, Raw, document modal, empty states, and the empty-structured guided flow.
 - Real Pod walkthrough for cached listing, background refresh, opening, editing, and `.meta`/Access lazy behavior.
