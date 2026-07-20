@@ -81,7 +81,7 @@ Reference roles:
   - Compact login modal, remembered-account continue, account-provider selection, and undefineds-only Cloud/Local data-space selection.
   - Conversation list and chat content pane. Secretary is the immutable first conversation and first-run entry surface.
   - Contact/agent/group detail.
-  - Two-pane file/resource browser: current-folder list/navigation on the left and preview/table/editor workspace on the right. The folder tree is invoked from the list head rather than occupying a permanent third pane.
+  - Files browser: after the global rail, an inline resource tree/list pane stays on the left and the preview/table/editor workspace stays on the right. The tree is part of the list pane, not a third sibling pane; on compact surfaces it collapses into a drawer while keeping one list head.
   - Chat files projection from message `richContent` file/artifact records, not text/log guessing.
   - Favorites/re-entry index.
   - Inbox/approval queue.
@@ -111,9 +111,9 @@ Reference roles:
 ## Files and Personal Linked Context
 
 - Files mental model: File Browser/Finder-like browsing for folders, files, selection, rename/move/copy, preview, keyboard expectations, and permission access; it remains a Pod/Solid resource browser, not a local Finder replacement.
-- Files desktop layout: after the global navigation rail, Files has exactly two persistent panes: a current-folder browser/list and a resource workspace. Folder tree/scope navigation is an invoked popover or drawer from the browser head. Do not compose a Shell list pane around another list/detail split.
+- Files desktop layout: after the global navigation rail, Files has an inline resource tree/list pane and a resource workspace. The tree supports lazy children, search, metadata states, roving keyboard focus, and a visible current path; it is not a third persistent pane. Compact surfaces may present the same tree in a drawer. Do not compose a Shell list pane around another list/detail split.
 - Files visual pass: use Apple/macOS as a restraint lens, not as identity. Keep the head near 48px, search in list/tool headers, right drawers collapsed by default, and controls tucked into icon/menu affordances until the user invokes them.
-- Files navigation: entering a folder changes the browser list and preserves a visible back action plus current path. With no child resource selected, the workspace shows the current folder overview or an actionable empty state; it must not become an unexplained blank pane.
+- Files navigation: the tree owns hierarchical navigation and expansion; there is no back button. The workspace head shows the selected resource's current path. With no child resource selected, the workspace shows the current folder overview or an actionable empty state; it must not become an unexplained blank pane.
 - Files creation/import: the current path is the explicit destination. The add menu uses user-facing operations: create document, create folder, upload files, upload folder, and add web page. Desktop uses the native picker where available; folder upload preserves hierarchy. `Ingest` may describe background/source status in details, but the creation command is `添加网页`, never `创建 Ingest 卡片`.
 - Finder scanning: narrow resource lists keep one dominant name column but retain a compact secondary line for kind/MIME, size, and modified time. Do not offer sorting by facts that are invisible everywhere in the row.
 - Personal Linked Context: user-owned files, conversations, tasks, evidence, decisions, preferences, and memories become linked, AI-usable context. The Pod behaves like a model-defined semantic file system: human-readable files plus queryable RDF semantics.
@@ -129,8 +129,8 @@ Reference roles:
 - Ingest: Ingest is the LinX product pipeline that turns source material into reviewable Files objects: cards, blocks, subjects, predicates, vocab proposals, approvals, and source-linked updates. Lower-level fetch/OCR/parser/extraction belongs to runtime/xpod; UI copy should not expose parser/index as the user-facing product concept.
 - Projections: Table is the default structured view. Kanban, Whiteboard, and Raw are projections over the same subject/resource data and view metadata, not separate durable authorities.
 - Projection implementation: structured tables should use TanStack Table for headless row/column/sort/filter/size/visibility state with LinX-owned UI primitives. Kanban may use dnd-kit for sortable/droppable lanes; Whiteboard starts as a subject-card/relation projection and can evaluate tldraw only when freeform canvas editing becomes a real requirement.
-- Subject opening: table/Kanban/Whiteboard subject clicks preview first; Enter, double-click, or explicit open enters the Files resource opening flow only when the subject resolves to a Pod resource path. Fragment subjects and term targets stay in definition/peek flows unless the user explicitly opens the containing resource.
-- Folder and file detail: folder details are Finder-like list/column/icon browsing with local selection and lightweight preview, not a card wall. Editable Markdown/text files open a focused sheet/modal with Tiptap/ProseMirror rich editing, raw source switch, and `.meta` in the bottom tail; folder/file/structured page context keeps `.meta` in the right drawer.
+- Subject opening: table/Kanban/Whiteboard subject clicks open a read-only preview first; Enter, double-click, or an explicit open action enters the Files resource opening flow only when the subject resolves to a Pod resource path. Fragment subjects and term targets stay in definition/peek flows unless the user explicitly opens the containing resource.
+- Folder and file detail: folder details offer a sortable `Table` projection and a Finder-style borderless `Grid` projection over the current folder, not a card wall; the add affordance is the final row or last tile. Editable Markdown/text files open a focused sheet/modal only through an explicit edit/open action, with Tiptap/ProseMirror rich editing, raw source switch, and `.meta` in the bottom tail; folder/file/structured page context keeps `.meta` in a right sidebar that is collapsed by default.
 - Editor session safety: the rich editor exposes one content H1; file identity stays in sheet chrome and metadata stays in the bottom tail. Formatting chrome is hidden until focus/selection. Rich and raw modes share one dirty/saving/discard session, so close or mode switches cannot silently drop drafts or race an in-flight save.
 - Access hierarchy: current effective access and the active ACL/ACR source appear before the change request. Full policy URIs, candidates, and maintenance actions remain in collapsed technical details.
 - Chat files: the `聊天文件` scope consumes chat message `richContent` file blocks and explicit runtime artifact containers (`artifacts`, `files`, `generatedFiles`, `outputs`, `resources`, `attachments`). It is reached through the single Files entry or a contextual chat action, not a duplicate folder icon in the global rail. Files must not infer generated files by regexing stdout, assistant prose, tool names, or local workspace paths.
@@ -200,7 +200,7 @@ Reference roles:
   - All navigation, dialogs, provider choices, chat controls, file rows, table cells, drawers, and approval cards must be keyboard reachable.
   - Focus states use a visible, restrained accent ring.
   - Back/cancel/switch-account actions must remain available during provider selection, Local preparation, and auth handoff.
-  - Files table subjects support preview on selection and explicit open through Enter/double-click/open action.
+  - Files explorer rows use roving focus: Arrow keys move selection and DOM focus, Enter opens, Space selects, and Escape clears selection. Table subjects support read-only preview first and explicit open through Enter/double-click/open action.
   - Long-running AI work has an interrupt affordance and visible waiting state.
 - Contrast/readability:
   - Text and status indicators must meet contrast requirements in light and dark modes.
