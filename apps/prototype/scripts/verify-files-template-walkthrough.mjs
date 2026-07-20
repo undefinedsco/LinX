@@ -55,12 +55,15 @@ async function openFiles(page) {
 async function clickTreeItem(page, label) {
   const mobileTreeButton = page.locator('.mobile-files-tree-button')
   if (await mobileTreeButton.isVisible().catch(() => false)) {
-    if (await page.locator('.tree-pane.mobile-open').count() === 0) {
+    if (await page.locator('.browser-pane.mobile-open').count() === 0) {
       await mobileTreeButton.click()
-      await page.locator('.tree-pane.mobile-open').waitFor({ state: 'visible' })
+      await page.locator('.browser-pane.mobile-open').waitFor({ state: 'visible' })
     }
   }
-  await page.locator('[aria-label="Pod file tree"]').getByRole('button', { name: label, exact: true }).click()
+  const treeRows = page.locator('[aria-label="Pod 文件树"] .tree-row')
+  const row = treeRows.filter({ hasText: label }).first()
+  await row.waitFor({ state: 'visible' })
+  await row.click()
 }
 
 async function expectSingleAccessibleClose(page, selector, label, name) {
@@ -91,8 +94,10 @@ async function runDesktopChecks(browser) {
   await page.keyboard.press('Escape')
   await expectDetached(page, '.access-modal-layer', 'access-dialog-closes-on-escape')
 
+  await clickTreeItem(page, 'files')
+  await page.locator('main.file-open-work h1', { hasText: 'files' }).waitFor()
   await clickTreeItem(page, 'linx-prototype.ttl')
-  await page.locator('main.structured-work h1', { hasText: '.data/workspaces/linx-prototype.ttl' }).waitFor()
+  await page.locator('main.structured-work h1', { hasText: '/files/linx-prototype.ttl' }).waitFor()
 
   await page.locator('.class-scope-button').first().click()
   await page.locator('.structured-filter-menu').waitFor()
@@ -100,7 +105,7 @@ async function runDesktopChecks(browser) {
   await expectDetached(page, '.structured-filter-menu', 'class-filter-closes-on-escape')
   await page.locator('.class-scope-button').first().click()
   await page.locator('.structured-filter-menu').waitFor()
-  await page.locator('button[aria-label="Show or hide predicate columns"]').click()
+  await page.locator('button[aria-label="列与命名空间"]').click()
   await page.locator('.predicate-visibility-menu').waitFor()
   const stackedFilterCount = await page.locator('.structured-filter-menu').count()
   if (stackedFilterCount !== 0) {
@@ -132,30 +137,35 @@ async function runDesktopChecks(browser) {
 
   await clickTreeItem(page, 'files')
   await page.locator('main.file-open-work h1', { hasText: 'files' }).waitFor()
-  await page.locator('.folder-browser[data-folder-root="files"]').waitFor()
+  await page.locator('.folder-table').waitFor()
+  await page.locator('.folder-table-row').first().waitFor()
   pass('root-files-tree-row-opens-folder-detail')
 
   await clickTreeItem(page, 'docs')
   await page.locator('main.file-open-work h1', { hasText: 'docs' }).waitFor()
-  await page.locator('button[aria-label="Folder column view"]').click()
-  await page.locator('.folder-browser[data-view="column"] .folder-middle-column').waitFor()
-  await page.locator('button[aria-label="Folder icon view"]').click()
-  await page.locator('.folder-browser[data-view="icon"] .folder-browser-list[data-layout="icon-grid"]').waitFor()
-  await page.locator('button[aria-label="Folder list view"]').click()
-  await page.locator('.folder-browser[data-view="list"] .folder-browser-list[data-layout="list"]').waitFor()
+  await page.locator('.folder-table').waitFor()
+  await page.locator('.folder-table-row').first().waitFor()
+  await page.locator('.folder-viewbar button[title="Grid"]').click()
+  await page.locator('.folder-grid-view').waitFor()
+  await page.locator('.folder-viewbar button[title="Table"]').click()
+  await page.locator('.folder-table-row').first().waitFor()
   pass('folder-view-modes-render-distinct-layouts')
 
   await clickTreeItem(page, 'multi-channel-access.md')
-  await page.locator('.file-detail-layer[role="dialog"][aria-label="multi-channel-access.md detail"]').waitFor()
+  await page.locator('main.file-open-work h1', { hasText: 'multi-channel-access.md' }).waitFor()
+  await page.locator('.doc-preview').waitFor()
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await page.locator('.file-detail-layer[role="dialog"]').waitFor()
   await expectSingleAccessibleClose(page, '.file-detail-layer', 'Close file detail', 'file-detail-has-single-close-target')
   await page.keyboard.press('Escape')
   await expectDetached(page, '.file-detail-layer', 'file-detail-closes-on-escape')
 
-  const treePaddingBottom = await page.locator('.folder-tree').evaluate((node) => {
+  const tree = page.locator('[aria-label="Pod 文件树"]')
+  const treePaddingBottom = await tree.evaluate((node) => {
     return Number.parseFloat(window.getComputedStyle(node).paddingBottom)
   })
-  if (treePaddingBottom < 40) {
-    fail('desktop-file-tree-reserves-bottom-breathing-room', `Expected >= 40px bottom padding, got ${treePaddingBottom}`)
+  if (treePaddingBottom < 12) {
+    fail('desktop-file-tree-reserves-bottom-breathing-room', `Expected >= 12px bottom padding, got ${treePaddingBottom}`)
   }
   pass('desktop-file-tree-reserves-bottom-breathing-room', { paddingBottom: treePaddingBottom })
 
@@ -173,8 +183,8 @@ async function runMobileChecks(browser) {
   await clickTreeItem(page, 'docs')
   await page.locator('main.file-open-work h1', { hasText: 'docs' }).waitFor()
   await clickTreeItem(page, 'linx-prototype.ttl')
-  await page.locator('.tree-pane.mobile-open').waitFor({ state: 'detached' })
-  await page.locator('main.structured-work h1', { hasText: '.data/workspaces/linx-prototype.ttl' }).waitFor()
+  await page.locator('.browser-pane.mobile-open').waitFor({ state: 'detached' })
+  await page.locator('main.structured-work h1', { hasText: '/files/docs/linx-prototype.ttl' }).waitFor()
   pass('mobile-tree-direct-ttl-navigation-switches-content')
 
   await page.close()

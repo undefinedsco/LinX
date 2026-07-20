@@ -72,6 +72,7 @@ type SettingsSection = 'general' | 'models' | 'runtime' | 'network' | 'about'
 type FavoriteTab = '全部' | '消息' | '文件' | '链接' | '联系人'
 const FILE_CONTENTS_STORAGE_KEY = 'linx.prototype.files.fileContentsByPath'
 const FILE_PROPERTIES_STORAGE_KEY = 'linx.prototype.files.filePropertiesByPath'
+const LIST_WIDTH_STORAGE_KEY = 'linx.prototype.shell.listWidth'
 
 interface NavItem {
   id: ModuleId
@@ -1735,7 +1736,7 @@ function ModuleSurface({
 
 function PrototypeApp() {
   const [activeModule, setActiveModule] = useState<ModuleId>('chat')
-  const [listWidth, setListWidth] = useState(272)
+  const [listWidth, setListWidth] = useState(() => readPrototypeStorage<number>(LIST_WIDTH_STORAGE_KEY, 272))
   const [selectedChat, setSelectedChat] = useState('secretary')
   const [selectedFavorite, setSelectedFavorite] = useState<ListItem | null>(null)
   const [favoriteTab, setFavoriteTab] = useState<FavoriteTab>('全部')
@@ -1779,6 +1780,10 @@ function PrototypeApp() {
     writePrototypeStorage(FILE_PROPERTIES_STORAGE_KEY, filePropertiesByPath)
   }, [filePropertiesByPath])
 
+  useEffect(() => {
+    writePrototypeStorage(LIST_WIDTH_STORAGE_KEY, listWidth)
+  }, [listWidth])
+
   const changeFileContent = (path: string, content: StoredFileContent) => {
     setFileContentsByPath((current) => ({ ...current, [path]: content }))
   }
@@ -1815,7 +1820,7 @@ function PrototypeApp() {
     const splitter = event.currentTarget
     splitter.classList.add('dragging')
     const onMove = (moveEvent: MouseEvent) => {
-      setListWidth(Math.min(480, Math.max(232, startWidth + moveEvent.clientX - startX)))
+      setListWidth(Math.min(360, Math.max(232, startWidth + moveEvent.clientX - startX)))
     }
     const onUp = () => {
       splitter.classList.remove('dragging')
