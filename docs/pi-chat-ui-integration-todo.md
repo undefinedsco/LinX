@@ -61,6 +61,7 @@ Pi / Codex / ChatKit / xpod SSE
 - [ ] Add an xpod SSE adapter for user, assistant delta, completion and error events.
 - [ ] Add a ChatKit thread-item adapter.
 - [ ] Add a Pi runtime event adapter without importing Pi UI or storage.
+- [x] Add the provider-neutral Pi message-content adapter for user text/images, assistant text/thinking/tool calls, tool results and terminal errors.
 - [ ] Ensure every adapter preserves stable Pod message ids after optimistic rendering.
 - [ ] Consolidate duplicated streaming state from `LocalChatPanel` and custom message surfaces.
 
@@ -83,12 +84,13 @@ Pi / Codex / ChatKit / xpod SSE
 
 ### Unit and component
 
-- Renderer registration, override and unregister behavior.
-- Unknown block fallback without crashing the full message.
-- Block ordering remains stable for equal timestamps.
-- Streaming updates do not duplicate blocks.
+- [x] Renderer registration, override and unregister behavior.
+- [x] Unknown block fallback without crashing the full message.
+- [x] Pi content-part ordering remains stable and block ids are deterministic.
+- [x] Streaming updates preserve block identities and do not duplicate blocks.
 - Tool and approval callbacks receive the correct call id.
 - Image/File/Citation content is escaped and safe.
+- [x] Pi user/assistant/tool-result text, image, thinking, redacted thinking, tool call, success, failure, provider error and aborted formats map to LinX blocks.
 
 ### Integration
 
@@ -142,6 +144,8 @@ Pi / Codex / ChatKit / xpod SSE
 - [x] Follow-up full Web suite: 115 files, 935 tests passed after Thread composer preference coverage.
 - [x] Disposable model-service E2E passed in system Chrome: fresh local login, real seeded xpod, mocked deterministic provider catalog, real provider/credential/model writes, full reload/re-auth, and persisted provider/model restore.
 - [x] Follow-up strict Web `build:check` passed (stores typecheck, Web typecheck, production bundle).
+- [x] Pi format-matrix unit coverage passes: interleaved content, streaming identity, text/image tool results, provider/tool/aborted failures and redacted thinking.
+- [x] Deterministic browser format gallery passes in system Chrome at desktop and mobile widths, including expand/collapse interaction, Markdown safety attributes, rich artifacts, runtime states, zero console errors and zero document-level horizontal overflow.
 
 ### Remaining follow-ups
 
@@ -157,6 +161,9 @@ yarn test:xpod:model-services
 
 # Browser login/bootstrap flow against an isolated seeded xpod.
 yarn workspace @linx/e2e test:model-services
+
+# Deterministic Pi format and responsive renderer regression in system Chrome.
+yarn workspace @linx/e2e test:message-formats
 ```
 
 The local browser command reuses the installed system Chrome, avoiding a separate Playwright browser download; CI keeps the standard Playwright-managed executable. Neither command deletes data from a developer Pod. The isolated runtime is the reset boundary: stopping the test removes its temporary Pod root.

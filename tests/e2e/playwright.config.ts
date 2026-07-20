@@ -5,6 +5,8 @@ const systemChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google 
 const chromiumExecutablePath = process.env.LINX_E2E_USE_SYSTEM_CHROME === '1' && existsSync(systemChromePath)
   ? systemChromePath
   : undefined
+const e2ePort = process.env.LINX_E2E_PORT ?? '5173'
+const e2eBaseUrl = `http://localhost:${e2ePort}`
 
 /**
  * Playwright E2E Test Configuration
@@ -38,7 +40,7 @@ export default defineConfig({
   /* Shared settings for all the projects below */
   use: {
     /* Base URL to use in actions like `await page.goto('/')` */
-    baseURL: 'http://localhost:5173',
+    baseURL: e2eBaseUrl,
 
     /* Collect trace when retrying the failed test */
     trace: 'on-first-retry',
@@ -69,8 +71,8 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'cd ../../ && yarn dev:web',
-    url: 'http://localhost:5173',
+    command: `cd ../../ && yarn workspace @linx/web dev --port ${e2ePort}`,
+    url: e2eBaseUrl,
     reuseExistingServer: true,
     timeout: 120 * 1000,
     stdout: 'pipe',
