@@ -245,3 +245,115 @@ describe('Files app shell architecture boundary', () => {
     }
   })
 })
+
+const layoutConfigBridgePath = 'src/modules/files/app/FilesLayoutConfigBridge.tsx'
+const explorerRowPath = 'src/modules/files/ui/FilesExplorerRow.tsx'
+const explorerControllerPath = 'src/modules/files/features/list/useFilesExplorerController.ts'
+const folderDetailModelPath = 'src/modules/files/domain/folder/folder-detail-model.ts'
+const folderDetailPreviewPath = 'src/modules/files/features/folder/FolderDetailPreview.tsx'
+const documentEditorModalPath = 'src/modules/files/features/editor/DocumentEditorModal.tsx'
+const fileEditorSheetPath = 'src/modules/files/features/editor/FileEditorSheet.tsx'
+const filesEmptyStatePath = 'src/modules/files/ui/FilesEmptyState.tsx'
+const structuredToolbarPath = 'src/modules/files/features/structured/StructuredResourceToolbar.tsx'
+const metaDrawerPath = 'src/modules/files/features/sidecars/ResourceSidecars.tsx'
+
+describe('Files shell alignment contract (2026-07-20 design)', () => {
+  it('clamps the resource tree width to 232-360px and persists it', () => {
+    expect(existsSync(layoutConfigBridgePath)).toBe(true)
+    if (!existsSync(layoutConfigBridgePath)) return
+
+    const source = readFileSync(layoutConfigBridgePath, 'utf8')
+
+    expect(source, 'tree width lower bound must be 232px').toContain('232')
+    expect(source, 'tree width upper bound must be 360px').toContain('360')
+    expect(source, 'tree width must persist across reloads').toMatch(/localStorage|persist|storage/i)
+  })
+
+  it('shows tree row actions only on hover, focus, menu-open, or selected state', () => {
+    expect(existsSync(explorerRowPath)).toBe(true)
+    if (!existsSync(explorerRowPath)) return
+
+    const source = readFileSync(explorerRowPath, 'utf8')
+
+    expect(source, 'row actions must be hidden until hover/focus/selected').toMatch(/group-hover|focus-within/)
+  })
+
+  it('uses one quiet selected background for tree rows, never fill plus inset outline', () => {
+    expect(existsSync(explorerRowPath)).toBe(true)
+    if (!existsSync(explorerRowPath)) return
+
+    const source = readFileSync(explorerRowPath, 'utf8')
+
+    expect(source, 'selected rows must not combine a fill with an inset outline').not.toMatch(/ring-inset|shadow-\[inset/)
+  })
+
+  it('moves DOM focus with arrow-key selection in the resource tree (roving focus)', () => {
+    expect(existsSync(explorerControllerPath)).toBe(true)
+    if (!existsSync(explorerControllerPath)) return
+
+    const source = readFileSync(explorerControllerPath, 'utf8')
+    const arrowBranch = source.match(/Arrow(?:Up|Down)[\s\S]{0,600}/)?.[0] ?? ''
+
+    expect(arrowBranch, 'arrow-key selection must also move DOM focus to the target row').toMatch(/\.focus\(\)/)
+  })
+
+  it('keeps folder projections to Table and Grid only, with no Columns view', () => {
+    expect(existsSync(folderDetailModelPath)).toBe(true)
+    if (!existsSync(folderDetailModelPath)) return
+
+    const modelSource = readFileSync(folderDetailModelPath, 'utf8')
+    const previewSource = existsSync(folderDetailPreviewPath) ? readFileSync(folderDetailPreviewPath, 'utf8') : ''
+
+    expect(modelSource, 'folder view modes must not include columns').not.toMatch(/'columns'|"columns"/)
+    expect(previewSource, 'folder workspace must not render a Columns view').not.toContain('FolderDetailColumnView')
+  })
+
+  it('owns ordinary-file editing in one centered DocumentEditorModal and delegates the legacy sheet', () => {
+    expect(existsSync(documentEditorModalPath), 'DocumentEditorModal must exist as the single ordinary-file editing surface').toBe(true)
+    expect(existsSync(fileEditorSheetPath)).toBe(true)
+    if (!existsSync(fileEditorSheetPath)) return
+
+    const sheetSource = readFileSync(fileEditorSheetPath, 'utf8')
+
+    expect(sheetSource, 'legacy FileEditorSheet must delegate to DocumentEditorModal instead of keeping its own editor markup').toContain('DocumentEditorModal')
+  })
+
+  it('opens .meta as a right sidebar that is collapsed by default, never an overlay covering the workspace', () => {
+    expect(existsSync(metaDrawerPath)).toBe(true)
+    if (!existsSync(metaDrawerPath)) return
+
+    const source = readFileSync(metaDrawerPath, 'utf8')
+
+    expect(source, '.meta surface must default to collapsed').toMatch(/defaultOpen\s*=\s*false|collapsed.*default|useState\(false\)/)
+  })
+
+  it('gives every empty state a concrete next action slot', () => {
+    expect(existsSync(filesEmptyStatePath)).toBe(true)
+    if (!existsSync(filesEmptyStatePath)) return
+
+    const source = readFileSync(filesEmptyStatePath, 'utf8')
+
+    expect(source, 'FilesEmptyState must accept an action so empty states are actionable').toMatch(/action\??:/)
+  })
+
+  it('wires the namespace switch and column visibility inside the structured toolbar column menu', () => {
+    expect(existsSync(structuredToolbarPath)).toBe(true)
+    if (!existsSync(structuredToolbarPath)) return
+
+    const source = readFileSync(structuredToolbarPath, 'utf8')
+
+    expect(source, 'namespace change handler must be wired, not discarded').not.toMatch(/onShowNamespacesChange\s*[=,]\s*_\b/)
+    expect(source, 'column visibility handler must be wired, not discarded').not.toMatch(/onTogglePredicateVisibility\s*[=,]\s*_\b/)
+    expect(source, 'namespace switch must not be a standalone toolbar control').not.toContain('namespace-switch')
+  })
+
+  it('shows the current resource path in the workspace head without a back button', () => {
+    expect(existsSync(folderDetailPreviewPath)).toBe(true)
+    if (!existsSync(folderDetailPreviewPath)) return
+
+    const source = readFileSync(folderDetailPreviewPath, 'utf8')
+
+    expect(source, 'folder workspace must not render a back button; the tree owns navigation').not.toMatch(/goBackFolder|返回|aria-label="back"/i)
+    expect(source, 'folder workspace head should show the current path').toMatch(/path|Path/)
+  })
+})
