@@ -23,6 +23,7 @@ const mockUseWorkspaceList = vi.fn()
 const mockUseChatList = vi.fn()
 const mockUseThreadList = vi.fn()
 const mockUseDefaultSecretaryBootstrapSettling = vi.fn()
+const mockUseModelServices = vi.fn()
 const mockClearMessageAnchor = vi.fn()
 const mockRuntimeEventHandler = { current: null as ((event: unknown) => void) | null }
 
@@ -78,6 +79,10 @@ vi.mock('@/modules/inbox/store', () => ({
     }),
 }))
 
+vi.mock('@/modules/model-services/hooks/useModelServices', () => ({
+  useModelServices: () => mockUseModelServices(),
+}))
+
 vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({
     db: {},
@@ -112,6 +117,7 @@ vi.mock('../collections', () => ({
   useLinxDefaultSecretaryBootstrapSettling: () => mockUseDefaultSecretaryBootstrapSettling(),
   LINX_DEFAULT_SECRETARY: {
     chatId: '__secretary__/index.ttl#this',
+    threadKey: '__default__',
     threadTitle: '默认话题',
   },
 }))
@@ -144,6 +150,7 @@ describe('ChatContentPane', () => {
       isLoading: false,
     })
     mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(false)
+    mockUseModelServices.mockReturnValue({ providers: {} })
     mockUseRuntimeSession.mockReturnValue({
       runtimeSession: null,
       refetch: vi.fn(),
@@ -191,6 +198,57 @@ describe('ChatContentPane', () => {
     )
   })
 
+  it('exposes configured provider models with an unambiguous transport id', () => {
+    mockUseModelServices.mockReturnValue({
+      providers: {
+        timecc: {
+          id: 'timecc',
+          name: 'TimeCC',
+          enabled: true,
+          models: [{ id: 'gpt-5.5', name: 'GPT-5.5', enabled: true }],
+        },
+      },
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(mockUseChatKit).toHaveBeenCalledWith(expect.objectContaining({
+      composer: expect.objectContaining({
+        models: expect.arrayContaining([
+          expect.objectContaining({ id: 'timecc::gpt-5.5', label: 'TimeCC / GPT-5.5' }),
+        ]),
+      }),
+    }))
+  })
+
+  it('restores the Thread provider model as the ChatKit composer default', () => {
+    mockUseModelServices.mockReturnValue({
+      providers: {
+        timecc: {
+          id: 'timecc',
+          name: 'TimeCC',
+          enabled: true,
+          models: [{ id: 'gpt-5.5', name: 'GPT-5.5', enabled: true }],
+        },
+      },
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [{ id: 'thread-1', metadata: { linxComposerModel: 'timecc::gpt-5.5' } }],
+      isLoading: false,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(mockUseChatKit).toHaveBeenCalledWith(expect.objectContaining({
+      composer: expect.objectContaining({
+        models: expect.arrayContaining([
+          expect.objectContaining({ id: 'timecc::gpt-5.5', default: true }),
+          expect.objectContaining({ id: 'linx-lite', default: false }),
+        ]),
+      }),
+    }))
+  })
+
   it('creates an initial Secretary thread immediately when bootstrap is pending but the thread list is ready', async () => {
     storeState.selectedChatId = '__secretary__/index.ttl#this'
     storeState.selectedThreadId = null
@@ -211,7 +269,29 @@ describe('ChatContentPane', () => {
     expect(mockMutations.createThread.mutate.mock.calls[0][0]).toEqual({
       chatId: '__secretary__/index.ttl#this',
       optimistic: true,
+      threadId: '__default__',
       title: '默认话题',
+    })
+  })
+
+  it('reselects the canonical Secretary thread instead of an older duplicate', async () => {
+    storeState.selectedChatId = '__secretary__/index.ttl#this'
+    storeState.selectedThreadId = 'legacy-thread'
+    mockUseChatList.mockReturnValue({
+      data: [{ id: '__secretary__/index.ttl#this', title: 'AI Secretary' }],
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [
+        { id: 'legacy-thread', title: '默认话题' },
+        { id: '__default__', title: '默认话题' },
+      ],
+      isLoading: false,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => {
+      expect(storeState.selectThread).toHaveBeenCalledWith('__default__')
     })
   })
 
@@ -241,6 +321,7 @@ describe('ChatContentPane', () => {
       expect(mockMutations.createThread.mutate.mock.calls[0][0]).toEqual({
         chatId: '__secretary__/index.ttl#this',
         optimistic: true,
+        threadId: '__default__',
         title: '默认话题',
       })
     } finally {

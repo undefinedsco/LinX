@@ -46,6 +46,7 @@ import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
 import { sendMatrixThreadMessage } from '../../matrix-service'
+import { withThreadComposerModel } from '../../composer-model-preference'
 import {
   DEFAULT_AGENT_AI_RUNTIME_LOCATION,
   readAgentAiRuntimeLocation,
@@ -146,6 +147,15 @@ function normalizePlatformRuntimeModel(value: unknown): 'linx-lite' | 'linx' | n
   }
 
   return null
+}
+
+function parseRequestedProviderModel(value: unknown): { provider: string; model: string } | null {
+  if (typeof value !== 'string') return null
+  const separator = value.indexOf('::')
+  if (separator <= 0 || separator >= value.length - 2) return null
+  const provider = normalizeAIConfigProviderId(value.slice(0, separator))
+  const model = normalizeAIConfigResourceId(value.slice(separator + 2))
+  return provider && model ? { provider, model } : null
 }
 
 type RuntimeThreadEvent =
@@ -300,6 +310,12 @@ export class LocalChatKitService {
       await this.store.addThreadItem(threadId, userMessage, context)
       yield { type: 'thread.item.added', item: userMessage }
       yield { type: 'thread.item.done', item: userMessage }
+      const nextMetadata = withThreadComposerModel(thread.metadata, params.input.inference_options?.model)
+      if (nextMetadata !== thread.metadata) {
+        thread.metadata = nextMetadata
+        thread.updated_at = nowTimestamp()
+        await this.store.saveThread(thread, context)
+      }
       yield* this.respond(thread, userMessage, context, params.input.inference_options)
     }
   }
@@ -319,6 +335,12 @@ export class LocalChatKitService {
     await this.store.addThreadItem(params.thread_id, userMessage, context)
     yield { type: 'thread.item.added', item: userMessage }
     yield { type: 'thread.item.done', item: userMessage }
+    const nextMetadata = withThreadComposerModel(thread.metadata, params.input.inference_options?.model)
+    if (nextMetadata !== thread.metadata) {
+      thread.metadata = nextMetadata
+      thread.updated_at = nowTimestamp()
+      await this.store.saveThread(thread, context)
+    }
     yield* this.respond(thread, userMessage, context, params.input.inference_options)
   }
 
@@ -457,7 +479,10 @@ export class LocalChatKitService {
         }
       } else {
         const agentConfig = await this.resolveThreadAgentConfig(thread)
-        const platformModel = this.resolvePlatformModel(agentConfig, inferenceOptions?.model)
+        const requestedProviderModel = parseRequestedProviderModel(inferenceOptions?.model)
+        const platformModel = requestedProviderModel
+          ? null
+          : this.resolvePlatformModel(agentConfig, inferenceOptions?.model)
 
         if (platformModel) {
           const stream = this.streamFromLinxRuntime(
@@ -487,7 +512,7 @@ export class LocalChatKitService {
           return
         }
 
-        const aiConfig = await this.getAiConfig(agentConfig?.provider)
+        const aiConfig = await this.getAiConfig(requestedProviderModel?.provider ?? agentConfig?.provider)
         if (!aiConfig) {
           assistantItem.content = [{ type: 'output_text', text: '请先在设置中配置 AI API Key。', annotations: [] }]
           assistantItem.status = 'completed'
@@ -496,7 +521,11 @@ export class LocalChatKitService {
           return
         }
 
-        const model = inferenceOptions?.model ?? agentConfig?.model ?? aiConfig.defaultModel ?? 'openai/gpt-4o-mini'
+        const model = requestedProviderModel?.model
+          ?? inferenceOptions?.model
+          ?? agentConfig?.model
+          ?? aiConfig.defaultModel
+          ?? 'openai/gpt-4o-mini'
         const stream = this.streamFromProvider(aiConfig, messages, model, inferenceOptions)
 
         for await (const chunk of stream) {
@@ -1018,19 +1047,27 @@ export class LocalChatKitService {
   }
 
   private async findChatById(chatId: string): Promise<any | null> {
-    const direct = await (this.db as any).findById?.(chatResource as any, chatId)
-    if (direct) return direct
+    const findById = (this.db as any).findById
+    if (typeof findById !== 'function') return null
 
-    const chats = await this.db.select().from(chatResource).execute()
-    return chats.find((entry: any) => entry.id === chatId) ?? null
+    // Chat ids in Thread metadata are logical keys. Resolve the deterministic
+    // base-relative resource id before reading it. A Pod-wide fallback scan can
+    // dereference foreign Chat IRIs retained in historical data and turn one
+    // inaccessible row into a failure for the active local chat.
+    return await findById.call(
+      this.db,
+      chatResource as any,
+      chatResource.buildId({ id: chatId }),
+    )
   }
 
   private resolvePlatformModel(agentConfig: ThreadAgentConfig | null, requestedModel?: unknown): string | null {
-    if (!agentConfig || agentConfig.provider !== 'undefineds') {
-      return null
-    }
+    const requestedPlatformModel = normalizePlatformRuntimeModel(requestedModel)
+    if (requestedPlatformModel) return requestedPlatformModel
 
-    return normalizePlatformRuntimeModel(requestedModel) ?? normalizePlatformRuntimeModel(agentConfig.model)
+    if (!agentConfig || agentConfig.provider !== 'undefineds') return null
+
+    return normalizePlatformRuntimeModel(agentConfig.model)
   }
 
   private resolveRuntimeBaseUrl(): string {

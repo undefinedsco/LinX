@@ -7,7 +7,7 @@
 
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
-import { MessageBlockRenderer } from '..'
+import { MessageBlockRenderer, registerMessageBlockRenderer } from '..'
 import { MessageBlockType, MessageBlockStatus } from '../../message-blocks'
 import type { MessageBlock } from '../../message-blocks'
 
@@ -54,7 +54,7 @@ function createBlock(type: MessageBlockType, extra = {}): MessageBlock {
     case MessageBlockType.TASK_PROGRESS:
       return {
         ...base, type,
-        taskId: 'task-1', title: 'Deploying',
+        task: 'task-1', taskId: 'task-1', title: 'Deploying',
         steps: [
           { id: 's1', label: 'Build', status: 'done' as const },
           { id: 's2', label: 'Deploy', status: 'running' as const },
@@ -69,6 +69,22 @@ function createBlock(type: MessageBlockType, extra = {}): MessageBlock {
         message: 'Something went wrong',
         retryable: true,
         ...extra,
+      } as MessageBlock
+    case MessageBlockType.IMAGE:
+      return { ...base, type, url: 'https://example.com/image.png' } as MessageBlock
+    case MessageBlockType.FILE:
+      return {
+        ...base, type,
+        fileName: 'report.pdf', fileUrl: 'https://example.com/report.pdf',
+        fileSize: 2048, mimeType: 'application/pdf',
+      } as MessageBlock
+    case MessageBlockType.CITATION:
+      return {
+        ...base, type,
+        webSearch: {
+          query: 'LinX',
+          results: [{ title: 'LinX source', url: 'https://example.com/linx', snippet: 'Source summary' }],
+        },
       } as MessageBlock
     default:
       return { ...base, type: MessageBlockType.UNKNOWN } as MessageBlock
@@ -156,15 +172,50 @@ describe('MessageBlockRenderer — block dispatch', () => {
     expect(container).toBeTruthy()
   })
 
-  it('skips unknown block types gracefully', () => {
-    const blocks = [
+  it('renders image, file and citation blocks without dropping rich content', () => {
+    render(<MessageBlockRenderer blocks={[
       createBlock(MessageBlockType.IMAGE),
-      createBlock(MessageBlockType.MAIN_TEXT),
-    ]
+      createBlock(MessageBlockType.FILE),
+      createBlock(MessageBlockType.CITATION),
+    ]} role="assistant" />)
 
-    render(<MessageBlockRenderer blocks={blocks} role="assistant" />)
+    expect(screen.getByRole('img', { name: '消息图片' })).toHaveAttribute('src', 'https://example.com/image.png')
+    expect(screen.getByRole('link', { name: /report.pdf/ })).toHaveAttribute('rel', 'noreferrer noopener')
+    expect(screen.getByRole('link', { name: /LinX source/ })).toHaveAttribute('target', '_blank')
+    expect(screen.getByText('Source summary')).toBeInTheDocument()
+  })
 
-    // IMAGE is skipped, MAIN_TEXT renders
-    expect(screen.getByText('Hello world')).toBeInTheDocument()
+  it('allows a runtime adapter to override and restore a renderer', () => {
+    const unregister = registerMessageBlockRenderer(MessageBlockType.IMAGE, (block) => (
+      <div data-testid="custom-image">{block.id}</div>
+    ))
+
+    const image = createBlock(MessageBlockType.IMAGE)
+    const first = render(<MessageBlockRenderer blocks={[image]} role="assistant" />)
+    expect(screen.getByTestId('custom-image')).toHaveTextContent(image.id)
+
+    first.unmount()
+    unregister()
+
+    render(<MessageBlockRenderer blocks={[image]} role="assistant" />)
+    expect(screen.queryByTestId('custom-image')).not.toBeInTheDocument()
+  })
+
+  it('drops unsafe rich-content URLs', () => {
+    const unsafeImage = { ...createBlock(MessageBlockType.IMAGE), url: 'javascript:alert(1)' } as MessageBlock
+    const unsafeFile = { ...createBlock(MessageBlockType.FILE), fileUrl: 'javascript:alert(1)' } as MessageBlock
+    const unsafeCitation = {
+      ...createBlock(MessageBlockType.CITATION),
+      webSearch: {
+        query: 'unsafe',
+        results: [{ title: 'Unsafe source', url: 'javascript:alert(1)' }],
+      },
+    } as MessageBlock
+
+    render(<MessageBlockRenderer blocks={[unsafeImage, unsafeFile, unsafeCitation]} role="assistant" />)
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unsafe source')).not.toBeInTheDocument()
   })
 })

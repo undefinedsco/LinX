@@ -31,6 +31,7 @@ import { requireRowResourceId } from '@/lib/data/resource-identity'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime/chat-reconciler'
+import { queryMessageRowsForChat } from '../../message-query'
 
 const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
@@ -173,6 +174,14 @@ function buildChatIri(db: SolidDatabase<any>, chatId: string): string {
 }
 
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
+  // ChatKit receives the durable base-relative resource id from the Web store.
+  // Resolve it directly before considering collection queries; otherwise a
+  // reload turns one exact lookup into a Pod-wide Thread scan.
+  if (threadId.includes('/') && threadId.includes('#')) {
+    const direct = await (db as any).findById(Thread as any, threadId)
+    if (direct) return direct
+  }
+
   if (chatId) {
     const exactId = threadRepository.idForChat(chatId, threadId)
     const exact = await (db as any).findById(Thread as any, exactId)
@@ -314,6 +323,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private threadMetadataCache = new Map<string, ThreadMetadata>()
   private threadItemsCache = new Map<string, ThreadItem[]>()
   private messageRowIdByItemId = new Map<string, string>()
+  private messageIriByItemId = new Map<string, string>()
 
   constructor(db: SolidDatabase, webId: string, authFetch: typeof fetch) {
     this.db = db
@@ -417,15 +427,18 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   private async selectMessagesForThread(threadId: string): Promise<any[]> {
     const chatId = await this.getThreadChatId(threadId)
+    const chatRef = this.buildChatUri(chatId)
+    const threadRef = this.buildThreadUri(chatId, threadId)
+    const threadKey = extractThreadId(threadId) ?? threadId
     const messages = await withTimeout(
-      this.db.select().from(Message).execute(),
+      queryMessageRowsForChat(this.db, chatRef, threadRef),
       POD_QUERY_TIMEOUT_MS,
       `Timed out loading messages for thread ${threadId}`,
     )
 
     return messages.filter((message: any) => (
       extractChatId(message.chat) === chatId
-      && extractThreadId(message.thread) === threadId
+      && extractThreadId(message.thread) === threadKey
       && !isHiddenMatrixProtocolEvent(message)
     ))
   }
@@ -472,6 +485,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   private cacheMessageRow(itemId: string, row: Record<string, unknown>): void {
     this.messageRowIdByItemId.set(itemId, requireRecordId(row, 'Message row'))
+    this.messageIriByItemId.set(itemId, this.resolveMessageIri(row))
   }
 
   private async findMessageByItemId(threadId: string, itemId: string): Promise<Record<string, unknown> | null> {
@@ -686,15 +700,18 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         return order === 'desc' ? bTime - aTime : aTime - bTime
       })
 
+      const threadItems = messages.map((message: any) => messageRecordToItem(message, threadId))
+      this.threadItemsCache.set(threadId, threadItems)
+
       let startIndex = 0
       if (after) {
-        const idx = messages.findIndex((m: any) => m.id === after)
+        const idx = threadItems.findIndex((item) => item.id === after)
         if (idx !== -1) startIndex = idx + 1
       }
-      const slice = messages.slice(startIndex, startIndex + limit)
+      const slice = threadItems.slice(startIndex, startIndex + limit)
       return {
-        data: slice.map((m: any) => messageRecordToItem(m, threadId)),
-        has_more: startIndex + limit < messages.length,
+        data: slice,
+        has_more: startIndex + limit < threadItems.length,
         first_id: slice.length > 0 ? (slice[0] as any).id : undefined,
         last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
       }
@@ -710,6 +727,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const createdAt = new Date(item.created_at * 1000)
     const thread = this.buildThreadUri(chatId, threadId)
     const messageId = this.buildMessageId(chatId, thread, item.id, createdAt)
+    const messageIri = messageResource.buildIri(requirePodBaseUrl(this.db), {
+      id: messageId,
+      parent: this.buildChatUri(chatId),
+      chat: this.buildChatUri(chatId),
+      thread,
+      createdAt,
+    })
     const maker = role === MessageRole.USER
       ? this.webId
       : await this.resolveCounterpartMaker(chatId)
@@ -749,12 +773,11 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       createdAt,
     }).execute()
 
-    const inserted = await (this.db as any).findById(Message as any, messageId)
-    if (inserted) {
-      this.cacheMessageRow(item.id, inserted)
-    } else {
-      this.messageRowIdByItemId.set(item.id, messageId)
-    }
+    // The resource identity is deterministic from the inserted row. Keep it
+    // instead of reading the row back: a stream normally calls saveItem right
+    // after addThreadItem, and that read can degrade into a broad SPARQL scan.
+    this.messageRowIdByItemId.set(item.id, messageId)
+    this.messageIriByItemId.set(item.id, messageIri)
     this.recentlyCreatedIds.add(item.id)
     this.upsertCachedThreadItem(threadId, item)
   }
@@ -768,6 +791,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     // instead of issuing a broad message SELECT during the active stream.
     if (this.recentlyCreatedIds.has(item.id) || cachedItem) {
       this.recentlyCreatedIds.delete(item.id)
+      const cachedMessageIri = this.messageIriByItemId.get(item.id)
+      if (cachedMessageIri) {
+        await this.directPatchMessage(cachedMessageIri, content, richContent, status)
+        this.upsertCachedThreadItem(threadId, item)
+        return
+      }
       const row = await this.findMessageByItemId(threadId, item.id)
       if (!row) throw new Error(`Cannot find Pod message row for ChatKit item ${item.id}`)
       const messageIri = this.resolveMessageIri(row)
@@ -879,6 +908,7 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
 
     await this.deleteMessageRecord(message)
     this.messageRowIdByItemId.delete(itemId)
+    this.messageIriByItemId.delete(itemId)
     this.removeCachedThreadItem(threadId, itemId)
   }
 

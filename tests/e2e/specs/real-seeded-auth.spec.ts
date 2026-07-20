@@ -80,9 +80,10 @@ test.describe('Real seeded xpod auth flow', () => {
 
     await page.goto('/')
 
-    await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText('数据保存位置')).toBeVisible({ timeout: 15_000 })
 
-    await page.getByRole('button', { name: /连接其他账号服务|连接其他 Solid 账号/ }).click()
+    await page.getByText('其他账号供应商').click()
+    await page.getByRole('button', { name: /添加供应商/ }).click()
     await page.getByPlaceholder('https://pod.example.com').fill(runtime.baseUrl)
 
     await Promise.all([
@@ -101,9 +102,50 @@ test.describe('Real seeded xpod auth flow', () => {
 
     await assertLoginRouteReady(page, runtime)
     await expectSecretaryInitialized(page)
-    await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
+    await expect(page.getByText('数据保存位置')).toHaveCount(0)
+    await verifyModelServicePersistsInDisposablePod(page)
   })
 })
+
+async function verifyModelServicePersistsInDisposablePod(page: Page): Promise<void> {
+  await page.route(/(?:qa-model\.invalid\/v1\/models|\/api\/model-services\/models)$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: [
+          { id: 'gpt-5.5-qa', name: 'GPT-5.5 QA' },
+          { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini' },
+        ],
+      }),
+    })
+  })
+
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/model-services')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await expect(page).toHaveURL(/\/model-services$/)
+  await page.getByRole('button', { name: '添加模型服务' }).click()
+  await page.locator('#model-service-name').fill('QA Disposable Provider')
+  await page.locator('#model-service-key').fill('sk-e2e-disposable-only')
+  await page.locator('#model-service-endpoint').fill('https://qa-model.invalid')
+  await page.getByRole('button', { name: '同步模型' }).click()
+  await expect(page.getByText('已同步 2 个模型').first()).toBeVisible({ timeout: 20_000 })
+  await page.getByRole('button', { name: '创建服务' }).click()
+
+  await expect(page.getByText('QA Disposable Provider').first()).toBeVisible({ timeout: 20_000 })
+  await page.reload()
+  await page.waitForURL(/\/(?:chat|model-services)$/, { timeout: 30_000 })
+  if (new URL(page.url()).pathname !== '/model-services') {
+    await page.evaluate(() => {
+      window.history.pushState({}, '', '/model-services')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+  }
+  await expect(page.getByText('QA Disposable Provider').first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText('GPT-5.5 QA').first()).toBeVisible({ timeout: 20_000 })
+}
 
 async function signInToSeededRuntime(page: Page, runtime: SeededXpodRuntime): Promise<void> {
   const signInGate = page.getByRole('button', { name: /Go to Sign in/i })

@@ -1,4 +1,10 @@
 import { defineConfig, devices } from '@playwright/test'
+import { existsSync } from 'node:fs'
+
+const systemChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const chromiumExecutablePath = process.env.LINX_E2E_USE_SYSTEM_CHROME === '1' && existsSync(systemChromePath)
+  ? systemChromePath
+  : undefined
 
 /**
  * Playwright E2E Test Configuration
@@ -45,7 +51,10 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : undefined,
+      },
     },
     // Uncomment to test on more browsers
     // {

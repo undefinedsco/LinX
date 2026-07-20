@@ -50,7 +50,7 @@ import {
 import { resolveWorkspaceContainerUri } from '@/lib/data/workspace-uri'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
-import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { filterRowsToCurrentPod, resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { findExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
@@ -61,6 +61,7 @@ import {
   type AgentAiRuntimeLocation,
   writeAgentAiRuntimeLocationMetadata,
 } from './agent-runtime-location'
+import { queryMessageRowsForChat } from './message-query'
 
 // ============================================================================
 // Database Getter
@@ -999,11 +1000,66 @@ function withExactReadTimeout<T>(promise: Promise<T | null>, timeoutMs: number):
 // Chat Collection
 // ============================================================================
 
+const chatListColumns: (keyof ChatRow)[] = [
+  'id',
+  'title',
+  'description',
+  'avatarUrl',
+  'status',
+  'starred',
+  'muted',
+  'unreadCount',
+  'lastActiveAt',
+  'lastMessagePreview',
+  'createdAt',
+  'updatedAt',
+]
+
+async function queryChatListRows(db: SolidDatabase): Promise<ChatRow[]> {
+  const projection = Object.fromEntries(
+    chatListColumns.map((column) => [column, (chatResource as any)[column]]),
+  )
+  return await db.select(projection)
+    .from(chatResource)
+    .orderBy('lastActiveAt', 'desc')
+    .execute() as ChatRow[]
+}
+
+async function readExactDefaultSecretaryChat(db: SolidDatabase): Promise<ChatRow | null> {
+  const exactSecretary = await findOptionalExactRecord<ChatRow>(
+    db,
+    chatResource,
+    LINX_DEFAULT_SECRETARY.chatResourceId,
+  )
+  if (!exactSecretary) {
+    const contactIri = resolveResourceIri(db, contactResource, LINX_DEFAULT_SECRETARY.contactResourceId)
+    const chatIri = resolveResourceIri(db, chatResource, LINX_DEFAULT_SECRETARY.chatResourceId)
+    if (!contactIri || !chatIri) return null
+    return buildDefaultSecretaryContactRows({
+      now: new Date(),
+      agentIri: resolveAgentIri(db, LINX_DEFAULT_SECRETARY.agentId) ?? '',
+      contactIri,
+      chatIri,
+    }).chat
+  }
+
+  const secretaryIri = resolveResourceIri(db, chatResource, LINX_DEFAULT_SECRETARY.chatResourceId)
+  const normalizedSecretary = normalizeCollectionRow(
+    exactSecretary,
+    LINX_DEFAULT_SECRETARY.chatId,
+    secretaryIri
+      ?? String(exactSecretary['@id'] ?? exactSecretary.id ?? LINX_DEFAULT_SECRETARY.chatResourceId),
+  )
+  const [hydratedSecretary] = await hydrateChatRows(db, [normalizedSecretary])
+  return hydratedSecretary ?? normalizedSecretary
+}
+
 export const chatCollection = createPodCollection<typeof chatResource, ChatRow, ChatInsert>({
   resource: chatResource,
   queryKey: ['chats'],
   queryClient,
   getDb,
+  columns: chatListColumns,
   orderBy: { column: 'lastActiveAt', direction: 'desc' },
   getKey: (item) => {
     if (!item.id) throw new Error('Chat item is missing id.')
@@ -1032,6 +1088,9 @@ export const threadCollection = createPodCollection<typeof threadResource, Threa
   getDb,
   columns: threadListColumns,
   orderBy: { column: 'updatedAt', direction: 'desc' },
+  // Thread rows are loaded per Chat by queryThreadRowsForChat. A global
+  // collection read can leak foreign Pod subjects from an unscoped endpoint.
+  readRows: async () => [],
   getKey: (item) => {
     if (!item.id) throw new Error('Thread item is missing id.')
     return item.id
@@ -1061,6 +1120,9 @@ export const messageCollection = createPodCollection<typeof messageResource, Mes
   getDb,
   columns: messageListColumns,
   orderBy: { column: 'createdAt', direction: 'asc' },
+  // Message rows are loaded per Thread by chatOps/ChatKit. Never start a
+  // duplicate Pod-wide timeline scan in the background collection cache.
+  readRows: async () => [],
   getKey: (item) => {
     if (!item.id) throw new Error('Message item is missing id.')
     return item.id
@@ -1882,20 +1944,26 @@ export const chatOps = {
 
     let rows: ChatRow[]
     try {
-      rows = await db.select()
-        .from(chatResource)
-        .orderBy('lastActiveAt', 'desc')
-        .execute() as ChatRow[]
+      rows = await queryChatListRows(db)
     } catch (error) {
       if (isRecoverableCollectionReadError(error)) {
-        return fallbackRows.length > 0 ? fallbackRows : chatOps.getAll()
+        const exactSecretary = await readExactDefaultSecretaryChat(db)
+        const cachedRows = fallbackRows.length > 0 ? fallbackRows : chatOps.getAll()
+        return exactSecretary ? mergeChatRows([exactSecretary], cachedRows) : cachedRows
       }
       throw error
     }
 
-    const hydratedRows = rows.length > 0
-      ? await hydrateChatRows(db, rows)
-      : rows
+    const currentPodRows = filterRowsToCurrentPod(db, rows)
+    let hydratedRows = currentPodRows.length > 0
+      ? await hydrateChatRows(db, currentPodRows)
+      : currentPodRows
+    if (!hydratedRows.some((row) => row.id === LINX_DEFAULT_SECRETARY.chatId)) {
+      const exactSecretary = await readExactDefaultSecretaryChat(db)
+      if (exactSecretary) {
+        hydratedRows = mergeChatRows([exactSecretary], hydratedRows)
+      }
+    }
     const lateFallbackRows = getStagedSecretaryChatRows()
     if (lateFallbackRows.length > 0 && linxWelcomeInFlight) {
       return mergeChatRows(lateFallbackRows, hydratedRows)
@@ -1914,19 +1982,20 @@ export const chatOps = {
     if (!resolvedChatId) {
       throw new Error(`Failed to resolve chat id for thread ${threadId}`)
     }
-    const threadRef = await buildThreadIri(db, threadId, resolvedChatId)
-    if (!threadRef) {
-      throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
+    const chatRef = buildChatIri(db, resolvedChatId)
+    if (!chatRef) {
+      throw new Error(`Failed to resolve chat IRI for thread ${threadId}`)
     }
-
-    const threadCol = (messageResource as any).thread
     try {
-      const rows = await db.select()
-        .from(messageResource)
-        .where(eq(threadCol, threadRef))
-        .orderBy('createdAt', 'asc')
-        .execute() as MessageRow[]
-      return rows.length > 0 ? rows : chatOps.getMessages(threadId)
+      const threadKey = extractThreadIdFromThreadRef(threadId) ?? threadId
+      const rows = await queryMessageRowsForChat(db, chatRef)
+      rows.sort((left, right) => (
+        new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+      ))
+      const currentPodRows = filterRowsToCurrentPod(db, rows).filter((row) => (
+        extractThreadIdFromThreadRef(row.thread) === threadKey
+      ))
+      return currentPodRows.length > 0 ? currentPodRows : chatOps.getMessages(threadId)
     } catch (error) {
       if (isRecoverableCollectionReadError(error)) {
         return chatOps.getMessages(threadId)
@@ -2050,6 +2119,7 @@ async function queryThreadRowsForChat(db: SolidDatabase, chatId: string): Promis
     throw error
   }
 
+  rows = filterRowsToCurrentPod(db, rows)
   rows.forEach((row) => cacheThreadRow(row, chatId))
 
   return rows
@@ -2071,15 +2141,13 @@ export function useChatList(filters?: { search?: string }) {
         const results = await db
           .select()
           .from(chatResource)
-          .where(
-            or(
-              like(chatResource.title as any, pattern),
-              like(chatResource.lastMessagePreview as any, pattern)
-            )
-          )
+          .where(or(
+            like(chatResource.title as any, pattern),
+            like(chatResource.lastMessagePreview as any, pattern)
+          ))
           .orderBy('lastActiveAt', 'desc')
           .execute()
-        return await hydrateChatRows(db, results as ChatRow[])
+        return await hydrateChatRows(db, filterRowsToCurrentPod(db, results as ChatRow[]))
       }
       
       return chatOps.fetchChats()
@@ -2122,7 +2190,9 @@ export function useThreadIndex(options?: { enabled?: boolean }) {
     queryKey: ['threads', 'index'],
     queryFn: async () => {
       if (!db) return []
-      return threadCollection.fetch()
+      const chats = await chatOps.fetchChats()
+      const groups = await Promise.all(chats.map((chat) => queryThreadRowsForChat(db, chat.id)))
+      return groups.flat()
     },
     enabled: !!db && enabled,
   })
@@ -2195,8 +2265,8 @@ export function useChatMutations() {
   })
 
   const createThread = useMutation({
-    mutationFn: ({ chatId, title, optimistic }: { chatId: string; title?: string; optimistic?: boolean }) =>
-      chatOps.createThread(chatId, title, { optimistic }),
+    mutationFn: ({ chatId, title, optimistic, threadId }: { chatId: string; title?: string; optimistic?: boolean; threadId?: string }) =>
+      chatOps.createThread(chatId, title, { optimistic, threadId }),
     onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: QUERY_KEYS.threads(variables.chatId) })
     },

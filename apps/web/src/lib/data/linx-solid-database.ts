@@ -3,8 +3,11 @@ import type { SolidDatabase } from '@undefineds.co/models'
 import {
   aiModelResource,
   aiProviderResource,
+  chatResource,
   credentialResource,
+  messageResource,
   solidSchema,
+  threadResource,
 } from '@undefineds.co/models'
 import { installBrowserSparqlEngine } from './browser-sparql-engine'
 import { initializeLinxPodStorage, type PodStorageBootstrapEvent } from './pod-storage-bootstrap'
@@ -92,7 +95,7 @@ async function createLinxSolidDatabaseUncached(
 
   applyPodUrlOverride(instance, options.podUrl)
   assertExplicitPodUrlApplied(instance, options.podUrl, 'before Pod initialization')
-  configureAIConfigQueryEndpoints(instance)
+  configureLinxQueryEndpoints(instance)
   report({
     stage: 'database:pod-url:ready',
     target: normalizePodUrl((instance as any).getDialect?.()?.getPodUrl?.()),
@@ -118,19 +121,23 @@ async function createLinxSolidDatabaseUncached(
   // Schema/bootstrap initialization may restore each resource's default
   // database endpoint. AI configuration lives outside `.data`, so reapply its
   // scoped endpoints after bootstrap and make this the final resource state.
-  configureAIConfigQueryEndpoints(instance)
+  configureLinxQueryEndpoints(instance)
   report({ stage: 'database:init:done' })
 
   return instance
 }
 
-export function configureAIConfigQueryEndpoints(db: SolidDatabase): void {
+export function configureLinxQueryEndpoints(db: SolidDatabase): void {
   const podUrl = normalizePodUrl((db as any).getDialect?.()?.getPodUrl?.())
   if (!podUrl) return
 
   credentialResource.setSparqlEndpoint(new URL('settings/-/sparql', podUrl).toString())
   aiProviderResource.setSparqlEndpoint(new URL('settings/providers/-/sparql', podUrl).toString())
   aiModelResource.setSparqlEndpoint(new URL('settings/providers/-/sparql', podUrl).toString())
+  const chatEndpoint = new URL('.data/chat/-/sparql', podUrl).toString()
+  chatResource.setSparqlEndpoint(chatEndpoint)
+  threadResource.setSparqlEndpoint(chatEndpoint)
+  messageResource.setSparqlEndpoint(chatEndpoint)
 }
 
 export function createTransportRewriteSession(

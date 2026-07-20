@@ -336,6 +336,7 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     const events = await sendMessage(service)
 
+    expect(db.findById).toHaveBeenCalledWith(mocked.chatResource, 'chat-1/index.ttl#this')
     expect(authFetch).toHaveBeenCalledWith(
       'https://api.undefineds.co/v1/chat/completions',
       expect.objectContaining({
@@ -346,6 +347,80 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(body.model).toBe('linx-lite')
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '可以')).toBe(true)
     expect(findAssistantDone(events)?.item?.status).toBe('completed')
+  })
+
+  it('honors an explicitly selected LinX platform model when the historical chat has no Agent config', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'openai',
+      model: 'gpt-4o',
+    })
+    db.findById.mockImplementation(async (resource: unknown) => {
+      if (resource === mocked.chatResource || resource === mocked.agentResource) return null
+      return null
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"E2E-OK"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { model: 'linx-lite' })
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(findAssistantDone(events)?.item).toMatchObject({
+      status: 'completed',
+      content: [expect.objectContaining({ text: 'E2E-OK' })],
+    })
+  })
+
+  it('routes a provider-qualified composer model through that provider credential', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' }, [{
+      id: 'timecc-default',
+      provider: 'timecc',
+      apiKey: 'test-key',
+      baseUrl: 'https://timicc.example/v1',
+    }])
+    const providerFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"E2E-OK"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    vi.stubGlobal('fetch', providerFetch)
+    const authFetch = vi.fn()
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { model: 'timecc::gpt-5.5' })
+
+    expect(providerFetch).toHaveBeenCalledWith(
+      'https://timicc.example/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const request = providerFetch.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(request.body)).model).toBe('gpt-5.5')
+    expect(findAssistantDone(events)?.item?.status).toBe('completed')
+    expect(store.saveThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          chat_id: 'chat-1',
+          linxComposerModel: 'timecc::gpt-5.5',
+        }),
+      }),
+      expect.anything(),
+    )
   })
 
   it('routes Matrix group user messages through Matrix send without local duplicate persistence', async () => {

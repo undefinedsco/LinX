@@ -5,7 +5,7 @@
  * 根据块类型分发到对应的渲染组件
  */
 
-import { memo, useMemo } from 'react'
+import { Fragment, memo, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import {
   MessageBlockType,
@@ -25,6 +25,60 @@ import { ToolApprovalBlock } from './ToolApprovalBlock'
 import { TaskProgressBlock } from './TaskProgressBlock'
 import { ErrorBlock } from './ErrorBlock'
 import { PlaceholderBlock } from './PlaceholderBlock'
+import { ImageBlock } from './ImageBlock'
+import { FileBlock } from './FileBlock'
+import { CitationBlock } from './CitationBlock'
+import {
+  registerMessageBlockRenderer,
+  renderRegisteredMessageBlock,
+} from './renderer-registry'
+
+let builtInRenderersRegistered = false
+
+function registerBuiltInRenderers() {
+  if (builtInRenderersRegistered) return
+  builtInRenderersRegistered = true
+
+  registerMessageBlockRenderer(MessageBlockType.MAIN_TEXT, (block, context) => (
+    <MainTextBlock block={block as MainTextMessageBlock} role={context.role} />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.CODE, (block, context) => (
+    <MainTextBlock block={block as MainTextMessageBlock} role={context.role} />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.THINKING, (block) => (
+    <ThinkingBlock block={block as ThinkingMessageBlock} />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.TOOL, (block) => (
+    <ToolBlock block={block as ToolMessageBlock} />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.TOOL_APPROVAL, (block, context) => (
+    <ToolApprovalBlock
+      block={block as Extract<MessageBlock, { type: MessageBlockType.TOOL_APPROVAL }>}
+      onApprove={context.onToolApprove}
+      onReject={context.onToolReject}
+    />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.TASK_PROGRESS, (block) => (
+    <TaskProgressBlock block={block as Extract<MessageBlock, { type: MessageBlockType.TASK_PROGRESS }>} />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.ERROR, (block, context) => (
+    <ErrorBlock block={block as ErrorMessageBlock} onRetry={context.onRetry} />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.UNKNOWN, (block) => (
+    <PlaceholderBlock block={block as PlaceholderMessageBlock} />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.IMAGE, (block) => (
+    <ImageBlock block={block as Extract<MessageBlock, { type: MessageBlockType.IMAGE }>} />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.FILE, (block) => (
+    <FileBlock block={block as Extract<MessageBlock, { type: MessageBlockType.FILE }>} />
+  ))
+  registerMessageBlockRenderer(MessageBlockType.CITATION, (block) => (
+    <CitationBlock block={block as Extract<MessageBlock, { type: MessageBlockType.CITATION }>} />
+  ))
+}
+
+registerBuiltInRenderers()
 
 interface MessageBlockRendererProps {
   /** 要渲染的块列表 */
@@ -70,79 +124,13 @@ export const MessageBlockRenderer = memo<MessageBlockRendererProps>(({
   return (
     <div className={cn('message-blocks space-y-1', className)}>
       {sortedBlocks.map((block) => {
-        switch (block.type) {
-          case MessageBlockType.MAIN_TEXT:
-          case MessageBlockType.CODE:
-            return (
-              <MainTextBlock
-                key={block.id}
-                block={block as MainTextMessageBlock}
-                role={role}
-              />
-            )
-
-          case MessageBlockType.THINKING:
-            return (
-              <ThinkingBlock
-                key={block.id}
-                block={block as ThinkingMessageBlock}
-              />
-            )
-
-          case MessageBlockType.TOOL:
-            return (
-              <ToolBlock
-                key={block.id}
-                block={block as ToolMessageBlock}
-              />
-            )
-
-          case MessageBlockType.TOOL_APPROVAL:
-            return (
-              <ToolApprovalBlock
-                key={block.id}
-                block={block as Extract<MessageBlock, { type: MessageBlockType.TOOL_APPROVAL }>}
-                onApprove={onToolApprove}
-                onReject={onToolReject}
-              />
-            )
-
-          case MessageBlockType.TASK_PROGRESS:
-            return (
-              <TaskProgressBlock
-                key={block.id}
-                block={block as Extract<MessageBlock, { type: MessageBlockType.TASK_PROGRESS }>}
-              />
-            )
-
-          case MessageBlockType.ERROR:
-            return (
-              <ErrorBlock
-                key={block.id}
-                block={block as ErrorMessageBlock}
-                onRetry={onRetry}
-              />
-            )
-
-          case MessageBlockType.UNKNOWN:
-            return (
-              <PlaceholderBlock
-                key={block.id}
-                block={block as PlaceholderMessageBlock}
-              />
-            )
-
-          // TODO: 后续迁移更多块类型
-          case MessageBlockType.IMAGE:
-          case MessageBlockType.FILE:
-          case MessageBlockType.CITATION:
-            // 暂时跳过这些类型
-            return null
-
-          default:
-            console.warn('Unknown block type:', (block as MessageBlock).type)
-            return null
-        }
+        const rendered = renderRegisteredMessageBlock(block, {
+          role,
+          onRetry,
+          onToolApprove,
+          onToolReject,
+        })
+        return rendered == null ? null : <Fragment key={block.id}>{rendered}</Fragment>
       })}
 
       {/* 处理中时显示占位块 */}
@@ -171,5 +159,13 @@ export { ToolApprovalBlock } from './ToolApprovalBlock'
 export { TaskProgressBlock } from './TaskProgressBlock'
 export { ErrorBlock } from './ErrorBlock'
 export { PlaceholderBlock } from './PlaceholderBlock'
+export { ImageBlock } from './ImageBlock'
+export { FileBlock } from './FileBlock'
+export { CitationBlock } from './CitationBlock'
+export {
+  getMessageBlockRenderer,
+  registerMessageBlockRenderer,
+  renderRegisteredMessageBlock,
+} from './renderer-registry'
 
 export default MessageBlockRenderer

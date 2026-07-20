@@ -53,6 +53,7 @@
     "pack:symphony-dual-role": "node scripts/pack-symphony-dual-role-fixtures.mjs",
     "test:e2e": "yarn workspace @linx/e2e test",
     "test:e2e:ui": "yarn workspace @linx/e2e test:ui",
+    "test:xpod:model-services": "XPOD_TEST_MODE=local yarn workspace @linx/web test --run src/modules/model-services/collections.integration.test.ts",
     "test": "yarn test:unit && yarn test:e2e"
   },
   "dependencies": {

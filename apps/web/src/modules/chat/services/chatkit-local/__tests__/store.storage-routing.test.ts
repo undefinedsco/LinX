@@ -2,6 +2,66 @@ import { describe, expect, it, vi } from 'vitest'
 import { LocalChatKitStore } from '../store'
 
 describe('LocalChatKitStore storage routing', () => {
+  it('scopes message loading to the required Chat parent before filtering the durable Thread', async () => {
+    const durableId = 'chat/__secretary__/index.ttl#__default__'
+    const where = vi.fn(() => ({ execute: vi.fn(async () => []) }))
+    const from = vi.fn(() => ({ where }))
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'http://localhost:5737/cuilinsu/' }),
+      findById: vi.fn(async () => ({
+        id: durableId,
+        parent: 'http://localhost:5737/cuilinsu/.data/chat/__secretary__/index.ttl#this',
+      })),
+      select: vi.fn(() => ({ from })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'http://localhost:5737/cuilinsu/profile/card#me',
+      vi.fn() as any,
+    )
+
+    await expect(store.loadThreadItems(durableId, undefined, 20, 'asc', {})).resolves.toEqual({
+      data: [],
+      has_more: false,
+      after: undefined,
+    })
+    expect(where).toHaveBeenCalledTimes(1)
+    const condition = where.mock.calls[0]?.[0]
+    expect(condition).toMatchObject({ operator: '=' })
+  })
+
+  it('loads a durable thread id by exact record without scanning the Pod thread index', async () => {
+    const durableId = 'chat/__secretary__/index.ttl#__default__'
+    const select = vi.fn()
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'http://localhost:5737/cuilinsu/',
+      }),
+      findById: vi.fn(async (_resource: unknown, id?: string) => id === durableId
+        ? {
+            id: durableId,
+            title: '默认话题',
+            status: 'active',
+            createdAt: new Date('2026-07-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-07-20T00:00:00.000Z'),
+          }
+        : null),
+      select,
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'http://localhost:5737/cuilinsu/profile/card#me',
+      vi.fn() as any,
+    )
+
+    await expect(store.loadThread(durableId, {})).resolves.toMatchObject({
+      id: '__default__',
+      title: '默认话题',
+    })
+    expect(db.findById).toHaveBeenCalledWith(expect.anything(), durableId)
+    expect(select).not.toHaveBeenCalled()
+  })
+
   it('stores message resource refs under the selected SP Pod, not the WebID origin', async () => {
     const inserts: Array<Record<string, unknown>> = []
     const db = {
@@ -82,14 +142,12 @@ describe('LocalChatKitStore storage routing', () => {
     } as any, {})).rejects.toThrow('Unable to resolve current Pod URL')
   })
 
-  it('does not hide message lookup failures after creating a Pod message row', async () => {
+  it('does not read a message back after creating its deterministic Pod resource', async () => {
     const db = {
       getDialect: () => ({
         getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
       }),
-      findById: vi.fn(async () => {
-        throw new Error('findById failed')
-      }),
+      findById: vi.fn(async () => null),
       insert: vi.fn(() => ({
         values() {
           return { execute: vi.fn(async () => undefined) }
@@ -114,7 +172,58 @@ describe('LocalChatKitStore storage routing', () => {
       content: [{ type: 'input_text', text: 'hello' }],
       attachments: [],
       created_at: 0,
-    } as any, {})).rejects.toThrow('findById failed')
+    } as any, {})).resolves.toBeUndefined()
+    expect(db.findById).not.toHaveBeenCalled()
+  })
+
+  it('patches a newly created message by its cached IRI without a read or broad SELECT', async () => {
+    const execute = vi.fn(async () => undefined)
+    const select = vi.fn(() => ({
+      from: vi.fn(() => ({
+        execute: vi.fn(async () => []),
+      })),
+    }))
+    const authFetch = vi.fn(async () => new Response(null, { status: 205 }))
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
+      }),
+      findById: vi.fn(async () => null),
+      insert: vi.fn(() => ({
+        values() {
+          return { execute }
+        },
+      })),
+      select,
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      authFetch as any,
+    )
+    const item = {
+      id: 'msg-stream-1',
+      thread_id: 'thread-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: 'hello' }],
+      attachments: [],
+      created_at: 0,
+    } as any
+
+    await store.addThreadItem('thread-1', item, {})
+    db.findById.mockClear()
+    select.mockClear()
+    await store.saveItem('thread-1', {
+      ...item,
+      content: [{ type: 'input_text', text: 'hello updated' }],
+    }, {})
+
+    expect(db.findById).not.toHaveBeenCalled()
+    expect(select).not.toHaveBeenCalled()
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://node-0000.undefineds.co/alice/.data/chat/default/1970/01/01/messages.ttl',
+      expect.objectContaining({ method: 'PATCH' }),
+    )
   })
 
   it('resolves assistant maker from a contact IRI with findByIri instead of deriving a row id', async () => {

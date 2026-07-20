@@ -11,6 +11,7 @@
     "test:real-auth": "playwright test specs/real-seeded-auth.spec.ts --workers=1",
     "test:real-cloud": "playwright test specs/real-cloud-auth.spec.ts --workers=1",
     "test:chat": "playwright test specs/chat-e2e.spec.ts",
+    "test:model-services": "LINX_E2E_USE_SYSTEM_CHROME=1 playwright test specs/real-seeded-auth.spec.ts --workers=1",
     "report": "playwright show-report"
   },
   "devDependencies": {

@@ -29,6 +29,8 @@ import { useInboxStore } from '@/modules/inbox/store'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { DEFAULT_LINX_PLATFORM_MODEL_ID, LINX_PLATFORM_MODEL_IDS } from '@/lib/agent-providers'
+import { useModelServices } from '@/modules/model-services/hooks/useModelServices'
+import { buildChatModelOptions } from '../model-options'
 import { createLocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
 import { useChatStore } from '../store'
 import {
@@ -52,6 +54,7 @@ import {
 } from '../runtime-client'
 import { buildWorkspaceSummary } from '../workspace-summary'
 import { restoreChatMessageAnchor } from '../message-anchor'
+import { readThreadComposerModel } from '../composer-model-preference'
 
 export interface ChatContentPaneProps extends MicroAppPaneProps {}
 
@@ -441,12 +444,35 @@ function RuntimeSessionToolbar({
   )
 }
 
-function ChatKitPanel({ session, selectedThreadId }: { session: any; selectedThreadId: string }) {
+function ChatKitPanel({
+  session,
+  selectedThreadId,
+  preferredComposerModel,
+}: {
+  session: any
+  selectedThreadId: string
+  preferredComposerModel?: string | null
+}) {
   const selectThread = useChatStore((state) => state.selectThread)
   const messageAnchorId = useChatStore((state) => state.messageAnchorId)
   const clearMessageAnchor = useChatStore((state) => state.clearMessageAnchor)
   const theme = useThemeMode()
   const { db } = useSolidDatabase()
+  const { providers: modelServiceProviders } = useModelServices()
+  const composerModels = useMemo(() => {
+    const options = buildChatModelOptions(modelServiceProviders)
+    const models = options.map((option) => ({
+      id: option.providerId === 'undefineds' ? option.id : `${option.providerId}::${option.id}`,
+      label: option.providerId === 'undefineds'
+        ? option.name
+        : `${option.providerName} / ${option.name}`,
+    }))
+    const defaultModel = preferredComposerModel
+      && models.some((model) => model.id === preferredComposerModel)
+      ? preferredComposerModel
+      : DEFAULT_LINX_PLATFORM_MODEL_ID
+    return models.map((model) => ({ ...model, default: model.id === defaultModel }))
+  }, [modelServiceProviders, preferredComposerModel])
   const chatKitHostRef = useRef<(HTMLElement & { setThreadId?: (threadId: string | null) => Promise<void> | void }) | null>(null)
 
   const localFetch = useMemo(() => {
@@ -474,11 +500,13 @@ function ChatKitPanel({ session, selectedThreadId }: { session: any; selectedThr
     history: { enabled: false },
     composer: {
       placeholder: '输入消息...',
-      models: LINX_PLATFORM_MODEL_IDS.map((modelId) => ({
-        id: modelId,
-        label: modelId === 'linx-lite' ? 'LinX Lite' : 'LinX',
-        default: modelId === DEFAULT_LINX_PLATFORM_MODEL_ID,
-      })),
+      models: composerModels.length > 0
+        ? composerModels
+        : LINX_PLATFORM_MODEL_IDS.map((modelId) => ({
+            id: modelId,
+            label: modelId === 'linx-lite' ? 'LinX Lite' : 'LinX',
+            default: modelId === DEFAULT_LINX_PLATFORM_MODEL_ID,
+          })),
     },
     threadItemActions: { feedback: true, retry: true },
     onThreadChange: ({ threadId }: { threadId: string | null }) => {
@@ -688,6 +716,17 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       .map((thread) => ({ ...thread, _id: thread.id }))
       .filter((thread) => Boolean(thread._id))
 
+    // The Secretary owns one canonical durable thread. Historical builds could
+    // create extra random "default" threads while bootstrap was settling; do
+    // not let collection order reopen one of those stale threads on refresh.
+    const canonicalSecretaryThread = selectedChatId === LINX_DEFAULT_SECRETARY.chatId
+      ? normalizedThreads.find((thread) => thread._id === LINX_DEFAULT_SECRETARY.threadKey)
+      : null
+    if (canonicalSecretaryThread && selectedThreadId !== canonicalSecretaryThread._id) {
+      selectThread(canonicalSecretaryThread._id)
+      return
+    }
+
     if (selectedThreadId && normalizedThreads.some((thread) => thread._id === selectedThreadId)) {
       return
     }
@@ -725,7 +764,10 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       {
         chatId: selectedChatId,
         ...(shouldCreateDefaultSecretaryOptimistically
-          ? { optimistic: true }
+          ? {
+              optimistic: true,
+              threadId: LINX_DEFAULT_SECRETARY.threadKey,
+            }
           : {}),
         title: '默认话题',
       },
@@ -807,7 +849,11 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
         />
         <InboxActionBanner chatId={selectedChatId} threadId={selectedThreadId} />
         <div className="min-h-0 flex-1 overflow-hidden">
-          <ChatKitPanel session={session} selectedThreadId={selectedThreadId} />
+          <ChatKitPanel
+            session={session}
+            selectedThreadId={selectedThreadId}
+            preferredComposerModel={readThreadComposerModel(activeThread?.metadata)}
+          />
         </div>
       </div>
     </div>

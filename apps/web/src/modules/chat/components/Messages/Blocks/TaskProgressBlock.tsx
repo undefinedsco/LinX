@@ -54,7 +54,7 @@ export const TaskProgressBlock = memo<TaskProgressBlockProps>(({
   block,
   className,
 }) => {
-  const { steps, currentStep, totalSteps, title } = block
+  const { steps, totalSteps, title } = block
   const doneCount = steps.filter(s => s.status === 'done').length
   const progressPct = totalSteps > 0 ? Math.round((doneCount / totalSteps) * 100) : 0
 

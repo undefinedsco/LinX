@@ -6,6 +6,7 @@ import { asBaseRelativeResourceId, requireRowResourceId } from '@linx/agent-runt
 import type { PodResource as PodResourceSchema } from '@undefineds.co/drizzle-solid'
 import { deleteExactRecord, updateExactRecord } from './exact-records'
 import { getPodNotificationManager } from './pod-notification-manager'
+import { filterRowsToCurrentPod } from './current-pod-base'
 
 function isPodCollectionDebugEnabled(): boolean {
   return typeof process !== 'undefined'
@@ -33,6 +34,9 @@ interface PodCollectionOptions<TResource, TData> {
   getKey?: (item: TData) => string
   // Optional: seed data when the collection is empty
   seed?: TData[] | (() => TData[])
+  // Optional scoped reader. Use this when a resource cannot be safely loaded
+  // as one Pod-wide collection (for example Thread/Message timelines).
+  readRows?: (db: SolidDatabase<any>) => Promise<TData[]>
 }
 
 /**
@@ -46,7 +50,7 @@ export function createPodCollection<
 >(
   options: PodCollectionOptions<TResource, TData>
 ) {
-  const { resource, queryKey, queryClient, getDb, columns, orderBy, getKey: customGetKey, seed } = options
+  const { resource, queryKey, queryClient, getDb, columns, orderBy, getKey: customGetKey, seed, readRows } = options
 
   const ensureId = (item: TData, operation: 'seed' | 'insert'): TData => {
     if (item.id) {
@@ -93,7 +97,7 @@ export function createPodCollection<
 
     let rows: TData[]
     try {
-      rows = (await buildQuery().execute()) as TData[]
+      rows = readRows ? await readRows(db) : (await buildQuery().execute()) as TData[]
     } catch (error) {
       if (isUnsupportedDocumentCollectionRead(error)) {
         console.warn(`[PodCollection] ${queryKey.join('/')} fetch skipped: ${errorMessage(error)}`)
@@ -102,6 +106,8 @@ export function createPodCollection<
       console.error(`[PodCollection] ${queryKey.join('/')} fetch failed:`, error)
       throw error
     }
+
+    rows = filterRowsToCurrentPod(db, rows)
 
     for (const row of rows) {
       requireRowResourceId(row, 'Pod collection row')

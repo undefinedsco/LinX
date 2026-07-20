@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldRenderAuthenticatedOutlet } from './router'
+import { shouldRenderAuthenticatedOutlet, shouldRenderLoginOverlay } from './router'
 
 describe('router auth gate', () => {
   it('blocks normal app routes until both Solid and LinX login state are ready', () => {
@@ -50,5 +50,11 @@ describe('router auth gate', () => {
         loginState: 'idle',
       })).toBe(true)
     }
+  })
+
+  it('does not cover diagnostic routes with the login overlay', () => {
+    expect(shouldRenderLoginOverlay('/debug/message-blocks')).toBe(false)
+    expect(shouldRenderLoginOverlay('/test/solid-ui-react')).toBe(false)
+    expect(shouldRenderLoginOverlay('/chat')).toBe(true)
   })
 })

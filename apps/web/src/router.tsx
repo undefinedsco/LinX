@@ -15,6 +15,9 @@ const DebugSearchableSelect = lazy(() =>
 const DebugChatPage = lazy(() =>
   import('./components/debug/DebugChatPage').then((mod) => ({ default: mod.DebugChatPage })),
 )
+const DebugMessageBlocksPage = lazy(() =>
+  import('./components/debug/DebugMessageBlocksPage').then((mod) => ({ default: mod.DebugMessageBlocksPage })),
+)
 const InruptTest = lazy(() => import('./pages/InruptTest'))
 const InruptSimpleTest = lazy(() => import('./pages/InruptSimpleTest'))
 const SolidUiReactTest = lazy(() => import('./app/test/solid-ui-react'))
@@ -49,6 +52,10 @@ function isRouteAllowedBeforeAuthentication(pathname: string): boolean {
     || pathname.startsWith('/inrupt-test')
 }
 
+export function shouldRenderLoginOverlay(pathname: string): boolean {
+  return !isRouteAllowedBeforeAuthentication(pathname)
+}
+
 // Root route component
 const RootComponent = () => {
   const pathname = useRouterState({
@@ -66,7 +73,7 @@ const RootComponent = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {renderOutlet ? <Outlet /> : <RouteFallback />}
-      <SolidLoginOverlay />
+      {shouldRenderLoginOverlay(pathname) && <SolidLoginOverlay />}
     </div>
   )
 }
@@ -123,6 +130,16 @@ const debugChatRoute = createRoute({
   component: () => (
     <Suspense fallback={<RouteFallback />}>
       <DebugChatPage />
+    </Suspense>
+  ),
+})
+
+const debugMessageBlocksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/debug/message-blocks',
+  component: () => (
+    <Suspense fallback={<RouteFallback />}>
+      <DebugMessageBlocksPage />
     </Suspense>
   ),
 })
@@ -238,6 +255,7 @@ const appDemoRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   debugSearchSelectRoute,
   debugChatRoute,
+  debugMessageBlocksRoute,
   inruptTestRoute,
   solidUiReactTestRoute,
   inruptSimpleTestRoute,

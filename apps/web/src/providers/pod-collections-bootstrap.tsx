@@ -30,6 +30,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     initializeSymphonyControlCollections(db)
 
     if (!db) {
+      resetChatStateForPodChange()
       lastStartedRef.current = null
       return
     }
@@ -37,6 +38,10 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     let cancelled = false
     const started = lastStartedRef.current
     const force = !!started && started !== db
+
+    if (force) {
+      resetChatStateForPodChange()
+    }
 
     lastStartedRef.current = db
 
@@ -83,6 +88,16 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
   }, [db, toast])
 
   return <>{children}</>
+}
+
+function resetChatStateForPodChange(): void {
+  for (const queryKey of [['chats'], ['threads'], ['messages'], ['agents']] as const) {
+    queryClient.removeQueries({ queryKey })
+  }
+
+  const state = useChatStore.getState()
+  state.selectChat(null)
+  state.setListViewMode('chats')
 }
 
 function selectInitialSecretary(chatId: string, threadId?: string): void {

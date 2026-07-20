@@ -360,7 +360,7 @@ export function ModelServicesContentPane() {
       await updateProvider(provider.id, {
         models: syncedModels,
       })
-      await recordVerificationResult(provider.id)
+      await recordVerificationResult(provider.id, undefined, { apiKey: normalizedApiKey })
 
       toast({ 
         description: fetchedModels.length > 0
@@ -371,7 +371,7 @@ export function ModelServicesContentPane() {
     } catch (e) {
       console.warn('[ModelServices] Provider verification failed:', e)
       try {
-        await recordVerificationResult(provider.id, e)
+        await recordVerificationResult(provider.id, e, { apiKey: localApiKey.trim() })
       } catch (healthError) {
         console.warn('[ModelServices] Failed to persist verification result:', healthError)
       }

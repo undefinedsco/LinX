@@ -13,9 +13,11 @@ const subscribeSymphonyControlToPodMock = vi.fn()
 const ensureLinxWelcomeMock = vi.fn()
 const subscribeToPodMock = vi.fn()
 const invalidateQueriesMock = vi.fn()
+const removeQueriesMock = vi.fn()
 const toastMock = vi.fn()
 const selectChatMock = vi.fn()
 const selectThreadMock = vi.fn()
+const setListViewModeMock = vi.fn()
 let chatStoreState = {
   selectedChatId: null as string | null,
   selectedThreadId: null as string | null,
@@ -39,6 +41,7 @@ vi.mock('@/modules/chat/collections', () => ({
 vi.mock('./query-provider', () => ({
   queryClient: {
     invalidateQueries: (...args: unknown[]) => invalidateQueriesMock(...args),
+    removeQueries: (...args: unknown[]) => removeQueriesMock(...args),
   },
 }))
 
@@ -48,6 +51,7 @@ vi.mock('@/modules/chat/store', () => ({
       ...chatStoreState,
       selectChat: selectChatMock,
       selectThread: selectThreadMock,
+      setListViewMode: setListViewModeMock,
     }),
   },
 }))
@@ -113,6 +117,9 @@ describe('PodCollectionsBootstrap', () => {
     expect(ensureLinxWelcomeMock).not.toHaveBeenCalled()
     expect(subscribeToPodMock).not.toHaveBeenCalled()
     expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
+    expect(selectChatMock).toHaveBeenCalledWith(null)
+    expect(setListViewModeMock).toHaveBeenCalledWith('chats')
+    expect(removeQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats'] })
   })
 
   it('stages the LinX welcome chat and renders children while Pod persistence continues in the background', async () => {
@@ -175,6 +182,25 @@ describe('PodCollectionsBootstrap', () => {
 
     expect(selectChatMock).not.toHaveBeenCalled()
     expect(selectThreadMock).not.toHaveBeenCalled()
+  })
+
+  it('clears stale chat selection and queries when the database identity changes', async () => {
+    const firstDb = { id: 'first-db' }
+    const secondDb = { id: 'second-db' }
+    useSolidDatabaseMock.mockReturnValue({ db: firstDb })
+    const view = render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
+
+    await waitFor(() => expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1))
+    vi.clearAllMocks()
+    useSolidDatabaseMock.mockReturnValue({ db: secondDb })
+    view.rerender(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
+
+    await waitFor(() => expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: true }))
+    expect(selectChatMock).toHaveBeenCalledWith(null)
+    expect(setListViewModeMock).toHaveBeenCalledWith('chats')
+    for (const queryKey of [['chats'], ['threads'], ['messages'], ['agents']]) {
+      expect(removeQueriesMock).toHaveBeenCalledWith({ queryKey })
+    }
   })
 
   it('keeps the app visible when background LinX welcome persistence fails', async () => {

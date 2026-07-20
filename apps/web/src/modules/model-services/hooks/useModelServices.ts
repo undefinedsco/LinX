@@ -712,7 +712,11 @@ export function useModelServices() {
     await refetchModelServiceCollections()
   }, [db, effectiveCredentialRows, exactCredentialRows, exactProviderRows, mergedProviderRows, modelRows])
 
-  const recordVerificationResult = useCallback(async (id: string, error?: unknown) => {
+  const recordVerificationResult = useCallback(async (
+    id: string,
+    error?: unknown,
+    verifiedCredential?: Pick<AIProvider, 'apiKey'>,
+  ) => {
     if (!db) throw new Error('Solid database is not ready.')
     await ensureModelServiceCollectionsReady()
     const currentProviderRows = mergeModelServiceProviderRows(
@@ -728,7 +732,19 @@ export function useModelServices() {
 
     const exactCredential = await findExactRecord<AnyRow>(db, credentialResource as any, credential)
     const update = buildCredentialVerificationUpdate(
-      { ...credential, ...(exactCredential ?? {}) },
+      {
+        ...credential,
+        ...(exactCredential ?? {}),
+        ...(verifiedCredential?.apiKey
+          ? {
+              apiKey: verifiedCredential.apiKey,
+              provider: id,
+              service: 'ai',
+              status: 'active',
+              isDefault: true,
+            }
+          : {}),
+      },
       error,
     )
     await updateExactRecord(db as any, credentialResource as any, credential, update as AnyRow)

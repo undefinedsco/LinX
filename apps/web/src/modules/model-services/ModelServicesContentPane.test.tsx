@@ -125,7 +125,11 @@ describe('ModelServicesContentPane', () => {
         expect.objectContaining({ id: 'gpt-4o-mini' }),
       ],
     }))
-    expect(mockRecordVerificationResult).toHaveBeenCalledWith('openai')
+    expect(mockRecordVerificationResult).toHaveBeenCalledWith(
+      'openai',
+      undefined,
+      { apiKey: 'sk-test' },
+    )
     expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
       description: '连接成功，已同步 2 个模型，移除 1 个过期模型',
     }))
@@ -234,6 +238,11 @@ describe('ModelServicesContentPane', () => {
         description: '连接失败：密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。',
       }))
     })
+    expect(mockRecordVerificationResult).toHaveBeenCalledWith(
+      'openai',
+      expect.any(Error),
+      { apiKey: 'sk-test' },
+    )
   })
 
   it('shows model-list guidance without leaking provider response text', async () => {

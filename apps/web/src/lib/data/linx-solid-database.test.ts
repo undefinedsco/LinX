@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   aiModelResource,
   aiProviderResource,
+  chatResource,
   credentialResource,
+  messageResource,
   solidProfileResource,
+  threadResource,
 } from '@undefineds.co/models'
 import { createLinxSolidDatabase, createTransportRewriteSession } from './linx-solid-database'
 
@@ -18,7 +21,10 @@ vi.mock('@undefineds.co/drizzle-solid', () => ({
 vi.mock('@undefineds.co/models', () => ({
   aiModelResource: { setSparqlEndpoint: vi.fn() },
   aiProviderResource: { setSparqlEndpoint: vi.fn() },
+  chatResource: { setSparqlEndpoint: vi.fn() },
   credentialResource: { setSparqlEndpoint: vi.fn() },
+  messageResource: { setSparqlEndpoint: vi.fn() },
+  threadResource: { setSparqlEndpoint: vi.fn() },
   solidProfileResource: { config: { base: 'idp:///profile/card' } },
   solidSchema: { chat: 'schema' },
 }))
@@ -34,6 +40,9 @@ describe('createLinxSolidDatabase', () => {
     vi.mocked(aiModelResource.setSparqlEndpoint).mockClear()
     vi.mocked(aiProviderResource.setSparqlEndpoint).mockClear()
     vi.mocked(credentialResource.setSparqlEndpoint).mockClear()
+    vi.mocked(chatResource.setSparqlEndpoint).mockClear()
+    vi.mocked(threadResource.setSparqlEndpoint).mockClear()
+    vi.mocked(messageResource.setSparqlEndpoint).mockClear()
   })
 
   it('creates and initializes the database before returning it', async () => {
@@ -79,9 +88,15 @@ describe('createLinxSolidDatabase', () => {
     expect(credentialResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/settings/-/sparql')
     expect(aiProviderResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/settings/providers/-/sparql')
     expect(aiModelResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/settings/providers/-/sparql')
+    expect(chatResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/.data/chat/-/sparql')
+    expect(threadResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/.data/chat/-/sparql')
+    expect(messageResource.setSparqlEndpoint).toHaveBeenCalledWith('https://pod.example.com/.data/chat/-/sparql')
     expect(credentialResource.setSparqlEndpoint).toHaveBeenCalledTimes(2)
     expect(aiProviderResource.setSparqlEndpoint).toHaveBeenCalledTimes(2)
     expect(aiModelResource.setSparqlEndpoint).toHaveBeenCalledTimes(2)
+    expect(chatResource.setSparqlEndpoint).toHaveBeenCalledTimes(2)
+    expect(threadResource.setSparqlEndpoint).toHaveBeenCalledTimes(2)
+    expect(messageResource.setSparqlEndpoint).toHaveBeenCalledTimes(2)
   })
 
   it('wraps authenticated fetch for local transport while preserving canonical Pod URLs', async () => {
