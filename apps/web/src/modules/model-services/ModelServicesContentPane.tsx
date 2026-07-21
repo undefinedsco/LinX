@@ -102,6 +102,18 @@ const countRemovedOnlineModels = (existingModels: AIModel[], fetchedModels: AIMo
   return existingModels.filter((model) => !model.isCustom && !fetchedIds.has(model.id)).length
 }
 
+const haveEquivalentSyncedModels = (left: AIModel[], right: AIModel[]) => {
+  if (left.length !== right.length) return false
+  const rightById = new Map(right.map((model) => [model.id, model]))
+  return left.every((model) => {
+    const candidate = rightById.get(model.id)
+    return Boolean(candidate)
+      && candidate!.name === model.name
+      && candidate!.enabled === model.enabled
+      && JSON.stringify(candidate!.capabilities ?? []) === JSON.stringify(model.capabilities ?? [])
+  })
+}
+
 async function fetchLatestProviderModels(
   provider: AIProvider,
   apiKey: string,
@@ -349,17 +361,22 @@ export function ModelServicesContentPane() {
     try {
       const normalizedApiKey = localApiKey.trim()
       const normalizedBaseUrl = localBaseUrl.trim()
-      await updateProvider(provider.id, {
-        apiKey: normalizedApiKey,
-        baseUrl: normalizedBaseUrl || provider.defaultBaseUrl,
-      })
+      const effectiveBaseUrl = normalizedBaseUrl || provider.defaultBaseUrl
+      if (normalizedApiKey !== provider.apiKey || effectiveBaseUrl !== provider.baseUrl) {
+        await updateProvider(provider.id, {
+          apiKey: normalizedApiKey,
+          baseUrl: effectiveBaseUrl,
+        })
+      }
       const fetchedModels = await fetchLatestProviderModels(provider, normalizedApiKey, normalizedBaseUrl)
       const syncedModels = buildSyncedModelList(provider.models, fetchedModels)
       const removedCount = countRemovedOnlineModels(provider.models, fetchedModels)
 
-      await updateProvider(provider.id, {
-        models: syncedModels,
-      })
+      if (!haveEquivalentSyncedModels(provider.models, syncedModels)) {
+        await updateProvider(provider.id, {
+          models: syncedModels,
+        })
+      }
       await recordVerificationResult(provider.id, undefined, { apiKey: normalizedApiKey })
 
       toast({ 

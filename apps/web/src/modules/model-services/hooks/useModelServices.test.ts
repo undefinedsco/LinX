@@ -99,7 +99,7 @@ describe('mergeModelServiceProviderRows', () => {
 })
 
 describe('buildCredentialVerificationUpdate', () => {
-  it('preserves credential configuration while recording a failed verification', () => {
+  it('updates only health fields after a failed verification', () => {
     const credential = {
       id: 'timecc-default',
       provider: '/settings/providers/timecc.ttl',
@@ -111,13 +111,10 @@ describe('buildCredentialVerificationUpdate', () => {
       failCount: 1,
     }
 
-    expect(buildCredentialVerificationUpdate(credential, new Error('unavailable'))).toEqual({
-      ...credential,
-      failCount: 2,
-    })
+    expect(buildCredentialVerificationUpdate(credential, new Error('unavailable'))).toEqual({ failCount: 2 })
   })
 
-  it('preserves credential configuration while recording a successful verification', () => {
+  it('updates only health fields after a successful verification', () => {
     const credential = {
       id: 'timecc-default',
       provider: '/settings/providers/timecc.ttl',
@@ -128,10 +125,8 @@ describe('buildCredentialVerificationUpdate', () => {
 
     const update = buildCredentialVerificationUpdate(credential)
 
-    expect(update).toMatchObject({
-      ...credential,
-      failCount: 0,
-    })
+    expect(update).toMatchObject({ failCount: 0 })
+    expect(update).not.toHaveProperty('apiKey')
     expect(update.lastUsedAt).toBeInstanceOf(Date)
   })
 })

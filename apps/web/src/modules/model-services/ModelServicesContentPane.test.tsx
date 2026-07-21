@@ -135,6 +135,46 @@ describe('ModelServicesContentPane', () => {
     }))
   })
 
+  it('does not rewrite unchanged provider credentials and models during verification', async () => {
+    mockProviderModels = [{
+      id: 'gpt-5.4-mini',
+      name: 'GPT-5.4 Mini',
+      enabled: true,
+      capabilities: [],
+      // Persisted providers are rebuilt without the static catalog, so online
+      // models currently arrive in this screen marked as custom.
+      isCustom: true,
+    }]
+    mockProviders = {
+      timecc: {
+        id: 'timecc',
+        name: 'Timecc',
+        enabled: true,
+        apiKey: 'sk-timecc',
+        baseUrl: 'https://timicc.com/v1',
+        defaultBaseUrl: 'https://timicc.com/v1',
+        models: mockProviderModels,
+        verificationStatus: 'unverified',
+      },
+    }
+    mockSelectedProviderId = 'timecc'
+    mockSearchProviderModels.mockResolvedValue({
+      '在线获取': [{ id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', capabilities: [] }],
+    })
+
+    render(<ModelServicesContentPane />)
+    fireEvent.click(screen.getByText('验证'))
+
+    await waitFor(() => {
+      expect(mockRecordVerificationResult).toHaveBeenCalledWith(
+        'timecc',
+        undefined,
+        { apiKey: 'sk-timecc' },
+      )
+    })
+    expect(mockUpdateProvider).not.toHaveBeenCalled()
+  })
+
   it('preserves custom models when syncing the latest provider model list', async () => {
     mockProviderModels = [
       {

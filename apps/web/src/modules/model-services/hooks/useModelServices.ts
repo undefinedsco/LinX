@@ -108,15 +108,12 @@ export function buildCredentialVerificationUpdate(
 ): AnyRow {
   const currentFailCount = typeof credential.failCount === 'number' ? credential.failCount : 0
 
-  // xpod's exact-record update rewrites the RDF subject from the supplied
-  // values. Keep the credential fields in the payload so recording health
-  // does not erase its key, provider relation, label, or enabled state.
-  return {
-    ...credential,
-    ...(error
-      ? { failCount: currentFailCount + 1 }
-      : { failCount: 0, lastUsedAt: new Date() }),
-  }
+  // Only mutate health predicates. Sending a hydrated credential through the
+  // current xpod SPARQL update path can collapse the subject to the final
+  // predicate in a multi-field update, erasing the API key and provider link.
+  return error
+    ? { failCount: currentFailCount + 1 }
+    : { failCount: 0, lastUsedAt: new Date() }
 }
 
 export function buildModelServiceExactUpdate(
@@ -715,7 +712,7 @@ export function useModelServices() {
   const recordVerificationResult = useCallback(async (
     id: string,
     error?: unknown,
-    verifiedCredential?: Pick<AIProvider, 'apiKey'>,
+    _verifiedCredential?: Pick<AIProvider, 'apiKey'>,
   ) => {
     if (!db) throw new Error('Solid database is not ready.')
     await ensureModelServiceCollectionsReady()
@@ -730,24 +727,22 @@ export function useModelServices() {
     const credential = selectAIConfigCredential(id, currentCredentialRows, currentProviderRows)?.credential
     if (!credential) return
 
-    const exactCredential = await findExactRecord<AnyRow>(db, credentialResource as any, credential)
-    const update = buildCredentialVerificationUpdate(
-      {
-        ...credential,
-        ...(exactCredential ?? {}),
-        ...(verifiedCredential?.apiKey
-          ? {
-              apiKey: verifiedCredential.apiKey,
-              provider: id,
-              service: 'ai',
-              status: 'active',
-              isDefault: true,
-            }
-          : {}),
-      },
-      error,
-    )
-    await updateExactRecord(db as any, credentialResource as any, credential, update as AnyRow)
+    // A collection refresh may lag behind the immediately preceding health
+    // write. Read the exact subject before incrementing so repeated failures
+    // cannot keep overwriting the same stale failCount.
+    const exactCredential = await findExactRecord<AnyRow>(db as any, credentialResource as any, credential)
+    const latestCredential = { ...credential, ...(exactCredential ?? {}) }
+    const update = buildCredentialVerificationUpdate(latestCredential, error)
+    // Keep each xpod mutation to one predicate. Its current SPARQL update path
+    // can collapse multiple predicates on the same subject to the final write.
+    for (const [field, value] of Object.entries(update)) {
+      await updateExactRecord(
+        db as any,
+        credentialResource as any,
+        latestCredential,
+        { [field]: value },
+      )
+    }
     await refetchCollection(credentialCollection, 'ai-credentials')
   }, [db, effectiveCredentialRows, exactCredentialRows, exactProviderRows, mergedProviderRows])
 
