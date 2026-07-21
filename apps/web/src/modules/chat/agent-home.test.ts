@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { agentResourceId } from '@/lib/data/resource-identity'
-import { buildAgentHomePath, ensureAgentHome, updateAgentHomeModel } from './agent-home'
+import { buildAgentHomePath, ensureAgentHome, readAgentHomeModel, updateAgentHomeModel } from './agent-home'
 
 describe('agent-home', () => {
   it('creates default Agent Home files at canonical Agent Home paths', async () => {
@@ -136,5 +136,47 @@ describe('agent-home', () => {
     expect(body).toContain('</settings/providers/timecc.ttl>')
     expect(body).toContain('</settings/providers/timecc.ttl#gpt-5.4-mini>')
     expect(body).toContain('</settings/credentials.ttl#timecc-default>')
+  })
+
+  it('reads the effective model from Agent Home metadata', async () => {
+    const metadata = `@prefix udfs: <https://undefineds.co/ns#>.\n<https://alice.example/agents/__secretary__/> udfs:provider <https://alice.example/settings/providers/timecc.ttl>; udfs:model <https://alice.example/settings/providers/timecc.ttl#gpt-5.4-mini>.`
+    const fetchMock = vi.fn(async () => new Response(metadata, {
+      status: 200,
+      headers: { 'Content-Type': 'text/turtle' },
+    }))
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    await expect(readAgentHomeModel(
+      db,
+      'https://alice.example/agents/__secretary__/',
+    )).resolves.toEqual({
+      provider: 'https://alice.example/settings/providers/timecc.ttl',
+      model: 'https://alice.example/settings/providers/timecc.ttl#gpt-5.4-mini',
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://alice.example/agents/__secretary__/.meta',
+      expect.objectContaining({ headers: { Accept: 'text/turtle' } }),
+    )
+  })
+
+  it('does not send authenticated Agent Home reads to external origins', async () => {
+    const fetchMock = vi.fn()
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    await expect(readAgentHomeModel(
+      db,
+      'https://attacker.example/agents/stolen/',
+    )).resolves.toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

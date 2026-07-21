@@ -2,8 +2,10 @@ import {
   aiConfigModelRef,
   aiConfigProviderRef,
   getDefaultAIConfigCredentialId,
+  UDFS,
   type SolidDatabase,
 } from '@undefineds.co/models'
+import { getSolidDataset, getThing, getUrl } from '@inrupt/solid-client'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import {
   agentHomePathFromResourceId,
@@ -20,6 +22,11 @@ export interface EnsureAgentHomeInput {
 
 export interface UpdateAgentHomeModelInput {
   agentId: BaseRelativeResourceId
+  provider: string
+  model: string
+}
+
+export interface AgentHomeModelConfig {
   provider: string
   model: string
 }
@@ -215,4 +222,42 @@ export async function updateAgentHomeModel(
     '}',
     '',
   ].join('\n'))
+}
+
+export async function readAgentHomeModel(
+  db: SolidDatabase,
+  agentRef: string,
+): Promise<AgentHomeModelConfig | null> {
+  const fetchFn = getAuthenticatedFetch(db)
+  if (!fetchFn || !agentRef) return null
+
+  const podBaseUrl = getPodBaseUrl(db)
+  if (!podBaseUrl) return null
+  const podUrl = new URL(`${podBaseUrl}/`)
+  const homeUrl = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(agentRef)
+    ? new URL(agentRef)
+    : new URL(buildAgentHomePath(agentRef as BaseRelativeResourceId).replace(/^\/+/, ''), podUrl)
+  const agentsPath = `${podUrl.pathname.replace(/\/$/, '')}/agents/`.replace(/^\/\//, '/')
+  if (homeUrl.origin !== podUrl.origin || !homeUrl.pathname.startsWith(agentsPath)) {
+    return null
+  }
+  const homeUrlString = homeUrl.toString()
+  const normalizedHomeUrl = homeUrlString.endsWith('/') ? homeUrlString : `${homeUrlString}/`
+  const metadataUrl = new URL('.meta', normalizedHomeUrl).toString()
+
+  try {
+    const dataset = await getSolidDataset(metadataUrl, { fetch: fetchFn })
+    const thing = getThing(dataset, normalizedHomeUrl)
+    if (!thing) return null
+
+    const provider = getUrl(thing, UDFS.provider)
+    const model = getUrl(thing, UDFS.model)
+    return provider && model ? { provider, model } : null
+  } catch (error) {
+    const statusCode = (error as { statusCode?: unknown })?.statusCode
+    if (statusCode === 404 || /404|not found/i.test(String((error as Error)?.message ?? error))) {
+      return null
+    }
+    throw error
+  }
 }

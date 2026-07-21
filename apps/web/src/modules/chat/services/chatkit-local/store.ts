@@ -62,6 +62,11 @@ function extractThreadId(threadIdOrUri: string | null | undefined): string | und
   return extractThreadIdFromThreadRef(threadIdOrUri) ?? undefined
 }
 
+function extractChatIdFromDurableThreadId(threadId: string): string | null {
+  const match = /^chat\/(.+)\/index\.ttl#/.exec(threadId)
+  return match?.[1] ? decodeURIComponent(match[1]) : null
+}
+
 function getChatIdFromMetadata(metadata?: Record<string, unknown>): string {
   if (metadata && typeof metadata.chat_id === 'string') {
     return extractChatId(metadata.chat_id)
@@ -550,7 +555,15 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     if (!thread) throw new Error(`Thread not found: ${threadId}`)
 
     const metadata = threadRecordToMetadata(thread)
+    const chatId = extractChatIdFromDurableThreadId(threadId)
+      ?? getChatIdFromMetadata(metadata.metadata)
+    // ChatKit reloads a durable `chat/{chat}/index.ttl#{thread}` id, then uses
+    // the logical `{thread}` id for later item requests. Preserve both aliases
+    // so duplicate logical ids in different chats never fall back to `default`.
+    this.threadChatIdCache.set(threadId, chatId)
+    this.threadChatIdCache.set(metadata.id, chatId)
     this.threadMetadataCache.set(threadId, metadata)
+    this.threadMetadataCache.set(metadata.id, metadata)
     return metadata
   }
 
@@ -830,21 +843,9 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const graphUri = resourceUrl
 
     const escapeForSparql = (value: string): string => {
-      const hasQuotes = value.includes('"')
-      const hasNewlines = value.includes('\n') || value.includes('\r')
-      if (hasQuotes || hasNewlines) {
-        let escaped = value
-        escaped = escaped.replace(/"""/g, '"\\"\\""')
-        if (escaped.endsWith('"')) {
-          const match = escaped.match(/"*$/)
-          const trailingQuotes = match ? match[0].length : 0
-          if (trailingQuotes > 0) {
-            escaped = escaped.slice(0, -trailingQuotes) + '\\"'.repeat(trailingQuotes)
-          }
-        }
-        return `"""${escaped}"""`
-      }
-      return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+      // JSON string escaping is compatible with SPARQL short string literals
+      // and keeps physical newlines out of xpod's statement splitter.
+      return JSON.stringify(value)
     }
 
     const deleteTriples = [

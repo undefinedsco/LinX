@@ -52,6 +52,7 @@ import {
   readAgentAiRuntimeLocation,
   type AgentAiRuntimeLocation,
 } from '../../agent-runtime-location'
+import { readAgentHomeModel } from '../../agent-home'
 
 function readChatIdFromThread(thread: ThreadMetadata): string | null {
   if (typeof thread.metadata?.chat_id !== 'string') {
@@ -1011,12 +1012,18 @@ export class LocalChatKitService {
       const agentRef = contact?.about ?? participantRef
       const agent = await this.findAgentByRef(agentRef)
 
-      if (!agent) {
+      const agentHomeModel = await readAgentHomeModel(this.db, agentRef)
+
+      if (!agent && !agentHomeModel) {
         continue
       }
 
-      const provider = normalizeAIConfigProviderId(typeof agent.provider === 'string' ? agent.provider : '')
-      const model = normalizeAIConfigResourceId(typeof agent.model === 'string' ? agent.model : '')
+      const provider = normalizeAIConfigProviderId(
+        agentHomeModel?.provider ?? (typeof agent?.provider === 'string' ? agent.provider : ''),
+      )
+      const model = normalizeAIConfigResourceId(
+        agentHomeModel?.model ?? (typeof agent?.model === 'string' ? agent.model : ''),
+      )
 
       if (!provider || !model) {
         continue
@@ -1025,8 +1032,8 @@ export class LocalChatKitService {
       return {
         provider,
         model,
-        instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
-        aiRuntimeLocation: readAgentAiRuntimeLocation((agent as Record<string, unknown>).metadata),
+        instructions: typeof agent?.instructions === 'string' ? agent.instructions : undefined,
+        aiRuntimeLocation: readAgentAiRuntimeLocation((agent as Record<string, unknown> | null)?.metadata),
       }
     }
 

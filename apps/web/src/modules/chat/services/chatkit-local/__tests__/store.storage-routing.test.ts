@@ -32,7 +32,8 @@ describe('LocalChatKitStore storage routing', () => {
 
   it('loads a durable thread id by exact record without scanning the Pod thread index', async () => {
     const durableId = 'chat/__secretary__/index.ttl#__default__'
-    const select = vi.fn()
+    const where = vi.fn(() => ({ execute: vi.fn(async () => []) }))
+    const select = vi.fn(() => ({ from: vi.fn(() => ({ where })) }))
     const db = {
       getDialect: () => ({
         getPodUrl: () => 'http://localhost:5737/cuilinsu/',
@@ -58,8 +59,15 @@ describe('LocalChatKitStore storage routing', () => {
       id: '__default__',
       title: '默认话题',
     })
+    await expect(store.loadThreadItems('__default__', undefined, 20, 'asc', {})).resolves.toMatchObject({
+      data: [],
+    })
     expect(db.findById).toHaveBeenCalledWith(expect.anything(), durableId)
-    expect(select).not.toHaveBeenCalled()
+    expect(db.findById).toHaveBeenCalledTimes(1)
+    expect(select).toHaveBeenCalledTimes(1)
+    expect(where.mock.calls[0]?.[0]).toMatchObject({
+      right: expect.stringContaining('__secretary__'),
+    })
   })
 
   it('stores message resource refs under the selected SP Pod, not the WebID origin', async () => {
@@ -215,7 +223,7 @@ describe('LocalChatKitStore storage routing', () => {
     select.mockClear()
     await store.saveItem('thread-1', {
       ...item,
-      content: [{ type: 'input_text', text: 'hello updated' }],
+      content: [{ type: 'input_text', text: 'hello "updated"\n```ts\nconst ok = true\n```' }],
     }, {})
 
     expect(db.findById).not.toHaveBeenCalled()
@@ -224,6 +232,9 @@ describe('LocalChatKitStore storage routing', () => {
       'https://node-0000.undefineds.co/alice/.data/chat/default/1970/01/01/messages.ttl',
       expect.objectContaining({ method: 'PATCH' }),
     )
+    const patchBody = String(authFetch.mock.calls[0]?.[1]?.body)
+    expect(patchBody).toContain('hello \\"updated\\"\\n```ts\\nconst ok = true\\n```')
+    expect(patchBody).not.toContain('"""')
   })
 
   it('resolves assistant maker from a contact IRI with findByIri instead of deriving a row id', async () => {
