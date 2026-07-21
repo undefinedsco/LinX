@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { agentResourceId } from '@/lib/data/resource-identity'
-import { buildAgentHomePath, ensureAgentHome } from './agent-home'
+import { buildAgentHomePath, ensureAgentHome, updateAgentHomeModel } from './agent-home'
 
 describe('agent-home', () => {
   it('creates default Agent Home files at canonical Agent Home paths', async () => {
@@ -107,5 +107,34 @@ describe('agent-home', () => {
 
     const writeCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT' || init?.method === 'PATCH')
     expect(writeCalls).toHaveLength(3)
+  })
+
+  it('updates a directory-backed Agent model through its metadata resource', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 200 }))
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    await updateAgentHomeModel(db, {
+      agentId: agentResourceId('__secretary__'),
+      provider: 'timecc',
+      model: 'gpt-5.4-mini',
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [target, init] = fetchMock.mock.calls[0]!
+    const body = String(init?.body)
+    expect(String(target)).toBe('https://alice.example/agents/__secretary__/.meta')
+    expect(init?.method).toBe('PATCH')
+    expect(body.match(/DELETE WHERE/g)).toHaveLength(3)
+    expect(body).not.toContain('OPTIONAL')
+    expect(body).not.toContain('PREFIX')
+    expect(body).toContain('<https://alice.example/agents/__secretary__/>')
+    expect(body).toContain('</settings/providers/timecc.ttl>')
+    expect(body).toContain('</settings/providers/timecc.ttl#gpt-5.4-mini>')
+    expect(body).toContain('</settings/credentials.ttl#timecc-default>')
   })
 })

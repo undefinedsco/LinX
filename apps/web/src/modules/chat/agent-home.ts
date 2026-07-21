@@ -18,6 +18,12 @@ export interface EnsureAgentHomeInput {
   instructions?: string
 }
 
+export interface UpdateAgentHomeModelInput {
+  agentId: BaseRelativeResourceId
+  provider: string
+  model: string
+}
+
 function getPodBaseUrl(db: SolidDatabase): string | null {
   return resolveCurrentPodBaseUrl(db)
 }
@@ -168,4 +174,45 @@ export async function ensureAgentHome(db: SolidDatabase, input: EnsureAgentHomeI
       file.contentType,
     )
   }
+}
+
+export async function updateAgentHomeModel(
+  db: SolidDatabase,
+  input: UpdateAgentHomeModelInput,
+): Promise<void> {
+  const fetchFn = getAuthenticatedFetch(db)
+  if (!fetchFn) {
+    throw new Error('Solid database is missing authenticated fetch.')
+  }
+
+  const metadataUrl = resolvePodPath(db, `${buildAgentHomePath(input.agentId)}.meta`)
+  const subjectRef = metadataUrl.slice(0, -'.meta'.length)
+  const providerRef = aiConfigProviderRef(input.provider)
+  const modelRef = aiConfigModelRef(input.provider, input.model)
+  const credentialRef = `/settings/credentials.ttl#${getDefaultAIConfigCredentialId(input.provider)}`
+  const udfs = 'https://undefineds.co/ns#'
+
+  // xpod's current patcher accepts basic graph patterns but not OPTIONAL.
+  // Keep the independent deletes and final insert in one PATCH so incomplete
+  // legacy metadata is repaired without exposing a partial or concurrent state.
+  const deleteOperations = ([
+    ['provider', 'provider'],
+    ['model', 'model'],
+    ['credential', 'credential'],
+  ] as const).map(([predicate, variable]) => [
+    'DELETE WHERE {',
+    `  <${subjectRef}> <${udfs}${predicate}> ?${variable} .`,
+    '}',
+  ].join('\n'))
+
+  await patchPodMetadata(fetchFn, metadataUrl, [
+    deleteOperations.join(';\n'),
+    ';',
+    'INSERT DATA {',
+    `  <${subjectRef}> <${udfs}provider> <${providerRef}> ;`,
+    `    <${udfs}model> <${modelRef}> ;`,
+    `    <${udfs}credential> <${credentialRef}> .`,
+    '}',
+    '',
+  ].join('\n'))
 }

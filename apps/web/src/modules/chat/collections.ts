@@ -56,7 +56,7 @@ import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 import { DEFAULT_LINX_PLATFORM_MODEL_ID, getAgentProviderInfo } from '@/lib/agent-providers'
 import { toStringArray } from '@/lib/utils'
-import { ensureAgentHome } from './agent-home'
+import { ensureAgentHome, updateAgentHomeModel } from './agent-home'
 import {
   type AgentAiRuntimeLocation,
   writeAgentAiRuntimeLocationMetadata,
@@ -1811,18 +1811,31 @@ export const chatOps = {
     const providerInfo = getAgentProviderInfo(provider)
     const providerRef = normalizeAIConfigProviderId(provider)
     const modelRef = normalizeAIConfigResourceId(model)
-    const tx = agentCollection.update(agentId, (draft: any) => {
-      const currentProviderId = normalizeAIConfigProviderId(typeof draft.provider === 'string' ? draft.provider : '')
-      const providerChanged = currentProviderId !== provider
-      draft.provider = providerRef
-      draft.model = modelRef
-      // Update avatarUrl when provider changes (unless user set a custom one)
-      if (providerChanged && providerInfo?.logoUrl) {
-        draft.avatarUrl = providerInfo.logoUrl
-      }
-      draft.updatedAt = new Date()
+    const db = getDb()
+    if (!db) throw new Error('Solid database is not ready.')
+    const currentAgent = readCollectionRows<AgentRow>(agentCollection).find((row) => row.id === agentId)
+    const currentProviderId = normalizeAIConfigProviderId(
+      typeof currentAgent?.provider === 'string' ? currentAgent.provider : '',
+    )
+    const providerChanged = currentProviderId !== provider
+
+    await updateAgentHomeModel(db, {
+      agentId: agentResourceId(agentId),
+      provider: providerRef,
+      model: modelRef,
     })
-    await tx.isPersisted.promise
+
+    if (currentAgent) {
+      writeCollectionRow(agentCollection, {
+        ...currentAgent,
+        provider: providerRef,
+        model: modelRef,
+        avatarUrl: providerChanged && providerInfo?.logoUrl
+          ? providerInfo.logoUrl
+          : currentAgent.avatarUrl,
+        updatedAt: new Date(),
+      }, agentId)
+    }
 
     if (contactId && providerInfo?.logoUrl) {
       const contactTx = _contactCollection.update(contactId, (draft: any) => {
