@@ -30,7 +30,7 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { DEFAULT_LINX_PLATFORM_MODEL_ID, LINX_PLATFORM_MODEL_IDS } from '@/lib/agent-providers'
 import { useModelServices } from '@/modules/model-services/hooks/useModelServices'
-import { buildChatModelOptions } from '../model-options'
+import { buildChatModelOptions, resolveDefaultChatModelSelection } from '../model-options'
 import { createLocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
 import { useChatStore } from '../store'
 import {
@@ -467,10 +467,15 @@ function ChatKitPanel({
         ? option.name
         : `${option.providerName} / ${option.name}`,
     }))
+    const configuredDefault = resolveDefaultChatModelSelection(modelServiceProviders, options)
+    const configuredDefaultModel = configuredDefault.provider === 'undefineds'
+      ? configuredDefault.model
+      : `${configuredDefault.provider}::${configuredDefault.model}`
     const defaultModel = preferredComposerModel
-      && models.some((model) => model.id === preferredComposerModel)
-      ? preferredComposerModel
-      : DEFAULT_LINX_PLATFORM_MODEL_ID
+      ? models.some((model) => model.id === preferredComposerModel)
+        ? preferredComposerModel
+        : DEFAULT_LINX_PLATFORM_MODEL_ID
+      : configuredDefaultModel
     return models.map((model) => ({ ...model, default: model.id === defaultModel }))
   }, [modelServiceProviders, preferredComposerModel])
   const chatKitHostRef = useRef<(HTMLElement & { setThreadId?: (threadId: string | null) => Promise<void> | void }) | null>(null)

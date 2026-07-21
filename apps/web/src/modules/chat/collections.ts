@@ -78,6 +78,7 @@ let stagedDefaultSecretaryRows: {
 } | null = null
 const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
 const DEFAULT_SECRETARY_EXACT_READ_TIMEOUT_MS = 1_500
+const STAGED_CHAT_READ_TIMEOUT_MS = 250
 
 export const LINX_DEFAULT_SECRETARY = {
   agentKey: '__secretary__',
@@ -1938,38 +1939,45 @@ export const chatOps = {
     }
 
     const fallbackRows = getStagedSecretaryChatRows()
-    if (fallbackRows.length > 0 && linxWelcomeInFlight) {
-      return fallbackRows
-    }
 
-    let rows: ChatRow[]
-    try {
-      rows = await queryChatListRows(db)
-    } catch (error) {
-      if (isRecoverableCollectionReadError(error)) {
+    const readPodChats = async (): Promise<ChatRow[]> => {
+      let rows: ChatRow[]
+      try {
+        rows = await queryChatListRows(db)
+      } catch (error) {
+        if (isRecoverableCollectionReadError(error)) {
+          const exactSecretary = await readExactDefaultSecretaryChat(db)
+          const cachedRows = fallbackRows.length > 0 ? fallbackRows : chatOps.getAll()
+          return exactSecretary ? mergeChatRows([exactSecretary], cachedRows) : cachedRows
+        }
+        throw error
+      }
+
+      const currentPodRows = filterRowsToCurrentPod(db, rows)
+      let hydratedRows = currentPodRows.length > 0
+        ? await hydrateChatRows(db, currentPodRows)
+        : currentPodRows
+      if (!hydratedRows.some((row) => row.id === LINX_DEFAULT_SECRETARY.chatId)) {
         const exactSecretary = await readExactDefaultSecretaryChat(db)
-        const cachedRows = fallbackRows.length > 0 ? fallbackRows : chatOps.getAll()
-        return exactSecretary ? mergeChatRows([exactSecretary], cachedRows) : cachedRows
+        if (exactSecretary) {
+          hydratedRows = mergeChatRows([exactSecretary], hydratedRows)
+        }
       }
-      throw error
+      const lateFallbackRows = getStagedSecretaryChatRows()
+      return lateFallbackRows.length > 0 && linxWelcomeInFlight
+        ? mergeChatRows(lateFallbackRows, hydratedRows)
+        : hydratedRows
     }
 
-    const currentPodRows = filterRowsToCurrentPod(db, rows)
-    let hydratedRows = currentPodRows.length > 0
-      ? await hydrateChatRows(db, currentPodRows)
-      : currentPodRows
-    if (!hydratedRows.some((row) => row.id === LINX_DEFAULT_SECRETARY.chatId)) {
-      const exactSecretary = await readExactDefaultSecretaryChat(db)
-      if (exactSecretary) {
-        hydratedRows = mergeChatRows([exactSecretary], hydratedRows)
-      }
-    }
-    const lateFallbackRows = getStagedSecretaryChatRows()
-    if (lateFallbackRows.length > 0 && linxWelcomeInFlight) {
-      return mergeChatRows(lateFallbackRows, hydratedRows)
+    if (fallbackRows.length > 0 && linxWelcomeInFlight) {
+      const podRows = await Promise.race([
+        readPodChats().catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), STAGED_CHAT_READ_TIMEOUT_MS)),
+      ])
+      return podRows ?? fallbackRows
     }
 
-    return hydratedRows
+    return readPodChats()
   },
 
   /**

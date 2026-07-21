@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seeded-xpod-runtime'
 
@@ -20,7 +20,7 @@ test.describe('Chat complete flow with real xpod persistence', () => {
     await runtime?.stop()
   })
 
-  test('login → provider → chat stream → Pod data → reload restore', async ({ page }) => {
+  test('login → provider → assistant → chat stream → Pod data → reload restore', async ({ page }, testInfo) => {
     test.setTimeout(180_000)
     const runId = Date.now()
     const prompt = `CHAT E2E USER ${runId}`
@@ -83,14 +83,22 @@ test.describe('Chat complete flow with real xpod persistence', () => {
     }
 
     await navigateSpa(page, '/chat')
+    const assistantName = `QA Assistant ${runId}`
+    await page.getByRole('button', { name: '新建聊天' }).click()
+    await page.getByText('创建助手', { exact: true }).click()
+    await page.locator('#agent-name').fill(assistantName)
+    await page.locator('#instructions').fill('Persistent E2E assistant for validating chat list and reload restoration.')
+    await page.getByRole('dialog').getByRole('button', { name: '创建', exact: true }).click()
+    await expect(page.getByText(assistantName, { exact: true })).toBeVisible({ timeout: 30_000 })
+    await page.reload()
+    await expect(page.getByText(assistantName, { exact: true })).toBeVisible({ timeout: 30_000 })
+
     await page.getByText('AI Secretary').first().click()
     const chatkit = page.locator('openai-chatkit').first()
     await expect(chatkit).toBeVisible({ timeout: 30_000 })
     const chatFrame = page.locator('iframe').last().contentFrame()
-    const modelButton = chatFrame.getByRole('button', { name: /LinX Lite/ })
+    const modelButton = chatFrame.getByRole('button', { name: /QA Chat Provider \/ GPT-5\.5 QA/ })
     await expect(modelButton).toBeVisible({ timeout: 30_000 })
-    await modelButton.click()
-    await chatFrame.getByText('QA Chat Provider / GPT-5.5 QA', { exact: true }).click()
     const composer = chatFrame.getByRole('textbox').first()
     await expect(composer).toBeVisible({ timeout: 30_000 })
 
@@ -110,6 +118,20 @@ test.describe('Chat complete flow with real xpod persistence', () => {
     expect(podEvidence.matches[prompt]?.[0]?.subject).toBeTruthy()
     expect(podEvidence.matches[reply]?.[0]?.subject).toBeTruthy()
     console.log(`[pod-evidence] ${JSON.stringify(podEvidence)}`)
+    const evidence = {
+      runId,
+      assistantName,
+      prompt,
+      reply,
+      providerRequestBody,
+      podEvidence,
+    }
+    const evidencePath = resolve(screenshotDir, '../chat-full-flow-evidence.json')
+    await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8')
+    await testInfo.attach('chat-full-flow-evidence', {
+      body: Buffer.from(JSON.stringify(evidence, null, 2)),
+      contentType: 'application/json',
+    })
 
     await page.reload()
     await expect(page.getByText('AI Secretary').first()).toBeVisible({ timeout: 30_000 })

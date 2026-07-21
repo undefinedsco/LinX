@@ -362,9 +362,19 @@ describe('AI Secretary bootstrap', () => {
     vi.useRealTimers()
   })
 
-  it('returns the staged Secretary chat while remote persistence is in flight', async () => {
+  it('merges Pod chats with the staged Secretary chat while welcome persistence is in flight', async () => {
     const { db, insertedRows, rows } = createSecretaryDb()
     const executeResolvers: Array<() => void> = []
+    const persistedChat = {
+      id: 'persisted-chat/index.ttl#this',
+      '@id': 'https://node-0000.undefineds.co/alice/.data/chat/persisted-chat/index.ttl#this',
+      title: 'Persisted chat',
+      participants: [],
+      metadata: { memberRoles: {} },
+      createdAt: new Date('2026-07-21T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-21T00:00:00.000Z'),
+      lastActiveAt: new Date('2026-07-21T00:00:00.000Z'),
+    }
 
     db.insert = vi.fn((resource: unknown) => ({
       values(row: Record<string, unknown>) {
@@ -381,7 +391,86 @@ describe('AI Secretary bootstrap', () => {
         const query = {
           orderBy: vi.fn(() => query),
           where: vi.fn(() => query),
+          execute: vi.fn(async () => [persistedChat]),
+        }
+        return query
+      },
+    }))
+
+    initializeChatCollections(db as any)
+    const bootstrapPromise = chatOps.ensureLinxWelcome({ force: true })
+
+    await expect(chatOps.fetchChats()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': rows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+      expect.objectContaining({
+        id: persistedChat.id,
+        title: persistedChat.title,
+      }),
+    ]))
+    expect(db.select).toHaveBeenCalled()
+    expect(bootstrapPromise).toBeInstanceOf(Promise)
+  })
+
+  it('returns the staged Secretary chat when the Pod chat query stalls', async () => {
+    vi.useFakeTimers()
+    const { db, rows } = createSecretaryDb()
+
+    db.insert = vi.fn((resource: unknown) => ({
+      values(row: Record<string, unknown>) {
+        return {
           execute: vi.fn(async () => new Promise(() => {})),
+        }
+      },
+    }))
+    db.select = vi.fn(() => ({
+      from() {
+        const query = {
+          orderBy: vi.fn(() => query),
+          where: vi.fn(() => query),
+          execute: vi.fn(async () => new Promise(() => {})),
+        }
+        return query
+      },
+    }))
+
+    initializeChatCollections(db as any)
+    const bootstrapPromise = chatOps.ensureLinxWelcome({ force: true })
+    const fetchPromise = chatOps.fetchChats()
+
+    await vi.advanceTimersByTimeAsync(250)
+    await expect(fetchPromise).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': rows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+    ])
+    expect(bootstrapPromise).toBeInstanceOf(Promise)
+    vi.useRealTimers()
+  })
+
+  it('returns the staged Secretary chat when the Pod chat query rejects during bootstrap', async () => {
+    const { db, rows } = createSecretaryDb()
+
+    db.insert = vi.fn((resource: unknown) => ({
+      values(row: Record<string, unknown>) {
+        return {
+          execute: vi.fn(async () => new Promise(() => {})),
+        }
+      },
+    }))
+    db.select = vi.fn(() => ({
+      from() {
+        const query = {
+          orderBy: vi.fn(() => query),
+          where: vi.fn(() => query),
+          execute: vi.fn(async () => {
+            throw new Error('Pod authorization failed')
+          }),
         }
         return query
       },
@@ -397,8 +486,6 @@ describe('AI Secretary bootstrap', () => {
         title: LINX_DEFAULT_SECRETARY.title,
       }),
     ])
-    expect(db.select).not.toHaveBeenCalled()
-    expect(insertedRows).toEqual([])
     expect(bootstrapPromise).toBeInstanceOf(Promise)
   })
 

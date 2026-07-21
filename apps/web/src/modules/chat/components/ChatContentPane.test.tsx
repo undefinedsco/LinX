@@ -221,6 +221,31 @@ describe('ChatContentPane', () => {
     }))
   })
 
+  it('uses an enabled configured provider instead of silently falling back to LinX Lite', () => {
+    mockUseModelServices.mockReturnValue({
+      providers: {
+        timecc: {
+          id: 'timecc',
+          name: 'TimeCC',
+          enabled: true,
+          selectedModelId: 'gpt-5.5',
+          models: [{ id: 'gpt-5.5', name: 'GPT-5.5', enabled: true }],
+        },
+      },
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(mockUseChatKit).toHaveBeenCalledWith(expect.objectContaining({
+      composer: expect.objectContaining({
+        models: expect.arrayContaining([
+          expect.objectContaining({ id: 'timecc::gpt-5.5', default: true }),
+          expect.objectContaining({ id: 'linx-lite', default: false }),
+        ]),
+      }),
+    }))
+  })
+
   it('restores the Thread provider model as the ChatKit composer default', () => {
     mockUseModelServices.mockReturnValue({
       providers: {
@@ -244,6 +269,35 @@ describe('ChatContentPane', () => {
         models: expect.arrayContaining([
           expect.objectContaining({ id: 'timecc::gpt-5.5', default: true }),
           expect.objectContaining({ id: 'linx-lite', default: false }),
+        ]),
+      }),
+    }))
+  })
+
+  it('falls back to LinX Lite when the saved Thread provider model is unavailable', () => {
+    mockUseModelServices.mockReturnValue({
+      providers: {
+        replacement: {
+          id: 'replacement',
+          name: 'Replacement',
+          enabled: true,
+          selectedModelId: 'other-model',
+          models: [{ id: 'other-model', name: 'Other model', enabled: true }],
+        },
+      },
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [{ id: 'thread-1', metadata: { linxComposerModel: 'removed::old-model' } }],
+      isLoading: false,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(mockUseChatKit).toHaveBeenCalledWith(expect.objectContaining({
+      composer: expect.objectContaining({
+        models: expect.arrayContaining([
+          expect.objectContaining({ id: 'linx-lite', default: true }),
+          expect.objectContaining({ id: 'replacement::other-model', default: false }),
         ]),
       }),
     }))
