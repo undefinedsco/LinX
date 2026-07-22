@@ -174,7 +174,48 @@ describe('useOidcConnect', () => {
     delete window.xpodDesktop
     delete (window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
     window.sessionStorage.clear()
+    window.localStorage.clear()
     window.history.replaceState({}, '', '/')
+  })
+
+  it('drops a stale dynamic client before interactive loopback login', async () => {
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'stale-session')
+    window.localStorage.setItem('solidClientAuthenticationUser:stale-session', JSON.stringify({
+      issuer: 'http://127.0.0.1:5737/',
+      redirectUrl: `${window.location.origin}/auth/callback`,
+      clientId: 'stale-dynamic-client',
+      dpop: 'true',
+      keepAlive: 'true',
+    }))
+    render(<TestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:stale-session')).toBeNull()
+  })
+
+  it('preserves Solid auth records before interactive Cloud login', async () => {
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'cloud-session')
+    window.localStorage.setItem('solidClientAuthenticationUser:cloud-session', JSON.stringify({
+      issuer: 'https://id.undefineds.co/',
+      redirectUrl: `${window.location.origin}/auth/callback`,
+      clientId: 'cloud-dynamic-client',
+      dpop: 'true',
+      keepAlive: 'true',
+    }))
+    render(<CloudTestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect cloud' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('cloud-session')
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:cloud-session')).not.toBeNull()
   })
 
   it('falls back to the browser callback URL when desktop auth is unavailable', async () => {
@@ -197,7 +238,7 @@ describe('useOidcConnect', () => {
     expect(options.handleRedirect).toBeUndefined()
   })
 
-  it('uses dynamic client registration in service mode', async () => {
+  it('uses fresh dynamic client registration in service mode', async () => {
     delete window.xpodDesktop
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
     render(<TestComponent />)

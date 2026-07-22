@@ -32,7 +32,29 @@ describe('AppRuntime', () => {
   afterEach(() => {
     vi.clearAllMocks()
     delete window.xpodDesktop
+    delete (window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
+    window.localStorage.clear()
     window.history.replaceState({}, '', '/')
+  })
+
+  it('drops a stale dynamic loopback client before the service provider can restore it', () => {
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'stale-session')
+    window.localStorage.setItem('solidClientAuthenticationUser:stale-session', JSON.stringify({
+      issuer: 'http://localhost:5737',
+      redirectUrl: `${window.location.origin}/auth/callback`,
+      clientId: 'stale-dynamic-client',
+      dpop: 'true',
+      keepAlive: 'true',
+    }))
+
+    render(<AppRuntime />)
+
+    expect(solidSessionProviderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ restorePreviousSession: false }),
+    )
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:stale-session')).toBeNull()
   })
 
   it('enables Inrupt session restore on normal web routes', () => {

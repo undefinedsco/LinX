@@ -3,6 +3,7 @@ import { useSession } from '@inrupt/solid-ui-react'
 import {
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
+  clearStoredSolidAuthRecords,
   clearUnrestorableSolidAuthState,
   getPendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
@@ -123,6 +124,16 @@ export function useOidcConnect() {
       ])
       if (resolvedIssuerResult === CANCELLED) return
       const resolvedIssuerUrl = resolvedIssuerResult
+
+      // A local xpod reset removes its dynamically registered OIDC clients,
+      // while Inrupt still considers the matching browser record restorable.
+      // Interactive loopback login must therefore register a fresh client.
+      // Keep non-loopback records intact so Cloud session restoration is not
+      // affected by this local-development recovery path.
+      if (isLoopbackUrl(resolvedIssuerUrl)) {
+        clearStoredSolidAuthRecords()
+      }
+
       const oidcEntryUrl = normalizedEntryUrl
       const returnToMicroAppId =
         options?.returnToMicroAppId

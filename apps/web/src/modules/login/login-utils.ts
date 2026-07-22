@@ -155,6 +155,23 @@ export function clearStoredSolidAuthRecords() {
   }
 }
 
+export function clearServiceLoopbackAuthState(): boolean {
+  const storedSession = getStoredSolidSession()
+  if (!storedSession?.issuerUrl || !isLoopbackUrl(storedSession.issuerUrl)) return false
+
+  clearStoredSolidAuthRecords()
+  return true
+}
+
+function isLoopbackUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url)
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+  } catch {
+    return false
+  }
+}
+
 function getLocalStorage(): Storage | null {
   const storage = typeof window !== 'undefined' ? window.localStorage : undefined
   if (
