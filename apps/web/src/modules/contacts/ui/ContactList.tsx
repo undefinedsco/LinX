@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, type KeyboardEvent } from 'react'
 import { Bot, Loader2, Plus, Search, Star, User, Users } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -26,6 +26,9 @@ export interface ContactListProps {
   onRetry: () => void
   onSelect: (id: string) => void
   onCreate: (type: 'agent' | 'friend' | 'group') => void
+  selectedIndex: number
+  onItemKeyDown: (index: number, event: KeyboardEvent<HTMLButtonElement>) => void
+  registerItemRef: (index: number, node: HTMLButtonElement | null) => void
 }
 
 function GroupAvatarGrid({ name }: { name: string }) {
@@ -48,10 +51,16 @@ function ContactItem({
   contact,
   selected,
   onSelect,
+  tabIndex,
+  itemRef,
+  onKeyDown,
 }: {
   contact: UnifiedContact
   selected: boolean
   onSelect: (id: string) => void
+  tabIndex: number
+  itemRef: (node: HTMLButtonElement | null) => void
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
 }) {
   const isAgent = contact.sourceType === 'agent'
   return (
@@ -59,6 +68,9 @@ function ContactItem({
       type="button"
       role="option"
       aria-selected={selected}
+      tabIndex={tabIndex}
+      ref={itemRef}
+      onKeyDown={onKeyDown}
       onClick={() => onSelect(contact.id)}
       className={cn(
         'group relative flex w-full items-center gap-3 h-14 px-3 cursor-pointer select-none text-left',
@@ -118,6 +130,9 @@ export function ContactList({
   onRetry,
   onSelect,
   onCreate,
+  selectedIndex,
+  onItemKeyDown,
+  registerItemRef,
 }: ContactListProps) {
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const scrollToLetter = useCallback((letter: string) => {
@@ -135,6 +150,7 @@ export function ContactList({
     window.setTimeout(() => onCreate(type), 0)
   }, [onCreate])
 
+  let flatIndex = 0
   return (
     <div className="relative flex h-full flex-col bg-layout-list-item">
       <div className="h-12 flex items-center gap-2 px-3 shrink-0 border-b border-border">
@@ -178,7 +194,7 @@ export function ContactList({
           ) : sections.length === 0 ? (
             <div className="p-12 text-center text-sm text-muted-foreground">暂无联系人</div>
           ) : (
-            <div role="listbox" aria-label="联系人">
+            <div role="listbox" aria-label="联系人" aria-orientation="vertical">
               {sections.map((section) => (
                 <div
                   key={`${section.key}-${section.title}`}
@@ -189,14 +205,22 @@ export function ContactList({
                   <div className="h-6 px-3 flex items-center bg-background sticky top-0 z-10">
                     <span className="text-[10px] font-bold text-muted-foreground uppercase">{section.title}</span>
                   </div>
-                  {section.items.map((contact) => (
-                    <ContactItem
-                      key={contact.id}
-                      contact={contact}
-                      selected={selectedId === contact.id}
-                      onSelect={onSelect}
-                    />
-                  ))}
+                  {section.items.map((contact) => {
+                    const index = flatIndex++
+                    const selected = selectedId === contact.id
+                    const tabbable = selected || (selectedIndex < 0 && index === 0)
+                    return (
+                      <ContactItem
+                        key={contact.id}
+                        contact={contact}
+                        selected={selected}
+                        onSelect={onSelect}
+                        tabIndex={tabbable ? 0 : -1}
+                        itemRef={(node) => registerItemRef(index, node)}
+                        onKeyDown={(event) => onItemKeyDown(index, event)}
+                      />
+                    )
+                  })}
                 </div>
               ))}
             </div>

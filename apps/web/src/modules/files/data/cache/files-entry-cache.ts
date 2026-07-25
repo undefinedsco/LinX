@@ -40,9 +40,13 @@ export function createFilesEntryCacheCollection(
   queryKeys: FilesEntryCacheQueryRoots,
   confirmedEntryTransferOverlays: ConfirmedEntryTransferOverlayStore,
 ) {
+  const entryListQueryRoots = [queryKeys.entries, queryKeys.containerEntries] as const
+
   const collection = {
     snapshot(cacheClient: QueryClient): FilesEntryCacheSnapshot {
-      return cacheClient.getQueriesData<FilesEntry[]>({ queryKey: queryKeys.entries })
+      return entryListQueryRoots.flatMap((queryKey) => (
+        cacheClient.getQueriesData<FilesEntry[]>({ queryKey })
+      ))
     },
 
     restore(cacheClient: QueryClient, snapshot?: FilesEntryCacheSnapshot) {
@@ -50,19 +54,25 @@ export function createFilesEntryCacheCollection(
     },
 
     upsert(cacheClient: QueryClient, entry: FilesEntry) {
-      setCachedEntryLists(cacheClient, queryKeys.entries, (current) => {
-        const existingIndex = current.findIndex((candidate) => candidate.uri === entry.uri)
-        if (existingIndex >= 0) {
-          const next = [...current]
-          next[existingIndex] = entry
-          return next
-        }
-        return [...current, entry]
-      })
+      const upsertEntry = (queryKey: QueryKey) => {
+        setCachedEntryLists(cacheClient, queryKey, (current) => {
+          const existingIndex = current.findIndex((candidate) => candidate.uri === entry.uri)
+          if (existingIndex >= 0) {
+            const next = [...current]
+            next[existingIndex] = entry
+            return next
+          }
+          return [...current, entry]
+        })
+      }
+      upsertEntry(queryKeys.entries)
+      upsertEntry([...queryKeys.containerEntries, entry.parentUri])
     },
 
     remove(cacheClient: QueryClient, resourceUri: string) {
-      setCachedEntryLists(cacheClient, queryKeys.entries, (current) => current.filter((entry) => entry.uri !== resourceUri))
+      entryListQueryRoots.forEach((queryKey) => {
+        setCachedEntryLists(cacheClient, queryKey, (current) => current.filter((entry) => entry.uri !== resourceUri))
+      })
     },
 
     updateRawText(
@@ -74,18 +84,20 @@ export function createFilesEntryCacheCollection(
         modifiedAt?: string | null
       },
     ) {
-      setCachedEntryLists(cacheClient, queryKeys.entries, (current) => current.map((entry) => {
-        if (entry.uri !== input.uri) return entry
-        const parentUri = getParentContainerUri(input.uri) ?? entry.parentUri
-        return {
-          ...entry,
-          parentUri,
-          semanticKind: classifyFilesEntry(input.uri, entry.kind === 'container', parentUri, input.mimeType),
-          mimeType: input.mimeType,
-          size: input.size,
-          modifiedAt: input.modifiedAt ?? new Date().toISOString(),
-        }
-      }))
+      entryListQueryRoots.forEach((queryKey) => {
+        setCachedEntryLists(cacheClient, queryKey, (current) => current.map((entry) => {
+          if (entry.uri !== input.uri) return entry
+          const parentUri = getParentContainerUri(input.uri) ?? entry.parentUri
+          return {
+            ...entry,
+            parentUri,
+            semanticKind: classifyFilesEntry(input.uri, entry.kind === 'container', parentUri, input.mimeType),
+            mimeType: input.mimeType,
+            size: input.size,
+            modifiedAt: input.modifiedAt ?? new Date().toISOString(),
+          }
+        }))
+      })
     },
 
     async stageRawTextSave(
@@ -96,6 +108,7 @@ export function createFilesEntryCacheCollection(
       },
     ): Promise<FilesEntryCacheSnapshot> {
       await cacheClient.cancelQueries({ queryKey: queryKeys.entries })
+      await cacheClient.cancelQueries({ queryKey: queryKeys.containerEntries })
       const entriesSnapshot = collection.snapshot(cacheClient)
       collection.updateRawText(cacheClient, {
         uri: input.resource.uri,
@@ -143,6 +156,7 @@ export function createFilesEntryCacheCollection(
       },
     ): Promise<FilesEntryCacheSnapshot> {
       await cacheClient.cancelQueries({ queryKey: queryKeys.entries })
+      await cacheClient.cancelQueries({ queryKey: queryKeys.containerEntries })
       const entriesSnapshot = collection.snapshot(cacheClient)
       collection.commitResourceCreate(cacheClient, input)
       return entriesSnapshot
@@ -196,6 +210,7 @@ export function createFilesEntryCacheCollection(
       operation: 'copy' | 'move',
     ): Promise<FilesEntryCacheSnapshot> {
       await cacheClient.cancelQueries({ queryKey: queryKeys.entries })
+      await cacheClient.cancelQueries({ queryKey: queryKeys.containerEntries })
       const entriesSnapshot = collection.snapshot(cacheClient)
       collection.applyTransfer(
         cacheClient,
@@ -230,6 +245,7 @@ export function createFilesEntryCacheCollection(
 
     async stageDelete(cacheClient: QueryClient, resourceUri: string): Promise<FilesEntryCacheSnapshot> {
       await cacheClient.cancelQueries({ queryKey: queryKeys.entries })
+      await cacheClient.cancelQueries({ queryKey: queryKeys.containerEntries })
       const entriesSnapshot = collection.snapshot(cacheClient)
       confirmedEntryTransferOverlays.forget(resourceUri)
       collection.remove(cacheClient, resourceUri)
@@ -258,6 +274,7 @@ export function createFilesEntryCacheCollection(
       podRootUri?: string | null,
     ): Promise<FilesEntryCacheSnapshot> {
       await cacheClient.cancelQueries({ queryKey: queryKeys.entries })
+      await cacheClient.cancelQueries({ queryKey: queryKeys.containerEntries })
       const entriesSnapshot = collection.snapshot(cacheClient)
       const uri = collection.optimisticFolderUri(input)
       collection.commitResourceCreate(cacheClient, {

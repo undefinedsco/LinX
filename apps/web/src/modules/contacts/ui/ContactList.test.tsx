@@ -26,6 +26,9 @@ const baseProps = {
   onRetry: vi.fn(),
   onSelect: vi.fn(),
   onCreate: vi.fn(),
+  selectedIndex: -1,
+  onItemKeyDown: vi.fn(),
+  registerItemRef: vi.fn(),
 }
 
 describe('ContactList', () => {

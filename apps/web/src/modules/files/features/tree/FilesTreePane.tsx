@@ -246,22 +246,24 @@ function TreeSectionHeader({
   onCollapse: () => void
 }) {
   return (
-    <div className="border-b border-border bg-layout-list-header px-3 py-2.5 shrink-0">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-foreground">{title}</p>
-          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{description}</p>
-        </div>
+    <>
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border bg-layout-list-header px-3">
+        <p className="min-w-0 truncate text-xs font-medium text-foreground">{title}</p>
         <button
           type="button"
           aria-label={collapseLabel}
-          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/70 hover:text-foreground"
           onClick={onCollapse}
         >
           <PanelLeftClose className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </div>
-    </div>
+      {description ? (
+        <div className="shrink-0 border-b border-border/40 px-3 py-1.5 text-[11px] leading-4 text-muted-foreground">
+          {description}
+        </div>
+      ) : null}
+    </>
   )
 }
 

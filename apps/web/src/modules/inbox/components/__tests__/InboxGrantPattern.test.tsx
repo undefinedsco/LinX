@@ -26,11 +26,11 @@ vi.mock('@/modules/files/store', () => ({
   useFilesStore: (selector: (state: unknown) => unknown) => mockUseFilesStore(selector),
 }))
 
-vi.mock('../../store', () => ({
+vi.mock('../../app/store', () => ({
   useInboxStore: (selector: (state: unknown) => unknown) => mockUseInboxStore(selector),
 }))
 
-vi.mock('../../collections', () => ({
+vi.mock('../../data/collections', () => ({
   useInboxItems: () => mockUseInboxItems(),
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
 }))

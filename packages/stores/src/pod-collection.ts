@@ -141,6 +141,12 @@ export function createPodCollection<
         const ensured = ensureId(modified as TData, 'insert')
         const payload = toPersistableInsert(ensured, resource)
         await db.insert(resource).values(payload as any).execute()
+        try {
+          ;(collection.utils as { writeUpsert?: (row: TData) => void }).writeUpsert?.(ensured)
+        } catch {
+          return undefined
+        }
+        return { refetch: false }
       },
 
       // UPDATE
@@ -160,6 +166,12 @@ export function createPodCollection<
           console.error(`[PodCollection] Update failed for ${queryKey.join('/')}:`, error)
           throw error
         }
+        try {
+          ;(collection.utils as { writeUpsert?: (row: TData) => void }).writeUpsert?.(modified as TData)
+        } catch {
+          return undefined
+        }
+        return { refetch: false }
       },
 
       // DELETE
@@ -168,6 +180,12 @@ export function createPodCollection<
         if (!db) throw new Error('Database not connected')
         const { original } = transaction.mutations[0]
         await deleteExactRecord(db, resource as any, original as any)
+        try {
+          ;(collection.utils as { writeDelete?: (key: string) => void }).writeDelete?.(getKey(original as TData))
+        } catch {
+          // syncedData may lack the row (inserted this session, not yet fetched) or sync not initialized
+        }
+        return { refetch: false }
       }
     })
   )
@@ -195,15 +213,50 @@ export function createPodCollection<
     }
 
     try {
+      const locatorDb = db as unknown as {
+        findByIri?: (resource: unknown, iri: string) => Promise<TData | null>
+        findById?: (resource: unknown, id: string) => Promise<TData | null>
+      }
+      // Resolve the row behind a subscribe activity without assuming the object format
+      // (IRI string, id string, or object with @id/id). On any failure return null so the
+      // caller falls back to invalidate — never worse than the previous behavior.
+      const resolveActivityRow = async (activity: any): Promise<TData | null> => {
+        const object = activity?.object
+        if (object == null) return null
+        const iri = typeof object === 'string'
+          ? object
+          : (typeof object === 'object' ? (object['@id'] ?? object.id ?? null) : null)
+        if (iri && typeof locatorDb.findByIri === 'function') {
+          const byIri = await locatorDb.findByIri(resource, iri)
+          if (byIri) return byIri
+        }
+        const id = typeof object === 'string' && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(object) ? object : null
+        if (id && typeof locatorDb.findById === 'function') {
+          const byId = await locatorDb.findById(resource, id)
+          if (byId) return byId
+        }
+        return null
+      }
+      const applyRemoteUpsert = async (activity: any) => {
+        try {
+          const row = await resolveActivityRow(activity)
+          if (row) {
+            ;(collection.utils as { writeUpsert?: (row: TData) => void }).writeUpsert?.(row)
+          } else {
+            queryClient.invalidateQueries({ queryKey })
+          }
+        } catch {
+          queryClient.invalidateQueries({ queryKey })
+        }
+      }
       const sub = await (db as any).subscribe(resource, {
         onCreate: async (activity: any) => {
           debugPodCollection(`[PodCollection] onCreate: ${activity.object}`)
-          // 直接 invalidate，让 useQuery 重新获取完整列表
-          queryClient.invalidateQueries({ queryKey })
+          await applyRemoteUpsert(activity)
         },
         onUpdate: async (activity: any) => {
           debugPodCollection(`[PodCollection] onUpdate: ${activity.object}`)
-          queryClient.invalidateQueries({ queryKey })
+          await applyRemoteUpsert(activity)
         },
         onDelete: (activity: any) => {
           debugPodCollection(`[PodCollection] onDelete: ${activity.object}`)

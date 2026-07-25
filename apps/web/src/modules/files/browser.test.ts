@@ -125,6 +125,19 @@ describe('files browser', () => {
     expect(listContainerResources).toHaveBeenCalledTimes(1)
   })
 
+  it('can read folder metadata without issuing a second child listing', async () => {
+    const listContainerResources = vi.fn().mockResolvedValue(['https://pod.example/public/README.md'])
+    const db = createDb({ listContainerResources })
+
+    const detail = await readFileDetail(db, 'https://pod.example/public/', {
+      includeContainerEntries: false,
+    })
+
+    expect(detail.kind).toBe('container')
+    expect(detail.childEntries).toBeUndefined()
+    expect(listContainerResources).not.toHaveBeenCalled()
+  })
+
   it('does not wait for per-child metadata before returning a container listing', async () => {
     const metadataFetch = vi.fn(() => new Promise<Response>(() => {})) as typeof fetch
     const db = createDb({ fetch: metadataFetch })

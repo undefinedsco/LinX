@@ -3,6 +3,15 @@ import type { FolderChildOpenTrigger } from './folder-child-open'
 import { formatBytes, formatDateTime } from '../detail/detail-metadata'
 import { getFilesEntrySemanticLabel } from '../resource/resource-semantics'
 
+export function projectFolderDetailPathLabel(containerUri: string): string {
+  try {
+    const url = new URL(containerUri)
+    return decodeURIComponent(url.pathname) || '/'
+  } catch {
+    return containerUri
+  }
+}
+
 export type FolderSortState = {
   key: 'name' | 'type' | 'modified' | 'size'
   direction: 'asc' | 'desc'

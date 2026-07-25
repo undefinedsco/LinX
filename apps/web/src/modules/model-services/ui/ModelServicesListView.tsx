@@ -22,7 +22,7 @@ export function ModelServicesListView({
 }: ModelServicesListViewProps) {
   return (
     <div className="flex h-full min-w-0 flex-col border-r border-border/40 bg-muted/10">
-      <div className="flex h-16 shrink-0 items-center gap-2 border-b border-border/40 bg-background px-4">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-layout-list-header px-3">
         <div className="relative min-w-0 flex-1">
           <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
           <Input

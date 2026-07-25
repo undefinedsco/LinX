@@ -14,13 +14,13 @@ import { ReactNode } from 'react'
 // ============================================================================
 
 const mockUseFavoriteStore = vi.fn()
-vi.mock('../store', () => ({
+vi.mock('../app/store', () => ({
   useFavoriteStore: (selector: (state: unknown) => unknown) => mockUseFavoriteStore(selector),
 }))
 
 const mockUseFavoriteList = vi.fn()
 const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined)
-vi.mock('../collections', () => ({
+vi.mock('../data/collections', () => ({
   useFavoriteList: () => mockUseFavoriteList(),
   useFavoriteMutations: () => ({
     removeFavorite: { mutateAsync: mockRemoveMutateAsync },

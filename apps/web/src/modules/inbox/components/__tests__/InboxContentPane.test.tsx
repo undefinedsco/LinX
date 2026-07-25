@@ -19,11 +19,11 @@ vi.mock('@/modules/chat/store', () => ({
   useChatStore: (selector: (state: unknown) => unknown) => mockUseChatStore(selector),
 }))
 
-vi.mock('../../store', () => ({
+vi.mock('../../app/store', () => ({
   useInboxStore: (selector: (state: unknown) => unknown) => mockUseInboxStore(selector),
 }))
 
-vi.mock('../../collections', () => ({
+vi.mock('../../data/collections', () => ({
   useInboxItems: () => mockUseInboxItems(),
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
 }))

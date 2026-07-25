@@ -410,6 +410,15 @@ export function FilesListPane(_props: MicroAppPaneProps) {
             >
               <Trash2 strokeWidth={1.5} className="h-3.5 w-3.5" />
             </button>
+            <button
+              type="button"
+              aria-label={listSelection.batchSelectionActions.cancelLabel}
+              title={listSelection.batchSelectionActions.cancelLabel}
+              className="flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+              onClick={() => listSelection.clearListSelection()}
+            >
+              <X strokeWidth={1.5} className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       ) : null}

@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { useMediaQuery } from '@/lib/use-media-query'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import {
   SourceLinkedCardDrawerMetadata,
@@ -56,6 +57,7 @@ function ResourceLayoutTitle({ slot, name }: { slot: HTMLElement; name: string }
 
 export function FileDetailPane() {
   const [accessDialogOpen, setAccessDialogOpen] = useState(false)
+  const isXlViewport = useMediaQuery('(min-width: 1280px)')
   const {
     activeDetailTab,
     closeMetaDrawer,
@@ -238,19 +240,26 @@ export function FileDetailPane() {
       ) : null}
 
       {/* Tab content */}
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        <ScrollArea ref={detailScrollAreaRef} className="h-full">
-          {!showTabs ? (
-            <FileDetailPreview key={selectedFileId} file={file} onOpenEditableFileSheet={closeMetaDrawer} />
-          ) : (
-            <>
-              {activeDetailTab === 'preview' && <FileDetailPreview key={selectedFileId} file={file} onOpenEditableFileSheet={closeMetaDrawer} />}
-              {activeDetailTab === 'lineage' && <FileDetailLineage file={file} />}
-            </>
-          )}
-        </ScrollArea>
-        {showMetaDrawer ? (
-          <ResourceMetaDrawer file={file} target={sidecarOwnerTarget} open={metaDrawerOpen} onClose={closeMetaDrawer}>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative min-w-0 flex-1 overflow-hidden">
+          <ScrollArea ref={detailScrollAreaRef} className="h-full">
+            {!showTabs ? (
+              <FileDetailPreview key={selectedFileId} file={file} onOpenEditableFileSheet={closeMetaDrawer} />
+            ) : (
+              <>
+                {activeDetailTab === 'preview' && <FileDetailPreview key={selectedFileId} file={file} onOpenEditableFileSheet={closeMetaDrawer} />}
+                {activeDetailTab === 'lineage' && <FileDetailLineage file={file} />}
+              </>
+            )}
+          </ScrollArea>
+        </div>
+        {showMetaDrawer && !isXlViewport ? (
+          <ResourceMetaDrawer
+            file={file}
+            target={sidecarOwnerTarget}
+            open={metaDrawerOpen}
+            onClose={closeMetaDrawer}
+          >
             {metaDrawerChildren}
           </ResourceMetaDrawer>
         ) : null}

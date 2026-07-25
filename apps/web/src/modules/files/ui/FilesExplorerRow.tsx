@@ -109,7 +109,7 @@ export function FilesExplorerRow({
           onDoubleClick={() => onOpen('double-click')}
           onKeyDown={handleKeyDown}
           className={cn(
-            'group relative flex h-7 w-full max-w-full min-w-0 cursor-pointer select-none items-center gap-1 overflow-hidden px-1 pr-12 text-xs leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-inset',
+            'group relative flex h-7 w-full max-w-full min-w-0 cursor-pointer select-none items-center gap-1 overflow-hidden px-1 pr-12 text-xs leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25',
             selected
               ? 'bg-layout-list-selected text-foreground'
               : contextTarget

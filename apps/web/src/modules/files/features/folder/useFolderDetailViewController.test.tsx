@@ -27,8 +27,8 @@ const sidecar = folderEntry('alpha.md.meta', { semanticKind: 'meta-sidecar', mim
 describe('useFolderDetailViewController', () => {
   it('owns Finder view mode, sidecar visibility, and sort projection for folder detail', () => {
     const { result, rerender } = renderHook(
-      ({ children }) => useFolderDetailViewController({ children }),
-      { initialProps: { children: [beta, sidecar, alpha] } },
+      ({ children, containerUri }) => useFolderDetailViewController({ children, containerUri }),
+      { initialProps: { children: [beta, sidecar, alpha], containerUri: 'https://pod.example/files/' } },
     )
 
     expect(result.current.viewMode).toBe('list')
@@ -73,7 +73,7 @@ describe('useFolderDetailViewController', () => {
     ])
     expect(result.current.contentState).toEqual({ kind: 'collection', viewMode: 'icons' })
 
-    rerender({ children: [folderEntry('gamma.md'), sidecar] })
+    rerender({ children: [folderEntry('gamma.md'), sidecar], containerUri: 'https://pod.example/files/' })
     expect(result.current.viewMode).toBe('icons')
     expect(result.current.visibleChildren.map((entry) => entry.name)).toEqual(['gamma.md'])
     expect(result.current.visibleChildCount).toBe(1)
@@ -82,7 +82,7 @@ describe('useFolderDetailViewController', () => {
 
   it('does not expose or enter the removed Folder Columns view', () => {
     const { result } = renderHook(
-      () => useFolderDetailViewController({ children: [alpha] }),
+      () => useFolderDetailViewController({ children: [alpha], containerUri: 'https://pod.example/files/' }),
     )
 
     expect(result.current.viewModeOptions.map((option) => option.mode)).toEqual(['list', 'icons'])
@@ -96,7 +96,7 @@ describe('useFolderDetailViewController', () => {
 
   it('projects visible child availability after sidecar filtering', () => {
     const { result } = renderHook(
-      () => useFolderDetailViewController({ children: [sidecar] }),
+      () => useFolderDetailViewController({ children: [sidecar], containerUri: 'https://pod.example/files/' }),
     )
 
     expect(result.current.visibleChildren).toEqual([])

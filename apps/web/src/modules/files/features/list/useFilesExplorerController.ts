@@ -121,8 +121,12 @@ export function useFilesExplorerController({
       ? rows.slice(rowIndex + 1).find((row) => row.kind === 'entry')
       : rows.slice(0, rowIndex).reverse().find((row) => row.kind === 'entry')
     if (nextRow?.kind === 'entry') {
-      selectFile(nextRow.entry.uri)
-      return nextRow.entry.uri
+      const targetUri = nextRow.entry.uri
+      selectFile(targetUri)
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(`[data-files-explorer-row-uri="${targetUri}"]`)?.focus()
+      })
+      return targetUri
     }
     return null
   }, [clearFileSelection, rows, selectFile, toggleFolder])

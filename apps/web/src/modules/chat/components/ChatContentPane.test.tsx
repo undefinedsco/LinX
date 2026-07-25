@@ -194,10 +194,20 @@ describe('ChatContentPane', () => {
     storeState.selectedChatId = null
     storeState.selectedThreadId = null
 
-    render(<ChatContentPane theme="light" />)
+    render(<ChatContentPane theme="light" compact />)
 
     expect(screen.getByTestId('compact-chat-list')).toBeInTheDocument()
+    expect(screen.queryByText('选择或创建一个聊天')).not.toBeInTheDocument()
+  })
+
+  it('shows the empty prompt instead of the inline list on desktop when no chat is selected', () => {
+    storeState.selectedChatId = null
+    storeState.selectedThreadId = null
+
+    render(<ChatContentPane theme="light" />)
+
     expect(screen.getByText('选择或创建一个聊天')).toBeInTheDocument()
+    expect(screen.queryByTestId('compact-chat-list')).not.toBeInTheDocument()
   })
 
   it('passes selected thread as the initial ChatKit thread without unsafe pre-upgrade method calls', () => {

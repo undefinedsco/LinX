@@ -33,13 +33,14 @@ export function FolderDetailPreview({
     childActionMenu,
     collectionChrome,
     contentState,
+    folderPathLabel,
     sort,
     sortedChildren,
     sortedCollectionRows,
     toolbarChrome,
     visibleChildren,
     viewModeOptions,
-  } = useFolderDetailViewController({ children })
+  } = useFolderDetailViewController({ children, containerUri: file.uri })
   const folderSelection = useFolderDetailSelectionController({
     visibleChildren,
     sortedChildren,
@@ -71,6 +72,7 @@ export function FolderDetailPreview({
       onDragLeave={folderUpload.handleUploadDragLeave}
       onDrop={folderUpload.handleUploadDrop}
     >
+      <p className="truncate text-xs text-muted-foreground" title={folderPathLabel}>{folderPathLabel}</p>
       <ResourceViewBar
         ariaLabel="文件夹视图"
         views={viewModeOptions.map((option) => ({

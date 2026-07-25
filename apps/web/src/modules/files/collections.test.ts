@@ -437,7 +437,9 @@ describe('files collections', () => {
     const cancelSpy = vi.spyOn(queryClient, 'cancelQueries')
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
     const entriesKey = ['files', 'entries', 'all', 'https://pod.example/public/']
+    const containerEntriesKey = [...FILES_COLLECTION_QUERY_KEYS.containerEntries, 'https://pod.example/public/']
     queryClient.setQueryData(entriesKey, [])
+    queryClient.setQueryData(containerEntriesKey, [])
 
     const snapshot = await filesEntryCacheCollection.stageResourceCreate(queryClient, {
       uri: 'https://pod.example/public/notes.md',
@@ -447,6 +449,7 @@ describe('files collections', () => {
     })
 
     expect(cancelSpy).toHaveBeenCalledWith({ queryKey: FILES_COLLECTION_QUERY_KEYS.entries })
+    expect(cancelSpy).toHaveBeenCalledWith({ queryKey: FILES_COLLECTION_QUERY_KEYS.containerEntries })
     expect(queryClient.getQueryData(entriesKey)).toEqual([
       expect.objectContaining({
         uri: 'https://pod.example/public/notes.md',
@@ -455,9 +458,13 @@ describe('files collections', () => {
         size: '# Notes'.length,
       }),
     ])
+    expect(queryClient.getQueryData(containerEntriesKey)).toEqual([
+      expect.objectContaining({ uri: 'https://pod.example/public/notes.md' }),
+    ])
 
     filesEntryCacheCollection.restore(queryClient, snapshot)
     expect(queryClient.getQueryData(entriesKey)).toEqual([])
+    expect(queryClient.getQueryData(containerEntriesKey)).toEqual([])
 
     filesEntryCacheCollection.commitResourceCreate(queryClient, {
       uri: 'https://pod.example/public/notes.md',
@@ -480,6 +487,7 @@ describe('files collections', () => {
     })
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: FILES_COLLECTION_QUERY_KEYS.entries })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: FILES_COLLECTION_QUERY_KEYS.containerEntries })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: FILES_COLLECTION_QUERY_KEYS.children })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.rawText, 'https://pod.example/public/notes.md'] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.detail, 'https://pod.example/public/notes.md'] })

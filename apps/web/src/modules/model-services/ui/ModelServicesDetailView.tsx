@@ -128,7 +128,7 @@ export function ModelServicesDetailView({
   return (
     <div className="flex h-full flex-col bg-background">
       <TooltipProvider>
-        <div className="flex h-16 shrink-0 items-center border-b border-border/40 bg-background/50 px-8">
+        <div className="flex h-12 shrink-0 items-center border-b border-border/40 bg-background/50 px-8">
           <div className="mx-auto flex w-full max-w-5xl items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-muted/50 p-0 shadow-sm">

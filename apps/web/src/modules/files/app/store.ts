@@ -147,6 +147,7 @@ interface FilesStore {
   detailTab: FileDetailTab
   editableFileSheetOpenRequestUri: string | null
   sidecarActionRequest: FilesSidecarActionRequest | null
+  metaSidebarOpen: boolean
   structuredViewMode: StructuredResourceViewMode
   structuredClassScope: string | null
   structuredSearchText: string
@@ -191,6 +192,7 @@ interface FilesStore {
 
   // Actions: detail
   setDetailTab: (tab: FileDetailTab) => void
+  setMetaSidebarOpen: (open: boolean) => void
   requestEditableFileSheetOpen: (uri: string) => void
   consumeEditableFileSheetOpenRequest: (uri: string) => void
   requestSidecarAction: (request: FilesSidecarActionRequest) => void
@@ -336,6 +338,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
   detailTab: 'preview',
   editableFileSheetOpenRequestUri: null,
   sidecarActionRequest: null,
+  metaSidebarOpen: false,
   structuredViewMode: 'table',
   structuredClassScope: null,
   structuredSearchText: '',
@@ -521,6 +524,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
 
   // Actions: detail
   setDetailTab: (detailTab) => set({ detailTab }),
+  setMetaSidebarOpen: (metaSidebarOpen) => set({ metaSidebarOpen }),
   requestEditableFileSheetOpen: (editableFileSheetOpenRequestUri) => set({ editableFileSheetOpenRequestUri }),
   consumeEditableFileSheetOpenRequest: (uri) =>
     set((state) => state.editableFileSheetOpenRequestUri === uri

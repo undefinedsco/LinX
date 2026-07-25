@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react'
-import { ChevronDown, FileCog, Shield, ExternalLink, InfoIcon } from 'lucide-react'
+import { ChevronDown, FileCog, Shield, ExternalLink, InfoIcon, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { SidecarDrawer } from '@/components/ui/sidecar-drawer'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -183,33 +184,63 @@ export function ResourceMetaDrawer({
   file,
   target,
   open,
+  defaultOpen = false,
   onClose,
   children,
+  variant = 'aside',
+  className,
 }: {
   file: FilesDetail
   target: Pick<FilesEntry, 'uri' | 'kind'>
-  open: boolean
+  open?: boolean
+  defaultOpen?: boolean
   onClose: () => void
   children?: ReactNode
+  variant?: 'aside' | 'embedded'
+  className?: string
 }) {
-  const { metaQuery } = useResourceMetaDrawerController({ open, target })
+  const isOpen = open ?? defaultOpen
+  const { metaQuery } = useResourceMetaDrawerController({ open: isOpen, target })
   const content = useResourceMetaSidecarContentController({ file, query: metaQuery })
 
-  if (!open) return null
+  if (!isOpen) return null
+
+  const body = (
+    <>
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <InfoIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <p className="truncate text-sm font-medium text-foreground">.meta</p>
+        </div>
+        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="关闭 .meta inspector" onClick={onClose}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-4">
+          {children}
+          <ResourceMetaSidecarContent content={content} />
+        </div>
+      </ScrollArea>
+    </>
+  )
+
+  if (variant === 'embedded') {
+    return (
+      <div aria-label="Resource .meta inspector" data-sidecar-coverage="content" className="flex h-full min-h-0 flex-col">
+        {body}
+      </div>
+    )
+  }
 
   return (
-    <SidecarDrawer
-      open={open}
-      ariaLabel="Resource .meta inspector"
-      title=".meta"
-      icon={<InfoIcon className="h-3.5 w-3.5" />}
-      closeLabel="关闭 .meta inspector"
-      coverage="content"
-      onClose={onClose}
+    <aside
+      aria-label="Resource .meta inspector"
+      data-sidecar-coverage="content"
+      className={cn('flex w-[320px] max-w-[40%] shrink-0 flex-col border-l border-border/50 bg-background', className)}
     >
-      {children}
-      <ResourceMetaSidecarContent content={content} />
-    </SidecarDrawer>
+      {body}
+    </aside>
   )
 }
 

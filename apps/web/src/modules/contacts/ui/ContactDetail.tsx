@@ -1,6 +1,7 @@
 import type { ContactRow } from '@undefineds.co/models'
 import type { UnifiedContact } from '../domain/types'
 import { getShortContactId } from '../domain/contact-projection'
+import { isDefaultSecretaryContactId } from '../domain/default-secretary'
 import type { GroupMember } from './MemberList'
 import { MemberList } from './MemberList'
 import { SelectableContactList } from './SelectableContactList'
@@ -180,10 +181,12 @@ export function ContactDetail({ detail, sync, group, editing, creation, actions 
     const isAgent = contact.sourceType === 'agent'
     const gender = contact.gender || (isAgent ? 'bot' : 'unknown')
     const isReference = contact.sourceType === 'solid' || (isAgent && rawId?.startsWith('http'))
+    // 默认助手（AI Secretary）不可删除：隐藏删除项与危险样式，消除删除压力
+    const isProtected = isDefaultSecretaryContactId(contact.id)
 
     return (
       <>
-        <div className="h-16 flex items-center justify-end px-4 gap-1 shrink-0">
+        <div className="h-12 flex items-center justify-end px-4 gap-1 shrink-0">
           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md" onClick={actions.onShare}>
             <Share2 className="w-4.5 h-4.5 text-muted-foreground" />
           </Button>
@@ -197,10 +200,14 @@ export function ContactDetail({ detail, sync, group, editing, creation, actions 
                 {contact.starred ? '取消星标' : '设为星标'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={actions.onOpenAliasEdit}><Edit3 className="w-4 h-4 mr-2" />修改备注</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={editing.onOpenDelete} className="text-destructive focus:text-destructive">
-                <Trash2 className="w-4 h-4 mr-2" />删除联系人
-              </DropdownMenuItem>
+              {isProtected ? null : (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={editing.onOpenDelete} className="text-destructive focus:text-destructive">
+                    <Trash2 className="w-4 h-4 mr-2" />删除联系人
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

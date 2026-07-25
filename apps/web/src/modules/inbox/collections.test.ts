@@ -75,7 +75,7 @@ describe('findLatestApprovalByTarget', () => {
 
 describe('buildRuntimeToolResponse', () => {
   it('keeps Files proposal application behind the Files collection boundary', () => {
-    const source = readFileSync('src/modules/inbox/collections.ts', 'utf8')
+    const source = readFileSync('src/modules/inbox/data/collections.ts', 'utf8')
 
     expect(source).toContain('filesProposalApplicationCollection.applyApprovalDecision')
     expect(source).not.toMatch(/\bapprove(?:VocabTerm|SourceUpdate|AccessPolicy|AiChange|StructuredCellChange)ProposalFromInbox\b/)

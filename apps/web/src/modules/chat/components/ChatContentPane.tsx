@@ -536,7 +536,7 @@ function ChatKitPanel({
       colorScheme: theme,
       color: {
         accent: {
-          primary: '#7C3AED',
+          primary: '#735FC4',
           level: 2,
         },
       },
@@ -707,7 +707,8 @@ function ChatKitPanel({
   )
 }
 
-export function ChatContentPane(_props: ChatContentPaneProps) {
+export function ChatContentPane(props: ChatContentPaneProps) {
+  const compact = props.compact === true
   const { session } = useSession()
   const {
     db,
@@ -985,15 +986,17 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       : null
 
   if (!selectedChatId) {
+    if (compact) {
+      return (
+        <div className="flex min-h-0 flex-1" aria-label="聊天列表">
+          <ChatListPane {...props} />
+        </div>
+      )
+    }
     return (
-      <>
-        <div className="hidden min-h-0 flex-1 md:flex">
-          <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与文件夹。" />
-        </div>
-        <div className="flex min-h-0 flex-1 md:hidden" aria-label="聊天列表">
-          <ChatListPane {..._props} />
-        </div>
-      </>
+      <div className="flex min-h-0 flex-1">
+        <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与文件夹。" />
+      </div>
     )
   }
 

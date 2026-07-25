@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useLiveQuery } from '@tanstack/react-db'
 import type { ContactRow } from '@undefineds.co/models'
@@ -103,6 +103,32 @@ export function ContactListPane({}: MicroAppPaneProps) {
     ?? (fetchError ? '联系人加载失败，请重试。' : null)
     ?? (db && liveQuery.isError ? '联系人加载失败，请重试。' : null)
 
+  const flatContacts = useMemo(
+    () => projection.sections.flatMap((section) => section.items),
+    [projection.sections],
+  )
+  const selectedIndex = useMemo(
+    () => flatContacts.findIndex((contact) => contact.id === selectedId),
+    [flatContacts, selectedId],
+  )
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const registerItemRef = useCallback((index: number, node: HTMLButtonElement | null) => {
+    optionRefs.current[index] = node
+  }, [])
+  const onItemKeyDown = useCallback((index: number, event: KeyboardEvent<HTMLButtonElement>) => {
+    let nextIndex: number
+    if (event.key === 'ArrowDown') nextIndex = Math.min(index + 1, flatContacts.length - 1)
+    else if (event.key === 'ArrowUp') nextIndex = Math.max(index - 1, 0)
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = flatContacts.length - 1
+    else return
+    event.preventDefault()
+    const target = flatContacts[nextIndex]
+    if (!target) return
+    select(target.id)
+    optionRefs.current[nextIndex]?.focus()
+  }, [flatContacts, select])
+
   return (
     <ContactList
       search={search}
@@ -117,6 +143,9 @@ export function ContactListPane({}: MicroAppPaneProps) {
       onRetry={retryContacts}
       onSelect={select}
       onCreate={openCreateDialog}
+      selectedIndex={selectedIndex}
+      onItemKeyDown={onItemKeyDown}
+      registerItemRef={registerItemRef}
     />
   )
 }

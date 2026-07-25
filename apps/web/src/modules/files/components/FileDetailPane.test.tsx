@@ -3320,8 +3320,8 @@ describe('FileDetailPane', () => {
 
     const drawer = screen.getByLabelText('Resource .meta inspector')
     expect(drawer).toHaveAttribute('data-sidecar-coverage', 'content')
-    expect(drawer).toHaveClass('inset-y-0', 'right-0', 'w-[360px]', 'max-w-full')
-    expect(drawer).not.toHaveClass('inset-0', 'w-full', 'max-w-none')
+    expect(drawer).toHaveClass('w-[320px]', 'border-l', 'shrink-0')
+    expect(drawer).not.toHaveClass('absolute', 'inset-y-0')
     expect(within(drawer).getByText('https://pod.example/.data/state.ttl.meta')).toBeInTheDocument()
     expect(within(drawer).getByText(/State metadata/)).toBeInTheDocument()
     expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()

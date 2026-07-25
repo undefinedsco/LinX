@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { useFilesRouteBridge } from '../../app/FilesRouteContext'
 import {
@@ -37,10 +37,11 @@ export function useFileDetailPaneController() {
   const sidecarActionRequest = useFilesStore((state) => state.sidecarActionRequest)
   const consumeSidecarActionRequest = useFilesStore((state) => state.consumeSidecarActionRequest)
   const requestEditableFileSheetOpen = useFilesStore((state) => state.requestEditableFileSheetOpen)
+  const metaSidebarOpen = useFilesStore((state) => state.metaSidebarOpen)
+  const setMetaSidebarOpen = useFilesStore((state) => state.setMetaSidebarOpen)
   const filesRouteBridge = useFilesRouteBridge()
   const { data: file, isLoading, error, refetch } = useFileDetail(selectedFileId)
   const { data: favorites = [] } = useFilesFavoriteList({ sourceModule: 'files' })
-  const [metaDrawerOpen, setMetaDrawerOpen] = useState(false)
   const detailScrollAreaRef = useRef<HTMLDivElement | null>(null)
   const previousSelectedFileIdRef = useRef(selectedFileId)
 
@@ -49,8 +50,8 @@ export function useFileDetailPaneController() {
   useEffect(() => {
     if (previousSelectedFileIdRef.current === selectedFileId) return
     previousSelectedFileIdRef.current = selectedFileId
-    setMetaDrawerOpen(false)
-  }, [selectedFileId])
+    setMetaSidebarOpen(false)
+  }, [selectedFileId, setMetaSidebarOpen])
 
   useEffect(() => {
     if (!shouldResetFileDetailHorizontalScroll({ structuredViewMode })) return
@@ -62,12 +63,12 @@ export function useFileDetailPaneController() {
   }, [selectedFileId, structuredViewMode])
 
   const closeMetaDrawer = useCallback(() => {
-    setMetaDrawerOpen(false)
-  }, [])
+    setMetaSidebarOpen(false)
+  }, [setMetaSidebarOpen])
 
   const openMetaDrawer = useCallback(() => {
-    setMetaDrawerOpen(true)
-  }, [])
+    setMetaSidebarOpen(true)
+  }, [setMetaSidebarOpen])
 
   const handleCopyUri = useCallback(() => {
     if (!file) return
@@ -153,7 +154,7 @@ export function useFileDetailPaneController() {
     handleSystemOpen,
     handleToggleFavorite,
     isFavorite,
-    metaDrawerOpen,
+    metaDrawerOpen: metaSidebarOpen,
     openMetaDrawer,
     resourceActions: detailState.resourceActions,
     isLoading,
