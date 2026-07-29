@@ -11231,10 +11231,10 @@
   resolved "https://registry.yarnpkg.com/@typescript/typescript-win32-x64/-/typescript-win32-x64-7.0.2.tgz#cf3b7b0d6ce5635daca4c8e01c189cdcde47ec3c"
   integrity sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g==
 
-"@undefineds.co/drizzle-solid@0.3.18", "@undefineds.co/drizzle-solid@^0.3.14":
-  version "0.3.18"
-  resolved "https://registry.yarnpkg.com/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.18.tgz#56df46f139eaa4e10a22b9a3645f552511763844"
-  integrity sha512-VY+4xkSuMhKKjujn+pEIifq/194Vc8fdw7GF+9HJb0YBAyXQUXwNFDt3mZnHN/pTVfta5RUJIIG14TTlr78pJg==
+"@undefineds.co/drizzle-solid@0.3.19", "@undefineds.co/drizzle-solid@^0.3.14":
+  version "0.3.19"
+  resolved "https://registry.npmjs.org/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.19.tgz"
+  integrity sha512-FRb6vmSHWWG6zSol5q08otBFCUpnqmCKy38sxvIarMLDWR/znMTryW9BH4YAO7zB9BffWqiEj10DQ4x3llDf2A==
   dependencies:
     "@inrupt/solid-client" "^3.0.0"
     "@inrupt/solid-client-authn-node" "^3.1.1"

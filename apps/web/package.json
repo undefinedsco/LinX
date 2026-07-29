@@ -53,7 +53,7 @@
     "@tiptap/pm": "3.27.1",
     "@tiptap/react": "^3.26.1",
     "@tiptap/starter-kit": "^3.26.1",
-    "@undefineds.co/drizzle-solid": "0.3.18",
+    "@undefineds.co/drizzle-solid": "0.3.19",
     "@undefineds.co/models": "0.2.45",
     "ai": "^6.0.188",
     "class-variance-authority": "^0.7.1",
