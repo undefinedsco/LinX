@@ -11,6 +11,8 @@
     "build:check": "yarn workspace @linx/stores build && tsc && vite build",
     "preview": "vite preview",
     "test": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks\" vitest",
+    "test:integration": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks\" vitest --config vitest.integration.config.ts",
+    "test:integration:perf": "XPOD_TEST_PERF=1 NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks\" vitest --config vitest.integration.config.ts --disableConsoleIntercept --reporter=verbose",
     "lint": "eslint src --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
@@ -51,7 +53,7 @@
     "@tiptap/pm": "3.27.1",
     "@tiptap/react": "^3.26.1",
     "@tiptap/starter-kit": "^3.26.1",
-    "@undefineds.co/drizzle-solid": "0.3.17",
+    "@undefineds.co/drizzle-solid": "0.3.18",
     "@undefineds.co/models": "0.2.45",
     "ai": "^6.0.188",
     "class-variance-authority": "^0.7.1",

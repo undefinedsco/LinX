@@ -25,6 +25,7 @@ if (statSync(packageDistRoot, { throwIfNoEntry: false }) == null) {
 }
 
 syncLocalDrizzleSolidDist(packageDistRoot)
+patchDirectSparqlEndpointQueries(packageDistRoot)
 patchDrizzleSolidPodUrlForwarding(packageDistRoot)
 patchDrizzleSolidExplicitPodUrlLock(packageDistRoot)
 patchDrizzleSolidResourceIdSemantics(packageDistRoot)
@@ -134,6 +135,82 @@ function stripEsmSourceMapUrls(root) {
     if (!sourceMapPattern.test(source)) continue
 
     writeFileSync(filePath, source.replace(sourceMapPattern, ''), 'utf8')
+  }
+}
+
+function patchDirectSparqlEndpointQueries(root) {
+  const files = [
+    path.join(root, 'core/sparql-executor.js'),
+    path.join(root, 'esm/core/sparql-executor.js'),
+  ]
+
+  for (const filePath of files) {
+    if (statSync(filePath, { throwIfNoEntry: false }) == null) {
+      continue
+    }
+
+    const source = readFileSync(filePath, 'utf8')
+    if (source.includes('async executeDirectSparqlQuery(')) {
+      continue
+    }
+
+    let patched = source.replace(
+      /(\s+async executeQueryWithSource\(sparqlQuery, sourceUrl, sourceType = 'auto'\) \{\n\s+try \{\n)/,
+      `$1            if ((sourceType === 'sparql' || sourceUrl.includes('/sparql'))
+                && (sparqlQuery.type === 'SELECT' || sparqlQuery.type === 'ASK')) {
+                return await this.executeDirectSparqlQuery(sparqlQuery, sourceUrl);
+            }
+`,
+    )
+
+    patched = patched.replace(
+      /(\s+\/\/ Add data source\n)/,
+      `
+    async executeDirectSparqlQuery(sparqlQuery, sourceUrl) {
+        const endpoint = new URL(sourceUrl);
+        endpoint.searchParams.set('query', sparqlQuery.query);
+        const response = await this.fetchFn(endpoint, {
+            headers: {
+                Accept: 'application/sparql-results+json'
+            }
+        });
+        if (!response.ok) {
+            throw new Error(\`SPARQL endpoint returned HTTP \${response.status}\`);
+        }
+        const payload = await response.json();
+        if (sparqlQuery.type === 'ASK') {
+            return [{ result: payload.boolean === true }];
+        }
+        const bindings = payload?.results?.bindings;
+        if (!Array.isArray(bindings)) {
+            return [];
+        }
+        return bindings.map((binding) => {
+            const result = {};
+            for (const [key, value] of Object.entries(binding)) {
+                if (!value || typeof value !== 'object')
+                    continue;
+                const term = value.type === 'uri'
+                    ? { termType: 'NamedNode', value: value.value }
+                    : value.type === 'bnode'
+                        ? { termType: 'BlankNode', value: value.value }
+                        : {
+                            termType: 'Literal',
+                            value: value.value,
+                            datatype: value.datatype ? { value: value.datatype } : undefined
+                        };
+                result[key] = this.convertComunicaTerm(term);
+            }
+            return result;
+        });
+    }
+$1`,
+    )
+
+    if (!patched.includes('async executeDirectSparqlQuery(')) {
+      throw new Error(`Unable to patch direct SPARQL endpoint queries in ${filePath}`)
+    }
+    writeFileSync(filePath, patched, 'utf8')
   }
 }
 

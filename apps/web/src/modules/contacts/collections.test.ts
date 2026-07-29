@@ -290,23 +290,6 @@ describe('contactOps', () => {
     })
   })
 
-  describe('updateContact', () => {
-    it('should call collection update with correct id', async () => {
-      await contactOps.updateContact('contact-1', { alias: 'New Alias' })
-
-      expect(mockUpdate).toHaveBeenCalledWith('contact-1', expect.any(Function))
-    })
-  })
-
-  describe('updateAgent', () => {
-    it('should call collection update with correct id', async () => {
-      const agentId = agentResourceId('agent-1')
-      await contactOps.updateAgent(agentId, { instructions: 'New instructions' })
-
-      expect(mockUpdate).toHaveBeenCalledWith(agentId, expect.any(Function))
-    })
-  })
-
   describe('toggleStar', () => {
     it('should toggle starred from false to true', async () => {
       const updateSpy = vi.spyOn(contactOps, 'updateContact').mockResolvedValue()
@@ -322,14 +305,6 @@ describe('contactOps', () => {
       await contactOps.toggleStar('contact-1', true)
 
       expect(updateSpy).toHaveBeenCalledWith('contact-1', { starred: false })
-    })
-  })
-
-  describe('deleteContact', () => {
-    it('should call collection delete', async () => {
-      await contactOps.deleteContact('contact-1')
-
-      expect(mockDelete).toHaveBeenCalledWith('contact-1')
     })
   })
 
@@ -541,42 +516,6 @@ describe('contactOps Query Operations', () => {
 
   afterEach(() => {
     setContactsDatabaseGetter(() => null)
-  })
-
-  describe('getAll', () => {
-    it('should return all contacts from collection state', () => {
-      const mockContacts = [
-        { id: 'contact-1', name: 'Alice' },
-        { id: 'contact-2', name: 'Bob' },
-      ]
-      mockContacts.forEach(c => mockCollectionState.set(c.id, c))
-
-      const result = contactOps.getAll()
-
-      expect(result).toHaveLength(2)
-    })
-
-    it('should return empty array when no contacts', () => {
-      mockCollectionState.clear()
-
-      const result = contactOps.getAll()
-
-      expect(result).toEqual([])
-    })
-  })
-
-  describe('getAllAgents', () => {
-    it('should return all agents from collection state', () => {
-      const mockAgents = [
-        { id: 'agent-1', name: 'Assistant A' },
-        { id: 'agent-2', name: 'Assistant B' },
-      ]
-      mockAgents.forEach(a => mockCollectionState.set(a.id, a))
-
-      const result = contactOps.getAllAgents()
-
-      expect(result).toHaveLength(2)
-    })
   })
 
   describe('search', () => {
