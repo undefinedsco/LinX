@@ -27,6 +27,14 @@ import {
   type SolidDatabase,
   UDFS,
 } from '@undefineds.co/models'
+import {
+  getDatetime,
+  getSolidDataset,
+  getStringNoLocale,
+  getThing,
+  getUrl,
+  getUrlAll,
+} from '@inrupt/solid-client'
 import { requireRowResourceId } from '@/lib/data/resource-identity'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
@@ -37,6 +45,13 @@ const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
 const CHATKIT_ITEM_ID_METADATA_KEY = 'chatkitItemId'
 const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
+const SIOC_HAS_MEMBER = 'http://rdfs.org/sioc/ns#has_member'
+const SIOC_CONTENT = 'http://rdfs.org/sioc/ns#content'
+const DCT_CREATED = 'http://purl.org/dc/terms/created'
+const UDFS_MESSAGE_TYPE = 'https://undefineds.co/ns#messageType'
+const UDFS_MESSAGE_STATUS = 'https://undefineds.co/ns#messageStatus'
+const UDFS_METADATA = 'https://undefineds.co/ns#metadata'
+const UDFS_CHATKIT_ITEM_ID = 'https://undefineds.co/ns#chatkitItemId'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -93,6 +108,19 @@ function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undef
 function resourceUrlFromIri(iri: string): string {
   const hashIndex = iri.indexOf('#')
   return hashIndex >= 0 ? iri.slice(0, hashIndex) : iri
+}
+
+function readBindingIri(value: unknown): string | null {
+  if (typeof value === 'string') return value
+  if (
+    value
+    && typeof value === 'object'
+    && 'value' in value
+    && typeof (value as { value?: unknown }).value === 'string'
+  ) {
+    return (value as { value: string }).value
+  }
+  return null
 }
 
 function parseRecordMetadata(metadata: unknown): Record<string, unknown> {
@@ -185,19 +213,59 @@ async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId
   if (threadId.includes('/') && threadId.includes('#')) {
     const direct = await (db as any).findById(Thread as any, threadId)
     if (direct) return direct
+    const durableChatId = extractChatIdFromDurableThreadId(threadId)
+    const logicalThreadId = extractThreadId(threadId)
+    if (durableChatId && logicalThreadId) {
+      const legacy = await findLegacyThreadRecord(db, durableChatId, logicalThreadId)
+      if (legacy) return legacy
+    }
   }
 
   if (chatId) {
     const exactId = threadRepository.idForChat(chatId, threadId)
     const exact = await (db as any).findById(Thread as any, exactId)
     if (exact) return exact
+    const legacy = await findLegacyThreadRecord(db, chatId, extractThreadId(threadId) ?? threadId)
+    if (legacy) return legacy
   }
 
-  const rows = await db.select().from(Thread).execute()
-  return rows.find((entry: any) => (
-    entry.id === threadId
-    || extractThreadId(entry.id) === threadId
-  )) ?? null
+  // A logical Thread id such as "__default__" is only unique inside its Chat.
+  // Never fall back to an unscoped collection scan: xpod query endpoints can
+  // expose subjects from multiple Pods, and selecting the first matching short
+  // id may dereference another account's protected resource.
+  return null
+}
+
+async function findLegacyThreadRecord(
+  db: SolidDatabase<any>,
+  chatId: string,
+  threadId: string,
+): Promise<Record<string, unknown> | null> {
+  const dialect = (db as any).getDialect?.()
+  const executeOnResource = dialect?.executeOnResource
+  if (typeof executeOnResource !== 'function') return null
+
+  const threadIri = threadRepository.iriForChat(requirePodBaseUrl(db), chatId, threadId)
+  const rows = await executeOnResource.call(
+    dialect,
+    resourceUrlFromIri(threadIri),
+    {
+      type: 'SELECT',
+      query: `SELECT ?type WHERE { <${threadIri}> a ?type . } LIMIT 1`,
+      prefixes: {},
+    },
+  ) as unknown[]
+  if (rows.length === 0) return null
+
+  const now = new Date()
+  return {
+    id: threadRepository.idForChat(chatId, threadId),
+    parent: buildChatIri(db, chatId),
+    title: '默认话题',
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -329,11 +397,17 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private threadItemsCache = new Map<string, ThreadItem[]>()
   private messageRowIdByItemId = new Map<string, string>()
   private messageIriByItemId = new Map<string, string>()
+  private attachmentCache = new Map<string, Attachment>()
 
   constructor(db: SolidDatabase, webId: string, authFetch: typeof fetch) {
     this.db = db
     this.webId = webId
     this.authFetch = authFetch
+  }
+
+  bindThreadToChat(threadId: string, chatId: string): void {
+    if (!threadId || !chatId) return
+    this.threadChatIdCache.set(threadId, extractChatIdFromChatRef(chatId) ?? chatId)
   }
 
   // -----------------------------------------------------------------------
@@ -435,6 +509,17 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const chatRef = this.buildChatUri(chatId)
     const threadRef = this.buildThreadUri(chatId, threadId)
     const threadKey = extractThreadId(threadId) ?? threadId
+    try {
+      const exactMembers = await this.loadExactThreadMembers(chatRef, threadRef)
+      if (exactMembers.length > 0) {
+        return exactMembers.filter((message: any) => !isHiddenMatrixProtocolEvent(message))
+      }
+    } catch (error) {
+      // Legacy Thread indexes can be incomplete or use a representation that
+      // the Solid dataset parser rejects. Their date-sharded Message resources
+      // remain queryable through the Chat collection endpoint.
+      console.warn('[LocalStore] Exact Thread member lookup failed; using scoped query:', error)
+    }
     const messages = await withTimeout(
       queryMessageRowsForChat(this.db, chatRef, threadRef),
       POD_QUERY_TIMEOUT_MS,
@@ -446,6 +531,81 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       && extractThreadId(message.thread) === threadKey
       && !isHiddenMatrixProtocolEvent(message)
     ))
+  }
+
+  private async loadExactThreadMembers(chatRef: string, threadRef: string): Promise<any[]> {
+    const noStoreFetch: typeof fetch = (input, init) => this.authFetch(input, {
+      ...init,
+      cache: 'no-store',
+    })
+    const dialect = (this.db as any).getDialect?.()
+    const executeOnResource = dialect?.executeOnResource
+    const podUrl = dialect?.getPodUrl?.()
+    const sparqlEndpoint = typeof podUrl === 'string'
+      ? new URL('.data/chat/-/sparql', podUrl).toString()
+      : null
+
+    let messageIris: string[] = []
+    if (typeof executeOnResource === 'function' && sparqlEndpoint) {
+      const rows = await executeOnResource.call(
+        dialect,
+        sparqlEndpoint,
+        {
+          type: 'SELECT',
+          query: `SELECT DISTINCT ?message WHERE {
+            GRAPH ?graph { <${threadRef}> <${SIOC_HAS_MEMBER}> ?message . }
+          }`,
+          prefixes: {},
+        },
+        { mode: 'sparql', endpoint: sparqlEndpoint },
+      ) as Array<{ message?: unknown }>
+      messageIris = rows
+        .map((row) => readBindingIri(row.message))
+        .filter((iri): iri is string => Boolean(iri))
+    }
+
+    if (messageIris.length === 0) {
+      const dataset = await getSolidDataset(resourceUrlFromIri(threadRef), {
+        fetch: noStoreFetch,
+      })
+      const threadThing = getThing(dataset, threadRef)
+      messageIris = threadThing ? getUrlAll(threadThing, SIOC_HAS_MEMBER) : []
+    }
+    if (messageIris.length === 0) return []
+
+    const datasets = new Map<string, Awaited<ReturnType<typeof getSolidDataset>>>()
+    return (await Promise.all(messageIris.map(async (iri) => {
+      const documentUrl = resourceUrlFromIri(iri)
+      let dataset = datasets.get(documentUrl)
+      if (!dataset) {
+        dataset = await getSolidDataset(documentUrl, { fetch: noStoreFetch })
+        datasets.set(documentUrl, dataset)
+      }
+      const messageThing = getThing(dataset, iri)
+      if (!messageThing) return null
+      const metadataIri = getUrl(messageThing, UDFS_METADATA)
+      const metadataThing = metadataIri ? getThing(dataset, metadataIri) : null
+      const itemId = metadataThing
+        ? getStringNoLocale(metadataThing, UDFS_CHATKIT_ITEM_ID)
+        : null
+      const dataRoot = new URL('.data/', requirePodBaseUrl(this.db)).toString()
+      const resourceId = iri.startsWith(dataRoot)
+        ? iri.slice(dataRoot.length)
+        : iri.slice(iri.lastIndexOf('/') + 1)
+      const stableItemId = itemId || new URL(iri).hash.slice(1) || resourceId
+
+      return {
+        id: resourceId,
+        parent: chatRef,
+        chat: chatRef,
+        thread: threadRef,
+        role: getStringNoLocale(messageThing, UDFS_MESSAGE_TYPE) || MessageRole.ASSISTANT,
+        content: getStringNoLocale(messageThing, SIOC_CONTENT) || '',
+        status: getStringNoLocale(messageThing, UDFS_MESSAGE_STATUS) || MessageStatus.COMPLETED,
+        createdAt: getDatetime(messageThing, DCT_CREATED) || new Date(),
+        metadata: { [CHATKIT_ITEM_ID_METADATA_KEY]: stableItemId },
+      }
+    }))).filter((row): row is NonNullable<typeof row> => Boolean(row))
   }
 
   private getCachedThreadItems(threadId: string): ThreadItem[] | null {
@@ -914,19 +1074,25 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
   }
 
   // -----------------------------------------------------------------------
-  // Attachment stubs
+  // Attachments are cached until their user message is persisted. The complete
+  // attachment metadata (including the uploaded data URL) is then archived in
+  // that message's richContent in the current Pod.
   // -----------------------------------------------------------------------
 
-  async saveAttachment(_attachment: Attachment, _context: StoreContext): Promise<void> {
-    // no-op for now
+  async saveAttachment(attachment: Attachment, _context: StoreContext): Promise<void> {
+    const id = String(attachment.id ?? attachment.attachment_id ?? '')
+    if (!id) throw new Error('Attachment is missing id')
+    this.attachmentCache.set(id, { ...attachment, id, attachment_id: id })
   }
 
   async loadAttachment(attachmentId: string, _context: StoreContext): Promise<Attachment> {
-    throw new Error(`Attachment not found: ${attachmentId}`)
+    const attachment = this.attachmentCache.get(attachmentId)
+    if (!attachment) throw new Error(`Attachment not found: ${attachmentId}`)
+    return attachment
   }
 
-  async deleteAttachment(_attachmentId: string, _context: StoreContext): Promise<void> {
-    // no-op
+  async deleteAttachment(attachmentId: string, _context: StoreContext): Promise<void> {
+    this.attachmentCache.delete(attachmentId)
   }
 }
 

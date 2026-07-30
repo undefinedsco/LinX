@@ -16,7 +16,9 @@
  * - 右键: 上下文菜单 (置顶、静音、标记未读、删除)
  * - 悬停: 显示更多操作按钮
  */
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useEffect } from 'react'
+import { useSession } from '@inrupt/solid-ui-react'
+import { useLoginStore } from '@linx/stores/login'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
 import {
@@ -32,6 +34,7 @@ import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useToast } from '@/components/ui/use-toast'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
+import { formatErrorForUser, isSolidAuthorizationExpired } from '@/lib/user-facing-errors'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Bot,
@@ -587,6 +590,7 @@ export interface ChatListPaneProps extends MicroAppPaneProps {}
 export function ChatListPane(_props: ChatListPaneProps) {
   // Initialize chat collections with database
   useChatInit()
+  const { session } = useSession()
   const { toast } = useToast()
   
   const search = useChatStore((state) => state.search)
@@ -596,7 +600,11 @@ export function ChatListPane(_props: ChatListPaneProps) {
   const openAddDialog = useChatStore((state) => state.openAddDialog)
 
   // Use new collection-based hooks
-  const { data: rawChats, isLoading: isChatsLoading } = useChatList(search ? { search } : undefined)
+  const {
+    data: rawChats,
+    isLoading: isChatsLoading,
+    error: chatListError,
+  } = useChatList(search ? { search } : undefined)
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const runtimeMode = isRuntimeSessionMode()
   const { data: threads = [] } = useThreadIndex({ enabled: runtimeMode })
@@ -609,6 +617,25 @@ export function ChatListPane(_props: ChatListPaneProps) {
   })
 
   const mutations = useChatMutations()
+
+  useEffect(() => {
+    if (!chatListError) {
+      return
+    }
+
+    if (!isSolidAuthorizationExpired(chatListError)) {
+      console.error('[ChatListPane] Failed to load chats:', chatListError)
+      return
+    }
+
+    console.warn('[ChatListPane] Solid authorization expired while loading chats:', chatListError)
+    const loginStore = useLoginStore.getState()
+    loginStore.setError('登录状态已失效。请重新登录。')
+    loginStore.setState('idle')
+    void session.logout().catch((logoutError: unknown) => {
+      console.warn('[ChatListPane] Failed to clear expired Solid session:', logoutError)
+    })
+  }, [chatListError, session])
 
   // 格式化 Chat 列表 - 添加标星排序
   const chats: ChatItemData[] = useMemo(() => {
@@ -797,6 +824,10 @@ export function ChatListPane(_props: ChatListPaneProps) {
           <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...
+          </div>
+        ) : chatListError ? (
+          <div className="px-4 py-12 text-center text-sm text-destructive animate-fade-in">
+            {formatErrorForUser(chatListError, '聊天列表加载失败，请刷新后重试。')}
           </div>
         ) : chats.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">

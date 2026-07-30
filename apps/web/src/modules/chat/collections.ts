@@ -1017,6 +1017,46 @@ const chatListColumns: (keyof ChatRow)[] = [
 ]
 
 async function queryChatListRows(db: SolidDatabase): Promise<ChatRow[]> {
+  const dialect = (db as any).getDialect?.()
+  const listContainerResources = dialect?.listContainerResources
+  const findByIri = (db as any).findByIri
+  const podBaseUrl = resolveCurrentPodBaseUrl(db)
+
+  if (
+    podBaseUrl
+    && typeof listContainerResources === 'function'
+    && typeof findByIri === 'function'
+  ) {
+    const chatContainerUrl = new URL('.data/chat/', `${podBaseUrl}/`).toString()
+    const resources = await listContainerResources.call(dialect, chatContainerUrl) as string[]
+    const chatIris = resources
+      .filter((resourceUrl) => (
+        typeof resourceUrl === 'string'
+        && resourceUrl.startsWith(chatContainerUrl)
+        && resourceUrl !== chatContainerUrl
+      ))
+      .map((resourceUrl) => (
+        resourceUrl.endsWith('/')
+          ? new URL('index.ttl#this', resourceUrl).toString()
+          : resourceUrl.endsWith('/index.ttl')
+            ? `${resourceUrl}#this`
+            : resourceUrl.includes('/index.ttl#')
+              ? resourceUrl
+              : null
+      ))
+      .filter((iri): iri is string => Boolean(iri))
+
+    const rows = await Promise.all(chatIris.map(
+      (iri) => findByIri.call(db, chatResource as any, iri) as Promise<ChatRow | null>,
+    ))
+    return rows
+      .filter((row): row is ChatRow => Boolean(row))
+      .sort((left, right) => (
+        new Date(right.lastActiveAt ?? right.updatedAt ?? 0).getTime()
+        - new Date(left.lastActiveAt ?? left.updatedAt ?? 0).getTime()
+      ))
+  }
+
   const projection = Object.fromEntries(
     chatListColumns.map((column) => [column, (chatResource as any)[column]]),
   )
@@ -2141,6 +2181,54 @@ async function queryThreadRowsForChat(db: SolidDatabase, chatId: string): Promis
   }
 
   rows = filterRowsToCurrentPod(db, rows)
+
+  // Historical Local ChatKit builds created the canonical "__default__"
+  // Thread without persisting sioc:has_parent. A parent-filtered collection
+  // query cannot discover that row even though its exact resource and all
+  // messages are still valid. Recover it by deterministic id and put it first
+  // so the UI does not create/select a replacement timeline.
+  const defaultThreadId = threadRepository.idForChat(chatId, '__default__')
+  if (!rows.some((row) => row.id === defaultThreadId) && typeof (db as any).findById === 'function') {
+    const exact = await (db as any).findById(threadResource as any, defaultThreadId) as ThreadRow | null
+    const threadIri = `${chatIri.slice(0, chatIri.indexOf('#'))}#__default__`
+    let recovered = exact
+    if (!recovered) {
+      const dialect = (db as any).getDialect?.()
+      const executeOnResource = dialect?.executeOnResource
+      if (typeof executeOnResource === 'function') {
+        const bindings = await executeOnResource.call(
+          dialect,
+          threadIri.slice(0, threadIri.indexOf('#')),
+          {
+            type: 'SELECT',
+            query: `SELECT ?type WHERE { <${threadIri}> a ?type . } LIMIT 1`,
+            prefixes: {},
+          },
+        ) as unknown[]
+        if (bindings.length > 0) {
+          const now = new Date()
+          recovered = {
+            id: defaultThreadId,
+            parent: chatIri,
+            title: '默认话题',
+            status: 'active',
+            createdAt: now,
+            updatedAt: now,
+          } as ThreadRow
+        }
+      }
+    }
+    if (recovered) {
+      rows = [
+        normalizeCollectionRow({
+          ...recovered,
+          parent: recovered.parent ?? chatIri,
+        }, defaultThreadId, threadIri),
+        ...rows,
+      ]
+    }
+  }
+
   rows.forEach((row) => cacheThreadRow(row, chatId))
 
   return rows
@@ -2159,6 +2247,22 @@ export function useChatList(filters?: { search?: string }) {
       // Use drizzle-solid ilike for server-side search
       if (filters?.search?.trim()) {
         const pattern = `%${filters.search.trim()}%`
+        const dialect = (db as any).getDialect?.()
+        if (
+          resolveCurrentPodBaseUrl(db)
+          && typeof dialect?.listContainerResources === 'function'
+          && typeof (db as any).findByIri === 'function'
+        ) {
+          const needle = filters.search.trim().toLocaleLowerCase()
+          const rows = await queryChatListRows(db)
+          return await hydrateChatRows(
+            db,
+            filterRowsToCurrentPod(db, rows).filter((row) => (
+              String(row.title ?? '').toLocaleLowerCase().includes(needle)
+              || String(row.lastMessagePreview ?? '').toLocaleLowerCase().includes(needle)
+            )),
+          )
+        }
         const results = await db
           .select()
           .from(chatResource)

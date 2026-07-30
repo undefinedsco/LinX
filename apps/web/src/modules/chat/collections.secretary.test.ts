@@ -415,6 +415,35 @@ describe('AI Secretary bootstrap', () => {
     expect(bootstrapPromise).toBeInstanceOf(Promise)
   })
 
+  it('lists chats from the current Pod container without querying foreign Pod subjects', async () => {
+    const { db, rows } = createSecretaryDb({ existingResources: true })
+    const listContainerResources = vi.fn(async () => [
+      `${rows.podBase}.data/chat/__secretary__/`,
+    ])
+    const findByIri = vi.fn(async (_resource: unknown, iri: string) => (
+      iri === rows.chatIri ? rows.chatRow : null
+    ))
+    db.getDialect = () => ({
+      getPodUrl: () => rows.podBase,
+      getWebId: () => rows.webId,
+      getAuthenticatedFetch: () => vi.fn(async () => new Response('', { status: 201 })),
+      listContainerResources,
+    })
+    ;(db as typeof db & { findByIri: typeof findByIri }).findByIri = findByIri
+
+    initializeChatCollections(db as any)
+
+    await expect(chatOps.fetchChats()).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': rows.chatIri,
+      }),
+    ])
+    expect(listContainerResources).toHaveBeenCalledWith(`${rows.podBase}.data/chat/`)
+    expect(findByIri).toHaveBeenCalledWith(chatResource, rows.chatIri)
+    expect(db.select).not.toHaveBeenCalled()
+  })
+
   it('returns the staged Secretary chat when the Pod chat query stalls', async () => {
     vi.useFakeTimers()
     const { db, rows } = createSecretaryDb()

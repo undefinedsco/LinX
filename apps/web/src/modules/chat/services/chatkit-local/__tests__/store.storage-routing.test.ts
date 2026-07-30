@@ -2,6 +2,51 @@ import { describe, expect, it, vi } from 'vitest'
 import { LocalChatKitStore } from '../store'
 
 describe('LocalChatKitStore storage routing', () => {
+  it('resolves a short thread id only after it is explicitly bound to the current Chat', async () => {
+    const findById = vi.fn(async (_resource: unknown, id?: string) => id === 'chat/__secretary__/index.ttl#__default__'
+      ? {
+          id,
+          parent: 'http://localhost:5737/cuilinsu/.data/chat/__secretary__/index.ttl#this',
+        }
+      : null)
+    const select = vi.fn()
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'http://localhost:5737/cuilinsu/' }),
+      findById,
+      select,
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'http://localhost:5737/cuilinsu/profile/card#me',
+      vi.fn() as any,
+    )
+
+    store.bindThreadToChat('__default__', '__secretary__')
+    await expect(store.loadThread('__default__', {})).resolves.toMatchObject({
+      id: '__default__',
+      metadata: { chat_id: '__secretary__' },
+    })
+    expect(findById).toHaveBeenCalledWith(expect.anything(), 'chat/__secretary__/index.ttl#__default__')
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it('fails closed for an unbound short thread id without scanning all Pods', async () => {
+    const select = vi.fn()
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'http://localhost:5737/cuilinsu/' }),
+      findById: vi.fn(async () => null),
+      select,
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'http://localhost:5737/cuilinsu/profile/card#me',
+      vi.fn() as any,
+    )
+
+    await expect(store.loadThread('__default__', {})).rejects.toThrow('Thread not found')
+    expect(select).not.toHaveBeenCalled()
+  })
+
   it('scopes message loading to the required Chat parent before filtering the durable Thread', async () => {
     const durableId = 'chat/__secretary__/index.ttl#__default__'
     const where = vi.fn(() => ({ execute: vi.fn(async () => []) }))
@@ -28,6 +73,94 @@ describe('LocalChatKitStore storage routing', () => {
     expect(where).toHaveBeenCalledTimes(1)
     const condition = where.mock.calls[0]?.[0]
     expect(condition).toMatchObject({ operator: '=' })
+  })
+
+  it('restores date-sharded messages from exact Thread membership links', async () => {
+    const durableId = 'chat/default/index.ttl#__default__'
+    const threadIri = 'http://localhost:5737/cuilinsu/.data/chat/default/index.ttl#__default__'
+    const messageIri = 'http://localhost:5737/cuilinsu/.data/chat/default/2026/07/28/messages.ttl#message-1'
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'http://localhost:5737/cuilinsu/' }),
+      findById: vi.fn(async () => ({
+        id: durableId,
+        parent: 'http://localhost:5737/cuilinsu/.data/chat/default/index.ttl#this',
+      })),
+      findByIri: vi.fn(async () => ({
+        id: 'chat/default/2026/07/28/messages.ttl#message-1',
+        role: 'user',
+        content: 'persisted',
+        createdAt: new Date('2026-07-28T17:00:05.000Z'),
+      })),
+      select: vi.fn(),
+    }
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => new Response(
+      String(input).includes('messages.ttl')
+        ? `@prefix sioc: <http://rdfs.org/sioc/ns#>.
+@prefix dct: <http://purl.org/dc/terms/>.
+@prefix udfs: <https://undefineds.co/ns#>.
+<${messageIri}> udfs:messageType "user";
+  sioc:content "persisted";
+  udfs:messageStatus "completed";
+  dct:created "2026-07-28T17:00:05.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>.`
+        : `@prefix sioc: <http://rdfs.org/sioc/ns#>.
+<${threadIri}> sioc:has_member <${messageIri}>.`,
+      { status: 200, headers: { 'Content-Type': 'text/turtle' } },
+    ))
+    const store = new LocalChatKitStore(
+      db as any,
+      'http://localhost:5737/cuilinsu/profile/card#me',
+      authFetch as any,
+    )
+
+    await expect(store.loadThreadItems(durableId, undefined, 20, 'asc', {})).resolves.toMatchObject({
+      data: [expect.objectContaining({
+        type: 'user_message',
+        content: [{ type: 'input_text', text: 'persisted' }],
+      })],
+    })
+    expect(authFetch).toHaveBeenCalledWith(
+      'http://localhost:5737/cuilinsu/.data/chat/default/index.ttl',
+      expect.anything(),
+    )
+    expect(authFetch).toHaveBeenCalledWith(
+      'http://localhost:5737/cuilinsu/.data/chat/default/2026/07/28/messages.ttl',
+      expect.anything(),
+    )
+    expect(db.select).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the scoped Message query when a legacy Thread index cannot be parsed', async () => {
+    const durableId = 'chat/default/index.ttl#__default__'
+    const execute = vi.fn(async () => [{
+      id: 'chat/default/2026/07/28/messages.ttl#message-1',
+      parent: 'http://localhost:5737/cuilinsu/.data/chat/default/index.ttl#this',
+      role: 'assistant',
+      content: 'recovered',
+      createdAt: new Date('2026-07-28T17:00:06.000Z'),
+    }])
+    const where = vi.fn(() => ({ execute }))
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'http://localhost:5737/cuilinsu/' }),
+      findById: vi.fn(async () => ({
+        id: durableId,
+        parent: 'http://localhost:5737/cuilinsu/.data/chat/default/index.ttl#this',
+      })),
+      findByIri: vi.fn(),
+      select: vi.fn(() => ({ from: vi.fn(() => ({ where })) })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'http://localhost:5737/cuilinsu/profile/card#me',
+      vi.fn(async () => { throw new Error('legacy Turtle parse failure') }) as any,
+    )
+
+    await expect(store.loadThreadItems(durableId, undefined, 20, 'asc', {})).resolves.toMatchObject({
+      data: [expect.objectContaining({
+        type: 'assistant_message',
+        content: [{ type: 'output_text', text: 'recovered', annotations: [] }],
+      })],
+    })
+    expect(where).toHaveBeenCalled()
   })
 
   it('loads a durable thread id by exact record without scanning the Pod thread index', async () => {

@@ -26,6 +26,10 @@ const mockUseDefaultSecretaryBootstrapSettling = vi.fn()
 const mockUseModelServices = vi.fn()
 const mockClearMessageAnchor = vi.fn()
 const mockRuntimeEventHandler = { current: null as ((event: unknown) => void) | null }
+const mockLogout = vi.fn(async () => undefined)
+const mockSetLoginState = vi.fn()
+const mockSetLoginError = vi.fn()
+const mockCreateLocalChatKitFetch = vi.fn(() => vi.fn())
 
 const storeState = {
   selectedChatId: 'chat-1',
@@ -44,8 +48,18 @@ vi.mock('@inrupt/solid-ui-react', () => ({
     session: {
       info: { webId: 'https://alice.example/profile/card#me' },
       fetch: vi.fn(),
+      logout: mockLogout,
     },
   }),
+}))
+
+vi.mock('@linx/stores/login', () => ({
+  useLoginStore: {
+    getState: () => ({
+      setState: mockSetLoginState,
+      setError: mockSetLoginError,
+    }),
+  },
 }))
 
 vi.mock('@openai/chatkit-react', () => ({
@@ -90,7 +104,7 @@ vi.mock('@/providers/solid-database-provider', () => ({
 }))
 
 vi.mock('../services/chatkit-local/fetch-handler', () => ({
-  createLocalChatKitFetch: () => vi.fn(),
+  createLocalChatKitFetch: (...args: unknown[]) => mockCreateLocalChatKitFetch(...args),
 }))
 
 vi.mock('../store', () => ({
@@ -172,7 +186,7 @@ describe('ChatContentPane', () => {
     mockRuntimeEventHandler.current = null
   })
 
-  it('passes selected thread as the initial ChatKit thread without unsafe pre-upgrade method calls', () => {
+  it('passes and explicitly activates the selected ChatKit thread', () => {
     render(<ChatContentPane theme="light" />)
 
     expect(mockUseChatKit).toHaveBeenCalledWith(
@@ -180,7 +194,25 @@ describe('ChatContentPane', () => {
         initialThread: 'thread-1',
       }),
     )
-    expect(mockSetThreadId).not.toHaveBeenCalled()
+    expect(mockSetThreadId).toHaveBeenCalledWith('thread-1')
+  })
+
+  it('clears an expired Solid session and opens the re-login state', async () => {
+    render(<ChatContentPane theme="light" />)
+    const options = mockCreateLocalChatKitFetch.mock.calls.at(-1)?.[0] as {
+      onAuthorizationExpired?: (error: unknown) => void
+    }
+
+    await act(async () => {
+      options.onAuthorizationExpired?.(
+        new Error('Write failed to http://localhost:5737/alice/messages.ttl: 401 Unauthorized'),
+      )
+      await Promise.resolve()
+    })
+
+    expect(mockLogout).toHaveBeenCalledTimes(1)
+    expect(mockSetLoginError).toHaveBeenCalledWith('登录状态已失效。请重新登录。')
+    expect(mockSetLoginState).toHaveBeenCalledWith('idle')
   })
 
   it('exposes LinX platform models to ChatKit with linx-lite as the default', () => {
@@ -194,6 +226,35 @@ describe('ChatContentPane', () => {
             expect.objectContaining({ id: 'linx', label: 'LinX', default: false }),
           ],
         }),
+      }),
+    )
+  })
+
+  it('configures a compact composer with supported image and text attachments', () => {
+    render(<ChatContentPane theme="light" />)
+
+    expect(mockUseChatKit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        api: expect.objectContaining({
+          uploadStrategy: { type: 'two_phase' },
+        }),
+        theme: expect.objectContaining({
+          radius: 'soft',
+          density: 'compact',
+          typography: expect.objectContaining({ baseSize: 15 }),
+        }),
+        composer: expect.objectContaining({
+          placeholder: '输入消息，或添加图片与文件…',
+          attachments: expect.objectContaining({
+            enabled: true,
+            maxCount: 4,
+            accept: expect.objectContaining({
+              'image/*': expect.arrayContaining(['.png', '.jpg', '.webp']),
+              'text/*': expect.arrayContaining(['.txt', '.md', '.csv']),
+            }),
+          }),
+        }),
+        thread: { autoScroll: true },
       }),
     )
   })
@@ -338,6 +399,27 @@ describe('ChatContentPane', () => {
       data: [
         { id: 'legacy-thread', title: '默认话题' },
         { id: '__default__', title: '默认话题' },
+      ],
+      isLoading: false,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => {
+      expect(storeState.selectThread).toHaveBeenCalledWith('__default__')
+    })
+  })
+
+  it('reselects a recovered canonical default thread instead of a replacement timeline', async () => {
+    storeState.selectedChatId = 'default'
+    storeState.selectedThreadId = 'thread-replacement'
+    mockUseChatList.mockReturnValue({
+      data: [{ id: 'default', title: 'Default Chat' }],
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [
+        { id: 'thread-replacement', title: '默认话题' },
+        { id: 'chat/default/index.ttl#__default__', title: '默认话题' },
       ],
       isLoading: false,
     })

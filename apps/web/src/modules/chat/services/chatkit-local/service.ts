@@ -43,7 +43,7 @@ import {
   type ResourceIri,
 } from '@/lib/data/resource-identity'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
-import { formatErrorForUser } from '@/lib/user-facing-errors'
+import { formatErrorForUser, isSolidAuthorizationExpired } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
 import { sendMatrixThreadMessage } from '../../matrix-service'
 import { withThreadComposerModel } from '../../composer-model-preference'
@@ -93,6 +93,7 @@ export interface LocalServiceOptions {
   webId: string
   authFetch: typeof fetch
   systemPrompt?: string
+  onAuthorizationExpired?: (error: unknown) => void
 }
 
 export interface StreamingResult {
@@ -171,6 +172,18 @@ type RuntimeThreadEvent =
   | { type: 'exit'; ts: number; threadId: string; code: number | null; signal?: string }
   | { type: 'error'; ts: number; threadId: string; message: string }
 
+type ChatCompletionContent =
+  | string
+  | Array<
+      | { type: 'text'; text: string }
+      | { type: 'image_url'; image_url: { url: string; detail: 'auto' } }
+    >
+
+type ChatCompletionMessage = {
+  role: string
+  content: ChatCompletionContent
+}
+
 export class LocalChatKitService {
   private store: ChatKitStore<StoreContext>
   private db: SolidDatabase
@@ -178,6 +191,7 @@ export class LocalChatKitService {
   private authFetch: typeof fetch
   private systemPrompt: string
   private runtimeSidecar: RuntimeSidecarSink
+  private onAuthorizationExpired?: (error: unknown) => void
 
   constructor(options: LocalServiceOptions) {
     this.store = options.store
@@ -185,6 +199,7 @@ export class LocalChatKitService {
     this.webId = options.webId
     this.authFetch = options.authFetch
     this.systemPrompt = options.systemPrompt ?? 'You are a helpful assistant.'
+    this.onAuthorizationExpired = options.onAuthorizationExpired
     this.runtimeSidecar = new RuntimeSidecarSink(this.db, this.webId)
   }
 
@@ -222,6 +237,9 @@ export class LocalChatKitService {
       }
     } catch (error: any) {
       console.error('[LocalChatKitService] Streaming request failed:', error)
+      if (isSolidAuthorizationExpired(error)) {
+        this.onAuthorizationExpired?.(error)
+      }
       const userMessage = formatErrorForUser(error, '消息生成失败。请稍后重试。')
       const errorEvent = {
         type: 'error',
@@ -270,8 +288,9 @@ export class LocalChatKitService {
       case 'items.feedback':
         return { success: true }
       case 'attachments.create':
-        return { attachment_id: generateId('attach') }
+        return this.handleAttachmentsCreate(request.params, context)
       case 'attachments.delete':
+        await this.store.deleteAttachment(request.params.attachment_id, context)
         return { success: true }
       case 'threads.update':
         return this.handleThreadsUpdate(request.params, context)
@@ -301,7 +320,13 @@ export class LocalChatKitService {
     yield { type: 'thread.created', thread }
 
     if (params.input) {
-      const userMessage = this.createUserMessage(threadId, params.input.content, thread)
+      const userMessage = await this.createUserMessage(
+        threadId,
+        params.input.content,
+        thread,
+        params.input.attachments,
+        context,
+      )
       const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
       if (matrixSent) {
         yield { type: 'thread.item.added', item: userMessage }
@@ -326,7 +351,13 @@ export class LocalChatKitService {
     context: StoreContext,
   ): AsyncIterable<ThreadStreamEvent> {
     const thread = await this.store.loadThread(params.thread_id, context)
-    const userMessage = this.createUserMessage(params.thread_id, params.input.content)
+    const userMessage = await this.createUserMessage(
+      params.thread_id,
+      params.input.content,
+      undefined,
+      params.input.attachments,
+      context,
+    )
     const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
     if (matrixSent) {
       yield { type: 'thread.item.added', item: userMessage }
@@ -430,6 +461,39 @@ export class LocalChatKitService {
   private async handleThreadsDelete(params: any, context: StoreContext) {
     await this.store.deleteThread(params.thread_id, context)
     return { success: true }
+  }
+
+  private async handleAttachmentsCreate(params: any, context: StoreContext) {
+    const id = generateId('attach')
+    const mimeType = typeof params?.mime_type === 'string'
+      ? params.mime_type
+      : 'application/octet-stream'
+    const name = typeof params?.name === 'string' && params.name.trim()
+      ? params.name.trim()
+      : '附件'
+    const isImage = mimeType.startsWith('image/')
+    const uploadUrl = new URL(
+      `/__linx_chatkit_attachment__/${encodeURIComponent(id)}`,
+      typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+    ).toString()
+    const attachment = {
+      id,
+      attachment_id: id,
+      type: isImage ? 'image' : 'file',
+      name,
+      mime_type: mimeType,
+      size: typeof params?.size === 'number' ? params.size : undefined,
+      ...(isImage
+        ? { preview_url: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=' }
+        : {}),
+      upload_descriptor: {
+        url: uploadUrl,
+        method: 'PUT',
+        headers: { 'Content-Type': mimeType },
+      },
+    }
+    await this.store.saveAttachment(attachment, context)
+    return attachment
   }
 
   private async *respond(
@@ -1093,7 +1157,7 @@ export class LocalChatKitService {
 
   private async *streamFromLinxRuntime(
     model: string,
-    messages: Array<{ role: string; content: string }>,
+    messages: ChatCompletionMessage[],
     inferenceOptions?: any,
     runtimeLocation: AgentAiRuntimeLocation = DEFAULT_AGENT_AI_RUNTIME_LOCATION,
   ): AsyncIterable<string> {
@@ -1232,7 +1296,7 @@ export class LocalChatKitService {
 
   private async *streamFromProvider(
     config: { providerId: string; baseUrl: string; apiKey: string },
-    messages: Array<{ role: string; content: string }>,
+    messages: ChatCompletionMessage[],
     model: string,
     inferenceOptions?: any,
   ): AsyncIterable<string> {
@@ -1260,8 +1324,8 @@ export class LocalChatKitService {
     threadId: string,
     context: StoreContext,
     currentUserMessage?: ThreadItem,
-  ): Promise<Array<{ role: string; content: string }>> {
-    const messages: Array<{ role: string; content: string }> = [
+  ): Promise<ChatCompletionMessage[]> {
+    const messages: ChatCompletionMessage[] = [
       { role: 'system', content: this.systemPrompt },
     ]
 
@@ -1272,9 +1336,9 @@ export class LocalChatKitService {
         includesCurrentUserMessage = true
       }
       if (item.type === 'user_message') {
-        const text = extractUserMessageText((item as any).content)
-        if (text) {
-          messages.push({ role: 'user', content: text })
+        const content = buildUserChatCompletionContent(item)
+        if (content) {
+          messages.push({ role: 'user', content })
         }
       } else if (item.type === 'assistant_message') {
         const text = (item as any).content
@@ -1291,18 +1355,20 @@ export class LocalChatKitService {
     // same turn. The current item is already the accepted request source, so it
     // must be included even when the just-persisted row is not indexed yet.
     if (currentUserMessage && !includesCurrentUserMessage) {
-      const text = extractUserMessageText((currentUserMessage as any).content)
-      if (text) messages.push({ role: 'user', content: text })
+      const content = buildUserChatCompletionContent(currentUserMessage)
+      if (content) messages.push({ role: 'user', content })
     }
 
     return messages
   }
 
-  private createUserMessage(
+  private async createUserMessage(
     threadId: string,
     content: any[],
     thread?: ThreadMetadata,
-  ): ThreadItem {
+    attachmentIds: unknown = [],
+    context: StoreContext = {},
+  ): Promise<ThreadItem> {
     const fallbackThread = thread || {
       id: threadId,
       status: { type: 'active' as const },
@@ -1311,13 +1377,75 @@ export class LocalChatKitService {
     }
 
     const itemId = this.store.generateItemId('user_message', fallbackThread, {})
+    const attachments = await Promise.all(
+      (Array.isArray(attachmentIds) ? attachmentIds : [])
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        .map((id) => this.store.loadAttachment(id, context)),
+    )
+
     return {
       id: itemId,
       thread_id: threadId,
       type: 'user_message',
       content,
-      attachments: [],
+      attachments,
       created_at: nowTimestamp(),
     } as ThreadItem
+  }
+}
+
+function buildUserChatCompletionContent(item: ThreadItem): ChatCompletionContent | null {
+  const text = extractUserMessageText((item as any).content)
+  const attachments = Array.isArray((item as any).attachments)
+    ? (item as any).attachments as Array<Record<string, unknown>>
+    : []
+  if (attachments.length === 0) return text || null
+
+  const parts: Exclude<ChatCompletionContent, string> = []
+  if (text) parts.push({ type: 'text', text })
+
+  for (const attachment of attachments) {
+    const mimeType = typeof attachment.mime_type === 'string'
+      ? attachment.mime_type
+      : 'application/octet-stream'
+    const name = typeof attachment.name === 'string' ? attachment.name : '附件'
+    const dataUrl = typeof attachment.data_url === 'string' ? attachment.data_url : ''
+
+    if (mimeType.startsWith('image/') && dataUrl) {
+      parts.push({
+        type: 'image_url',
+        image_url: { url: dataUrl, detail: 'auto' },
+      })
+      continue
+    }
+
+    const extractedText = dataUrl ? decodeTextAttachment(dataUrl, mimeType) : null
+    parts.push({
+      type: 'text',
+      text: extractedText
+        ? `附件「${name}」内容：\n\n${extractedText}`
+        : `已附加文件「${name}」（${mimeType}），但当前模型接口不能直接读取这种文件格式。`,
+    })
+  }
+
+  return parts.length > 0 ? parts : null
+}
+
+function decodeTextAttachment(dataUrl: string, mimeType: string): string | null {
+  if (
+    !mimeType.startsWith('text/')
+    && mimeType !== 'application/json'
+    && !/[/+](?:json|xml|yaml|csv)$/i.test(mimeType)
+  ) {
+    return null
+  }
+
+  const commaIndex = dataUrl.indexOf(',')
+  if (commaIndex < 0) return null
+  try {
+    const bytes = Uint8Array.from(atob(dataUrl.slice(commaIndex + 1)), (char) => char.charCodeAt(0))
+    return new TextDecoder().decode(bytes)
+  } catch {
+    return null
   }
 }

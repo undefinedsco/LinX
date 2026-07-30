@@ -84,4 +84,76 @@ describe('queryMessageRowsForChat regression', () => {
     expect(where).toHaveBeenCalledWith(expect.objectContaining({ operator: '=' }))
   })
 
+  it('reloads persisted messages from the exact Thread membership links', async () => {
+    const chatIri = 'http://localhost:5737/alice/.data/chat/default/index.ttl#this'
+    const threadIri = 'http://localhost:5737/alice/.data/chat/default/index.ttl#__default__'
+    const messageIri = 'http://localhost:5737/alice/.data/chat/default/2026/07/28/messages.ttl#message-1'
+    const executeOnResource = vi.fn(async () => [{
+      message: { termType: 'NamedNode', value: messageIri },
+    }])
+    const findByIri = vi.fn(async () => ({
+      id: 'chat/default/2026/07/28/messages.ttl#message-1',
+      role: 'user',
+      content: 'persisted',
+      createdAt: new Date('2026-07-28T17:00:05.000Z'),
+    }))
+    const select = vi.fn()
+    const db = {
+      getDialect: () => ({
+        executeOnResource,
+        getPodUrl: () => 'http://localhost:5737/alice/',
+      }),
+      findByIri,
+      select,
+    }
+
+    await expect(queryMessageRowsForChat(db as any, chatIri, threadIri)).resolves.toEqual([
+      expect.objectContaining({
+        content: 'persisted',
+        chat: chatIri,
+        thread: threadIri,
+      }),
+    ])
+    expect(executeOnResource).toHaveBeenCalledWith(
+      'http://localhost:5737/alice/.data/chat/-/sparql',
+      expect.objectContaining({
+        query: expect.stringContaining(`<${threadIri}>`),
+      }),
+      {
+        mode: 'sparql',
+        endpoint: 'http://localhost:5737/alice/.data/chat/-/sparql',
+      },
+    )
+    expect(findByIri).toHaveBeenCalledWith(messageResource, messageIri)
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the Chat-scoped query when the legacy Thread index has no membership links', async () => {
+    const chatIri = 'http://localhost:5737/alice/.data/chat/default/index.ttl#this'
+    const threadIri = 'http://localhost:5737/alice/.data/chat/default/index.ttl#__default__'
+    const candidate = {
+      id: 'chat/default/2026/07/28/messages.ttl#message-1',
+      parent: chatIri,
+      role: 'assistant',
+      content: 'restored from date shard',
+      metadata: undefined,
+    }
+    const execute = vi.fn(async () => [candidate])
+    const where = vi.fn(() => ({ execute }))
+    const select = vi.fn(() => ({ from: vi.fn(() => ({ where })) }))
+    const executeOnResource = vi.fn(async () => [])
+
+    await expect(queryMessageRowsForChat({
+      getDialect: () => ({ executeOnResource }),
+      findByIri: vi.fn(),
+      select,
+    } as any, chatIri, threadIri)).resolves.toEqual([
+      expect.objectContaining({
+        content: 'restored from date shard',
+        thread: threadIri,
+      }),
+    ])
+    expect(where).toHaveBeenCalledWith(expect.objectContaining({ operator: '=' }))
+  })
+
 })

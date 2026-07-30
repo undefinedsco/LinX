@@ -9,8 +9,20 @@ import { ReactNode } from 'react'
 
 // Mock store
 const mockUseChatStore = vi.fn()
+const mockSessionLogout = vi.fn()
+const mockSetLoginError = vi.fn()
+const mockSetLoginState = vi.fn()
 vi.mock('../store', () => ({
   useChatStore: (selector: (state: unknown) => unknown) => mockUseChatStore(selector),
+}))
+
+vi.mock('@linx/stores/login', () => ({
+  useLoginStore: {
+    getState: () => ({
+      setError: mockSetLoginError,
+      setState: mockSetLoginState,
+    }),
+  },
 }))
 
 // Mock collections hooks
@@ -74,11 +86,14 @@ vi.mock('@undefineds.co/models', async (importOriginal) => {
 // Mock solid session
 vi.mock('@inrupt/solid-ui-react', () => ({
   useSession: () => ({
-    session: { info: { isLoggedIn: true } },
+    session: {
+      info: { isLoggedIn: true },
+      logout: mockSessionLogout,
+    },
     sessionRequestInProgress: false,
     fetch: globalThis.fetch,
     login: vi.fn(),
-    logout: vi.fn(),
+    logout: mockSessionLogout,
   }),
 }))
 
@@ -141,6 +156,7 @@ describe('ChatListPane', () => {
     })
     mockListRuntimeSessions.mockResolvedValue([])
     mockFetchRuntimeSessionLog.mockResolvedValue('runtime log')
+    mockSessionLogout.mockResolvedValue(undefined)
     mockIsRuntimeSessionMode.mockReturnValue(false)
     mockCreateAndStartRuntimeSession.mockResolvedValue(null)
     mockMutations.ensureLinxWelcome.mutate.mockReset()
@@ -199,6 +215,42 @@ describe('ChatListPane', () => {
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
       expect(screen.getByText('正在加载...')).toBeInTheDocument()
+    })
+
+    it('requires a fresh login when the chat query reports an expired Solid authorization', async () => {
+      mockUseChatList.mockReturnValue({
+        data: [],
+        isLoading: false,
+        error: new Error(
+          'Invalid SPARQL endpoint response from http://localhost:5737/alice/.data/chat/-/sparql (HTTP status 401)',
+        ),
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('登录状态已失效。请重新登录。')).toBeInTheDocument()
+      await waitFor(() => {
+        expect(mockSetLoginError).toHaveBeenCalledWith('登录状态已失效。请重新登录。')
+        expect(mockSetLoginState).toHaveBeenCalledWith('idle')
+        expect(mockSessionLogout).toHaveBeenCalledTimes(1)
+      })
+      expect(screen.queryByText('暂无聊天')).not.toBeInTheDocument()
+    })
+
+    it('shows a load failure instead of an empty list for non-auth query errors', () => {
+      mockUseChatList.mockReturnValue({
+        data: [],
+        isLoading: false,
+        error: new Error('chat query failed'),
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('聊天列表加载失败，请刷新后重试。')).toBeInTheDocument()
+      expect(screen.queryByText('暂无聊天')).not.toBeInTheDocument()
+      expect(mockSessionLogout).not.toHaveBeenCalled()
     })
 
     it('does not prepare AI Secretary from the chat list when chat list is empty', () => {

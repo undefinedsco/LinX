@@ -8,9 +8,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
+import { useLoginStore } from '@linx/stores/login'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, Loader2, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
+import { extractThreadIdFromThreadRef } from '@undefineds.co/models'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
 import {
@@ -446,10 +448,12 @@ function RuntimeSessionToolbar({
 
 function ChatKitPanel({
   session,
+  selectedChatId,
   selectedThreadId,
   preferredComposerModel,
 }: {
   session: any
+  selectedChatId: string
   selectedThreadId: string
   preferredComposerModel?: string | null
 }) {
@@ -458,6 +462,19 @@ function ChatKitPanel({
   const clearMessageAnchor = useChatStore((state) => state.clearMessageAnchor)
   const theme = useThemeMode()
   const { db } = useSolidDatabase()
+  const markLoginExpired = useCallback((error: unknown) => {
+    console.warn('[ChatKit] Solid authorization expired:', error)
+    const loginStore = useLoginStore.getState()
+
+    void session.logout()
+      .catch((logoutError: unknown) => {
+        console.warn('[ChatKit] Failed to clear expired Solid session:', logoutError)
+      })
+      .finally(() => {
+        loginStore.setError('登录状态已失效。请重新登录。')
+        loginStore.setState('idle')
+      })
+  }, [session])
   const { providers: modelServiceProviders } = useModelServices()
   const composerModels = useMemo(() => {
     const options = buildChatModelOptions(modelServiceProviders)
@@ -466,6 +483,8 @@ function ChatKitPanel({
       label: option.providerId === 'undefineds'
         ? option.name
         : `${option.providerName} / ${option.name}`,
+      description: option.description
+        || buildChatKitModelDescription(option.providerName, option.capabilities),
     }))
     const configuredDefault = resolveDefaultChatModelSelection(modelServiceProviders, options)
     const configuredDefaultModel = configuredDefault.provider === 'undefineds'
@@ -482,18 +501,33 @@ function ChatKitPanel({
 
   const localFetch = useMemo(() => {
     if (!db || !session.info.webId || !session.fetch) return session.fetch
-    return createLocalChatKitFetch({ db, webId: session.info.webId, authFetch: session.fetch })
-  }, [db, session.fetch, session.info.webId])
+    return createLocalChatKitFetch({
+      db,
+      webId: session.info.webId,
+      authFetch: session.fetch,
+      selectedChatId,
+      selectedThreadId,
+      onAuthorizationExpired: markLoginExpired,
+    })
+  }, [db, markLoginExpired, selectedChatId, selectedThreadId, session.fetch, session.info.webId])
 
   const chatkit = useChatKit({
     api: {
       url: 'local://chatkit',
       domainKey: 'local',
       fetch: localFetch,
+      uploadStrategy: { type: 'two_phase' },
     },
     initialThread: selectedThreadId,
     theme: {
       colorScheme: theme,
+      radius: 'soft',
+      density: 'compact',
+      typography: {
+        baseSize: 15,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", sans-serif',
+        fontFamilyMono: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+      },
       color: {
         accent: {
           primary: '#7C3AED',
@@ -504,7 +538,22 @@ function ChatKitPanel({
     header: { enabled: false },
     history: { enabled: false },
     composer: {
-      placeholder: '输入消息...',
+      placeholder: '输入消息，或添加图片与文件…',
+      attachments: {
+        enabled: true,
+        maxCount: 4,
+        maxSize: {
+          'image/*': 8 * 1024 * 1024,
+          'text/*': 2 * 1024 * 1024,
+          'application/json': 2 * 1024 * 1024,
+          '*': 2 * 1024 * 1024,
+        },
+        accept: {
+          'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.gif'],
+          'text/*': ['.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.yml'],
+          'application/json': ['.json'],
+        },
+      },
       models: composerModels.length > 0
         ? composerModels
         : LINX_PLATFORM_MODEL_IDS.map((modelId) => ({
@@ -512,6 +561,10 @@ function ChatKitPanel({
             label: modelId === 'linx-lite' ? 'LinX Lite' : 'LinX',
             default: modelId === DEFAULT_LINX_PLATFORM_MODEL_ID,
           })),
+    },
+    thread: { autoScroll: true },
+    disclaimer: {
+      text: 'AI 可能会出错，请核对重要信息。附件会保存到当前空间。',
     },
     threadItemActions: { feedback: true, retry: true },
     onThreadChange: ({ threadId }: { threadId: string | null }) => {
@@ -523,6 +576,7 @@ function ChatKitPanel({
       console.error('[ChatKit] Error:', error)
     },
   })
+  const setChatKitThreadId = chatkit.setThreadId
 
   useEffect(() => {
     if (!selectedThreadId) return
@@ -530,29 +584,13 @@ function ChatKitPanel({
     let disposed = false
 
     const switchThread = async () => {
-      const registry = typeof window !== 'undefined' ? window.customElements : undefined
-      const tagName = 'openai-chatkit'
-      const element = chatKitHostRef.current
-      const isChatKitElement = element?.tagName?.toLowerCase() === tagName
-
-      if (isChatKitElement && registry?.whenDefined && !registry.get(tagName)) {
-        try {
-          await registry.whenDefined(tagName)
-        } catch (error) {
-          console.error('[ChatKit] Failed to wait for custom element definition:', error)
-          return
-        }
-      }
-
       if (disposed) return
 
-      const setThreadId = chatKitHostRef.current?.setThreadId
-      if (typeof setThreadId !== 'function') {
-        return
-      }
-
       try {
-        await setThreadId.call(chatKitHostRef.current, selectedThreadId)
+        // useChatKit exposes the imperative methods on its return value. The
+        // React host ref is only the custom element and is not guaranteed to
+        // carry those proxy methods, so calling it left restored threads blank.
+        await setChatKitThreadId(selectedThreadId)
       } catch (error) {
         console.error('[ChatKit] Failed to switch thread:', error)
       }
@@ -563,7 +601,7 @@ function ChatKitPanel({
     return () => {
       disposed = true
     }
-  }, [selectedThreadId])
+  }, [selectedThreadId, setChatKitThreadId])
 
   useEffect(() => {
     if (!messageAnchorId || !chatKitHostRef.current) return
@@ -626,12 +664,31 @@ function ChatKitPanel({
   return (
     <div className="h-full min-w-0 flex-1 overflow-hidden">
       <ChatKitComponent
+        key={selectedThreadId}
         ref={chatKitHostRef as any}
         control={chatkit.control}
         style={{ display: 'block', width: '100%', maxWidth: '100%', minWidth: 0, height: '100%' }}
       />
     </div>
   )
+}
+
+function buildChatKitModelDescription(providerName: string, capabilities: string[]): string {
+  const labels = capabilities
+    .map((capability) => ({
+      vision: '图片理解',
+      function_calling: '工具调用',
+      web_search: '联网搜索',
+      reasoning: '深度推理',
+      embedding: '向量',
+      rerank: '重排序',
+      free: '免费',
+    })[capability])
+    .filter((label): label is string => Boolean(label))
+
+  return labels.length > 0
+    ? `${providerName} · ${labels.join(' · ')}`
+    : `${providerName} · 文本对话`
 }
 
 export function ChatContentPane(_props: ChatContentPaneProps) {
@@ -698,7 +755,10 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
 
   const activeThread = useMemo(() => {
     if (!selectedThreadId) return null
-    return threads.find((thread) => thread.id === selectedThreadId) ?? null
+    return threads.find((thread) => (
+      thread.id === selectedThreadId
+      || extractThreadIdFromThreadRef(thread.id) === selectedThreadId
+    )) ?? null
   }, [selectedThreadId, threads])
 
   useEffect(() => {
@@ -729,6 +789,23 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       : null
     if (canonicalSecretaryThread && selectedThreadId !== canonicalSecretaryThread._id) {
       selectThread(canonicalSecretaryThread._id)
+      return
+    }
+
+    // Local ChatKit's original timeline is the deterministic "__default__"
+    // Thread. Prefer it when present so a previously created recovery Thread
+    // cannot hide persisted history after switching chats or signing in again.
+    const canonicalDefaultThread = normalizedThreads.find((thread) => (
+      thread._id === '__default__'
+      || thread._id.endsWith('/index.ttl#__default__')
+    ))
+    const canonicalDefaultThreadId = canonicalDefaultThread
+      ? extractThreadIdFromThreadRef(canonicalDefaultThread._id) ?? canonicalDefaultThread._id
+      : null
+    if (canonicalDefaultThreadId) {
+      if (selectedThreadId !== canonicalDefaultThreadId) {
+        selectThread(canonicalDefaultThreadId)
+      }
       return
     }
 
@@ -856,6 +933,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
         <div className="min-h-0 flex-1 overflow-hidden">
           <ChatKitPanel
             session={session}
+            selectedChatId={selectedChatId}
             selectedThreadId={selectedThreadId}
             preferredComposerModel={readThreadComposerModel(activeThread?.metadata)}
           />
