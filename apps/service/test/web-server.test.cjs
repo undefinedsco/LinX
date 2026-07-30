@@ -695,6 +695,43 @@ test('model service chat proxy forwards OpenAI-compatible requests without expos
   assert.equal(JSON.parse(aiCall.init.body).model, 'gpt-5.4-mini')
 })
 
+test('model service chat proxy accepts image payloads larger than the Express default JSON limit', async (t) => {
+  const { server, fetchCalls } = loadWebServerWithStubs(t, {
+    aiResponse: async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const dataUrl = `data:image/png;base64,${'a'.repeat(512 * 1024)}`
+  const response = await requestJson(origin, '/api/model-services/chat/completions', {
+    method: 'POST',
+    body: {
+      providerId: 'openai',
+      endpoint: 'https://example.com/v1/chat/completions',
+      apiKey: 'sk-test',
+      body: {
+        model: 'gpt-vision-test',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: '描述图片' },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ],
+        }],
+        stream: false,
+      },
+    },
+  })
+
+  assert.equal(response.status, 200)
+  const aiCall = fetchCalls.find((call) => call.url === 'https://example.com/v1/chat/completions')
+  assert.ok(aiCall)
+  assert.equal(JSON.parse(aiCall.init.body).messages[0].content[1].image_url.url.length, dataUrl.length)
+})
+
 test('model service endpoints reject untrusted browser origins', async (t) => {
   const { server } = loadWebServerWithStubs(t)
   const { listener, origin } = await listenOnRandomPort(server.app)

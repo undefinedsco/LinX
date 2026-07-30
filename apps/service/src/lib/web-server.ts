@@ -812,7 +812,7 @@ export class WebServerModule {
     const distDir = this.getWebDistDir()
 
     // API routes for service control
-    this.app.use(express.json())
+    this.app.use(express.json({ limit: '100mb' }))
     this.app.use('/api', (req: Request, res: Response, next) => {
       const origin = req.get('origin')
       if (!origin) {
