@@ -220,6 +220,31 @@ describe('LoginModal', () => {
     expect(props.onSwitchAccount).toHaveBeenCalledTimes(1)
   })
 
+  it('presents an expired Solid session as a re-login state instead of a generic error', () => {
+    const props = createProps({
+      state: 'idle',
+      error: 'Write failed to http://localhost:5737/ganlu/messages.ttl: 401 Unauthorized',
+      hasRestorableSession: true,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderLabel: 'Local',
+      },
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('会话已过期')).toBeTruthy()
+    expect(screen.getByText(/账号和已有数据不会丢失/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重新登录并继续' })).toBeTruthy()
+    expect(screen.queryByText('登录状态已失效。请重新登录。')).toBeNull()
+    expect(screen.queryByRole('button', { name: '关闭错误提示' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '重新登录并继续' }))
+    expect(props.onContinueStoredAccount).toHaveBeenCalledTimes(1)
+  })
+
   it('shows continue action when a restorable remembered session exists', () => {
     const props = createProps({
       hasRestorableSession: true,
