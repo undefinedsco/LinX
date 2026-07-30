@@ -586,7 +586,7 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
     return row
   }
 
-  const rows = await chatCollection.fetch()
+  const rows = await chatCollection.fetch({ refetch: true })
   const [row] = await hydrateChatRows(db, rows.filter((candidate) => candidate.id === chatId))
 
   if (!row) {

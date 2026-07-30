@@ -6,6 +6,7 @@
   "scripts": {
     "benchmark:files-read": "node scripts/benchmark-files-read-cloud.mjs",
     "benchmark:files-read:model": "node scripts/benchmark-files-read-path.mjs",
+    "benchmark:live-query": "vitest run src/lib/data/live-query-contract.test.tsx --disableConsoleIntercept --reporter=verbose",
     "dev": "vite",
     "build": "yarn workspace @linx/stores build && vite build",
     "build:check": "yarn workspace @linx/stores build && tsc && vite build",

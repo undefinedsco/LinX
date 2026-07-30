@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
-import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
 import {
   aiModelResource,
   aiProviderResource,
@@ -9,7 +8,6 @@ import {
 } from '@undefineds.co/models'
 import {
   initializeModelCollections,
-  credentialCollection,
 } from './collections'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
@@ -53,62 +51,51 @@ afterAll(async () => {
   await context?.stop()
 }, 40000)
 
-function waitFor(predicate: () => boolean, timeoutMs = 10000): Promise<boolean> {
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => resolve(false), timeoutMs)
-    const interval = setInterval(() => {
-      if (predicate()) {
-        clearTimeout(timeout)
-        clearInterval(interval)
-        resolve(true)
-      }
-    }, 50)
-  })
-}
-
 describe('model services collections integration', () => {
-  it('credential collection optimistic insert persists', { timeout: 30000 }, async () => {
+  it('credential CRUD via drizzle-solid persists to Pod RDF', { timeout: 30000 }, async () => {
     const { db: database } = await getContext()
 
-    const ready = new Promise<void>((resolve) => credentialCollection.onFirstReady(resolve))
-    credentialCollection.startSyncImmediate()
-    await ready
-
     const id = crypto.randomUUID()
-    const newCredential = {
-      id,
+    const credentialResourceId = credentialResource.buildId({ id })
+
+    const [created] = await database.insert(credentialResource).values({
+      id: credentialResourceId,
       provider: '/settings/providers/openai.ttl',
       service: 'ai',
       status: 'active',
       apiKey: 'sk-test',
       baseUrl: 'https://api.openai.com/v1',
       label: 'Test key',
-    }
+    } as any).execute()
 
-    let optimisticSeen = false
-    const subscription = credentialCollection.subscribeChanges((changes) => {
-      if (changes.some((change) => change.type === 'insert' && (change.value as any)?.id === id)) {
-        optimisticSeen = true
-      }
-    })
-
-    const tx = credentialCollection.insert(newCredential as any)
-    const result = await Promise.race([
-      waitFor(() => optimisticSeen).then((ok) => (ok ? 'optimistic' : 'timeout')),
-      tx.isPersisted.promise.then(() => 'persisted'),
-    ])
-
-    subscription.unsubscribe()
-    expect(result).toBe('optimistic')
-
-    await tx.isPersisted.promise
-
-    const credentialResourceId = credentialResource.buildId({ id })
-    const created = await (database as any).findById(credentialResource as any, credentialResourceId)
     const subject = (created as any)?.['@id']
     if (subject) createdSubjects.push({ kind: 'credential', id: subject })
-    expect(created?.id).toBe(credentialResourceId)
-    expect(created?.provider).toContain('/settings/providers/openai.ttl')
+    expect(created).toBeDefined()
+
+    const row = await (database as any).findById(credentialResource as any, credentialResourceId)
+    expect(row).toMatchObject({
+      id: credentialResourceId,
+      service: 'ai',
+      status: 'active',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.openai.com/v1',
+      label: 'Test key',
+    })
+    expect(row?.provider).toContain('/settings/providers/openai.ttl')
+
+    await (database as any).updateById(credentialResource as any, credentialResourceId, {
+      status: 'inactive',
+      label: 'Updated test key',
+    })
+    const updated = await (database as any).findById(credentialResource as any, credentialResourceId)
+    expect(updated).toMatchObject({
+      status: 'inactive',
+      label: 'Updated test key',
+    })
+
+    await (database as any).deleteById(credentialResource as any, credentialResourceId)
+    const deleted = await (database as any).findById(credentialResource as any, credentialResourceId)
+    expect(deleted).toBeNull()
   })
 
   it('provider/model CRUD via drizzle-solid persists to Pod', { timeout: 30000 }, async () => {

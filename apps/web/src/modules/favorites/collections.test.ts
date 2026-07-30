@@ -11,7 +11,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // Mock Setup (must be before imports)
 // ============================================================================
 
-const { mockCollectionState, mockInsert, mockUpdate, mockDelete, mockFetch } = vi.hoisted(() => ({
+const {
+  mockCollectionState,
+  mockInsert,
+  mockUpdate,
+  mockDelete,
+  mockFetch,
+  mockSubscribeToPod,
+} = vi.hoisted(() => ({
   mockCollectionState: new Map(),
   mockInsert: vi.fn().mockReturnValue({
     isPersisted: { promise: Promise.resolve() },
@@ -23,6 +30,7 @@ const { mockCollectionState, mockInsert, mockUpdate, mockDelete, mockFetch } = v
     isPersisted: { promise: Promise.resolve() },
   }),
   mockFetch: vi.fn().mockResolvedValue([]),
+  mockSubscribeToPod: vi.fn().mockResolvedValue(() => undefined),
 }))
 
 vi.mock('@/lib/data/pod-collection', () => ({
@@ -32,6 +40,7 @@ vi.mock('@/lib/data/pod-collection', () => ({
     update: mockUpdate,
     delete: mockDelete,
     fetch: mockFetch,
+    subscribeToPod: mockSubscribeToPod,
   })),
 }))
 
@@ -183,6 +192,22 @@ describe('favoriteOps', () => {
       expect(result).toHaveLength(2)
     })
 
+    it('normalizes legacy target fields from collection state', () => {
+      mockCollectionState.set('legacy-favorite', {
+        id: 'legacy-favorite',
+        target: 'https://pod.example/report.md',
+        title: 'Report',
+      })
+
+      expect(favoriteOps.getAll()).toEqual([
+        expect.objectContaining({
+          id: 'legacy-favorite',
+          targetUri: 'https://pod.example/report.md',
+          sourceId: 'https://pod.example/report.md',
+        }),
+      ])
+    })
+
     it('should return empty array when no favorites', () => {
       const result = favoriteOps.getAll()
       expect(result).toEqual([])
@@ -209,6 +234,44 @@ describe('favoriteOps', () => {
     it('should call collection delete', async () => {
       await favoriteOps.removeFavorite('f1')
       expect(mockDelete).toHaveBeenCalledWith('f1')
+    })
+  })
+
+  describe('query-model wiring', () => {
+    it('keeps an absent database subscription lazy', async () => {
+      setFavoritesDatabaseGetter(() => null)
+
+      const unsubscribe = await favoriteOps.subscribeToPod()
+
+      expect(mockSubscribeToPod).not.toHaveBeenCalled()
+      expect(unsubscribe()).toBeUndefined()
+    })
+
+    it('delegates one physical subscription to the shared Pod collection', async () => {
+      const db = { id: 'favorites-db' }
+      const unsubscribe = vi.fn()
+      mockSubscribeToPod.mockResolvedValueOnce(unsubscribe)
+      setFavoritesDatabaseGetter(() => db as any)
+
+      await expect(favoriteOps.subscribeToPod()).resolves.toBe(unsubscribe)
+      expect(mockSubscribeToPod).toHaveBeenCalledOnce()
+      expect(mockSubscribeToPod).toHaveBeenCalledWith(db)
+    })
+
+    it('normalizes legacy target fields after collection hydration', async () => {
+      mockFetch.mockResolvedValueOnce([{
+        id: 'legacy-favorite',
+        target: 'https://pod.example/report.md',
+        title: 'Report',
+      }])
+
+      await expect(favoriteOps.fetchFavorites()).resolves.toEqual([
+        expect.objectContaining({
+          id: 'legacy-favorite',
+          targetUri: 'https://pod.example/report.md',
+          sourceId: 'https://pod.example/report.md',
+        }),
+      ])
     })
   })
 })

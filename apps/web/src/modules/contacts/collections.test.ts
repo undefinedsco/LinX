@@ -834,4 +834,36 @@ describe('contactOps Solid Profile Operations', () => {
       expect(contactOps.getLastSyncedText(threeDaysAgo)).toBe('3天前同步')
     })
   })
+
+  describe('collection subscriptions and fetch', () => {
+    it('returns a no-op subscription when no database is available', async () => {
+      setContactsDatabaseGetter(() => null)
+
+      const unsubscribe = await contactOps.subscribeToPod()
+
+      expect(unsubscribe).toBeTypeOf('function')
+      expect(mockSubscribeToPod).not.toHaveBeenCalled()
+    })
+
+    it('delegates Pod subscription to the contact collection', async () => {
+      const unsubscribeContact = vi.fn()
+      mockSubscribeToPod.mockResolvedValueOnce(unsubscribeContact)
+
+      const unsubscribe = await contactOps.subscribeToPod()
+      unsubscribe()
+
+      expect(mockSubscribeToPod).toHaveBeenCalledWith(mockDb)
+      expect(unsubscribeContact).toHaveBeenCalledTimes(1)
+    })
+
+    it('forwards refetch options to the contact collection fetch', async () => {
+      const rows = [{ id: 'contact-1', name: 'Alice' }]
+      mockFetch.mockResolvedValueOnce(rows)
+
+      const result = await contactOps.fetch({ refetch: true })
+
+      expect(result).toBe(rows)
+      expect(mockFetch).toHaveBeenCalledWith({ refetch: true })
+    })
+  })
 })

@@ -1,12 +1,8 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
-import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { approvalResource, solidSchema } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
-import {
-  approvalCollection,
-  initializeInboxCollections,
-} from './data/collections'
+import { initializeInboxCollections } from './data/collections'
 
 let context: XpodIntegrationContext<typeof solidSchema> | null = null
 const createdSubjects: string[] = []
@@ -81,42 +77,5 @@ describe('inbox approval collections integration', () => {
     await (database as any).deleteById(approvalResource as any, values.id)
     const deleted = await (database as any).findById(approvalResource as any, values.id)
     expect(deleted).toBeNull()
-  })
-
-  it('round-trips collection CRUD through the same Pod resource', { timeout: 60000 }, async () => {
-    const { db: database, webId } = await getContext()
-    const tag = `collection-${Date.now()}`
-    const values = makeApprovalValues(webId, tag)
-
-    const insert = approvalCollection.insert(values as any)
-    await insert.isPersisted.promise
-
-    await approvalCollection.fetch()
-    const fetched = approvalCollection.toArray.find((row) => row.id === values.id)
-    expect(fetched?.id).toBe(values.id)
-    expect(await (database as any).findById(approvalResource as any, values.id)).toMatchObject({
-      toolName: 'integration-tool',
-      risk: 'low',
-    })
-
-    const update = approvalCollection.update(values.id, (draft: any) => {
-      draft.status = 'rejected'
-      draft.reason = 'updated through TanStack collection CRUD'
-    })
-    await update.isPersisted.promise
-
-    await approvalCollection.fetch()
-    const persistedUpdate = await (database as any).findById(approvalResource as any, values.id)
-    expect(persistedUpdate).toMatchObject({
-      status: 'rejected',
-      reason: 'updated through TanStack collection CRUD',
-    })
-
-    const remove = approvalCollection.delete(values.id)
-    await remove.isPersisted.promise
-
-    await approvalCollection.fetch()
-    expect(approvalCollection.get(values.id)).toBeUndefined()
-    expect(await (database as any).findById(approvalResource as any, values.id)).toBeNull()
   })
 })

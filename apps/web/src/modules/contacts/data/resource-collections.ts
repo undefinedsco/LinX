@@ -8,7 +8,7 @@ import {
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { createPodCollection } from '@/lib/data/pod-collection'
-import { rebindPodCollection } from '@/lib/data/pod-collection-rebind'
+import { rebindPodCollections } from '@/lib/data/pod-collection-rebind'
 import { queryClient } from '@/providers/query-provider'
 
 let databaseGetter: (() => SolidDatabase | null) | null = null
@@ -55,14 +55,16 @@ export async function initializeContactCollections(db: SolidDatabase | null): Pr
   setContactsDatabaseGetter(() => db)
 
   try {
-    await Promise.all([
-      rebindPodCollection(contactCollection, Boolean(db), {
+    await rebindPodCollections([
+      {
+        collection: contactCollection,
         cancelInFlight: () => queryClient.cancelQueries({ queryKey: contactQueryKey, exact: true }),
-      }),
-      rebindPodCollection(agentCollection, Boolean(db), {
+      },
+      {
+        collection: agentCollection,
         cancelInFlight: () => queryClient.cancelQueries({ queryKey: agentQueryKey, exact: true }),
-      }),
-    ])
+      },
+    ], Boolean(db))
   } catch (error) {
     if (activeDatabase === db) {
       activeDatabase = undefined

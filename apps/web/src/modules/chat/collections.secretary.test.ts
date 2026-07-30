@@ -100,17 +100,63 @@ vi.mock('@/providers/solid-database-provider', () => ({
 }))
 
 import {
+  chatCollection,
   chatOps,
   configureChatContactsPort,
   initializeChatCollections,
   isLinxDefaultSecretaryBootstrapSettling,
   LINX_DEFAULT_SECRETARY,
+  messageCollection,
   SECRETARY_BOOTSTRAP_TIMEOUT_MS,
+  threadCollection,
 } from './collections'
 
 configureChatContactsPort({
   agentCollection: createCollectionMock({ queryKey: ['agents'] }) as any,
   contactCollection: createCollectionMock({ queryKey: ['contacts'] }) as any,
+})
+
+describe('chatOps collection subscriptions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    collectionStates.forEach((state) => state.clear())
+  })
+
+  afterEach(() => {
+    initializeChatCollections(null)
+  })
+
+  it('returns a no-op subscription when no database is available', async () => {
+    initializeChatCollections(null)
+
+    const unsubscribe = await chatOps.subscribeToPod()
+
+    expect(unsubscribe).toBeTypeOf('function')
+    expect(chatCollection.subscribeToPod).not.toHaveBeenCalled()
+    expect(threadCollection.subscribeToPod).not.toHaveBeenCalled()
+    expect(messageCollection.subscribeToPod).not.toHaveBeenCalled()
+  })
+
+  it('subscribes to chat, thread, and message collections and disposes all subscriptions', async () => {
+    const db = { name: 'chat-db' }
+    const unsubscribeChat = vi.fn()
+    const unsubscribeThread = vi.fn()
+    const unsubscribeMessage = vi.fn()
+    vi.mocked(chatCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeChat)
+    vi.mocked(threadCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeThread)
+    vi.mocked(messageCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeMessage)
+    initializeChatCollections(db as any)
+
+    const unsubscribe = await chatOps.subscribeToPod()
+    unsubscribe()
+
+    expect(chatCollection.subscribeToPod).toHaveBeenCalledWith(db)
+    expect(threadCollection.subscribeToPod).toHaveBeenCalledWith(db)
+    expect(messageCollection.subscribeToPod).toHaveBeenCalledWith(db)
+    expect(unsubscribeChat).toHaveBeenCalledTimes(1)
+    expect(unsubscribeThread).toHaveBeenCalledTimes(1)
+    expect(unsubscribeMessage).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('AI Secretary bootstrap', () => {

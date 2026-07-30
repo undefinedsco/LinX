@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   modelInsert: vi.fn(),
   modelUpdate: vi.fn(),
   modelDelete: vi.fn(),
+  providerStartSync: vi.fn(),
+  credentialStartSync: vi.fn(),
+  modelStartSync: vi.fn(),
 }))
 
 function persistedTx() {
@@ -57,19 +60,19 @@ vi.mock('@/providers/solid-database-provider', () => ({
 
 vi.mock('./collections', () => ({
   providerCollection: {
-    startSyncImmediate: vi.fn(),
+    startSyncImmediate: mocks.providerStartSync,
     insert: mocks.providerInsert,
     update: mocks.providerUpdate,
     delete: mocks.providerDelete,
   },
   credentialCollection: {
-    startSyncImmediate: vi.fn(),
+    startSyncImmediate: mocks.credentialStartSync,
     insert: mocks.credentialInsert,
     update: mocks.credentialUpdate,
     delete: mocks.credentialDelete,
   },
   modelCollection: {
-    startSyncImmediate: vi.fn(),
+    startSyncImmediate: mocks.modelStartSync,
     insert: mocks.modelInsert,
     update: mocks.modelUpdate,
     delete: mocks.modelDelete,
@@ -108,6 +111,15 @@ describe('useModelServices data persistence', () => {
       .mockReturnValueOnce({ data: [], isError: false })
       .mockReturnValueOnce({ data: [], isError: false })
       .mockReturnValueOnce({ data: [], isError: false })
+  })
+
+  it('delegates initial hydration to useLiveQuery without manual collection starts', () => {
+    renderHook(() => useModelServices())
+
+    expect(mocks.useLiveQuery).toHaveBeenCalledTimes(3)
+    expect(mocks.providerStartSync).not.toHaveBeenCalled()
+    expect(mocks.credentialStartSync).not.toHaveBeenCalled()
+    expect(mocks.modelStartSync).not.toHaveBeenCalled()
   })
 
   it('restores earlier provider and credential writes when later model persistence fails', async () => {

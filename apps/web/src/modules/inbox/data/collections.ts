@@ -395,6 +395,20 @@ function buildInboxItems(
 }
 
 export const inboxOps = {
+  async subscribeToPod(): Promise<() => void> {
+    const db = getDb()
+    if (!db) return () => {}
+    const unsubscribes = await Promise.all([
+      approvalCollection.subscribeToPod(db),
+      auditCollection.subscribeToPod(db),
+      inboxNotificationCollection.subscribeToPod(db),
+      inputRequestCollection.subscribeToPod(db),
+    ])
+    return () => {
+      for (const unsubscribe of unsubscribes) unsubscribe()
+    }
+  },
+
   async fetchApprovals() {
     return approvalCollection.fetch()
   },

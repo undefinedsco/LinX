@@ -1143,7 +1143,7 @@ export const contactOps = {
   /**
    * Fetch contacts from Pod (initial load)
    */
-  async fetch(): Promise<ContactRow[]> {
-    return await contactCollection.fetch()
+  async fetch(options: { refetch?: boolean } = {}): Promise<ContactRow[]> {
+    return await contactCollection.fetch(options)
   },
 }

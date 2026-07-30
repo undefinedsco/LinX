@@ -159,7 +159,7 @@ export function createPodCollection<
           await updateExactRecord(
             db,
             resource as any,
-            (original ?? modified) as any,
+            toPersistableIdentity((original ?? modified) as TData, resource) as any,
             changedPersistableFields(original as TData | undefined, modified as TData),
           )
         } catch (error) {
@@ -179,7 +179,11 @@ export function createPodCollection<
         const db = getDb()
         if (!db) throw new Error('Database not connected')
         const { original } = transaction.mutations[0]
-        await deleteExactRecord(db, resource as any, original as any)
+        await deleteExactRecord(
+          db,
+          resource as any,
+          toPersistableIdentity(original as TData, resource) as any,
+        )
         try {
           ;(collection.utils as { writeDelete?: (key: string) => void }).writeDelete?.(getKey(original as TData))
         } catch {
@@ -191,22 +195,29 @@ export function createPodCollection<
   )
 
   // 2. Attach helpers
-  const fetch = async () => {
+  const fetch = async (fetchOptions: { refetch?: boolean } = {}) => {
     if (!collection.isReady()) {
       await collection.preload()
       return collection.toArray as TData[]
     }
 
-    const refetch = (collection.utils as { refetch?: () => Promise<void> }).refetch
-    if (typeof refetch === 'function') {
-      await refetch()
+    if (fetchOptions.refetch) {
+      const refetch = (collection.utils as { refetch?: () => Promise<void> }).refetch
+      if (typeof refetch === 'function') {
+        await refetch()
+      }
     }
 
     return collection.toArray as TData[]
   }
 
-  // Usage: useEffect(() => collection.subscribeToPod(db), [db])
-  const subscribeToPod = async (db: SolidDatabase<any>) => {
+  type SharedSubscription = {
+    references: number
+    unsubscribePromise: Promise<() => void>
+  }
+  const sharedSubscriptions = new WeakMap<object, SharedSubscription>()
+
+  const connectToPod = async (db: SolidDatabase<any>) => {
     if (typeof (db as any).subscribe !== 'function') {
       console.warn('[PodCollection] db.subscribe not available')
       return () => {}
@@ -216,6 +227,24 @@ export function createPodCollection<
       const locatorDb = db as unknown as {
         findByIri?: (resource: unknown, iri: string) => Promise<TData | null>
         findById?: (resource: unknown, id: string) => Promise<TData | null>
+      }
+      const inFlightRemoteUpserts = new Map<string, Promise<void>>()
+      let pendingInvalidation: Promise<unknown> | null = null
+      const activityObjectIdentity = (activity: any): string | null => {
+        const object = activity?.object
+        const candidate = typeof object === 'string'
+          ? object
+          : (typeof object === 'object' ? (object['@id'] ?? object.id ?? null) : null)
+        return typeof candidate === 'string' && candidate.length > 0 ? candidate : null
+      }
+      const invalidateOnce = (): Promise<unknown> => {
+        if (!pendingInvalidation) {
+          pendingInvalidation = queryClient.invalidateQueries({ queryKey })
+            .finally(() => {
+              pendingInvalidation = null
+            })
+        }
+        return pendingInvalidation
       }
       // Resolve the row behind a subscribe activity without assuming the object format
       // (IRI string, id string, or object with @id/id). On any failure return null so the
@@ -237,16 +266,52 @@ export function createPodCollection<
         }
         return null
       }
-      const applyRemoteUpsert = async (activity: any) => {
+      const resolveActivityKey = (activity: any): string | null => {
+        const object = activity?.object
+        const candidate = typeof object === 'string'
+          ? object
+          : (typeof object === 'object' ? object?.id : null)
+        if (typeof candidate !== 'string' || /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(candidate)) {
+          return null
+        }
         try {
-          const row = await resolveActivityRow(activity)
-          if (row) {
-            ;(collection.utils as { writeUpsert?: (row: TData) => void }).writeUpsert?.(row)
-          } else {
-            queryClient.invalidateQueries({ queryKey })
-          }
+          return getKey({ id: candidate } as TData)
         } catch {
-          queryClient.invalidateQueries({ queryKey })
+          return null
+        }
+      }
+      const applyRemoteUpsert = async (activity: any) => {
+        const identity = activityObjectIdentity(activity)
+        if (identity) {
+          const inFlight = inFlightRemoteUpserts.get(identity)
+          if (inFlight) {
+            return inFlight
+          }
+        }
+
+        const operation = (async () => {
+          try {
+            const row = await resolveActivityRow(activity)
+            if (row) {
+              ;(collection.utils as { writeUpsert?: (row: TData) => void }).writeUpsert?.(row)
+            } else {
+              await invalidateOnce()
+            }
+          } catch {
+            await invalidateOnce()
+          }
+        })()
+
+        if (!identity) {
+          return operation
+        }
+        inFlightRemoteUpserts.set(identity, operation)
+        try {
+          await operation
+        } finally {
+          if (inFlightRemoteUpserts.get(identity) === operation) {
+            inFlightRemoteUpserts.delete(identity)
+          }
         }
       }
       const sub = await (db as any).subscribe(resource, {
@@ -260,6 +325,15 @@ export function createPodCollection<
         },
         onDelete: (activity: any) => {
           debugPodCollection(`[PodCollection] onDelete: ${activity.object}`)
+          const key = resolveActivityKey(activity)
+          if (key) {
+            try {
+              ;(collection.utils as { writeDelete?: (key: string) => void }).writeDelete?.(key)
+              return
+            } catch {
+              // Fall through to a full refresh when local sync state cannot accept the delete.
+            }
+          }
           queryClient.invalidateQueries({ queryKey })
         }
       })
@@ -269,6 +343,39 @@ export function createPodCollection<
     } catch (error) {
       console.error(`[PodCollection] Subscription failed`, error)
       return () => {}
+    }
+  }
+
+  // Concurrent consumers share one physical Pod channel per collection and database.
+  const subscribeToPod = async (db: SolidDatabase<any>) => {
+    const key = db as object
+    let shared = sharedSubscriptions.get(key)
+    if (!shared) {
+      shared = {
+        references: 0,
+        unsubscribePromise: connectToPod(db),
+      }
+      sharedSubscriptions.set(key, shared)
+      void shared.unsubscribePromise.catch(() => {
+        if (sharedSubscriptions.get(key) === shared) {
+          sharedSubscriptions.delete(key)
+        }
+      })
+    }
+    shared.references += 1
+
+    let released = false
+    return async () => {
+      if (released) return
+      released = true
+      shared.references -= 1
+      if (shared.references > 0) return
+      const unsubscribe = await shared.unsubscribePromise
+      if (shared.references > 0) return
+      if (sharedSubscriptions.get(key) === shared) {
+        sharedSubscriptions.delete(key)
+      }
+      unsubscribe()
     }
   }
 
@@ -288,6 +395,10 @@ function errorMessage(error: unknown): string {
 }
 
 function toPersistableInsert<TData extends { id?: string }>(item: TData, resource: unknown): TData {
+  return toPersistableIdentity(item, resource)
+}
+
+function toPersistableIdentity<TData extends { id?: string }>(item: TData, resource: unknown): TData {
   const buildId = (resource as { buildId?: (target: { id: string }) => string } | null)?.buildId
   if (typeof buildId !== 'function' || !item.id || looksLikeBaseRelativeResourceId(item.id)) {
     return item

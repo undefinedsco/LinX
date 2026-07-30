@@ -19,9 +19,9 @@ import {
   contactCollection,
   initializeContactCollections,
 } from '@/modules/contacts/data/collections'
-import { initializeFavoriteCollections } from '@/modules/favorites/collections'
+import { favoriteOps, initializeFavoriteCollections } from '@/modules/favorites/collections'
 import { filesOps, initializeFilesCollections } from '@/modules/files/collections'
-import { initializeInboxCollections } from '@/modules/inbox/collections'
+import { inboxOps, initializeInboxCollections } from '@/modules/inbox/collections'
 import { initializeModelCollections } from '@/modules/model-services/data/collections'
 import { initializeSymphonyControlCollections, symphonyControlOps } from '@/modules/symphony/collections'
 
@@ -64,7 +64,9 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
 
     let cancelled = false
     let unsubscribe: (() => void) | null = null
+    let unsubscribeFavorites: (() => void) | null = null
     let unsubscribeFiles: (() => void) | null = null
+    let unsubscribeInbox: (() => void) | null = null
     let unsubscribeSymphony: (() => void) | null = null
     const started = lastStartedRef.current
     const force = !!started && started !== db
@@ -94,6 +96,30 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
       })
       .catch((error) => {
         console.warn('[PodCollectionsBootstrap] Failed to subscribe files collections:', error)
+      })
+
+    void favoriteOps.subscribeToPod()
+      .then((nextUnsubscribe) => {
+        if (cancelled) {
+          nextUnsubscribe()
+          return
+        }
+        unsubscribeFavorites = nextUnsubscribe
+      })
+      .catch((error) => {
+        console.warn('[PodCollectionsBootstrap] Failed to subscribe favorite collection:', error)
+      })
+
+    void inboxOps.subscribeToPod()
+      .then((nextUnsubscribe) => {
+        if (cancelled) {
+          nextUnsubscribe()
+          return
+        }
+        unsubscribeInbox = nextUnsubscribe
+      })
+      .catch((error) => {
+        console.warn('[PodCollectionsBootstrap] Failed to subscribe inbox collections:', error)
       })
 
     void symphonyControlOps.subscribeToPod()
@@ -145,7 +171,9 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     return () => {
       cancelled = true
       unsubscribe?.()
+      unsubscribeFavorites?.()
       unsubscribeFiles?.()
+      unsubscribeInbox?.()
       unsubscribeSymphony?.()
     }
   }, [db])

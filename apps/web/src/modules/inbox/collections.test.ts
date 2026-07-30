@@ -33,7 +33,16 @@ import {
   renderStructuredCellChangeProposalTurtle,
 } from '@/modules/files/structured-cell-approval'
 import { createVocabTermProposal, renderVocabTermProposalTurtle } from '@/modules/files/structured-table'
-import { approvalCollection, buildRuntimeToolResponse, findLatestApprovalByTarget, inboxOps, initializeInboxCollections } from './collections'
+import {
+  approvalCollection,
+  auditCollection,
+  buildRuntimeToolResponse,
+  findLatestApprovalByTarget,
+  inboxNotificationCollection,
+  inboxOps,
+  initializeInboxCollections,
+  inputRequestCollection,
+} from './collections'
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -70,6 +79,41 @@ describe('findLatestApprovalByTarget', () => {
   it('returns null for empty or unmatched targets', () => {
     expect(findLatestApprovalByTarget([], null)).toBeNull()
     expect(findLatestApprovalByTarget([{ id: 'approval-1', target: 'x' }] as any[], 'y')).toBeNull()
+  })
+})
+
+describe('inbox aggregate query model', () => {
+  it('keeps subscriptions lazy while no database is bound', async () => {
+    initializeInboxCollections(null)
+    const subscribe = vi.spyOn(approvalCollection, 'subscribeToPod')
+
+    const unsubscribe = await inboxOps.subscribeToPod()
+
+    expect(subscribe).not.toHaveBeenCalled()
+    expect(unsubscribe()).toBeUndefined()
+  })
+
+  it('subscribes and disposes every resource in the aggregate', async () => {
+    const db = { id: 'inbox-db' }
+    const collections = [
+      approvalCollection,
+      auditCollection,
+      inboxNotificationCollection,
+      inputRequestCollection,
+    ]
+    const disposers = collections.map(() => vi.fn())
+    for (const [index, collection] of collections.entries()) {
+      vi.spyOn(collection, 'subscribeToPod').mockResolvedValueOnce(disposers[index])
+    }
+    initializeInboxCollections(db as any)
+
+    const unsubscribe = await inboxOps.subscribeToPod()
+    unsubscribe()
+
+    for (const [index, collection] of collections.entries()) {
+      expect(collection.subscribeToPod).toHaveBeenCalledWith(db)
+      expect(disposers[index]).toHaveBeenCalledOnce()
+    }
   })
 })
 

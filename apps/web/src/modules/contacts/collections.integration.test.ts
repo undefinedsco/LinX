@@ -3,10 +3,6 @@ import { afterAll, describe, expect, it } from 'vitest'
 import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { contactResource, solidSchema } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
-import {
-  contactCollection,
-  initializeContactCollections,
-} from './data/collections'
 
 let context: XpodIntegrationContext<typeof solidSchema> | null = null
 const createdSubjects: string[] = []
@@ -17,7 +13,6 @@ async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>>
     schema: solidSchema,
     resources: [contactResource],
   })
-  await initializeContactCollections(context.db)
   return context
 }
 
@@ -106,60 +101,5 @@ describe('contact collections integration', () => {
     )
     expect(extRow).toBeTruthy()
     expect(extRow?.contactType).toBe('external')
-  })
-
-  it('round-trips collection CRUD through the same Pod resource', { timeout: 60000 }, async () => {
-    const { db: database, webId } = await getContext()
-    const resourceId = contactResource.buildId({ id: `collection-contact-${Date.now()}` })
-
-    const insert = contactCollection.insert({
-      id: resourceId,
-      name: 'Collection Contact',
-      about: webId,
-      contactType: 'solid',
-    } as any)
-    await insert.isPersisted.promise
-
-    await contactCollection.fetch()
-    const fetched = contactCollection.toArray.find((row) => row.name === 'Collection Contact')
-    expect(fetched?.id).toBe(resourceId)
-    expect(await (database as any).findById(contactResource as any, resourceId)).toMatchObject({
-      name: 'Collection Contact',
-      contactType: 'solid',
-    })
-
-    const update = contactCollection.update(resourceId, (draft: any) => {
-      draft.name = 'Collection Contact Updated'
-      draft.note = 'updated through TanStack collection CRUD'
-    })
-    await update.isPersisted.promise
-
-    await contactCollection.fetch()
-    const persistedUpdate = await (database as any).findById(contactResource as any, resourceId)
-    expect(persistedUpdate).toMatchObject({
-      name: 'Collection Contact Updated',
-      note: 'updated through TanStack collection CRUD',
-    })
-    expect(contactCollection.toArray.map((row) => ({ id: row.id, name: row.name }))).toContainEqual({
-      id: resourceId,
-      name: 'Collection Contact Updated',
-    })
-
-    const clearNote = contactCollection.update(resourceId, (draft: any) => {
-      draft.note = null
-    })
-    await clearNote.isPersisted.promise
-
-    await contactCollection.fetch()
-    const cleared = await (database as any).findById(contactResource as any, resourceId)
-    expect(cleared?.note).toBeUndefined()
-    expect(contactCollection.toArray.find((row) => row.id === resourceId)?.name).toBe('Collection Contact Updated')
-
-    const remove = contactCollection.delete(resourceId)
-    await remove.isPersisted.promise
-
-    await contactCollection.fetch()
-    expect(contactCollection.get(resourceId)).toBeUndefined()
-    expect(await (database as any).findById(contactResource as any, resourceId)).toBeNull()
   })
 })

@@ -27,7 +27,7 @@ describe('symphony control collections', () => {
     vi.clearAllMocks()
   })
 
-  it('declares Web-readable control resources for Symphony Pod state', async () => {
+  it('declares Web-readable control resources for Symphony Pod state', { timeout: 15000 }, async () => {
     const module = await import('./collections')
 
     expect(collectionRecords.map((record) => record.options.queryKey)).toEqual([
@@ -40,6 +40,20 @@ describe('symphony control collections', () => {
       ['symphony', 'evidence'],
       ['symphony', 'reports'],
     ])
+    expect(collectionRecords.map((record) => record.options.orderBy)).toEqual([
+      { column: 'updatedAt', direction: 'desc' },
+      { column: 'updatedAt', direction: 'desc' },
+      { column: 'updatedAt', direction: 'desc' },
+      { column: 'updatedAt', direction: 'desc' },
+      { column: 'updatedAt', direction: 'desc' },
+      { column: 'createdAt', direction: 'desc' },
+      { column: 'createdAt', direction: 'desc' },
+      { column: 'updatedAt', direction: 'desc' },
+    ])
+    for (const record of collectionRecords) {
+      expect(record.options.getKey?.({ id: 'row.ttl' })).toBe('row.ttl')
+      expect(() => record.options.getKey?.({})).toThrow(/missing id/i)
+    }
 
     const db = { id: 'db' }
     module.initializeSymphonyControlCollections(db as never)
@@ -72,5 +86,28 @@ describe('symphony control collections', () => {
       evidence: [{ id: 'evidence-1' }],
       reports: [{ id: 'reports-1' }],
     })
+  })
+
+  it('disposes every control subscription even when one disposer fails', async () => {
+    const module = await import('./collections')
+    const disposers = collectionRecords.map(() => vi.fn())
+    disposers[0].mockImplementationOnce(() => {
+      throw new Error('first disposer failed')
+    })
+    for (const [index, record] of collectionRecords.entries()) {
+      record.subscribeToPod.mockResolvedValueOnce(disposers[index])
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    module.initializeSymphonyControlCollections({ id: 'db' } as never)
+
+    const unsubscribe = await module.symphonyControlOps.subscribeToPod()
+    unsubscribe()
+
+    expect(disposers.every((dispose) => dispose.mock.calls.length === 1)).toBe(true)
+    expect(warn).toHaveBeenCalledWith(
+      '[symphonyControlOps] Unsubscribe error:',
+      expect.objectContaining({ message: 'first disposer failed' }),
+    )
+    warn.mockRestore()
   })
 })

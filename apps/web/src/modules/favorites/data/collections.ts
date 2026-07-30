@@ -56,7 +56,7 @@ export const favoriteCollection = createPodCollection<
 // Favorite Operations
 // ============================================================================
 
-function normalizeFavoriteRow(row: FavoriteRow): FavoriteRow {
+export function normalizeFavoriteRow(row: FavoriteRow): FavoriteRow {
   const target = (row as any).targetUri ?? (row as any).target ?? null
   if (!target) return row
 
@@ -68,6 +68,12 @@ function normalizeFavoriteRow(row: FavoriteRow): FavoriteRow {
 }
 
 export const favoriteOps = {
+  async subscribeToPod(): Promise<() => void> {
+    const db = getDb()
+    if (!db) return () => {}
+    return favoriteCollection.subscribeToPod(db)
+  },
+
   getAll(): FavoriteRow[] {
     return Array.from(favoriteCollection.state.values()).map(normalizeFavoriteRow)
   },
