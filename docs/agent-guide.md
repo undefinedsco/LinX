@@ -97,6 +97,7 @@ Feature contracts:
 
 ## Working Heuristics
 
+- 本地验证登录、模型服务或聊天时必须运行 `yarn dev:service`；`yarn dev` / `yarn dev:web` 只是纯 Vite UI，不提供 `/api/model-services/*` 后台代理。不要把纯 Vite 5173 当作完整 LinX Web 服务，也不要据此改成浏览器直连模型厂商。可通过页面中的 `window.__LINX_SERVICE__ = true` 和 `/api/service/status` 确认 Service 模式。
 - 优先复用已有实现，不平行重写已有登录、启动、授权、会话、桌面壳逻辑。
 - 改动保持小而完整；修根因，不做表面补丁。
 - 先完成一个功能板块到“可测可用”，再展开下一个板块。

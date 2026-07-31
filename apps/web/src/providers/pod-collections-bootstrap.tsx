@@ -29,6 +29,13 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     initializeModelCollections(db)
     initializeSymphonyControlCollections(db)
 
+    // Model collections are module singletons. They can become ready with an
+    // empty result while the app is logged out, and TanStack then reuses that
+    // result after an authenticated database is installed. Drop those query
+    // snapshots whenever the active Pod changes so mounted live queries load
+    // the current account's provider, credential, and model rows again.
+    resetModelServiceStateForPodChange()
+
     if (!db) {
       resetChatStateForPodChange()
       lastStartedRef.current = null
@@ -98,6 +105,12 @@ function resetChatStateForPodChange(): void {
   const state = useChatStore.getState()
   state.selectChat(null)
   state.setListViewMode('chats')
+}
+
+function resetModelServiceStateForPodChange(): void {
+  for (const queryKey of [['ai-credentials'], ['ai-providers'], ['ai-models']] as const) {
+    queryClient.removeQueries({ queryKey })
+  }
 }
 
 function selectInitialSecretary(chatId: string, threadId?: string): void {

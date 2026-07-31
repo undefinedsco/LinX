@@ -142,6 +142,9 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeFavoriteCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(db)
+    expect(removeQueriesMock).toHaveBeenCalledWith({ queryKey: ['ai-credentials'] })
+    expect(removeQueriesMock).toHaveBeenCalledWith({ queryKey: ['ai-providers'] })
+    expect(removeQueriesMock).toHaveBeenCalledWith({ queryKey: ['ai-models'] })
     expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(db)
     expect(subscribeToPodMock).not.toHaveBeenCalled()
     // Symphony control data is loaded on demand. Eight global SSE subscriptions

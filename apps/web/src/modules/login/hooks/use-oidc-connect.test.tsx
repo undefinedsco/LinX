@@ -12,6 +12,7 @@ const loginMock = vi.fn()
 const fetchMock = vi.fn()
 const openAuthorizationWindowMock = vi.fn()
 const openEmbeddedAuthorizationMock = vi.fn()
+const openExternalMock = vi.fn()
 const prepareLoopbackRedirectMock = vi.fn()
 const resolveDesktopOidcIssuerMock = vi.fn()
 
@@ -155,6 +156,7 @@ describe('useOidcConnect', () => {
     prepareLoopbackRedirectMock.mockResolvedValue('http://127.0.0.1:43123/auth/callback')
     openAuthorizationWindowMock.mockResolvedValue(undefined)
     openEmbeddedAuthorizationMock.mockResolvedValue(undefined)
+    openExternalMock.mockResolvedValue(undefined)
     resolveDesktopOidcIssuerMock.mockReset()
     window.xpodDesktop = {
       auth: {
@@ -165,6 +167,9 @@ describe('useOidcConnect', () => {
         consumePendingRedirect: vi.fn(),
         onEmbeddedAuthorizationState: vi.fn(() => () => {}),
         onRedirect: vi.fn(() => () => {}),
+      },
+      app: {
+        openExternal: openExternalMock,
       },
     } as any
   })
@@ -443,6 +448,23 @@ describe('useOidcConnect', () => {
     await waitFor(() => {
       expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
       expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
+    })
+  })
+
+  it('falls back to the system browser when embedded authorization fails', async () => {
+    openEmbeddedAuthorizationMock.mockRejectedValueOnce(new Error('embedded failed'))
+    loginMock.mockImplementationOnce(async (options) => {
+      await options.handleRedirect('https://idp.example.com/authorize')
+      return new Promise(() => {})
+    })
+    render(<EmbeddedTestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect embedded' }))
+
+    await waitFor(() => {
+      expect(openExternalMock).toHaveBeenCalledWith(
+        'https://idp.example.com/authorize?provisionCode=pc-123',
+      )
     })
   })
 

@@ -138,7 +138,22 @@ Web 是当前主产品面，也是迭代最快的环境。
 ELECTRON_SKIP_BINARY_DOWNLOAD=1 yarn install
 ```
 
-### 启动 Web
+### 启动完整本地 Web
+
+需要验证登录、模型服务或聊天时，必须启动 LinX Service。它会在 5173
+提供 Web UI，并提供 `/api/model-services/*` 等后台代理：
+
+```bash
+yarn dev:service
+```
+
+不要用纯 Vite 页面验证模型服务或对话。`yarn dev`、`yarn dev:web` 和下面的
+workspace 命令只启动前端，不提供 LinX 后台代理；浏览器会直接请求模型厂商，
+并可能被跨域策略拒绝。
+
+### 仅启动 Web UI
+
+只做组件、样式等纯前端调试时才使用：
 
 ```bash
 yarn workspace @linx/web dev

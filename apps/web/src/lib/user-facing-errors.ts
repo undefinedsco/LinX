@@ -75,10 +75,6 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
     return '登录服务暂时不可用。请稍后重试。'
   }
 
-  if (/oidc|openid-configuration|failed to fetch|networkerror|aborterror|无法连接服务器|连接超时/.test(normalized)) {
-    return '登录页面暂时打不开。请检查网络，或回到“选择空间”重试。'
-  }
-
   if (/api key|invalid key|missing key|incorrect api key|authentication.*key|invalid_api_key/.test(normalized)) {
     return '密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。'
   }
@@ -87,8 +83,12 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
     return '当前模型服务已停用，请重新选择模型。'
   }
 
-  if (/ai error|anthropic error|openai error|model error|模型服务/.test(normalized)) {
+  if (/ai error|anthropic error|openai error|model error|model service|模型服务/.test(normalized)) {
     return '模型服务暂时不可用。请检查密钥、服务地址或网络后重试。'
+  }
+
+  if (/oidc|openid-configuration|failed to fetch|networkerror|aborterror|无法连接服务器|连接超时/.test(normalized)) {
+    return '登录页面暂时打不开。请检查网络，或回到“选择空间”重试。'
   }
 
   if (/(?:http|api error|runtime request failed|request failed)[:\s]*401\b|401 unauthorized|unauthorized|读取 webid profile 失败/.test(normalized)) {

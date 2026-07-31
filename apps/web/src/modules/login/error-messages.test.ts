@@ -202,6 +202,11 @@ describe('formatLoginErrorForUser', () => {
       .toBe('File not found')
   })
 
+  it('does not present a model network failure as a login failure', () => {
+    expect(formatLoginErrorForUser('Model service request failed: Failed to fetch'))
+      .toBe('模型服务暂时不可用。请检查密钥、服务地址或网络后重试。')
+  })
+
   it('does not leak implementation terms in mapped user-facing messages', () => {
     const rawErrors = [
       'Failed to create Pod container https://node-0000.undefineds.co/alice/.data/agents/__secretary__/: HTTP 403',

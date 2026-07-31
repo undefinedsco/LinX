@@ -69,6 +69,7 @@ export function LoginModal(props: LoginModalProps) {
         <ProviderSelectionView
           providers={props.providers}
           error={props.error}
+          localProviderSource={props.localProviderSource}
           localLoginStatus={props.localLoginStatus}
           onConnect={props.onConnect}
           onAddProvider={props.onAddProvider}
@@ -247,6 +248,7 @@ function AccountView({
 function ProviderSelectionView({
   providers,
   error,
+  localProviderSource,
   localLoginStatus,
   onConnect,
   onAddProvider,
@@ -254,6 +256,7 @@ function ProviderSelectionView({
 }: {
   providers: LoginProviderOption[]
   error: string | null
+  localProviderSource: LoginModalProps['localProviderSource']
   localLoginStatus: LoginModalProps['localLoginStatus']
   onConnect: (providerKey: string) => void
   onAddProvider: (url: string, label?: string) => void
@@ -267,6 +270,8 @@ function ProviderSelectionView({
   const selectedProvider = selectedSpace === 'local'
     ? (localProvider ?? standaloneProvider)
     : cloudProvider
+  const selectedProviderKey = selectedProvider?.id
+    ?? (selectedSpace === 'local' ? localProviderSource : null)
 
   if (view === 'providers') {
     return (
@@ -326,8 +331,8 @@ function ProviderSelectionView({
       <div className="shrink-0 space-y-2">
         <button
           type="button"
-          disabled={!selectedProvider}
-          onClick={() => selectedProvider && onConnect(selectedProvider.id)}
+          disabled={!selectedProviderKey}
+          onClick={() => selectedProviderKey && onConnect(selectedProviderKey)}
           className="w-full h-11 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
           继续

@@ -336,6 +336,22 @@ describe('LoginModal', () => {
     expect(props.onConnect).not.toHaveBeenCalledWith('cloud')
   })
 
+  it('allows 本机 to continue while desktop providers are still loading', () => {
+    const baseProps = createProps()
+    const props = createProps({
+      providers: baseProps.providers.filter((provider) => provider.source === 'cloud'),
+      localProviderSource: 'local',
+    })
+    render(<LoginModal {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /本机/ }))
+    const continueButton = screen.getByRole('button', { name: '继续' })
+    expect((continueButton as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.click(continueButton)
+    expect(props.onConnect).toHaveBeenCalledWith('local')
+  })
+
   it('shows Local startup status inline without leaving the compact login state', () => {
     const props = createProps({
       localLoginStatus: {

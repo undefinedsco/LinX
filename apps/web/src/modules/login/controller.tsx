@@ -632,6 +632,16 @@ export function useLoginController() {
       }
 
       if (snapshot?.state === 'repair_required') {
+        if (source === 'local' && snapshot.errorCode === 'LOCAL_CLOUD_BINDING_REQUIRED') {
+          const standaloneSnapshot = await startLocal('standalone')
+          if (standaloneSnapshot?.state === 'ready') {
+            setActiveLocalProviderSource('standalone')
+            await connectReadyLocalSnapshot(standaloneSnapshot, 'standalone', {
+              restoreAccount: options?.restoreAccount ?? storedAccount,
+            })
+            return
+          }
+        }
         setLocalLoginActive(false)
         return
       }
@@ -666,7 +676,9 @@ export function useLoginController() {
     setStorageConflict(null)
     const normalizedProviderKeyUrl = normalizeUrl(providerKey)
     const provider = resolveProviderByKey(providerKey, providers)
-    const source = resolveLoginProviderSource(provider)
+    const source = providerKey === 'local' || providerKey === 'standalone'
+      ? providerKey
+      : resolveLoginProviderSource(provider)
     if (isLocalLoginProviderSource(source)) {
       await startLocalLogin(source, {
         restoreAccount: getReusableLocalStoredAccount(storedAccount, providers, source),

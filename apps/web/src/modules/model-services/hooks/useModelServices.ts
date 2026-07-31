@@ -383,11 +383,12 @@ export function useModelServices() {
       )
       const template = getModelProviderTemplate(providerState.id)
       const metadata = getAIConfigProviderMetadata(providerState.id)
-      const credential = selectAIConfigCredential(
+      const selectedCredential = selectAIConfigCredential(
         providerState.id,
         effectiveCredentialRows,
         mergedProviderRows,
-      )?.credential
+      )
+      const credential = selectedCredential?.credential
       const failCount = typeof credential?.failCount === 'number' ? credential.failCount : 0
       const verificationStatus = failCount > 0
         ? 'failed'
@@ -424,7 +425,7 @@ export function useModelServices() {
         baseUrl:
           (typeof providerRow?.baseUrl === 'string' && providerRow.baseUrl.trim()
             ? providerRow.baseUrl.trim()
-            : providerState?.baseUrl) || template?.defaultBaseUrl || metadata.defaultBaseUrl,
+            : selectedCredential?.baseUrl || providerState?.baseUrl) || template?.defaultBaseUrl || metadata.defaultBaseUrl,
         models: providerState?.models?.length ? providerState.models : defaultModels,
         verificationStatus,
       }

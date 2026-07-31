@@ -1039,6 +1039,44 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().state).toBe('idle')
   })
 
+  it('falls back to Standalone when a healthy local xpod has no Cloud binding', async () => {
+    startLocalMock
+      .mockResolvedValueOnce({
+        state: 'repair_required',
+        spaceKind: 'local',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'http://localhost:5737/',
+        publicUrl: null,
+        cloudIdentityUrl: null,
+        provisionCode: null,
+        errorCode: 'LOCAL_CLOUD_BINDING_REQUIRED',
+      })
+      .mockResolvedValueOnce({
+        state: 'ready',
+        spaceKind: 'standalone',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'http://localhost:5737/',
+        publicUrl: null,
+        cloudIdentityUrl: null,
+        provisionCode: null,
+        errorCode: null,
+      })
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(startLocalMock).toHaveBeenNthCalledWith(1, 'local')
+    expect(startLocalMock).toHaveBeenNthCalledWith(2, 'standalone')
+    expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', expect.objectContaining({
+      authorizationSurface: 'window',
+      route: 'standalone',
+      strictDiscovery: true,
+    }))
+  })
+
   it('uses the canonical Local SP URL for Local login without testing public connectivity', async () => {
     const connectivity = {
       status: 'local-only',

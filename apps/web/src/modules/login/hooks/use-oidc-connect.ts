@@ -192,22 +192,29 @@ export function useOidcConnect() {
       if (redirectUrlResult === CANCELLED) return
       const redirectUrl = redirectUrlResult
 
+      const externalRedirectHandler = desktopApi?.app?.openExternal
+        ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, authorizationQuery))
+        : undefined
       const redirectHandler =
         authorizationSurface === 'embedded' && desktopApi?.auth?.openEmbeddedAuthorization
-          ? (url: string) => desktopApi.auth.openEmbeddedAuthorization(appendAuthorizationQuery(url, authorizationQuery), {
-              providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
-            })
+          ? async (url: string) => {
+              const authorizationUrl = appendAuthorizationQuery(url, authorizationQuery)
+              try {
+                await desktopApi.auth.openEmbeddedAuthorization(authorizationUrl, {
+                  providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
+                })
+              } catch (error) {
+                if (!externalRedirectHandler) throw error
+                await externalRedirectHandler(url)
+              }
+            }
         : authorizationSurface === 'external'
-          ? desktopApi?.app?.openExternal
-            ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, authorizationQuery))
-            : undefined
+          ? externalRedirectHandler
         : desktopApi?.auth?.openAuthorizationWindow
           ? (url: string) => desktopApi.auth.openAuthorizationWindow(appendAuthorizationQuery(url, authorizationQuery), {
               providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
             })
-        : desktopApi?.app?.openExternal
-          ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, authorizationQuery))
-          : undefined
+        : externalRedirectHandler
       const redirectStarted = redirectHandler ? createDeferred<void>() : null
       const handleRedirect = redirectHandler
         ? (url: string) => {

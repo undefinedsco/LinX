@@ -1310,7 +1310,13 @@ export class LocalChatKitService {
       max_tokens: inferenceOptions?.max_tokens ?? 2048,
     }
 
-    const response = await this.fetchProviderChatCompletion(config, endpoint, body)
+    let response: Response
+    try {
+      response = await this.fetchProviderChatCompletion(config, endpoint, body)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`Model service request failed: ${detail}`)
+    }
 
     if (!response.ok) {
       const text = await response.text()

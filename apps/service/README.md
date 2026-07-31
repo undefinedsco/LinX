@@ -69,6 +69,11 @@ yarn dev:service
 `dev:service` 会先重新构建 Web，再编译并启动 Service，避免 `apps/web/dist` 残留旧 bundle。
 Service 使用静态集成模式；运行期间修改 Web 源码后，需要重新执行 `yarn dev:service`。
 
+登录、模型验证和聊天的本地联调必须使用这个入口。根目录的 `yarn dev` / `yarn dev:web`
+只运行 Vite，不包含 `/api/model-services/models` 和
+`/api/model-services/chat/completions` 后台代理，不能用于完整链路验证。确认启动正确时，
+5173 返回的页面应设置 `window.__LINX_SERVICE__ = true`。
+
 ## 端口
 
 - `5173` - Web UI
