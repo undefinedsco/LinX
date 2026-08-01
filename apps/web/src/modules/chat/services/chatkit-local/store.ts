@@ -40,6 +40,8 @@ import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime/chat-reconciler'
 import { queryMessageRowsForChat } from '../../message-query'
+import { queryClient } from '@/providers/query-provider'
+import { shouldAutoTitleChat, summarizeConversationTitle } from '../../conversation-title'
 
 const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
@@ -965,6 +967,10 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       createdAt,
     }).execute()
 
+    if (item.type === 'user_message') {
+      await this.ensureChatTitle(chatId, content)
+    }
+
     // The resource identity is deterministic from the inserted row. Keep it
     // instead of reading the row back: a stream normally calls saveItem right
     // after addThreadItem, and that read can degrade into a broad SPARQL scan.
@@ -972,6 +978,21 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.messageIriByItemId.set(item.id, messageIri)
     this.recentlyCreatedIds.add(item.id)
     this.upsertCachedThreadItem(threadId, item)
+  }
+
+  private async ensureChatTitle(chatId: string, content: string): Promise<void> {
+    const title = summarizeConversationTitle(content)
+    if (!title) return
+
+    const chatIdForResource = chatResource.buildId({ id: chatId })
+    const chat = await (this.db as any).findById(Chat as any, chatIdForResource)
+    if (!chat || !shouldAutoTitleChat(chat.title)) return
+
+    await updateExactRecord(this.db, Chat as any, chat, {
+      title,
+      updatedAt: new Date(),
+    })
+    await queryClient.invalidateQueries({ queryKey: ['chats'] })
   }
 
   async saveItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {

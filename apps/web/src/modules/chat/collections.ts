@@ -1412,6 +1412,13 @@ export const chatOps = {
         ...data,
         updatedAt,
       } as ChatRow, id)
+      if (typeof data.starred === 'boolean') {
+        favoriteHooks.onStarredChange('chat', id, data.starred, {
+          title: String(data.title ?? existing?.title ?? id),
+          searchText: String(data.title ?? existing?.title ?? id),
+          snapshotContent: existing?.lastMessagePreview ?? undefined,
+        })
+      }
       return
     }
 
@@ -1419,6 +1426,13 @@ export const chatOps = {
       Object.assign(draft, data, { updatedAt })
     })
     await tx.isPersisted.promise
+    if (typeof data.starred === 'boolean') {
+      favoriteHooks.onStarredChange('chat', id, data.starred, {
+        title: String(data.title ?? existing?.title ?? id),
+        searchText: String(data.title ?? existing?.title ?? id),
+        snapshotContent: existing?.lastMessagePreview ?? undefined,
+      })
+    }
   },
 
   /**
@@ -1428,13 +1442,6 @@ export const chatOps = {
     const newStarred = !currentStarred
     await this.updateChat(id, { starred: newStarred })
 
-    // CP1: report starred change to favorites hub
-    const chat = this.getById(id)
-    favoriteHooks.onStarredChange('chat', id, newStarred, {
-      title: chat?.title ?? id,
-      searchText: chat?.title ?? undefined,
-      snapshotContent: chat?.lastMessagePreview ?? undefined,
-    })
   },
 
   /**

@@ -387,7 +387,10 @@ describe('LocalChatKitStore storage routing', () => {
       attachments: [],
       created_at: 0,
     } as any, {})).resolves.toBeUndefined()
-    expect(db.findById).not.toHaveBeenCalled()
+    // A user message may read its Chat once to decide whether the default title
+    // should be replaced. It must not read the newly inserted Message back.
+    expect(db.findById).toHaveBeenCalledTimes(1)
+    expect(db.findById).toHaveBeenCalledWith(expect.anything(), 'default/index.ttl#this')
   })
 
   it('patches a newly created message by its cached IRI without a read or broad SELECT', async () => {

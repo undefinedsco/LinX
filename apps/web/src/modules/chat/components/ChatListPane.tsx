@@ -51,6 +51,7 @@ import {
   Users,
   User,
   Terminal,
+  Pencil,
 } from 'lucide-react'
 import { AddChatDialog } from './AddChatDialog'
 import { Button } from '@/components/ui/button'
@@ -215,6 +216,7 @@ interface ChatItemProps {
   isActive: boolean
   onClick: () => void
   onStar: () => void
+  onRename: () => void
   onMute: () => void
   onMarkUnread: () => void
   onCopyLog: () => void
@@ -226,6 +228,7 @@ function ChatItem({
   isActive,
   onClick,
   onStar,
+  onRename,
   onMute,
   onMarkUnread,
   onCopyLog,
@@ -338,6 +341,10 @@ function ChatItem({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRename() }}>
+                          <Pencil strokeWidth={1.5} className="mr-2 h-4 w-4" />
+                          修改标题
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMute() }}>
                           <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
                           {chat.muted ? '取消静音' : '静音'}
@@ -394,6 +401,10 @@ function ChatItem({
         <ContextMenuItem onClick={onStar}>
           <Star className={cn('mr-2 h-4 w-4', chat.starred && 'text-amber-500 fill-amber-500')} />
           {chat.starred ? '取消标星' : '标星'}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onRename}>
+          <Pencil strokeWidth={1.5} className="mr-2 h-4 w-4" />
+          修改标题
         </ContextMenuItem>
         <ContextMenuItem onClick={onMute}>
           <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
@@ -754,6 +765,19 @@ export function ChatListPane(_props: ChatListPaneProps) {
     }
   }, [chats, mutations])
 
+  const handleRenameChat = useCallback(async (chatId: string) => {
+    const chat = chats.find(c => c.id === chatId)
+    if (!chat) return
+    const nextTitle = window.prompt('修改对话标题', chat.title)?.trim()
+    if (!nextTitle || nextTitle === chat.title) return
+    try {
+      await mutations.updateChat.mutateAsync({ id: chatId, title: nextTitle })
+    } catch (error) {
+      console.error('Rename chat failed:', error)
+      toast({ description: '修改标题失败，请稍后重试。', variant: 'destructive' })
+    }
+  }, [chats, mutations, toast])
+
   const handleMarkAsUnread = useCallback(async (chatId: string) => {
     try {
       await mutations.updateChat.mutateAsync({
@@ -842,6 +866,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
                 isActive={selectedChatId === chat.id}
                 onClick={() => handleChatClick(chat.id)}
                 onStar={() => handleStarChat(chat.id)}
+                onRename={() => handleRenameChat(chat.id)}
                 onMute={() => handleMuteChat(chat.id)}
                 onMarkUnread={() => handleMarkAsUnread(chat.id)}
                 onCopyLog={() => handleCopyLog(chat.id)}
