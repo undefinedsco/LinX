@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import {
   ensurePendingPostLoginMicroAppId,
   getStoredSolidSession,

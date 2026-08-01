@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { EVENTS, type ISessionEventListener } from '@inrupt/solid-client-authn-browser'
 import { Loader2, AlertTriangle } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { useOidcConnect } from '@/modules/login/hooks/use-oidc-connect'
+import { useEmbeddedAuthorizationState } from '@/modules/login/hooks/use-embedded-authorization-state'
 import {
   capturePendingCallbackError,
   clearPendingCallbackError,
@@ -37,6 +37,7 @@ interface AuthCallbackProps {
 const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
 const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
 const CALLBACK_RESTORE_TIMEOUT_MS = 15_000
+const SILENT_RESTORE_FALLBACK_KEY = 'linx-auth-silent-restore-fallback'
 const SESSION_CURRENT_KEY_TIMEOUT_MS = 10_000
 const SESSION_CURRENT_KEY_POLL_MS = 100
 const CALLBACK_REDIRECT_RETRY_ATTEMPTS = 3
@@ -47,6 +48,7 @@ let desktopRedirectRestoreUrl: string | null = null
 export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackProps) {
   const { session, sessionRequestInProgress } = useSession()
   const oidc = useOidcConnect()
+  const embeddedAuthorization = useEmbeddedAuthorizationState()
   const [error, setError] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
   const navigatedRef = useRef(false)
@@ -57,7 +59,9 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
   const pendingTransaction = useMemo(() => getPendingLoginTransaction(), [])
   const callbackError = useMemo(() => getPendingCallbackError(), [])
   const retryInteractiveFromSilentAttempt = useCallback(async () => {
-    if (!pendingAttempt || retrying) return
+    if (!pendingAttempt || retrying) {
+      return
+    }
 
     setRetrying(true)
     setError(null)
@@ -79,11 +83,39 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
         nodeId: pendingTransaction?.nodeId,
       })
     } catch (retryError: any) {
+      console.warn('[auth-callback] silent fallback connect failed', retryError)
       setError(formatLoginErrorForUser(retryError, '重新发起登录失败。请返回登录页后再试。'))
     } finally {
       setRetrying(false)
     }
   }, [oidc, pendingAttempt, pendingTransaction, retrying])
+
+  // The SDK's session restore performs its own silent (prompt=none) attempt
+  // without an app-level pending login attempt. When the provider answers
+  // with a silent-auth error (e.g. consent_required for a fresh client),
+  // recover with an interactive connect instead of a terminal error page.
+  const retryInteractiveFromRestoredIssuer = useCallback(async (issuerUrl: string | null, errorDescription?: string | null) => {
+    if (!issuerUrl || retrying) return
+    if (hasSilentRestoreFallbackStarted()) {
+      // Already retried once: surface the error rather than looping reloads.
+      setError(formatLoginErrorForUser(errorDescription ?? 'consent_required', '登录未完成，请重试。'))
+      return
+    }
+    markSilentRestoreFallbackStarted()
+
+    setRetrying(true)
+    setError(null)
+
+    try {
+      await oidc.connect(issuerUrl, { prompt: 'consent' })
+    } catch (retryError: any) {
+      console.warn('[auth-callback] restored-issuer fallback connect failed', retryError)
+      clearSilentRestoreFallback()
+      setError(formatLoginErrorForUser(retryError, '重新发起登录失败。请返回登录页后再试。'))
+    } finally {
+      setRetrying(false)
+    }
+  }, [oidc, retrying])
 
   // Check for OIDC errors in URL
   useEffect(() => {
@@ -103,6 +135,11 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
         if (!silentFallbackStartedRef.current) {
           silentFallbackStartedRef.current = true
           void retryInteractiveFromSilentAttempt()
+        }
+      } else if (!pendingAttempt && isSilentAuthError(errorParam)) {
+        if (!silentFallbackStartedRef.current) {
+          silentFallbackStartedRef.current = true
+          void retryInteractiveFromRestoredIssuer(params.get('iss'), errorDesc)
         }
       } else {
         setError(formatLoginErrorForUser(errorDesc ?? errorParam, '登录请求被拒绝。请返回登录页后重试。'))
@@ -127,23 +164,43 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
 
       setError(formatLoginErrorForUser(callbackError.description ?? callbackError.error, '登录请求被拒绝。请返回登录页后重试。'))
     }
-  }, [callbackError, pendingAttempt, retryInteractiveFromSilentAttempt])
+  }, [callbackError, pendingAttempt, retryInteractiveFromSilentAttempt, retryInteractiveFromRestoredIssuer])
 
   const restoreDesktopRedirect = useCallback(async (redirectUrl: string) => {
-    if (navigatedRef.current || desktopRedirectRestoreInProgressRef.current) return
+    if (navigatedRef.current || desktopRedirectRestoreInProgressRef.current) {
+      return
+    }
 
     const normalizedRedirectUrl = normalizeDesktopAuthRedirectUrl(redirectUrl)
     if (isCallbackErrorRedirect(redirectUrl) || isCallbackErrorRedirect(normalizedRedirectUrl)) {
       const captured = capturePendingCallbackError(redirectUrl)
         ?? capturePendingCallbackError(normalizedRedirectUrl)
       if (captured?.error) {
+        console.warn('[auth-callback] error redirect captured', {
+          error: captured.error,
+          description: captured.description,
+          prompt: pendingAttempt?.prompt,
+          silentFallbackStarted: silentFallbackStartedRef.current,
+        })
         if (isInvalidClientErrorCode(captured.error)) {
           clearStoredSolidSession()
+        }
+        if (pendingAttempt?.prompt === 'none' && isSilentAuthError(captured.error)) {
+          // A silent (prompt=none) attempt failed on the desktop loopback
+          // redirect. Fall back to an interactive authorization instead of
+          // surfacing the provider's raw error to the user.
+          clearRememberedDesktopAuthRedirectUrl()
+          if (!silentFallbackStartedRef.current) {
+            silentFallbackStartedRef.current = true
+            void retryInteractiveFromSilentAttempt()
+            return
+          }
         }
         setError(formatLoginErrorForUser(
           captured.description ?? captured.error,
           '登录请求被拒绝。请返回登录页后重试。',
         ))
+        desktopRedirectRestoreStartedRef.current = false
       }
       clearRememberedDesktopAuthRedirectUrl()
       return
@@ -179,13 +236,16 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
         }
         navigatedRef.current = true
         clearRememberedDesktopAuthRedirectUrl()
+        clearSilentRestoreFallback()
         onSuccess?.()
         return
       }
 
       setError('登录未完成，请重试。')
+      desktopRedirectRestoreStartedRef.current = false
     } catch (restoreError) {
       console.warn('[auth-callback] failed to restore desktop redirect', restoreError)
+      desktopRedirectRestoreStartedRef.current = false
       if (isInvalidClientError(restoreError)) {
         clearStoredSolidSession()
         setError('登录凭据已失效，请重新登录。')
@@ -247,7 +307,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
   }, [error, restoreDesktopRedirect, session.info.isLoggedIn, sessionRequestInProgress])
 
   useEffect(() => {
-    if (error || navigatedRef.current || session.info.isLoggedIn) return
+    if (navigatedRef.current || session.info.isLoggedIn) return
     const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
     if (sessionRequestInProgress && !desktopAuth) return
     if (getCurrentLocationCallbackRedirectUrl()) return
@@ -257,27 +317,38 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     return desktopAuth.onRedirect(() => {
       void desktopAuth.consumePendingRedirect()
         .then((redirectUrl) => {
-          if (!redirectUrl) return
-          void restoreDesktopRedirect(redirectUrl)
+          // useSessionRestore also listens for this event and may have won
+          // the consume race, stashing the URL in session storage instead.
+          const effectiveUrl = redirectUrl ?? getRememberedDesktopAuthRedirectUrl()
+          if (!effectiveUrl) return
+          // A late callback (e.g. the user finished typing credentials after
+          // the error page appeared) beats the error state.
+          setError(null)
+          void restoreDesktopRedirect(effectiveUrl)
         })
         .catch((restoreError) => {
           console.warn('[auth-callback] failed to consume desktop redirect event', restoreError)
         })
     })
-  }, [error, restoreDesktopRedirect, session.info.isLoggedIn, sessionRequestInProgress])
+  }, [restoreDesktopRedirect, session.info.isLoggedIn, sessionRequestInProgress])
 
   useEffect(() => {
     if (error || navigatedRef.current) return
     if (session.info.isLoggedIn) return
     if (sessionRequestInProgress) return
+    // An interactive embedded sheet flow owns the clock: the user may need
+    // arbitrarily long to type credentials, so the restore timeout must not
+    // fire while a retry is being set up or the sheet is open.
+    if (retrying || embeddedAuthorization.open) return
 
     const timeoutId = window.setTimeout(() => {
       if (navigatedRef.current) return
+      console.warn('[auth-callback] restore timeout fired', { sessionRequestInProgress, loggedIn: session.info.isLoggedIn })
       setError('登录未完成，请重试。')
     }, CALLBACK_RESTORE_TIMEOUT_MS)
 
     return () => window.clearTimeout(timeoutId)
-  }, [error, session.info.isLoggedIn, sessionRequestInProgress])
+  }, [error, session.info.isLoggedIn, sessionRequestInProgress, retrying, embeddedAuthorization.open])
 
   // Wait for the Inrupt callback to finish persisting auth metadata before
   // leaving /auth/callback. Navigating on the first LOGIN event can interrupt
@@ -303,6 +374,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
         }
         navigatedRef.current = true
         clearRememberedDesktopAuthRedirectUrl()
+        clearSilentRestoreFallback()
         onSuccess?.()
         return
       }
@@ -318,8 +390,8 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
   }, [session.info.isLoggedIn, session.info.sessionId, sessionRequestInProgress, onSuccess, error])
 
   const retryLabel = pendingAttempt
-    ? isLocalLoginTransaction(pendingTransaction) || isLocalIssuer(pendingAttempt.issuerUrl) || pendingAttempt.authorizationSurface === 'embedded'
-      ? '重试本地空间'
+    ? isLocalLoginTransaction(pendingTransaction) || isLocalIssuer(pendingAttempt.issuerUrl)
+      ? '重试本机空间'
       : '重试云端登录'
     : '重试登录'
 
@@ -328,12 +400,15 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
 
     setRetrying(true)
     setError(null)
+    silentFallbackStartedRef.current = false
 
     try {
       const retryEntryUrl = pendingTransaction
         ? getLoginTransactionRetryEntryUrl(pendingTransaction)
         : pendingAttempt.issuerUrl
-      const prompt = pendingTransaction?.prompt ?? pendingAttempt.prompt
+      // A manual retry always runs interactively: reusing a silent
+      // (prompt=none) attempt would loop back into the same failure the
+      // user is trying to escape.
       const retryOptions = {
         authorizationSurface: pendingAttempt.authorizationSurface,
         returnToMicroAppId: pendingAttempt.returnToMicroAppId,
@@ -345,7 +420,6 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
         authorizationQuery: pendingTransaction?.authorizationQuery ?? pendingAttempt.authorizationQuery,
         strictDiscovery: pendingTransaction?.strictDiscovery ?? pendingAttempt.strictDiscovery,
         nodeId: pendingTransaction?.nodeId,
-        ...(prompt ? { prompt } : {}),
       }
       await oidc.connect(retryEntryUrl, {
         ...retryOptions,
@@ -361,38 +435,50 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     clearPendingCallbackError()
     clearPendingLoginAttempt()
     clearPendingPostLoginMicroAppId()
+    clearSilentRestoreFallback()
     onError?.(formatLoginErrorForUser(error ?? '登录未完成', '登录未完成，请重试。'))
   }
   const visibleError = error ? formatLoginErrorForUser(error, '登录未完成，请重试。') : null
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md rounded-xl border border-border/50 bg-card p-8 text-center shadow-lg">
+      <div className="w-compact-modal overflow-hidden rounded-xl border border-border/50 bg-card flex flex-col shadow-lg">
         {visibleError ? (
-          <div className="flex flex-col items-center animate-in fade-in">
-            <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-6">
-              <AlertTriangle className="w-8 h-8 text-destructive" />
+          <div className="flex-1 flex flex-col animate-in fade-in">
+            <div className="px-6 pt-7 pb-5 flex flex-col items-center gap-3 text-center">
+              <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-destructive" />
+              </div>
+              <p className="text-base font-semibold text-foreground">登录未完成</p>
+              <p className="text-sm leading-6 text-muted-foreground">{visibleError}</p>
             </div>
-            <h2 className="text-xl font-semibold text-foreground mb-2">登录未完成</h2>
-            <p className="text-sm text-muted-foreground mb-8 px-4">{visibleError}</p>
-            <div className="flex w-full max-w-[280px] flex-col gap-3">
+            <div className="px-4 pb-5 space-y-2">
               {pendingAttempt ? (
-                <Button onClick={() => void handleRetry()} disabled={retrying}>
+                <button
+                  type="button"
+                  onClick={() => void handleRetry()}
+                  disabled={retrying}
+                  className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                >
                   {retrying ? '正在重新发起登录…' : retryLabel}
-                </Button>
+                </button>
               ) : null}
-              <Button variant={pendingAttempt ? 'outline' : 'default'} onClick={handleBack}>
+              <button
+                type="button"
+                onClick={handleBack}
+                className={pendingAttempt
+                  ? 'w-full h-9 rounded-md border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors cursor-pointer'
+                  : 'w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer'}
+              >
                 重新登录
-              </Button>
+              </button>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center animate-in fade-in">
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-6">
-              <Loader2 className="w-8 h-8 text-primary animate-spin" />
-            </div>
-            <h2 className="text-xl font-semibold text-foreground mb-2">正在验证身份</h2>
-            <p className="text-sm text-muted-foreground">请稍候，即将进入 LinX...</p>
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 gap-3 text-center animate-in fade-in">
+            <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
+            <p className="text-sm font-medium text-foreground">正在验证身份</p>
+            <p className="text-xs text-muted-foreground">请稍候，即将进入 LinX...</p>
           </div>
         )}
       </div>
@@ -414,6 +500,21 @@ function isSilentAuthError(error: string): boolean {
     || error === 'interaction_required'
     || error === 'consent_required'
     || error === 'account_selection_required'
+}
+
+function hasSilentRestoreFallbackStarted(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.sessionStorage.getItem(SILENT_RESTORE_FALLBACK_KEY) === '1'
+}
+
+function markSilentRestoreFallbackStarted() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(SILENT_RESTORE_FALLBACK_KEY, '1')
+}
+
+function clearSilentRestoreFallback() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(SILENT_RESTORE_FALLBACK_KEY)
 }
 
 type CurrentSessionPersistence = 'ready' | 'repaired' | 'missing'

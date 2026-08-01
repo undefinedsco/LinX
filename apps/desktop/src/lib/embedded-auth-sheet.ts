@@ -70,7 +70,35 @@ export class EmbeddedAuthorizationSheet {
       return;
     }
 
-    this.window = new BrowserWindow({
+    this.window = this.createAuthWindow(mainWindow, title);
+    this.emitState({ open: true, reason: 'opened', ready: false });
+    void this.installAuthEnhancerOnNewDocument();
+
+    try {
+      await this.loadUrlRecreatingWindow(mainWindow, title, targetUrl, openToken);
+      if (!this.isRequestCurrent(openToken)) {
+        return;
+      }
+
+      await this.installNavigationControls();
+      await this.installProvisionCode();
+      await this.installAuthEnhancer();
+      this.showWindow();
+      this.emitState({ open: true, reason: 'opened', ready: true });
+    } catch (error) {
+      console.warn('[auth-sheet] open failed', error);
+      if (!this.isRequestCurrent(openToken)) {
+        return;
+      }
+
+      this.destroyWindow();
+      this.emitState({ open: false, reason: 'dismissed', ready: false });
+      throw error;
+    }
+  }
+
+  private createAuthWindow(mainWindow: Electron.BrowserWindow, title: string): Electron.BrowserWindow {
+    const authWindow = new BrowserWindow({
       parent: mainWindow,
       width: AUTHORIZATION_SURFACE_WIDTH,
       height: AUTHORIZATION_SURFACE_HEIGHT,
@@ -92,60 +120,72 @@ export class EmbeddedAuthorizationSheet {
       },
     });
 
-    installSingleSurfaceWindowOpenHandler(this.window.webContents, {
+    installSingleSurfaceWindowOpenHandler(authWindow.webContents, {
       prepareSameOriginUrl: addEmbeddedAuthQuery,
     });
-    installAuthCallbackNavigationInterceptor(this.window.webContents, (callbackUrl) => {
+    installAuthCallbackNavigationInterceptor(authWindow.webContents, (callbackUrl) => {
       this.onCallbackUrl?.(callbackUrl);
       this.close('completed');
     });
-    this.emitState({ open: true, reason: 'opened', ready: false });
-    await this.installAuthEnhancerOnNewDocument();
 
-    this.window.webContents.on('did-finish-load', () => {
+    authWindow.webContents.on('did-finish-load', () => {
       void this.installNavigationControls();
       void this.installProvisionCode();
       void this.installAuthEnhancer();
     });
 
-    this.window.webContents.on('did-navigate-in-page', () => {
+    authWindow.webContents.on('did-navigate-in-page', () => {
       void this.installNavigationControls();
       void this.installProvisionCode();
       void this.installAuthEnhancer();
     });
 
-    this.window.on('closed', () => {
-      this.window = null;
+    authWindow.on('closed', () => {
+      if (this.window === authWindow) {
+        this.window = null;
+      }
       if (this.isOpen) {
         this.emitState({ open: false, reason: 'dismissed', ready: false });
       }
     });
 
-    this.window.webContents.on('before-input-event', (event, input) => {
+    authWindow.webContents.on('before-input-event', (event, input) => {
       if (input.key === 'Escape') {
         event.preventDefault();
         this.close('dismissed');
       }
     });
 
+    return authWindow;
+  }
+
+  // A late cancel/close from a superseded flow can destroy the window while
+  // the current open is still loading. Recreate it once instead of failing.
+  private async loadUrlRecreatingWindow(
+    mainWindow: Electron.BrowserWindow,
+    title: string,
+    targetUrl: string,
+    openToken: number,
+  ): Promise<void> {
     try {
+      if (!this.window || this.window.isDestroyed()) {
+        throw new Error('Authorization window was destroyed before loading.');
+      }
       await loadURLWithRetry(this.window.webContents, targetUrl, 5);
+      return;
+    } catch (error) {
+      if (this.window && !this.window.isDestroyed()) {
+        throw error;
+      }
       if (!this.isRequestCurrent(openToken)) {
         return;
       }
-
-      await this.installNavigationControls();
-      await this.installProvisionCode();
-      await this.installAuthEnhancer();
-      this.showWindow();
-      this.emitState({ open: true, reason: 'opened', ready: true });
-    } catch (error) {
-      if (this.isRequestCurrent(openToken)) {
-        this.destroyWindow();
-        this.emitState({ open: false, reason: 'dismissed', ready: false });
-      }
-      throw error;
     }
+
+    this.destroyWindow();
+    this.window = this.createAuthWindow(mainWindow, title);
+    void this.installAuthEnhancerOnNewDocument();
+    await loadURLWithRetry(this.window.webContents, targetUrl, 5);
   }
 
   public close(reason: Exclude<EmbeddedAuthorizationCloseReason, 'opened'> = 'dismissed'): void {
@@ -388,7 +428,7 @@ async function loadURLWithRetry(
       await webContents.loadURL(url);
       return;
     } catch (error) {
-      if (attempt === retries) {
+      if (attempt === retries || webContents.isDestroyed?.() === true) {
         throw error;
       }
       await new Promise((resolve) => setTimeout(resolve, 500));

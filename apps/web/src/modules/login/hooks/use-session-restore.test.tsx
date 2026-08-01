@@ -19,7 +19,7 @@ const sessionState = {
   sessionRequestInProgress: false,
 }
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: sessionState.info,

@@ -3,7 +3,13 @@ import { SolidSessionProvider } from './providers/solid-session-provider'
 import { SolidDatabaseProvider } from './providers/solid-database-provider'
 import { PodCollectionsBootstrap } from './providers/pod-collections-bootstrap'
 import { TelemetryProvider } from './lib/telemetry/telemetry-context'
+import { useSessionTokenMaintenance } from './modules/login/hooks/use-session-token-maintenance'
 import { router } from './router'
+
+function SessionTokenMaintenance() {
+  useSessionTokenMaintenance()
+  return null
+}
 
 export function AppRuntime() {
   const isDesktopRuntime = typeof window !== 'undefined' && Boolean(window.xpodDesktop)
@@ -21,6 +27,7 @@ export function AppRuntime() {
       onError={(error) => console.warn('🔴 SessionProvider error (ignored):', error)}
     >
       <SolidDatabaseProvider>
+        <SessionTokenMaintenance />
         <PodCollectionsBootstrap>
           <TelemetryProvider>
             <RouterProvider router={router} />

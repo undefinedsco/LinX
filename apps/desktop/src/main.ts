@@ -256,6 +256,7 @@ async function ensureMainWindowReadyForAuthRedirect(): Promise<void> {
 
 function queueAuthRedirect(url: string): void {
   if (!isDesktopAuthCallbackUrl(url)) {
+    console.warn('[Desktop] queueAuthRedirect rejected: not a desktop callback url');
     return;
   }
 

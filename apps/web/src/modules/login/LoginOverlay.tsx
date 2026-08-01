@@ -51,6 +51,8 @@ function LoginOverlayContent({ hidden = false }: { hidden?: boolean }) {
       localLoginStatus={controller.localLoginStatus}
       authWindowStatus={controller.authWindowStatus}
       connectingProvider={controller.connectingProvider}
+      preferredSpace={controller.preferredSpace}
+      onSelectSpace={controller.selectSpace}
     />
   )
 }

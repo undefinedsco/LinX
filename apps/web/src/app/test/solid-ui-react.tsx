@@ -1,4 +1,4 @@
-import { SessionProvider, LoginButton, useSession } from '@inrupt/solid-ui-react'
+import { SolidSessionProvider, useSession } from '@/providers/solid-session-provider'
 
 function LoginStatus() {
   const { session } = useSession()
@@ -16,26 +16,28 @@ function LoginStatus() {
   return (
     <div style={{ padding: 20 }}>
       <h2>未登录</h2>
-      <LoginButton
-        oidcIssuer="http://localhost:3000"
-        redirectUrl={window.location.href}
-        authOptions={{ clientName: 'solid-ui-react-test' }}
+      <button
+        onClick={() => void session.login({
+          oidcIssuer: 'http://localhost:3000',
+          redirectUrl: window.location.href,
+          clientName: 'solid-session-test',
+        })}
       >
-        <button>使用 CSS v8 登录</button>
-      </LoginButton>
+        使用 CSS v8 登录
+      </button>
     </div>
   )
 }
 
 export default function SolidUiReactTest() {
   return (
-    <SessionProvider sessionId="solid-ui-react-test">
+    <SolidSessionProvider sessionId="solid-session-test">
       <div style={{ fontFamily: 'system-ui', maxWidth: 600, margin: '0 auto' }}>
-        <h1>@inrupt/solid-ui-react 测试</h1>
-        <p>测试 patch 后的库是否能登录 CSS v8</p>
+        <h1>Solid session 测试</h1>
+        <p>测试本地 session provider 是否能登录 CSS v8</p>
         <hr />
         <LoginStatus />
       </div>
-    </SessionProvider>
+    </SolidSessionProvider>
   )
 }

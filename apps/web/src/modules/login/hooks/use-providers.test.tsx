@@ -78,7 +78,7 @@ describe('useProviders', () => {
     render(<TestComponent />)
 
     await waitFor(() => {
-      expect(screen.getByText('本地空间')).toBeTruthy()
+      expect(screen.getByText('本机空间')).toBeTruthy()
       expect(screen.getByText('本机空间')).toBeTruthy()
     })
 
@@ -144,7 +144,7 @@ describe('useProviders', () => {
     await waitFor(() => {
       expect(screen.getByText('Local')).toBeTruthy()
       expect(screen.getByText('Standalone')).toBeTruthy()
-      expect(screen.getByText('本地空间')).toBeTruthy()
+      expect(screen.getByText('本机空间')).toBeTruthy()
       expect(screen.getByText('本机空间')).toBeTruthy()
     })
   })

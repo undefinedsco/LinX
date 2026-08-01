@@ -19,7 +19,7 @@ const sessionInfoMock: { current: { isLoggedIn: boolean } } = {
   current: { isLoggedIn: false },
 }
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     login: loginMock,
     session: {
@@ -543,7 +543,7 @@ describe('useOidcConnect', () => {
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
   })
 
-  it('clears unrestorable Solid auth storage before starting a fresh login', async () => {
+  it('preserves the registered client when starting a fresh login', async () => {
     window.localStorage.setItem('solidClientAuthn:currentSession', 'pending-session')
     window.localStorage.setItem(
       'solidClientAuthenticationUser:pending-session',
@@ -561,11 +561,13 @@ describe('useOidcConnect', () => {
     await waitFor(() => {
       expect(loginMock).toHaveBeenCalledTimes(1)
     })
-    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
-    expect(window.localStorage.getItem('solidClientAuthenticationUser:pending-session')).toBeNull()
+    // Keeping the client registration lets the provider honor
+    // "Remember this client" across logins.
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('pending-session')
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:pending-session')).not.toBeNull()
   })
 
-  it('clears stale restorable Solid client metadata before starting a fresh login', async () => {
+  it('preserves restorable Solid client metadata when starting a fresh login', async () => {
     window.localStorage.setItem('solidClientAuthn:currentSession', 'stale-session')
     window.localStorage.setItem(
       'solidClientAuthenticationUser:stale-session',
@@ -585,8 +587,8 @@ describe('useOidcConnect', () => {
     await waitFor(() => {
       expect(loginMock).toHaveBeenCalledTimes(1)
     })
-    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
-    expect(window.localStorage.getItem('solidClientAuthenticationUser:stale-session')).toBeNull()
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('stale-session')
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:stale-session')).not.toBeNull()
   })
 
   it('preserves the registered client while attempting a silent Web restore', async () => {
@@ -614,7 +616,7 @@ describe('useOidcConnect', () => {
     expect(window.localStorage.getItem('solidClientAuthenticationUser:remembered-session')).not.toBeNull()
   })
 
-  it('always clears Solid client metadata before a fresh login, even when the Inrupt session reports logged in', async () => {
+  it('preserves Solid client metadata on fresh login even when the Inrupt session reports logged in', async () => {
     sessionInfoMock.current = { isLoggedIn: true }
     window.localStorage.setItem('solidClientAuthn:currentSession', 'active-session')
     window.localStorage.setItem(
@@ -635,16 +637,41 @@ describe('useOidcConnect', () => {
     await waitFor(() => {
       expect(loginMock).toHaveBeenCalledTimes(1)
     })
-    // A session reported as logged in may be backed by a stale, server-side
-    // deleted client. connect() must always start from a clean state so the
-    // provider is never asked to authenticate an unknown client.
-    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
-    expect(window.localStorage.getItem('solidClientAuthenticationUser:active-session')).toBeNull()
+    // A session reported as logged in may still be backed by a stale,
+    // server-side deleted client; that case self-heals via the
+    // invalid_client retry instead of an upfront purge, so remembered
+    // consent survives whenever the client is still valid.
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('active-session')
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:active-session')).not.toBeNull()
   })
 
-  it('purges the cached Solid session when the provider rejects the client', async () => {
+  it('registers a fresh client and retries once when the provider rejects the stored client', async () => {
     const clearStoredSolidSessionSpy = vi.spyOn(loginUtils, 'clearStoredSolidSession')
     loginMock.mockRejectedValueOnce(new Error('Authenticating with unknown client'))
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'rejected-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:rejected-session',
+      JSON.stringify({
+        issuer: 'http://localhost:5737/',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+        clientId: 'deleted-client-id',
+      }),
+    )
+
+    render(<TestComponent />)
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(2)
+    })
+    // The rejected client state was purged before the retry.
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:rejected-session')).toBeNull()
+    clearStoredSolidSessionSpy.mockRestore()
+  })
+
+  it('purges the cached Solid session when the provider keeps rejecting the client', async () => {
+    const clearStoredSolidSessionSpy = vi.spyOn(loginUtils, 'clearStoredSolidSession')
+    loginMock.mockRejectedValue(new Error('Authenticating with unknown client'))
 
     function LocalComponent() {
       const { connect } = useOidcConnect()
@@ -661,7 +688,7 @@ describe('useOidcConnect', () => {
     await waitFor(() => {
       expect(clearStoredSolidSessionSpy).toHaveBeenCalled()
     })
-    expect(loginMock).toHaveBeenCalledTimes(1)
+    expect(loginMock).toHaveBeenCalledTimes(2)
     clearStoredSolidSessionSpy.mockRestore()
   })
 })

@@ -462,10 +462,24 @@ export class XpodModule {
     const configPath = path.join(runtime.packageDir, 'config', 'local.json')
     const apiMain = path.join(runtime.packageDir, 'dist', 'api', 'main.js')
 
-    const cssRuntimeConfig = createEmbeddedCssRuntimeConfig({
+    // Reuse the xpod runtime's own config generator: it rewrites the override
+    // layer (local.json) together with the base config chain (main.json /
+    // xpod.base.json) and the auth-mode imports. The previous in-service
+    // generator imported local.json alone, which left default components like
+    // urn:solid-server:default:MetadataStrategy undefined and CSS crashed.
+    const cssProcessModule = require(path.join(runtime.packageDir, 'dist', 'runtime', 'css-process.js')) as {
+      createCssChildRuntimeConfig: (options: {
+        configPath: string
+        runtimeRoot: string
+        externalOidcIssuer?: string
+        baseEnv?: Record<string, string>
+      }) => { configPath: string; cwd?: string }
+    }
+    const cssRuntimeConfig = cssProcessModule.createCssChildRuntimeConfig({
       configPath,
       runtimeRoot: path.join(resolveLinxUserDataDir(), 'xpod-css-runtime'),
-      oidcIssuer,
+      externalOidcIssuer: oidcIssuer,
+      baseEnv: env,
     })
     const cssArgs = buildEmbeddedCssArgs({
       cssBinary,
@@ -475,9 +489,14 @@ export class XpodModule {
       hostBaseUrl,
     })
 
+    // Under Electron, process.execPath is the Electron binary whose embedded
+    // Node version may not match the xpod runtime's supported range. Allow an
+    // explicit Node binary override for the child runtimes.
+    const childNodeBinary = process.env.XPOD_NODE_BINARY ?? process.execPath
+
     supervisor.register({
       name: 'css',
-      command: process.execPath,
+      command: childNodeBinary,
       args: cssArgs,
       cwd: cssRuntimeConfig.cwd ?? runtime.packageDir,
       env: buildCssRuntimeEnv(env, {
@@ -488,7 +507,7 @@ export class XpodModule {
 
     supervisor.register({
       name: 'api',
-      command: process.execPath,
+      command: childNodeBinary,
       args: [apiMain],
       cwd: runtime.packageDir,
       env: buildRuntimeEnv(env, {

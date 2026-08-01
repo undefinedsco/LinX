@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { useNavigate } from '@tanstack/react-router'
 import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { defaultMicroAppId } from '@/modules/layout/micro-app-registry'
@@ -64,9 +64,11 @@ export function useLoginController() {
     state,
     error,
     storedAccount,
+    preferredSpace,
     setState,
     setError,
     setStoredAccount,
+    setPreferredSpace,
     loginSuccess,
     reset,
   } = useLoginStore()
@@ -104,7 +106,7 @@ export function useLoginController() {
   const connectReadyLocalSnapshot = useCallback(async (
     snapshot: LocalOnboardingSnapshot,
     source: LocalLoginProviderSource,
-    options?: { restoreAccount?: StoredAccount | null },
+    options?: { restoreAccount?: StoredAccount | null; isInvalidClientRetry?: boolean },
   ) => {
     const storedSolidSession = getStoredSolidSession()
     const accountForReuse = options?.restoreAccount ?? storedAccount
@@ -124,7 +126,7 @@ export function useLoginController() {
     if (!localProviderUrl) {
       setError(isStandalone
         ? '独立空间已启动，但本机登录入口尚未准备好。请稍后重试。'
-        : '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+        : '本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。')
       return
     }
 
@@ -133,7 +135,7 @@ export function useLoginController() {
       : normalizeRememberedUrl(snapshot.cloudIdentityUrl) ?? LINX_CLOUD_IDENTITY_ORIGIN
 
     if (!isStandalone && !snapshot.provisionCode) {
-      setError('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+      setError('本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。')
       return
     }
 
@@ -180,12 +182,19 @@ export function useLoginController() {
     } catch (error: any) {
       resetDesktopAuthState()
       localConnectKeyRef.current = null
+      if (isInvalidClientError(error) && !options?.isInvalidClientRetry) {
+        // Local pods keep dynamic client registrations in memory; a pod restart
+        // invalidates the stored client. Purge it and retry once — the next
+        // login() performs a fresh registration without user involvement.
+        clearStoredSolidSession()
+        return connectReadyLocalSnapshot(snapshot, source, { ...options, isInvalidClientRetry: true })
+      }
       setConnectingProvider(null)
       setState('idle')
       if (isInvalidClientError(error)) {
         clearStoredSolidSession()
       }
-      setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回空间选择页重试。'))
+      setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回登录方式页重试。'))
     }
   }, [
     isDesktop,
@@ -420,7 +429,7 @@ export function useLoginController() {
         localPublicUrl: localOnboarding?.publicUrl,
       })
       if (storageProviderLabel === 'Local' && !storageProviderPublicUrl) {
-        throw new Error('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+        throw new Error('本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。')
       }
       const conflict = await detectStorageConflict({
         webId: session.info.webId ?? '',
@@ -440,6 +449,7 @@ export function useLoginController() {
         setStorageConflict(resolveStorageConflictAction(conflict, {
           storageProviderLabel,
           provisionCode: localOnboarding?.provisionCode,
+          provisionUrl: localOnboarding?.provisionUrl,
         }))
         setStoredAccount(account)
         setView('default')
@@ -574,7 +584,7 @@ export function useLoginController() {
 
       if (snapshot?.state === 'error') {
         setLocalLoginActive(false)
-        setError(formatLoginErrorForUser(snapshot.message, '本地空间启动失败。请稍后重试。'))
+        setError(formatLoginErrorForUser(snapshot.message, '本机空间启动失败。请稍后重试。'))
         return
       }
 
@@ -617,11 +627,11 @@ export function useLoginController() {
       setLocalLoginActive(isLocalStartupSnapshot(snapshot))
     } catch (error: any) {
       setLocalLoginActive(false)
-      setError(formatLoginErrorForUser(error, '本地空间启动失败。请稍后重试。'))
+      setError(formatLoginErrorForUser(error, '本机空间启动失败。请稍后重试。'))
     }
   }, [connectReadyLocalSnapshot, isDesktop, logout, providers, resetDesktopAuthState, session, setError, setState, startLocal, storedAccount])
 
-  const connect = useCallback(async (providerKey: string, options?: { prompt?: 'none' | 'consent' }) => {
+  const connect = useCallback(async (providerKey: string, options?: { prompt?: 'none' | 'consent'; isInvalidClientRetry?: boolean }) => {
     loginFinalizeGenerationRef.current += 1
     suppressAutoLoginRef.current = false
     setStorageConflict(null)
@@ -663,6 +673,13 @@ export function useLoginController() {
         ...(options?.prompt ? { prompt: options.prompt } : {}),
       })
     } catch (err: any) {
+      if (isInvalidClientError(err) && !options?.isInvalidClientRetry) {
+        // The provider forgot our dynamic client registration (server restart or
+        // registration expiry). Purge the stale registration and retry once —
+        // the next login() performs a fresh DCR without user involvement.
+        clearStoredSolidSession()
+        return connect(providerKey, { ...options, isInvalidClientRetry: true })
+      }
       resetDesktopAuthState()
       setConnectingProvider(null)
       if (isInvalidClientError(err)) {
@@ -880,7 +897,7 @@ export function useLoginController() {
   const testLocalConnectivity = useCallback(async () => {
     const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
     if (!desktopApi?.localOnboarding?.testConnectivity) {
-      setError('当前桌面端不支持测试本地空间连接。')
+      setError('当前桌面端不支持测试本机空间连接。')
       return
     }
 
@@ -889,7 +906,7 @@ export function useLoginController() {
     try {
       await desktopApi.localOnboarding.testConnectivity()
     } catch (error: any) {
-      setError(formatLoginErrorForUser(error, '测试本地空间连接失败。请稍后重试。'))
+      setError(formatLoginErrorForUser(error, '测试本机空间连接失败。请稍后重试。'))
     } finally {
       setLocalLoginActive(false)
     }
@@ -1042,7 +1059,7 @@ export function useLoginController() {
     localLoginStatus: {
       active: localStartupStatusActive,
       message: localStartupStatusActive
-        ? (localOnboarding?.message ?? (activeLocalProviderSource === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…'))
+        ? (localOnboarding?.message ?? (activeLocalProviderSource === 'standalone' ? '正在启动独立空间…' : '正在启动本机空间…'))
         : null,
     },
     authWindowStatus: {
@@ -1052,6 +1069,8 @@ export function useLoginController() {
     },
     connectingProvider,
     isRestoring: restore.isRestoring,
+    preferredSpace,
+    selectSpace: setPreferredSpace,
     connect,
     continueStoredAccount,
     continueLocalLogin: signInLocalOnboarding,
@@ -1089,6 +1108,7 @@ function resolveStorageConflictAction(
   input: {
     storageProviderLabel?: string
     provisionCode?: string | null
+    provisionUrl?: string | null
   },
 ): StorageConflict {
   if (input.storageProviderLabel !== 'Local' || !input.provisionCode) {
@@ -1099,7 +1119,7 @@ function resolveStorageConflictAction(
     }
   }
 
-  const createPodUrl = buildLocalScopedCreatePodUrl(conflict.storageProviderUrl, input.provisionCode)
+  const createPodUrl = normalizeRememberedUrl(input.provisionUrl)
   if (!createPodUrl) {
     return {
       ...conflict,
@@ -1112,26 +1132,6 @@ function resolveStorageConflictAction(
     ...conflict,
     setupUrl: createPodUrl,
     setupKind: 'create-pod',
-  }
-}
-
-function buildLocalScopedCreatePodUrl(
-  storageProviderUrl: string | null | undefined,
-  provisionCode: string,
-): string | null {
-  const normalizedStorageProviderUrl = normalizeRememberedUrl(storageProviderUrl)
-  if (!normalizedStorageProviderUrl) {
-    return null
-  }
-
-  try {
-    const url = new URL('/.account/create-pod/', normalizedStorageProviderUrl.endsWith('/')
-      ? normalizedStorageProviderUrl
-      : `${normalizedStorageProviderUrl}/`)
-    url.searchParams.set('provisionCode', provisionCode)
-    return url.toString()
-  } catch {
-    return null
   }
 }
 

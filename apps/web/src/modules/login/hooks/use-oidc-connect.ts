@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import {
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
@@ -94,18 +94,19 @@ export function useOidcConnect() {
   }, [])
 
   const connect = useCallback(async (issuerUrl: string, options?: OidcConnectOptions) => {
-    if (connectingRef.current) return
+    if (connectingRef.current) {
+      return
+    }
     connectingRef.current = true
     const generation = ++generationRef.current
 
     try {
-      // A silent restore must reuse the previously registered client so the
-      // provider can honor "Remember this client". Explicit login still
-      // starts clean; invalid_client handling below also purges stale state.
-      if (options?.prompt !== 'none') {
-        clearSolidAuthClientState()
-      }
-
+      // Keep the previously registered client for every flow (explicit login
+      // included) so the provider can honor "Remember this client" across
+      // logins. A client that was deleted server-side is rejected with
+      // invalid_client/unknown_client: purge and register fresh once below.
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
       const requestedEntryUrl = issuerUrl.replace(/\/$/, '')
       const explicitAccountIssuerUrl = normalizeLoginUrl(options?.accountIssuerUrl)
       const explicitStorageProviderUrl = normalizeLoginUrl(options?.storageProviderUrl)
@@ -207,6 +208,7 @@ export function useOidcConnect() {
         ? (url: string) => {
             try {
               if (generationRef.current !== generation) {
+                console.warn('[oidc-connect] handleRedirect dropped: stale generation', { generation, current: generationRef.current })
                 redirectStarted?.resolve()
                 return undefined
               }
@@ -251,15 +253,24 @@ export function useOidcConnect() {
           ? '登录窗口打开超时，请重试。'
           : '登录跳转超时，请重试。',
       })
-    } catch (error) {
-      clearPendingLoginAttempt()
-      clearPendingPostLoginMicroAppId()
-      if (isInvalidClientError(error)) {
-        // The provider rejected a stale/invalid client. Drop the cached Solid
-        // session so the next login attempt registers a fresh client.
-        clearStoredSolidSession()
+          return
+        } catch (error) {
+          if (attempt === 1 && isInvalidClientError(error)) {
+            // The stored client was deleted server-side. Purge it and retry
+            // once with a fresh dynamic registration.
+            clearSolidAuthClientState()
+            continue
+          }
+          clearPendingLoginAttempt()
+          clearPendingPostLoginMicroAppId()
+          if (isInvalidClientError(error)) {
+            // The provider rejected a stale/invalid client. Drop the cached Solid
+            // session so the next login attempt registers a fresh client.
+            clearStoredSolidSession()
+          }
+          throw error
+        }
       }
-      throw error
     } finally {
       if (generationRef.current === generation) {
         connectingRef.current = false

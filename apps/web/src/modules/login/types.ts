@@ -77,4 +77,6 @@ export interface LoginModalProps {
   localLoginStatus: LocalLoginStatus
   authWindowStatus: AuthWindowStatus
   connectingProvider: ConnectingProviderInfo | null
+  preferredSpace: 'cloud' | 'local'
+  onSelectSpace: (space: 'cloud' | 'local') => void
 }

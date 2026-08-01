@@ -8,6 +8,17 @@ vi.mock('./providers/solid-session-provider', () => ({
   SolidSessionProvider: (props: unknown) => solidSessionProviderMock(props),
 }))
 
+vi.mock('./providers/solid-session-context', () => ({
+  useSession: () => ({
+    session: {
+      info: { isLoggedIn: false, webId: null },
+      fetch: vi.fn(),
+      events: { on: vi.fn(), off: vi.fn() },
+    },
+    sessionRequestInProgress: false,
+  }),
+}))
+
 vi.mock('./providers/solid-database-provider', () => ({
   SolidDatabaseProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))

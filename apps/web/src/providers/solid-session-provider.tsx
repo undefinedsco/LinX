@@ -2,14 +2,11 @@ import {
   Session,
   EVENTS,
 } from '@inrupt/solid-client-authn-browser'
-import {
-  SessionContext,
-  useSession,
-} from '@inrupt/solid-ui-react'
 import type { ReactNode } from 'react'
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { capturePendingCallbackError } from '@/modules/login/login-utils'
 import { getPersistentBrowserStorage, PersistentSessionStorage } from './persistent-session-storage'
+import { SessionContext, useSession } from './solid-session-context'
 
 interface SolidSessionProviderProps {
   children: ReactNode
@@ -105,7 +102,7 @@ function SessionEventBridge({
   children: ReactNode
   onError?: (error: Error) => void
 }) {
-  const context = useContext(SessionContext)
+  const context = useSession()
   const { session, setSessionRequestInProgress } = context
   const [version, setVersion] = useState(0)
   const bumpVersion = useCallback(() => setVersion((current) => current + 1), [])

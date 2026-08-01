@@ -27,7 +27,7 @@ function rendererCallbackUrl() {
   return `${window.location.origin}/auth/callback?code=abc&state=xyz`
 }
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: sessionState.info,
@@ -356,7 +356,7 @@ describe('AuthCallback', () => {
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '重试本地空间' }))
+    fireEvent.click(screen.getByRole('button', { name: '重试本机空间' }))
 
     await waitFor(() => {
       expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
@@ -409,6 +409,61 @@ describe('AuthCallback', () => {
     expect(screen.queryByText('认证服务器拒绝了请求')).toBeNull()
   })
 
+  it('falls back to interactive auth when an SDK silent restore returns consent_required without a pending attempt', async () => {
+    window.history.replaceState({}, '', '/auth/callback?error=consent_required&error_description=requested%20scopes%20not%20granted&iss=https%3A%2F%2Fnode-0000.undefineds.co%2F')
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co/', { prompt: 'consent' })
+    })
+    expect(screen.queryByText(/requested scopes not granted/)).toBeNull()
+  })
+
+  it('shows an error instead of looping when the restored-issuer fallback already ran', async () => {
+    window.sessionStorage.setItem('linx-auth-silent-restore-fallback', '1')
+    window.history.replaceState({}, '', '/auth/callback?error=consent_required&error_description=requested%20scopes%20not%20granted&iss=https%3A%2F%2Fnode-0000.undefineds.co%2F')
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/requested scopes not granted/)).toBeInTheDocument()
+    })
+    expect(connectMock).not.toHaveBeenCalled()
+  })
+
+  it('falls back to interactive auth when a silent Desktop attempt returns interaction_required via loopback', async () => {
+    setPendingLoginAttempt({
+      issuerUrl: 'http://localhost:5737',
+      accountIssuerUrl: 'http://localhost:5737',
+      accountIssuerLabel: 'Standalone',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+      storageProviderUrl: 'http://localhost:5737',
+      storageProviderLabel: 'Standalone',
+      prompt: 'none',
+    })
+    consumePendingRedirectMock.mockResolvedValueOnce(
+      'http://127.0.0.1:43123/auth/callback?error=interaction_required&error_description=An%20account%20cookie%20is%20required.',
+    )
+    window.xpodDesktop = {
+      auth: {
+        consumePendingRedirect: consumePendingRedirectMock,
+        onRedirect: onRedirectMock,
+      },
+    } as any
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('http://localhost:5737', expect.objectContaining({
+        authorizationSurface: 'embedded',
+        returnToMicroAppId: 'chat',
+      }))
+    })
+    expect(screen.queryByText(/account cookie is required/)).toBeNull()
+  })
+
   it('renders a retry action for the last Local attempt', async () => {
     setPendingLoginAttempt({
       issuerUrl: 'http://localhost:5737',
@@ -419,7 +474,21 @@ describe('AuthCallback', () => {
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
-    expect(screen.getByRole('button', { name: '重试本地空间' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重试本机空间' })).toBeTruthy()
+  })
+
+  it('labels the retry action by issuer rather than the embedded surface', async () => {
+    setPendingLoginAttempt({
+      issuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'files',
+    })
+    window.history.replaceState({}, '', '/auth/callback?error=server_error')
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    expect(screen.getByRole('button', { name: '重试云端登录' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '重试本机空间' })).toBeNull()
   })
 
   it('falls back to return-only when there is no retry context', async () => {
@@ -428,7 +497,7 @@ describe('AuthCallback', () => {
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
     expect(screen.queryByRole('button', { name: '重试云端登录' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '重试本地空间' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '重试本机空间' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '重新登录' }))
     expect(onErrorMock).toHaveBeenCalledTimes(1)
   })
@@ -461,7 +530,7 @@ describe('AuthCallback', () => {
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
-    expect(screen.getByRole('button', { name: '重试本地空间' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重试本机空间' })).toBeTruthy()
     expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBe('files')
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).not.toBeNull()
   })
@@ -480,7 +549,7 @@ describe('AuthCallback', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试云端登录' }))
 
     await waitFor(() => {
-      expect(screen.getByText('登录没有重新打开。请返回空间选择页后再试。')).toBeTruthy()
+      expect(screen.getByText('登录没有重新打开。请返回登录方式页后再试。')).toBeTruthy()
     })
   })
 })
