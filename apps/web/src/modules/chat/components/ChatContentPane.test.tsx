@@ -49,7 +49,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: mockSession,
   }),
@@ -618,6 +618,35 @@ describe('ChatContentPane', () => {
     expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument()
   })
 
+  it('treats an authenticated 401 query failure as transient loading and auto-retries', async () => {
+    mockUseChatList.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: Object.assign(new Error('Request failed'), { status: 401 }),
+      refetch: mockChatRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.queryByText('登录未完成')).not.toBeInTheDocument()
+    expect(screen.getByText('正在加载聊天')).toBeInTheDocument()
+    await waitFor(() => expect(mockChatRefetch).toHaveBeenCalled(), { timeout: 1000 })
+  })
+
+  it('shows login-required only after the grace period when an authenticated 401 persists', async () => {
+    mockUseChatList.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: Object.assign(new Error('Request failed'), { status: 401 }),
+      refetch: mockChatRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.queryByText('登录未完成')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('登录未完成')).toBeInTheDocument(), { timeout: 4000 })
+  }, 6000)
+
   it('creates a random-id initial thread and binds the default Pod workspace after bootstrap when no thread exists', async () => {
     storeState.selectedChatId = 'chat-1'
     storeState.selectedThreadId = null
@@ -842,7 +871,7 @@ describe('ChatContentPane', () => {
       })
     })
 
-    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|node\.example|__secretary__|Pod container/i)).not.toBeInTheDocument()
   })
 

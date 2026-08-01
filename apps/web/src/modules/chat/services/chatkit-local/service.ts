@@ -1038,7 +1038,7 @@ export class LocalChatKitService {
 
   private async fetchServerOriginatedLinxRuntime(requestInit: RequestInit): Promise<Response> {
     if (!this.isServiceMode()) {
-      throw new Error('服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本地空间。')
+      throw new Error('服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本机空间。')
     }
 
     return fetch('/api/ai/chat/completions', requestInit)

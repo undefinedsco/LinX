@@ -36,7 +36,7 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
       notifications: {
-        preferredChannels: ['websocket', 'streaming-http'],
+        preferredChannels: ['streaming-http', 'websocket'],
       },
       podUrl: undefined,
       resourcePreparation: 'best-effort',
@@ -63,7 +63,7 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
       notifications: {
-        preferredChannels: ['websocket', 'streaming-http'],
+        preferredChannels: ['streaming-http', 'websocket'],
       },
       podUrl: 'https://pod.example.com/',
       resourcePreparation: 'best-effort',
@@ -102,7 +102,7 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(expect.any(Object), {
       disableInteropDiscovery: true,
       notifications: {
-        preferredChannels: ['websocket', 'streaming-http'],
+        preferredChannels: ['streaming-http', 'websocket'],
       },
       podUrl: 'https://node.example/alice/',
       resourcePreparation: 'best-effort',

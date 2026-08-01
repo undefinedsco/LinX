@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { useLiveQuery } from '@tanstack/react-db'
 import { isGroupContact } from '@undefineds.co/models'
 import { useToast } from '@/components/ui/use-toast'
@@ -48,8 +48,8 @@ export function useContactDetailController() {
       : null
   const retryDetailQueries = () => {
     void Promise.all([
-      contactCollection.fetch(),
-      chatCollection.fetch(),
+      contactCollection.fetch({ refetch: true }),
+      chatCollection.fetch({ refetch: true }),
     ]).catch(() => {
       notify.error('联系人详情加载失败，请重试。')
     })
@@ -89,7 +89,6 @@ export function useContactDetailController() {
   const group = useContactGroupMembershipController({
     groupContactId: isGroup ? persistedContact.id : null,
     currentUserRef,
-    inviteMemberDialogOpen,
     inviteTargetGroupId,
     closeInviteMemberDialog,
     notify,

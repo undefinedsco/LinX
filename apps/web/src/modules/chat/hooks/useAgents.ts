@@ -1,42 +1,23 @@
-import { useQuery } from '@tanstack/react-query'
-import { agentResource } from '@undefineds.co/models'
-import { useSolidDatabase } from '@/providers/solid-database-provider'
-
-export const AGENT_QUERY_KEYS = {
-  agents: ['agents'] as const,
-  agent: (id: string) => ['agents', id] as const,
-}
+import { useLiveQuery } from '@tanstack/react-db'
+import { useMemo } from 'react'
+import { agentCollection } from '@/modules/contacts/collections'
 
 /**
  * Hook to fetch all available AI agents
  */
 export function useAgents() {
-  const { db } = useSolidDatabase()
-
-  return useQuery({
-    queryKey: AGENT_QUERY_KEYS.agents,
-    queryFn: async () => {
-      if (!db) return []
-      const rows = await db.select().from(agentResource).execute()
-      return rows
-    },
-    enabled: !!db,
-  })
+  return useLiveQuery(agentCollection)
 }
 
 /**
  * Hook to fetch a single agent by ID
  */
 export function useAgent(id: string | null) {
-  const { db } = useSolidDatabase()
+  const query = useLiveQuery(agentCollection)
+  const data = useMemo(
+    () => id ? query.data.find((row) => row.id === id) ?? null : null,
+    [id, query.data],
+  )
 
-  return useQuery({
-    queryKey: AGENT_QUERY_KEYS.agent(id || ''),
-    queryFn: async () => {
-      if (!db || !id) return null
-      const rows = await db.select().from(agentResource).execute()
-      return rows.find(r => r.id === id) ?? null
-    },
-    enabled: !!db && !!id,
-  })
+  return { ...query, data }
 }

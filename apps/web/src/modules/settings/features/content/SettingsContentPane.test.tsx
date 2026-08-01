@@ -54,7 +54,7 @@ const localOnboardingState = {
     provisionCode: 'pc-123',
     provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
     nodeId: 'node-123',
-    message: '本地空间已准备好。',
+    message: '本机空间已准备好。',
     errorCode: null,
     canRetry: true,
     canOpenSettings: true,

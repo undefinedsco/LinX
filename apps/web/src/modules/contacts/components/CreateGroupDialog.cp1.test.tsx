@@ -24,7 +24,7 @@ const {
   mockCreateGroup: vi.fn().mockResolvedValue({ id: 'g-1', chatId: 'ch-1' }),
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {
@@ -34,7 +34,12 @@ vi.mock('@inrupt/solid-ui-react', () => ({
   }),
 }))
 
+vi.mock('@tanstack/react-db', () => ({
+  useLiveQuery: () => ({ data: mockContacts, isLoading: false, isError: false }),
+}))
+
 vi.mock('../data/collections', () => ({
+  contactCollection: { name: 'contacts' },
   contactOps: {
     getAll: vi.fn(() => mockContacts),
     createGroupWithChat: mockCreateGroupWithChat,
@@ -183,7 +188,7 @@ describe('CreateGroupDialog', () => {
     fireEvent.click(alice)
     fireEvent.click(screen.getByRole('button', { name: '创建群组' }))
 
-    expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|Pod container|node\.example|\.data/i)).not.toBeInTheDocument()
   })
 })

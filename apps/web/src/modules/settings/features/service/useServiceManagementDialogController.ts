@@ -74,7 +74,7 @@ export function useServiceManagementDialogController(open: boolean) {
         setServiceSetupReady(true)
       } catch (loadError) {
         if (!cancelled) {
-          setError(formatLoginErrorForUser(loadError, '读取本地空间设置失败。请稍后重试。'))
+          setError(formatLoginErrorForUser(loadError, '读取本机空间设置失败。请稍后重试。'))
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -113,7 +113,7 @@ export function useServiceManagementDialogController(open: boolean) {
       await runServiceAction(action)
       await refreshStatus()
     } catch (actionError) {
-      setError(formatLoginErrorForUser(actionError, '本地空间操作失败。请稍后重试。'))
+      setError(formatLoginErrorForUser(actionError, '本机空间操作失败。请稍后重试。'))
     } finally {
       setSubmitting(false)
     }
@@ -147,7 +147,7 @@ export function useServiceManagementDialogController(open: boolean) {
       await runServiceAction('start')
       await refreshStatus()
     } catch (startError) {
-      setError(formatLoginErrorForUser(startError, '保存并启动本地空间失败。请检查配置后重试。'))
+      setError(formatLoginErrorForUser(startError, '保存并启动本机空间失败。请检查配置后重试。'))
     } finally {
       setSubmitting(false)
     }

@@ -76,7 +76,7 @@ vi.mock('@undefineds.co/models', async (importOriginal) => {
 })
 
 // Mock solid session
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: { info: { isLoggedIn: true } },
     sessionRequestInProgress: false,

@@ -47,6 +47,10 @@ vi.mock('@tanstack/react-db', () => ({
   useLiveQuery: mockUseLiveQuery,
 }))
 
+vi.mock('@/providers/solid-session-context', () => ({
+  useSession: () => ({ session: { info: { isLoggedIn: true } } }),
+}))
+
 // Mock contactOps - factory function can't reference external variables
 vi.mock('../data/collections', () => {
   return {
@@ -70,9 +74,12 @@ vi.mock('../data/collections', () => {
 })
 
 // Mock solid database provider
-vi.mock('@/providers/solid-database-provider', () => ({
-  useSolidDatabase: () => ({ db: { mockDb: true }, status: 'ready' }),
-}))
+vi.mock('@/providers/solid-database-provider', () => {
+  const db = { mockDb: true }
+  return {
+    useSolidDatabase: () => ({ db, status: 'ready' }),
+  }
+})
 
 // Mock store state - will be updated in tests
 let mockStoreState = {
@@ -192,7 +199,7 @@ describe('ContactListPane', () => {
     it('filters contacts by search term', async () => {
       mockStoreState.search = 'alice'
       // Override mock for this test
-      vi.mocked(contactOps.search).mockReturnValue([
+      vi.mocked(contactOps.search).mockResolvedValue([
         {
           id: 'mock-solid-1',
           name: 'Alice',
@@ -213,7 +220,7 @@ describe('ContactListPane', () => {
 
     it('hides new friends entry when searching', async () => {
       mockStoreState.search = 'alice'
-      vi.mocked(contactOps.search).mockReturnValue([
+      vi.mocked(contactOps.search).mockResolvedValue([
         {
           id: 'mock-solid-1',
           name: 'Alice',
@@ -235,7 +242,7 @@ describe('ContactListPane', () => {
 
     it('shows empty state when no matches', async () => {
       mockStoreState.search = 'xyz-nonexistent'
-      vi.mocked(contactOps.search).mockReturnValue([])
+      vi.mocked(contactOps.search).mockResolvedValue([])
       
       render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
       

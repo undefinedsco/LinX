@@ -87,7 +87,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {
@@ -329,7 +329,7 @@ describe('ContactDetailPane', () => {
 
     render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
 
-    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|读取资源头信息失败|alice\.example/i)).not.toBeInTheDocument()
   })
 

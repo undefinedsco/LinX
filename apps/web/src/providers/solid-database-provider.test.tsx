@@ -25,7 +25,7 @@ const sessionState = {
   sessionRequestInProgress: false,
 }
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('./solid-session-context', () => ({
   useSession: () => sessionState,
 }))
 
@@ -511,7 +511,7 @@ describe('SolidDatabaseProvider', () => {
     expect(createLinxSolidDatabaseMock).not.toHaveBeenCalled()
     expect(screen.getByTestId('status').textContent).toBe('error')
     expect(screen.getByTestId('has-db').textContent).toBe('false')
-    expect((window as any).__SOLID_DB_ERROR__).toContain('本地空间还没有完成准备')
+    expect((window as any).__SOLID_DB_ERROR__).toContain('本机空间还没有完成准备')
   })
 
   it('fails closed when a Local login points storage back at the Cloud issuer', async () => {
@@ -538,7 +538,7 @@ describe('SolidDatabaseProvider', () => {
     expect(createLinxSolidDatabaseMock).not.toHaveBeenCalled()
     expect(screen.getByTestId('status').textContent).toBe('error')
     expect(screen.getByTestId('has-db').textContent).toBe('false')
-    expect((window as any).__SOLID_DB_ERROR__).toContain('本地空间还没有完成准备')
+    expect((window as any).__SOLID_DB_ERROR__).toContain('本机空间还没有完成准备')
   })
 
   it('uses a split SP provider URL even when the provider label is missing', async () => {

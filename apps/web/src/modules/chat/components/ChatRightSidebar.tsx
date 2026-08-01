@@ -9,7 +9,7 @@
  */
 
 import { useState, useMemo, type FC } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { 
   User, 
   MessageCircle, 

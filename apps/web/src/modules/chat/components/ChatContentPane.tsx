@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
@@ -53,7 +53,7 @@ import {
 } from '../runtime-client'
 import { buildWorkspaceSummary } from '../workspace-summary'
 import { restoreChatMessageAnchor } from '../message-anchor'
-import { projectChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
+import { projectChatContentState, type ChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
 import {
   SecretaryWelcome,
   type SecretaryStarterAction,
@@ -103,6 +103,9 @@ const CONTENT_FAILURE_COPY: Partial<Record<ChatContentStateKind, { title: string
     description: '读取当前空间时发生错误。请检查连接后重试。',
   },
 }
+
+const LOGIN_REQUIRED_RETRY_DELAY_MS = 250
+const LOGIN_REQUIRED_GRACE_MS = 2000
 
 function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
@@ -950,7 +953,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   ])
 
   const isAuthenticated = Boolean(session.info.webId && session.fetch)
-  const contentState = projectChatContentState({
+  const rawContentState = projectChatContentState({
     isAuthenticated,
     isLoading: !isReady
       || !db
@@ -965,6 +968,25 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     isSecretary,
     hasThread: Boolean(selectedThreadId && activeThread),
   })
+  const isErrorDerivedLoginRequired = rawContentState.kind === 'login-required' && isAuthenticated
+  const [loginRequiredGraceExpired, setLoginRequiredGraceExpired] = useState(false)
+
+  useEffect(() => {
+    if (!isErrorDerivedLoginRequired) {
+      setLoginRequiredGraceExpired(false)
+      return
+    }
+    const retryTimer = window.setTimeout(() => retryContentQueries(), LOGIN_REQUIRED_RETRY_DELAY_MS)
+    const graceTimer = window.setTimeout(() => setLoginRequiredGraceExpired(true), LOGIN_REQUIRED_GRACE_MS)
+    return () => {
+      window.clearTimeout(retryTimer)
+      window.clearTimeout(graceTimer)
+    }
+  }, [isErrorDerivedLoginRequired, retryContentQueries])
+
+  const contentState: ChatContentState = isErrorDerivedLoginRequired && !loginRequiredGraceExpired
+    ? { kind: 'loading', recoverable: true }
+    : rawContentState
   const readyWarning = contentState.kind === 'ready' && databaseStatus === 'error'
     ? {
         title: '当前空间连接已失效',

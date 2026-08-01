@@ -7,10 +7,10 @@
  * Includes `chatOps` for business logic that spans multiple collections.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useSyncExternalStore } from 'react'
+import { useLiveQuery } from '@tanstack/react-db'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { useMemo, useSyncExternalStore } from 'react'
 import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
-import { like, or } from '@undefineds.co/drizzle-solid'
 import {
   chatResource,
   threadResource,
@@ -20,7 +20,6 @@ import {
   contactResource,
   credentialResource,
   aiProviderResource,
-  eq,
   getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
@@ -64,7 +63,6 @@ import {
   type AgentAiRuntimeLocation,
   writeAgentAiRuntimeLocationMetadata,
 } from '../domain/agent-runtime-location'
-import { CHAT_QUERY_RETRY, runChatQueryWithBoundary } from '../utils/chat-query-boundary'
 
 // ============================================================================
 // Database Getter
@@ -97,27 +95,10 @@ function observeChatQueryScope(scopeKey: string, db: SolidDatabase | null): numb
   return currentChatQueryGeneration
 }
 
-function isChatQueryScopeCurrent(
-  scopeKey: string,
-  db: SolidDatabase | null,
-  generation: number,
-): boolean {
-  return currentChatQueryScopeKey === scopeKey
-    && currentChatQueryDatabase === db
-    && currentChatQueryGeneration === generation
-}
-
 function throwIfChatQueryAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return
   if (signal.reason instanceof Error) throw signal.reason
   const error = new Error('Chat query aborted.')
-  error.name = 'AbortError'
-  throw error
-}
-
-function throwIfChatQueryStale(isCurrent: () => boolean): void {
-  if (isCurrent()) return
-  const error = new Error('Chat query scope changed.')
   error.name = 'AbortError'
   throw error
 }
@@ -1132,6 +1113,10 @@ export const chatCollection = createPodCollection<typeof chatResource, ChatRow, 
   queryClient,
   getDb,
   orderBy: { column: 'lastActiveAt', direction: 'desc' },
+  transformRows: async (rows, db) => {
+    const hydratedRows = await hydrateChatRows(db, rows)
+    return mergeChatRows(getStagedSecretaryChatRows(), hydratedRows)
+  },
   getKey: (item) => {
     if (!item.id) throw new Error('Chat item is missing id.')
     return item.id
@@ -1962,75 +1947,12 @@ export const chatOps = {
   /**
    * Fetch chats from Pod
    */
-  async fetchChats(signal?: AbortSignal): Promise<ChatRow[]> {
-    const db = getDb()
-    if (!db) {
-      return chatCollection.fetch()
-    }
 
-    stageLinxDefaultSecretary(db)
-    const fallbackRows = getStagedSecretaryChatRows()
-    if (fallbackRows.length > 0 && linxWelcomeInFlight) {
-      return fallbackRows
-    }
-
-    let rows: ChatRow[]
-    try {
-      throwIfChatQueryAborted(signal)
-      rows = await db.select()
-        .from(chatResource)
-        .orderBy('lastActiveAt', 'desc')
-        .execute() as ChatRow[]
-      throwIfChatQueryAborted(signal)
-    } catch (error) {
-      if (isRecoverableCollectionReadError(error)) {
-        return fallbackRows.length > 0 ? fallbackRows : chatOps.getAll()
-      }
-      throw error
-    }
-
-    const hydratedRows = rows.length > 0
-      ? await hydrateChatRows(db, rows, signal)
-      : rows
-    throwIfChatQueryAborted(signal)
-    const lateFallbackRows = getStagedSecretaryChatRows()
-    if (lateFallbackRows.length > 0) {
-      return mergeChatRows(lateFallbackRows, hydratedRows)
-    }
-
-    return hydratedRows
-  },
 
   /**
    * Fetch messages for a thread
    */
-  async fetchMessages(threadId: string, chatId?: string | null): Promise<MessageRow[]> {
-    const db = getDb()
-    if (!db) return []
-    const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
-    if (!resolvedChatId) {
-      throw new Error(`Failed to resolve chat id for thread ${threadId}`)
-    }
-    const threadRef = await buildThreadIri(db, threadId, resolvedChatId)
-    if (!threadRef) {
-      throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
-    }
 
-    const threadCol = (messageResource as any).thread
-    try {
-      const rows = await db.select()
-        .from(messageResource)
-        .where(eq(threadCol, threadRef))
-        .orderBy('createdAt', 'asc')
-        .execute() as MessageRow[]
-      return rows.length > 0 ? rows : chatOps.getMessages(threadId)
-    } catch (error) {
-      if (isRecoverableCollectionReadError(error)) {
-        return chatOps.getMessages(threadId)
-      }
-      throw error
-    }
-  },
 
   // ==========================================================================
   // Subscription Operations
@@ -2086,18 +2008,6 @@ export function initializeChatCollections(db: SolidDatabase | null) {
 }
 
 // ============================================================================
-// Legacy Subscription API (for backward compatibility)
-// ============================================================================
-
-/**
- * @deprecated Use chatOps.subscribeToPod() instead
- */
-export async function subscribeToChatCollections(db: SolidDatabase): Promise<() => void> {
-  setDatabaseGetter(() => db)
-  return chatOps.subscribeToPod()
-}
-
-// ============================================================================
 // React Query Hooks
 // ============================================================================
 
@@ -2147,145 +2057,49 @@ export function buildMessageListQueryKey(scopeKey: string, chatId: string, threa
   return [...QUERY_KEYS.messages(chatId, threadId), 'scope', scopeKey] as const
 }
 
-async function queryThreadRowsForChat(
-  db: SolidDatabase,
-  chatId: string,
-  signal: AbortSignal,
-  isCurrent: () => boolean,
-): Promise<ThreadRow[]> {
-  throwIfChatQueryAborted(signal)
-  const chatIri = buildChatIri(db, chatId)
-  if (!chatIri) {
-    throw new Error(`Failed to resolve chat IRI for chat ${chatId}`)
-  }
-
-  let rows: ThreadRow[]
-  try {
-    // drizzle-solid execute does not currently accept AbortSignal, so the
-    // operation checks cancellation and account generation around the await.
-    rows = await db.select()
-      .from(threadResource)
-      .where(eq(threadResource.parent, chatIri))
-      .orderBy('updatedAt', 'desc')
-      .execute() as ThreadRow[]
-    throwIfChatQueryAborted(signal)
-    throwIfChatQueryStale(isCurrent)
-  } catch (error) {
-    if (isRecoverableCollectionReadError(error)) {
-      return chatOps.getThreads(chatId)
-    }
-    throw error
-  }
-
-  rows.forEach((row) => {
-    const rowChatId = resolveThreadChatRowId(row)
-    if (row.id && rowChatId) {
-      threadChatIdCache.set(row.id, rowChatId)
-    }
-  })
-
-  return rows
-}
-
 /**
  * Hook to fetch chat list with optional search
  */
 export function useChatList(filters?: { search?: string }) {
-  const { db, scopeKey } = useSolidDatabase()
-  const generation = observeChatQueryScope(scopeKey, db)
-  const isCurrent = () => isChatQueryScopeCurrent(scopeKey, db, generation)
-  return useQuery({
-    queryKey: buildChatListQueryKey(scopeKey, filters?.search || ''),
-    queryFn: ({ signal }) => runChatQueryWithBoundary(
-      async (operationSignal) => {
-        if (!db) return []
-        throwIfChatQueryAborted(operationSignal)
-
-        // Use drizzle-solid ilike for server-side search
-        if (filters?.search?.trim()) {
-          const pattern = `%${filters.search.trim()}%`
-          const results = await db
-            .select()
-            .from(chatResource)
-            .where(
-              or(
-                like(chatResource.title as any, pattern),
-                like(chatResource.lastMessagePreview as any, pattern),
-              ),
-            )
-            .orderBy('lastActiveAt', 'desc')
-            .execute()
-          throwIfChatQueryAborted(operationSignal)
-          throwIfChatQueryStale(isCurrent)
-          return hydrateChatRows(db, results as ChatRow[], operationSignal)
-        }
-
-        return chatOps.fetchChats(operationSignal)
-      },
-      { signal, isCurrent },
-    ),
-    enabled: !!db,
-    retry: CHAT_QUERY_RETRY,
-  })
+  const query = useLiveQuery(chatCollection)
+  const data = useMemo(() => {
+    const rows = (query.data ?? []) as ChatRow[]
+    const term = filters?.search?.trim().toLocaleLowerCase()
+    if (!term) return rows
+    return rows.filter((row) => [row.title, row.lastMessagePreview]
+      .some((value) => value?.toLocaleLowerCase().includes(term)))
+  }, [filters?.search, query.data])
+  return { ...query, data, error: null, refetch: () => chatCollection.fetch({ refetch: true }) }
 }
 
 /**
  * Hook to fetch thread list for a chat
  */
 export function useThreadList(chatId: string, options?: { enabled?: boolean }) {
-  const { db, scopeKey } = useSolidDatabase()
-  const generation = observeChatQueryScope(scopeKey, db)
-  const isCurrent = () => isChatQueryScopeCurrent(scopeKey, db, generation)
-  const enabled = options?.enabled ?? (!!db && !!chatId)
-  
-  return useQuery({
-    queryKey: buildThreadListQueryKey(scopeKey, chatId || ''),
-    queryFn: ({ signal }) => runChatQueryWithBoundary(
-      async (operationSignal) => {
-        if (!db || !chatId) return []
-        if (
-          normalizeChatRowId(chatId) === LINX_DEFAULT_SECRETARY.chatId
-          && isLinxDefaultSecretaryBootstrapPending()
-        ) {
-          return []
-        }
-        return queryThreadRowsForChat(db, chatId, operationSignal, isCurrent)
-      },
-      { signal, isCurrent },
-    ),
-    enabled: !!db && !!chatId && enabled,
-    retry: CHAT_QUERY_RETRY,
-  })
+  const query = useLiveQuery(threadCollection)
+  const enabled = options?.enabled ?? !!chatId
+  const data = useMemo(() => {
+    if (!enabled || !chatId) return []
+    if (normalizeChatRowId(chatId) === LINX_DEFAULT_SECRETARY.chatId && isLinxDefaultSecretaryBootstrapPending()) {
+      return []
+    }
+    return ((query.data ?? []) as ThreadRow[])
+      .filter((row) => resolveThreadChatRowId(row) === normalizeChatRowId(chatId))
+  }, [chatId, enabled, query.data])
+  return { ...query, data, error: null, refetch: () => threadCollection.fetch({ refetch: true }) }
 }
 
 /**
  * Hook to fetch all threads for chat list/runtime index use cases.
  */
 export function useThreadIndex(options?: { enabled?: boolean }) {
-  const { db, scopeKey } = useSolidDatabase()
-  const generation = observeChatQueryScope(scopeKey, db)
-  const isCurrent = () => isChatQueryScopeCurrent(scopeKey, db, generation)
-  const enabled = options?.enabled ?? !!db
-
-  return useQuery({
-    queryKey: buildThreadIndexQueryKey(scopeKey),
-    queryFn: ({ signal }) => runChatQueryWithBoundary(
-      async (operationSignal) => {
-        if (!db) return []
-        throwIfChatQueryAborted(operationSignal)
-        const rows = await db.select()
-          .from(threadResource)
-          .orderBy('updatedAt', 'desc')
-          .execute() as ThreadRow[]
-        throwIfChatQueryAborted(operationSignal)
-        throwIfChatQueryStale(isCurrent)
-        return rows
-      },
-      { signal, isCurrent },
-    ),
-    enabled: !!db && enabled,
-    retry: CHAT_QUERY_RETRY,
-  })
+  const query = useLiveQuery(threadCollection)
+  return {
+    ...query,
+    data: options?.enabled === false ? [] : (query.data ?? []) as ThreadRow[],
+    error: null,
+    refetch: () => threadCollection.fetch({ refetch: true }),
+  }
 }
 
 export function useWorkspaceList(options?: { enabled?: boolean }) {
@@ -2303,43 +2117,13 @@ export function useWorkspaceList(options?: { enabled?: boolean }) {
  * Hook to fetch message list for a thread
  */
 export function useMessageList(chatId: string | null, threadId: string | null) {
-  const { db, scopeKey } = useSolidDatabase()
-  const generation = observeChatQueryScope(scopeKey, db)
-  const isCurrent = () => isChatQueryScopeCurrent(scopeKey, db, generation)
-  
-  return useQuery({
-    queryKey: buildMessageListQueryKey(scopeKey, chatId || '', threadId || ''),
-    queryFn: ({ signal }) => runChatQueryWithBoundary(
-      async (operationSignal) => {
-        if (!db || !threadId || !chatId) return []
-        throwIfChatQueryAborted(operationSignal)
-        const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
-        throwIfChatQueryAborted(operationSignal)
-        throwIfChatQueryStale(isCurrent)
-        if (!resolvedChatId) {
-          throw new Error(`Failed to resolve chat id for thread ${threadId}`)
-        }
-        const threadRef = await buildThreadIri(db, threadId, resolvedChatId)
-        throwIfChatQueryAborted(operationSignal)
-        throwIfChatQueryStale(isCurrent)
-        if (!threadRef) {
-          throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
-        }
-
-        const rows = await db.select()
-          .from(messageResource)
-          .where(eq((messageResource as any).thread, threadRef))
-          .orderBy('createdAt', 'asc')
-          .execute() as MessageRow[]
-        throwIfChatQueryAborted(operationSignal)
-        throwIfChatQueryStale(isCurrent)
-        return rows
-      },
-      { signal, isCurrent },
-    ),
-    enabled: !!db && !!threadId && !!chatId,
-    retry: CHAT_QUERY_RETRY,
-  })
+  const query = useLiveQuery(messageCollection)
+  const data = useMemo(() => threadId && chatId
+    ? ((query.data ?? []) as MessageRow[])
+      .filter((row) => extractThreadIdFromThreadRef(row.thread) === threadId)
+      .sort((left, right) => new Date(left.createdAt ?? 0).getTime() - new Date(right.createdAt ?? 0).getTime())
+    : [], [chatId, query.data, threadId])
+  return { ...query, data, error: null, refetch: () => messageCollection.fetch({ refetch: true }) }
 }
 
 // ============================================================================
@@ -2350,43 +2134,26 @@ export function useMessageList(chatId: string | null, threadId: string | null) {
  * Hook for chat mutations
  */
 export function useChatMutations() {
-  const qc = useQueryClient()
-  
   const createAIChat = useMutation({
     mutationFn: (input: CreateAIChatInput) => chatOps.createAIChat(input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-    },
   })
 
   const updateChat = useMutation({
     mutationFn: ({ id, ...data }: { id: string } & Partial<ChatRow>) => 
       chatOps.updateChat(id, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-    },
   })
 
   const deleteChat = useMutation({
     mutationFn: (id: string) => chatOps.deleteChat(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-    },
   })
 
   const ensureLinxWelcome = useMutation({
     mutationFn: (options?: EnsureLinxWelcomeOptions) => chatOps.ensureLinxWelcome(options),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-    },
   })
 
   const createThread = useMutation({
     mutationFn: ({ chatId, title }: { chatId: string; title?: string }) => 
       chatOps.createThread(chatId, title),
-    onSuccess: (_, variables) => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.threads(variables.chatId) })
-    },
   })
 
   const ensureThreadWorkspace = useMutation({
@@ -2399,43 +2166,25 @@ export function useChatMutations() {
       baseRef?: string
       branch?: string
     }) => chatOps.ensureThreadWorkspace(input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['threads', 'index'] })
-    },
   })
 
   const updateThread = useMutation({
     mutationFn: ({ id, chatId: _chatId, ...data }: { id: string; chatId: string } & Partial<ThreadRow>) =>
       chatOps.updateThread(id, data),
-    onSuccess: (_, variables) => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.threads(variables.chatId) })
-    },
   })
 
   const deleteThread = useMutation({
     mutationFn: ({ id, chatId }: { id: string; chatId: string }) => 
       chatOps.deleteThread(id, chatId),
-    onSuccess: (_, variables) => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.threads(variables.chatId) })
-    },
   })
 
   const deleteMessage = useMutation({
     mutationFn: ({ id, threadId }: { id: string; threadId: string }) => 
       chatOps.deleteMessage(id, threadId),
-    onSuccess: (_, variables) => {
-      const cachedChatId = getCachedThreadChatId(variables.threadId) || ''
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.messages(cachedChatId, variables.threadId) })
-    },
   })
 
   const updateAgentProfile = useMutation({
     mutationFn: (input: UpdateAgentProfileInput) => chatOps.updateAgentProfile(input),
-    onSuccess: (_, variables) => {
-      if (variables.chatId) {
-        qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-      }
-    },
   })
 
   const updateAgentInstructions = useMutation({
@@ -2446,11 +2195,6 @@ export function useChatMutations() {
   const updateAgentModel = useMutation({
     mutationFn: ({ agentId, provider, model, chatId, contactId }: UpdateAgentModelInput) =>
       chatOps.updateAgentModel(agentId, provider, model, chatId, contactId),
-    onSuccess: (_, variables) => {
-      if (variables.chatId) {
-        qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-      }
-    },
   })
 
   return {

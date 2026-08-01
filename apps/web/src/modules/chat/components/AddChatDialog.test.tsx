@@ -297,7 +297,7 @@ describe('AddChatDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '添加为好友' }))
 
-    expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|Pod container|node\.example|\.data/i)).not.toBeInTheDocument()
   })
 

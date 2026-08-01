@@ -12,12 +12,13 @@ const mocks = vi.hoisted(() => ({
     retry: vi.fn(),
   },
   fetchContacts: vi.fn(async () => []),
+  searchContacts: vi.fn(async () => [] as Array<Record<string, unknown>>),
   session: {
     info: { webId: null as string | null, isLoggedIn: true },
   },
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({ session: mocks.session }),
 }))
 
@@ -40,7 +41,7 @@ vi.mock('../../data/collections', async () => {
       getGroupDisplayInfo: vi.fn(),
       fetch: mocks.fetchContacts,
       getAll: vi.fn(() => []),
-      search: vi.fn(async () => []),
+      search: mocks.searchContacts,
     },
   }
 })
@@ -78,15 +79,19 @@ describe('ContactListPane collection reactivity', () => {
     mocks.database.error = null
     mocks.session.info.isLoggedIn = true
     mocks.fetchContacts.mockClear()
+    mocks.searchContacts.mockReset()
+    mocks.searchContacts.mockResolvedValue([])
+    store.search = ''
     for (const row of contactCollection.toArray) {
       contactCollection.delete(row.id)
     }
   })
 
-  it('fetches the first contact page when the Pod database is ready', async () => {
+  it('delegates the first contact hydration to useLiveQuery', async () => {
     render(<ContactListPane />, { wrapper: createWrapper() })
 
-    await waitFor(() => expect(mocks.fetchContacts).toHaveBeenCalledOnce())
+    await waitFor(() => expect(contactCollection.isReady()).toBe(true))
+    expect(mocks.fetchContacts).not.toHaveBeenCalled()
   })
 
   it('does not present an unavailable Pod as an empty contact list', () => {
@@ -126,5 +131,21 @@ describe('ContactListPane collection reactivity', () => {
       contactCollection.delete('alice')
     })
     await waitFor(() => expect(screen.queryByText('Alice Updated')).not.toBeInTheDocument())
+  })
+
+  it('uses remote search so matches outside the resident window remain discoverable', async () => {
+    store.search = 'remote alice'
+    mocks.searchContacts.mockResolvedValueOnce([{
+      id: 'outside-top-100',
+      name: 'Remote Alice',
+      contactType: 'solid',
+      starred: false,
+    }])
+
+    render(<ContactListPane />, { wrapper: createWrapper() })
+
+    expect(await screen.findByText('Remote Alice')).toBeInTheDocument()
+    expect(mocks.searchContacts).toHaveBeenCalledWith('remote alice')
+    expect(contactCollection.toArray).toHaveLength(0)
   })
 })

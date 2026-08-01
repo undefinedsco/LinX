@@ -30,7 +30,7 @@ describe('ErrorBlock', () => {
     render(<ErrorBlock block={block} />)
 
     expect(screen.getByText('LinX 初始化失败。请刷新页面；如果仍失败，请换一个空间重新登录。')).toBeInTheDocument()
-    expect(screen.getByText('当前空间还没有创建完成。请回到空间选择页，重新进入后按提示创建。')).toBeInTheDocument()
+    expect(screen.getByText('当前空间还没有创建完成。请回到登录方式页，重新进入后按提示创建。')).toBeInTheDocument()
     expect(screen.queryByText(/findById|localhost|HTTP 500|\/Users|file\.ts/i)).not.toBeInTheDocument()
   })
 })

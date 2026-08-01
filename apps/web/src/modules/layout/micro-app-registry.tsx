@@ -52,6 +52,10 @@ export interface MicroAppLayoutConfig {
   }
   rightSidebar?: ReactNode
   rightSidebarWidth?: number
+  rightSidebarToggle?: {
+    open: boolean
+    onToggle: () => void
+  }
   hideIcon?: boolean
   hideHeader?: boolean
 }

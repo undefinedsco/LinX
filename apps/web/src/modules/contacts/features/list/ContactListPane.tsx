@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { useLiveQuery } from '@tanstack/react-db'
 import type { ContactRow } from '@undefineds.co/models'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
@@ -17,6 +17,8 @@ export function ContactListPane({}: MicroAppPaneProps) {
   const { session } = useSession()
   const { db, status: databaseStatus, error: databaseError, retry: retryDatabase } = useSolidDatabase()
   const [fetchError, setFetchError] = useState<Error | null>(null)
+  const [remoteSearchResults, setRemoteSearchResults] = useState<ContactRow[] | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
   const search = useContactStore((state) => state.search)
   const setSearch = useContactStore((state) => state.setSearch)
   const selectedId = useContactStore((state) => state.selectedId)
@@ -30,15 +32,9 @@ export function ContactListPane({}: MicroAppPaneProps) {
       setFetchError(null)
       return
     }
-    contactCollection.startSyncImmediate()
     let active = true
     let cleanup: (() => void) | undefined
     setFetchError(null)
-    void contactOps.fetch().catch((error) => {
-      if (active) {
-        setFetchError(error instanceof Error ? error : new Error(String(error)))
-      }
-    })
     void contactOps.subscribeToPod().then((unsubscribe) => {
       if (active) {
         cleanup = unsubscribe
@@ -58,7 +54,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
       return
     }
     setFetchError(null)
-    void contactOps.fetch().catch((error) => {
+    void contactOps.fetch({ refetch: true }).catch((error) => {
       setFetchError(error instanceof Error ? error : new Error(String(error)))
     })
   }, [db, retryDatabase])
@@ -70,14 +66,35 @@ export function ContactListPane({}: MicroAppPaneProps) {
     () => (liveQuery.data ?? []) as ContactRow[],
     [liveQuery.data],
   )
+  useEffect(() => {
+    const term = search.trim()
+    if (!db || !term) {
+      setRemoteSearchResults(null)
+      setIsSearching(false)
+      return
+    }
+
+    let active = true
+    setIsSearching(true)
+    const timer = window.setTimeout(() => {
+      void contactOps.search(term).then((rows) => {
+        if (active) setRemoteSearchResults(rows)
+      }).catch((error) => {
+        if (active) setFetchError(error instanceof Error ? error : new Error(String(error)))
+      }).finally(() => {
+        if (active) setIsSearching(false)
+      })
+    }, 150)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [db, search])
   const visibleContacts = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
     if (!term) return rawContacts
-    return rawContacts.filter((contact) => (
-      [contact.name, contact.alias, contact.externalId, contact.note, contact.about]
-        .some((value) => typeof value === 'string' && value.toLocaleLowerCase().includes(term))
-    ))
-  }, [rawContacts, search])
+    return remoteSearchResults ?? []
+  }, [rawContacts, remoteSearchResults, search])
   const groupInfoById = useMemo(() => {
     const result = new Map<string, GroupContactInfo>()
     for (const contact of visibleContacts) {
@@ -138,7 +155,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
       selectedId={selectedId}
       sections={projection.sections}
       letters={projection.letters}
-      isLoading={databaseStatus === 'initializing' || (!!db && liveQuery.isLoading)}
+      isLoading={databaseStatus === 'initializing' || (!!db && (liveQuery.isLoading || isSearching))}
       error={listError}
       onRetry={retryContacts}
       onSelect={select}

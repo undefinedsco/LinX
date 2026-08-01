@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { EVENTS } from '@inrupt/solid-client-authn-browser'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from './solid-session-context'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { useLoginStore, type StoredAccount } from '@linx/stores/login'
@@ -418,7 +418,7 @@ function resolveLoginPodContext(
     if (!pendingTransaction.authorizationQuery?.provisionCode) {
       return {
         context: null,
-        error: new Error('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。'),
+        error: new Error('本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。'),
       }
     }
     return resolved
@@ -438,7 +438,7 @@ function resolveLoginPodContext(
     if (isPendingSplitLocalLoginAttempt(pendingLoginAttempt) && !pendingLoginAttempt.authorizationQuery?.provisionCode) {
       return {
         context: null,
-        error: new Error('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。'),
+        error: new Error('本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。'),
       }
     }
     return resolved
@@ -486,7 +486,7 @@ async function resolveRuntimePodContext(
   if (!profileStorageUrl) {
     return {
       context: null,
-      error: new Error('LinX 还不能把数据保存到当前空间。请换一个空间；如果这是本地空间，请先完成空间创建。'),
+      error: new Error('LinX 还不能把数据保存到当前空间。请换一个空间；如果这是本机空间，请先完成空间创建。'),
     }
   }
 
@@ -558,7 +558,7 @@ function resolveCandidatePodContext(
   if (!normalized) {
     return {
       context: null,
-      error: new Error('本地空间不可用。请返回空间选择页，重新选择“本地”。'),
+      error: new Error('本机空间不可用。请返回登录方式页，重新选择“本地”。'),
     }
   }
 
@@ -679,7 +679,7 @@ function classifyStorageProvider(
   const providerOrigin = normalizeOrigin(storageProviderUrl)
   if (!providerOrigin) {
     return normalizedLabel === 'local' || normalizedLabel === 'standalone'
-      ? { kind: 'invalid', message: '本地空间不可用。请返回空间选择页，重新选择“本地”。' }
+      ? { kind: 'invalid', message: '本机空间不可用。请返回登录方式页，重新选择“本地”。' }
       : { kind: 'default' }
   }
 
@@ -698,7 +698,7 @@ function classifyStorageProvider(
       ? { kind: 'default' }
       : {
           kind: 'invalid',
-          message: '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。',
+          message: '本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。',
         }
   }
 
@@ -710,7 +710,7 @@ function classifyStorageProvider(
   if (providerIsAccessRoute) {
     return {
       kind: 'invalid',
-      message: '本地空间还没完成登录准备。请返回空间选择页，重新选择“本地”。',
+      message: '本机空间还没完成登录准备。请返回登录方式页，重新选择“本地”。',
     }
   }
 

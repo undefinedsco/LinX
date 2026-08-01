@@ -1,10 +1,10 @@
 /**
  * CP1 Component Tests: ContactListPane filtering
  *
- * Tests the filter tabs and contactType filtering behavior.
+ * Tests contactType filtering without restoring the removed filter-tab row.
  */
 
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
@@ -46,7 +46,7 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: { mockDb: true }, status: 'ready' }),
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {
@@ -101,13 +101,14 @@ describe('ContactListPane CP1 Filtering', () => {
     }
   })
 
-  it('renders filter tabs when CP1 enabled', async () => {
+  it('keeps the list header compact without a filter-tab row', async () => {
     render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
 
-    expect(screen.getByText('全部')).toBeInTheDocument()
-    expect(screen.getByText('个人')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'AI' })).toBeInTheDocument()
-    expect(screen.getByText('群组')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('搜索联系人')).toBeInTheDocument()
+    expect(screen.queryByText('全部')).not.toBeInTheDocument()
+    expect(screen.queryByText('个人')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'AI' })).not.toBeInTheDocument()
+    expect(screen.queryByText('群组')).not.toBeInTheDocument()
   })
 
   it('renders all contacts when filter is "all"', async () => {
@@ -116,13 +117,6 @@ describe('ContactListPane CP1 Filtering', () => {
     expect(await screen.findByText('Alice')).toBeInTheDocument()
     expect(screen.getByText('GPT Helper')).toBeInTheDocument()
     expect(screen.getByText('Dev Team')).toBeInTheDocument()
-  })
-
-  it('calls setListFilter when a tab is clicked', async () => {
-    render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
-
-    fireEvent.click(screen.getByText('群组'))
-    expect(mockStoreState.setListFilter).toHaveBeenCalledWith('groups')
   })
 
   it('filters to only groups when listFilter is "groups"', async () => {
