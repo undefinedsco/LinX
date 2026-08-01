@@ -7,7 +7,7 @@
  * Includes `contactOps` for business logic that spans multiple collections.
  */
 
-import { like, or } from '@undefineds.co/drizzle-solid'
+import { asc, like, or } from '@undefineds.co/drizzle-solid'
 import {
   chatResource,
   contactResource,
@@ -523,6 +523,8 @@ export const contactOps = {
             like(contactResource.about as any, pattern)
           )
         )
+        .orderBy(asc(contactResource.name), asc(contactResource.id))
+        .limit(100)
         .execute()
 
       return results as ContactRow[]

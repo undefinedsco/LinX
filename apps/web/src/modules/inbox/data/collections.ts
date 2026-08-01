@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useSession } from '@/providers/solid-session-context'
+import { useLiveQuery } from '@tanstack/react-db'
+import { useMutation } from '@tanstack/react-query'
 import {
   approvalResource,
   auditResource,
@@ -52,6 +53,11 @@ export const approvalCollection = createPodCollection<typeof approvalResource, A
   queryClient,
   getDb,
   orderBy: { column: 'createdAt', direction: 'desc' },
+  window: {
+    limit: 100,
+    orderBy: [{ column: 'createdAt', direction: 'desc' }],
+    maxResidentPages: 3,
+  },
   getKey: (item) => {
     if (!item.id) throw new Error('Approval record is missing id')
     return item.id
@@ -64,6 +70,11 @@ export const auditCollection = createPodCollection<typeof auditResource, AuditRo
   queryClient,
   getDb,
   orderBy: { column: 'createdAt', direction: 'desc' },
+  window: {
+    limit: 100,
+    orderBy: [{ column: 'createdAt', direction: 'desc' }],
+    maxResidentPages: 3,
+  },
   getKey: (item) => {
     if (!item.id) throw new Error('Audit record is missing id')
     return item.id
@@ -76,6 +87,11 @@ export const inboxNotificationCollection = createPodCollection<typeof inboxNotif
   queryClient,
   getDb,
   orderBy: { column: 'createdAt', direction: 'desc' },
+  window: {
+    limit: 100,
+    orderBy: [{ column: 'createdAt', direction: 'desc' }],
+    maxResidentPages: 3,
+  },
   getKey: (item) => {
     if (!item.id) throw new Error('Inbox notification record is missing id')
     return item.id
@@ -88,6 +104,11 @@ export const inputRequestCollection = createPodCollection<typeof inputRequestRes
   queryClient,
   getDb,
   orderBy: { column: 'createdAt', direction: 'desc' },
+  window: {
+    limit: 100,
+    orderBy: [{ column: 'createdAt', direction: 'desc' }],
+    maxResidentPages: 3,
+  },
   getKey: (item) => {
     if (!item.id) throw new Error('InputRequest record is missing id')
     return item.id
@@ -133,18 +154,6 @@ export function findLatestApprovalByTarget(approvals: ApprovalRow[], target: str
   return approvals
     .filter((approval) => approval.target === normalizedTarget)
     .sort((a, b) => formatTimestamp(b.resolvedAt ?? b.createdAt) - formatTimestamp(a.resolvedAt ?? a.createdAt))[0] ?? null
-}
-
-function findCachedApprovalByTarget(target: string | null | undefined): ApprovalRow | null {
-  const normalizedTarget = target?.trim()
-  if (!normalizedTarget) return null
-
-  const queryApprovals = queryClient.getQueryData<ApprovalRow[]>(['inbox', 'approvals'])
-  const queryMatch = findLatestApprovalByTarget(queryApprovals ?? [], normalizedTarget)
-  if (queryMatch) return queryMatch
-
-  if (!approvalCollection.isReady()) return null
-  return findLatestApprovalByTarget(approvalCollection.toArray as ApprovalRow[], normalizedTarget)
 }
 
 async function updateApprovalByIri(
@@ -409,17 +418,8 @@ export const inboxOps = {
     }
   },
 
-  async fetchApprovals() {
+  async readApprovals() {
     return approvalCollection.fetch()
-  },
-  async fetchAuditEntries() {
-    return auditCollection.fetch()
-  },
-  async fetchNotifications() {
-    return inboxNotificationCollection.fetch()
-  },
-  async fetchInputRequests() {
-    return inputRequestCollection.fetch()
   },
   async resolveApproval(input: {
     approval: ApprovalRow
@@ -467,7 +467,8 @@ export const inboxOps = {
       createdAt: now,
     }
     assertInsertValuesBelongToCurrentPod(db, auditPayload)
-    await db.insert(auditResource).values(auditPayload).execute()
+    const auditTx = auditCollection.insert(auditPayload as AuditRow)
+    await auditTx.isPersisted.promise
 
     const notificationPayload = {
       id: crypto.randomUUID(),
@@ -476,51 +477,43 @@ export const inboxOps = {
       createdAt: now,
     }
     assertInsertValuesBelongToCurrentPod(db, notificationPayload)
-    await db.insert(inboxNotificationResource).values(notificationPayload).execute()
-
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['inbox', 'approvals'] }),
-      queryClient.invalidateQueries({ queryKey: ['inbox', 'audit'] }),
-      queryClient.invalidateQueries({ queryKey: ['inbox', 'notifications'] }),
-      queryClient.invalidateQueries({ queryKey: ['inbox', 'inputRequests'] }),
-      queryClient.invalidateQueries({ queryKey: ['inbox', 'items'] }),
-    ])
+    const notificationTx = inboxNotificationCollection.insert(notificationPayload as InboxNotificationRow)
+    await notificationTx.isPersisted.promise
   },
 }
 
 export function useInboxItems(filter: InboxFilter = 'all', options?: { enabled?: boolean }) {
-  const { db } = useSolidDatabase()
+  const approvals = useLiveQuery(approvalCollection)
+  const audits = useLiveQuery(auditCollection)
+  const notifications = useLiveQuery(inboxNotificationCollection)
+  const inputRequests = useLiveQuery(inputRequestCollection)
+  const enabled = options?.enabled ?? true
+  const data = useMemo(() => {
+    if (!enabled) return []
+    return filterInboxItems(buildInboxItems(
+      (notifications.data ?? []) as InboxNotificationRow[],
+      (approvals.data ?? []) as ApprovalRow[],
+      (inputRequests.data ?? []) as InputRequestRow[],
+      (audits.data ?? []) as AuditRow[],
+    ), filter)
+  }, [approvals.data, audits.data, enabled, filter, inputRequests.data, notifications.data])
 
-  return useQuery({
-    queryKey: ['inbox', 'items', filter],
-    enabled: !!db && (options?.enabled ?? true),
-    queryFn: async () => {
-      const [notifications, approvals, inputRequests, audits] = await Promise.all([
-        inboxOps.fetchNotifications(),
-        inboxOps.fetchApprovals(),
-        inboxOps.fetchInputRequests(),
-        inboxOps.fetchAuditEntries(),
-      ])
-
-      const allItems = buildInboxItems(notifications, approvals, inputRequests, audits)
-      return filterInboxItems(allItems, filter)
-    },
-  })
+  return {
+    data,
+    isLoading: enabled && [approvals, audits, notifications, inputRequests].some((query) => query.isLoading),
+    isError: [approvals, audits, notifications, inputRequests].some((query) => query.isError),
+    error: null,
+  }
 }
 
 export function useApprovalByTarget(target: string | null | undefined, options?: { enabled?: boolean }) {
-  const { db } = useSolidDatabase()
   const normalizedTarget = target?.trim() || null
-
-  return useQuery({
-    queryKey: ['inbox', 'approvals', 'target', normalizedTarget],
-    enabled: !!db && !!normalizedTarget && (options?.enabled ?? true),
-    initialData: () => findCachedApprovalByTarget(normalizedTarget),
-    queryFn: async () => {
-      const approvals = await inboxOps.fetchApprovals()
-      return findLatestApprovalByTarget(approvals, normalizedTarget)
-    },
-  })
+  const query = useLiveQuery(approvalCollection)
+  const enabled = !!normalizedTarget && (options?.enabled ?? true)
+  const data = useMemo(() => enabled
+    ? findLatestApprovalByTarget((query.data ?? []) as ApprovalRow[], normalizedTarget)
+    : null, [enabled, normalizedTarget, query.data])
+  return { ...query, data }
 }
 
 export function useInboxSummary() {

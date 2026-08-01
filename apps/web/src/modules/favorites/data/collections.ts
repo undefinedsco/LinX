@@ -5,7 +5,9 @@
  * Provides reactive data management with Solid Pod persistence.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useLiveQuery } from '@tanstack/react-db'
+import { useMutation } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import {
   favoriteResource,
@@ -46,6 +48,12 @@ export const favoriteCollection = createPodCollection<
   queryClient,
   getDb,
   orderBy: { column: 'favoredAt', direction: 'desc' },
+  window: {
+    limit: 100,
+    orderBy: [{ column: 'favoredAt', direction: 'desc' }],
+    maxResidentPages: 3,
+  },
+  transformRows: (rows) => rows.map(normalizeFavoriteRow),
   getKey: (item) => {
     if (!item.id) throw new Error('Favorite item is missing id.')
     return item.id
@@ -88,9 +96,6 @@ export const favoriteOps = {
     await tx.isPersisted.promise
   },
 
-  async fetchFavorites(): Promise<FavoriteRow[]> {
-    return (await favoriteCollection.fetch()).map(normalizeFavoriteRow)
-  },
 }
 
 // ============================================================================
@@ -162,7 +167,6 @@ async function onStarredChange(
       await tx.isPersisted.promise
     }
 
-    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.favorites })
   } else {
     // Find and delete by sourceModule + sourceId
     const target = Array.from(favoriteCollection.state.values()).map(normalizeFavoriteRow).find(
@@ -171,7 +175,6 @@ async function onStarredChange(
     if (target) {
       const tx = favoriteCollection.delete(target.id)
       await tx.isPersisted.promise
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.favorites })
     }
   }
 }
@@ -193,10 +196,6 @@ export function initializeFavoriteCollections(db: SolidDatabase | null) {
 // React Query Hooks
 // ============================================================================
 
-const QUERY_KEYS = {
-  favorites: ['favorites'] as const,
-}
-
 export function useFavoriteInit() {
   const { db } = useSolidDatabase()
   return { db, isReady: !!db }
@@ -206,49 +205,30 @@ export function useFavoriteList(filters?: {
   search?: string
   sourceModule?: SourceModule
 }) {
-  const db = getDb()
-  return useQuery({
-    queryKey: [
-      ...QUERY_KEYS.favorites,
-      filters?.search || '',
-      filters?.sourceModule || '',
-    ],
-    queryFn: async () => {
-      if (!db) return []
-      let rows = await favoriteOps.fetchFavorites()
+  const query = useLiveQuery(favoriteCollection)
+  const data = useMemo(() => {
+    let rows = ((query.data ?? []) as FavoriteRow[]).map(normalizeFavoriteRow)
+    if (filters?.sourceModule) {
+      rows = rows.filter((row) => row.sourceModule === filters.sourceModule)
+    }
+    const term = filters?.search?.trim().toLowerCase()
+    if (term) {
+      rows = rows.filter((row) => [
+        row.searchText,
+        row.title,
+        row.snapshotContent,
+        row.snapshotAuthor,
+      ].some((value) => value?.toLowerCase().includes(term)))
+    }
+    return rows
+  }, [filters?.search, filters?.sourceModule, query.data])
 
-      // Client-side filter by sourceModule
-      if (filters?.sourceModule) {
-        rows = rows.filter((r) => r.sourceModule === filters.sourceModule)
-      }
-
-      // Client-side fuzzy search on searchText / title
-      if (filters?.search?.trim()) {
-        const q = filters.search.trim().toLowerCase()
-        rows = rows.filter(
-          (r) =>
-            r.searchText?.toLowerCase().includes(q) ||
-            r.title?.toLowerCase().includes(q) ||
-            r.snapshotContent?.toLowerCase().includes(q) ||
-            r.snapshotAuthor?.toLowerCase().includes(q)
-        )
-      }
-
-      return rows
-    },
-    enabled: !!db,
-  })
+  return { ...query, data }
 }
 
 export function useFavoriteMutations() {
-  const qc = useQueryClient()
-
   const removeFavorite = useMutation({
     mutationFn: (id: string) => favoriteOps.removeFavorite(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.favorites })
-    },
   })
-
   return { removeFavorite }
 }

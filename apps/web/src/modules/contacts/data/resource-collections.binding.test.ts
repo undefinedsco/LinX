@@ -54,4 +54,28 @@ describe('contact collection database binding', () => {
 
     expect(mocks.rebindPodCollections).toHaveBeenCalledTimes(2)
   })
+
+  it('bounds the contact collection resident window by contact name', async () => {
+    await import('./resource-collections')
+
+    expect(mocks.createPodCollection.mock.calls[0][0]).toMatchObject({
+      queryKey: ['contacts'],
+      orderBy: { column: 'name', direction: 'asc' },
+      window: {
+        limit: 100,
+        orderBy: [{ column: 'name', direction: 'asc' }],
+        maxResidentPages: 3,
+      },
+    })
+  })
+
+  it('keeps agent collection unbounded', async () => {
+    await import('./resource-collections')
+
+    expect(mocks.createPodCollection.mock.calls[1][0]).toMatchObject({
+      queryKey: ['agents'],
+      orderBy: { column: 'name', direction: 'asc' },
+    })
+    expect(mocks.createPodCollection.mock.calls[1][0]).not.toHaveProperty('window')
+  })
 })

@@ -30,6 +30,11 @@ export const contactCollection = createPodCollection<typeof contactResource, Con
   queryClient,
   getDb: getContactsDatabase,
   orderBy: { column: 'name', direction: 'asc' },
+  window: {
+    limit: 100,
+    orderBy: [{ column: 'name', direction: 'asc' }],
+    maxResidentPages: 3,
+  },
   getKey: (item) => {
     if (!item.id) throw new Error('Contact record is missing id')
     return item.id

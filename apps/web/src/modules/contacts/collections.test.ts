@@ -23,7 +23,11 @@ const mockDb = {
   select: vi.fn().mockReturnValue({
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockReturnValue({
-        execute: vi.fn().mockImplementation(() => Promise.resolve(mockSearchResults)),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockReturnValue({
+            execute: vi.fn().mockImplementation(() => Promise.resolve(mockSearchResults)),
+          }),
+        }),
       }),
       orderBy: vi.fn().mockReturnValue({
         execute: vi.fn().mockResolvedValue([]),
@@ -87,7 +91,11 @@ function resetMockDb() {
   mockDb.select.mockImplementation(() => ({
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockReturnValue({
-        execute: vi.fn().mockImplementation(() => Promise.resolve(mockSearchResults)),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockReturnValue({
+            execute: vi.fn().mockImplementation(() => Promise.resolve(mockSearchResults)),
+          }),
+        }),
       }),
       orderBy: vi.fn().mockReturnValue({
         execute: vi.fn().mockResolvedValue([]),

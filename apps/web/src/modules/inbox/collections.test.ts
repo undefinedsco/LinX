@@ -83,6 +83,28 @@ describe('findLatestApprovalByTarget', () => {
 })
 
 describe('inbox aggregate query model', () => {
+  it('bounds every Inbox collection resident window by creation time', () => {
+    const source = readFileSync('src/modules/inbox/data/collections.ts', 'utf8')
+    const collectionNames = [
+      'approvalCollection',
+      'auditCollection',
+      'inboxNotificationCollection',
+      'inputRequestCollection',
+    ]
+
+    for (const collectionName of collectionNames) {
+      expect(source).toMatch(new RegExp(
+        `export const ${collectionName} = createPodCollection[\\s\\S]*?` +
+        `window:\\s*{[\\s\\S]*?` +
+        `limit:\\s*100,[\\s\\S]*?` +
+        `orderBy:\\s*\\[\\{\\s*column:\\s*'createdAt',\\s*direction:\\s*'desc'\\s*\\}\\],[\\s\\S]*?` +
+        `maxResidentPages:\\s*3,[\\s\\S]*?` +
+        `}\\s*,[\\s\\S]*?` +
+        `getKey:`,
+      ))
+    }
+  })
+
   it('keeps subscriptions lazy while no database is bound', async () => {
     initializeInboxCollections(null)
     const subscribe = vi.spyOn(approvalCollection, 'subscribeToPod')

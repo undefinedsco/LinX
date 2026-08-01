@@ -18,6 +18,7 @@ const {
   mockDelete,
   mockFetch,
   mockSubscribeToPod,
+  mockCollectionOptions,
 } = vi.hoisted(() => ({
   mockCollectionState: new Map(),
   mockInsert: vi.fn().mockReturnValue({
@@ -31,17 +32,21 @@ const {
   }),
   mockFetch: vi.fn().mockResolvedValue([]),
   mockSubscribeToPod: vi.fn().mockResolvedValue(() => undefined),
+  mockCollectionOptions: {} as Record<string, any>,
 }))
 
 vi.mock('@/lib/data/pod-collection', () => ({
-  createPodCollection: vi.fn(() => ({
-    state: mockCollectionState,
-    insert: mockInsert,
-    update: mockUpdate,
-    delete: mockDelete,
-    fetch: mockFetch,
-    subscribeToPod: mockSubscribeToPod,
-  })),
+  createPodCollection: vi.fn((options: Record<string, any>) => {
+    Object.assign(mockCollectionOptions, options)
+    return {
+      state: mockCollectionState,
+      insert: mockInsert,
+      update: mockUpdate,
+      delete: mockDelete,
+      fetch: mockFetch,
+      subscribeToPod: mockSubscribeToPod,
+    }
+  }),
 }))
 
 vi.mock('@/providers/query-provider', () => ({
@@ -108,9 +113,7 @@ describe('favoriteHooks.onStarredChange', () => {
       expect(insertedData.snapshotContent).toBe('Last message preview')
       expect(insertedData.favoredAt).toBeInstanceOf(Date)
 
-      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ['favorites'],
-      })
+      expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
     })
 
     it('should update existing favorite when one already exists', async () => {
@@ -131,9 +134,7 @@ describe('favoriteHooks.onStarredChange', () => {
       expect(mockUpdate).toHaveBeenCalledTimes(1)
       expect(mockUpdate).toHaveBeenCalledWith('existing-fav', expect.any(Function))
 
-      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ['favorites'],
-      })
+      expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
     })
 
     it('should use sourceId as fallback title when metadata.title is missing', async () => {
@@ -161,9 +162,7 @@ describe('favoriteHooks.onStarredChange', () => {
       expect(mockDelete).toHaveBeenCalledTimes(1)
       expect(mockDelete).toHaveBeenCalledWith('fav-to-delete')
 
-      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ['favorites'],
-      })
+      expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
     })
 
     it('should do nothing if no matching favorite exists', async () => {
@@ -238,6 +237,14 @@ describe('favoriteOps', () => {
   })
 
   describe('query-model wiring', () => {
+    it('bounds the resident favorites window by favored time', () => {
+      expect(mockCollectionOptions.window).toEqual({
+        limit: 100,
+        orderBy: [{ column: 'favoredAt', direction: 'desc' }],
+        maxResidentPages: 3,
+      })
+    })
+
     it('keeps an absent database subscription lazy', async () => {
       setFavoritesDatabaseGetter(() => null)
 
@@ -258,20 +265,18 @@ describe('favoriteOps', () => {
       expect(mockSubscribeToPod).toHaveBeenCalledWith(db)
     })
 
-    it('normalizes legacy target fields after collection hydration', async () => {
-      mockFetch.mockResolvedValueOnce([{
+    it('normalizes legacy target fields through the collection projection', async () => {
+      const [legacy] = mockCollectionOptions.transformRows([{
         id: 'legacy-favorite',
         target: 'https://pod.example/report.md',
         title: 'Report',
       }])
 
-      await expect(favoriteOps.fetchFavorites()).resolves.toEqual([
-        expect.objectContaining({
-          id: 'legacy-favorite',
-          targetUri: 'https://pod.example/report.md',
-          sourceId: 'https://pod.example/report.md',
-        }),
-      ])
+      expect(legacy).toEqual(expect.objectContaining({
+        id: 'legacy-favorite',
+        targetUri: 'https://pod.example/report.md',
+        sourceId: 'https://pod.example/report.md',
+      }))
     })
   })
 })

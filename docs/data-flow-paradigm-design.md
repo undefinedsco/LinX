@@ -1,10 +1,10 @@
 # 数据流范式统一设计（local-first / 乐观 / ORM / subscribe 回流）
 
-- Status: Draft（设计 + 性能验证先行，**未写业务代码**；2026-07-22）
+- Status: Implementing（设计 + 集中契约 benchmark；更新于 2026-07-27）
 - 范围：`packages/stores/src/pod-collection.ts`（基础设施）+ 各 applet 数据层（chat/inbox/files/favorites/contacts/model-services）+ `@undefineds.co/models` 的 starred-sync（外部包，单列）
 - 目标：把"乐观更新 → ORM 持久化 → subscribe 确认回流 → 统一读法"落成**单一范式**，并把**验证下沉到基础设施层一份契约测试**，各 applet 不再各写一套。
 
-> 本文是诊断 + 设计 + 验证方案，不含实现。所有事实标 file:line；未确认项标【探针】，不伪装已确认。性能结论均有 TanStack DB / drizzle-solid 源码支撑，非假设。
+> 本文包含诊断、目标设计和已落地的集中验证。历史诊断保留原时间点；已实现项以对应测试和 benchmark 为准。
 
 ## 0. 目标范式（一句话）
 
@@ -297,3 +297,67 @@ grep 全仓 `useLiveQuery` 非测试调用点：**全量 from、无 where**。
 ---
 
 *生成方式：只读核查 `packages/stores/src/pod-collection.ts`、`@tanstack/db` 的 `collection/state.d.ts`+`index.d.ts`、`@undefineds.co/drizzle-solid` 的 `pod.d.ts`+`pod-database.d.ts`、各 applet 读法与 subscribe 接入点、models `starred-sync.js`。未改任何文件。*
+## Live Query 统一契约与 benchmark
+
+Web 端允许两种 TanStack DB 用法：
+
+- `useLiveQuery(collection)`：读取完整 collection。
+- `useLiveQuery((q) => q.from(...))`：通过 query builder 投影、过滤或关联。
+
+两种形式都由 `useLiveQuery` 启动同步。业务模块不得在首次挂载时再调用
+`startSyncImmediate()` 或 `fetch()`；用户主动重试可以调用 `fetch()`。
+
+集中回归与 benchmark 位于
+`apps/web/src/lib/data/live-query-contract.test.tsx`，运行：
+
+```bash
+yarn workspace @linx/web benchmark:live-query
+```
+
+指标定义：
+
+- `selects`：底层 hydration 查询次数，是稳定回归门禁。
+- `rowsRead`：底层读取总行数，是 IO 放大门禁。
+- `readyMs`：本机观测延迟，只用于趋势观察，不作为固定时延断言。
+- 乐观更新必须让两种 Live Query 同步看到新值，且 `selects` 不增加。
+
+2026-07-27，1,000 行本地基准：
+
+| 路径 | selects | rowsRead | 结果 |
+| --- | ---: | ---: | --- |
+| Live Query-only | 1 | 1,000 | 当前实现 |
+| Live Query + mount fetch | 2 | 2,000 | 历史重复 hydration |
+
+当前实现相对历史路径减少 50% 查询次数和 50% 读取行数。`readyMs` 受机器和
+调度影响，每次运行直接输出当次数据。
+
+## 2026-08-01: P7 bounded working set implemented
+
+Sections 4.6 and the historical matrix above describe the state before this
+implementation. P7 is now implemented for Favorites, Inbox, Contacts, and
+Symphony through `createPodCollection({ window })`:
+
+- the active page retains 100 rows and uses a stable primary sort plus `id ASC`;
+- cursor pagination replaces offset pagination;
+- at most three settled pages remain resident;
+- local and subscribed create/update/delete events reorder the active page and
+  perform one boundary backfill when membership changes;
+- resolved remote bursts commit through one TanStack synced-state `writeBatch`;
+- Contacts non-empty search uses a separate remote query and does not pollute the
+  primary resident window.
+
+The 1,000/10,000-row centralized benchmark enforces `maxRowsPerSelect <= 101`
+and `residentRows <= 300`. A real private xpod integration run with 105 contacts
+retained the Top 100 and paged the remainder. Because xpod currently caps one
+physical SELECT response at about 51 subjects, the first logical page uses two
+physical requests.
+
+Stable cursor execution depends on two upstream capabilities:
+
+- drizzle-solid `whereCursor()` permits only a sort predicate plus an `id/@id`
+  range tie-breaker; ordinary public `where()` remains unable to filter by id;
+- xpod compiles composite cursor OR filters into embedded Union branches so the
+  direct-SPARQL path does not fall back to a cold Comunica engine.
+
+Chat, Profile singletons, intentionally small Model Services registries, and raw
+Files LDP/container queries are explicit non-goals of this P7 rollout.

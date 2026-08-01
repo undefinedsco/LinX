@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const collectionRecords: Array<{
-  options: { resource: unknown; queryKey: string[]; getDb: () => unknown; orderBy?: unknown; getKey?: (item: { id?: string }) => string }
+  options: {
+    resource: unknown
+    queryKey: string[]
+    getDb: () => unknown
+    orderBy?: unknown
+    window?: unknown
+    getKey?: (item: { id?: string }) => string
+  }
   fetch: ReturnType<typeof vi.fn>
   subscribeToPod: ReturnType<typeof vi.fn>
 }> = []
@@ -49,6 +56,16 @@ describe('symphony control collections', () => {
       { column: 'createdAt', direction: 'desc' },
       { column: 'createdAt', direction: 'desc' },
       { column: 'updatedAt', direction: 'desc' },
+    ])
+    expect(collectionRecords.map((record) => record.options.window)).toEqual([
+      { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
+      { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
+      { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
+      { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
+      { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
+      { limit: 100, orderBy: [{ column: 'createdAt', direction: 'desc' }], maxResidentPages: 3 },
+      { limit: 100, orderBy: [{ column: 'createdAt', direction: 'desc' }], maxResidentPages: 3 },
+      { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
     ])
     for (const record of collectionRecords) {
       expect(record.options.getKey?.({ id: 'row.ttl' })).toBe('row.ttl')

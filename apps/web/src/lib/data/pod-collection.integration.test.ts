@@ -39,6 +39,14 @@ async function cleanup() {
   }
 }
 
+async function waitForCondition(condition: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for Pod collection state')
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}
+
 afterAll(async () => {
   if (context?.mode !== 'local-seeded-auth') {
     await cleanup()
@@ -47,6 +55,87 @@ afterAll(async () => {
 }, 20000)
 
 describe('pod-collection integration', () => {
+  it('hydrates and paginates a bounded window against real xpod', { timeout: 60000 }, async () => {
+    const { db: database, requestMetrics } = await getContext()
+    const queryClient = new QueryClient()
+    const benchmarkId = `bounded-window-${crypto.randomUUID()}`
+    const rows = Array.from({ length: 105 }, (_, index) => ({
+      id: `${benchmarkId}-${String(index).padStart(3, '0')}`,
+      name: `Bounded ${benchmarkId} ${String(index).padStart(3, '0')}`,
+      about: `https://example.test/bounded/${benchmarkId}/${index}`,
+      contactType: 'external',
+    }))
+    const created = await (database as any).insert(contactResource).values(rows).execute() as any[]
+    for (const row of created) {
+      if (typeof row?.['@id'] === 'string') createdContactSubjects.push(row['@id'])
+    }
+
+    const collection = createPodCollection({
+      resource: contactResource,
+      queryKey: ['contacts-test-bounded-window'],
+      queryClient,
+      getDb: () => database as any,
+      window: {
+        limit: 100,
+        orderBy: [{ column: 'name', direction: 'asc' }],
+        maxResidentPages: 3,
+      },
+    })
+
+    let releaseSubscription: (() => void | Promise<void>) | null = null
+    try {
+      const requestStart = requestMetrics.length
+      await collection.fetch()
+      const initialRequests = requestMetrics.slice(requestStart)
+
+      expect(collection.toArray).toHaveLength(100)
+      expect(collection.window?.hasNextPage).toBe(true)
+      expect(collection.window?.residentPages).toBe(1)
+      // xpod currently caps one physical SELECT response at about 51 subjects,
+      // so one logical Top-100 window is assembled from exactly two requests.
+      expect(initialRequests).toHaveLength(2)
+
+      const persistedRows = await (database as any).select().from(contactResource).execute() as any[]
+      const targetRow = persistedRows.find((row) => row.name === rows[104].name)
+      const targetSubject = targetRow?.['@id'] as string | undefined
+      const firstRow = collection.toArray.find((row: any) => row.name === rows[0].name) as any
+      const firstSubject = firstRow?.['@id'] as string | undefined
+      const boundaryName = rows[99].name
+      const promotedName = `A Bounded ${benchmarkId} newest`
+      expect(targetSubject).toBeTruthy()
+      expect(firstSubject).toBeTruthy()
+      expect(collection.toArray.some((row: any) => row.name === boundaryName)).toBe(true)
+
+      releaseSubscription = await collection.subscribeToPod(database as any)
+      await (database as any).updateByIri(contactResource, targetSubject, {
+        name: promotedName,
+      })
+      await collection.fetch({ refetch: true })
+      await waitForCondition(() => collection.toArray.some((row: any) => row.name === promotedName))
+      expect(collection.toArray.some((row: any) => row.name === boundaryName)).toBe(false)
+
+      await (database as any).deleteByIri(contactResource, firstSubject)
+      await collection.fetch({ refetch: true })
+      await waitForCondition(() => (
+        !collection.toArray.some((row: any) => row.name === rows[0].name)
+        && collection.toArray.some((row: any) => row.name === boundaryName)
+      ))
+      expect(collection.toArray).toHaveLength(100)
+
+      const nextRequestStart = requestMetrics.length
+      const nextPage = await collection.window?.loadNextPage()
+      const nextRequests = requestMetrics.slice(nextRequestStart)
+
+      expect(nextPage?.length).toBeGreaterThan(0)
+      expect(nextRequests).toHaveLength(1)
+      expect(collection.window?.residentPages).toBe(2)
+    } finally {
+      await releaseSubscription?.()
+      await collection.cleanup()
+      queryClient.clear()
+    }
+  })
+
   it('hydrates real rows once and serves repeated consumers from the live collection cache', { timeout: 60000 }, async () => {
     const { authenticatedFetch, db: database, podUrl, requestMetrics } = await getContext()
     const queryClient = new QueryClient()
