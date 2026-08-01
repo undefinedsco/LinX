@@ -50,6 +50,7 @@ const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
 const SIOC_HAS_MEMBER = 'http://rdfs.org/sioc/ns#has_member'
 const SIOC_CONTENT = 'http://rdfs.org/sioc/ns#content'
 const DCT_CREATED = 'http://purl.org/dc/terms/created'
+const DCT_TITLE = 'http://purl.org/dc/terms/title'
 const UDFS_MESSAGE_TYPE = 'https://undefineds.co/ns#messageType'
 const UDFS_MESSAGE_STATUS = 'https://undefineds.co/ns#messageStatus'
 const UDFS_METADATA = 'https://undefineds.co/ns#metadata'
@@ -986,12 +987,28 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     const chatIdForResource = chatResource.buildId({ id: chatId })
     const chat = await (this.db as any).findById(Chat as any, chatIdForResource)
-    if (!chat || !shouldAutoTitleChat(chat.title)) return
+    let currentTitle = chat?.title
+    if (typeof currentTitle !== 'string') {
+      // Exact ORM reads can temporarily miss an existing LDP document while
+      // its index is converging. Read the known Chat document directly before
+      // deciding whether an automatic title is allowed.
+      try {
+        const chatIri = this.buildChatUri(chatId)
+        const dataset = await getSolidDataset(resourceUrlFromIri(chatIri), { fetch: this.authFetch })
+        const chatThing = getThing(dataset, chatIri)
+        currentTitle = chatThing ? getStringNoLocale(chatThing, DCT_TITLE) ?? undefined : undefined
+      } catch (error) {
+        console.warn('[LocalStore] Failed to read Chat title directly:', error)
+        return
+      }
+    }
+    if (!shouldAutoTitleChat(currentTitle)) return
 
-    await updateExactRecord(this.db, Chat as any, chat, {
+    await updateExactRecord(this.db, Chat as any, chat ?? chatIdForResource, {
       title,
       updatedAt: new Date(),
     })
+    console.info('[LocalStore] Automatically titled Chat', { chatId, title })
     await queryClient.invalidateQueries({ queryKey: ['chats'] })
   }
 

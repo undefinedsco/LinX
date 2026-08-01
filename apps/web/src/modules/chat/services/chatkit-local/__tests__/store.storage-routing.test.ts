@@ -441,7 +441,8 @@ describe('LocalChatKitStore storage routing', () => {
       'https://node-0000.undefineds.co/alice/.data/chat/default/1970/01/01/messages.ttl',
       expect.objectContaining({ method: 'PATCH' }),
     )
-    const patchBody = String(authFetch.mock.calls[0]?.[1]?.body)
+    const patchCall = authFetch.mock.calls.find((call) => call[1]?.method === 'PATCH')
+    const patchBody = String(patchCall?.[1]?.body)
     expect(patchBody).toContain('hello \\"updated\\"\\n```ts\\nconst ok = true\\n```')
     expect(patchBody).not.toContain('"""')
   })
