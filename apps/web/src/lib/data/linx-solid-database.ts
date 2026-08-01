@@ -76,7 +76,13 @@ async function createLinxSolidDatabaseUncached(
       // SSE first: the server advertises updatesViaStreamingHttp2023 and SSE
       // connects directly without a subscription POST, while wss connections
       // fail on current deployments and leak a server-side channel per attempt.
-      preferredChannels: ['streaming-http', 'websocket'],
+      // Plain-HTTP pods (local xpod over HTTP/1.1) get no channels at all:
+      // every streaming subscription pins one browser connection, Chromium
+      // allows only six per host, and a dozen collections would starve all
+      // other Pod traffic. HTTPS deployments multiplex over HTTP/2.
+      preferredChannels: isPlainHttpPodUrl(options.podUrl)
+        ? []
+        : ['streaming-http', 'websocket'],
     },
     podUrl: normalizePodUrl(options.podUrl),
     resourcePreparation: 'best-effort',
@@ -108,6 +114,11 @@ async function createLinxSolidDatabaseUncached(
   }
 
   assertExplicitPodUrlApplied(instance, options.podUrl, 'after Pod initialization')
+
+  const effectivePodUrl = options.podUrl ?? readDialectPodUrl(instance)
+  if (isPlainHttpPodUrl(effectivePodUrl)) {
+    disableStreamingNotificationChannels(instance)
+  }
   report({ stage: 'database:init:done' })
 
   return instance
@@ -372,6 +383,25 @@ function assertExplicitPodUrlApplied(db: SolidDatabase, podUrl: string | null | 
   }
 
   throw new Error(`Selected SP Pod URL was not applied ${phase}: expected ${expected}, got ${actual ?? 'unavailable'}`)
+}
+
+function isPlainHttpPodUrl(podUrl?: string | null): boolean {
+  return typeof podUrl === 'string' && podUrl.trim().toLowerCase().startsWith('http:')
+}
+
+function readDialectPodUrl(db: SolidDatabase): string | null {
+  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
+  return typeof podUrl === 'string' ? podUrl : null
+}
+
+// NotificationsClient is created lazily on first subscribe and reads the
+// dialect channel preference at that point, so mutating the config here is
+// enough to keep plain-HTTP pods on request/response-only traffic.
+function disableStreamingNotificationChannels(db: SolidDatabase): void {
+  const dialect = (db as any).getDialect?.()
+  if (dialect?.config) {
+    dialect.config.preferredChannels = []
+  }
 }
 
 function normalizePodUrl(podUrl?: string | null): string | undefined {
