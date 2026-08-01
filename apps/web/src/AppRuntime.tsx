@@ -4,6 +4,10 @@ import { SolidDatabaseProvider } from './providers/solid-database-provider'
 import { PodCollectionsBootstrap } from './providers/pod-collections-bootstrap'
 import { TelemetryProvider } from './lib/telemetry/telemetry-context'
 import { useSessionTokenMaintenance } from './modules/login/hooks/use-session-token-maintenance'
+import {
+  cleanupExpiredLoginTransaction,
+  clearServiceLoopbackAuthState,
+} from './modules/login/login-utils'
 import { router } from './router'
 
 function SessionTokenMaintenance() {
@@ -13,6 +17,19 @@ function SessionTokenMaintenance() {
 
 export function AppRuntime() {
   const isDesktopRuntime = typeof window !== 'undefined' && Boolean(window.xpodDesktop)
+  const isAuthCallback = typeof window !== 'undefined'
+    && window.location.pathname.startsWith('/auth/callback')
+  const isService = typeof window !== 'undefined' && window.__LINX_SERVICE__ === true
+  const clearedStaleServiceSession = isService && !isAuthCallback
+    ? clearServiceLoopbackAuthState()
+    : false
+
+  // Callback processing still needs the oidc.* state/PKCE/sessionId mapping.
+  // Never run auth maintenance before AuthCallback has consumed it.
+  if (!isAuthCallback) {
+    cleanupExpiredLoginTransaction()
+  }
+
   const shouldRestoreInProvider =
     typeof window !== 'undefined'
     && window.location.protocol !== 'file:'
@@ -20,6 +37,10 @@ export function AppRuntime() {
     // loopback callbacks, and an identity provider may require interaction;
     // that iframe redirect is rejected by Chromium and leaves the app blank.
     && !isDesktopRuntime
+    // AuthCallback owns the code exchange on callback routes; restoring a
+    // previous session here would race it for the same OAuth payload.
+    && !isAuthCallback
+    && !clearedStaleServiceSession
 
   return (
     <SolidSessionProvider

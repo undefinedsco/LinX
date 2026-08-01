@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { useSession } from '@/providers/solid-session-context'
 import { useNavigate } from '@tanstack/react-router'
 import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
@@ -37,6 +37,12 @@ import {
   resolveLoginProviderSource,
 } from './provider-model'
 import { formatLoginErrorForUser } from './error-messages'
+import {
+  createInitialLoginFlowState,
+  loginFlowReducer,
+  selectLoginFlowVisibleError,
+  type LoginErrorScope,
+} from './login-flow'
 
 const LOCAL_RESTORE_TIMEOUT_MS = 5000
 function normalizeUrl(url: string): string {
@@ -58,20 +64,45 @@ function restoreStoredSolidSession(session: ReturnType<typeof useSession>['sessi
 export function useLoginController() {
   const { session, logout, sessionRequestInProgress } = useSession()
   const navigate = useNavigate()
-  const [view, setView] = useState<'default' | 'local'>('default')
 
   const {
-    state,
-    error,
+    state: legacyState,
+    error: storeError,
     storedAccount,
     preferredSpace,
-    setState,
-    setError,
+    setState: setLegacyState,
+    setError: setStoreError,
     setStoredAccount,
     setPreferredSpace,
-    loginSuccess,
-    reset,
+    loginSuccess: legacyLoginSuccess,
+    reset: legacyReset,
   } = useLoginStore()
+  const [flow, dispatchFlow] = useReducer(loginFlowReducer, legacyState, createInitialLoginFlowState)
+  const state = flow.phase
+  const setState = useCallback((nextState: typeof legacyState) => {
+    dispatchFlow({ type: 'set-phase', phase: nextState })
+    setLegacyState(nextState)
+  }, [setLegacyState])
+  const loginSuccess = useCallback((account: StoredAccount) => {
+    dispatchFlow({ type: 'set-phase', phase: 'authenticated' })
+    legacyLoginSuccess(account)
+  }, [legacyLoginSuccess])
+  const reset = useCallback(() => {
+    dispatchFlow({ type: 'reset-default' })
+    legacyReset()
+  }, [legacyReset])
+  const view = flow.view
+  const setView = useCallback((nextView: 'default' | 'local') => {
+    dispatchFlow({ type: 'set-view', view: nextView })
+  }, [])
+  const setError = useCallback((message: string | null, scope: LoginErrorScope = 'global') => {
+    if (message) {
+      dispatchFlow({ type: 'set-error', scope, message })
+    } else {
+      dispatchFlow({ type: 'clear-error' })
+    }
+    setStoreError(message)
+  }, [setStoreError])
 
   const initRef = useRef(false)
   const suppressAutoLoginRef = useRef(false)
@@ -93,10 +124,27 @@ export function useLoginController() {
     localOnboarding,
     startLocal,
   } = useProviders()
-  const [localLoginActive, setLocalLoginActive] = useState(false)
-  const [activeLocalProviderSource, setActiveLocalProviderSource] = useState<LocalLoginProviderSource>('local')
-  const [storageConflict, setStorageConflict] = useState<StorageConflict | null>(null)
-  const [connectingProvider, setConnectingProvider] = useState<ConnectingProviderInfo | null>(null)
+  const localLoginActive = flow.localLoginActive
+  const activeLocalProviderSource = flow.localProviderSource
+  const storageConflict = flow.storageConflict
+  const connectingProvider = flow.connectingProvider
+  const setLocalLoginActive = useCallback((active: boolean) => {
+    dispatchFlow({ type: 'set-local-login-active', active })
+  }, [])
+  const setActiveLocalProviderSource = useCallback((source: LocalLoginProviderSource) => {
+    dispatchFlow({ type: 'set-local-provider-source', source })
+  }, [])
+  const setStorageConflict = useCallback((conflict: StorageConflict | null) => {
+    dispatchFlow({ type: 'set-storage-conflict', conflict })
+  }, [])
+  const setConnectingProvider = useCallback((provider: ConnectingProviderInfo | null) => {
+    dispatchFlow({ type: 'set-connecting-provider', provider })
+  }, [])
+  const error = selectLoginFlowVisibleError({
+    flow,
+    storeError,
+    localOnboarding,
+  })
   const isDesktop = typeof window !== 'undefined' && Boolean(window.xpodDesktop?.auth)
   const resetDesktopAuthState = useCallback((): void => {
     desktopAuthPendingRef.current = false

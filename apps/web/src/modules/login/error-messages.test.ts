@@ -166,6 +166,18 @@ describe('formatLoginErrorForUser', () => {
       .toBe('密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。')
   })
 
+  it('explains expired Solid and DPoP credentials as a login problem', () => {
+    expect(formatLoginErrorForUser(
+      'Write failed to http://localhost:5737/alice/messages.ttl: 401 Unauthorized',
+    )).toBe('登录状态已失效。请重新登录。')
+    expect(formatLoginErrorForUser(
+      'DPoP-bound access token: "exp" claim timestamp check failed',
+    )).toBe('登录状态已失效。请重新登录。')
+    expect(formatLoginErrorForUser(
+      'Invalid SPARQL endpoint response from http://localhost:5737/alice/.data/chat/-/sparql (HTTP status 401)',
+    )).toBe('登录状态已失效。请重新登录。')
+  })
+
   it('hides Local space kind internals from service mode errors', () => {
     expect(formatLoginErrorForUser('spaceKind must be "local" or "standalone"'))
       .toBe('当前页面和已启动的空间不一致。请回到登录方式页重新进入。')

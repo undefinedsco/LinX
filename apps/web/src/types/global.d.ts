@@ -19,6 +19,7 @@ interface ApiKeyManager {
 declare global {
   interface Window {
     apiKeyManager?: ApiKeyManager
+    __LINX_SERVICE__?: boolean
   }
 }
 

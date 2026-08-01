@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Loader2, Plus, X, AlertCircle, ChevronRight, HardDrive, ArrowLeft, Link2 } from 'lucide-react'
+import { Loader2, Plus, X, AlertCircle, ChevronRight, HardDrive, ArrowLeft, Link2, ShieldAlert } from 'lucide-react'
 import { isLocalAccessHostname } from '@/lib/local-access-url'
 import { cn } from '@/lib/utils'
 import type { LoginModalProps, LoginProviderOption } from './types'
@@ -173,9 +173,20 @@ function AccountView({
   error: string | null
   onClearError: () => void
 }) {
+  const formattedError = error
+    ? formatLoginErrorForUser(error, '操作失败，请返回上一步后重试。')
+    : null
+  const isSessionExpired = formattedError === '登录状态已失效。请重新登录。'
+
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="flex-1 px-5 py-8 flex flex-col items-center justify-center gap-4">
+        {isSessionExpired ? (
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary">
+            <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
+            会话已过期
+          </div>
+        ) : null}
         <AccountAvatar
           name={storedAccount.displayName}
           avatarUrl={storedAccount.avatarUrl}
@@ -186,9 +197,14 @@ function AccountView({
           <p className="text-base font-semibold text-foreground">{storedAccount.displayName}</p>
           <p className="text-xs text-muted-foreground">{getRememberedAccountBindingLabel(storedAccount)}</p>
         </div>
+        {isSessionExpired ? (
+          <p className="max-w-[18rem] text-center text-xs leading-5 text-muted-foreground">
+            为保护空间中的数据，LinX 已暂停当前会话。重新登录后可继续使用，账号和已有数据不会丢失。
+          </p>
+        ) : null}
       </div>
 
-      <ErrorBanner error={error} onClearError={onClearError} />
+      {!isSessionExpired ? <ErrorBanner error={error} onClearError={onClearError} /> : null}
 
       <div className="px-5 pb-5 pt-2 space-y-2 shrink-0">
         <button
@@ -234,7 +250,8 @@ function ProviderSelectionView({
   const [view, setView] = useState<'main' | 'methods'>('main')
   const cloudProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'cloud')
   const localProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'local')
-  const preferredProvider = preferredSpace === 'local' ? (localProvider ?? cloudProvider) : cloudProvider
+  const standaloneProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'standalone')
+  const preferredProvider = preferredSpace === 'local' ? (localProvider ?? standaloneProvider) : cloudProvider
 
   if (view === 'methods') {
     return (

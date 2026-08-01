@@ -4,6 +4,30 @@ const INTERNAL_ERROR_PATTERN =
 const STACK_OR_PATH_PATTERN = /(?:\/Users\/|\\Users\\|\.tsx?:\d+|\.jsx?:\d+|Require stack|at\s+\w+[\w.]*\s*\()/i
 const RAW_ADDRESS_PATTERN = /(?:https?:\/\/|file:\/\/|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i
 
+export function isSolidAuthorizationExpired(error: unknown): boolean {
+  const message = safeDecodeURIComponent(extractErrorMessage(error)).trim().toLowerCase()
+  if (!message) return false
+
+  // Provider credentials belong to model-service configuration and must not
+  // invalidate the user's Solid session.
+  if (/api key|invalid key|missing key|incorrect api key|invalid_api_key/.test(message)) {
+    return false
+  }
+
+  if (
+    /dpop[\s\S]*(?:access token|["']?exp["']?\s+claim|timestamp check failed|expired)/
+      .test(message)
+  ) {
+    return true
+  }
+
+  const hasUnauthorizedStatus = /\b401\b[\s:-]*(?:unauthorized)?|unauthorized/.test(message)
+  const hasSolidOperationContext =
+    /solid|pod|sparql endpoint|querycollection|podcollection|authenticated fetch|access token|webid|(?:write|read|patch|delete) failed(?:\s+to)?\s+https?:\/\//.test(message)
+
+  return hasUnauthorizedStatus && hasSolidOperationContext
+}
+
 export function formatErrorForUser(error: unknown, fallback = '操作失败，请重试。'): string {
   const raw = extractErrorMessage(error)
   if (!raw) {
@@ -12,6 +36,10 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
 
   const message = safeDecodeURIComponent(raw).trim()
   const normalized = message.toLowerCase()
+
+  if (isSolidAuthorizationExpired(error)) {
+    return '登录状态已失效。请重新登录。'
+  }
 
   if (/email_unverified|verify_required/.test(normalized)) {
     return '请先验证邮箱。打开注册邮箱里的验证邮件后，再回到 LinX 重试。'
@@ -59,7 +87,11 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
     return '密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。'
   }
 
-  if (/ai error|anthropic error|openai error|model error|模型服务/.test(normalized)) {
+  if (/当前模型服务已停用|model service.*disabled/.test(normalized)) {
+    return '当前模型服务已停用，请重新选择模型。'
+  }
+
+  if (/ai error|anthropic error|openai error|model error|model service|模型服务/.test(normalized)) {
     return '模型服务暂时不可用。请检查密钥、服务地址或网络后重试。'
   }
 

@@ -13,6 +13,7 @@ const loginMock = vi.fn()
 const fetchMock = vi.fn()
 const openAuthorizationWindowMock = vi.fn()
 const openEmbeddedAuthorizationMock = vi.fn()
+const openExternalMock = vi.fn()
 const prepareLoopbackRedirectMock = vi.fn()
 const resolveDesktopOidcIssuerMock = vi.fn()
 const sessionInfoMock: { current: { isLoggedIn: boolean } } = {
@@ -174,6 +175,7 @@ describe('useOidcConnect', () => {
     prepareLoopbackRedirectMock.mockResolvedValue('http://127.0.0.1:43123/auth/callback')
     openAuthorizationWindowMock.mockResolvedValue(undefined)
     openEmbeddedAuthorizationMock.mockResolvedValue(undefined)
+    openExternalMock.mockResolvedValue(undefined)
     resolveDesktopOidcIssuerMock.mockReset()
     window.xpodDesktop = {
       auth: {
@@ -184,6 +186,9 @@ describe('useOidcConnect', () => {
         consumePendingRedirect: vi.fn(),
         onEmbeddedAuthorizationState: vi.fn(() => () => {}),
         onRedirect: vi.fn(() => () => {}),
+      },
+      app: {
+        openExternal: openExternalMock,
       },
     } as any
   })
@@ -690,5 +695,53 @@ describe('useOidcConnect', () => {
     })
     expect(loginMock).toHaveBeenCalledTimes(2)
     clearStoredSolidSessionSpy.mockRestore()
+  })
+
+  it('falls back to the system browser when embedded authorization fails', async () => {
+    openEmbeddedAuthorizationMock.mockRejectedValueOnce(new Error('embedded failed'))
+    loginMock.mockImplementationOnce(async (options) => {
+      await options.handleRedirect('https://idp.example.com/authorize')
+      return new Promise(() => {})
+    })
+    render(<EmbeddedTestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect embedded' }))
+
+    await waitFor(() => {
+      expect(openExternalMock).toHaveBeenCalledWith(
+        'https://idp.example.com/authorize?provisionCode=pc-123',
+      )
+    })
+  })
+
+  it('rejects browser login setup when Inrupt resolves but the page does not leave the app', async () => {
+    vi.useFakeTimers()
+    try {
+      delete window.xpodDesktop
+      loginMock.mockResolvedValueOnce(undefined)
+      render(<ErrorHandledTestComponent />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'connect safely' }))
+
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(loginMock).toHaveBeenCalledTimes(1)
+      expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+      expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not silently accept a duplicate login while the first setup is pending', async () => {
+    loginMock.mockImplementationOnce(() => new Promise<void>(() => {}))
+    render(<TestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => expect(loginMock).toHaveBeenCalledTimes(1))
   })
 })

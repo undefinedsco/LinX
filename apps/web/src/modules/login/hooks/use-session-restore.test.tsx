@@ -181,6 +181,58 @@ describe('useSessionRestore', () => {
     expect(clearStoredSolidSessionMock).not.toHaveBeenCalled()
   })
 
+  it('fails stored web session restore only after the provider timeout', async () => {
+    vi.useFakeTimers()
+    delete window.xpodDesktop
+    window.history.replaceState({}, '', '/chat')
+    getStoredSolidSessionMock.mockReturnValue({
+      sessionId: 'linx-session',
+      issuerUrl: 'http://localhost:5737',
+      redirectUrl: 'http://localhost:5173/auth/callback',
+      clientId: 'dynamic-client',
+      tokenType: null,
+      webId: null,
+    })
+
+    render(<TestComponent />)
+
+    await act(async () => {})
+    expect(screen.getByTestId('restore-failed').textContent).toBe('false')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000)
+    })
+
+    expect(screen.getByTestId('restore-failed').textContent).toBe('true')
+    expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('restore-complete').textContent).toBe('false')
+  })
+
+  it('fails a web restore that remains in progress instead of loading forever', async () => {
+    vi.useFakeTimers()
+    delete window.xpodDesktop
+    getStoredSolidSessionMock.mockReturnValue({
+      sessionId: 'linx-session',
+      issuerUrl: 'http://localhost:5737',
+      redirectUrl: 'http://127.0.0.1:5173/auth/callback',
+      clientId: 'http://127.0.0.1:5173/client',
+      tokenType: 'Bearer',
+    })
+    sessionState.sessionRequestInProgress = true
+
+    render(<TestComponent />)
+    await act(async () => {})
+
+    expect(screen.getByTestId('restore-failed').textContent).toBe('false')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000)
+    })
+
+    expect(screen.getByTestId('restore-failed').textContent).toBe('true')
+    expect(screen.getByTestId('restore-complete').textContent).toBe('false')
+  })
+
   it('keeps web callback restore pending briefly after SolidSessionProvider finishes without login', async () => {
     vi.useFakeTimers()
     delete window.xpodDesktop
