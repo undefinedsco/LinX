@@ -8,7 +8,6 @@ export type FilesQueryInvalidationRoots = {
   detail: QueryKey
   accessBasics: QueryKey
   metaSidecar: QueryKey
-  structuredViewMetadata: QueryKey
   rawText: QueryKey
   blob: QueryKey
   structuredCellProposals: QueryKey
@@ -106,7 +105,6 @@ export function createFilesResourceCacheInvalidationCollection(
       client.invalidateQueries({ queryKey: queryKeys.blob }),
       client.invalidateQueries({ queryKey: queryKeys.accessBasics }),
       client.invalidateQueries({ queryKey: queryKeys.metaSidecar }),
-      client.invalidateQueries({ queryKey: queryKeys.structuredViewMetadata }),
       client.invalidateQueries({ queryKey: queryKeys.vocabDiscovery }),
     ])
   }

@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { ChevronDown, FileCog, Shield, ExternalLink, InfoIcon, X } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { FileCog, Shield, ExternalLink, InfoIcon, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -100,10 +100,22 @@ export function ResourceMetaSidecarContent({
 
   return (
     <div className="space-y-3">
-      {showUserMetadata && content.userRows.length > 0 ? (
+      {content.fileRows.length > 0 ? (
+        <section aria-label="文件信息">
+          <p className="mb-1.5 text-[11px] font-medium text-foreground/80">文件</p>
+          <MetaRows rows={content.fileRows} compact />
+        </section>
+      ) : null}
+      {showUserMetadata ? (
         <section aria-label="用户元数据">
           <p className="mb-1.5 text-[11px] font-medium text-foreground/80">元数据</p>
-          <MetaRows rows={content.userRows} compact />
+          {content.userRows.length > 0 ? (
+            <MetaRows rows={content.userRows} compact />
+          ) : (
+            <p className="rounded-md bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+              暂无标题、标签等元数据。
+            </p>
+          )}
         </section>
       ) : null}
       {content.showSemanticRows ? (
@@ -120,7 +132,7 @@ export function ResourceMetaSidecarContent({
       ) : null}
       {content.rawPanel?.kind === 'notice' ? <SidecarRawPanel panel={content.rawPanel} /> : null}
       <details className="rounded-md border border-border/30 bg-muted/10">
-        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">技术信息</summary>
+        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">.meta 原始内容</summary>
         <div className="space-y-3 border-t border-border/20 p-3">
           {content.showFolderRows ? (
             <section>
@@ -136,50 +148,6 @@ export function ResourceMetaSidecarContent({
   )
 }
 
-export function ResourceMetaTail({
-  id = 'files-file-meta-tail',
-  content,
-  children,
-}: {
-  id?: string
-  content: ResourceMetaSidecarContentModel
-  children?: ReactNode
-}) {
-  const [expanded, setExpanded] = useState(true)
-
-  return (
-    <section id={id} className="border-t border-border/40 bg-background px-8 py-5" aria-label="文件 meta">
-      <div className="mx-auto flex w-full max-w-[800px] items-center justify-between border-b border-border/25 pb-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
-          <InfoIcon className="h-4 w-4" />
-          Info
-        </div>
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-label={expanded ? '收起 Info' : '展开 Info'}
-          title={expanded ? '收起 Info' : '展开 Info'}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
-          data-resource-meta-tail-toggle="true"
-          onClick={() => setExpanded((current) => !current)}
-        >
-          <ChevronDown className={expanded ? 'h-4 w-4' : 'h-4 w-4 -rotate-90'} aria-hidden="true" />
-        </button>
-      </div>
-      {expanded ? (
-        <div className="mx-auto mt-3 w-full max-w-[800px] space-y-3">
-          <div className="border-b border-border/20 pb-3">
-            <p className="mb-1.5 text-[11px] font-medium text-foreground/80">文件</p>
-            <MetaRows rows={content.fileRows} compact />
-          </div>
-          {children}
-          <ResourceMetaSidecarContent content={content} showUserMetadata={false} />
-        </div>
-      ) : null}
-    </section>
-  )
-}
-
 export function ResourceMetaDrawer({
   file,
   target,
@@ -189,6 +157,7 @@ export function ResourceMetaDrawer({
   children,
   variant = 'aside',
   className,
+  showUserMetadata = true,
 }: {
   file: FilesDetail
   target: Pick<FilesEntry, 'uri' | 'kind'>
@@ -198,6 +167,7 @@ export function ResourceMetaDrawer({
   children?: ReactNode
   variant?: 'aside' | 'embedded'
   className?: string
+  showUserMetadata?: boolean
 }) {
   const isOpen = open ?? defaultOpen
   const { metaQuery } = useResourceMetaDrawerController({ open: isOpen, target })
@@ -219,7 +189,7 @@ export function ResourceMetaDrawer({
       <ScrollArea className="flex-1">
         <div className="p-4">
           {children}
-          <ResourceMetaSidecarContent content={content} />
+          <ResourceMetaSidecarContent content={content} showUserMetadata={showUserMetadata} />
         </div>
       </ScrollArea>
     </>
@@ -403,7 +373,7 @@ export function AccessPolicyDialog({
           </div>
           <details className="rounded-md border border-border/40 bg-muted/10">
             <summary className="cursor-pointer px-3 py-2 font-medium text-muted-foreground">
-              技术信息
+              来源详情
             </summary>
             <div className="grid gap-4 border-t border-border/20 p-3">
               <div>

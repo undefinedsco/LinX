@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { ExternalLink, Info, X } from 'lucide-react'
 import {
   type StructuredSubjectPeek,
@@ -121,6 +121,15 @@ export function StructuredSubjectPeekDrawer({
   onClose: () => void
   children: ReactNode
 }) {
+  useEffect(() => {
+    if (!peek) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [peek, onClose])
+
   if (!peek) return null
 
   const drawerChrome = projectStructuredSubjectPeekDrawerChrome(peek)
@@ -129,6 +138,12 @@ export function StructuredSubjectPeekDrawer({
       aria-label={drawerChrome.drawerAriaLabel}
       data-structured-subject-peek="true"
       className="absolute right-3 top-3 z-30 flex max-h-[calc(100%-24px)] w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-xl border border-border/50 bg-background shadow-lg"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation()
+          onClose()
+        }
+      }}
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-border/40 px-3 py-2">
         {drawerChrome.iconKind === 'external-link' ? <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" /> : <Info className="h-3.5 w-3.5 text-muted-foreground" />}

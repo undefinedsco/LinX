@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import {
+  FileDrawerMetadata,
   SourceLinkedCardDrawerMetadata,
 } from './FileDetailMetadataPanels'
 import {
@@ -39,7 +40,7 @@ const TABS: { value: FileDetailTab; label: string; icon: typeof Eye }[] = [
   { value: 'lineage', label: '来源', icon: GitBranch },
 ]
 
-function ResourceLayoutTitle({ slot, name }: { slot: HTMLElement; name: string }) {
+function ResourceLayoutTitle({ slot, name, subtitle }: { slot: HTMLElement; name: string; subtitle?: string }) {
   useLayoutEffect(() => {
     const fallback = slot.querySelector<HTMLElement>('[data-default-micro-app-title="true"]')
     if (fallback) fallback.hidden = true
@@ -48,7 +49,14 @@ function ResourceLayoutTitle({ slot, name }: { slot: HTMLElement; name: string }
     }
   }, [slot])
 
-  return <h3 data-resource-title="true" className="max-w-[42vw] truncate text-sm font-medium" title={name}>{name}</h3>
+  return (
+    <div data-resource-title="true" className="min-w-0 max-w-[42vw]">
+      <h3 className="truncate text-sm font-medium" title={name}>{name}</h3>
+      {subtitle ? (
+        <p className="truncate text-[11px] leading-tight text-muted-foreground" title={subtitle}>{subtitle}</p>
+      ) : null}
+    </div>
+  )
 }
 
 // ============================================================================
@@ -62,6 +70,7 @@ export function FileDetailPane() {
     activeDetailTab,
     closeMetaDrawer,
     consumeRequestedSidecarAction,
+    detailChrome,
     detailScrollAreaRef,
     emptyState,
     file,
@@ -79,8 +88,7 @@ export function FileDetailPane() {
     retryDetail,
     selectedFileId,
     setDetailTab,
-    showHeadSidecarActions,
-    showMetaDrawer,
+    showFileDrawerMetadata,
     showSourceLinkedDrawerMetadata,
     showTabs,
     sidecarOwnerTarget,
@@ -104,10 +112,27 @@ export function FileDetailPane() {
   ])
 
   if (emptyState || !file || !selectedFileId || !sidecarOwnerTarget) {
+    if (isLoading && !detailErrorState) {
+      return (
+        <div role="status" aria-label="正在读取文件详情" className="flex h-full flex-col animate-pulse motion-reduce:animate-none">
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/40 px-5">
+            <span className="h-5 w-14 rounded-full bg-muted-foreground/15" />
+            <span className="h-5 w-14 rounded-full bg-muted-foreground/10" />
+          </div>
+          <div className="flex flex-col gap-3 px-5 py-6">
+            <span className="h-2.5 w-11/12 rounded-full bg-muted-foreground/10" />
+            <span className="h-2.5 w-4/5 rounded-full bg-muted-foreground/10" />
+            <span className="h-2.5 w-3/5 rounded-full bg-muted-foreground/10" />
+            <span className="h-2.5 w-2/5 rounded-full bg-muted-foreground/10" />
+          </div>
+        </div>
+      )
+    }
+
     return (
       <FilesEmptyState
-        title={detailErrorState?.title ?? (isLoading ? '正在读取文件详情' : '选择一个文件查看详情')}
-        description={detailErrorState?.description ?? (isLoading ? '正在从当前空间读取文件。' : '从左侧资源树选择一个文件。')}
+        title={detailErrorState?.title ?? '选择一个文件查看详情'}
+        description={detailErrorState?.description ?? '从左侧资源树选择一个文件。'}
         action={detailErrorState ? (
           <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={retryDetail}>
             重新读取
@@ -119,7 +144,9 @@ export function FileDetailPane() {
 
   const metaDrawerChildren = showSourceLinkedDrawerMetadata
     ? <SourceLinkedCardDrawerMetadata file={file} />
-    : null
+    : showFileDrawerMetadata
+      ? <FileDrawerMetadata file={file} />
+      : null
 
   const titleSlot = document.querySelector<HTMLElement>('[data-micro-app-title-slot="true"]')
 
@@ -168,13 +195,11 @@ export function FileDetailPane() {
             <FolderOpen className="mr-2 h-3.5 w-3.5" />
             进入所在容器
           </DropdownMenuItem>
-          {showHeadSidecarActions ? (
-            <ResourceSidecarMenuItems
-              file={file}
-              onMeta={openMetaDrawer}
-              onAccess={() => setAccessDialogOpen(true)}
-            />
-          ) : null}
+          <ResourceSidecarMenuItems
+            file={file}
+            onMeta={openMetaDrawer}
+            onAccess={() => setAccessDialogOpen(true)}
+          />
           {resourceActions.map((action) => action.id === 'download' ? (
             <DropdownMenuItem key={action.id} asChild>
               <a href={action.href} download={action.downloadName} aria-label={`${action.label} ${action.downloadName}`}>
@@ -203,13 +228,16 @@ export function FileDetailPane() {
         />
       ) : null}
       {titleSlot ? createPortal(
-        <ResourceLayoutTitle slot={titleSlot} name={file.name} />,
+        <ResourceLayoutTitle slot={titleSlot} name={file.name} subtitle={detailChrome?.subtitle} />,
         titleSlot,
       ) : null}
       {!titleSlot ? (
         <div aria-label="文件详情 head" className="flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 px-4 py-1.5">
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-foreground">{file.name}</p>
+            {detailChrome?.subtitle ? (
+              <p className="truncate text-[11px] leading-tight text-muted-foreground" title={detailChrome.subtitle}>{detailChrome.subtitle}</p>
+            ) : null}
           </div>
           {detailActions}
         </div>
@@ -253,17 +281,23 @@ export function FileDetailPane() {
             )}
           </ScrollArea>
         </div>
-        {showMetaDrawer && !isXlViewport ? (
+        {!isXlViewport ? (
           <ResourceMetaDrawer
             file={file}
             target={sidecarOwnerTarget}
             open={metaDrawerOpen}
             onClose={closeMetaDrawer}
+            showUserMetadata={!showFileDrawerMetadata}
           >
             {metaDrawerChildren}
           </ResourceMetaDrawer>
         ) : null}
       </div>
+      {detailChrome?.footer ? (
+        <div aria-label="资源状态条" className="flex h-7 shrink-0 items-center border-t border-border/40 px-4">
+          <p className="truncate text-[11px] text-muted-foreground" title={detailChrome.footer}>{detailChrome.footer}</p>
+        </div>
+      ) : null}
     </div>
   )
 }

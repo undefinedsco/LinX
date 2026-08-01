@@ -33,7 +33,6 @@ export function FolderDetailPreview({
     childActionMenu,
     collectionChrome,
     contentState,
-    folderPathLabel,
     sort,
     sortedChildren,
     sortedCollectionRows,
@@ -72,7 +71,6 @@ export function FolderDetailPreview({
       onDragLeave={folderUpload.handleUploadDragLeave}
       onDrop={folderUpload.handleUploadDrop}
     >
-      <p className="truncate text-xs text-muted-foreground" title={folderPathLabel}>{folderPathLabel}</p>
       <ResourceViewBar
         ariaLabel="文件夹视图"
         views={viewModeOptions.map((option) => ({
@@ -213,6 +211,7 @@ export function FolderDetailPreview({
               actionMenu={childActionMenu}
               collectionChrome={collectionChrome}
               onSortKey={setSortKey}
+              onAdd={() => folderOperation.openOperation({ type: 'create-markdown' })}
               onSelect={folderSelection.selectChild}
               onKeyboardSelect={folderSelection.selectChildFromKeyboard}
               onContextMenuSelect={folderSelection.prepareChildContextMenuSelection}

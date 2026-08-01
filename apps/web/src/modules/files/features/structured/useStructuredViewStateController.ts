@@ -40,6 +40,8 @@ export function useStructuredViewStateController({
 }) {
   const viewMode = useFilesStore((state) => state.structuredViewMode)
   const setStructuredViewMode = useFilesStore((state) => state.setStructuredViewMode)
+  const openViews = useFilesStore((state) => state.structuredOpenViews)
+  const closeStructuredView = useFilesStore((state) => state.closeStructuredView)
   const classScope = useFilesStore((state) => state.structuredClassScope)
   const setStructuredClassScope = useFilesStore((state) => state.setStructuredClassScope)
   const structuredSearchText = useFilesStore((state) => state.structuredSearchText)
@@ -106,6 +108,7 @@ export function useStructuredViewStateController({
   const currentViewMetadata = useMemo<StructuredViewMetadata>(() => ({
     documentUri: file.uri,
     viewMode,
+    openViews,
     classScope: effectiveClassScope,
     searchText: structuredSearchText,
     sortKey: structuredSortKey,
@@ -129,6 +132,7 @@ export function useStructuredViewStateController({
     hiddenPredicates,
     kanbanGroupPredicate,
     kanbanOrder,
+    openViews,
     persistedKanbanBoard,
     structuredSearchText,
     structuredSortDirection,
@@ -158,6 +162,10 @@ export function useStructuredViewStateController({
     markLocalViewMetadataChange()
     setStructuredViewMode(mode)
   }, [markLocalViewMetadataChange, setStructuredViewMode])
+  const closeStructuredViewFromUi = useCallback((mode: StructuredResourceViewMode) => {
+    markLocalViewMetadataChange()
+    closeStructuredView(mode)
+  }, [closeStructuredView, markLocalViewMetadataChange])
   const setStructuredClassScopeFromUi = useCallback((className: string | null) => {
     markLocalViewMetadataChange()
     setStructuredClassScope(className)
@@ -234,12 +242,14 @@ export function useStructuredViewStateController({
     addWhiteboardSubjectFromUi,
     classScope,
     clearWhiteboardSubjectsFromUi,
+    closeStructuredViewFromUi,
     columnSizing,
     effectiveClassScope,
     hiddenPredicates,
     kanbanGroupPredicate,
     kanbanOrder,
     kanbanBoard,
+    openViews,
     removeWhiteboardSubjectFromUi,
     setKanbanColumnOrderFromUi,
     setKanbanBoardFromUi,

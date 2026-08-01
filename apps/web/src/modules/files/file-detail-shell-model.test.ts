@@ -39,7 +39,7 @@ describe('file detail shell model', () => {
     expect(modelSource).not.toContain("from '../../store'")
   })
 
-  it('projects editable file chrome without tabs or inline sidecar drawer', () => {
+  it('projects editable file chrome with drawer metadata instead of tabs', () => {
     const state = projectFileDetailShellState({
       detailTab: 'metadata',
       file: filesDetail(),
@@ -49,8 +49,7 @@ describe('file detail shell model', () => {
     expect(state).toMatchObject({
       activeDetailTab: 'preview',
       openMode: 'editable-file-sheet',
-      showHeadSidecarActions: false,
-      showMetaDrawer: false,
+      showFileDrawerMetadata: true,
       showSourceLinkedDrawerMetadata: false,
       showTabs: false,
     })
@@ -86,14 +85,12 @@ describe('file detail shell model', () => {
     expect(structuredState).toMatchObject({
       activeDetailTab: 'lineage',
       openMode: 'structured-data-table',
-      showHeadSidecarActions: true,
-      showMetaDrawer: true,
+      showFileDrawerMetadata: false,
       showTabs: false,
     })
     expect(vocabState).toMatchObject({
       openMode: 'locked-vocab-table',
-      showHeadSidecarActions: true,
-      showMetaDrawer: true,
+      showFileDrawerMetadata: false,
       showTabs: false,
     })
   })
@@ -113,8 +110,7 @@ describe('file detail shell model', () => {
     expect(state).toMatchObject({
       activeDetailTab: 'preview',
       openMode: 'source-linked-card-preview',
-      showHeadSidecarActions: true,
-      showMetaDrawer: true,
+      showFileDrawerMetadata: false,
       showSourceLinkedDrawerMetadata: true,
       showTabs: true,
     })
@@ -153,8 +149,7 @@ describe('file detail shell model', () => {
 
     expect(state).toMatchObject({
       openMode: 'sidecar-detail',
-      showHeadSidecarActions: true,
-      showMetaDrawer: true,
+      showFileDrawerMetadata: false,
       showTabs: true,
     })
     expect(state.sidecarOwnerTarget).toEqual({

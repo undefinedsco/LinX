@@ -19,6 +19,7 @@ import { shouldRequestEditableSheetForStructuredSubjectTarget } from '../domain/
 import { parseTreeNodeId } from '../domain/resource/tree-model'
 import {
   DEFAULT_STRUCTURED_VIEW_CONFIG,
+  normalizeStructuredOpenViews,
   normalizeStructuredViewConfig,
   normalizeStructuredWhiteboardLayouts,
   type StructuredKanbanBoardMetadataV1,
@@ -130,7 +131,6 @@ interface FilesStore {
   // Tree navigation
   selectedTreeNodeId: string | null
   expandedTreeNodeIds: Set<string>
-  resourceRailCollapsed: boolean
   folderHistory: FolderHistoryEntry[]
 
   // File list
@@ -146,9 +146,11 @@ interface FilesStore {
   // Detail pane
   detailTab: FileDetailTab
   editableFileSheetOpenRequestUri: string | null
+  editableFileOpenRequestMode: 'inline' | 'modal'
   sidecarActionRequest: FilesSidecarActionRequest | null
   metaSidebarOpen: boolean
   structuredViewMode: StructuredResourceViewMode
+  structuredOpenViews: StructuredResourceViewMode[]
   structuredClassScope: string | null
   structuredSearchText: string
   structuredSortKey: string | null
@@ -170,7 +172,6 @@ interface FilesStore {
   // Actions: tree
   selectTreeNode: (id: string | null, detailResourceUri?: string | null) => void
   toggleTreeNode: (id: string) => void
-  toggleResourceRail: () => void
   enterFolder: (input: { treeNodeId: string; containerUri: string; scrollKey?: string | null }) => void
   goBackFolder: () => void
   clearFolderHistory: () => void
@@ -194,10 +195,12 @@ interface FilesStore {
   setDetailTab: (tab: FileDetailTab) => void
   setMetaSidebarOpen: (open: boolean) => void
   requestEditableFileSheetOpen: (uri: string) => void
+  requestEditableFileInlineEdit: (uri: string) => void
   consumeEditableFileSheetOpenRequest: (uri: string) => void
   requestSidecarAction: (request: FilesSidecarActionRequest) => void
   consumeSidecarActionRequest: (uri: string, action: FilesSidecarAction) => void
   setStructuredViewMode: (mode: StructuredResourceViewMode) => void
+  closeStructuredView: (mode: StructuredResourceViewMode) => void
   setStructuredClassScope: (className: string | null) => void
   setStructuredSearchText: (searchText: string) => void
   setStructuredSortKey: (sortKey: string) => void
@@ -267,6 +270,7 @@ function structuredConfigFromState(state: FilesStore): StructuredViewConfig {
   const documentUri = state.selectedFileId ?? ''
   return {
     viewMode: state.structuredViewMode,
+    openViews: state.structuredOpenViews,
     classScope: state.structuredClassScope,
     searchText: state.structuredSearchText,
     sortKey: state.structuredSortKey,
@@ -299,11 +303,12 @@ function updateStructuredViewConfig(
 function structuredSelectionState(
   state: FilesStore,
   documentUri: string | null,
-): Pick<FilesStore, 'structuredViewMode' | 'structuredClassScope' | 'structuredSearchText' | 'structuredSortKey' | 'structuredSortDirection' | 'structuredHiddenPredicates' | 'structuredKanbanGroupPredicate'> {
+): Pick<FilesStore, 'structuredViewMode' | 'structuredOpenViews' | 'structuredClassScope' | 'structuredSearchText' | 'structuredSortKey' | 'structuredSortDirection' | 'structuredHiddenPredicates' | 'structuredKanbanGroupPredicate'> {
   const config = documentUri ? state.structuredViewConfigsByDocument[documentUri] : null
   const resolved = config ?? DEFAULT_STRUCTURED_VIEW_CONFIG
   return {
     structuredViewMode: resolved.viewMode,
+    structuredOpenViews: resolved.openViews,
     structuredClassScope: resolved.classScope,
     structuredSearchText: resolved.searchText,
     structuredSortKey: resolved.sortKey,
@@ -321,7 +326,6 @@ export const useFilesStore = create<FilesStore>((set) => ({
   // Tree navigation
   selectedTreeNodeId: 'all',
   expandedTreeNodeIds: new Set<string>(),
-  resourceRailCollapsed: false,
   folderHistory: [],
 
   // File list
@@ -337,9 +341,11 @@ export const useFilesStore = create<FilesStore>((set) => ({
   // Detail pane
   detailTab: 'preview',
   editableFileSheetOpenRequestUri: null,
+  editableFileOpenRequestMode: 'inline',
   sidecarActionRequest: null,
   metaSidebarOpen: false,
   structuredViewMode: 'table',
+  structuredOpenViews: [],
   structuredClassScope: null,
   structuredSearchText: '',
   structuredSortKey: null,
@@ -377,6 +383,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
         detailTab: 'preview',
         editableFileSheetOpenRequestUri: null,
         structuredViewMode: 'table',
+        structuredOpenViews: [],
         structuredClassScope: null,
         structuredSearchText: '',
         structuredSortKey: null,
@@ -395,8 +402,6 @@ export const useFilesStore = create<FilesStore>((set) => ({
       else next.add(id)
       return { expandedTreeNodeIds: next }
     }),
-  toggleResourceRail: () =>
-    set((state) => ({ resourceRailCollapsed: !state.resourceRailCollapsed })),
   enterFolder: ({ treeNodeId, containerUri, scrollKey = null }) =>
     set((state) => ({
       folderHistory: pushFolderHistory(state.folderHistory, {
@@ -487,6 +492,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
         ? state.editableFileSheetOpenRequestUri
         : null,
       structuredViewMode: viewMode,
+      structuredOpenViews: state.structuredViewConfigsByDocument[targetUri]?.openViews ?? [],
       structuredClassScope: classScope,
       structuredSearchText: searchText,
       structuredSortKey: sortKey,
@@ -525,7 +531,8 @@ export const useFilesStore = create<FilesStore>((set) => ({
   // Actions: detail
   setDetailTab: (detailTab) => set({ detailTab }),
   setMetaSidebarOpen: (metaSidebarOpen) => set({ metaSidebarOpen }),
-  requestEditableFileSheetOpen: (editableFileSheetOpenRequestUri) => set({ editableFileSheetOpenRequestUri }),
+  requestEditableFileSheetOpen: (editableFileSheetOpenRequestUri) => set({ editableFileSheetOpenRequestUri, editableFileOpenRequestMode: 'modal' }),
+  requestEditableFileInlineEdit: (editableFileSheetOpenRequestUri) => set({ editableFileSheetOpenRequestUri, editableFileOpenRequestMode: 'inline' }),
   consumeEditableFileSheetOpenRequest: (uri) =>
     set((state) => state.editableFileSheetOpenRequestUri === uri
       ? { editableFileSheetOpenRequestUri: null }
@@ -536,10 +543,29 @@ export const useFilesStore = create<FilesStore>((set) => ({
       ? { sidecarActionRequest: null }
       : {}),
   setStructuredViewMode: (structuredViewMode) =>
-    set((state) => ({
-      structuredViewMode,
-      structuredViewConfigsByDocument: updateStructuredViewConfig(state, state.selectedFileId, { viewMode: structuredViewMode }),
-    })),
+    set((state) => {
+      const structuredOpenViews = structuredViewMode === 'table' || state.structuredOpenViews.includes(structuredViewMode)
+        ? state.structuredOpenViews
+        : [...state.structuredOpenViews, structuredViewMode]
+      return {
+        structuredViewMode,
+        structuredOpenViews,
+        structuredViewConfigsByDocument: updateStructuredViewConfig(state, state.selectedFileId, { viewMode: structuredViewMode, openViews: structuredOpenViews }),
+      }
+    }),
+  closeStructuredView: (mode) =>
+    set((state) => {
+      if (mode === 'table' || !state.structuredOpenViews.includes(mode)) return {}
+      const structuredOpenViews = state.structuredOpenViews.filter((openView) => openView !== mode)
+      const structuredViewMode = state.structuredViewMode === mode
+        ? structuredOpenViews[structuredOpenViews.length - 1] ?? 'table'
+        : state.structuredViewMode
+      return {
+        structuredViewMode,
+        structuredOpenViews,
+        structuredViewConfigsByDocument: updateStructuredViewConfig(state, state.selectedFileId, { viewMode: structuredViewMode, openViews: structuredOpenViews }),
+      }
+    }),
   setStructuredClassScope: (structuredClassScope) =>
     set((state) => ({
       structuredClassScope,
@@ -599,8 +625,10 @@ export const useFilesStore = create<FilesStore>((set) => ({
     }),
   hydrateStructuredViewMetadata: (metadata, whiteboardLayoutKey) =>
     set((state) => {
+      const openViews = normalizeStructuredOpenViews(metadata.openViews, metadata.viewMode)
       const nextConfig: StructuredViewConfig = {
         viewMode: metadata.viewMode,
+        openViews,
         classScope: metadata.classScope,
         searchText: metadata.searchText,
         sortKey: metadata.sortKey,
@@ -624,6 +652,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
         ...(state.selectedFileId === metadata.documentUri
           ? {
               structuredViewMode: metadata.viewMode,
+              structuredOpenViews: openViews,
               structuredClassScope: metadata.classScope,
               structuredSearchText: metadata.searchText,
               structuredSortKey: metadata.sortKey,
@@ -804,6 +833,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
         selectedFileId: context.documentUri,
         detailTab: 'preview',
         structuredViewMode: context.viewMode,
+        structuredOpenViews: state.structuredViewConfigsByDocument[context.documentUri]?.openViews ?? [],
         structuredClassScope: context.classScope,
         structuredSearchText: context.searchText,
         structuredSortKey: context.sortKey,

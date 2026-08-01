@@ -1,5 +1,5 @@
 import type { KeyboardEvent, ReactNode } from 'react'
-import { Check, ExternalLink, Info, Minus, MoreHorizontal, RotateCcw, X } from 'lucide-react'
+import { Check, ExternalLink, Eye, Info, Minus, MoreHorizontal, RotateCcw, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -572,12 +572,14 @@ export function StructuredEnumValueChips({
 
 export function StructuredBooleanCellToggle({
   ariaLabel,
+  disabled = false,
   pressed,
   title,
   trailing,
   onToggle,
 }: {
   ariaLabel: string
+  disabled?: boolean
   pressed: boolean
   title: string
   trailing?: ReactNode
@@ -588,8 +590,9 @@ export function StructuredBooleanCellToggle({
       type="button"
       aria-label={ariaLabel}
       aria-pressed={pressed}
+      disabled={disabled}
       title={title}
-      className="inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-foreground hover:bg-muted/70"
+      className="inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-foreground hover:bg-muted/70 disabled:pointer-events-none"
       onClick={(event) => {
         event.stopPropagation()
         onToggle()
@@ -686,7 +689,7 @@ export function StructuredSubjectCell({
   if (pending) {
     return (
       <>
-        <span>{pendingMarker?.displayLabel ?? displayLabel}</span>
+        <span title={subject}>{pendingMarker?.displayLabel ?? displayLabel}</span>
         {pendingMarker ? (
           <span className="ml-2 rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-normal text-warning">
             {pendingMarker.label}
@@ -696,10 +699,10 @@ export function StructuredSubjectCell({
     )
   }
 
-  if (!openTarget || !onOpenSubject) return <span>{displayLabel}</span>
+  if (!openTarget || !onOpenSubject) return <span title={subject}>{displayLabel}</span>
 
   return (
-    <>
+    <span className="inline-flex min-w-0 max-w-full items-center gap-0.5">
       <button
         type="button"
         data-structured-subject-open={subject}
@@ -711,26 +714,46 @@ export function StructuredSubjectCell({
           subject,
           openTarget.targetUri,
           openTarget.kind,
-          structuredSubjectOpenOptions(event.currentTarget, false, rowIndex),
+          structuredSubjectOpenOptions(event.currentTarget, openTarget.canNavigateDirectly, rowIndex),
         )}
-        onDoubleClick={(event) => {
-          event.preventDefault()
-          onOpenSubject(subject, openTarget.targetUri, openTarget.kind, {
-            ...structuredSubjectOpenOptions(event.currentTarget, openTarget.canNavigateDirectly, rowIndex),
-          })
-        }}
         onKeyDown={(event) => {
-          if (event.key !== 'Enter') return
-          event.preventDefault()
-          event.stopPropagation()
-          onOpenSubject(subject, openTarget.targetUri, openTarget.kind, {
-            ...structuredSubjectOpenOptions(event.currentTarget, openTarget.canNavigateDirectly, rowIndex),
-          })
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenSubject(subject, openTarget.targetUri, openTarget.kind, {
+              ...structuredSubjectOpenOptions(event.currentTarget, openTarget.canNavigateDirectly, rowIndex),
+            })
+            return
+          }
+          if (event.key === ' ' || event.key === 'Spacebar') {
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenSubject(subject, openTarget.targetUri, openTarget.kind, {
+              ...structuredSubjectOpenOptions(event.currentTarget, false, rowIndex),
+            })
+          }
         }}
       >
         {displayLabel}
       </button>
-    </>
+      <button
+        type="button"
+        aria-label={`预览 ${displayLabel}`}
+        title="预览"
+        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+        onClick={(event) => {
+          event.stopPropagation()
+          onOpenSubject(
+            subject,
+            openTarget.targetUri,
+            openTarget.kind,
+            structuredSubjectOpenOptions(event.currentTarget, false, rowIndex),
+          )
+        }}
+      >
+        <Eye className="h-3 w-3" aria-hidden="true" />
+      </button>
+    </span>
   )
 }
 

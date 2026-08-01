@@ -43,6 +43,7 @@ export function useFilesExplorerController({
   const enterFolder = useFilesStore((state) => state.enterFolder)
   const setDetailTab = useFilesStore((state) => state.setDetailTab)
   const requestEditableFileSheetOpen = useFilesStore((state) => state.requestEditableFileSheetOpen)
+  const requestEditableFileInlineEdit = useFilesStore((state) => state.requestEditableFileInlineEdit)
   const [internalExpandedUris, setInternalExpandedUris] = useState<Set<string>>(() => new Set())
   const expandedUris = controlledExpandedUris ?? internalExpandedUris
 
@@ -87,13 +88,18 @@ export function useFilesExplorerController({
         selectFile(decision.fileUri)
         setDetailTab('preview')
         break
+      case 'open-editable-inline':
+        selectFile(decision.fileUri)
+        setDetailTab('preview')
+        requestEditableFileInlineEdit(decision.fileUri)
+        break
       case 'open-editable-sheet':
         selectFile(decision.fileUri)
         setDetailTab('preview')
         requestEditableFileSheetOpen(decision.fileUri)
         break
     }
-  }, [enterFolder, requestEditableFileSheetOpen, selectFile, setDetailTab, toggleFolder])
+  }, [enterFolder, requestEditableFileInlineEdit, requestEditableFileSheetOpen, selectFile, setDetailTab, toggleFolder])
 
   const handleRowKeyDown = useCallback((rowUri: string, key: string): string | null => {
     const rowIndex = rows.findIndex((row) => row.kind === 'entry' && row.entry.uri === rowUri)

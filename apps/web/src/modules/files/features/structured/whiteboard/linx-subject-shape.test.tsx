@@ -69,6 +69,8 @@ describe('TldrawLinxSubjectShape', () => {
     fireEvent.doubleClick(card)
     expect(onOpen).toHaveBeenCalledWith('#a', { navigate: true })
     fireEvent.keyDown(card, { key: 'Enter' })
+    expect(onOpen).toHaveBeenLastCalledWith('#a', { navigate: true })
+    fireEvent.click(screen.getByRole('button', { name: '预览 Alpha' }))
     expect(onOpen).toHaveBeenLastCalledWith('#a', { navigate: false })
   })
 

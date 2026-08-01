@@ -1,5 +1,5 @@
 import { type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { ExternalLink } from 'lucide-react'
+import { Eye } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -82,7 +82,7 @@ export function StructuredSubjectCard({
   const handleCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault()
-      openSubject(false)
+      openSubject(true)
       return
     }
     if (event.key === ' ' || event.key === 'Spacebar') {
@@ -120,7 +120,8 @@ export function StructuredSubjectCard({
         {action}
         <button
           type="button"
-          aria-label={`打开 ${model.title}`}
+          aria-label={`预览 ${model.title}`}
+          title="预览"
           className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
           data-structured-card-action="true"
           onClick={(event) => {
@@ -128,7 +129,7 @@ export function StructuredSubjectCard({
             openSubject(false)
           }}
         >
-          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          <Eye className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import type { FilesStructuredViewMetadataSidecar } from '../../domain/resource/resource-model'
 import {
   normalizeStructuredKanbanBoardMetadata,
+  normalizeStructuredOpenViews,
   normalizeStructuredWhiteboardSnapshotMetadata,
   type StructuredViewMetadata,
 } from '../../domain/structured/structured-view-metadata'
@@ -18,6 +19,7 @@ export function structuredViewMetadataSignature(metadata: StructuredViewMetadata
   return JSON.stringify({
     documentUri: metadata.documentUri,
     viewMode: metadata.viewMode,
+    openViews: normalizeStructuredOpenViews(metadata.openViews, metadata.viewMode),
     classScope: metadata.classScope,
     searchText: metadata.searchText,
     sortKey: metadata.sortKey,
@@ -48,6 +50,7 @@ export function defaultStructuredViewMetadataSignature(documentUri: string) {
   return structuredViewMetadataSignature({
     documentUri,
     viewMode: 'table',
+    openViews: [],
     classScope: null,
     searchText: '',
     sortKey: null,

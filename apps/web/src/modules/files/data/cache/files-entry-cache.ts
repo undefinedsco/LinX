@@ -25,7 +25,6 @@ export type FilesEntryCacheQueryRoots = {
   detail: QueryKey
   rawText: QueryKey
   metaSidecar: QueryKey
-  structuredViewMetadata: QueryKey
 }
 
 function findEntryInSnapshot(snapshot: FilesEntryCacheSnapshot, resourceUri: string): FilesEntry | null {
@@ -120,8 +119,9 @@ export function createFilesEntryCacheCollection(
 
     commitRawTextSave(
       cacheClient: QueryClient,
-      resource: Pick<FilesRawTextResource, 'uri' | 'mimeType' | 'content' | 'headers'>,
+      resource: Pick<FilesRawTextResource, 'uri' | 'mimeType' | 'etag' | 'content' | 'headers'>,
     ) {
+      cacheClient.setQueryData([...queryKeys.rawText, resource.uri], resource)
       collection.updateRawText(cacheClient, {
         uri: resource.uri,
         mimeType: resource.mimeType,
@@ -136,7 +136,6 @@ export function createFilesEntryCacheCollection(
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
-        cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, resourceUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, resourceUri] }),
         parentContainerUri
           ? cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, parentContainerUri] })
@@ -261,7 +260,6 @@ export function createFilesEntryCacheCollection(
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, resourceUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, resourceUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.metaSidecar, resourceUri, 'resource'] }),
-        cacheClient.invalidateQueries({ queryKey: [...queryKeys.structuredViewMetadata, resourceUri, 'resource'] }),
         parentContainerUri
           ? cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, parentContainerUri] })
           : Promise.resolve(),

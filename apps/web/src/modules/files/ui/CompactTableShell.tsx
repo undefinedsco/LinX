@@ -44,7 +44,7 @@ export function CompactTableShell<TData>({
 }: CompactTableShellProps<TData>) {
   return (
     <div data-compact-table-shell="true" className="w-full overflow-x-auto rounded-sm border border-border/20">
-      <table className="min-w-full border-collapse text-left text-[11px]" style={{ width: table.getCenterTotalSize() }}>
+      <table className="min-w-full table-fixed border-collapse text-left text-[11px]" style={{ width: table.getCenterTotalSize() }}>
         <thead className="bg-background/70 text-muted-foreground">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
@@ -61,7 +61,7 @@ export function CompactTableShell<TData>({
                     aria-sort={ariaSort}
                     data-pinned-column={pinned || undefined}
                     className={cn(
-                      'relative border-b border-border/40 px-2 py-1 align-middle font-medium',
+                      'relative overflow-hidden border-b border-border/40 px-2 py-1 align-middle font-medium',
                       index > 0 && 'border-l border-border/5',
                       pinned && 'sticky left-0 z-20 bg-background shadow-[1px_0_0_hsl(var(--border)/0.12)]',
                     )}
@@ -95,7 +95,7 @@ export function CompactTableShell<TData>({
         </thead>
         <tbody>
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className={getRowClassName?.(row)}>
+            <tr key={row.id} className={cn('group', getRowClassName?.(row))}>
               {row.getVisibleCells().map((cell, index) => {
                 const interactive = editable && (isCellInteractive?.(cell, index) ?? true)
                 const pinned = cell.column.id === pinnedColumnId
@@ -120,7 +120,7 @@ export function CompactTableShell<TData>({
                       }
                     }}
                     className={cn(
-                      'align-middle',
+                      'overflow-hidden align-middle',
                       index > 0 && 'border-l border-border/5',
                       pinned && 'sticky left-0 z-10 bg-background shadow-[1px_0_0_hsl(var(--border)/0.08)]',
                       getCellClassName?.(cell, index),

@@ -137,6 +137,24 @@ export function useFilesEntries(selectedTreeNodeId: string | null, entryScope: F
   })
 }
 
+export function useFilesTreeSearchEntries(enabled: boolean) {
+  const { db } = useSolidDatabase()
+  const { workspaceUri } = useActiveFilesWorkspaceContext()
+  return useQuery<FilesEntry[]>(filesResourceQueryCollection.treeSearchEntries({ workspaceUri, enabled, db }))
+}
+
+export function useFilesContainerEntries(containerUri: string | null, enabled = true) {
+  const { db } = useSolidDatabase()
+  const queryOptions = filesResourceQueryCollection.containerEntries({
+    containerUri: containerUri ?? undefined,
+    db,
+  })
+  return useQuery<FilesEntry[]>({
+    ...queryOptions,
+    enabled: queryOptions.enabled && enabled,
+  })
+}
+
 export function useFilesExpandedContainerEntries({
   expandedContainerUris,
 }: {

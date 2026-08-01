@@ -23,9 +23,9 @@ const sourceLinkedCardPreviewModelFeaturePath = 'src/modules/files/features/deta
 const sourceLinkedCardWorkflowControllerFeaturePath = 'src/modules/files/features/detail/useSourceLinkedCardWorkflowController.ts'
 const sourceLinkedCardWorkflowModelFeaturePath = 'src/modules/files/features/detail/source-linked-card-workflow-model.ts'
 const editorFeaturePath = 'src/modules/files/features/editor/DocumentEditorModal.tsx'
+const editorSurfaceFeaturePath = 'src/modules/files/features/editor/FileEditorSurface.tsx'
 const editorControllerFeaturePath = 'src/modules/files/features/editor/useFileEditorSheetController.ts'
 const editorModelFeaturePath = 'src/modules/files/features/editor/file-editor-sheet-model.ts'
-const editorMetaTailFeaturePath = 'src/modules/files/features/editor/FileEditorSheetMetaTail.tsx'
 const editorRawSourceFeaturePath = 'src/modules/files/features/editor/FileEditorRawSourceEditor.tsx'
 const editorRawSourceControllerFeaturePath = 'src/modules/files/features/editor/useFileEditorRawSourceController.ts'
 const editorRawSourceModelFeaturePath = 'src/modules/files/features/editor/file-editor-raw-source-model.ts'
@@ -234,12 +234,12 @@ describe('Files features boundary', () => {
     expect(controllerSource).toContain('export function useFilesTreeChildrenController')
     expect(controllerSource).toContain('useFilesRootNodes')
     expect(controllerSource).toContain('useContainerChildTreeNodes')
-    expect(controllerSource).toContain('useActiveFilesWorkspaceContext')
+    expect(controllerSource).toContain('useFilesTreeSearchEntries')
     expect(controllerSource).toContain('useFilesStore')
     expect(controllerSource).toContain('projectFilesTreeContentState')
     expect(controllerSource).toContain('projectFilesTreeChildrenState')
     expect(controllerSource).toContain('projectFilesTreeNodeViewState')
-    expect(controllerSource).toContain('projectFilesTreeHeaderDescription')
+    expect(controllerSource).toContain('projectFilesTreeSearchResults')
     expect(controllerSource).not.toContain('canExpandFilesTreeNode')
     expect(controllerSource).not.toContain('当前话题：')
     expect(controllerSource).not.toContain('浏览当前 Pod 容器')
@@ -367,6 +367,7 @@ describe('Files features boundary', () => {
     const shimSource = readFileSync(detailMetadataPanelsComponentShimPath, 'utf8')
 
     expect(featureSource).toContain('export function FileRdfMetadataPanel')
+    expect(featureSource).toContain('export function FileDrawerMetadata')
     expect(featureSource).toContain('export function SourceLinkedCardMetadataPanel')
     expect(featureSource).toContain('useDetailMetaPredicateController')
     expect(featureSource).toContain('projectFileRdfMetadataPanelModel')
@@ -679,7 +680,6 @@ describe('Files features boundary', () => {
     expect(existsSync(editorFeaturePath)).toBe(true)
     expect(existsSync(editorControllerFeaturePath)).toBe(true)
     expect(existsSync(editorModelFeaturePath)).toBe(true)
-    expect(existsSync(editorMetaTailFeaturePath)).toBe(true)
     expect(existsSync(editorRawSourceFeaturePath)).toBe(true)
     expect(existsSync(editorRawSourceControllerFeaturePath)).toBe(true)
     expect(existsSync(editorRawSourceModelFeaturePath)).toBe(true)
@@ -688,7 +688,6 @@ describe('Files features boundary', () => {
       !existsSync(editorFeaturePath)
       || !existsSync(editorControllerFeaturePath)
       || !existsSync(editorModelFeaturePath)
-      || !existsSync(editorMetaTailFeaturePath)
       || !existsSync(editorRawSourceFeaturePath)
       || !existsSync(editorRawSourceControllerFeaturePath)
       || !existsSync(editorRawSourceModelFeaturePath)
@@ -696,32 +695,37 @@ describe('Files features boundary', () => {
     ) return
 
     const featureSource = readFileSync(editorFeaturePath, 'utf8')
+    const surfaceSource = readFileSync(editorSurfaceFeaturePath, 'utf8')
     const controllerSource = readFileSync(editorControllerFeaturePath, 'utf8')
     const modelSource = readFileSync(editorModelFeaturePath, 'utf8')
-    const metaTailSource = readFileSync(editorMetaTailFeaturePath, 'utf8')
     const rawSourceSource = readFileSync(editorRawSourceFeaturePath, 'utf8')
     const rawSourceControllerSource = readFileSync(editorRawSourceControllerFeaturePath, 'utf8')
     const rawSourceModelSource = readFileSync(editorRawSourceModelFeaturePath, 'utf8')
     const shimSource = readFileSync(editorComponentShimPath, 'utf8')
 
     expect(featureSource).toContain('export function DocumentEditorModal')
-    expect(featureSource).toContain("from './useFileEditorSheetController'")
-    expect(featureSource).toContain("from './FileEditorSheetMetaTail'")
-    expect(featureSource).toContain("from './FileEditorRawSourceEditor'")
-    expect(featureSource).toContain('editor.richContentState')
-    expect(featureSource).toContain('editor.rawSourceEditorState')
-    expect(featureSource).toContain('sourceState={editor.rawSourceEditorState}')
-    expect(featureSource).not.toContain('rawResource={editor.rawSourceEditorState.rawResource}')
-    expect(featureSource).not.toContain('isLoading={editor.rawSourceEditorState.isLoading}')
-    expect(featureSource).not.toContain('error={editor.rawSourceEditorState.error}')
-    expect(featureSource).not.toContain('useSaveRawTextResource')
-    expect(featureSource).not.toContain('useCreateAiChangeProposal')
-    expect(featureSource).not.toContain('useCreateSourceUpdateProposal')
-    expect(featureSource).not.toContain('useFilesStore')
-    expect(featureSource).not.toContain('useFilesRouteBridge')
-    expect(featureSource).not.toContain('editor.rawQuery')
-    expect(featureSource).not.toContain('editor.rawResource')
-    expect(featureSource).not.toContain('editor.effectiveSourceText')
+    expect(featureSource).toContain("from './FileEditorSurface'")
+    expect(featureSource).toContain('<FileEditorSurface')
+    expect(featureSource).not.toContain("from './useFileEditorSheetController'")
+    expect(featureSource).not.toContain("from './FileEditorSheetMetaTail'")
+    expect(featureSource).not.toContain("from './FileEditorRawSourceEditor'")
+    expect(surfaceSource).toContain("from './useFileEditorSheetController'")
+    expect(surfaceSource).not.toContain('FileEditorSheetMetaTail')
+    expect(surfaceSource).toContain("from './FileEditorRawSourceEditor'")
+    expect(surfaceSource).toContain('editor.richContentState')
+    expect(surfaceSource).toContain('editor.rawSourceEditorState')
+    expect(surfaceSource).toContain('sourceState={editor.rawSourceEditorState}')
+    expect(surfaceSource).not.toContain('rawResource={editor.rawSourceEditorState.rawResource}')
+    expect(surfaceSource).not.toContain('isLoading={editor.rawSourceEditorState.isLoading}')
+    expect(surfaceSource).not.toContain('error={editor.rawSourceEditorState.error}')
+    expect(surfaceSource).not.toContain('useSaveRawTextResource')
+    expect(surfaceSource).not.toContain('useCreateAiChangeProposal')
+    expect(surfaceSource).not.toContain('useCreateSourceUpdateProposal')
+    expect(surfaceSource).not.toContain('useFilesStore')
+    expect(surfaceSource).not.toContain('useFilesRouteBridge')
+    expect(surfaceSource).not.toContain('editor.rawQuery')
+    expect(surfaceSource).not.toContain('editor.rawResource')
+    expect(surfaceSource).not.toContain('editor.effectiveSourceText')
     expect(controllerSource).toContain('export function useFileEditorSheetController')
     expect(controllerSource).toContain('useSaveRawTextResource')
     expect(controllerSource).toContain('useCreateAiChangeProposal')
@@ -742,7 +746,6 @@ describe('Files features boundary', () => {
     expect(controllerSource).not.toContain('displaySourceIngestVersion')
     expect(controllerSource).not.toContain('DialogContent')
     expect(controllerSource).not.toContain('RichTextFileEditor')
-    expect(modelSource).toContain('export function createFileEditorMetaTailId')
     expect(modelSource).toContain('export function createFileEditorSheetState')
     expect(modelSource).toContain('export function projectFileEditorSheetContentView')
     expect(modelSource).toContain('export function projectFileEditorSheetReset')
@@ -750,17 +753,12 @@ describe('Files features boundary', () => {
     expect(modelSource).toContain('export function projectFileEditorSourceLinkedDraft')
     expect(modelSource).toContain('export function projectFileEditorRawSourceResource')
     expect(modelSource).toContain('export function projectFileEditorRichContentState')
-    expect(modelSource).toContain('export function projectFileEditorBylineItems')
     expect(modelSource).toContain('export function projectFileEditorCapabilities')
     expect(modelSource).not.toContain('useToast')
     expect(modelSource).not.toContain('useState')
     expect(modelSource).not.toContain('useMemo')
     expect(featureSource).not.toMatch(/\nfunction RawSourceEditor\(/)
     expect(featureSource).not.toContain('renderMetaContent')
-    expect(metaTailSource).toContain('export function FileEditorSheetMetaTail')
-    expect(metaTailSource).toContain('FileRdfMetadataPanel')
-    expect(metaTailSource).toContain('SourceLinkedCardMetadataPanel')
-    expect(metaTailSource).not.toContain('renderMetaContent')
     expect(rawSourceSource).toContain('export function FileEditorRawSourceEditor')
     expect(rawSourceSource).toContain("from './useFileEditorRawSourceController'")
     expect(rawSourceSource).toContain('useFileEditorRawSourceController')
@@ -1376,8 +1374,10 @@ describe('Files features boundary', () => {
     const stateControllerShimSource = readFileSync(structuredViewStateControllerComponentShimPath, 'utf8')
 
     expect(metadataControllerSource).toContain('export function useStructuredViewMetadataController')
-    expect(metadataControllerSource).toContain('useStructuredViewMetadata')
-    expect(metadataControllerSource).toContain('useSaveStructuredViewMetadata')
+    expect(metadataControllerSource).toContain("from './local-structured-view-metadata-store'")
+    expect(metadataControllerSource).toContain('loadLocalStructuredViewMetadata')
+    expect(metadataControllerSource).toContain('saveLocalStructuredViewMetadata')
+    expect(metadataControllerSource).not.toContain('useSaveStructuredViewMetadata')
     expect(metadataControllerSource).toContain('autosaveReadyRef')
     expect(metadataControllerSource).toContain("from './structured-view-metadata-workflow-model'")
     expect(metadataControllerSource).toContain('projectStructuredViewMetadataHydration')
@@ -2469,7 +2469,6 @@ describe('Files features boundary', () => {
       sourceLinkedCardPreviewFeaturePath,
       editorFeaturePath,
       editorControllerFeaturePath,
-      editorMetaTailFeaturePath,
       editorRawSourceFeaturePath,
       editorRawSourceControllerFeaturePath,
       editorRawSourceModelFeaturePath,

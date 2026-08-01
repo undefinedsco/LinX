@@ -5,8 +5,6 @@ import {
   normalizeStructuredKanbanBoardMetadata,
   normalizeStructuredViewConfig,
   normalizeStructuredWhiteboardSnapshotMetadata,
-  parseStructuredViewMetadataTurtle,
-  renderStructuredViewMetadataTurtle,
   normalizeStructuredWhiteboardLayouts,
 } from './structured-view-metadata'
 
@@ -14,6 +12,7 @@ describe('structured view metadata model', () => {
   it('normalizes stored view config values without app store state', () => {
     expect(normalizeStructuredViewConfig({
       viewMode: 'whiteboard',
+      openViews: ['kanban', 'table', 'kanban', 'bogus'],
       classScope: 'https://schema.example/Task',
       searchText: 'draft',
       sortKey: 'https://schema.example/priority',
@@ -31,6 +30,7 @@ describe('structured view metadata model', () => {
       },
     })).toEqual({
       viewMode: 'whiteboard',
+      openViews: ['kanban', 'whiteboard'],
       classScope: 'https://schema.example/Task',
       searchText: 'draft',
       sortKey: 'https://schema.example/priority',
@@ -198,73 +198,4 @@ describe('structured view metadata model', () => {
     ])
   })
 
-  it('round-trips versioned board metadata while preserving legacy Turtle fields', () => {
-    const turtle = renderStructuredViewMetadataTurtle({
-      documentUri: 'https://pod.example/.data/files/files.ttl',
-      viewMode: 'whiteboard',
-      classScope: null,
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: 'status',
-      kanbanOrder: {
-        todo: ['#A'],
-      },
-      kanbanBoard: {
-        version: 1,
-        laneOrder: ['todo', 'done'],
-        collapsedLaneIds: ['done'],
-        scrollLeft: 240,
-        cardOrder: {
-          todo: ['#A', '#B'],
-        },
-      },
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: ['#A'],
-        positions: { '#A': { x: 10, y: 20 } },
-        visualRelations: [{ id: 'legacy-rel', from: '#A', to: '#B', label: 'legacy' }],
-        snapshot: {
-          version: 1,
-          camera: { x: 4, y: 8, z: 1.5 },
-          nodes: [{ resourceUri: '#A', x: 10, y: 20, w: 288, h: 160, z: 1, kind: 'subject' }],
-          groups: [{ id: 'group-1', title: 'Sprint', color: 'blue' }],
-          visualRelations: [{ id: 'rel-a-b', from: '#A', to: '#B', label: 'blocks', predicate: 'status' }],
-        },
-      },
-      writesCanonicalData: false,
-    })
-
-    expect(turtle).toContain('udfs:kanbanCardOrder [ udfs:column "todo" ; udfs:subject "#A" ; udfs:index 0 ]')
-    expect(turtle).toContain('udfs:writesCanonicalData false')
-
-    expect(parseStructuredViewMetadataTurtle(turtle, 'fallback')).toMatchObject({
-      kanbanOrder: {
-        todo: ['#A'],
-      },
-      kanbanBoard: {
-        version: 1,
-        laneOrder: ['todo', 'done'],
-        collapsedLaneIds: ['done'],
-        scrollLeft: 240,
-        cardOrder: {
-          todo: ['#A', '#B'],
-        },
-      },
-      whiteboard: {
-        selectedSubjects: ['#A'],
-        positions: { '#A': { x: 10, y: 20 } },
-        visualRelations: [{ id: 'legacy-rel', from: '#A', to: '#B', label: 'legacy' }],
-        snapshot: {
-          version: 1,
-          camera: { x: 4, y: 8, z: 1.5 },
-          nodes: [{ resourceUri: '#A', x: 10, y: 20, w: 288, h: 160, z: 1, kind: 'subject' }],
-          groups: [{ id: 'group-1', title: 'Sprint', color: 'blue' }],
-          visualRelations: [{ id: 'rel-a-b', from: '#A', to: '#B', label: 'blocks', predicate: 'status' }],
-        },
-      },
-      writesCanonicalData: false,
-    })
-  })
 })

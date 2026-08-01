@@ -9,7 +9,7 @@ import {
   ModeCard,
   RawTextBlock,
 } from '../../ui/FileDetailPreviewPrimitives'
-import { RichTextFileEditor } from '../../ui/RichTextFileEditor'
+import { BlockNoteFileEditor } from '@/modules/files/ui/BlockNoteFileEditor'
 import type { SourceLinkedCardPrimaryActionIcon } from './source-linked-card-preview-model'
 import { useSourceLinkedCardPreviewController } from './useSourceLinkedCardPreviewController'
 
@@ -78,7 +78,7 @@ export function SourceLinkedCardPreview({ file }: { file: FilesDetail }) {
           </p>
         ) : null}
         <div className="mt-3">
-          <RichTextFileEditor
+          <BlockNoteFileEditor
             content={content.bodyRichEditorContent}
             warning={content.bodyRichTextWarning}
             editable={false}

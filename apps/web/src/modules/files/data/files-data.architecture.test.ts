@@ -20,7 +20,6 @@ const resourceCollectionPath = 'src/modules/files/data/collections/resource-coll
 const resourceMutationCollectionPath = 'src/modules/files/data/collections/resource-mutation-collection.ts'
 const resourceQueryCollectionPath = 'src/modules/files/data/collections/resource-query-collection.ts'
 const runtimeCollectionPath = 'src/modules/files/data/collections/runtime.ts'
-const sidecarMutationCollectionPath = 'src/modules/files/data/collections/sidecar-mutation-collection.ts'
 const sidecarQueryCollectionPath = 'src/modules/files/data/collections/sidecar-query-collection.ts'
 const sourceIngestCollectionPath = 'src/modules/files/data/collections/source-ingest-collection.ts'
 const subscriptionCollectionPath = 'src/modules/files/data/collections/subscription-collection.ts'
@@ -32,7 +31,6 @@ const optimisticMutationCachePath = 'src/modules/files/data/cache/optimistic-mut
 const proposalQueryCachePath = 'src/modules/files/data/cache/proposal-query-cache.ts'
 const filesQueryInvalidationPath = 'src/modules/files/data/cache/files-query-invalidation.ts'
 const sourceIngestCachePath = 'src/modules/files/data/cache/source-ingest-cache.ts'
-const structuredViewMetadataCachePath = 'src/modules/files/data/cache/structured-view-metadata-cache.ts'
 const sourceIngestServicePath = 'src/modules/files/data/ingest/source-ingest-service.ts'
 const sourceIngestSnapshotPath = 'src/modules/files/data/ingest/source-ingest-snapshot.ts'
 const sourceExtractorCompatPath = 'src/modules/files/data/ingest/source-extractor-compat.ts'
@@ -346,21 +344,13 @@ describe('Files data boundary', () => {
 
     expect(sidecarQueriesSource).toContain('export function useFilesAccessBasics')
     expect(sidecarQueriesSource).toContain('export function useFilesMetaSidecar')
-    expect(sidecarQueriesSource).toContain('export function useStructuredViewMetadata')
-    expect(sidecarQueriesSource).toContain('export function useSaveStructuredViewMetadata')
     expect(sidecarQueriesSource).toContain('filesSidecarQueryCollection')
-    expect(sidecarQueriesSource).toContain('filesSidecarMutationCollection')
-    expect(sidecarQueriesSource).toContain('StructuredViewMetadata')
     expect(sidecarQueriesSource).toContain("from '../../domain/resource/resource-model'")
-    expect(sidecarQueriesSource).toContain("from '../../domain/structured/structured-view-metadata'")
     expect(sidecarQueriesSource).toContain("from '../collections'")
     expect(queryFacadeSource).toContain("export * from './sidecar-queries'")
     expect(queryFacadeSource).not.toMatch(/\nexport function useFilesAccessBasics\b/)
     expect(queryFacadeSource).not.toMatch(/\nexport function useFilesMetaSidecar\b/)
-    expect(queryFacadeSource).not.toMatch(/\nexport function useStructuredViewMetadata\b/)
-    expect(queryFacadeSource).not.toMatch(/\nexport function useSaveStructuredViewMetadata\b/)
     expect(queryFacadeSource).not.toContain('filesSidecarQueryCollection')
-    expect(queryFacadeSource).not.toContain('filesSidecarMutationCollection')
   })
 
   it('keeps vocab discovery query hooks in a dedicated data/queries owner module', () => {
@@ -496,7 +486,7 @@ describe('Files data boundary', () => {
 
     expect(inboxApprovalSource).toContain('export function fetchFilesInboxApprovals')
     expect(inboxApprovalSource).toContain('@/modules/inbox/collections')
-    expect(inboxApprovalSource).toContain('inboxOps.fetchApprovals')
+    expect(inboxApprovalSource).toContain('inboxOps.readApprovals')
     expect(inboxApprovalSource).not.toContain("from '../collections'")
     expect(collectionFacadeSource).toContain("from './inbox-approval-source'")
     expect(collectionFacadeSource).toContain('fetchApprovals: fetchFilesInboxApprovals')
@@ -530,7 +520,7 @@ describe('Files data boundary', () => {
     expect(favoriteQueriesSource).toContain('@/modules/favorites/collections')
     expect(favoriteQueriesSource).toContain('export function useFilesFavoriteList')
     expect(favoriteQueriesSource).toContain('export const filesFavoriteHooks')
-    expect(favoriteQueriesSource).toContain('useFavoriteList')
+    expect(favoriteQueriesSource).toContain('useLiveQuery')
     expect(favoriteQueriesSource).toContain('favoriteHooks')
     expect(queryFacadeSource).toContain("export * from './favorite-queries'")
   })
@@ -600,29 +590,6 @@ describe('Files data boundary', () => {
     expect(collectionFacadeSource).not.toContain('createRawTextResourceWithCache')
   })
 
-  it('keeps sidecar mutation cache workflow in a dedicated owner module', () => {
-    expect(existsSync(sidecarMutationCollectionPath)).toBe(true)
-    if (!existsSync(sidecarMutationCollectionPath)) return
-
-    const sidecarMutationCollectionSource = readFileSync(sidecarMutationCollectionPath, 'utf8')
-    const resourceMutationCollectionSource = readFileSync(resourceMutationCollectionPath, 'utf8')
-    const collectionFacadeSource = readFileSync(collectionFacadePath, 'utf8')
-
-    expect(sidecarMutationCollectionSource).toContain('export function createSidecarMutationCollection')
-    expect(sidecarMutationCollectionSource).toContain('saveStructuredViewMetadata')
-    expect(sidecarMutationCollectionSource).toContain('stageSave')
-    expect(sidecarMutationCollectionSource).toContain('commitSave')
-    expect(sidecarMutationCollectionSource).toContain('invalidateSave')
-    expect(sidecarMutationCollectionSource).toContain('saveStructuredViewMetadataResource')
-    expect(sidecarMutationCollectionSource).not.toContain("from '../collections'")
-    expect(collectionFacadeSource).toContain("from './sidecar-mutation-collection'")
-    expect(collectionFacadeSource).toContain('createSidecarMutationCollection({')
-    expect(collectionFacadeSource).toContain('filesSidecarMutationCollection')
-    expect(resourceMutationCollectionSource).not.toContain('saveStructuredViewMetadata')
-    expect(resourceMutationCollectionSource).not.toContain('stageSave')
-    expect(resourceMutationCollectionSource).not.toContain('commitSave')
-    expect(resourceMutationCollectionSource).not.toContain('invalidateSave')
-  })
 
   it('keeps resource query wrappers in a dedicated owner module', () => {
     expect(existsSync(resourceQueryCollectionPath)).toBe(true)
@@ -658,10 +625,8 @@ describe('Files data boundary', () => {
     expect(sidecarQueryCollectionSource).toContain('export function createSidecarQueryCollection')
     expect(sidecarQueryCollectionSource).toContain('accessBasics(input:')
     expect(sidecarQueryCollectionSource).toContain('metaSidecar(input:')
-    expect(sidecarQueryCollectionSource).toContain('structuredViewMetadata(input:')
     expect(sidecarQueryCollectionSource).toContain('readFilesAccessBasics')
     expect(sidecarQueryCollectionSource).toContain('readFilesMetaSidecar')
-    expect(sidecarQueryCollectionSource).toContain('readStructuredViewMetadata')
     expect(sidecarQueryCollectionSource).not.toContain("from '../collections'")
     expect(collectionFacadeSource).toContain("from './sidecar-query-collection'")
     expect(collectionFacadeSource).toContain('createSidecarQueryCollection({')
@@ -669,13 +634,11 @@ describe('Files data boundary', () => {
     expect(sidecarQueriesSource).toContain('filesSidecarQueryCollection')
     expect(resourceQueryCollectionSource).not.toContain('accessBasics(input:')
     expect(resourceQueryCollectionSource).not.toContain('metaSidecar(input:')
-    expect(resourceQueryCollectionSource).not.toContain('structuredViewMetadata(input:')
     expect(resourceQueryCollectionSource).not.toContain('readAccessBasics')
     expect(resourceQueryCollectionSource).not.toContain('readMetaSidecar')
     expect(resourceQueryCollectionSource).not.toContain('readStructuredViewMetadata')
     expect(collectionFacadeSource).not.toContain('return filesResourceCollection.readAccessBasics(input.file, input.db)')
     expect(collectionFacadeSource).not.toContain('return filesResourceCollection.readMetaSidecar(input.file, input.db)')
-    expect(collectionFacadeSource).not.toContain('return filesResourceCollection.readStructuredViewMetadata(input.file, input.db)')
   })
 
   it('keeps resource collection adapter wrappers and list strategy in a dedicated owner module', () => {
@@ -769,15 +732,10 @@ describe('Files data boundary', () => {
     const resourceMutationSource = existsSync(resourceMutationCollectionPath)
       ? readFileSync(resourceMutationCollectionPath, 'utf8')
       : ''
-    const sidecarMutationSource = existsSync(sidecarMutationCollectionPath)
-      ? readFileSync(sidecarMutationCollectionPath, 'utf8')
-      : ''
 
     expect(cacheSource).toMatch(/\nexport async function runOptimisticMutation\b/)
     expect(resourceMutationSource).toContain("from '../cache/optimistic-mutation'")
-    expect(sidecarMutationSource).toContain("from '../cache/optimistic-mutation'")
     expect(resourceMutationSource).not.toMatch(/catch\s*\(\s*error\s*\)\s*{[\s\S]*?\.restore\(/)
-    expect(sidecarMutationSource).not.toMatch(/catch\s*\(\s*error\s*\)\s*{[\s\S]*?\.restore\(/)
   })
 
   it('keeps generic proposal query cache mechanics under data/cache instead of collections', () => {
@@ -853,25 +811,6 @@ describe('Files data boundary', () => {
     expect(collectionSource).not.toMatch(/\nconst sourceIngestRefreshCacheCollection = \{/)
   })
 
-  it('keeps structured view metadata cache workflow under data/cache instead of collections', () => {
-    expect(existsSync(structuredViewMetadataCachePath)).toBe(true)
-    if (!existsSync(structuredViewMetadataCachePath)) return
-
-    const cacheSource = readFileSync(structuredViewMetadataCachePath, 'utf8')
-    const collectionSource = readFileSync(collectionFacadePath, 'utf8')
-
-    expect(cacheSource).toContain('export type FilesStructuredViewMetadataCacheSnapshot')
-    expect(cacheSource).toMatch(/\nexport function createStructuredViewMetadataCacheCollection\b/)
-    expect(cacheSource).toContain('stageSave')
-    expect(cacheSource).toContain('commitSave')
-    expect(cacheSource).toContain('invalidateSave')
-    expect(collectionSource).toContain("from '../cache/structured-view-metadata-cache'")
-    expect(collectionSource).not.toMatch(/\nexport type FilesStructuredViewMetadataCacheSnapshot\b/)
-    expect(collectionSource).not.toMatch(/\nfunction structuredViewMetadataKind\b/)
-    expect(collectionSource).not.toMatch(/\nfunction structuredViewMetadataQueryKey\b/)
-    expect(collectionSource).not.toMatch(/\nfunction completeStructuredViewMetadata\b/)
-    expect(collectionSource).not.toMatch(/\nexport const filesStructuredViewMetadataCacheCollection\b/)
-  })
 
   it('keeps source Ingest manifest resource IO under data/ingest with a root compatibility shim', () => {
     expect(existsSync(sourceIngestServicePath)).toBe(true)

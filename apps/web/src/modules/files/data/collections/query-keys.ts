@@ -6,10 +6,10 @@ export const FILES_COLLECTION_QUERY_KEYS = {
   containerEntries: ['files', 'container-entries'] as const,
   children: ['files', 'children'] as const,
   entries: ['files', 'entries'] as const,
+  treeSearch: ['files', 'tree-search'] as const,
   detail: ['files', 'detail'] as const,
   accessBasics: ['files', 'access-basics'] as const,
   metaSidecar: ['files', 'meta-sidecar'] as const,
-  structuredViewMetadata: ['files', 'structured-view-metadata'] as const,
   rawText: ['files', 'raw-text'] as const,
   blob: ['files', 'blob'] as const,
   structuredCellProposals: ['files', 'structured-cell-proposals'] as const,
@@ -58,6 +58,10 @@ export const filesResourceQueryKeys = {
     return [...FILES_COLLECTION_QUERY_KEYS.detail, resourceUri ?? ''] as const
   },
 
+  treeSearch(workspaceUri?: string | null) {
+    return [...FILES_COLLECTION_QUERY_KEYS.treeSearch, workspaceUri ?? ''] as const
+  },
+
   rawText(resourceUri?: string | null) {
     return [...FILES_COLLECTION_QUERY_KEYS.rawText, resourceUri ?? ''] as const
   },
@@ -72,10 +76,6 @@ export const filesResourceQueryKeys = {
 
   metaSidecar(file?: Pick<FilesDetail, 'uri' | 'kind'> | null) {
     return [...FILES_COLLECTION_QUERY_KEYS.metaSidecar, file?.uri ?? '', file?.kind ?? ''] as const
-  },
-
-  structuredViewMetadata(file?: Pick<FilesDetail, 'uri' | 'kind'> | null) {
-    return [...FILES_COLLECTION_QUERY_KEYS.structuredViewMetadata, file?.uri ?? '', file?.kind ?? ''] as const
   },
 
   vocabDiscovery(webId?: string | null, registryClassUri?: string | null, localVocabUri?: string | null) {

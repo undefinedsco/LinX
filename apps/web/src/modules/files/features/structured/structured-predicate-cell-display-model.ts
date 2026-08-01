@@ -9,7 +9,10 @@ import {
   isPendingEnumOption,
   pendingEnumOptionLabelsForPredicate,
 } from '../../domain/structured/structured-table-cell-model'
-import { resolveStructuredRelationOpenTarget } from '../../domain/structured/structured-subject-peek'
+import {
+  displayStructuredFactValue,
+  resolveStructuredRelationOpenTarget,
+} from '../../domain/structured/structured-subject-peek'
 import { localPredicateLabel } from '../../domain/structured/structured-table-vocab'
 
 export type StructuredRelationValueViewModel = {
@@ -61,6 +64,14 @@ function structuredRelationValueDisplayLabel(value: string) {
   if (!normalized) return '—'
   const hashIndex = normalized.lastIndexOf('#')
   if (hashIndex >= 0 && hashIndex < normalized.length - 1) return normalized.slice(hashIndex + 1)
+  if (!normalized.includes('://')) {
+    const prefixedMatch = normalized.match(/^[A-Za-z][\w-]*:([^\s"<>]+)$/)
+    if (prefixedMatch) {
+      const localPart = prefixedMatch[1]
+      const localSlashIndex = localPart.replace(/\/+$/, '').lastIndexOf('/')
+      return localSlashIndex >= 0 ? localPart.slice(localSlashIndex + 1) : localPart
+    }
+  }
   const withoutTrailingSlash = normalized.replace(/\/+$/, '')
   const slashIndex = withoutTrailingSlash.lastIndexOf('/')
   if (slashIndex >= 0 && slashIndex < withoutTrailingSlash.length - 1) return withoutTrailingSlash.slice(slashIndex + 1)
@@ -133,8 +144,8 @@ export function projectStructuredScalarValueLabels(input: {
   values: readonly string[]
 }): string[] {
   return input.values.map((value) => {
-    const label = unquoteStructuredCellLiteral(value)
+    const label = displayStructuredFactValue(displayStructuredCellValue(value))
     const suffix = isPendingEnumOption(input.proposals, input.predicate, label) ? '*' : ''
-    return `${displayStructuredCellValue(value)}${suffix}`
+    return `${label}${suffix}`
   })
 }

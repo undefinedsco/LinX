@@ -48,6 +48,7 @@ export function StructuredPredicateStaticCell({
     return (
       <StructuredBooleanCellToggle
         ariaLabel={display.toggle.ariaLabel}
+        disabled={!display.editable}
         pressed={display.toggle.pressed}
         title={display.toggle.title}
         onToggle={onToggleBoolean}

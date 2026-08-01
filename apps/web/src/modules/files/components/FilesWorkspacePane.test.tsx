@@ -8,6 +8,10 @@ const mockMutateAsync = vi.fn()
 const mockUseCreateSourceIngest = vi.fn()
 const mockUseSelectedFilesLocation = vi.fn()
 
+vi.mock('@/providers/solid-session-provider', () => ({
+  useSession: () => ({ session: { info: { isLoggedIn: false } } }),
+}))
+
 vi.mock('../features/list/FilesListPane', () => ({
   FilesListPane: () => <div>files list</div>,
 }))

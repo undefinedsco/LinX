@@ -1,14 +1,9 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { FilesDetail, FilesEntry } from '../../domain/resource/resource-model'
+import type { FolderChildCollectionRow } from '../../domain/folder/folder-detail-model'
 import { FolderDetailTreeView } from './FolderDetailTreeView'
-
-const mockUseFileDetail = vi.fn()
-
-vi.mock('../../data/queries', () => ({
-  useFileDetail: (...args: unknown[]) => mockUseFileDetail(...args),
-}))
 
 function entry(name: string, kind: FilesEntry['kind'] = 'resource'): FilesEntry {
   const uri = `https://pod.example/files/${name}${kind === 'container' ? '/' : ''}`
@@ -27,69 +22,90 @@ function entry(name: string, kind: FilesEntry['kind'] = 'resource'): FilesEntry 
 
 function folderDetail(childEntries: FilesEntry[]): FilesDetail {
   return {
-    ...entry('docs', 'container'),
+    ...entry('files', 'container'),
     headers: {},
     previewText: null,
     childEntries,
   }
 }
 
+function row(child: FilesEntry): FolderChildCollectionRow {
+  return {
+    entry: child,
+    iconKind: child.kind === 'container' ? 'folder' : 'file',
+    typeLabel: child.kind === 'container' ? '目录' : '文件',
+    modifiedLabel: '—',
+    sizeLabel: '—',
+  }
+}
+
+function renderView({
+  children,
+  onOpen = vi.fn(),
+  onSelect = vi.fn(),
+  onKeyboardSelect = vi.fn(),
+}: {
+  children: FilesEntry[]
+  onOpen?: ReturnType<typeof vi.fn>
+  onSelect?: ReturnType<typeof vi.fn>
+  onKeyboardSelect?: ReturnType<typeof vi.fn>
+}) {
+  const utils = render(
+    <FolderDetailTreeView
+      file={folderDetail(children)}
+      rows={children.map(row)}
+      selectedUris={new Set()}
+      sort={{ key: 'name', direction: 'asc' }}
+      actionMenu={{ items: [] }}
+      collectionChrome={{ ariaLabel: 'Folder list view', sortHeaders: [] }}
+      onSortKey={vi.fn()}
+      onSelect={onSelect}
+      onKeyboardSelect={onKeyboardSelect}
+      onContextMenuSelect={vi.fn()}
+      onOpen={onOpen}
+      onCopyUri={vi.fn()}
+      onRename={vi.fn()}
+      onCopy={vi.fn()}
+      onMove={vi.fn()}
+      onDelete={vi.fn()}
+    />,
+  )
+  return { ...utils, onOpen, onSelect, onKeyboardSelect }
+}
+
 describe('FolderDetailTreeView', () => {
-  it('loads child containers only after disclosure and opens nested files through the existing workflow', async () => {
+  it('renders folder rows without disclosure controls', () => {
+    renderView({ children: [entry('docs', 'container')] })
+
+    expect(screen.queryByRole('button', { name: /^展开 / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^收起 / })).not.toBeInTheDocument()
+  })
+
+  it('selects a folder on click without opening it, and opens it via double click or Enter', () => {
     const docs = entry('docs', 'container')
-    const guide = {
-      ...entry('guide.md'),
-      id: 'https://pod.example/files/docs/guide.md',
-      uri: 'https://pod.example/files/docs/guide.md',
-      parentUri: docs.uri,
-    }
-    const onOpen = vi.fn()
-    mockUseFileDetail.mockReturnValue({
-      data: folderDetail([guide]),
-      isLoading: false,
-      error: null,
-    })
+    const { onOpen, onSelect } = renderView({ children: [docs] })
 
-    render(
-      <FolderDetailTreeView
-        file={folderDetail([docs])}
-        rows={[{
-          entry: docs,
-          iconKind: 'folder',
-          typeLabel: '目录',
-          modifiedLabel: '—',
-          sizeLabel: '—',
-        }]}
-        selectedUris={new Set()}
-        sort={{ key: 'name', direction: 'asc' }}
-        actionMenu={{ items: [] }}
-        collectionChrome={{ ariaLabel: 'Folder list view', sortHeaders: [] }}
-        onSortKey={vi.fn()}
-        onSelect={vi.fn()}
-        onKeyboardSelect={vi.fn()}
-        onContextMenuSelect={vi.fn()}
-        onOpen={onOpen}
-        onCopyUri={vi.fn()}
-        onRename={vi.fn()}
-        onCopy={vi.fn()}
-        onMove={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    )
+    const docsButton = screen.getByRole('button', { name: /docs/ })
+    fireEvent.click(docsButton)
+    expect(onSelect).toHaveBeenCalledWith(docs, expect.anything())
+    expect(onOpen).not.toHaveBeenCalled()
 
-    expect(mockUseFileDetail).not.toHaveBeenCalled()
-    expect(screen.queryByText('guide.md')).not.toBeInTheDocument()
+    fireEvent.doubleClick(docsButton)
+    expect(onOpen).toHaveBeenCalledWith(docs, 'double-click')
 
-    fireEvent.click(screen.getByRole('button', { name: '展开 docs' }))
+    fireEvent.keyDown(docsButton, { key: 'Enter' })
+    expect(onOpen).toHaveBeenCalledWith(docs, 'enter')
+  })
 
-    expect(await screen.findByText('guide.md')).toBeInTheDocument()
-    expect(mockUseFileDetail).toHaveBeenCalledWith(docs.uri)
+  it('opens files on click and on Enter', () => {
+    const guide = entry('guide.md')
+    const { onOpen } = renderView({ children: [guide] })
 
-    const tree = screen.getByRole('tree', { name: 'Folder list view' })
-    const guideButton = within(tree).getByRole('button', { name: /guide\.md/ })
+    const guideButton = screen.getByRole('button', { name: /guide\.md/ })
     fireEvent.click(guideButton)
     expect(onOpen).toHaveBeenCalledWith(guide, 'click')
-    fireEvent.doubleClick(guideButton)
-    expect(onOpen).toHaveBeenCalledWith(guide, 'double-click')
+
+    fireEvent.keyDown(guideButton, { key: 'Enter' })
+    expect(onOpen).toHaveBeenCalledWith(guide, 'enter')
   })
 })

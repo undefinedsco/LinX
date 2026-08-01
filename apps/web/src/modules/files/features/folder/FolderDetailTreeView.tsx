@@ -1,5 +1,5 @@
-import { Fragment, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { ChevronDown, ChevronRight, FileText, Folder, LoaderCircle } from 'lucide-react'
+import { Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { FileText, Folder, Plus } from 'lucide-react'
 
 import {
   ContextMenu,
@@ -10,12 +10,9 @@ import {
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
 
-import { useFileDetail } from '../../data/queries'
 import {
-  getVisibleFolderChildren,
   projectFolderChildKeyboardNavigationPlan,
   projectFolderChildCollectionRow,
-  sortFolderEntries,
   type FolderChildActionKind,
   type FolderChildActionMenuChrome,
   type FolderChildCollectionChrome,
@@ -44,18 +41,15 @@ type TreeSharedProps = {
 
 function TreeRow({
   child,
-  depth,
   parentFile,
   siblingEntries,
   ...shared
 }: TreeSharedProps & {
   child: FilesEntry
-  depth: number
   parentFile: FilesDetail
   siblingEntries: FilesEntry[]
 }) {
   const isContainer = child.kind === 'container'
-  const [expanded, setExpanded] = useState(false)
   const row = projectFolderChildCollectionRow(child)
 
   const handleAction = (action: FolderChildActionKind) => {
@@ -72,9 +66,8 @@ function TreeRow({
 
   const handleOpen = (event: ReactMouseEvent<HTMLButtonElement>) => {
     shared.onSelect(child, event)
-    if (isContainer) {
-      setExpanded((current) => !current)
-    } else if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+    const isMultiSelectGesture = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+    if (!isContainer && !isMultiSelectGesture) {
       shared.onOpen(child, 'click')
     }
   }
@@ -97,121 +90,61 @@ function TreeRow({
       rowButtons.find((button) => button.dataset.folderUri === navigationPlan.nextChild?.uri)?.focus()
       return
     }
-    if (event.key === 'ArrowRight' && isContainer && !expanded) {
-      event.preventDefault()
-      setExpanded(true)
-      return
-    }
-    if (event.key === 'ArrowLeft' && isContainer && expanded) {
-      event.preventDefault()
-      setExpanded(false)
-      return
-    }
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     shared.onKeyboardSelect(child)
     if (event.key === ' ') return
-    if (isContainer) setExpanded((current) => !current)
-    else shared.onOpen(child, 'enter')
+    shared.onOpen(child, 'enter')
   }
 
   return (
-    <>
-      <div
-        role="treeitem"
-        aria-selected={shared.selectedUris.has(child.uri)}
-        aria-expanded={isContainer ? expanded : undefined}
-        className={cn(
-          'grid h-7 grid-cols-[minmax(0,1.4fr)_112px_112px_72px] items-center gap-3 border-b border-border/20 px-3 text-xs last:border-0 hover:bg-layout-list-hover',
-          shared.selectedUris.has(child.uri) && 'bg-primary/10',
-        )}
-      >
-        <div className="flex min-w-0 items-center" style={{ paddingLeft: `${depth * 16}px` }}>
-          {isContainer ? (
+    <div
+      data-folder-tree-item="true"
+      aria-selected={shared.selectedUris.has(child.uri)}
+      className={cn(
+        'grid h-7 grid-cols-[minmax(0,1.4fr)_112px_112px_72px] items-center gap-3 border-b border-border/20 px-3 text-xs last:border-0 hover:bg-layout-list-hover',
+        shared.selectedUris.has(child.uri) && 'bg-primary/10',
+      )}
+    >
+      <div className="flex min-w-0 items-center">
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
-              aria-label={`${expanded ? '收起' : '展开'} ${child.name}`}
-              onClick={() => setExpanded((current) => !current)}
+              data-folder-tree-row="true"
+              data-folder-uri={child.uri}
+              className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              onClick={handleOpen}
+              onDoubleClick={() => shared.onOpen(child, 'double-click')}
+              onContextMenu={() => shared.onContextMenuSelect(child)}
+              onKeyDown={handleKeyDown}
             >
-              {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              {isContainer
+                ? <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+              <span className="truncate text-foreground/85">{child.name}</span>
             </button>
-          ) : <span className="h-6 w-6 shrink-0" aria-hidden="true" />}
-          <ContextMenu>
-            <ContextMenuTrigger asChild>
-              <button
-                type="button"
-                data-folder-tree-row="true"
-                data-folder-uri={child.uri}
-                className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                onClick={handleOpen}
-                onDoubleClick={() => shared.onOpen(child, 'double-click')}
-                onContextMenu={() => shared.onContextMenuSelect(child)}
-                onKeyDown={handleKeyDown}
-              >
-                {isContainer
-                  ? <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                <span className="truncate text-foreground/85">{child.name}</span>
-              </button>
-            </ContextMenuTrigger>
-            <ContextMenuContent className="w-40">
-              {shared.actionMenu.items.map((item) => (
-                <Fragment key={item.kind}>
-                  {item.separatorBefore ? <ContextMenuSeparator /> : null}
-                  <ContextMenuItem
-                    className={item.destructive ? 'text-destructive focus:text-destructive' : undefined}
-                    onSelect={() => handleAction(item.kind)}
-                  >
-                    {item.label}
-                  </ContextMenuItem>
-                </Fragment>
-              ))}
-            </ContextMenuContent>
-          </ContextMenu>
-        </div>
-        <span className="truncate text-muted-foreground">{row.typeLabel}</span>
-        <span className="truncate text-muted-foreground">{row.modifiedLabel}</span>
-        <span className="text-right text-muted-foreground">{row.sizeLabel}</span>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-40">
+            {shared.actionMenu.items.map((item) => (
+              <Fragment key={item.kind}>
+                {item.separatorBefore ? <ContextMenuSeparator /> : null}
+                <ContextMenuItem
+                  className={item.destructive ? 'text-destructive focus:text-destructive' : undefined}
+                  onSelect={() => handleAction(item.kind)}
+                >
+                  {item.label}
+                </ContextMenuItem>
+              </Fragment>
+            ))}
+          </ContextMenuContent>
+        </ContextMenu>
       </div>
-      {isContainer && expanded ? (
-        <ExpandedFolderBranch containerUri={child.uri} depth={depth + 1} {...shared} />
-      ) : null}
-    </>
+      <span className="truncate text-muted-foreground">{row.typeLabel}</span>
+      <span className="truncate text-muted-foreground">{row.modifiedLabel}</span>
+      <span className="text-right text-muted-foreground">{row.sizeLabel}</span>
+    </div>
   )
-}
-
-function ExpandedFolderBranch({ containerUri, depth, ...shared }: TreeSharedProps & { containerUri: string; depth: number }) {
-  const detailQuery = useFileDetail(containerUri)
-
-  if (detailQuery.isLoading) {
-    return (
-      <div className="flex h-8 items-center gap-2 px-3 text-xs text-muted-foreground" style={{ paddingLeft: `${depth * 16 + 36}px` }}>
-        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-        正在读取...
-      </div>
-    )
-  }
-  const parentFile = detailQuery.data?.kind === 'container' ? detailQuery.data : null
-  if (detailQuery.error || !parentFile) {
-    return <div className="h-8 px-3 py-2 text-xs text-muted-foreground" style={{ paddingLeft: `${depth * 16 + 36}px` }}>无法读取此文件夹</div>
-  }
-
-  const siblingEntries = sortFolderEntries(getVisibleFolderChildren(parentFile.childEntries ?? []), shared.sort)
-  if (siblingEntries.length === 0) {
-    return <div className="h-8 px-3 py-2 text-xs text-muted-foreground" style={{ paddingLeft: `${depth * 16 + 36}px` }}>空文件夹</div>
-  }
-
-  return siblingEntries.map((child) => (
-    <TreeRow
-      key={child.uri}
-      child={child}
-      depth={depth}
-      parentFile={parentFile}
-      siblingEntries={siblingEntries}
-      {...shared}
-    />
-  ))
 }
 
 export function FolderDetailTreeView({
@@ -219,17 +152,19 @@ export function FolderDetailTreeView({
   rows,
   collectionChrome,
   onSortKey,
+  onAdd,
   ...shared
 }: TreeSharedProps & {
   file: FilesDetail
   rows: FolderChildCollectionRow[]
   collectionChrome: FolderChildCollectionChrome
   onSortKey: (key: FolderSortState['key']) => void
+  onAdd?: () => void
 }) {
   const siblingEntries = rows.map((row) => row.entry)
   return (
-    <div role="tree" data-folder-tree="true" aria-label={collectionChrome.ariaLabel} className="overflow-hidden border-y border-border/30">
-      <div className="grid grid-cols-[minmax(0,1.4fr)_112px_112px_72px] gap-3 border-b border-border/25 bg-muted/15 px-3 py-1.5 pl-9 text-[10px] font-medium uppercase text-muted-foreground">
+    <div data-folder-tree="true" aria-label={collectionChrome.ariaLabel} className="overflow-hidden border-y border-border/30">
+      <div className="grid grid-cols-[minmax(0,1.4fr)_112px_112px_72px] gap-3 border-b border-border/25 bg-muted/15 px-3 py-1.5 text-[10px] font-medium uppercase text-muted-foreground">
         {collectionChrome.sortHeaders.map((header) => (
           <button
             key={header.key}
@@ -247,12 +182,22 @@ export function FolderDetailTreeView({
         <TreeRow
           key={row.entry.uri}
           child={row.entry}
-          depth={0}
           parentFile={file}
           siblingEntries={siblingEntries}
           {...shared}
         />
       ))}
+      {onAdd ? (
+        <button
+          type="button"
+          aria-label="添加"
+          className="flex h-7 w-full items-center justify-center gap-1 text-xs text-muted-foreground hover:bg-layout-list-hover hover:text-foreground"
+          onClick={onAdd}
+        >
+          <Plus className="h-3 w-3" aria-hidden="true" />
+          添加
+        </button>
+      ) : null}
     </div>
   )
 }

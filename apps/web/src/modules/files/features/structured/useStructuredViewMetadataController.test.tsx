@@ -1,24 +1,16 @@
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { StructuredViewMetadata } from '../../domain/structured/structured-view-metadata'
+import {
+  loadLocalStructuredViewMetadata,
+  saveLocalStructuredViewMetadata,
+} from './local-structured-view-metadata-store'
 import { useStructuredViewMetadataController } from './useStructuredViewMetadataController'
 
-const mutateAsync = vi.fn()
-const toast = vi.fn()
-const saveMutation = { mutateAsync }
 const hydrateStructuredViewMetadata = vi.fn()
 const markStructuredViewMetadataDirty = vi.fn()
 const clearStructuredViewMetadataDirty = vi.fn()
-
-vi.mock('../../data/queries', () => ({
-  useStructuredViewMetadata: () => ({ data: baseMetadata }),
-  useSaveStructuredViewMetadata: () => saveMutation,
-}))
-
-vi.mock('@/components/ui/use-toast', () => ({
-  useToast: () => ({ toast }),
-}))
 
 const baseMetadata: Required<StructuredViewMetadata> = {
   documentUri: 'https://pod.example/tasks.ttl',
@@ -41,10 +33,49 @@ const baseMetadata: Required<StructuredViewMetadata> = {
   writesCanonicalData: false,
 }
 
+function renderController({
+  currentViewMetadata = baseMetadata,
+  localViewMetadataDirty = false,
+}: {
+  currentViewMetadata?: StructuredViewMetadata
+  localViewMetadataDirty?: boolean
+} = {}) {
+  return renderHook(
+    ({ currentViewMetadata, localViewMetadataDirty }) => useStructuredViewMetadataController({
+      currentViewMetadata,
+      file: { uri: baseMetadata.documentUri, kind: 'resource' },
+      hydrateStructuredViewMetadata,
+      localViewMetadataDirty,
+      markStructuredViewMetadataDirty,
+      clearStructuredViewMetadataDirty,
+      whiteboardLayoutKey: baseMetadata.documentUri,
+    }),
+    { initialProps: { currentViewMetadata, localViewMetadataDirty } },
+  )
+}
+
 describe('useStructuredViewMetadataController', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    window.localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('hydrates the stored view metadata from local storage on mount', () => {
+    saveLocalStructuredViewMetadata(baseMetadata.documentUri, { ...baseMetadata, viewMode: 'kanban' })
+
+    renderController()
+
+    expect(hydrateStructuredViewMetadata).toHaveBeenCalledTimes(1)
+    const [hydratedMetadata, layoutKey] = hydrateStructuredViewMetadata.mock.calls[0]
+    expect(hydratedMetadata.viewMode).toBe('kanban')
+    expect(hydratedMetadata.documentUri).toBe(baseMetadata.documentUri)
+    expect(layoutKey).toBe(baseMetadata.documentUri)
   })
 
   it('does not autosave transient view state before the current document is locally changed', async () => {
@@ -53,56 +84,54 @@ describe('useStructuredViewMetadataController', () => {
       documentUri: 'https://pod.example/previous.ttl',
       viewMode: 'whiteboard' as const,
     }
-    const { rerender } = renderHook(
-      ({ currentViewMetadata }) => useStructuredViewMetadataController({
-        currentViewMetadata,
-        file: { uri: baseMetadata.documentUri, kind: 'resource' },
-        hydrateStructuredViewMetadata,
-        localViewMetadataDirty: false,
-        markStructuredViewMetadataDirty,
-        clearStructuredViewMetadataDirty,
-        whiteboardLayoutKey: baseMetadata.documentUri,
-      }),
-      { initialProps: { currentViewMetadata: baseMetadata } },
-    )
+    const { rerender } = renderController()
 
-    rerender({ currentViewMetadata: transientMetadata })
+    rerender({ currentViewMetadata: transientMetadata, localViewMetadataDirty: false })
     await act(async () => vi.advanceTimersByTimeAsync(800))
 
-    expect(mutateAsync).not.toHaveBeenCalled()
+    expect(loadLocalStructuredViewMetadata(baseMetadata.documentUri)).toBeNull()
+    expect(loadLocalStructuredViewMetadata('https://pod.example/previous.ttl')).toBeNull()
   })
 
-  it('keeps a durable error state and retries the current metadata', async () => {
-    mutateAsync.mockRejectedValueOnce(new Error('network unavailable')).mockResolvedValueOnce(undefined)
+  it('saves local view changes to local storage after the debounce', async () => {
     const changedMetadata = { ...baseMetadata, viewMode: 'kanban' as const }
-    const { result, rerender } = renderHook(
-      ({ currentViewMetadata, localViewMetadataDirty }) => useStructuredViewMetadataController({
-        currentViewMetadata,
-        file: { uri: baseMetadata.documentUri, kind: 'resource' },
-        hydrateStructuredViewMetadata,
-        localViewMetadataDirty,
-        markStructuredViewMetadataDirty,
-        clearStructuredViewMetadataDirty,
-        whiteboardLayoutKey: baseMetadata.documentUri,
-      }),
-      { initialProps: { currentViewMetadata: baseMetadata, localViewMetadataDirty: false } },
-    )
+    const { result, rerender } = renderController()
 
-    rerender({ currentViewMetadata: baseMetadata, localViewMetadataDirty: false })
     rerender({ currentViewMetadata: changedMetadata, localViewMetadataDirty: true })
     expect(result.current.viewMetadataSaveStatus).toBe('dirty')
 
     await act(async () => vi.advanceTimersByTimeAsync(800))
 
-    expect(mutateAsync).toHaveBeenCalledTimes(1)
+    const stored = loadLocalStructuredViewMetadata(baseMetadata.documentUri)
+    expect(stored?.viewMode).toBe('kanban')
+    expect(result.current.viewMetadataSaveStatus).toBe('synced')
+    expect(result.current.viewMetadataSaveError).toBeNull()
+    expect(clearStructuredViewMetadataDirty).toHaveBeenCalledWith(baseMetadata.documentUri)
+  })
+
+  it('keeps a durable error state and retries the current metadata', async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+    setItemSpy.mockImplementationOnce(() => {
+      throw new Error('quota exceeded')
+    })
+    const changedMetadata = { ...baseMetadata, viewMode: 'kanban' as const }
+    const { result, rerender } = renderController()
+
+    rerender({ currentViewMetadata: changedMetadata, localViewMetadataDirty: true })
+    expect(result.current.viewMetadataSaveStatus).toBe('dirty')
+
+    await act(async () => vi.advanceTimersByTimeAsync(800))
+
     expect(result.current.viewMetadataSaveStatus).toBe('error')
-    expect(result.current.viewMetadataSaveError).toBe('network unavailable')
+    expect(result.current.viewMetadataSaveError).toBe('quota exceeded')
+    expect(loadLocalStructuredViewMetadata(baseMetadata.documentUri)).toBeNull()
 
     act(() => result.current.retryViewMetadataSave())
     expect(result.current.viewMetadataSaveStatus).toBe('dirty')
     await act(async () => vi.advanceTimersByTimeAsync(800))
 
-    expect(mutateAsync).toHaveBeenCalledTimes(2)
+    const stored = loadLocalStructuredViewMetadata(baseMetadata.documentUri)
+    expect(stored?.viewMode).toBe('kanban')
     expect(result.current.viewMetadataSaveStatus).toBe('synced')
     expect(result.current.viewMetadataSaveError).toBeNull()
   })

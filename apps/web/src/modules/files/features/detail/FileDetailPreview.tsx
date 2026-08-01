@@ -1,4 +1,5 @@
-import { FileText } from 'lucide-react'
+import { FileText, Pencil, SquareArrowOutUpRight } from 'lucide-react'
+import { useRef } from 'react'
 
 import { Button } from '@/components/ui/button'
 
@@ -9,6 +10,7 @@ import type { FilesDetail } from '../../domain/resource/resource-model'
 import { LockedVocabTablePreview } from '../structured/LockedVocabTablePreview'
 import { StructuredResourcePreview } from '../structured/StructuredTablePreview'
 import { DocumentEditorModal } from '../editor/DocumentEditorModal'
+import { FileEditorSurface, type FileEditorSurfaceHandle } from '../editor/FileEditorSurface'
 import { SourceLinkedCardPreview } from './FileDetailSourceLinkedCardPreview'
 import { ModeCard, RawTextBlock } from '../../ui/FileDetailPreviewPrimitives'
 import { FolderDetailPreview } from '../folder/FolderDetailPreview'
@@ -30,23 +32,61 @@ function EditableFilePreview({
   file: FilesDetail
   onOpenSheet?: () => void
 }) {
+  const surfaceRef = useRef<FileEditorSurfaceHandle>(null)
   const {
+    editing,
     handlePreviewKeyDown,
-    openSheet,
+    openModal,
+    setEditing,
     setSheetOpen,
     sheetOpen,
+    startInlineEdit,
   } = useEditableFilePreviewController({
     fileUri: file.uri,
     onOpenSheet,
   })
   const editablePreview = projectEditableFilePreviewModel(file)
 
+  if (editing) {
+    return (
+      <div className="flex min-h-full flex-col" aria-label="可编辑文件预览">
+        <div className="flex h-11 shrink-0 items-center justify-end gap-1 border-b border-border/30 px-4">
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => surfaceRef.current?.requestClose()}>
+            完成编辑
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            aria-label="在新窗口中编辑"
+            title="在新窗口中编辑（⌘/Ctrl + 单击文件）"
+            onClick={openModal}
+          >
+            <SquareArrowOutUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+        <FileEditorSurface
+          ref={surfaceRef}
+          file={file}
+          open
+          variant="inline"
+          onExited={() => setEditing(false)}
+        />
+        <DocumentEditorModal
+          file={file}
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+        />
+      </div>
+    )
+  }
+
   return (
     <div
       aria-label="可编辑文件预览"
       className="flex min-h-full items-start justify-center px-6 py-8 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       tabIndex={0}
-      onDoubleClick={openSheet}
+      onDoubleClick={startInlineEdit}
       onKeyDown={handlePreviewKeyDown}
     >
       <section className="w-full max-w-xl">
@@ -65,9 +105,22 @@ function EditableFilePreview({
               ))}
             </p>
           </div>
-          <Button size="sm" className="h-7 shrink-0 text-xs" onClick={openSheet}>
-            {editablePreview.openLabel}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button size="sm" className="h-7 text-xs" onClick={startInlineEdit}>
+              <Pencil className="mr-1 h-3 w-3" aria-hidden="true" />
+              {editablePreview.openLabel}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              aria-label="在新窗口中编辑"
+              title="在新窗口中编辑（⌘/Ctrl + 单击文件）"
+              onClick={openModal}
+            >
+              <SquareArrowOutUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
         <div className="mt-4 space-y-3">
           <RawTextBlock text={file.previewText} />

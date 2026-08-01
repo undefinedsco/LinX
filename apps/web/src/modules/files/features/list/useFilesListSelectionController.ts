@@ -83,12 +83,8 @@ export function useFilesListSelectionController({
       }
     }
     if (event?.metaKey || event?.ctrlKey) {
-      toggleFileSelection(file.uri)
-      setInteractionState((current) => projectFilesListInteractionAnchor({
-        current,
-        selectionAnchorId: file.uri,
-      }))
       selectFile(file.uri)
+      openFile(file, 'modifier-click')
       return
     }
     replaceFileSelection([file.uri])

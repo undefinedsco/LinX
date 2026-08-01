@@ -207,6 +207,7 @@ export function buildStructuredProjectionTableColumns({
           <StructuredPredicateColumnHeader
             predicate={predicate}
             proposal={proposal}
+            showNamespaces={showNamespaces}
             observedValues={columnModel.observedValues}
             definition={definition}
             sortIcon={(

@@ -1,4 +1,4 @@
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import type { AccessPolicyProposal } from '../../domain/proposal/access-approval-model'

@@ -354,6 +354,11 @@ describe('Files shell alignment contract (2026-07-20 design)', () => {
     const source = readFileSync(folderDetailPreviewPath, 'utf8')
 
     expect(source, 'folder workspace must not render a back button; the tree owns navigation').not.toMatch(/goBackFolder|返回|aria-label="back"/i)
-    expect(source, 'folder workspace head should show the current path').toMatch(/path|Path/)
+
+    const detailPaneModelPath = 'src/modules/files/features/detail/file-detail-pane-model.ts'
+    expect(existsSync(detailPaneModelPath)).toBe(true)
+    if (!existsSync(detailPaneModelPath)) return
+    const detailPaneModelSource = readFileSync(detailPaneModelPath, 'utf8')
+    expect(detailPaneModelSource, 'workspace head should show the current path').toContain('fileDetailPathLabel')
   })
 })

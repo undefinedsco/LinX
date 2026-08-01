@@ -73,6 +73,10 @@ function structuredSubjectDisplayLabel(subject: string, documentUri: string) {
     const hash = subjectUrl.hash
     subjectUrl.hash = ''
     if (hash && subjectUrl.href === documentUrl.href) return hash
+    const segments = subjectUrl.pathname.split('/').filter(Boolean)
+    const basename = segments[segments.length - 1]
+    if (basename) return `${decodeURIComponent(basename)}${hash}`
+    return `${subjectUrl.host}${hash}`
   } catch {
     // Non-URL and relative subjects are already display-ready.
   }
@@ -93,8 +97,8 @@ export function projectStructuredSubjectCellOpenAffordance(
   if (!openTarget) return null
 
   const ariaDescription = openTarget.canNavigateDirectly
-    ? '单击打开预览；Enter 或双击打开资源。'
-    : '单击打开预览；在预览中选择打开动作。'
+    ? '单击或 Enter 打开资源；空格预览。'
+    : '单击或 Enter 打开预览；在预览中选择打开动作。'
 
   return {
     ariaDescription,
@@ -187,7 +191,7 @@ export function projectStructuredSubjectCellChrome({
   row: StructuredProjectionTableRow
   rowIndex: number
 }): StructuredSubjectCellChrome {
-  const openTarget = resolveStructuredSubjectOpenTarget(documentUri, row.subject, { projection })
+  const openTarget = resolveStructuredSubjectOpenTarget(documentUri, row.subject, { fallbackToDocument: true, projection })
   const displayLabel = structuredSubjectDisplayLabel(row.subject, documentUri)
 
   return {

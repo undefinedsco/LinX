@@ -2,7 +2,7 @@ import { useFilesStore } from '../../app/store'
 import { hasFilesSystemExternalOpen } from '../../app/platform-actions'
 import { useFileDetail } from '../../data/queries'
 import { projectFileDetailControllerState } from '../detail/file-detail-pane-model'
-import { SourceLinkedCardDrawerMetadata } from '../detail/FileDetailMetadataPanels'
+import { FileDrawerMetadata, SourceLinkedCardDrawerMetadata } from '../detail/FileDetailMetadataPanels'
 import { ResourceMetaDrawer } from './ResourceSidecars'
 
 export function FilesMetaSidebar() {
@@ -19,7 +19,7 @@ export function FilesMetaSidebar() {
     hasSystemOpen: hasFilesSystemExternalOpen(),
   })
 
-  if (!detailState.showMetaDrawer || !file || !detailState.sidecarOwnerTarget) return null
+  if (!file || !detailState.sidecarOwnerTarget) return null
 
   return (
     <ResourceMetaDrawer
@@ -28,8 +28,10 @@ export function FilesMetaSidebar() {
       target={detailState.sidecarOwnerTarget}
       open
       onClose={() => setMetaSidebarOpen(false)}
+      showUserMetadata={!detailState.showFileDrawerMetadata}
     >
       {detailState.showSourceLinkedDrawerMetadata ? <SourceLinkedCardDrawerMetadata file={file} /> : null}
+      {detailState.showFileDrawerMetadata ? <FileDrawerMetadata file={file} /> : null}
     </ResourceMetaDrawer>
   )
 }

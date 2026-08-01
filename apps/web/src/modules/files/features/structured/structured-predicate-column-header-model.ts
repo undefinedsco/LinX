@@ -245,12 +245,14 @@ export function projectStructuredPredicateColumnHeader({
   observedValues,
   predicate,
   proposal,
+  showNamespaces = false,
 }: {
   canCreateVocabTermProposal?: boolean
   definition?: StructuredVocabPredicateDefinition
   observedValues: string[]
   predicate: string
   proposal?: StructuredPredicateColumnProposal
+  showNamespaces?: boolean
 }): StructuredPredicateColumnHeaderModel {
   if (proposal) {
     const displayLabel = pendingPredicateHeaderLabel(proposal.label)
@@ -278,7 +280,7 @@ export function projectStructuredPredicateColumnHeader({
     }
   }
 
-  const label = localPredicateLabel(predicate)
+  const label = showNamespaces ? predicate : localPredicateLabel(predicate)
   const shapeRules = definition?.shapeRules ?? []
   return {
     kind: 'defined',

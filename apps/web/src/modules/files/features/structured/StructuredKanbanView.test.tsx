@@ -141,7 +141,7 @@ describe('StructuredKanbanView', () => {
 
     expect(onOpenSubject).toHaveBeenCalledTimes(2)
     expect(onOpenSubject).toHaveBeenNthCalledWith(1, '#b', { navigate: true })
-    expect(onOpenSubject).toHaveBeenNthCalledWith(2, '#b', { navigate: false })
+    expect(onOpenSubject).toHaveBeenNthCalledWith(2, '#b', { navigate: true })
   })
 
   it('extends card selection with Shift without opening either card', () => {

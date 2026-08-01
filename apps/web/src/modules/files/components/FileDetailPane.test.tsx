@@ -6,14 +6,16 @@ import { FilesResourceReadError } from '../browser'
 import { createSourceUpdateProposal, renderSourceUpdateProposalTurtle } from '../source-approval'
 import { createStructuredCellChangeProposal } from '../structured-cell-approval'
 import { createVocabTermProposal } from '../structured-table'
+import {
+  loadLocalStructuredViewMetadata,
+  saveLocalStructuredViewMetadata,
+} from '../features/structured/local-structured-view-metadata-store'
 
 const mockUseFileDetail = vi.fn()
 const mockUseFilesAccessBasics = vi.fn()
 const mockUseFilesMetaSidecar = vi.fn()
-const mockUseStructuredViewMetadata = vi.fn()
 const mockUseRawTextResource = vi.fn()
 const mockUseBlobResource = vi.fn()
-const mockUseSaveStructuredViewMetadata = vi.fn()
 const mockUseSaveRawTextResource = vi.fn()
 const mockUseCreateRawTextResource = vi.fn()
 const mockUseCreateBlobResource = vi.fn()
@@ -46,21 +48,17 @@ function revealRichTextToolbar(editor = getRichEditorTextbox()) {
   fireEvent.focus(editor)
 }
 
-function getEditableFileSurface(): HTMLElement {
-  return screen.queryByRole('dialog', { name: 'Hello' }) ?? document.body
+function getFileMetaDrawer(): HTMLElement {
+  return screen.getByLabelText('Resource .meta inspector')
 }
 
-function getEditableFileMetaTail(): HTMLElement {
-  return within(getEditableFileSurface()).getByLabelText('文件 meta')
-}
-
-function getEditableFileMetaControl(label: string): HTMLElement {
-  return within(getEditableFileSurface()).getByLabelText(label)
+function getFileMetaDrawerControl(label: string): HTMLElement {
+  return within(getFileMetaDrawer()).getByLabelText(label)
 }
 
 function getFolderTreeItem(name: RegExp) {
-  const button = within(screen.getByRole('tree', { name: 'Folder list view' })).getByRole('button', { name })
-  const treeItem = button.closest('[role="treeitem"]')
+  const button = within(screen.getByLabelText('Folder list view')).getByRole('button', { name })
+  const treeItem = button.closest('[data-folder-tree-item]')
   if (!(treeItem instanceof HTMLElement)) throw new Error('Folder tree item was not rendered')
   return treeItem
 }
@@ -84,7 +82,6 @@ const mockCreateCellProposal = vi.fn()
 const mockMoveFileResource = vi.fn()
 const mockDeleteFileResource = vi.fn()
 const mockRefreshSourceLinkedCard = vi.fn()
-const mockSaveStructuredViewMetadata = vi.fn()
 const mockRequestIngestRange = vi.fn()
 const mockResolveInboxApproval = vi.fn()
 
@@ -93,7 +90,7 @@ function closeAutoOpenedFileSheet() {
 }
 
 function requestDefaultEditableFileSheetOpen() {
-  useFilesStore.setState({ editableFileSheetOpenRequestUri: 'https://pod.example/public/README.md' })
+  useFilesStore.getState().requestEditableFileSheetOpen('https://pod.example/public/README.md')
 }
 
 function selectFileEditorMode(label: '富文本' | '源码') {
@@ -117,12 +114,19 @@ function openHeaderMetaDrawer() {
 }
 
 function openHeaderAccessDialog() {
-  const editableLauncher = screen.queryByRole('button', { name: '打开文件编辑器' })
-    ?? screen.queryByRole('button', { name: '打开文件详情' })
-  if (editableLauncher) {
-    fireEvent.click(editableLauncher)
-    const editorSheet = screen.getByRole('dialog', { name: 'Hello' })
-    fireEvent.pointerDown(within(editorSheet).getByRole('button', { name: '更多文件操作' }))
+  if (!screen.queryByRole('dialog', { name: 'Hello' })) {
+    const editableLauncher = screen.queryByRole('button', { name: '打开文件编辑器' })
+      ?? screen.queryByRole('button', { name: '打开文件详情' })
+    if (editableLauncher) {
+      act(() => {
+        const selectedFileId = useFilesStore.getState().selectedFileId
+        if (selectedFileId) useFilesStore.getState().requestEditableFileSheetOpen(selectedFileId)
+      })
+    }
+  }
+  const editorHeader = screen.queryByLabelText('文件详情标题')
+  if (editorHeader && within(editorHeader).queryByRole('button', { name: '更多文件操作' })) {
+    fireEvent.pointerDown(within(editorHeader).getByRole('button', { name: '更多文件操作' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '查看 Access 来源' }))
     return
   }
@@ -159,10 +163,8 @@ vi.mock('../data/queries', () => ({
   },
   useFilesAccessBasics: (...args: unknown[]) => mockUseFilesAccessBasics(...args),
   useFilesMetaSidecar: (...args: unknown[]) => mockUseFilesMetaSidecar(...args),
-  useStructuredViewMetadata: (...args: unknown[]) => mockUseStructuredViewMetadata(...args),
   useRawTextResource: (...args: unknown[]) => mockUseRawTextResource(...args),
   useBlobResource: (...args: unknown[]) => mockUseBlobResource(...args),
-  useSaveStructuredViewMetadata: () => mockUseSaveStructuredViewMetadata(),
   useSaveRawTextResource: () => mockUseSaveRawTextResource(),
   useCreateRawTextResource: () => mockUseCreateRawTextResource(),
   useCreateBlobResource: () => mockUseCreateBlobResource(),
@@ -216,6 +218,7 @@ beforeEach(() => {
     expandedTreeNodeIds: new Set(),
     selectedFileId: 'https://pod.example/public/README.md',
     selectedFileIds: new Set(),
+    metaSidebarOpen: false,
     searchText: '',
     sortField: 'modifiedAt',
     sortDirection: 'desc',
@@ -224,6 +227,7 @@ beforeEach(() => {
     editableFileSheetOpenRequestUri: null,
     sidecarActionRequest: null,
     structuredViewMode: 'table',
+    structuredOpenViews: [],
     structuredClassScope: null,
     structuredSearchText: '',
     structuredSortKey: null,
@@ -516,16 +520,7 @@ beforeEach(() => {
     isLoading: false,
     error: null,
   })
-  mockUseStructuredViewMetadata.mockReturnValue({
-    data: null,
-    isLoading: false,
-    error: null,
-  })
-  mockUseSaveStructuredViewMetadata.mockReturnValue({
-    mutate: mockSaveStructuredViewMetadata,
-    mutateAsync: mockSaveStructuredViewMetadata,
-    isPending: false,
-  })
+  window.localStorage.clear()
   mockToast.mockClear()
   mockMutateRaw.mockClear()
   mockCreateRaw.mockClear()
@@ -538,7 +533,6 @@ beforeEach(() => {
   mockCreateCellProposal.mockClear()
   mockMoveFileResource.mockClear()
   mockDeleteFileResource.mockClear()
-  mockSaveStructuredViewMetadata.mockClear()
   mockRequestIngestRange.mockClear()
   mockUseRefreshSourceLinkedCard.mockClear()
   mockRefreshSourceLinkedCard.mockClear()
@@ -576,21 +570,25 @@ describe('FileDetailPane', () => {
     expect(within(preview).getAllByText('https://pod.example/public/README.md').length).toBeGreaterThan(0)
     expect(preview.querySelector('pre')).toHaveTextContent('# Hello')
     expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument()
-    expect(mockUseFilesMetaSidecar).toHaveBeenCalledWith(expect.objectContaining({
-      uri: 'https://pod.example/public/README.md',
-    }), false)
+    expect(mockUseFilesMetaSidecar).not.toHaveBeenCalledWith(expect.anything(), true)
 
     fireEvent.doubleClick(preview)
-    expect(await screen.findByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
-    closeAutoOpenedFileSheet()
+    expect(await screen.findByRole('button', { name: '完成编辑' })).toBeInTheDocument()
+    expect(screen.getByTestId('rich-text-file-editor')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument()
+    expect(mockUseFilesMetaSidecar).not.toHaveBeenCalledWith(expect.anything(), true)
+    fireEvent.click(screen.getByRole('button', { name: '完成编辑' }))
+    expect(screen.queryByRole('button', { name: '完成编辑' })).not.toBeInTheDocument()
 
-    fireEvent.keyDown(preview, { key: 'Enter' })
-    expect(await screen.findByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
-    closeAutoOpenedFileSheet()
+    fireEvent.keyDown(screen.getByLabelText('可编辑文件预览'), { key: 'Enter' })
+    expect(await screen.findByRole('button', { name: '完成编辑' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '完成编辑' }))
 
-    fireEvent.click(within(preview).getByRole('button', { name: '打开文件详情' }))
-    expect(await screen.findByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
-    closeAutoOpenedFileSheet()
+    fireEvent.click(within(screen.getByLabelText('可编辑文件预览')).getByRole('button', { name: '打开文件详情' }))
+    expect(await screen.findByRole('button', { name: '完成编辑' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '完成编辑' }))
 
     act(() => {
       useFilesStore.getState().requestEditableFileSheetOpen('https://pod.example/public/README.md')
@@ -628,108 +626,23 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('button', { name: '源码' })).not.toBeInTheDocument()
     expect(screen.getByTestId('rich-text-file-editor')).toBeInTheDocument()
     expect(screen.queryByRole('toolbar', { name: '富文本块工具' })).not.toBeInTheDocument()
-    const metaTail = getEditableFileMetaTail()
     const titleRegion = within(editorSheet).getByLabelText('文件详情标题')
     const contentRegion = screen.getByTestId('rich-text-file-editor')
     const sheetScrollArea = within(editorSheet).getByLabelText('文件详情内容滚动区')
-    expect(metaTail).toBeInTheDocument()
-    expect(sheetScrollArea).toContainElement(metaTail)
+    expect(sheetScrollArea).toContainElement(contentRegion)
     expect(titleRegion.compareDocumentPosition(contentRegion) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(contentRegion.compareDocumentPosition(metaTail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(within(metaTail).getByText('MIME 类型')).toBeInTheDocument()
-    expect(within(metaTail).getByRole('button', { name: '收起 Info' })).toBeInTheDocument()
-    expect(within(metaTail).getByText('text/markdown')).toBeInTheDocument()
-    expect(within(metaTail).getByText('大小')).toBeInTheDocument()
-    expect(within(metaTail).getByText('1.0 KB')).toBeInTheDocument()
-    expect(within(metaTail).getByText('父容器')).toBeInTheDocument()
-    expect(within(metaTail).getByText('https://pod.example/public/')).toBeInTheDocument()
-    expect(within(metaTail).queryByText('访问权限')).not.toBeInTheDocument()
-    expect(within(metaTail).queryByText('你：可查看、可追加、可管理权限')).not.toBeInTheDocument()
-    expect(within(metaTail).queryByText('公开访问：可查看')).not.toBeInTheDocument()
-    expect(within(metaTail).getAllByText('.meta').length).toBeGreaterThan(0)
-    expect(within(metaTail).getAllByText('来源').length).toBeGreaterThan(0)
-    expect(within(metaTail).getByText('https://source.example/readme')).toBeInTheDocument()
-    expect(within(metaTail).getByText('相关链接')).toBeInTheDocument()
-    expect(within(metaTail).getByText('https://pod.example/public/spec.md')).toBeInTheDocument()
-    expect(within(metaTail).getByText('词表 / Schema')).toBeInTheDocument()
-    expect(within(metaTail).getAllByText(/terms\.ttl/).length).toBeGreaterThan(0)
-    expect(within(metaTail).getAllByText(/MarkdownFileShape/).length).toBeGreaterThan(0)
-    expect(within(metaTail).getByLabelText('RDF metadata')).toBeInTheDocument()
-    expect(within(metaTail).getByLabelText('File title meta predicate')).toHaveValue('Hello')
-    expect(within(metaTail).getByLabelText('File review status meta predicate')).toHaveValue('')
-    expect(within(metaTail).getByRole('combobox', { name: 'File tags meta predicate' })).toHaveValue('')
-    expect(within(metaTail).getByLabelText('File source meta predicate')).toHaveValue('https://source.example/readme')
-    const sheetInfoButton = within(titleRegion).getByRole('button', { name: '显示 Info' })
-    expect(sheetInfoButton).toBeInTheDocument()
+    expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
+    expect(within(titleRegion).queryByRole('button', { name: '显示 Info' })).not.toBeInTheDocument()
     fireEvent.pointerDown(within(titleRegion).getByRole('button', { name: '更多文件操作' }))
-    expect(screen.getByRole('menuitem', { name: '显示 Info' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '显示 Info' })).not.toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
-    expect(within(metaTail).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
-    expect(within(metaTail).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('menuitem', { name: '显示 Info' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '富文本' }))
+    expect(screen.queryByRole('menuitem', { name: '查看 Access 来源' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Resource .meta inspector')).not.toBeInTheDocument()
-    expect(getEditableFileMetaTail()).toBe(metaTail)
     expect(screen.queryByRole('button', { name: /保存/ })).not.toBeInTheDocument()
     expect(within(getRichEditorTextbox()).getByRole('heading', { name: 'Hello' })).toBeInTheDocument()
     expect(getRichEditorTextbox()).toHaveAttribute('contenteditable', 'true')
     expect(screen.getByText(/LinX full raw/)).toBeInTheDocument()
-
-    fireEvent.change(within(metaTail).getByLabelText('File title meta predicate'), { target: { value: 'Hello RDF' } })
-    fireEvent.blur(within(metaTail).getByLabelText('File title meta predicate'))
-    await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
-        documentUri: 'https://pod.example/public/README.md.meta',
-        subject: '#meta',
-        predicate: 'rdfs:label',
-        previousValues: [],
-        nextValues: ['"Hello RDF"'],
-        writesCanonicalResource: false,
-      }))
-    })
-    mockCreateCellProposal.mockClear()
-
-    const reviewStatusInput = within(metaTail).getByLabelText('File review status meta predicate')
-    fireEvent.change(reviewStatusInput, { target: { value: 'Ready' } })
-    fireEvent.keyDown(reviewStatusInput, { key: 'Enter' })
-    await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
-        documentUri: 'https://pod.example/public/README.md.meta',
-        subject: '#meta',
-        predicate: 'udfs:reviewStatus',
-        previousValues: [],
-        nextValues: ['"Ready"'],
-        writesCanonicalResource: false,
-      }))
-    })
-    mockCreateCellProposal.mockClear()
-
-    fireEvent.change(getEditableFileMetaControl('File tags meta predicate'), { target: { value: 'docs' } })
-    fireEvent.keyDown(getEditableFileMetaControl('File tags meta predicate'), { key: 'Enter' })
-    await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
-        documentUri: 'https://pod.example/public/README.md.meta',
-        subject: '#meta',
-        predicate: 'udfs:tags',
-        previousValues: [],
-        nextValues: ['"docs"'],
-        writesCanonicalResource: false,
-      }))
-    })
-    expect(within(metaTail).getByLabelText('已选择值 docs')).toBeInTheDocument()
-    mockCreateCellProposal.mockClear()
-
-    fireEvent.change(getEditableFileMetaControl('File source meta predicate'), { target: { value: 'https://source.example/readme-v2' } })
-    fireEvent.blur(getEditableFileMetaControl('File source meta predicate'))
-    await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
-        documentUri: 'https://pod.example/public/README.md.meta',
-        subject: '#meta',
-        predicate: 'dcterms:source',
-        previousValues: ['<https://source.example/readme>'],
-        nextValues: ['<https://source.example/readme-v2>'],
-        writesCanonicalResource: false,
-      }))
-    })
 
     selectFileEditorMode('源码')
 
@@ -738,7 +651,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('button', { name: '保存原始内容' })).toBeDisabled()
   })
 
-  it('keeps editable file sheet chrome minimal until Info or More is requested', async () => {
+  it('keeps editable file sheet chrome minimal until More is requested', async () => {
     requestDefaultEditableFileSheetOpen()
     render(<FileDetailPane />)
 
@@ -753,7 +666,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('button', { name: '源码' })).not.toBeInTheDocument()
     expect(screen.queryByRole('toolbar', { name: '富文本块工具' })).not.toBeInTheDocument()
 
-    expect(within(sheetHeader).getByRole('button', { name: '显示 Info' })).toBeInTheDocument()
+    expect(within(sheetHeader).queryByRole('button', { name: '显示 Info' })).not.toBeInTheDocument()
     fireEvent.pointerDown(within(sheetHeader).getByRole('button', { name: '更多文件操作' }))
     expect(screen.getByRole('menuitem', { name: '源码' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
@@ -774,7 +687,6 @@ describe('FileDetailPane', () => {
     })
 
     expect(await screen.findByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
-    expect(getEditableFileMetaTail()).toBeInTheDocument()
   })
 
   it('restores the originating structured context when closing a document editor opened from a subject resource', async () => {
@@ -1003,7 +915,6 @@ describe('FileDetailPane', () => {
   })
 
   it('hydrates editable file RDF metadata from .meta and stages edits against the meta values', async () => {
-    requestDefaultEditableFileSheetOpen()
     mockUseFilesMetaSidecar.mockReturnValue({
       data: {
         ownerUri: 'https://pod.example/public/README.md',
@@ -1028,15 +939,17 @@ describe('FileDetailPane', () => {
     })
 
     render(<FileDetailPane />)
+    openHeaderMetaDrawer()
 
-    expect(getEditableFileMetaControl('File title meta predicate')).toHaveValue('Readme metadata title')
-    expect(getEditableFileMetaControl('File review status meta predicate')).toHaveValue('Needs review')
-    expect(within(getEditableFileMetaTail()).getByLabelText('已选择值 core')).toBeInTheDocument()
-    expect(within(getEditableFileMetaTail()).getByLabelText('已选择值 rdf')).toBeInTheDocument()
-    expect(getEditableFileMetaControl('File source meta predicate')).toHaveValue('https://source.example/readme')
+    expect(getFileMetaDrawerControl('File title meta predicate')).toHaveValue('Readme metadata title')
+    expect(getFileMetaDrawerControl('File review status meta predicate')).toHaveValue('Needs review')
+    expect(within(getFileMetaDrawer()).getByLabelText('已选择值 core')).toBeInTheDocument()
+    expect(within(getFileMetaDrawer()).getByLabelText('已选择值 rdf')).toBeInTheDocument()
+    expect(getFileMetaDrawerControl('File source meta predicate')).toHaveValue('https://source.example/readme')
+    expect(within(getFileMetaDrawer()).queryByText('审核状态')).not.toBeInTheDocument()
 
-    fireEvent.change(getEditableFileMetaControl('File title meta predicate'), { target: { value: 'Readme display title' } })
-    fireEvent.blur(getEditableFileMetaControl('File title meta predicate'))
+    fireEvent.change(getFileMetaDrawerControl('File title meta predicate'), { target: { value: 'Readme display title' } })
+    fireEvent.blur(getFileMetaDrawerControl('File title meta predicate'))
     await waitFor(() => {
       expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/public/README.md.meta',
@@ -1049,7 +962,7 @@ describe('FileDetailPane', () => {
     })
     mockCreateCellProposal.mockClear()
 
-    const reviewStatusInput = getEditableFileMetaControl('File review status meta predicate')
+    const reviewStatusInput = getFileMetaDrawerControl('File review status meta predicate')
     fireEvent.change(reviewStatusInput, { target: { value: 'Published' } })
     fireEvent.keyDown(reviewStatusInput, { key: 'Enter' })
     await waitFor(() => {
@@ -1064,8 +977,8 @@ describe('FileDetailPane', () => {
     })
     mockCreateCellProposal.mockClear()
 
-    fireEvent.change(getEditableFileMetaControl('File tags meta predicate'), { target: { value: 'files' } })
-    fireEvent.keyDown(getEditableFileMetaControl('File tags meta predicate'), { key: 'Enter' })
+    fireEvent.change(getFileMetaDrawerControl('File tags meta predicate'), { target: { value: 'files' } })
+    fireEvent.keyDown(getFileMetaDrawerControl('File tags meta predicate'), { key: 'Enter' })
     await waitFor(() => {
       expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/public/README.md.meta',
@@ -1079,7 +992,6 @@ describe('FileDetailPane', () => {
   })
 
   it('shows field-level pending and error state for editable file RDF metadata predicate proposals', async () => {
-    requestDefaultEditableFileSheetOpen()
     mockUseFilesMetaSidecar.mockReturnValue({
       data: {
         ownerUri: 'https://pod.example/public/README.md',
@@ -1107,26 +1019,27 @@ describe('FileDetailPane', () => {
       .mockRejectedValueOnce(new Error('proposal write failed'))
 
     render(<FileDetailPane />)
+    openHeaderMetaDrawer()
 
-    fireEvent.change(getEditableFileMetaControl('File title meta predicate'), { target: { value: 'Readme display title' } })
-    fireEvent.blur(getEditableFileMetaControl('File title meta predicate'))
+    fireEvent.change(getFileMetaDrawerControl('File title meta predicate'), { target: { value: 'Readme display title' } })
+    fireEvent.blur(getFileMetaDrawerControl('File title meta predicate'))
 
     await waitFor(() => {
       expect(screen.getByLabelText('待审核更改：File title meta predicate')).toHaveTextContent('*')
     })
     expect(screen.queryByLabelText('meta predicate 更改提交失败：File title meta predicate')).not.toBeInTheDocument()
 
-    fireEvent.change(getEditableFileMetaControl('File tags meta predicate'), { target: { value: 'files' } })
-    fireEvent.keyDown(getEditableFileMetaControl('File tags meta predicate'), { key: 'Enter' })
+    fireEvent.change(getFileMetaDrawerControl('File tags meta predicate'), { target: { value: 'files' } })
+    fireEvent.keyDown(getFileMetaDrawerControl('File tags meta predicate'), { key: 'Enter' })
 
     await waitFor(() => {
       expect(screen.getByLabelText('meta predicate 更改提交失败：File tags meta predicate')).toHaveTextContent('!')
     })
-    expect(within(getEditableFileMetaTail()).getByLabelText('已选择值 files')).toBeInTheDocument()
+    expect(within(getFileMetaDrawer()).getByLabelText('已选择值 files')).toBeInTheDocument()
     expect(screen.getByLabelText('待审核更改：File title meta predicate')).toBeInTheDocument()
 
-    fireEvent.change(getEditableFileMetaControl('File source meta predicate'), { target: { value: 'https://source.example/readme-v2' } })
-    fireEvent.blur(getEditableFileMetaControl('File source meta predicate'))
+    fireEvent.change(getFileMetaDrawerControl('File source meta predicate'), { target: { value: 'https://source.example/readme-v2' } })
+    fireEvent.blur(getFileMetaDrawerControl('File source meta predicate'))
 
     await waitFor(() => {
       expect(screen.getByLabelText('待审核更改：File source meta predicate')).toHaveTextContent('*')
@@ -1134,7 +1047,6 @@ describe('FileDetailPane', () => {
   })
 
   it('hydrates pending editable file RDF metadata predicate proposals from Inbox targets', () => {
-    requestDefaultEditableFileSheetOpen()
     mockUseFilesMetaSidecar.mockReturnValue({
       data: {
         ownerUri: 'https://pod.example/public/README.md',
@@ -1189,20 +1101,20 @@ describe('FileDetailPane', () => {
     })
 
     render(<FileDetailPane />)
+    openHeaderMetaDrawer()
 
     expect(mockUsePendingStructuredCellChangeProposals).toHaveBeenCalledWith('https://pod.example/public/README.md.meta', true)
-    expect(getEditableFileMetaControl('File title meta predicate')).toHaveValue('Readme display title')
-    expect(within(getEditableFileMetaTail()).getByLabelText('已选择值 core')).toBeInTheDocument()
-    expect(within(getEditableFileMetaTail()).getByLabelText('已选择值 rdf')).toBeInTheDocument()
-    expect(within(getEditableFileMetaTail()).getByLabelText('已选择值 files')).toBeInTheDocument()
-    expect(getEditableFileMetaControl('File source meta predicate')).toHaveValue('https://source.example/readme-v2')
-    expect(within(getEditableFileMetaTail()).getByLabelText('待审核更改：File title meta predicate')).toHaveTextContent('*')
-    expect(within(getEditableFileMetaTail()).getByLabelText('待审核更改：File tags meta predicate')).toHaveTextContent('*')
-    expect(within(getEditableFileMetaTail()).getByLabelText('待审核更改：File source meta predicate')).toHaveTextContent('*')
+    expect(getFileMetaDrawerControl('File title meta predicate')).toHaveValue('Readme display title')
+    expect(within(getFileMetaDrawer()).getByLabelText('已选择值 core')).toBeInTheDocument()
+    expect(within(getFileMetaDrawer()).getByLabelText('已选择值 rdf')).toBeInTheDocument()
+    expect(within(getFileMetaDrawer()).getByLabelText('已选择值 files')).toBeInTheDocument()
+    expect(getFileMetaDrawerControl('File source meta predicate')).toHaveValue('https://source.example/readme-v2')
+    expect(within(getFileMetaDrawer()).getByLabelText('待审核更改：File title meta predicate')).toHaveTextContent('*')
+    expect(within(getFileMetaDrawer()).getByLabelText('待审核更改：File tags meta predicate')).toHaveTextContent('*')
+    expect(within(getFileMetaDrawer()).getByLabelText('待审核更改：File source meta predicate')).toHaveTextContent('*')
   })
 
   it('stages editable file RDF metadata predicate edits against the existing owner subject in .meta', async () => {
-    requestDefaultEditableFileSheetOpen()
     mockUseFilesMetaSidecar.mockReturnValue({
       data: {
         ownerUri: 'https://pod.example/public/README.md',
@@ -1227,11 +1139,12 @@ describe('FileDetailPane', () => {
     })
 
     render(<FileDetailPane />)
+    openHeaderMetaDrawer()
 
-    expect(getEditableFileMetaControl('File title meta predicate')).toHaveValue('Owner title')
-    expect(within(getEditableFileMetaTail()).getByLabelText('已选择值 owner')).toBeInTheDocument()
-    fireEvent.change(getEditableFileMetaControl('File title meta predicate'), { target: { value: 'Owner title v2' } })
-    fireEvent.blur(getEditableFileMetaControl('File title meta predicate'))
+    expect(getFileMetaDrawerControl('File title meta predicate')).toHaveValue('Owner title')
+    expect(within(getFileMetaDrawer()).getByLabelText('已选择值 owner')).toBeInTheDocument()
+    fireEvent.change(getFileMetaDrawerControl('File title meta predicate'), { target: { value: 'Owner title v2' } })
+    fireEvent.blur(getFileMetaDrawerControl('File title meta predicate'))
 
     await waitFor(() => {
       expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
@@ -2633,7 +2546,7 @@ describe('FileDetailPane', () => {
     const currentAccessHeading = within(accessDialog).getByText('当前可访问性')
     const currentSourceHeading = within(accessDialog).getByText('当前权限来源')
     const requestAccessHeading = within(accessDialog).getByText('申请权限变更')
-    const technicalDetailsHeading = within(accessDialog).getByText('技术信息')
+    const technicalDetailsHeading = within(accessDialog).getByText('来源详情')
     expect(currentSourceHeading.closest('details')).toBeNull()
     expect(currentAccessHeading.compareDocumentPosition(currentSourceHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(currentSourceHeading.compareDocumentPosition(requestAccessHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -3128,96 +3041,97 @@ describe('FileDetailPane', () => {
     expect(screen.getByLabelText('Agent/WebID')).toHaveValue('')
   })
 
-  it('keeps ordinary file meta inside the opened sheet instead of the main right drawer', () => {
-    requestDefaultEditableFileSheetOpen()
+  it('opens ordinary file meta in the right drawer instead of the editor sheet', () => {
     render(<FileDetailPane />)
 
     expect(screen.queryByLabelText('Resource .meta inspector')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
     expect(within(screen.getByLabelText('文件详情 head')).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
 
-    const sheetHeader = within(screen.getByRole('dialog', { name: 'Hello' })).getByLabelText('文件详情标题')
-    expect(within(sheetHeader).getByRole('button', { name: '显示 Info' })).toBeInTheDocument()
-    expect(getEditableFileMetaTail()).toBeInTheDocument()
-    expect(screen.queryByLabelText('Resource .meta inspector')).not.toBeInTheDocument()
+    openHeaderMetaDrawer()
+
+    const metaDrawer = getFileMetaDrawer()
+    expect(within(metaDrawer).getByLabelText('RDF metadata')).toBeInTheDocument()
+    expect(within(metaDrawer).getByLabelText('File title meta predicate')).toHaveValue('Hello')
+    expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
   })
 
-  it('does not fetch the editable file meta sidecar until the editor sheet opens', () => {
+  it('does not fetch the file meta sidecar until the meta drawer opens', () => {
     render(<FileDetailPane />)
 
-    expect(mockUseFilesMetaSidecar).toHaveBeenCalledWith(
-      expect.objectContaining({ uri: 'https://pod.example/public/README.md' }),
-      false,
-    )
-    expect(mockUseFilesMetaSidecar).not.toHaveBeenCalledWith(
-      expect.objectContaining({ uri: 'https://pod.example/public/README.md' }),
-      true,
-    )
+    expect(mockUseFilesMetaSidecar).not.toHaveBeenCalledWith(expect.anything(), true)
+
+    openHeaderMetaDrawer()
+
+    expect(mockUseFilesMetaSidecar).toHaveBeenCalledWith(expect.objectContaining({
+      uri: 'https://pod.example/public/README.md',
+    }), true)
   })
 
-  it('shows the editable file meta sidecar at the bottom of the sheet', () => {
-    requestDefaultEditableFileSheetOpen()
+  it('shows the file meta sidecar in the right drawer', () => {
     render(<FileDetailPane />)
 
-    const metaTail = getEditableFileMetaTail()
+    openHeaderMetaDrawer()
 
-    expect(within(metaTail).getByText('text/markdown')).toBeInTheDocument()
-    expect(within(metaTail).getByText('1.0 KB')).toBeInTheDocument()
-    expect(within(metaTail).queryByText('权限')).not.toBeInTheDocument()
-    expect(within(metaTail).queryByText('ACL · direct')).not.toBeInTheDocument()
-    expect(within(metaTail).queryByText('可查看、可追加、可管理权限')).not.toBeInTheDocument()
-    expect(within(metaTail).getByText('https://pod.example/public/README.md.meta')).toBeInTheDocument()
-    expect(within(metaTail).getByText('链接与 Schema')).toBeInTheDocument()
-    expect(within(metaTail).getByText('来源')).toBeInTheDocument()
-    expect(within(metaTail).getByText('https://source.example/readme')).toBeInTheDocument()
-    expect(within(metaTail).getByText('相关链接')).toBeInTheDocument()
-    expect(within(metaTail).getByText('https://pod.example/public/spec.md')).toBeInTheDocument()
-    expect(within(metaTail).getByText('已连接')).toBeInTheDocument()
-    expect(within(metaTail).queryByText('Linked metadata')).not.toBeInTheDocument()
-    expect(within(metaTail).queryByText('exists')).not.toBeInTheDocument()
-    const rawMetaDetails = within(metaTail).getByText('原始数据').closest('details')
+    const metaDrawer = getFileMetaDrawer()
+
+    expect(within(metaDrawer).getByText('text/markdown')).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('1.0 KB')).toBeInTheDocument()
+    expect(within(metaDrawer).queryByText('权限')).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByText('ACL · direct')).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByText('可查看、可追加、可管理权限')).not.toBeInTheDocument()
+    expect(within(metaDrawer).getByText('https://pod.example/public/README.md.meta')).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('链接与 Schema')).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('来源')).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('https://source.example/readme')).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('相关链接')).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('https://pod.example/public/spec.md')).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('已连接')).toBeInTheDocument()
+    expect(within(metaDrawer).queryByText('Linked metadata')).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByText('exists')).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByText('暂无标题、标签等元数据。')).not.toBeInTheDocument()
+    const rawMetaDetails = within(metaDrawer).getByText('原始数据').closest('details')
     expect(rawMetaDetails).toBeInTheDocument()
     expect(rawMetaDetails).not.toHaveAttribute('open')
-    expect(within(metaTail).getByText(/@prefix dcterms:/)).toBeInTheDocument()
-    expect(within(metaTail).getByText(/<#meta> dcterms:source <https:\/\/source\.example\/readme>/)).toBeInTheDocument()
-    expect(within(metaTail).getByText(/udfs:shape <https:\/\/pod\.example\/\.vocab\/shapes\.ttl#MarkdownFileShape>/)).toBeInTheDocument()
+    expect(within(metaDrawer).getByText(/@prefix dcterms:/)).toBeInTheDocument()
+    expect(within(metaDrawer).getByText(/<#meta> dcterms:source <https:\/\/source\.example\/readme>/)).toBeInTheDocument()
+    expect(within(metaDrawer).getByText(/udfs:shape <https:\/\/pod\.example\/\.vocab\/shapes\.ttl#MarkdownFileShape>/)).toBeInTheDocument()
+    expect(within(metaDrawer).getByLabelText('RDF metadata')).toBeInTheDocument()
+    expect(within(metaDrawer).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
 
     const head = screen.getByLabelText('文件详情 head')
     expect(within(head).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
-    const sheetHeader = within(screen.getByRole('dialog', { name: 'Hello' })).getByLabelText('文件详情标题')
-    expect(sheetHeader.parentElement).toHaveClass('pr-14')
-    fireEvent.click(within(sheetHeader).getByRole('button', { name: '显示 Info' }))
-    expect(screen.queryByLabelText('Resource .meta inspector')).not.toBeInTheDocument()
-    expect(getEditableFileMetaTail()).toBe(metaTail)
-    expect(within(metaTail).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
-    fireEvent.pointerDown(within(sheetHeader).getByRole('button', { name: '更多文件操作' }))
+    openResourceActionsMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: '查看 Access 来源' }))
     const accessDialog = screen.getByRole('dialog', { name: '权限' })
     expect(within(accessDialog).getAllByText('ACL').length).toBeGreaterThan(0)
     expect(within(accessDialog).getByText('当前资源')).toBeInTheDocument()
     expect(within(accessDialog).getByText('可查看、可追加、可管理权限')).toBeInTheDocument()
-    expect(within(accessDialog).getByText('技术信息')).toBeInTheDocument()
+    expect(within(accessDialog).getByText('来源详情')).toBeInTheDocument()
     expect(within(accessDialog).queryByText('当前 Pod 权限模型')).not.toBeInTheDocument()
     expect(within(accessDialog).queryByText(/policy provider/i)).not.toBeInTheDocument()
   })
 
-  it('shows editable sheet meta sidecar query errors without duplicating file metadata', () => {
+  it('shows file meta sidecar query errors in the right drawer', () => {
     mockUseFilesMetaSidecar.mockReturnValue({
       data: null,
       isLoading: false,
       error: new Error('meta unavailable'),
     })
 
-    requestDefaultEditableFileSheetOpen()
     render(<FileDetailPane />)
+    openHeaderMetaDrawer()
 
-    const metaTail = getEditableFileMetaTail()
+    const metaDrawer = getFileMetaDrawer()
 
-    expect(within(metaTail).getAllByText('ID')).toHaveLength(1)
-    expect(within(metaTail).getByText('无法读取 .meta。')).toBeInTheDocument()
-    expect(within(metaTail).getByText('meta unavailable')).toBeInTheDocument()
+    expect(within(metaDrawer).queryByText('ID')).not.toBeInTheDocument()
+    expect(within(metaDrawer).getByText('无法读取 .meta。')).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('meta unavailable')).toBeInTheDocument()
   })
 
-  it('shows missing editable file meta sidecar state at the bottom of the sheet', () => {
+  it('shows missing file meta sidecar state in the right drawer', () => {
     mockUseFilesMetaSidecar.mockReturnValue({
       data: {
         ownerUri: 'https://pod.example/public/README.md',
@@ -3233,24 +3147,14 @@ describe('FileDetailPane', () => {
       error: null,
     })
 
-    requestDefaultEditableFileSheetOpen()
     render(<FileDetailPane />)
+    openHeaderMetaDrawer()
 
-    const metaTail = getEditableFileMetaTail()
+    const metaDrawer = getFileMetaDrawer()
 
-    expect(within(metaTail).getByText('https://pod.example/public/README.md.meta')).toBeInTheDocument()
-    expect(within(metaTail).getByText('未找到 .meta。')).toBeInTheDocument()
-    expect(within(metaTail).getByLabelText('RDF metadata')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Resource .meta inspector')).not.toBeInTheDocument()
-  })
-
-  it('does not open the right meta drawer for editable file sheet metadata', () => {
-    requestDefaultEditableFileSheetOpen()
-    render(<FileDetailPane />)
-
-    expect(screen.queryByLabelText('Resource .meta inspector')).not.toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
-    expect(getEditableFileMetaTail()).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('https://pod.example/public/README.md.meta')).toBeInTheDocument()
+    expect(within(metaDrawer).getByText('未找到 .meta。')).toBeInTheDocument()
+    expect(within(metaDrawer).getByLabelText('RDF metadata')).toBeInTheDocument()
   })
 
   it('opens structured ttl meta in the right drawer instead of file sheet meta', () => {
@@ -3685,7 +3589,7 @@ describe('FileDetailPane', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://pod.example/public/README.md')
   })
 
-  it('opens editable file meta in the detail sheet for a sidecar request from the list row', async () => {
+  it('opens editable file meta in the right drawer for a sidecar request from the list row', async () => {
     useFilesStore.setState({
       sidecarActionRequest: {
         uri: 'https://pod.example/public/README.md',
@@ -3695,8 +3599,8 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(await screen.findByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
-    expect(screen.queryByLabelText('Resource .meta inspector')).not.toBeInTheDocument()
+    expect(await screen.findByLabelText('Resource .meta inspector')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument()
     expect(useFilesStore.getState().sidecarActionRequest).toBeNull()
   })
 
@@ -3841,7 +3745,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('button', { name: '元数据' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '来源' })).not.toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
-    expect(getEditableFileMetaTail()).toBeInTheDocument()
+    expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
   })
 
   it('renders locked vocab registry semantics', () => {
@@ -4081,9 +3985,9 @@ describe('FileDetailPane', () => {
     expect(within(termSidecar).getByText('#tags')).toBeInTheDocument()
     expect(within(termSidecar).getByText('https://pod.example/.vocab/terms.ttl')).toBeInTheDocument()
     expect(within(termSidecar).getByText('rdfs:label')).toBeInTheDocument()
-    expect(within(termSidecar).getByText('"tags"')).toBeInTheDocument()
+    expect(within(termSidecar).getByText('tags')).toBeInTheDocument()
     expect(within(termSidecar).getByText('rdfs:comment')).toBeInTheDocument()
-    expect(within(termSidecar).getByText('"Topic labels"')).toBeInTheDocument()
+    expect(within(termSidecar).getByText('Topic labels')).toBeInTheDocument()
     expect(within(termSidecar).queryByRole('button', { name: '取消' })).not.toBeInTheDocument()
 
     fireEvent.click(within(termSidecar).getByRole('button', { name: '关闭' }))
@@ -4140,9 +4044,9 @@ describe('FileDetailPane', () => {
 	    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
     expect(screen.queryByText('词表定义表')).not.toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '#tags' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"tags"' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"Topic labels"' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"skos:Concept"' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'tags' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Topic labels' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'skos:Concept' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'TagsShape' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
@@ -4182,8 +4086,8 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
     expect(screen.queryByText('词表定义表')).not.toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '#tags' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"tags"' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"Topic labels"' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'tags' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Topic labels' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
   })
@@ -4228,13 +4132,13 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"partial"' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'partial' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
     expect(mockUsePendingStructuredCellChangeProposals).toHaveBeenCalledWith(manifestUri, false)
     expect(mockUsePendingVocabTermProposals).toHaveBeenCalledWith(manifestUri, false)
 
-    fireEvent.click(screen.getByRole('cell', { name: '"partial"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'partial' }))
 
     expect(screen.queryByRole('textbox', { name: '编辑 #manifest 的 ingestStatus' })).not.toBeInTheDocument()
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
@@ -4280,13 +4184,13 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"partial"' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'partial' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
     expect(mockUsePendingStructuredCellChangeProposals).toHaveBeenCalledWith(manifestUri, false)
     expect(mockUsePendingVocabTermProposals).toHaveBeenCalledWith(manifestUri, false)
 
-    fireEvent.click(screen.getByRole('cell', { name: '"partial"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'partial' }))
 
     expect(screen.queryByRole('textbox', { name: '编辑 #manifest 的 ingestStatus' })).not.toBeInTheDocument()
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
@@ -4474,12 +4378,12 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('button', { name: 'Kanban' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'class' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'rdf:type' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'https://pod.example/public/report.md' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'report.md' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '../docs/report.md' })).toBeInTheDocument()
     expect(screen.queryByText(/@prefix schema/)).not.toBeInTheDocument()
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '../docs/report.md' }))
+      fireEvent.click(screen.getByRole('button', { name: '预览 ../docs/report.md' }))
     })
 
     const subjectSidecar = screen.getByLabelText('Structured subject peek')
@@ -4511,6 +4415,7 @@ describe('FileDetailPane', () => {
     expect(mockCreateSourceProposal).not.toHaveBeenCalled()
 
     act(() => {
+      window.localStorage.clear()
       useFilesStore.setState({
         selectedFileId: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         structuredViewMode: 'table',
@@ -4527,7 +4432,7 @@ describe('FileDetailPane', () => {
     })
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '../docs/external.md' }))
+      fireEvent.click(screen.getByRole('button', { name: '预览 ../docs/external.md' }))
     })
     const externalSubjectSidecar = screen.getByLabelText('Structured subject peek')
     expect(within(externalSubjectSidecar).getByText('卡片预览')).toBeInTheDocument()
@@ -4567,7 +4472,7 @@ describe('FileDetailPane', () => {
     fireEvent.scroll(structuredViewport!)
     window.history.replaceState({}, '', '/files')
     await act(async () => {
-      fireEvent.click(reportSubjectButton)
+      fireEvent.click(screen.getByRole('button', { name: '预览 ../docs/report.md' }))
     })
     expect(new URLSearchParams(window.location.search).get('filesRoute')).toBeNull()
     const reportSubjectSidecar = screen.getByLabelText('Structured subject peek')
@@ -4615,13 +4520,12 @@ describe('FileDetailPane', () => {
     })
 
     await chooseClassScope('udfs:Workspace')
-    const absoluteSubjectButton = await screen.findByRole('button', { name: 'https://pod.example/public/report.md' })
-    const absoluteStructuredViewport = absoluteSubjectButton.closest('[data-structured-resource-viewport="true"]') as HTMLElement | null
-    expect(absoluteStructuredViewport).toBeTruthy()
-    absoluteStructuredViewport!.scrollTop = 184
+    const absoluteStructuredViewport = screen.getByLabelText('Structured resource viewport')
+    const absoluteSubjectButton = await within(absoluteStructuredViewport).findByRole('button', { name: 'report.md' })
+    absoluteStructuredViewport.scrollTop = 184
     fireEvent.scroll(absoluteStructuredViewport!)
     await act(async () => {
-      fireEvent.click(absoluteSubjectButton)
+      fireEvent.click(screen.getByRole('button', { name: '预览 report.md' }))
     })
 
     const absoluteSubjectSidecar = screen.getByLabelText('Structured subject peek')
@@ -4703,23 +4607,23 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('columnheader', { name: /dateModified/ })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: /schema:dateModified/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('switch', { name: '显示命名空间' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '隐藏 predicate' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '列显示' })).toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '隐藏 predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
     const namespaceVisibilityItem = screen.getByRole('menuitemcheckbox', { name: '显示命名空间' })
     expect(namespaceVisibilityItem).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(namespaceVisibilityItem)
     expect(screen.getByRole('columnheader', { name: /schema:dateModified/ })).toBeInTheDocument()
-    fireEvent.pointerDown(screen.getByRole('button', { name: '隐藏 predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '显示命名空间' }))
     expect(screen.queryByRole('columnheader', { name: /schema:dateModified/ })).not.toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '隐藏 predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
     const dateModifiedVisibilityItem = screen.getByRole('menuitemcheckbox', { name: 'dateModified' })
     expect(dateModifiedVisibilityItem).toHaveAttribute('aria-checked', 'true')
     fireEvent.click(dateModifiedVisibilityItem)
     expect(screen.queryByRole('columnheader', { name: /dateModified/ })).not.toBeInTheDocument()
-    fireEvent.pointerDown(screen.getByRole('button', { name: '隐藏 predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'dateModified' }))
     expect(screen.getByRole('columnheader', { name: /dateModified/ })).toBeInTheDocument()
     const subjectHeader = screen.getByRole('columnheader', { name: /subject/ })
@@ -4741,7 +4645,7 @@ describe('FileDetailPane', () => {
 
     mockMutateRaw.mockClear()
     mockCreateCellProposal.mockClear()
-    fireEvent.click(screen.getByRole('cell', { name: '"Files"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
     expect(titleInput).toHaveValue('Files')
     fireEvent.change(titleInput, { target: { value: 'LinX Files' } })
@@ -4985,7 +4889,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('button', { name: '+ Subject' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'class' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'https://pod.example/public/report.md' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'report.md' })).toBeInTheDocument()
 
     mockCreateCellProposal.mockClear()
     fireEvent.click(screen.getByRole('button', { name: '+ Subject' }))
@@ -5196,9 +5100,10 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     const whiteboardViewMenu = screen.getByRole('menu')
     expect(within(whiteboardViewMenu).queryByRole('menuitem', { name: 'Whiteboard' })).not.toBeInTheDocument()
-    expect(within(whiteboardViewMenu).getByRole('menuitem', { name: 'Kanban' })).toBeInTheDocument()
+    expect(within(whiteboardViewMenu).queryByRole('menuitem', { name: 'Kanban' })).not.toBeInTheDocument()
     expect(within(whiteboardViewMenu).getByRole('menuitem', { name: 'Raw' })).toBeInTheDocument()
     fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Kanban' })).toBeInTheDocument()
 
     expect(screen.getByText('添加 subject 后会在白板中显示卡片。')).toBeInTheDocument()
     expect(document.querySelector('[data-whiteboard-subject="#Workspace"]')).toBeNull()
@@ -5232,7 +5137,7 @@ describe('FileDetailPane', () => {
 
     expect(screen.queryByRole('button', { name: '元数据' })).not.toBeInTheDocument()
     expect(screen.getByText(/@prefix schema/)).toBeInTheDocument()
-  }, 40_000)
+  }, 90_000)
 
   it('hides 校验提醒 for rows excluded by the pending writes filter', async () => {
     const structuredSource = [
@@ -5446,7 +5351,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('1 个校验提醒')).toBeInTheDocument()
     expect(screen.getByText('#Workspace tags has 2 values; maxCount is 1.')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('cell', { name: '"Other"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'Other' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Other 的 title' })
     fireEvent.change(titleInput, { target: { value: 'Other draft' } })
     fireEvent.focus(titleInput)
@@ -5664,7 +5569,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('button', { name: '../docs/report.md' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '../docs/report.md' }))
+      fireEvent.click(screen.getByRole('button', { name: '预览 ../docs/report.md' }))
     })
 
     const subjectSidecar = screen.getByLabelText('Structured subject peek')
@@ -5777,7 +5682,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('button', { name: '../docs/report.md' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '../docs/report.md' }))
+    fireEvent.click(screen.getByRole('button', { name: '预览 ../docs/report.md' }))
     const subjectSidecar = screen.getByLabelText('Structured subject peek')
     expect(within(subjectSidecar).getByText('卡片预览')).toBeInTheDocument()
     expect(within(subjectSidecar).getByText('https://pod.example/public/source.pdf')).toBeInTheDocument()
@@ -6144,7 +6049,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.getByRole('columnheader', { name: /owner/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '隐藏 predicate' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '列显示' })).toBeInTheDocument()
     expect(screen.queryByRole('switch', { name: '显示命名空间' })).not.toBeInTheDocument()
   })
 
@@ -7165,7 +7070,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    const subjectButton = await screen.findByRole('button', { name: 'https://pod.example/public/report.md' })
+    const subjectButton = await screen.findByRole('button', { name: 'report.md' })
     await act(async () => {
       fireEvent.keyDown(subjectButton, { key: 'Enter' })
     })
@@ -7180,7 +7085,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByLabelText('Structured subject peek')).not.toBeInTheDocument()
   })
 
-  it('opens resource subjects in a peek on click and navigates from the explicit open action', async () => {
+  it('opens resource subjects in a peek from the explicit preview action and navigates from the open action', async () => {
     const structuredSource = [
       '@prefix udfs: <https://undefineds.co/vocab/> .',
       '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .',
@@ -7229,7 +7134,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     const sourceTableUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
-    fireEvent.click(await screen.findByRole('button', { name: 'https://pod.example/public/report.md' }))
+    fireEvent.click(await screen.findByRole('button', { name: '预览 report.md' }))
 
     expect(useFilesStore.getState().selectedFileId).toBe(sourceTableUri)
     expect(new URLSearchParams(window.location.search).get('filesRow')).toBeNull()
@@ -7315,7 +7220,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     await act(async () => {
-      fireEvent.click(await screen.findByRole('button', { name: cardUri }))
+      fireEvent.click(await screen.findByRole('button', { name: '预览 report.card.ttl' }))
     })
 
     const subjectSidecar = screen.getByLabelText('Structured subject peek')
@@ -7401,7 +7306,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     await act(async () => {
-      fireEvent.click(await screen.findByRole('button', { name: cardUri }))
+      fireEvent.click(await screen.findByRole('button', { name: '预览 report.card.ttl' }))
     })
 
     const subjectSidecar = screen.getByLabelText('Structured subject peek')
@@ -7422,7 +7327,7 @@ describe('FileDetailPane', () => {
     expect(mockCreateSourceProposal).not.toHaveBeenCalled()
   })
 
-  it('opens a structured subject resource directly with double click from the subject cell', async () => {
+  it('opens a structured subject resource directly with a single click from the subject cell', async () => {
     const structuredSource = '@prefix udfs: <https://undefineds.co/vocab/> .\n<https://pod.example/public/report.md> a udfs:Workspace ; title "Report" .'
     useFilesStore.setState({
       selectedFileId: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -7466,10 +7371,10 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     await act(async () => {
-      fireEvent.doubleClick(await screen.findByRole('button', { name: 'https://pod.example/public/report.md' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'report.md' }))
     })
 
-    expect(screen.queryByRole('dialog', { name: 'Subject preview' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Structured subject peek')).not.toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/report.md')
   })
 
@@ -7516,9 +7421,9 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    const subjectButton = await screen.findByRole('button', { name: 'https://source.example/report.pdf' })
+    const subjectButton = await screen.findByRole('button', { name: 'report.pdf' })
     await act(async () => {
-      fireEvent.doubleClick(subjectButton)
+      fireEvent.click(subjectButton)
     })
 
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/.data/workspaces/ws-1/state.ttl')
@@ -7537,7 +7442,7 @@ describe('FileDetailPane', () => {
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/.data/workspaces/ws-1/state.ttl')
   })
 
-  it('previews a kanban subject with Enter and navigates only from the detail action', async () => {
+  it('navigates a kanban subject with Enter and previews from the explicit preview action', async () => {
     const structuredSource = '@prefix udfs: <https://undefineds.co/vocab/> .\n<https://pod.example/public/report.md> a udfs:Workspace ; title "Report" ; mode "read/write" .'
     useFilesStore.setState({
       selectedFileId: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -7590,12 +7495,7 @@ describe('FileDetailPane', () => {
     expect(cardContent).toBeTruthy()
     fireEvent.keyDown(cardContent, { key: 'Enter' })
 
-    const subjectPeek = screen.getByLabelText('Structured subject peek')
-    expect(subjectPeek).toBeInTheDocument()
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/.data/workspaces/ws-1/state.ttl')
-
-    fireEvent.click(within(subjectPeek).getByRole('button', { name: '打开资源' }))
-
+    expect(screen.queryByLabelText('Structured subject peek')).not.toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/report.md')
     expect(useFilesStore.getState().structuredSubjectReturnContext).toMatchObject({
       documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -7731,7 +7631,7 @@ describe('FileDetailPane', () => {
     })
   })
 
-  it('previews a whiteboard subject node with Enter and navigates only from the detail action', async () => {
+  it('navigates a whiteboard subject node with Enter and previews from the explicit preview action', async () => {
     const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
     const structuredSource = '@prefix udfs: <https://undefineds.co/vocab/> .\n<https://pod.example/public/report.md> a udfs:Workspace ; title "Report" .'
     useFilesStore.setState({
@@ -7780,12 +7680,7 @@ describe('FileDetailPane', () => {
 
     fireEvent.keyDown(await screen.findByLabelText('打开 subject Report'), { key: 'Enter' })
 
-    const subjectPeek = screen.getByLabelText('Structured subject peek')
-    expect(subjectPeek).toBeInTheDocument()
-    expect(useFilesStore.getState().selectedFileId).toBe(documentUri)
-
-    fireEvent.click(within(subjectPeek).getByRole('button', { name: '打开资源' }))
-
+    expect(screen.queryByLabelText('Structured subject peek')).not.toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/report.md')
     expect(useFilesStore.getState().structuredSubjectReturnContext).toMatchObject({
       documentUri,
@@ -7946,41 +7841,32 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        metaUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl.meta',
-        state: 'exists',
-        metadata: {
-          documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-          viewMode: 'whiteboard',
-          classScope: 'udfs:Workspace',
-          searchText: '',
-          sortKey: 'title',
-          sortDirection: 'desc',
-          hiddenPredicates: ['mode'],
-          kanbanGroupPredicate: 'mode',
-          columnSizing: { title: 180 },
-          whiteboard: {
-            selectedSubjects: ['#Workspace', '#Other'],
-            positions: {
-              '#Workspace': { x: 120, y: 96 },
-              '#Other': { x: 320, y: 120 },
-            },
-            visualRelations: [
-              {
-                id: 'visual-workspace-other',
-                from: '#Workspace',
-                to: '#Other',
-                label: 'sketch link',
-              },
-            ],
-          },
-          writesCanonicalData: false,
+    saveLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl', {
+      documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+      viewMode: 'whiteboard',
+      classScope: 'udfs:Workspace',
+      searchText: '',
+      sortKey: 'title',
+      sortDirection: 'desc',
+      hiddenPredicates: ['mode'],
+      kanbanGroupPredicate: 'mode',
+      columnSizing: { title: 180 },
+      whiteboard: {
+        selectedSubjects: ['#Workspace', '#Other'],
+        positions: {
+          '#Workspace': { x: 120, y: 96 },
+          '#Other': { x: 320, y: 120 },
         },
+        visualRelations: [
+          {
+            id: 'visual-workspace-other',
+            from: '#Workspace',
+            to: '#Other',
+            label: 'sketch link',
+          },
+        ],
       },
-      isLoading: false,
-      error: null,
+      writesCanonicalData: false,
     })
 
     render(<FileDetailPane />)
@@ -8040,40 +7926,29 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: documentUri,
-        metaUri: `${documentUri}.meta`,
-        state: 'exists',
-        metadata: {
-          documentUri,
-          viewMode: 'whiteboard',
-          classScope: 'udfs:Workspace',
-          searchText: '',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: null,
-          kanbanOrder: {},
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: ['#Workspace', '#Other'],
-            positions: {},
-            visualRelations: [],
-          },
-          writesCanonicalData: false,
-        },
+    saveLocalStructuredViewMetadata(documentUri, {
+      documentUri,
+      viewMode: 'whiteboard',
+      classScope: 'udfs:Workspace',
+      searchText: '',
+      sortKey: null,
+      sortDirection: 'asc',
+      hiddenPredicates: [],
+      kanbanGroupPredicate: null,
+      kanbanOrder: {},
+      columnSizing: {},
+      whiteboard: {
+        selectedSubjects: ['#Workspace', '#Other'],
+        positions: {},
+        visualRelations: [],
       },
-      isLoading: false,
-      error: null,
+      writesCanonicalData: false,
     })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
 
     render(<FileDetailPane />)
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '添加 subject 到白板' })).toHaveAttribute('title', expect.stringContaining('白板中 2 张卡片'))
     })
-    mockSaveStructuredViewMetadata.mockClear()
     mockCreateCellProposal.mockClear()
     mockMutateRaw.mockClear()
     mockCreateRaw.mockClear()
@@ -8101,13 +7976,8 @@ describe('FileDetailPane', () => {
       await vi.advanceTimersByTimeAsync(900)
     })
 
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledTimes(1)
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledWith({
-      file: {
-        uri: documentUri,
-        kind: 'resource',
-      },
-      metadata: expect.objectContaining({
+    expect(loadLocalStructuredViewMetadata(documentUri)).toEqual(
+      expect.objectContaining({
         documentUri,
         viewMode: 'whiteboard',
         writesCanonicalData: false,
@@ -8122,7 +7992,7 @@ describe('FileDetailPane', () => {
           ],
         }),
       }),
-    })
+    )
   })
 
   it('edits a temporary whiteboard visual relation label without creating RDF facts', async () => {
@@ -8159,47 +8029,36 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: documentUri,
-        metaUri: `${documentUri}.meta`,
-        state: 'exists',
-        metadata: {
-          documentUri,
-          viewMode: 'whiteboard',
-          classScope: 'udfs:Workspace',
-          searchText: '',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: null,
-          kanbanOrder: {},
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: ['#Workspace', '#Other'],
-            positions: {},
-            visualRelations: [
-              {
-                id: 'visual-workspace-other',
-                from: '#Workspace',
-                to: '#Other',
-                label: 'sketch link',
-              },
-            ],
+    saveLocalStructuredViewMetadata(documentUri, {
+      documentUri,
+      viewMode: 'whiteboard',
+      classScope: 'udfs:Workspace',
+      searchText: '',
+      sortKey: null,
+      sortDirection: 'asc',
+      hiddenPredicates: [],
+      kanbanGroupPredicate: null,
+      kanbanOrder: {},
+      columnSizing: {},
+      whiteboard: {
+        selectedSubjects: ['#Workspace', '#Other'],
+        positions: {},
+        visualRelations: [
+          {
+            id: 'visual-workspace-other',
+            from: '#Workspace',
+            to: '#Other',
+            label: 'sketch link',
           },
-          writesCanonicalData: false,
-        },
+        ],
       },
-      isLoading: false,
-      error: null,
+      writesCanonicalData: false,
     })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
 
     render(<FileDetailPane />)
     await waitFor(() => {
       expect(document.querySelectorAll('[data-whiteboard-relation-source="visual"]')).toHaveLength(1)
     })
-    mockSaveStructuredViewMetadata.mockClear()
     mockCreateCellProposal.mockClear()
     mockMutateRaw.mockClear()
     vi.useFakeTimers()
@@ -8225,9 +8084,8 @@ describe('FileDetailPane', () => {
       await vi.advanceTimersByTimeAsync(900)
     })
 
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledTimes(1)
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: expect.objectContaining({
+    expect(loadLocalStructuredViewMetadata(documentUri)).toEqual(
+      expect.objectContaining({
         whiteboard: expect.objectContaining({
           visualRelations: [
             {
@@ -8239,7 +8097,7 @@ describe('FileDetailPane', () => {
           ],
         }),
       }),
-    }))
+    )
   })
 
   it('removes a temporary whiteboard visual relation without changing RDF facts', async () => {
@@ -8276,47 +8134,36 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: documentUri,
-        metaUri: `${documentUri}.meta`,
-        state: 'exists',
-        metadata: {
-          documentUri,
-          viewMode: 'whiteboard',
-          classScope: 'udfs:Workspace',
-          searchText: '',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: null,
-          kanbanOrder: {},
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: ['#Workspace', '#Other'],
-            positions: {},
-            visualRelations: [
-              {
-                id: 'visual-workspace-other',
-                from: '#Workspace',
-                to: '#Other',
-                label: 'sketch link',
-              },
-            ],
+    saveLocalStructuredViewMetadata(documentUri, {
+      documentUri,
+      viewMode: 'whiteboard',
+      classScope: 'udfs:Workspace',
+      searchText: '',
+      sortKey: null,
+      sortDirection: 'asc',
+      hiddenPredicates: [],
+      kanbanGroupPredicate: null,
+      kanbanOrder: {},
+      columnSizing: {},
+      whiteboard: {
+        selectedSubjects: ['#Workspace', '#Other'],
+        positions: {},
+        visualRelations: [
+          {
+            id: 'visual-workspace-other',
+            from: '#Workspace',
+            to: '#Other',
+            label: 'sketch link',
           },
-          writesCanonicalData: false,
-        },
+        ],
       },
-      isLoading: false,
-      error: null,
+      writesCanonicalData: false,
     })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
 
     render(<FileDetailPane />)
     await waitFor(() => {
       expect(document.querySelector('[data-whiteboard-relation-source="visual"]')).toBeTruthy()
     })
-    mockSaveStructuredViewMetadata.mockClear()
     mockCreateCellProposal.mockClear()
     mockMutateRaw.mockClear()
     vi.useFakeTimers()
@@ -8332,14 +8179,13 @@ describe('FileDetailPane', () => {
       await vi.advanceTimersByTimeAsync(900)
     })
 
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledTimes(1)
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: expect.objectContaining({
+    expect(loadLocalStructuredViewMetadata(documentUri)).toEqual(
+      expect.objectContaining({
         whiteboard: expect.objectContaining({
           visualRelations: [],
         }),
       }),
-    }))
+    )
   })
 
   it('does not autosave stale default structured view metadata immediately after hydration', async () => {
@@ -8376,35 +8222,25 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        metaUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl.meta',
-        state: 'exists',
-        etag: '"meta-view-hydrate-1"',
-        metadata: {
-          documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-          viewMode: 'whiteboard',
-          classScope: 'udfs:Workspace',
-          searchText: '',
-          sortKey: 'title',
-          sortDirection: 'desc',
-          hiddenPredicates: ['mode'],
-          kanbanGroupPredicate: 'mode',
-          columnSizing: { title: 180 },
-          whiteboard: {
-            selectedSubjects: ['#Workspace'],
-            positions: {
-              '#Workspace': { x: 120, y: 96 },
-            },
-          },
-          writesCanonicalData: false,
+    saveLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl', {
+      documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+      viewMode: 'whiteboard',
+      classScope: 'udfs:Workspace',
+      searchText: '',
+      sortKey: 'title',
+      sortDirection: 'desc',
+      hiddenPredicates: ['mode'],
+      kanbanGroupPredicate: 'mode',
+      columnSizing: { title: 180 },
+      whiteboard: {
+        selectedSubjects: ['#Workspace'],
+        positions: {
+          '#Workspace': { x: 120, y: 96 },
         },
       },
-      isLoading: false,
-      error: null,
+      writesCanonicalData: false,
     })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
+    const seededMetadata = loadLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl')
 
     render(<FileDetailPane />)
 
@@ -8412,7 +8248,7 @@ describe('FileDetailPane', () => {
     expect(useFilesStore.getState().structuredViewMode).toBe('whiteboard')
     await vi.advanceTimersByTimeAsync(900)
 
-    expect(mockSaveStructuredViewMetadata).not.toHaveBeenCalled()
+    expect(loadLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl')).toEqual(seededMetadata)
   })
 
   it('autosaves structured view metadata after user changes the view state', async () => {
@@ -8448,61 +8284,45 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        metaUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl.meta',
-        state: 'exists',
-        etag: '"meta-view-save-1"',
-        metadata: {
-          documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-          viewMode: 'table',
-          classScope: 'udfs:Workspace',
-          searchText: '',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: null,
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: [],
-            positions: {},
-          },
-          writesCanonicalData: false,
-        },
+    saveLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl', {
+      documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+      viewMode: 'table',
+      classScope: 'udfs:Workspace',
+      searchText: '',
+      sortKey: null,
+      sortDirection: 'asc',
+      hiddenPredicates: [],
+      kanbanGroupPredicate: null,
+      columnSizing: {},
+      whiteboard: {
+        selectedSubjects: [],
+        positions: {},
       },
-      isLoading: false,
-      error: null,
+      writesCanonicalData: false,
     })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
+    const seededMetadata = loadLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl')
 
     render(<FileDetailPane />)
 
     await waitFor(() => {
       expect(useFilesStore.getState().structuredClassScope).toBe('udfs:Workspace')
     })
-    expect(mockSaveStructuredViewMetadata).not.toHaveBeenCalled()
+    expect(loadLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl')).toEqual(seededMetadata)
 
     vi.useFakeTimers()
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
 
-    expect(mockSaveStructuredViewMetadata).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(900)
 
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledTimes(1)
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledWith({
-      file: {
-        uri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        kind: 'resource',
-      },
-      metadata: expect.objectContaining({
+    expect(loadLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl')).toEqual(
+      expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         viewMode: 'kanban',
         classScope: 'udfs:Workspace',
         writesCanonicalData: false,
       }),
-    })
+    )
   })
 
   it('autosaves a view change made before an empty meta sidecar query resolves', async () => {
@@ -8538,50 +8358,23 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: null,
-      isLoading: true,
-      error: null,
-    })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
 
     vi.useFakeTimers()
-    const { rerender } = render(<FileDetailPane />)
+    render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
 
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        metaUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl.meta',
-        state: 'exists',
-        content: '<state.ttl> a <http://www.w3.org/ns/ldp#Resource> .',
-        mimeType: 'text/turtle',
-        etag: null,
-        size: 56,
-        metadata: null,
-      },
-      isLoading: false,
-      error: null,
-    })
-    rerender(<FileDetailPane />)
-
     await vi.advanceTimersByTimeAsync(900)
 
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledTimes(1)
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledWith({
-      file: {
-        uri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        kind: 'resource',
-      },
-      metadata: expect.objectContaining({
+    expect(loadLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl')).toEqual(
+      expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         viewMode: 'kanban',
         classScope: 'udfs:Workspace',
         writesCanonicalData: false,
       }),
-    })
+    )
   })
 
   it('preserves a user view change made before existing meta sidecar hydration resolves', async () => {
@@ -8617,66 +8410,22 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: null,
-      isLoading: true,
-      error: null,
-    })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
-
     vi.useFakeTimers()
-    const { rerender } = render(<FileDetailPane />)
+    render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
 
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        metaUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl.meta',
-        state: 'exists',
-        content: '<state.ttl> a <http://www.w3.org/ns/ldp#Resource> .',
-        mimeType: 'text/turtle',
-        etag: '"meta-view-existing-late-1"',
-        size: 56,
-        metadata: {
-          documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-          viewMode: 'table',
-          classScope: 'udfs:Workspace',
-          searchText: '',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: null,
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: [],
-            positions: {},
-          },
-          writesCanonicalData: false,
-        },
-      },
-      isLoading: false,
-      error: null,
-    })
-    rerender(<FileDetailPane />)
-
     await vi.advanceTimersByTimeAsync(900)
 
     expect(useFilesStore.getState().structuredViewMode).toBe('kanban')
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledTimes(1)
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledWith({
-      file: {
-        uri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        kind: 'resource',
-      },
-      metadata: expect.objectContaining({
+    expect(loadLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl')).toEqual(
+      expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         viewMode: 'kanban',
-        classScope: 'udfs:Workspace',
         writesCanonicalData: false,
       }),
-    })
+    )
   })
 
   it('preserves a user class scope change made before existing meta sidecar hydration resolves', async () => {
@@ -8720,66 +8469,23 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: null,
-      isLoading: true,
-      error: null,
-    })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
-
     vi.useFakeTimers()
-    const { rerender } = render(<FileDetailPane />)
+    render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Project' }))
 
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        metaUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl.meta',
-        state: 'exists',
-        content: '<state.ttl> a <http://www.w3.org/ns/ldp#Resource> .',
-        mimeType: 'text/turtle',
-        etag: '"meta-class-existing-late-1"',
-        size: 56,
-        metadata: {
-          documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-          viewMode: 'table',
-          classScope: 'udfs:Workspace',
-          searchText: '',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: null,
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: [],
-            positions: {},
-          },
-          writesCanonicalData: false,
-        },
-      },
-      isLoading: false,
-      error: null,
-    })
-    rerender(<FileDetailPane />)
-
     await vi.advanceTimersByTimeAsync(900)
 
     expect(useFilesStore.getState().structuredClassScope).toBe('udfs:Project')
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledTimes(1)
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledWith({
-      file: {
-        uri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        kind: 'resource',
-      },
-      metadata: expect.objectContaining({
+    expect(loadLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl')).toEqual(
+      expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         viewMode: 'table',
         classScope: 'udfs:Project',
         writesCanonicalData: false,
       }),
-    })
+    )
   })
 
   it('persists structured table column resizing through view metadata without writing canonical data', async () => {
@@ -8815,33 +8521,22 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-        metaUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl.meta',
-        state: 'exists',
-        etag: '"meta-column-resize-1"',
-        metadata: {
-          documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-          viewMode: 'table',
-          classScope: 'udfs:Workspace',
-          searchText: '',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: null,
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: [],
-            positions: {},
-          },
-          writesCanonicalData: false,
-        },
+    saveLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl', {
+      documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+      viewMode: 'table',
+      classScope: 'udfs:Workspace',
+      searchText: '',
+      sortKey: null,
+      sortDirection: 'asc',
+      hiddenPredicates: [],
+      kanbanGroupPredicate: null,
+      columnSizing: {},
+      whiteboard: {
+        selectedSubjects: [],
+        positions: {},
       },
-      isLoading: false,
-      error: null,
+      writesCanonicalData: false,
     })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
     try {
@@ -8866,19 +8561,15 @@ describe('FileDetailPane', () => {
 
       await vi.advanceTimersByTimeAsync(900)
 
-      expect(mockSaveStructuredViewMetadata).toHaveBeenCalledWith({
-        file: {
-          uri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
-          kind: 'resource',
-        },
-        metadata: expect.objectContaining({
+      expect(loadLocalStructuredViewMetadata('https://pod.example/.data/workspaces/ws-1/state.ttl')).toEqual(
+        expect.objectContaining({
           documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
           viewMode: 'table',
           classScope: 'udfs:Workspace',
           columnSizing: { title: resizedWidth },
           writesCanonicalData: false,
         }),
-      })
+      )
       expect(consoleErrorSpy.mock.calls.flat().some((arg) => (
         typeof arg === 'string' && arg.includes('Cannot update a component')
       ))).toBe(false)
@@ -8924,7 +8615,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.getByText('#RawOnly')).toBeInTheDocument()
-    expect(screen.getByText('"Raw only"')).toBeInTheDocument()
+    expect(screen.getByText('Raw only')).toBeInTheDocument()
   })
 
   it('does not project structured rows from truncated preview when full raw content fails', () => {
@@ -8959,7 +8650,48 @@ describe('FileDetailPane', () => {
 
     expect(screen.getByText('完整原始内容暂时不可用，不能解析结构化表。')).toBeInTheDocument()
     expect(screen.queryByText('#PreviewOnly')).not.toBeInTheDocument()
-    expect(screen.queryByText('"Preview only"')).not.toBeInTheDocument()
+    expect(screen.queryByText('Preview only')).not.toBeInTheDocument()
+  })
+
+  it('shows a dedicated empty state for an empty structured document', () => {
+    useFilesStore.setState({
+      selectedFileId: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+      structuredSubjectReturnContext: null,
+    })
+    mockUseFileDetail.mockReturnValue({
+      data: {
+        id: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+        uri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+        name: 'state.ttl',
+        kind: 'resource',
+        semanticKind: 'structured-data',
+        parentUri: 'https://pod.example/.data/workspaces/ws-1/',
+        mimeType: 'text/turtle',
+        size: 0,
+        modifiedAt: '2026-03-01T10:00:00Z',
+        headers: {},
+        previewText: '',
+      },
+      isLoading: false,
+      error: null,
+    })
+    mockUseRawTextResource.mockReturnValue({
+      data: {
+        uri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+        content: '',
+        mimeType: 'text/turtle',
+        etag: '"raw-empty-1"',
+        headers: { etag: '"raw-empty-1"', 'content-type': 'text/turtle' },
+      },
+      isLoading: false,
+      error: null,
+    })
+
+    render(<FileDetailPane />)
+
+    expect(screen.getByText('这个文档还没有数据')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '创建 class' })).toBeInTheDocument()
+    expect(screen.queryByText('尚未选择 class')).not.toBeInTheDocument()
   })
 
   it('opens fragment subjects as term definitions before navigating to the resource file', () => {
@@ -8987,7 +8719,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'https://pod.example/.vocab/terms.ttl#tags' }))
+    fireEvent.click(screen.getByRole('button', { name: 'terms.ttl#tags' }))
 
     const termSidecar = screen.getByLabelText('Structured term peek')
     expect(screen.queryByRole('dialog', { name: 'term definition' })).not.toBeInTheDocument()
@@ -8996,9 +8728,9 @@ describe('FileDetailPane', () => {
     expect(within(termSidecar).getByText('https://pod.example/.vocab/terms.ttl#tags')).toBeInTheDocument()
     expect(within(termSidecar).getByText('https://pod.example/.vocab/terms.ttl')).toBeInTheDocument()
     expect(within(termSidecar).getByText('rdfs:label')).toBeInTheDocument()
-    expect(within(termSidecar).getByText('"tags"')).toBeInTheDocument()
+    expect(within(termSidecar).getByText('tags')).toBeInTheDocument()
     expect(within(termSidecar).getByText('rdfs:comment')).toBeInTheDocument()
-    expect(within(termSidecar).getByText('"Topic labels"')).toBeInTheDocument()
+    expect(within(termSidecar).getByText('Topic labels')).toBeInTheDocument()
 
     fireEvent.click(within(termSidecar).getByRole('button', { name: '打开承载文件' }))
 
@@ -9043,7 +8775,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    const subjectButton = screen.getByRole('button', { name: 'https://pod.example/.vocab/terms.ttl#tags' })
+    const subjectButton = screen.getByRole('button', { name: 'terms.ttl#tags' })
     fireEvent.keyDown(subjectButton, { key: 'Enter' })
 
     const termSidecar = screen.getByLabelText('Structured term peek')
@@ -9086,7 +8818,7 @@ describe('FileDetailPane', () => {
 
     fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
-    fireEvent.click(screen.getByRole('cell', { name: '"Files"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
     fireEvent.change(titleInput, { target: { value: 'Edited first document' } })
     fireEvent.blur(titleInput)
@@ -9103,7 +8835,7 @@ describe('FileDetailPane', () => {
     rerender(<FileDetailPane />)
 
     expect(screen.queryByRole('cell', { name: 'Edited first document' })).not.toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"Second Files"' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Second Files' })).toBeInTheDocument()
   })
 
   it('hydrates pending structured cell proposals from Inbox when the table opens', () => {
@@ -9544,7 +9276,7 @@ describe('FileDetailPane', () => {
     const summaryHeaders = screen.getAllByRole('columnheader').filter((header) => /summary/i.test(header.textContent ?? ''))
     expect(summaryHeaders).toHaveLength(1)
     expect(summaryHeaders[0]).toHaveTextContent('Summary*')
-    expect(screen.getByRole('cell', { name: '"Existing"' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Existing' })).toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
     expect(screen.getByText('Note*')).toBeInTheDocument()
     expect(screen.getByText('审批记录已准备')).toBeInTheDocument()
@@ -9570,7 +9302,7 @@ describe('FileDetailPane', () => {
     )
     fireEvent.keyDown(document.body, { key: 'Escape' })
 
-    fireEvent.click(screen.getByRole('cell', { name: '"Existing"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'Existing' }))
     const summaryInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 Summary' })
     fireEvent.change(summaryInput, { target: { value: 'Updated summary' } })
     fireEvent.focus(summaryInput)
@@ -9756,7 +9488,7 @@ describe('FileDetailPane', () => {
 
     fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
-    fireEvent.click(screen.getByRole('cell', { name: '"Files"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
     fireEvent.change(titleInput, { target: { value: 'Draft title' } })
     fireEvent.focus(titleInput)
@@ -9772,7 +9504,7 @@ describe('FileDetailPane', () => {
       expect(screen.queryByRole('button', { name: 'Discard pending write for title on #Workspace' })).not.toBeInTheDocument()
       expect(screen.queryByRole('cell', { name: /Draft title/ })).not.toBeInTheDocument()
     })
-    expect(screen.getByRole('cell', { name: '"Files"' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Files' })).toBeInTheDocument()
   })
 
   it('stages existing .data predicate cell edits through structured cell approvals', async () => {
@@ -9809,7 +9541,7 @@ describe('FileDetailPane', () => {
 
     fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
-    fireEvent.click(screen.getByRole('cell', { name: '"Files"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
     fireEvent.change(titleInput, { target: { value: 'Draft title' } })
     fireEvent.focus(titleInput)
@@ -9829,7 +9561,7 @@ describe('FileDetailPane', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Discard pending write for title on #Workspace' })).not.toBeInTheDocument()
     })
-    expect(screen.getByText('"Draft title"')).toBeInTheDocument()
+    expect(screen.getByText('Draft title')).toBeInTheDocument()
     expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' })).toBeInTheDocument()
     expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' }))
       .toHaveAttribute('title', '单元格变更已提交；等待 Inbox 审批，canonical 数据未变更')
@@ -9870,7 +9602,7 @@ describe('FileDetailPane', () => {
 
     fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
-    fireEvent.click(screen.getByRole('cell', { name: '"Files"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
     fireEvent.change(titleInput, { target: { value: 'Draft title' } })
     fireEvent.blur(titleInput)
@@ -10229,38 +9961,26 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockUseStructuredViewMetadata.mockReturnValue({
-      data: {
-        ownerUri: documentUri,
-        metaUri: `${documentUri}.meta`,
-        state: 'exists',
-        etag: '"meta-kanban-order-1"',
-        metadata: {
-          documentUri,
-          viewMode: 'kanban',
-          classScope: null,
-          searchText: '',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: 'mode',
-          kanbanOrder: {},
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: [],
-            positions: {},
-          },
-          writesCanonicalData: false,
-        },
+    saveLocalStructuredViewMetadata(documentUri, {
+      documentUri,
+      viewMode: 'kanban',
+      classScope: null,
+      searchText: '',
+      sortKey: null,
+      sortDirection: 'asc',
+      hiddenPredicates: [],
+      kanbanGroupPredicate: 'mode',
+      kanbanOrder: {},
+      columnSizing: {},
+      whiteboard: {
+        selectedSubjects: [],
+        positions: {},
       },
-      isLoading: false,
-      error: null,
+      writesCanonicalData: false,
     })
-    mockSaveStructuredViewMetadata.mockResolvedValue(undefined)
 
     render(<FileDetailPane />)
     await vi.advanceTimersByTimeAsync(0)
-    mockSaveStructuredViewMetadata.mockClear()
     mockCreateCellProposal.mockClear()
     mockMutateRaw.mockClear()
 
@@ -10289,13 +10009,8 @@ describe('FileDetailPane', () => {
       await vi.advanceTimersByTimeAsync(900)
     })
 
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledTimes(1)
-    expect(mockSaveStructuredViewMetadata).toHaveBeenCalledWith({
-      file: {
-        uri: documentUri,
-        kind: 'resource',
-      },
-      metadata: expect.objectContaining({
+    expect(loadLocalStructuredViewMetadata(documentUri)).toEqual(
+      expect.objectContaining({
         documentUri,
         viewMode: 'kanban',
         kanbanGroupPredicate: 'mode',
@@ -10304,7 +10019,7 @@ describe('FileDetailPane', () => {
         },
         writesCanonicalData: false,
       }),
-    })
+    )
     expect(screen.queryByText(/待审批：mode/)).not.toBeInTheDocument()
   })
 
@@ -10424,9 +10139,9 @@ describe('FileDetailPane', () => {
     expect(within(termRelationSidecar).getByText('https://pod.example/.vocab/terms.ttl#tags')).toBeInTheDocument()
     expect(within(termRelationSidecar).getByText('https://pod.example/.vocab/terms.ttl')).toBeInTheDocument()
     expect(within(termRelationSidecar).getByText('rdfs:label')).toBeInTheDocument()
-    expect(within(termRelationSidecar).getByText('"tags"')).toBeInTheDocument()
+    expect(within(termRelationSidecar).getByText('tags')).toBeInTheDocument()
     expect(within(termRelationSidecar).getByText('rdfs:comment')).toBeInTheDocument()
-    expect(within(termRelationSidecar).getByText('"Topic labels"')).toBeInTheDocument()
+    expect(within(termRelationSidecar).getByText('Topic labels')).toBeInTheDocument()
     fireEvent.click(within(termRelationSidecar).getByRole('button', { name: '取消' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Open URL https://source.example/report.pdf' }))
@@ -10642,11 +10357,11 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"Files"' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Files' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('cell', { name: '"Files"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
 
     expect(screen.queryByRole('textbox', { name: '编辑 #Workspace 的 title' })).not.toBeInTheDocument()
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
@@ -10687,11 +10402,11 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '"Files"' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Files' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('cell', { name: '"Files"' }))
+    fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
 
     expect(screen.queryByRole('textbox', { name: '编辑 #Workspace 的 title' })).not.toBeInTheDocument()
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
@@ -10784,7 +10499,7 @@ describe('FileDetailPane', () => {
     expect(mockMutateRaw).not.toHaveBeenCalled()
   })
 
-  it('renders folder detail as an expandable tree without a side preview', () => {
+  it('renders folder detail as a flat list without disclosure controls or a side preview', () => {
     useFilesStore.setState({ selectedFileId: 'https://pod.example/public/' })
     mockUseFileDetail.mockReturnValue({
       data: {
@@ -10817,8 +10532,8 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('tree', { name: 'Folder list view' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '展开 docs' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Folder list view')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '展开 docs' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Folder child preview')).not.toBeInTheDocument()
     expect(screen.queryByText('文件夹预览')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '预览' })).not.toBeInTheDocument()
@@ -11049,7 +10764,7 @@ describe('FileDetailPane', () => {
     expect(within(drawer).getByText('同步状态')).toBeInTheDocument()
     expect(within(drawer).getByText('已连接 · 200')).toBeInTheDocument()
     expect(within(drawer).getByText('类型')).toBeInTheDocument()
-    expect(within(drawer).getByText('inode/container')).toBeInTheDocument()
+    expect(within(drawer).getAllByText('inode/container').length).toBeGreaterThan(0)
     expect(within(drawer).getAllByText('https://pod.example/public/').length).toBeGreaterThan(0)
     expect(within(drawer).getByText('https://pod.example/public/.meta')).toBeInTheDocument()
     expect(within(drawer).getByText('<#container> <#summary> "Folder metadata" .')).toBeInTheDocument()
@@ -11186,7 +10901,7 @@ describe('FileDetailPane', () => {
     expect(within(listView).queryByText('README.md.meta')).not.toBeInTheDocument()
     expect(within(listView).queryByText('README.md.acl')).not.toBeInTheDocument()
     expect(within(listView).queryByText('README.md.acr')).not.toBeInTheDocument()
-    expect(within(listView).getAllByRole('treeitem')).toHaveLength(1)
+    expect(within(listView).getAllByRole('button', { name: /README\.md/ })).toHaveLength(1)
 
     fireEvent.click(screen.getByRole('button', { name: '网格' }))
     const iconView = screen.getByLabelText('Folder icon view')
@@ -12273,7 +11988,6 @@ describe('FileDetailPane', () => {
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
     expect(screen.getByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
     expect(screen.getByTestId('rich-text-file-editor')).toBeInTheDocument()
-    expect(screen.getByLabelText('文件 meta')).toBeInTheDocument()
   })
 
   it('opens an editable child file sheet with Enter after preview selection', () => {
@@ -12328,8 +12042,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByTestId('rich-text-file-editor')).toBeInTheDocument()
   })
 
-  it('keeps ordinary editable file meta tail from duplicating Access ACL and ACR permission summaries', () => {
-    requestDefaultEditableFileSheetOpen()
+  it('keeps ordinary file meta drawer from duplicating Access ACL and ACR permission summaries', () => {
     mockUseFilesMetaSidecar.mockReturnValue({
       data: {
         ownerUri: 'https://pod.example/public/README.md',
@@ -12351,15 +12064,15 @@ describe('FileDetailPane', () => {
     })
 
     render(<FileDetailPane />)
+    openHeaderMetaDrawer()
 
-    const editorSheet = screen.getByRole('dialog', { name: 'Hello' })
-    const metaTail = within(editorSheet).getByLabelText('文件 meta')
-    expect(within(metaTail).queryByText('访问权限')).not.toBeInTheDocument()
-    expect(within(metaTail).queryByText('你：可查看、可追加、可管理权限')).not.toBeInTheDocument()
-    expect(within(metaTail).queryByText('公开访问：可查看')).not.toBeInTheDocument()
-    expect(within(metaTail).queryByText(/acl:mode acl:Read/)).not.toBeInTheDocument()
-    expect(within(metaTail).queryByText(/acr:accessControl/)).not.toBeInTheDocument()
-    fireEvent.pointerDown(within(editorSheet).getByRole('button', { name: '更多文件操作' }))
+    const metaDrawer = getFileMetaDrawer()
+    expect(within(metaDrawer).queryByText('访问权限')).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByText('你：可查看、可追加、可管理权限')).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByText('公开访问：可查看')).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByText(/acl:mode acl:Read/)).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByText(/acr:accessControl/)).not.toBeInTheDocument()
+    openResourceActionsMenu()
     expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
   })
 

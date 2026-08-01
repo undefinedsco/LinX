@@ -57,6 +57,7 @@ interface ResourceQueryKeyCollection {
     chatFileFingerprint?: string | null
   }): QueryKey
   detail(resourceUri?: string | null): QueryKey
+  treeSearch(workspaceUri?: string | null): QueryKey
   rawText(resourceUri?: string | null): QueryKey
   blob(resourceUri?: string | null): QueryKey
 }
@@ -74,8 +75,14 @@ interface ResourceQueryResourceCollection {
     containerUri: string,
     sourceLabel?: string,
     dbOverride?: SolidDatabase | null,
+    options?: { enrichMetadata?: boolean },
   ): Promise<FilesEntry[]>
   listEntries(input: FilesEntryListInput, dbOverride?: SolidDatabase | null): Promise<FilesEntry[]>
+  listAllEntries(
+    workspaceUri?: string | null,
+    options?: { recursive?: boolean },
+    dbOverride?: SolidDatabase | null,
+  ): Promise<FilesEntry[]>
   readDetail(resourceUri: string, dbOverride?: SolidDatabase | null): Promise<FilesDetail>
   readRawText(resourceUri: string, dbOverride?: SolidDatabase | null): Promise<FilesRawTextResource>
   readBlob(resourceUri: string, dbOverride?: SolidDatabase | null): Promise<FilesBlobResource>
@@ -147,7 +154,7 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
         queryKey: filesResourceQueryKeys.containerEntries(input.containerUri),
         queryFn: async (context) => withPodRequestBoundary(async () => {
           if (!input.db || !input.containerUri) return []
-          return filesResourceCollection.listContainerEntries(input.containerUri, undefined, input.db)
+          return filesResourceCollection.listContainerEntries(input.containerUri, undefined, input.db, { enrichMetadata: false })
         }, { signal: context?.signal }),
         enabled: !!input.db && !!input.containerUri,
         staleTime: REMOTE_RESOURCE_STALE_TIME_MS,
@@ -188,6 +195,24 @@ export function createResourceQueryCollection(dependencies: ResourceQueryCollect
           }, input.db)
         }, { signal: context?.signal }),
         enabled: !!input.db && (input.entryScope !== 'chat-files' || !!input.workspaceUri || !!input.chatPodRootUri),
+        staleTime: REMOTE_RESOURCE_STALE_TIME_MS,
+        retry: shouldRetryPodRequest,
+      }
+    },
+
+    treeSearchEntries(input: {
+      workspaceUri?: string | null
+      enabled?: boolean
+      db?: SolidDatabase | null
+    }): FilesResourceQueryOptions<FilesEntry[]> {
+      const enabled = input.enabled ?? true
+      return {
+        queryKey: filesResourceQueryKeys.treeSearch(input.workspaceUri),
+        queryFn: async (context) => withPodRequestBoundary(async () => {
+          if (!input.db) return []
+          return filesResourceCollection.listAllEntries(input.workspaceUri, { recursive: true }, input.db)
+        }, { signal: context?.signal }),
+        enabled: !!input.db && enabled,
         staleTime: REMOTE_RESOURCE_STALE_TIME_MS,
         retry: shouldRetryPodRequest,
       }

@@ -6,9 +6,9 @@ const detailPreviewPath = 'src/modules/files/features/detail/FileDetailPreview.t
 const sourceLinkedCardPreviewPath = 'src/modules/files/features/detail/FileDetailSourceLinkedCardPreview.tsx'
 const editorSheetPath = 'src/modules/files/features/editor/FileEditorSheet.tsx'
 const documentEditorModalPath = 'src/modules/files/features/editor/DocumentEditorModal.tsx'
+const editorSurfacePath = 'src/modules/files/features/editor/FileEditorSurface.tsx'
 const editorSheetControllerPath = 'src/modules/files/features/editor/useFileEditorSheetController.ts'
 const editorSheetModelPath = 'src/modules/files/features/editor/file-editor-sheet-model.ts'
-const editorMetaTailPath = 'src/modules/files/features/editor/FileEditorSheetMetaTail.tsx'
 const editorRawSourcePath = 'src/modules/files/features/editor/FileEditorRawSourceEditor.tsx'
 const editorRawSourceControllerPath = 'src/modules/files/features/editor/useFileEditorRawSourceController.ts'
 const editorRawSourceModelPath = 'src/modules/files/features/editor/file-editor-raw-source-model.ts'
@@ -21,9 +21,9 @@ describe('FileEditorSheet architecture boundary', () => {
     expect(existsSync(detailPreviewPath)).toBe(true)
     expect(existsSync(editorSheetPath)).toBe(true)
     expect(existsSync(documentEditorModalPath)).toBe(true)
+    expect(existsSync(editorSurfacePath)).toBe(true)
     expect(existsSync(editorSheetControllerPath)).toBe(true)
     expect(existsSync(editorSheetModelPath)).toBe(true)
-    expect(existsSync(editorMetaTailPath)).toBe(true)
     expect(existsSync(editorRawSourcePath)).toBe(true)
     expect(existsSync(editorRawSourceControllerPath)).toBe(true)
     expect(existsSync(editorRawSourceModelPath)).toBe(true)
@@ -32,9 +32,9 @@ describe('FileEditorSheet architecture boundary', () => {
     if (
       !existsSync(detailPreviewPath)
       || !existsSync(editorSheetPath)
+      || !existsSync(editorSurfacePath)
       || !existsSync(editorSheetControllerPath)
       || !existsSync(editorSheetModelPath)
-      || !existsSync(editorMetaTailPath)
       || !existsSync(editorRawSourcePath)
       || !existsSync(editorRawSourceControllerPath)
       || !existsSync(editorRawSourceModelPath)
@@ -45,9 +45,9 @@ describe('FileEditorSheet architecture boundary', () => {
     const detailPreviewSource = readFileSync(detailPreviewPath, 'utf8')
     const editorSheetSource = readFileSync(editorSheetPath, 'utf8')
     const documentEditorModalSource = readFileSync(documentEditorModalPath, 'utf8')
+    const editorSurfaceSource = readFileSync(editorSurfacePath, 'utf8')
     const editorSheetControllerSource = readFileSync(editorSheetControllerPath, 'utf8')
     const editorSheetModelSource = readFileSync(editorSheetModelPath, 'utf8')
-    const editorMetaTailSource = readFileSync(editorMetaTailPath, 'utf8')
     const editorRawSourceSource = readFileSync(editorRawSourcePath, 'utf8')
     const editorRawSourceControllerSource = readFileSync(editorRawSourceControllerPath, 'utf8')
     const editorRawSourceModelSource = readFileSync(editorRawSourceModelPath, 'utf8')
@@ -63,15 +63,20 @@ describe('FileEditorSheet architecture boundary', () => {
     expect(detailPreviewSource).toContain("from '../editor/DocumentEditorModal'")
     expect(editorSheetSource).toContain("DocumentEditorModal as FileEditorSheet")
     expect(documentEditorModalSource).toMatch(/\nexport function DocumentEditorModal\(/)
-    expect(documentEditorModalSource).toContain("from './useFileEditorSheetController'")
-    expect(documentEditorModalSource).toContain('useFileEditorSheetController')
-    expect(documentEditorModalSource).toContain("from './FileEditorSheetMetaTail'")
-    expect(documentEditorModalSource).toContain('<FileEditorSheetMetaTail')
-    expect(documentEditorModalSource).toContain("from './FileEditorRawSourceEditor'")
-    expect(documentEditorModalSource).toContain('<FileEditorRawSourceEditor')
-    expect(documentEditorModalSource).toContain('editor.richContentState')
-    expect(documentEditorModalSource).toContain('editor.rawSourceEditorState')
-    expect(documentEditorModalSource).toContain('sourceState={editor.rawSourceEditorState}')
+    expect(documentEditorModalSource).toContain("from './FileEditorSurface'")
+    expect(documentEditorModalSource).toContain('<FileEditorSurface')
+    expect(documentEditorModalSource).toContain('variant="modal"')
+    expect(documentEditorModalSource).not.toContain("from './useFileEditorSheetController'")
+    expect(documentEditorModalSource).not.toContain("from './FileEditorSheetMetaTail'")
+    expect(documentEditorModalSource).not.toContain("from './FileEditorRawSourceEditor'")
+    expect(editorSurfaceSource).toContain("from './useFileEditorSheetController'")
+    expect(editorSurfaceSource).toContain('useFileEditorSheetController')
+    expect(editorSurfaceSource).not.toContain('FileEditorSheetMetaTail')
+    expect(editorSurfaceSource).toContain("from './FileEditorRawSourceEditor'")
+    expect(editorSurfaceSource).toContain('<FileEditorRawSourceEditor')
+    expect(editorSurfaceSource).toContain('editor.richContentState')
+    expect(editorSurfaceSource).toContain('editor.rawSourceEditorState')
+    expect(editorSurfaceSource).toContain('sourceState={editor.rawSourceEditorState}')
     expect(editorSheetSource).not.toContain('rawResource={editor.rawSourceEditorState.rawResource}')
     expect(editorSheetSource).not.toContain('isLoading={editor.rawSourceEditorState.isLoading}')
     expect(editorSheetSource).not.toContain('error={editor.rawSourceEditorState.error}')
@@ -106,7 +111,7 @@ describe('FileEditorSheet architecture boundary', () => {
     expect(editorSheetControllerSource).toContain('useCreateSourceUpdateProposal')
     expect(editorSheetControllerSource).toContain('useFilesCurrentPodRootUri')
     expect(editorSheetControllerSource).toContain('useRawTextResource')
-    expect(editorSheetControllerSource).toContain('useFilesMetaSidecar')
+    expect(editorSheetControllerSource).not.toContain('useFilesMetaSidecar')
     expect(editorSheetControllerSource).toContain('useFilesStore')
     expect(editorSheetControllerSource).toContain('useFilesRouteBridge')
     expect(editorSheetControllerSource).toContain('clearStructuredSubjectRoute')
@@ -128,7 +133,6 @@ describe('FileEditorSheet architecture boundary', () => {
     expect(editorSheetControllerSource).not.toContain('RichTextFileEditor')
     expect(editorSheetControllerSource).not.toContain('FileEditorRawSourceEditor')
     expect(editorSheetControllerSource).not.toContain('FileEditorSheetMetaTail')
-    expect(editorSheetModelSource).toContain('export function createFileEditorMetaTailId')
     expect(editorSheetModelSource).toContain('export function createFileEditorSheetState')
     expect(editorSheetModelSource).toContain('export function projectFileEditorSheetContentView')
     expect(editorSheetModelSource).toContain('export function projectFileEditorSheetReset')
@@ -136,17 +140,10 @@ describe('FileEditorSheet architecture boundary', () => {
     expect(editorSheetModelSource).toContain('export function projectFileEditorSourceLinkedDraft')
     expect(editorSheetModelSource).toContain('export function projectFileEditorRawSourceResource')
     expect(editorSheetModelSource).toContain('export function projectFileEditorRichContentState')
-    expect(editorSheetModelSource).toContain('export function projectFileEditorBylineItems')
     expect(editorSheetModelSource).toContain('export function projectFileEditorCapabilities')
     expect(editorSheetModelSource).not.toContain('useToast')
     expect(editorSheetModelSource).not.toContain('useState')
     expect(editorSheetModelSource).not.toContain('useMemo')
-
-    expect(editorMetaTailSource).toContain('export function FileEditorSheetMetaTail')
-    expect(editorMetaTailSource).toContain('FileRdfMetadataPanel')
-    expect(editorMetaTailSource).toContain('SourceLinkedCardMetadataPanel')
-    expect(editorMetaTailSource).not.toContain('renderMetaContent')
-    expect(editorMetaTailSource).not.toContain('children')
 
     expect(editorRawSourceSource).toContain('export function FileEditorRawSourceEditor')
     expect(editorRawSourceSource).toContain("from './useFileEditorRawSourceController'")

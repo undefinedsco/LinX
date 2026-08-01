@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useToast } from '@/components/ui/use-toast'
-import { FilesSaveConflictError, type FilesDetail } from '../../domain/resource/resource-model'
-import { useSaveStructuredViewMetadata, useStructuredViewMetadata } from '../../data/queries'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { FilesDetail, FilesStructuredViewMetadataSidecar } from '../../domain/resource/resource-model'
 import type { StructuredViewMetadata } from '../../domain/structured/structured-view-metadata'
 import {
   isSameStructuredDocumentUri,
   projectStructuredViewMetadataHydration,
   structuredViewMetadataSignature,
 } from './structured-view-metadata-workflow-model'
+import {
+  loadLocalStructuredViewMetadata,
+  saveLocalStructuredViewMetadata,
+} from './local-structured-view-metadata-store'
 
 export function useStructuredViewMetadataController({
   currentViewMetadata,
@@ -26,9 +28,24 @@ export function useStructuredViewMetadataController({
   clearStructuredViewMetadataDirty: (documentUri: string) => void
   whiteboardLayoutKey: string
 }) {
-  const structuredViewMetadataQuery = useStructuredViewMetadata(file)
-  const saveStructuredViewMetadata = useSaveStructuredViewMetadata()
-  const { toast } = useToast()
+  // View configuration is renderer UI state, so it lives in local storage
+  // keyed by document URI instead of the Pod .meta sidecar.
+  const [localStoreRevision, setLocalStoreRevision] = useState(0)
+  const structuredViewMetadataSidecar = useMemo<FilesStructuredViewMetadataSidecar>(() => {
+    const metadata = loadLocalStructuredViewMetadata(file.uri)
+    return {
+      ownerUri: file.uri,
+      metaUri: `local://structured-view/${encodeURIComponent(file.uri)}`,
+      state: metadata ? 'exists' : 'missing',
+      status: 200,
+      content: null,
+      mimeType: null,
+      etag: metadata ? structuredViewMetadataSignature(metadata) : null,
+      size: null,
+      metadata,
+    }
+    // localStoreRevision re-reads local storage after each save.
+  }, [file.uri, localStoreRevision])
   const hydratedViewMetadataKeyRef = useRef<string | null>(null)
   const syncedViewMetadataSignatureRef = useRef<string | null>(null)
   const autosaveReadyRef = useRef(false)
@@ -64,7 +81,7 @@ export function useStructuredViewMetadataController({
       currentHydrationKey: hydratedViewMetadataKeyRef.current,
       fileUri: file.uri,
       localViewMetadataChangeBeforeHydration: localViewMetadataChangeBeforeHydrationRef.current || localViewMetadataDirty,
-      metadataSidecar: structuredViewMetadataQuery.data,
+      metadataSidecar: structuredViewMetadataSidecar,
       whiteboardLayoutKey,
     })
     if (hydrationPlan.action === 'none') return
@@ -86,12 +103,11 @@ export function useStructuredViewMetadataController({
     file.uri,
     hydrateStructuredViewMetadata,
     localViewMetadataDirty,
-    structuredViewMetadataQuery.data,
+    structuredViewMetadataSidecar,
     whiteboardLayoutKey,
   ])
 
   useEffect(() => {
-    if (!structuredViewMetadataQuery.data) return
     if (!isSameStructuredDocumentUri(currentViewMetadata.documentUri, file.uri)) return
 
     const currentSignature = structuredViewMetadataSignature(currentViewMetadata)
@@ -110,41 +126,28 @@ export function useStructuredViewMetadataController({
     const timeoutId = window.setTimeout(() => {
       setViewMetadataSaveStatus('saving')
       setViewMetadataSaveError(null)
-      void saveStructuredViewMetadata.mutateAsync({
-        file: {
-          uri: file.uri,
-          kind: file.kind,
-        },
-        metadata: currentViewMetadata,
-      }).then(() => {
+      try {
+        saveLocalStructuredViewMetadata(file.uri, currentViewMetadata)
         syncedViewMetadataSignatureRef.current = currentSignature
         failedViewMetadataSignatureRef.current = null
         localViewMetadataChangeBeforeHydrationRef.current = false
         clearStructuredViewMetadataDirty(file.uri)
         setViewMetadataSaveStatus('synced')
         setViewMetadataSaveError(null)
-      }).catch((error) => {
-        const description = error instanceof FilesSaveConflictError
-          ? '视图配置保存冲突：远端 .meta 已变化，请重新打开后再调整视图。'
-          : error instanceof Error
-            ? error.message
-            : '保存视图配置失败'
+        setLocalStoreRevision((current) => current + 1)
+      } catch (error) {
+        const description = error instanceof Error ? error.message : '保存视图配置失败'
         setViewMetadataSaveStatus('error')
         setViewMetadataSaveError(description)
         failedViewMetadataSignatureRef.current = currentSignature
-        toast({ description, variant: 'destructive' })
-      })
+      }
     }, 800)
 
     return () => window.clearTimeout(timeoutId)
   }, [
     currentViewMetadata,
     clearStructuredViewMetadataDirty,
-    file.kind,
     file.uri,
-    saveStructuredViewMetadata,
-    structuredViewMetadataQuery.data,
-    toast,
     retryToken,
   ])
 

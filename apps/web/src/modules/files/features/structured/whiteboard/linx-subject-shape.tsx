@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Link2 } from 'lucide-react'
+import { Eye, Link2 } from 'lucide-react'
 import {
   HTMLContainer,
   type RecordProps,
@@ -73,7 +73,7 @@ export function TldrawLinxSubjectShape({
         onKeyDown={(event) => {
           if (event.key !== 'Enter') return
           event.preventDefault()
-          onOpenSubject?.(shape.props.resourceUri, { navigate: false })
+          onOpenSubject?.(shape.props.resourceUri, { navigate: true })
         }}
       >
         <div className="min-w-0">
@@ -91,6 +91,28 @@ export function TldrawLinxSubjectShape({
         </div>
         {children}
       </div>
+      {onOpenSubject ? (
+        <button
+          type="button"
+          aria-label={`预览 ${shape.props.title || shape.props.resourceUri}`}
+          title="预览"
+          className={cn(
+            'absolute right-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/50 bg-background text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground group-focus-within:opacity-100 group-hover:opacity-100',
+            selected && 'opacity-100',
+          )}
+          onPointerDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenSubject(shape.props.resourceUri, { navigate: false })
+          }}
+        >
+          <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      ) : null}
       {onConnectSubject ? (
         <button
           type="button"

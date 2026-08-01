@@ -4,9 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { FilesDetail, FilesRawTextResource } from '../../domain/resource/resource-model'
 import {
   createFileEditorSheetState,
-  createFileEditorMetaTailId,
   getFileEditorMarkdownNoteTitle,
-  projectFileEditorBylineItems,
   projectFileEditorCapabilities,
   projectFileEditorRawSourceResource,
   projectFileEditorRichContentState,
@@ -25,6 +23,7 @@ import {
 const editorModelPath = 'src/modules/files/features/editor/file-editor-sheet-model.ts'
 const editorControllerPath = 'src/modules/files/features/editor/useFileEditorSheetController.ts'
 const editorFeaturePath = 'src/modules/files/features/editor/DocumentEditorModal.tsx'
+const editorSurfacePath = 'src/modules/files/features/editor/FileEditorSurface.tsx'
 
 function file(overrides: Partial<FilesDetail> = {}): FilesDetail {
   return {
@@ -76,13 +75,14 @@ describe('file editor sheet model', () => {
     expect(existsSync(editorModelPath)).toBe(true)
     expect(existsSync(editorControllerPath)).toBe(true)
     expect(existsSync(editorFeaturePath)).toBe(true)
-    if (!existsSync(editorModelPath) || !existsSync(editorControllerPath) || !existsSync(editorFeaturePath)) return
+    expect(existsSync(editorSurfacePath)).toBe(true)
+    if (!existsSync(editorModelPath) || !existsSync(editorControllerPath) || !existsSync(editorFeaturePath) || !existsSync(editorSurfacePath)) return
 
     const modelSource = readFileSync(editorModelPath, 'utf8')
     const controllerSource = readFileSync(editorControllerPath, 'utf8')
     const featureSource = readFileSync(editorFeaturePath, 'utf8')
+    const surfaceSource = readFileSync(editorSurfacePath, 'utf8')
 
-    expect(modelSource).toContain('export function createFileEditorMetaTailId')
     expect(modelSource).toContain('export function createFileEditorSheetState')
     expect(modelSource).toContain('export function projectFileEditorSheetContentView')
     expect(modelSource).toContain('export function projectFileEditorSheetReset')
@@ -94,7 +94,6 @@ describe('file editor sheet model', () => {
     expect(modelSource).toContain('export function projectFileEditorRawSourceResource')
     expect(modelSource).toContain('export function projectFileEditorRichContentState')
     expect(modelSource).toContain('export function projectFileEditorRichEditorContent')
-    expect(modelSource).toContain('export function projectFileEditorBylineItems')
     expect(modelSource).toContain('export function projectFileEditorCapabilities')
     expect(modelSource).not.toContain('useToast')
     expect(modelSource).not.toContain('useState')
@@ -108,23 +107,25 @@ describe('file editor sheet model', () => {
     expect(controllerSource).not.toContain('displaySourceIngestVersion')
     expect(controllerSource).toContain('projectFileEditorSheetChrome')
     expect(controllerSource).toContain('projectFileEditorRichEditorContent')
-    expect(featureSource).toContain('editor.sheetChrome')
-    expect(featureSource).not.toContain('aria-label="文件详情标题"')
-    expect(featureSource).not.toContain('aria-label="笔记标题"')
-    expect(featureSource).not.toContain('aria-label="文件详情 byline"')
-    expect(featureSource).not.toContain('aria-label="文件详情内容滚动区"')
-    expect(featureSource).not.toContain("file.mimeType ?? 'file'")
-    expect(featureSource).not.toContain("mode === 'rich' ? '富文本' : '源码'")
-    expect(featureSource).toContain('editor.sourceLinkedPanel')
-    expect(featureSource).not.toContain('sourceLinkedDescriptor.sourceUri')
-    expect(featureSource).not.toContain('sourceLinkedDescriptor.sourceIngestManifestUri')
-    expect(featureSource).not.toContain('editor.sourceLinkedDisplayIngestVersion')
-    expect(featureSource).not.toContain('>Source</p>')
-    expect(featureSource).not.toContain('>Ingest 记录</span>')
-    expect(featureSource).toContain('editor.structuredReturnAction')
-    expect(featureSource).toContain('editor.richEditorContent')
-    expect(featureSource).not.toContain('editor.structuredSubjectReturnContext?.subject')
-    expect(featureSource).not.toContain('返回来源表 ·')
+    expect(featureSource).toContain("from './FileEditorSurface'")
+    expect(featureSource).not.toContain('editor.sheetChrome')
+    expect(surfaceSource).toContain('editor.sheetChrome')
+    expect(surfaceSource).not.toContain('aria-label="文件详情标题"')
+    expect(surfaceSource).not.toContain('aria-label="笔记标题"')
+    expect(surfaceSource).not.toContain('aria-label="文件详情 byline"')
+    expect(surfaceSource).not.toContain('aria-label="文件详情内容滚动区"')
+    expect(surfaceSource).not.toContain("file.mimeType ?? 'file'")
+    expect(surfaceSource).not.toContain("mode === 'rich' ? '富文本' : '源码'")
+    expect(surfaceSource).toContain('editor.sourceLinkedPanel')
+    expect(surfaceSource).not.toContain('sourceLinkedDescriptor.sourceUri')
+    expect(surfaceSource).not.toContain('sourceLinkedDescriptor.sourceIngestManifestUri')
+    expect(surfaceSource).not.toContain('editor.sourceLinkedDisplayIngestVersion')
+    expect(surfaceSource).not.toContain('>Source</p>')
+    expect(surfaceSource).not.toContain('>Ingest 记录</span>')
+    expect(surfaceSource).toContain('editor.structuredReturnAction')
+    expect(surfaceSource).toContain('editor.richEditorContent')
+    expect(surfaceSource).not.toContain('editor.structuredSubjectReturnContext?.subject')
+    expect(surfaceSource).not.toContain('返回来源表 ·')
   })
 
   it('projects generic rich editor content outside the UI surface', () => {
@@ -269,8 +270,7 @@ describe('file editor sheet model', () => {
     })
   })
 
-  it('projects title, capabilities, and byline without controller-local branching', () => {
-    expect(createFileEditorMetaTailId('https://pod.example/files/note.md')).toMatch(/^files-file-meta-tail-[a-z0-9]+$/)
+  it('projects title and capabilities without controller-local branching', () => {
     expect(getFileEditorMarkdownNoteTitle('# Full title\n\nbody', 'note.md')).toBe('Full title')
     expect(getFileEditorMarkdownNoteTitle('body only', 'note.md')).toBe('note')
     expect(getFileEditorMarkdownNoteTitle('intro\n\n# Later section', 'note.md')).toBe('note')
@@ -299,36 +299,6 @@ describe('file editor sheet model', () => {
       canSaveRichText: false,
       canUseRichEditor: true,
     })
-
-    expect(projectFileEditorBylineItems({
-      file: file(),
-      rawLoading: false,
-      hasRawResource: true,
-      metaLoading: false,
-      metaState: 'exists',
-      isSourceLinkedEditor: false,
-      canSaveRichText: true,
-    })).toEqual([
-      'note.md',
-      '更新 not-a-date',
-      '完整内容',
-      '.meta 已连接',
-      '失焦保存',
-    ])
-    expect(projectFileEditorBylineItems({
-      file: file({ name: 'report.pdf', mimeType: 'application/pdf', modifiedAt: null }),
-      rawLoading: true,
-      hasRawResource: false,
-      metaLoading: true,
-      metaState: 'missing',
-      isSourceLinkedEditor: true,
-      canSaveRichText: false,
-    })).toEqual([
-      'report.pdf',
-      '读取内容中',
-      'meta 检查中',
-      '审批写入',
-    ])
   })
 
   it('projects sheet chrome and content view options outside the renderer', () => {

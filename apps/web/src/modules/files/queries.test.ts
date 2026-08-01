@@ -27,11 +27,9 @@ import {
   useRefreshSourceLinkedCard,
   useRequestSourceIngestRange,
   useSaveRawTextResource,
-  useSaveStructuredViewMetadata,
   useFilesVocabRegistryDiscovery,
-  useStructuredViewMetadata,
 } from './queries'
-import { createContainerNodeId, type FilesEntry, type FilesRootData, type FilesStructuredViewMetadataSidecar } from './browser'
+import { createContainerNodeId, type FilesEntry, type FilesRootData } from './browser'
 import {
   createSourceIndexManifest,
   createSourceIngestManifest,
@@ -85,8 +83,6 @@ const mocks = vi.hoisted(() => ({
   moveFileResource: vi.fn(),
   createAiChangeProposalInboxApproval: vi.fn(),
   createSourceUpdateProposalInboxApproval: vi.fn(),
-  readStructuredViewMetadata: vi.fn(),
-  saveStructuredViewMetadata: vi.fn(),
   filesBuildRoots: vi.fn(),
   filesResolveCurrentPodRootUri: vi.fn(),
   filesListChildTreeNodes: vi.fn(),
@@ -98,7 +94,6 @@ const mocks = vi.hoisted(() => ({
   filesReadBlob: vi.fn(),
   filesReadAccessBasics: vi.fn(),
   filesReadMetaSidecar: vi.fn(),
-  filesReadStructuredViewMetadata: vi.fn(),
   filesResourceQueryResolveCurrentPodRootUri: vi.fn(),
   filesResourceQueryRoots: vi.fn(),
   filesResourceQueryChildren: vi.fn(),
@@ -109,11 +104,6 @@ const mocks = vi.hoisted(() => ({
   filesResourceQueryBlob: vi.fn(),
   filesSidecarQueryAccessBasics: vi.fn(),
   filesSidecarQueryMetaSidecar: vi.fn(),
-  filesSidecarQueryStructuredViewMetadata: vi.fn(),
-  filesSaveStructuredViewMetadata: vi.fn(),
-  structuredViewMetadataCacheStageSave: vi.fn(),
-  structuredViewMetadataCacheCommitSave: vi.fn(),
-  structuredViewMetadataCacheInvalidateSave: vi.fn(),
   filesSaveRawText: vi.fn(),
   filesCreateRawText: vi.fn(),
   filesCreateBlob: vi.fn(),
@@ -173,7 +163,7 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: { id: 'db' } }),
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: { webId: mocks.webId },
@@ -211,8 +201,6 @@ vi.mock('./data/pod-adapter', async (importOriginal) => {
     createRawTextResource: mocks.createRawTextResource,
     readRawTextResource: mocks.readRawTextResource,
     saveRawTextResource: mocks.saveRawTextResource,
-    readStructuredViewMetadata: mocks.readStructuredViewMetadata,
-    saveStructuredViewMetadata: mocks.saveStructuredViewMetadata,
   }
 })
 
@@ -244,26 +232,6 @@ vi.mock('./data/collections', async (importOriginal) => {
   mocks.sourceIngestRefresh.mockImplementation(actual.sourceIngestCollection.refresh)
   mocks.sourceIngestRequestRange.mockImplementation(actual.sourceIngestCollection.requestRange)
   mocks.sourceIngestMarkRangeIngested.mockImplementation(actual.sourceIngestCollection.markRangeIngested)
-  const filesSidecarMutationCollection = {
-    async saveStructuredViewMetadata(input: {
-      cacheClient: QueryClient
-      db?: unknown
-      file: Parameters<typeof mocks.filesSaveStructuredViewMetadata>[0]
-      metadata: Parameters<typeof mocks.filesSaveStructuredViewMetadata>[1]
-    }) {
-      const snapshot = await mocks.structuredViewMetadataCacheStageSave(input.cacheClient, input.file, input.metadata)
-      try {
-        const sidecar = await mocks.filesSaveStructuredViewMetadata(input.file, input.metadata, input.db)
-        mocks.structuredViewMetadataCacheCommitSave(input.cacheClient, sidecar)
-        await mocks.structuredViewMetadataCacheInvalidateSave(input.cacheClient, sidecar)
-        return sidecar
-      } catch (error) {
-        actual.filesStructuredViewMetadataCacheCollection.restore(input.cacheClient, snapshot)
-        throw error
-      }
-    },
-  }
-
   const filesResourceMutationCollection = {
     async saveRawText(input: {
       cacheClient: QueryClient
@@ -444,8 +412,6 @@ vi.mock('./data/collections', async (importOriginal) => {
       readBlob: mocks.filesReadBlob,
       readAccessBasics: mocks.filesReadAccessBasics,
       readMetaSidecar: mocks.filesReadMetaSidecar,
-      readStructuredViewMetadata: mocks.filesReadStructuredViewMetadata,
-      saveStructuredViewMetadata: mocks.filesSaveStructuredViewMetadata,
       saveRawText: mocks.filesSaveRawText,
       createRawText: mocks.filesCreateRawText,
       createBlob: mocks.filesCreateBlob,
@@ -468,16 +434,8 @@ vi.mock('./data/collections', async (importOriginal) => {
     filesSidecarQueryCollection: {
       accessBasics: mocks.filesSidecarQueryAccessBasics,
       metaSidecar: mocks.filesSidecarQueryMetaSidecar,
-      structuredViewMetadata: mocks.filesSidecarQueryStructuredViewMetadata,
     },
     filesResourceMutationCollection,
-    filesSidecarMutationCollection,
-    filesStructuredViewMetadataCacheCollection: {
-      ...actual.filesStructuredViewMetadataCacheCollection,
-      stageSave: mocks.structuredViewMetadataCacheStageSave,
-      commitSave: mocks.structuredViewMetadataCacheCommitSave,
-      invalidateSave: mocks.structuredViewMetadataCacheInvalidateSave,
-    },
     filesVocabDiscoveryCollection: {
       ...actual.filesVocabDiscoveryCollection,
       resolveLocalVocabUri: mocks.filesVocabResolveLocalVocabUri,
@@ -1105,18 +1063,6 @@ describe('files queries', () => {
         return mocks.filesReadMetaSidecar(file, db)
       },
     }))
-    mocks.filesSidecarQueryStructuredViewMetadata.mockImplementation(({ file, enabled = true, db }: {
-      file?: { uri: string; kind: string } | null
-      enabled?: boolean
-      db?: unknown
-    }) => ({
-      queryKey: ['files', 'structured-view-metadata', file?.uri ?? '', file?.kind ?? ''],
-      enabled: !!db && !!file && enabled,
-      queryFn: async () => {
-        if (!db || !file) throw new Error('No file selected')
-        return mocks.filesReadStructuredViewMetadata(file, db)
-      },
-    }))
     mocks.copyFileResource.mockResolvedValue({
       uri: 'https://pod.example/public/report copy.md',
       id: 'https://pod.example/public/report copy.md',
@@ -1247,90 +1193,6 @@ describe('files queries', () => {
     })
     mocks.createAiChangeProposalInboxApproval.mockResolvedValue('https://pod.example/.data/approvals/ai-change.ttl#approval')
     mocks.createSourceUpdateProposalInboxApproval.mockResolvedValue('https://pod.example/.data/approvals/source-ingest.ttl#approval')
-    mocks.readStructuredViewMetadata.mockResolvedValue({
-      ownerUri: 'https://pod.example/.data/files/files.ttl',
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-      state: 'exists',
-      metadata: {
-        documentUri: 'https://pod.example/.data/files/files.ttl',
-        viewMode: 'table',
-      },
-    })
-    mocks.filesReadStructuredViewMetadata.mockResolvedValue({
-      ownerUri: 'https://pod.example/.data/files/files.ttl',
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-      state: 'exists',
-      metadata: {
-        documentUri: 'https://pod.example/.data/files/files.ttl',
-        viewMode: 'table',
-      },
-    })
-    mocks.saveStructuredViewMetadata.mockResolvedValue({
-      ownerUri: 'https://pod.example/.data/files/files.ttl',
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-      state: 'exists',
-      metadata: {
-        documentUri: 'https://pod.example/.data/files/files.ttl',
-        viewMode: 'whiteboard',
-      },
-    })
-    mocks.filesSaveStructuredViewMetadata.mockResolvedValue({
-      ownerUri: 'https://pod.example/.data/files/files.ttl',
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-      state: 'exists',
-      metadata: {
-        documentUri: 'https://pod.example/.data/files/files.ttl',
-        viewMode: 'whiteboard',
-      },
-    })
-    mocks.structuredViewMetadataCacheStageSave.mockImplementation((
-      queryClient: QueryClient,
-      file: { uri: string; kind: 'container' | 'resource' },
-      metadata: {
-        documentUri: string
-        viewMode?: string
-        searchText?: string
-        whiteboard?: { selectedSubjects?: string[]; positions?: Record<string, unknown> }
-      },
-    ) => {
-      const queryKey = ['files', 'structured-view-metadata', file.uri, file.kind] as const
-      const previous = queryClient.getQueryData(queryKey)
-      queryClient.setQueryData(queryKey, (current: FilesStructuredViewMetadataSidecar | undefined) => ({
-        ownerUri: file.uri,
-        metaUri: current?.metaUri ?? `${file.uri}.meta`,
-        state: 'exists',
-        content: current?.content ?? null,
-        mimeType: current?.mimeType ?? 'text/turtle',
-        etag: current?.etag ?? null,
-        size: current?.size ?? null,
-        metadata: {
-          ...(current?.metadata ?? {}),
-          ...metadata,
-          whiteboard: {
-            ...(current?.metadata.whiteboard ?? {}),
-            ...(metadata.whiteboard ?? {}),
-          },
-        },
-      }))
-      return { queryKey, previous }
-    })
-    mocks.structuredViewMetadataCacheCommitSave.mockImplementation((
-      queryClient: QueryClient,
-      sidecar: FilesStructuredViewMetadataSidecar,
-    ) => {
-      queryClient.setQueryData(['files', 'structured-view-metadata', sidecar.ownerUri, sidecar.ownerUri.endsWith('/') ? 'container' : 'resource'], sidecar)
-    })
-    mocks.structuredViewMetadataCacheInvalidateSave.mockImplementation((
-      queryClient: QueryClient,
-      sidecar: FilesStructuredViewMetadataSidecar,
-    ) => Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: ['files', 'structured-view-metadata', sidecar.ownerUri, sidecar.ownerUri.endsWith('/') ? 'container' : 'resource'],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ['files', 'meta-sidecar', sidecar.ownerUri, sidecar.ownerUri.endsWith('/') ? 'container' : 'resource'],
-      }),
-    ]))
     mocks.filesCreateRawText.mockResolvedValue({
       uri: 'https://pod.example/.data/workspaces/ws-1/cards/quarterly-report.card.ttl',
       content: '',
@@ -1784,9 +1646,16 @@ describe('files queries', () => {
       mimeType: 'text/markdown',
       etag: '"report-1"',
     }, '# Updated report', { id: 'db' })
+    expect(queryClient.getQueryData(['files', 'raw-text', 'https://pod.example/public/report.md'])).toEqual(
+      expect.objectContaining({
+        uri: 'https://pod.example/public/report.md',
+        content: '# Updated report',
+        etag: '"report-2"',
+      }),
+    )
     expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'entries'] }))
     expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'children'] }))
-    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'raw-text', 'https://pod.example/public/report.md'] }))
+    expect(invalidateSpy).not.toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'raw-text', 'https://pod.example/public/report.md'] }))
     expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'detail', 'https://pod.example/public/report.md'] }))
     expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'detail', 'https://pod.example/public/'] }))
   })
@@ -1811,7 +1680,6 @@ describe('files queries', () => {
     expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'detail', 'https://pod.example/public/report.md'] }))
     expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'raw-text', 'https://pod.example/public/report.md'] }))
     expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'meta-sidecar', 'https://pod.example/public/report.md', 'resource'] }))
-    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'structured-view-metadata', 'https://pod.example/public/report.md', 'resource'] }))
     expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['files', 'detail', 'https://pod.example/public/'] }))
   })
 
@@ -3674,163 +3542,6 @@ describe('files queries', () => {
     expect(result.current.data).toEqual([proposal])
   })
 
-  it('reads structured view metadata through a typed query hook', async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    })
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      createElement(QueryClientProvider, { client: queryClient }, children)
-    )
 
-    const file = { uri: 'https://pod.example/.data/files/files.ttl', kind: 'resource' as const }
-    const { result } = renderHook(() => useStructuredViewMetadata(file), { wrapper })
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true))
-
-    expect(mocks.filesSidecarQueryStructuredViewMetadata).toHaveBeenCalledWith({ file, enabled: true, db: { id: 'db' } })
-    expect(mocks.filesReadStructuredViewMetadata).toHaveBeenCalledWith(file, { id: 'db' })
-    expect(result.current.data).toMatchObject({
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-      metadata: { viewMode: 'table' },
-    })
-  })
-
-  it('saves structured view metadata and invalidates the matching meta query', async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    })
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      createElement(QueryClientProvider, { client: queryClient }, children)
-    )
-    const file = { uri: 'https://pod.example/.data/files/files.ttl', kind: 'resource' as const }
-    const { result } = renderHook(() => useSaveStructuredViewMetadata(), { wrapper })
-
-    await act(async () => {
-      await result.current.mutateAsync({
-        file,
-        metadata: {
-          documentUri: file.uri,
-          viewMode: 'whiteboard',
-          classScope: 'https://pod.example/.vocab/terms.ttl#FileResource',
-          searchText: '',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: null,
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: ['#FileResource'],
-            positions: {},
-          },
-        },
-      })
-    })
-
-    expect(mocks.filesSaveStructuredViewMetadata).toHaveBeenCalledWith(
-      file,
-      expect.objectContaining({ viewMode: 'whiteboard' }),
-      { id: 'db' },
-    )
-    expect(mocks.structuredViewMetadataCacheStageSave).toHaveBeenCalledWith(
-      queryClient,
-      file,
-      expect.objectContaining({ viewMode: 'whiteboard' }),
-    )
-    expect(mocks.structuredViewMetadataCacheCommitSave).toHaveBeenCalledWith(
-      queryClient,
-      expect.objectContaining({ ownerUri: file.uri }),
-    )
-    expect(mocks.structuredViewMetadataCacheInvalidateSave).toHaveBeenCalledWith(
-      queryClient,
-      expect.objectContaining({ ownerUri: file.uri }),
-    )
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ['files', 'structured-view-metadata', file.uri, file.kind],
-    })
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ['files', 'meta-sidecar', file.uri, file.kind],
-    })
-  })
-
-  it('optimistically updates structured view metadata cache and rolls back failures', async () => {
-    const saveDeferredResource = createDeferred<FilesStructuredViewMetadataSidecar>()
-    mocks.filesSaveStructuredViewMetadata.mockReturnValueOnce(saveDeferredResource.promise)
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    })
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      createElement(QueryClientProvider, { client: queryClient }, children)
-    )
-    const file = { uri: 'https://pod.example/.data/files/files.ttl', kind: 'resource' as const }
-    const queryKey = ['files', 'structured-view-metadata', file.uri, file.kind]
-    const previousSidecar: FilesStructuredViewMetadataSidecar = {
-      ownerUri: file.uri,
-      metaUri: `${file.uri}.meta`,
-      state: 'exists',
-      content: '',
-      mimeType: 'text/turtle',
-      etag: '"view-1"',
-      size: 12,
-      metadata: {
-        documentUri: file.uri,
-        viewMode: 'table',
-        classScope: null,
-        searchText: '',
-        sortKey: null,
-        sortDirection: 'asc',
-        hiddenPredicates: [],
-        kanbanGroupPredicate: null,
-        kanbanOrder: {},
-        columnSizing: {},
-        whiteboard: {
-          selectedSubjects: [],
-          positions: {},
-          visualRelations: [],
-        },
-        writesCanonicalData: false,
-      },
-    }
-    queryClient.setQueryData(queryKey, previousSidecar)
-    const { result } = renderHook(() => useSaveStructuredViewMetadata(), { wrapper })
-
-    let mutation: Promise<unknown>
-    act(() => {
-      mutation = result.current.mutateAsync({
-        file,
-        metadata: {
-          documentUri: file.uri,
-          viewMode: 'whiteboard',
-          classScope: null,
-          searchText: 'report',
-          sortKey: null,
-          sortDirection: 'asc',
-          hiddenPredicates: [],
-          kanbanGroupPredicate: null,
-          columnSizing: {},
-          whiteboard: {
-            selectedSubjects: ['#FileResource'],
-            positions: {},
-          },
-        },
-      }).catch(() => undefined)
-    })
-
-    await waitFor(() => {
-      expect(queryClient.getQueryData<FilesStructuredViewMetadataSidecar>(queryKey)?.metadata).toMatchObject({
-        viewMode: 'whiteboard',
-        searchText: 'report',
-        whiteboard: {
-          selectedSubjects: ['#FileResource'],
-        },
-      })
-    })
-
-    await act(async () => {
-      saveDeferredResource.reject(new Error('HTTP 412'))
-      await mutation!
-    })
-
-    expect(queryClient.getQueryData(queryKey)).toEqual(previousSidecar)
-  })
 })

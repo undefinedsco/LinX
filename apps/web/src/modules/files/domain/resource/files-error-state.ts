@@ -65,8 +65,19 @@ export function getFilesDetailErrorState(error: unknown): FilesErrorState {
     }
   }
 
+  const reason = getReadErrorReason(error)
   return {
     title: '读取文件失败',
-    description: '当前文件暂时不可用，请稍后重试。',
+    description: `当前文件暂时不可用，请稍后重试。${reason ? `（${reason}）` : ''}`,
   }
+}
+
+function getReadErrorReason(error: unknown): string | null {
+  if (error instanceof FilesResourceReadError) {
+    return error.status ? `HTTP ${error.status}` : null
+  }
+  if (error instanceof Error && error.message) {
+    return error.message.length > 120 ? `${error.message.slice(0, 120)}…` : error.message
+  }
+  return null
 }

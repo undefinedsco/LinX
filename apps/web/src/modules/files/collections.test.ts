@@ -53,8 +53,6 @@ const mocks = vi.hoisted(() => ({
   readBlobResource: vi.fn(),
   readFilesAccessBasics: vi.fn(),
   readFilesMetaSidecar: vi.fn(),
-  readStructuredViewMetadata: vi.fn(),
-  saveStructuredViewMetadata: vi.fn(),
   saveRawTextResource: vi.fn(),
   createRawTextResource: vi.fn(),
   createBlobResource: vi.fn(),
@@ -88,8 +86,6 @@ vi.mock('./data/pod-adapter', async (importOriginal) => {
     readBlobResource: mocks.readBlobResource,
     readFilesAccessBasics: mocks.readFilesAccessBasics,
     readFilesMetaSidecar: mocks.readFilesMetaSidecar,
-    readStructuredViewMetadata: mocks.readStructuredViewMetadata,
-    saveStructuredViewMetadata: mocks.saveStructuredViewMetadata,
     saveRawTextResource: mocks.saveRawTextResource,
     createRawTextResource: mocks.createRawTextResource,
     createBlobResource: mocks.createBlobResource,
@@ -110,7 +106,7 @@ vi.mock('@/providers/query-provider', () => ({
 
 vi.mock('@/modules/inbox/collections', () => ({
   inboxOps: {
-    fetchApprovals: mocks.fetchApprovals,
+    readApprovals: mocks.fetchApprovals,
   },
 }))
 
@@ -216,26 +212,6 @@ describe('files collections', () => {
       mimeType: null,
       etag: null,
       size: null,
-    })
-    mocks.readStructuredViewMetadata.mockResolvedValue({
-      ownerUri: 'https://pod.example/.data/files/files.ttl',
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-      state: 'exists',
-      content: '',
-      mimeType: 'text/turtle',
-      etag: null,
-      size: 0,
-      metadata: { documentUri: 'https://pod.example/.data/files/files.ttl', viewMode: 'table' },
-    })
-    mocks.saveStructuredViewMetadata.mockResolvedValue({
-      ownerUri: 'https://pod.example/.data/files/files.ttl',
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-      state: 'exists',
-      content: '',
-      mimeType: 'text/turtle',
-      etag: null,
-      size: 0,
-      metadata: { documentUri: 'https://pod.example/.data/files/files.ttl', viewMode: 'whiteboard' },
     })
     mocks.saveRawTextResource.mockResolvedValue({
       uri: 'https://pod.example/public/report.md',
@@ -406,9 +382,17 @@ describe('files collections', () => {
       uri: entry.uri,
       content: '# Updated report',
       mimeType: 'text/markdown',
+      etag: '"raw-2"',
       headers: { 'last-modified': 'Tue, 23 Jun 2026 10:00:00 GMT' },
     })
 
+    expect(queryClient.getQueryData([...FILES_COLLECTION_QUERY_KEYS.rawText, entry.uri])).toEqual(
+      expect.objectContaining({
+        uri: entry.uri,
+        content: '# Updated report',
+        etag: '"raw-2"',
+      }),
+    )
     expect(queryClient.getQueryData(entriesKey)).toEqual([
       expect.objectContaining({
         uri: entry.uri,
@@ -422,7 +406,7 @@ describe('files collections', () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: FILES_COLLECTION_QUERY_KEYS.entries })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: FILES_COLLECTION_QUERY_KEYS.children })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.rawText, entry.uri] })
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.rawText, entry.uri] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.detail, entry.uri] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.detail, 'https://pod.example/public/'] })
   })
@@ -561,7 +545,6 @@ describe('files collections', () => {
 
     await filesEntryCacheCollection.invalidateDelete(queryClient, transfer.destinationUri)
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.metaSidecar, transfer.destinationUri, 'resource'] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.structuredViewMetadata, transfer.destinationUri, 'resource'] })
 
     const folderSnapshot = await filesEntryCacheCollection.stageFolderCreate(queryClient, {
       containerUri: 'https://pod.example/public/',
@@ -941,65 +924,6 @@ describe('files collections', () => {
     }
   })
 
-  it('owns structured view metadata cache updates and rollback snapshots', async () => {
-    const { filesStructuredViewMetadataCacheCollection } = await import('./collections') as any
-    expect(filesStructuredViewMetadataCacheCollection).toBeDefined()
-
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    })
-    const file = { uri: 'https://pod.example/.data/files/files.ttl', kind: 'resource' as const }
-    const queryKey = ['files', 'structured-view-metadata', file.uri, file.kind]
-    const previousSidecar = {
-      ownerUri: file.uri,
-      metaUri: `${file.uri}.meta`,
-      state: 'exists' as const,
-      content: '',
-      mimeType: 'text/turtle',
-      etag: '"1"',
-      size: 12,
-      metadata: {
-        documentUri: file.uri,
-        viewMode: 'table' as const,
-        classScope: null,
-        searchText: '',
-        sortKey: null,
-        sortDirection: 'asc' as const,
-        hiddenPredicates: [],
-        kanbanGroupPredicate: null,
-        kanbanOrder: {},
-        columnSizing: {},
-        whiteboard: {
-          selectedSubjects: [],
-          positions: {},
-          visualRelations: [],
-        },
-        writesCanonicalData: false as const,
-      },
-    }
-    const nextSidecar = {
-      ...previousSidecar,
-      etag: '"2"',
-      metadata: {
-        ...previousSidecar.metadata,
-        viewMode: 'whiteboard' as const,
-        whiteboard: {
-          selectedSubjects: ['#FileResource'],
-          positions: {},
-          visualRelations: [],
-        },
-      },
-    }
-    queryClient.setQueryData(queryKey, previousSidecar)
-
-    const snapshot = filesStructuredViewMetadataCacheCollection.snapshot(queryClient, file)
-    filesStructuredViewMetadataCacheCollection.setSidecar(queryClient, nextSidecar)
-
-    expect(queryClient.getQueryData(queryKey)).toEqual(nextSidecar)
-
-    filesStructuredViewMetadataCacheCollection.restore(queryClient, snapshot)
-    expect(queryClient.getQueryData(queryKey)).toEqual(previousSidecar)
-  })
 
   it('owns structured cell proposal cache staging and rollback snapshots', async () => {
     const { structuredCellProposalCacheCollection } = await import('./collections') as any
@@ -1087,9 +1011,16 @@ describe('files collections', () => {
         modifiedAt: 'Tue, 23 Jun 2026 10:00:00 GMT',
       }),
     ])
+    expect(queryClient.getQueryData([...FILES_COLLECTION_QUERY_KEYS.rawText, entry.uri])).toEqual(
+      expect.objectContaining({
+        uri: entry.uri,
+        content: '# Updated report',
+        etag: '"2"',
+      }),
+    )
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: FILES_COLLECTION_QUERY_KEYS.entries })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: FILES_COLLECTION_QUERY_KEYS.children })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.rawText, entry.uri] })
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.rawText, entry.uri] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.detail, 'https://pod.example/public/'] })
   })
 
@@ -1456,8 +1387,6 @@ describe('files collections', () => {
     await filesResourceCollection.readBlob('https://pod.example/public/image.png', db)
     await filesResourceCollection.readAccessBasics(file, db)
     await filesResourceCollection.readMetaSidecar(file, db)
-    await filesResourceCollection.readStructuredViewMetadata(file, db)
-    await filesResourceCollection.saveStructuredViewMetadata(file, { documentUri: file.uri, viewMode: 'whiteboard' }, db)
     await filesResourceCollection.saveRawText(rawResource, '# Report', db)
     await filesResourceCollection.createRawText(newResource, '# Notes', db)
     await filesResourceCollection.createBlob({ uri: 'https://pod.example/public/image.png', mimeType: 'image/png' }, new Blob(['image']), db)
@@ -1469,7 +1398,7 @@ describe('files collections', () => {
     expect(mocks.buildRootNodes).toHaveBeenCalledWith(db, 'https://pod.example/public/')
     expect(mocks.listContainerChildNodes).toHaveBeenCalledWith(db, 'https://pod.example/public/', 'container:https://pod.example/public/', 'https://pod.example/')
     expect(mocks.listAllBrowsableEntries).toHaveBeenCalledWith(db, 'https://pod.example/public/', { recursive: true })
-    expect(mocks.listContainerEntries).toHaveBeenCalledWith(db, 'https://pod.example/public/', 'Workspace')
+    expect(mocks.listContainerEntries).toHaveBeenCalledWith(db, 'https://pod.example/public/', 'Workspace', undefined)
     expect(mocks.readFileDetail).toHaveBeenCalledWith(db, 'https://pod.example/public/report.md', {
       includeContainerEntries: false,
     })
@@ -1477,8 +1406,6 @@ describe('files collections', () => {
     expect(mocks.readBlobResource).toHaveBeenCalledWith(db, 'https://pod.example/public/image.png')
     expect(mocks.readFilesAccessBasics).toHaveBeenCalledWith(db, file)
     expect(mocks.readFilesMetaSidecar).toHaveBeenCalledWith(db, file)
-    expect(mocks.readStructuredViewMetadata).toHaveBeenCalledWith(db, file)
-    expect(mocks.saveStructuredViewMetadata).toHaveBeenCalledWith(db, file, expect.objectContaining({ viewMode: 'whiteboard' }))
     expect(mocks.saveRawTextResource).toHaveBeenCalledWith(db, rawResource, '# Report')
     expect(mocks.createRawTextResource).toHaveBeenCalledWith(db, newResource, '# Notes')
     expect(mocks.createBlobResource).toHaveBeenCalledWith(db, { uri: 'https://pod.example/public/image.png', mimeType: 'image/png' }, expect.any(Blob))
@@ -1557,9 +1484,6 @@ describe('files collections', () => {
     await expect(filesSidecarQueryCollection.metaSidecar({ file, db }).queryFn()).resolves.toEqual(expect.objectContaining({
       metaUri: 'https://pod.example/public/report.md.meta',
     }))
-    await expect(filesSidecarQueryCollection.structuredViewMetadata({ file, db }).queryFn()).resolves.toEqual(expect.objectContaining({
-      ownerUri: 'https://pod.example/.data/files/files.ttl',
-    }))
 
     expect(filesResourceQueryCollection.roots({ workspaceUri: null, db: null }).enabled).toBe(false)
     expect(filesResourceQueryCollection.children({ parentNode: null, db }).enabled).toBe(false)
@@ -1595,7 +1519,7 @@ describe('files collections', () => {
     ])
 
     expect(mocks.listContainerEntries).toHaveBeenCalledTimes(1)
-    expect(mocks.listContainerEntries).toHaveBeenCalledWith(db, containerUri, undefined)
+    expect(mocks.listContainerEntries).toHaveBeenCalledWith(db, containerUri, undefined, { enrichMetadata: false })
   })
 
   it('centralizes Files entry listing strategy in the resource collection', async () => {
@@ -1830,7 +1754,6 @@ describe('files collections', () => {
       FILES_COLLECTION_QUERY_KEYS.blob,
       FILES_COLLECTION_QUERY_KEYS.accessBasics,
       FILES_COLLECTION_QUERY_KEYS.metaSidecar,
-      FILES_COLLECTION_QUERY_KEYS.structuredViewMetadata,
       FILES_COLLECTION_QUERY_KEYS.structuredCellProposals,
       FILES_COLLECTION_QUERY_KEYS.sourceUpdateProposals,
       FILES_COLLECTION_QUERY_KEYS.accessPolicyProposals,

@@ -5,6 +5,7 @@ import type { FileDetailTab } from '../../app/store'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import {
   planFileDetailFavoriteToggle,
+  projectFileDetailChrome,
   projectFileDetailControllerState,
   projectFileDetailFavoriteState,
   projectFileDetailStructuredReturnAction,
@@ -155,6 +156,41 @@ describe('file detail pane model', () => {
     })).toBeNull()
   })
 
+  it('projects detail chrome subtitle and footer from available resource facts', () => {
+    expect(projectFileDetailChrome(file({
+      mimeType: 'text/markdown',
+      parentUri: 'https://pod.example/files/cards/',
+      size: 6144,
+      modifiedAt: '2026-07-25T08:40:00.000Z',
+    }))).toEqual({
+      subtitle: 'Markdown 文档 · /files/cards/',
+      footer: 'text/markdown · 6 KB · 2026-07-25 08:40',
+    })
+
+    expect(projectFileDetailChrome({
+      ...file(),
+      kind: 'container',
+      mimeType: null,
+      parentUri: 'https://pod.example/files/',
+      size: 0,
+      modifiedAt: null,
+      childEntries: [{}, {}] as FilesDetail['childEntries'],
+    })).toEqual({
+      subtitle: 'Pod 容器 · /files/',
+      footer: '2 项',
+    })
+
+    expect(projectFileDetailChrome({
+      ...file(),
+      mimeType: 'text/turtle',
+      size: null,
+      modifiedAt: 'not-a-date',
+    })).toEqual({
+      subtitle: 'Turtle 数据 · /files/',
+      footer: 'text/turtle',
+    })
+  })
+
   it('projects empty state, shell fallback, and horizontal scroll reset decisions', () => {
     expect(shouldResetFileDetailHorizontalScroll({ structuredViewMode: 'table' })).toBe(true)
     expect(shouldResetFileDetailHorizontalScroll({ structuredViewMode: 'kanban' })).toBe(true)
@@ -170,8 +206,7 @@ describe('file detail pane model', () => {
       activeDetailTab: 'preview',
       emptyState: {},
       resourceActions: [],
-      showHeadSidecarActions: false,
-      showMetaDrawer: false,
+      showFileDrawerMetadata: false,
       showSourceLinkedDrawerMetadata: false,
       showTabs: false,
       sidecarOwnerTarget: null,
@@ -201,7 +236,7 @@ describe('file detail pane model', () => {
     })).toEqual(expect.objectContaining({
       activeDetailTab: 'preview',
       emptyState: null,
-      showMetaDrawer: false,
+      showFileDrawerMetadata: true,
       showTabs: false,
       sidecarOwnerTarget: {
         uri: 'https://pod.example/files/report.md',

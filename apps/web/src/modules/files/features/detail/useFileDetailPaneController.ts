@@ -17,6 +17,7 @@ import {
 import { createContainerNodeId } from '../../domain/resource/tree-model'
 import {
   planFileDetailFavoriteToggle,
+  projectFileDetailChrome,
   projectFileDetailControllerState,
   projectFileDetailFavoriteState,
   projectFileDetailStructuredReturnAction,
@@ -36,7 +37,6 @@ export function useFileDetailPaneController() {
   const returnToStructuredSubject = useFilesStore((state) => state.returnToStructuredSubject)
   const sidecarActionRequest = useFilesStore((state) => state.sidecarActionRequest)
   const consumeSidecarActionRequest = useFilesStore((state) => state.consumeSidecarActionRequest)
-  const requestEditableFileSheetOpen = useFilesStore((state) => state.requestEditableFileSheetOpen)
   const metaSidebarOpen = useFilesStore((state) => state.metaSidebarOpen)
   const setMetaSidebarOpen = useFilesStore((state) => state.setMetaSidebarOpen)
   const filesRouteBridge = useFilesRouteBridge()
@@ -46,6 +46,11 @@ export function useFileDetailPaneController() {
   const previousSelectedFileIdRef = useRef(selectedFileId)
 
   const isFavorite = projectFileDetailFavoriteState({ file, favorites })
+
+  useEffect(() => {
+    if (!error || !selectedFileId) return
+    console.warn('[files] 读取文件详情失败', selectedFileId, error)
+  }, [selectedFileId, error])
 
   useEffect(() => {
     if (previousSelectedFileIdRef.current === selectedFileId) return
@@ -121,21 +126,24 @@ export function useFileDetailPaneController() {
     file,
     returnContext: structuredSubjectReturnContext,
   })
+  const detailChrome = file ? projectFileDetailChrome(file) : null
 
   const consumeRequestedSidecarAction = useCallback((): 'access' | null => {
     if (!sidecarActionRequest || sidecarActionRequest.uri !== selectedFileId) return null
+    if (isLoading) return null
     const { action, uri } = sidecarActionRequest
-    if (action === 'meta') {
-      if (detailState.showMetaDrawer) openMetaDrawer()
-      else requestEditableFileSheetOpen(uri)
+    if (!file) {
+      consumeSidecarActionRequest(uri, action)
+      return null
     }
+    if (action === 'meta') openMetaDrawer()
     consumeSidecarActionRequest(uri, action)
     return action === 'access' ? 'access' : null
   }, [
     consumeSidecarActionRequest,
-    detailState.showMetaDrawer,
+    file,
+    isLoading,
     openMetaDrawer,
-    requestEditableFileSheetOpen,
     selectedFileId,
     sidecarActionRequest,
   ])
@@ -144,6 +152,7 @@ export function useFileDetailPaneController() {
     activeDetailTab: detailState.activeDetailTab,
     closeMetaDrawer,
     consumeRequestedSidecarAction,
+    detailChrome,
     detailScrollAreaRef,
     emptyState: detailState.emptyState,
     file,
@@ -161,8 +170,7 @@ export function useFileDetailPaneController() {
     retryDetail,
     selectedFileId,
     setDetailTab,
-    showHeadSidecarActions: detailState.showHeadSidecarActions,
-    showMetaDrawer: detailState.showMetaDrawer,
+    showFileDrawerMetadata: detailState.showFileDrawerMetadata,
     showSourceLinkedDrawerMetadata: detailState.showSourceLinkedDrawerMetadata,
     showTabs: detailState.showTabs,
     sidecarOwnerTarget: detailState.sidecarOwnerTarget,

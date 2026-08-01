@@ -5,12 +5,15 @@ import {
   createContainerNodeId,
   createResourceNodeId,
   getContainerLabel,
+  getPodRootLabel,
   parseTreeNodeId,
+  pinFavoriteTreeNodesFirst,
   projectFilesTreeChildrenState,
   projectFilesTreeChromeModel,
   projectFilesTreeContentState,
-  projectFilesTreeHeaderDescription,
+  projectFilesTreeFooterLabel,
   projectFilesTreeNodeViewState,
+  projectFilesTreeSearchResults,
 } from './tree-model'
 
 describe('Files tree model', () => {
@@ -33,6 +36,38 @@ describe('Files tree model', () => {
   it('labels the Pod root and ordinary containers', () => {
     expect(getContainerLabel('https://pod.example/', 'https://pod.example/')).toBe('Pod 根目录')
     expect(getContainerLabel('https://pod.example/public/projects/')).toBe('projects')
+  })
+
+  it('labels an account-scoped Pod root with the account name', () => {
+    expect(getContainerLabel(
+      'https://id.undefineds.co/gcloud/',
+      'https://id.undefineds.co/gcloud/',
+    )).toBe("gcloud's Pod")
+    expect(getPodRootLabel('https://id.undefineds.co/gcloud/')).toBe("gcloud's Pod")
+    expect(getPodRootLabel('https://pod.example/')).toBe('Pod 根目录')
+    expect(getPodRootLabel(null)).toBe('Pod 根目录')
+  })
+
+  it('projects a tree footer label only for selected root nodes with a known count', () => {
+    const treeNodes = [
+      { id: 'smart-root:all', label: '全部可浏览资源', type: 'all' as const, count: 6 },
+      { id: 'container:https://pod.example/', label: 'Pod 根目录', type: 'container' as const, count: 6 },
+      { id: 'smart-root:recent', label: '最近文件', type: 'recent' as const },
+    ]
+
+    expect(projectFilesTreeFooterLabel({
+      selectedTreeNodeId: 'container:https://pod.example/',
+      treeNodes,
+    })).toBe('Pod 根目录 · 6 项')
+    expect(projectFilesTreeFooterLabel({
+      selectedTreeNodeId: 'smart-root:recent',
+      treeNodes,
+    })).toBeNull()
+    expect(projectFilesTreeFooterLabel({
+      selectedTreeNodeId: 'container:https://pod.example/nested/',
+      treeNodes,
+    })).toBeNull()
+    expect(projectFilesTreeFooterLabel({ selectedTreeNodeId: null, treeNodes })).toBeNull()
   })
 
   it('identifies tree nodes that can be expanded without UI state', () => {
@@ -83,15 +118,33 @@ describe('Files tree model', () => {
   })
 
   it('projects tree chrome outside the renderer', () => {
-    expect(projectFilesTreeChromeModel()).toEqual({
-      headerTitle: '资源范围',
-      collapseRailLabel: '收起资源栏',
-      expandRailLabel: '展开资源栏',
+    const chrome = projectFilesTreeChromeModel()
+    expect(chrome).toEqual({
+      searchPlaceholder: '搜索文件树',
+      clearSearchLabel: '清除搜索',
+      emptySearchLabel: expect.any(Function),
       treeLabel: '文件分组树',
       rootLoadingLabel: '正在加载容器…',
       rootErrorLabel: '读取容器失败。',
       childLoadingLabel: '正在读取子容器…',
     })
+    expect(chrome.emptySearchLabel('missing')).toBe('没有匹配“missing”的资源')
+  })
+
+  it('filters recursive entries by case-insensitive name for tree search', () => {
+    const entries = [
+      { id: 'https://pod.example/public/docs/', uri: 'https://pod.example/public/docs/', name: 'Docs', kind: 'container' },
+      { id: 'https://pod.example/public/docs/report.md', uri: 'https://pod.example/public/docs/report.md', name: 'report.md', kind: 'resource' },
+      { id: 'https://pod.example/public/notes.txt', uri: 'https://pod.example/public/notes.txt', name: 'notes.txt', kind: 'resource' },
+    ] as const
+
+    expect(projectFilesTreeSearchResults({ entries, query: '  ' })).toEqual([])
+    expect(projectFilesTreeSearchResults({ entries, query: 'REPORT' }).map((entry) => entry.uri)).toEqual([
+      'https://pod.example/public/docs/report.md',
+    ])
+    expect(projectFilesTreeSearchResults({ entries, query: 'docs' }).map((entry) => entry.uri)).toEqual([
+      'https://pod.example/public/docs/',
+    ])
   })
 
   it('projects header copy and node view state outside the controller', () => {
@@ -105,19 +158,6 @@ describe('Files tree model', () => {
       label: 'All',
       type: 'all',
     } as const
-
-    expect(projectFilesTreeHeaderDescription({
-      threadTitle: '代码审阅',
-      workspaceUri: 'https://pod.example/ws/',
-    })).toBe('当前话题：代码审阅')
-    expect(projectFilesTreeHeaderDescription({
-      threadTitle: null,
-      workspaceUri: 'https://pod.example/ws/',
-    })).toBe('当前话题：未命名话题')
-    expect(projectFilesTreeHeaderDescription({
-      threadTitle: '代码审阅',
-      workspaceUri: null,
-    })).toBe('浏览当前 Pod 容器；绑定目录后会在这里出现当前话题容器。')
 
     expect(projectFilesTreeNodeViewState({
       expandedTreeNodeIds: new Set([workspaceNode.id]),
@@ -143,5 +183,18 @@ describe('Files tree model', () => {
       isLoading: false,
       toggleLabel: '展开 All',
     })
+  })
+
+  it('pins favorite child nodes first while preserving relative order', () => {
+    const childNodes = [
+      { id: 'container:https://pod.example/a/', label: 'a', type: 'container' as const, uri: 'https://pod.example/a/' },
+      { id: 'resource:https://pod.example/b.md', label: 'b.md', type: 'resource' as const, uri: 'https://pod.example/b.md' },
+      { id: 'resource:https://pod.example/c.md', label: 'c.md', type: 'resource' as const, uri: 'https://pod.example/c.md' },
+    ]
+    const favorites = [{ sourceId: 'https://pod.example/c.md' }]
+
+    expect(pinFavoriteTreeNodesFirst(childNodes, favorites).map((node) => node.label)).toEqual(['c.md', 'a', 'b.md'])
+    expect(pinFavoriteTreeNodesFirst(childNodes, []).map((node) => node.label)).toEqual(['a', 'b.md', 'c.md'])
+    expect(pinFavoriteTreeNodesFirst(childNodes, [{ sourceId: 'https://pod.example/elsewhere.md' }]).map((node) => node.label)).toEqual(['a', 'b.md', 'c.md'])
   })
 })

@@ -42,8 +42,10 @@ describe('Structured view metadata controller architecture boundary', () => {
     expect(previewSource).not.toContain('resolveEffectiveClassScope')
 
     expect(controllerSource).toContain('export function useStructuredViewMetadataController')
-    expect(controllerSource).toContain('useStructuredViewMetadata')
-    expect(controllerSource).toContain('useSaveStructuredViewMetadata')
+    expect(controllerSource).toContain("from './local-structured-view-metadata-store'")
+    expect(controllerSource).toContain('loadLocalStructuredViewMetadata')
+    expect(controllerSource).toContain('saveLocalStructuredViewMetadata')
+    expect(controllerSource).not.toContain('useSaveStructuredViewMetadata')
     expect(controllerSource).toContain('autosaveReadyRef')
     expect(controllerSource).toContain("from './structured-view-metadata-workflow-model'")
     expect(controllerSource).toContain('projectStructuredViewMetadataHydration')

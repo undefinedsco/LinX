@@ -7,6 +7,7 @@ import {
   WORKSPACES_ROOT_NODE_ID,
   type FilesTreeNode,
   type FilesTreeNodeType,
+  type FilesEntry,
 } from './resource-model'
 import {
   getEntryName,
@@ -59,9 +60,21 @@ export function parseTreeNodeId(nodeId?: string | null): {
   return null
 }
 
+export function getPodRootLabel(podRootUri?: string | null): string {
+  if (podRootUri) {
+    try {
+      const segment = new URL(podRootUri).pathname.split('/').filter(Boolean)[0]
+      if (segment) return `${decodeURIComponent(segment)}'s Pod`
+    } catch {
+      // Fall through to the generic label.
+    }
+  }
+  return 'Pod 根目录'
+}
+
 export function getContainerLabel(uri: string, podRootUri?: string | null): string {
   if (podRootUri && normalizeContainerUri(uri) === normalizeContainerUri(podRootUri)) {
-    return 'Pod 根目录'
+    return getPodRootLabel(podRootUri)
   }
   return getEntryName(uri)
 }
@@ -93,9 +106,9 @@ export type FilesTreeNodeViewState = {
 }
 
 export type FilesTreeChromeModel = {
-  headerTitle: string
-  collapseRailLabel: string
-  expandRailLabel: string
+  searchPlaceholder: string
+  clearSearchLabel: string
+  emptySearchLabel: (query: string) => string
   treeLabel: string
   rootLoadingLabel: string
   rootErrorLabel: string
@@ -128,22 +141,55 @@ export function projectFilesTreeChildrenState({
   return { kind: 'content', childNodes }
 }
 
-export function projectFilesTreeHeaderDescription({
-  threadTitle,
-  workspaceUri,
+export function pinFavoriteTreeNodesFirst(
+  childNodes: readonly FilesTreeNode[],
+  favorites: readonly { sourceId?: string | null }[],
+): FilesTreeNode[] {
+  if (childNodes.length === 0 || favorites.length === 0) return [...childNodes]
+  const favoriteUris = new Set(
+    favorites.map((favorite) => favorite.sourceId).filter((uri): uri is string => !!uri),
+  )
+  if (favoriteUris.size === 0) return [...childNodes]
+
+  const pinned: FilesTreeNode[] = []
+  const rest: FilesTreeNode[] = []
+  for (const node of childNodes) {
+    if (node.uri && favoriteUris.has(node.uri)) pinned.push(node)
+    else rest.push(node)
+  }
+  return pinned.length > 0 ? [...pinned, ...rest] : [...childNodes]
+}
+
+export function projectFilesTreeSearchResults({
+  entries,
+  query,
 }: {
-  threadTitle?: string | null
-  workspaceUri?: string | null
-}) {
-  if (workspaceUri) return `当前话题：${threadTitle ?? '未命名话题'}`
-  return '浏览当前 Pod 容器；绑定目录后会在这里出现当前话题容器。'
+  entries: readonly FilesEntry[]
+  query: string
+}): FilesEntry[] {
+  const normalizedQuery = query.trim().toLowerCase()
+  if (!normalizedQuery) return []
+  return entries.filter((entry) => entry.name.toLowerCase().includes(normalizedQuery))
+}
+
+export function projectFilesTreeFooterLabel({
+  selectedTreeNodeId,
+  treeNodes,
+}: {
+  selectedTreeNodeId?: string | null
+  treeNodes: readonly FilesTreeNode[]
+}): string | null {
+  if (!selectedTreeNodeId) return null
+  const selectedNode = treeNodes.find((node) => node.id === selectedTreeNodeId)
+  if (!selectedNode || selectedNode.count === undefined) return null
+  return `${selectedNode.label} · ${selectedNode.count} 项`
 }
 
 export function projectFilesTreeChromeModel(): FilesTreeChromeModel {
   return {
-    headerTitle: '资源范围',
-    collapseRailLabel: '收起资源栏',
-    expandRailLabel: '展开资源栏',
+    searchPlaceholder: '搜索文件树',
+    clearSearchLabel: '清除搜索',
+    emptySearchLabel: (query) => `没有匹配“${query}”的资源`,
     treeLabel: '文件分组树',
     rootLoadingLabel: '正在加载容器…',
     rootErrorLabel: '读取容器失败。',

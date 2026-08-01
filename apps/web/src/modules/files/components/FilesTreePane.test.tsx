@@ -6,23 +6,45 @@ import { useFilesStore } from '../app/store'
 const mockUseFilesRootNodes = vi.fn()
 const mockUseContainerChildTreeNodes = vi.fn()
 const mockUseActiveFilesWorkspaceContext = vi.fn()
+const mockUseFilesTreeSearchEntries = vi.fn()
+const mockUseFilesContainerEntries = vi.fn()
+const mockUseSelectedFilesLocation = vi.fn()
 const mockFavoriteChange = vi.fn()
 
 vi.mock('../data/queries', () => ({
   useFilesRootNodes: () => mockUseFilesRootNodes(),
   useContainerChildTreeNodes: (node: unknown) => mockUseContainerChildTreeNodes(node),
   useActiveFilesWorkspaceContext: () => mockUseActiveFilesWorkspaceContext(),
+  useFilesTreeSearchEntries: (enabled: boolean) => mockUseFilesTreeSearchEntries(enabled),
+  useFilesContainerEntries: (containerUri: string | null, enabled?: boolean) => mockUseFilesContainerEntries(containerUri, enabled),
+  useSelectedFilesLocation: (selectedTreeNodeId: string | null) => mockUseSelectedFilesLocation(selectedTreeNodeId),
   useFilesFavoriteList: () => ({ data: [] }),
   filesFavoriteHooks: {
     onStarredChange: (...args: unknown[]) => mockFavoriteChange(...args),
   },
 }))
 
+vi.mock('../features/add/FilesAddMenu', () => ({
+  FilesAddMenu: ({
+    containerUri,
+    onOpenChange,
+  }: {
+    containerUri: string | null
+    onOpenChange: (open: boolean) => void
+  }) => (
+    <button
+      type="button"
+      aria-label="添加"
+      data-add-container={containerUri ?? ''}
+      onClick={() => onOpenChange(true)}
+    />
+  ),
+}))
+
 beforeEach(() => {
   useFilesStore.setState({
     selectedTreeNodeId: 'all',
     expandedTreeNodeIds: new Set(),
-    resourceRailCollapsed: false,
     selectedFileId: null,
     selectedFileIds: new Set(),
     searchText: '',
@@ -32,6 +54,15 @@ beforeEach(() => {
     tagFilter: null,
     detailTab: 'preview',
     editableFileSheetOpenRequestUri: null,
+  })
+
+  mockUseFilesTreeSearchEntries.mockReturnValue({ data: [], isLoading: false, error: null })
+  mockUseFilesContainerEntries.mockReturnValue({ data: [], isLoading: false, error: null })
+  mockUseSelectedFilesLocation.mockImplementation((selectedTreeNodeId: string | null) => {
+    if (selectedTreeNodeId === 'workspace:https://pod.example/.data/workspaces/ws-1/') {
+      return { kind: 'container', containerUri: 'https://pod.example/.data/workspaces/ws-1/' }
+    }
+    return { kind: 'all' }
   })
 
   mockUseActiveFilesWorkspaceContext.mockReturnValue({
@@ -157,9 +188,12 @@ beforeEach(() => {
 const defaultProps = { paneId: 'tree', appId: 'files' }
 
 describe('FilesTreePane', () => {
-  it('renders real root nodes and current thread summary', () => {
+  it('renders real root nodes with the search and add header', () => {
     render(<FilesTreePane {...defaultProps} />)
 
+    expect(screen.getByRole('textbox', { name: '搜索文件树' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '添加' })).toBeInTheDocument()
+    expect(screen.queryByText('资源范围')).not.toBeInTheDocument()
     expect(screen.getByText('全部可浏览资源')).toBeInTheDocument()
     expect(screen.getByText('最近文件')).toBeInTheDocument()
     expect(screen.getByText('当前话题容器')).toBeInTheDocument()
@@ -167,7 +201,6 @@ describe('FilesTreePane', () => {
     expect(screen.getByText('Agent homes')).toBeInTheDocument()
     expect(screen.getByText('Workspaces')).toBeInTheDocument()
     expect(screen.getByText('Repositories')).toBeInTheDocument()
-    expect(screen.getByText('当前话题：代码审阅')).toBeInTheDocument()
   })
 
   it('selects a root container and its right-side folder preview on click', () => {
@@ -306,24 +339,112 @@ describe('FilesTreePane', () => {
     expect(screen.queryByText('.acr')).not.toBeInTheDocument()
   })
 
-  it('collapses the resource tree into a narrow semantic rail', () => {
+  it('filters the tree into flat recursive search results and opens a match', () => {
+    mockUseFilesTreeSearchEntries.mockReturnValue({
+      data: [
+        {
+          id: 'https://pod.example/public/docs/report.md',
+          uri: 'https://pod.example/public/docs/report.md',
+          name: 'report.md',
+          kind: 'resource',
+          semanticKind: 'markdown',
+          parentUri: 'https://pod.example/public/docs/',
+          mimeType: 'text/markdown',
+          size: 12,
+          modifiedAt: null,
+        },
+        {
+          id: 'https://pod.example/public/notes.txt',
+          uri: 'https://pod.example/public/notes.txt',
+          name: 'notes.txt',
+          kind: 'resource',
+          semanticKind: 'text',
+          parentUri: 'https://pod.example/public/',
+          mimeType: 'text/plain',
+          size: 5,
+          modifiedAt: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    })
     render(<FilesTreePane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '收起资源栏' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索文件树' }), { target: { value: 'report' } })
 
-    expect(useFilesStore.getState().resourceRailCollapsed).toBe(true)
-    expect(screen.queryByText('资源范围')).not.toBeInTheDocument()
-    expect(screen.queryByText('当前话题：代码审阅')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '展开资源栏' })).toBeInTheDocument()
-    expect(screen.getByRole('treeitem', { name: '全部可浏览资源' })).toBeInTheDocument()
-    expect(screen.getByRole('treeitem', { name: '最近文件' })).toBeInTheDocument()
-    expect(screen.getByRole('treeitem', { name: '当前话题容器' })).toBeInTheDocument()
+    expect(mockUseFilesTreeSearchEntries).toHaveBeenCalledWith(true)
+    expect(screen.getByText('report.md')).toBeInTheDocument()
+    expect(screen.queryByText('notes.txt')).not.toBeInTheDocument()
+    expect(screen.queryByText('全部可浏览资源')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '展开资源栏' }))
+    fireEvent.click(screen.getByText('report.md'))
 
-    expect(useFilesStore.getState().resourceRailCollapsed).toBe(false)
-    expect(screen.getByText('资源范围')).toBeInTheDocument()
-    expect(screen.getByText('当前话题：代码审阅')).toBeInTheDocument()
+    expect(useFilesStore.getState().selectedTreeNodeId).toBe('resource:https://pod.example/public/docs/report.md')
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/docs/report.md')
+  })
+
+  it('opens a container search result as a folder selection', () => {
+    mockUseFilesTreeSearchEntries.mockReturnValue({
+      data: [
+        {
+          id: 'https://pod.example/public/docs/',
+          uri: 'https://pod.example/public/docs/',
+          name: 'docs',
+          kind: 'container',
+          semanticKind: 'folder',
+          parentUri: 'https://pod.example/public/',
+          mimeType: null,
+          size: null,
+          modifiedAt: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    })
+    render(<FilesTreePane {...defaultProps} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索文件树' }), { target: { value: 'docs' } })
+    fireEvent.click(screen.getByText('docs'))
+
+    expect(useFilesStore.getState().selectedTreeNodeId).toBe('container:https://pod.example/public/docs/')
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/docs/')
+  })
+
+  it('shows the empty search hint and clears the query with escape', () => {
+    render(<FilesTreePane {...defaultProps} />)
+
+    const input = screen.getByRole('textbox', { name: '搜索文件树' })
+    fireEvent.change(input, { target: { value: 'missing' } })
+
+    expect(screen.getByText('没有匹配“missing”的资源')).toBeInTheDocument()
+
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    expect(screen.queryByText('没有匹配“missing”的资源')).not.toBeInTheDocument()
+    expect(screen.getByText('全部可浏览资源')).toBeInTheDocument()
+  })
+
+  it('targets the selected container with the add menu', () => {
+    render(<FilesTreePane {...defaultProps} />)
+
+    expect(mockUseFilesContainerEntries).toHaveBeenLastCalledWith(
+      null,
+      false,
+    )
+
+    fireEvent.click(screen.getByText('当前话题容器'))
+
+    expect(screen.getByRole('button', { name: '添加' })).toHaveAttribute(
+      'data-add-container',
+      'https://pod.example/.data/workspaces/ws-1/',
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
+
+    expect(mockUseFilesContainerEntries).toHaveBeenLastCalledWith(
+      'https://pod.example/.data/workspaces/ws-1/',
+      true,
+    )
   })
 
   it('shows loading state while root nodes are loading', () => {
@@ -335,6 +456,6 @@ describe('FilesTreePane', () => {
 
     render(<FilesTreePane {...defaultProps} />)
 
-    expect(screen.getByText('正在加载容器…')).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: '正在加载容器…' })).toBeInTheDocument()
   })
 })

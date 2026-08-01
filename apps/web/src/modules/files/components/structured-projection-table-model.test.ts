@@ -428,7 +428,7 @@ describe('structured projection table model', () => {
       predicate: 'https://schema.org/status',
       proposals: [pendingProposal],
       values: ['"Review"', '"2026-06-18"^^xsd:date'],
-    })).toEqual(['"Review"*', '2026-06-18'])
+    })).toEqual(['Review*', '2026-06-18'])
   })
 
   it('reads original projection cell values and detects pending edit indicators', () => {

@@ -35,6 +35,7 @@ export function FilesLayoutConfigBridge({
   onConfigChange: (config: MicroAppLayoutConfig | undefined) => void
 }) {
   const metaSidebarOpen = useFilesStore((state) => state.metaSidebarOpen)
+  const setMetaSidebarOpen = useFilesStore((state) => state.setMetaSidebarOpen)
   const config = useMemo<MicroAppLayoutConfig>(() => ({
     listPanel: {
       defaultWidth: readPersistedTreeWidth(),
@@ -49,7 +50,11 @@ export function FilesLayoutConfigBridge({
         )
       : null,
     rightSidebarWidth: 320,
-  }), [metaSidebarOpen])
+    rightSidebarToggle: {
+      open: metaSidebarOpen,
+      onToggle: () => setMetaSidebarOpen(!metaSidebarOpen),
+    },
+  }), [metaSidebarOpen, setMetaSidebarOpen])
 
   useEffect(() => {
     onConfigChange(config)

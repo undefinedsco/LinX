@@ -65,8 +65,62 @@ export function shouldResetFileDetailHorizontalScroll({
   return true
 }
 
-export function projectFileDetailStructuredReturnAction({
-  file,
+function fileDetailKindLabel(file: FilesDetail): string {
+  if (file.kind === 'container') return 'Pod 容器'
+  const mime = file.mimeType ?? ''
+  if (mime === 'text/markdown') return 'Markdown 文档'
+  if (mime === 'text/turtle') return 'Turtle 数据'
+  if (mime === 'application/json') return 'JSON 数据'
+  if (mime.startsWith('text/')) return '文本文档'
+  if (mime.startsWith('image/')) return '图片'
+  if (mime) return mime
+  return '资源'
+}
+
+function fileDetailPathLabel(uri: string): string {
+  try {
+    return new URL(uri).pathname
+  } catch {
+    return uri
+  }
+}
+
+function fileDetailSizeLabel(size: number | null): string | null {
+  if (size === null || Number.isNaN(size)) return null
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function fileDetailModifiedLabel(modifiedAt: string | null): string | null {
+  if (!modifiedAt) return null
+  const date = new Date(modifiedAt)
+  if (Number.isNaN(date.getTime())) return null
+  return modifiedAt.slice(0, 16).replace('T', ' ')
+}
+
+export function projectFileDetailChrome(file: FilesDetail): {
+  subtitle: string
+  footer: string
+} {
+  const subtitle = `${fileDetailKindLabel(file)} · ${fileDetailPathLabel(file.parentUri)}`
+  const segments: string[] = []
+  if (file.kind === 'container') {
+    segments.push(`${file.childEntries?.length ?? 0} 项`)
+  } else if (file.mimeType) {
+    segments.push(file.mimeType)
+  }
+  const sizeLabel = file.kind === 'container' ? null : fileDetailSizeLabel(file.size)
+  if (sizeLabel) segments.push(sizeLabel)
+  const modifiedLabel = fileDetailModifiedLabel(file.modifiedAt)
+  if (modifiedLabel) segments.push(modifiedLabel)
+  return {
+    subtitle,
+    footer: segments.join(' · '),
+  }
+}
+
+export function projectFileDetailStructuredReturnAction({  file,
   returnContext,
 }: {
   file: FilesDetail | null | undefined
@@ -109,8 +163,7 @@ export function projectFileDetailControllerState({
     activeDetailTab: shellState?.activeDetailTab ?? 'preview',
     emptyState,
     resourceActions: shellState?.resourceActions ?? [],
-    showHeadSidecarActions: shellState?.showHeadSidecarActions ?? false,
-    showMetaDrawer: shellState?.showMetaDrawer ?? false,
+    showFileDrawerMetadata: shellState?.showFileDrawerMetadata ?? false,
     showSourceLinkedDrawerMetadata: shellState?.showSourceLinkedDrawerMetadata ?? false,
     showTabs: shellState?.showTabs ?? false,
     sidecarOwnerTarget: shellState?.sidecarOwnerTarget ?? (file ? { uri: file.uri, kind: file.kind } : null),

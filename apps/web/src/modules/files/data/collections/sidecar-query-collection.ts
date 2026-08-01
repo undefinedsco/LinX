@@ -3,18 +3,15 @@ import type { SolidDatabase } from '@undefineds.co/models'
 import {
   readFilesAccessBasics,
   readFilesMetaSidecar,
-  readStructuredViewMetadata,
   type FilesAccessBasics,
   type FilesDetail,
   type FilesMetaSidecar,
-  type FilesStructuredViewMetadataSidecar,
 } from '../pod-adapter'
 import type { FilesResourceQueryOptions } from './resource-query-collection'
 
 interface SidecarQueryKeyCollection {
   accessBasics(file?: Pick<FilesDetail, 'uri' | 'kind'> | null): QueryKey
   metaSidecar(file?: Pick<FilesDetail, 'uri' | 'kind'> | null): QueryKey
-  structuredViewMetadata(file?: Pick<FilesDetail, 'uri' | 'kind'> | null): QueryKey
 }
 
 export interface SidecarQueryCollectionDependencies {
@@ -54,22 +51,6 @@ export function createSidecarQueryCollection(dependencies: SidecarQueryCollectio
         queryFn: async () => {
           if (!input.db || !input.file) throw new Error('No file selected')
           return readFilesMetaSidecar(input.db, input.file)
-        },
-        enabled: !!input.db && !!input.file && enabled,
-      }
-    },
-
-    structuredViewMetadata(input: {
-      file?: Pick<FilesDetail, 'uri' | 'kind'> | null
-      enabled?: boolean
-      db?: SolidDatabase | null
-    }): FilesResourceQueryOptions<FilesStructuredViewMetadataSidecar> {
-      const enabled = input.enabled ?? true
-      return {
-        queryKey: filesResourceQueryKeys.structuredViewMetadata(input.file),
-        queryFn: async () => {
-          if (!input.db || !input.file) throw new Error('No file selected')
-          return readStructuredViewMetadata(input.db, input.file)
         },
         enabled: !!input.db && !!input.file && enabled,
       }

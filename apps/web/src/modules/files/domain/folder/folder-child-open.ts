@@ -7,6 +7,7 @@ export type FolderChildOpenTrigger = 'click' | 'double-click' | 'enter' | 'expli
 export type FolderChildOpenDecision =
   | { type: 'noop' }
   | { type: 'browse-container'; treeNodeId: string }
+  | { type: 'open-editable-inline'; file: FilesDetail }
   | { type: 'open-editable-sheet'; file: FilesDetail }
   | { type: 'select-file-preview'; fileUri: string }
 

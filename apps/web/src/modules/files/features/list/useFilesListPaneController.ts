@@ -57,6 +57,7 @@ export function useFilesListPaneController() {
   const selectTreeNode = useFilesStore((s) => s.selectTreeNode)
   const setDetailTab = useFilesStore((s) => s.setDetailTab)
   const requestEditableFileSheetOpen = useFilesStore((s) => s.requestEditableFileSheetOpen)
+  const requestEditableFileInlineEdit = useFilesStore((s) => s.requestEditableFileInlineEdit)
   const requestSidecarAction = useFilesStore((s) => s.requestSidecarAction)
   const folderHistory = useFilesStore((s) => s.folderHistory)
   const goBackFolder = useFilesStore((s) => s.goBackFolder)
@@ -128,6 +129,11 @@ export function useFilesListPaneController() {
           selectFile(decision.fileUri)
           setDetailTab('preview')
           break
+        case 'open-editable-inline':
+          selectFile(decision.fileUri)
+          setDetailTab('preview')
+          requestEditableFileInlineEdit(decision.fileUri)
+          break
         case 'open-editable-sheet':
           selectFile(decision.fileUri)
           setDetailTab('preview')
@@ -135,7 +141,7 @@ export function useFilesListPaneController() {
           break
       }
     },
-    [enterFolder, requestEditableFileSheetOpen, selectFile, setDetailTab],
+    [enterFolder, requestEditableFileInlineEdit, requestEditableFileSheetOpen, selectFile, setDetailTab],
   )
 
   const sortList = useCallback((field: FilesListSortField) => {

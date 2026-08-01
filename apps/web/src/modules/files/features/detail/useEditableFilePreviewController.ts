@@ -10,31 +10,41 @@ export function useEditableFilePreviewController({
   onOpenSheet?: () => void
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
   const openRequestUri = useFilesStore((state) => state.editableFileSheetOpenRequestUri)
+  const openRequestMode = useFilesStore((state) => state.editableFileOpenRequestMode)
   const consumeOpenRequest = useFilesStore((state) => state.consumeEditableFileSheetOpenRequest)
 
-  const openSheet = useCallback(() => {
+  const openModal = useCallback(() => {
     onOpenSheet?.()
     setSheetOpen(true)
   }, [onOpenSheet])
+
+  const startInlineEdit = useCallback(() => {
+    setEditing(true)
+  }, [])
 
   const handlePreviewKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
-    openSheet()
-  }, [openSheet])
+    startInlineEdit()
+  }, [startInlineEdit])
 
   useEffect(() => {
     if (openRequestUri !== fileUri) return
-    openSheet()
+    if (openRequestMode === 'modal') openModal()
+    else startInlineEdit()
     consumeOpenRequest(fileUri)
-  }, [consumeOpenRequest, fileUri, openRequestUri, openSheet])
+  }, [consumeOpenRequest, fileUri, openModal, openRequestMode, openRequestUri, startInlineEdit])
 
   return {
+    editing,
     handlePreviewKeyDown,
-    openSheet,
+    openModal,
+    setEditing,
     setSheetOpen,
     sheetOpen,
+    startInlineEdit,
   }
 }

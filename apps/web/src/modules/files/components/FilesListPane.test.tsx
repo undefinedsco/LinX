@@ -1052,17 +1052,13 @@ describe('FilesListPane', () => {
     expect(useFilesStore.getState().editableFileSheetOpenRequestUri).toBe('https://pod.example/public/README.md')
   })
 
-  it('tracks Cmd/Ctrl multi-selection in the main file list', () => {
+  it('opens editable file editor modal on Cmd/Ctrl click in the main file list', () => {
     render(<FilesListPane {...defaultProps} />)
 
     fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { ctrlKey: true })
 
-    expect(Array.from(useFilesStore.getState().selectedFileIds)).toEqual([
-      'https://pod.example/public/README.md',
-      'https://pod.example/public/config.json',
-    ])
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/config.json')
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
+    expect(useFilesStore.getState().editableFileSheetOpenRequestUri).toBe('https://pod.example/public/README.md')
   })
 
   it('tracks Shift range selection in the main file list', () => {
@@ -1105,8 +1101,8 @@ describe('FilesListPane', () => {
   it('copies selected main list file URIs from the batch toolbar', () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { shiftKey: true })
 
     expect(screen.getByText('已选择 2 项')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '复制所选 URI' }))
@@ -1120,8 +1116,8 @@ describe('FilesListPane', () => {
   it('deletes selected main list files from the batch toolbar', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { shiftKey: true })
     fireEvent.click(screen.getByRole('button', { name: '删除所选项' }))
 
     expect(screen.getByRole('dialog', { name: '删除 2 项' })).toBeInTheDocument()
@@ -1140,8 +1136,8 @@ describe('FilesListPane', () => {
     mockDeleteFileResource.mockRejectedValueOnce(new Error('HTTP 403'))
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { shiftKey: true })
     fireEvent.click(screen.getByRole('button', { name: '删除所选项' }))
     fireEvent.click(screen.getByRole('button', { name: '删除' }))
 
@@ -1158,7 +1154,7 @@ describe('FilesListPane', () => {
   it('opens a single-item context menu from an unselected main list row', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }))
     fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'public' }))
 
     expect(await screen.findByRole('menuitem', { name: '复制 URI' })).toBeInTheDocument()
@@ -1258,8 +1254,8 @@ describe('FilesListPane', () => {
   it('keeps multi-selection when opening a context menu on a selected main list row', async () => {
     render(<FilesListPane {...defaultProps} />)
 
-    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }), { metaKey: true })
-    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { metaKey: true })
+    fireEvent.click(screen.getByRole('treeitem', { name: 'README.md' }))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { shiftKey: true })
     fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }))
 
     expect(screen.getByText('已选择 2 项')).toBeInTheDocument()

@@ -44,12 +44,14 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     addWhiteboardSubjectFromUi,
     classScope,
     clearWhiteboardSubjectsFromUi,
+    closeStructuredViewFromUi,
     columnSizing,
     effectiveClassScope,
     hiddenPredicates,
     kanbanBoard,
     kanbanGroupPredicate,
     kanbanOrder,
+    openViews,
     removeWhiteboardSubjectFromUi,
     retryViewMetadataSave,
     setKanbanColumnOrderFromUi,
@@ -295,6 +297,8 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           onClassScopeMenuOpenChange={setClassScopeMenuOpen}
           viewMode={viewMode}
           onViewModeChange={setStructuredViewModeFromUi}
+          openViews={openViews}
+          onCloseView={closeStructuredViewFromUi}
           searchText={structuredSearchText}
           onSearchTextChange={setStructuredSearchTextFromUi}
           warningRowsOnly={warningRowsOnly}
@@ -327,6 +331,22 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
         <div className="mt-2">
           {structuredSourceLoading && viewMode === 'table' ? (
             <StructuredTableLoadingSkeleton />
+          ) : viewMode === 'table' && projection.rows.length === 0 && !scopedProjection.className ? (
+            <FilesEmptyState
+              title="这个文档还没有数据"
+              description="文档中还没有任何 subject。先创建一个 class，再为该 class 添加 subject。"
+              action={(
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setClassScopeMenuOpen(true)}
+                >
+                  创建 class
+                </Button>
+              )}
+            />
           ) : viewMode === 'table' && !scopedProjection.className ? (
             <FilesEmptyState
               title="尚未选择 class"

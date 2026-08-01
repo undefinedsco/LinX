@@ -11,8 +11,7 @@ export interface FileDetailShellState {
   activeDetailTab: FileDetailShellTab
   openMode: FilesOpenMode
   resourceActions: FilesResourceAction[]
-  showHeadSidecarActions: boolean
-  showMetaDrawer: boolean
+  showFileDrawerMetadata: boolean
   showSourceLinkedDrawerMetadata: boolean
   showTabs: boolean
   sidecarOwnerTarget: {
@@ -40,8 +39,7 @@ export function projectFileDetailShellState({
     activeDetailTab: detailTab === 'metadata' ? 'preview' : detailTab,
     openMode,
     resourceActions: getFilesResourceActions(file, { systemOpen: hasSystemOpen }),
-    showHeadSidecarActions: !isEditableSheetMode,
-    showMetaDrawer: !isEditableSheetMode,
+    showFileDrawerMetadata: isEditableSheetMode,
     showSourceLinkedDrawerMetadata: openMode === 'source-linked-card-preview',
     showTabs: !isEditableSheetMode && !isEmbeddedStructuredMode && !isContainerMode,
     sidecarOwnerTarget: {

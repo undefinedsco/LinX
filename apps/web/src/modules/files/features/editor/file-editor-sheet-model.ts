@@ -1,4 +1,3 @@
-import { formatDateTime } from '../../domain/detail/detail-metadata'
 import type { FilesDetail, FilesRawTextResource } from '../../domain/resource/resource-model'
 import {
   displaySourceIngestVersion,
@@ -80,14 +79,6 @@ export function projectFileEditorSheetReset({
 }): FileEditorSheetState {
   const next = createFileEditorSheetState({ canUseRichEditor, noteTitle })
   return current.noteTitle === next.noteTitle && current.contentView === next.contentView ? current : next
-}
-
-export function createFileEditorMetaTailId(uri: string) {
-  let hash = 0
-  for (let index = 0; index < uri.length; index += 1) {
-    hash = ((hash << 5) - hash + uri.charCodeAt(index)) | 0
-  }
-  return `files-file-meta-tail-${Math.abs(hash).toString(36)}`
 }
 
 export function getFileEditorMarkdownNoteTitle(content: string | null | undefined, fallback: string): string {
@@ -337,30 +328,4 @@ export function projectFileEditorCapabilities({
     canSaveRichText,
     canUseRichEditor: canSaveRichText || isSourceLinkedEditor,
   }
-}
-
-export function projectFileEditorBylineItems({
-  file,
-  rawLoading,
-  hasRawResource,
-  metaLoading,
-  metaState,
-  isSourceLinkedEditor,
-  canSaveRichText,
-}: {
-  file: Pick<FilesDetail, 'name' | 'modifiedAt'>
-  rawLoading: boolean
-  hasRawResource: boolean
-  metaLoading: boolean
-  metaState?: string | null
-  isSourceLinkedEditor: boolean
-  canSaveRichText: boolean
-}) {
-  return [
-    file.name,
-    file.modifiedAt ? `更新 ${formatDateTime(file.modifiedAt)}` : null,
-    rawLoading ? '读取内容中' : hasRawResource ? '完整内容' : '预览内容',
-    metaLoading ? 'meta 检查中' : metaState === 'exists' ? '.meta 已连接' : '.meta 未创建',
-    isSourceLinkedEditor ? '审批写入' : canSaveRichText ? '失焦保存' : '原始内容编辑',
-  ].filter((item): item is string => Boolean(item))
 }

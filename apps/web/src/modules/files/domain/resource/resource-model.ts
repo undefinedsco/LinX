@@ -83,8 +83,10 @@ export interface FilesBlobResource {
 }
 
 export class FilesSaveConflictError extends Error {
-  constructor(uri: string) {
-    super(`保存冲突：${uri} 已被其他客户端修改。`)
+  constructor(uri: string, options?: { reason?: 'modified' | 'exists' }) {
+    super(options?.reason === 'exists'
+      ? `同名资源已存在：${uri}。`
+      : `保存冲突：${uri} 已被其他客户端修改。`)
     this.name = 'FilesSaveConflictError'
   }
 }

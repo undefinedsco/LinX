@@ -62,6 +62,7 @@ export interface StructuredWhiteboardSnapshotV1 {
 
 export interface StructuredViewConfig {
   viewMode: StructuredResourceViewMode
+  openViews: StructuredResourceViewMode[]
   classScope: string | null
   searchText: string
   sortKey: string | null
@@ -82,6 +83,7 @@ export interface StructuredViewMetadataWhiteboard {
 export interface StructuredViewMetadata {
   documentUri: string
   viewMode: StructuredResourceViewMode
+  openViews?: StructuredResourceViewMode[]
   classScope: string | null
   searchText: string
   sortKey: string | null
@@ -97,6 +99,7 @@ export interface StructuredViewMetadata {
 
 export const DEFAULT_STRUCTURED_VIEW_CONFIG: StructuredViewConfig = {
   viewMode: 'table',
+  openViews: [],
   classScope: null,
   searchText: '',
   sortKey: null,
@@ -107,43 +110,6 @@ export const DEFAULT_STRUCTURED_VIEW_CONFIG: StructuredViewConfig = {
   columnSizing: {},
 }
 
-const UDFS_NAMESPACE = 'https://undefineds.co/vocab/'
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function predicatePattern(predicate: string) {
-  if (!predicate.startsWith('udfs:')) return escapeRegExp(predicate)
-  const localName = predicate.slice('udfs:'.length)
-  return `(?:${escapeRegExp(predicate)}|<${escapeRegExp(`${UDFS_NAMESPACE}${localName}`)}>)`
-}
-
-function turtleString(value: string) {
-  return `"${value
-    .replace(/\\/g, '\\\\')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t')
-    .replace(/"/g, '\\"')}"`
-}
-
-function unturtleString(value: string) {
-  return value
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t')
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, '\\')
-}
-
-function normalizeViewMode(value: string | null): StructuredResourceViewMode {
-  return value === 'kanban' || value === 'whiteboard' || value === 'raw' ? value : 'table'
-}
-
-function normalizeSortDirection(value: string | null): StructuredSortDirection {
-  return value === 'desc' ? 'desc' : 'asc'
-}
 
 export function normalizeStructuredSortDirection(value: unknown): StructuredSortDirection {
   return value === 'desc' ? 'desc' : 'asc'
@@ -151,6 +117,19 @@ export function normalizeStructuredSortDirection(value: unknown): StructuredSort
 
 export function normalizeStructuredViewMode(value: unknown): StructuredResourceViewMode {
   return value === 'kanban' || value === 'whiteboard' || value === 'raw' ? value : 'table'
+}
+
+export function normalizeStructuredOpenViews(value: unknown, viewMode: StructuredResourceViewMode = 'table'): StructuredResourceViewMode[] {
+  const openViews: StructuredResourceViewMode[] = []
+  const push = (mode: StructuredResourceViewMode) => {
+    if (mode === 'table' || openViews.includes(mode)) return
+    openViews.push(mode)
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) push(normalizeStructuredViewMode(item))
+  }
+  push(viewMode)
+  return openViews
 }
 
 export function normalizeStructuredColumnSizing(value: unknown): StructuredColumnSizingState {
@@ -359,8 +338,10 @@ export function normalizeStructuredViewConfig(value: unknown): StructuredViewCon
     ? candidate.hiddenPredicates.filter((predicate): predicate is string => typeof predicate === 'string')
     : []
 
+  const viewMode = normalizeStructuredViewMode(candidate.viewMode)
   return {
-    viewMode: normalizeStructuredViewMode(candidate.viewMode),
+    viewMode,
+    openViews: normalizeStructuredOpenViews(candidate.openViews, viewMode),
     classScope: typeof candidate.classScope === 'string' ? candidate.classScope : null,
     searchText: typeof candidate.searchText === 'string' ? candidate.searchText : '',
     sortKey: typeof candidate.sortKey === 'string' ? candidate.sortKey : null,
@@ -403,397 +384,3 @@ function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
-function iriOrStringObject(value: string) {
-  if (value === 'subject') return turtleString(value)
-  if (/^https?:\/\//.test(value)) return `<${value}>`
-  return turtleString(value)
-}
-
-function readFirstLiteral(source: string, predicate: string): string | null {
-  const match = source.match(new RegExp(`${predicatePattern(predicate)}\\s+"((?:\\\\.|[^"\\\\])*)"`))
-  return match ? unturtleString(match[1]) : null
-}
-
-function readFirstIri(source: string, predicate: string): string | null {
-  return source.match(new RegExp(`${predicatePattern(predicate)}\\s+<([^>]+)>`))?.[1] ?? null
-}
-
-function readRepeatedLiterals(source: string, predicate: string): string[] {
-  return Array.from(source.matchAll(new RegExp(`${predicatePattern(predicate)}\\s+((?:"(?:\\\\.|[^"\\\\])*"\\s*(?:,\\s*)?)+)`, 'g')))
-    .flatMap((match) => Array.from(match[1].matchAll(/"((?:\\.|[^"\\])*)"/g)))
-    .map((match) => unturtleString(match[1]))
-}
-
-function readRepeatedLiteralOrIri(source: string, predicate: string): string[] {
-  return Array.from(source.matchAll(new RegExp(`${predicatePattern(predicate)}\\s+((?:(?:<[^>]+>|"(?:\\\\.|[^"\\\\])*")\\s*(?:,\\s*)?)+)`, 'g')))
-    .flatMap((match) => Array.from(match[1].matchAll(/<([^>]+)>|"((?:\\.|[^"\\])*)"/g)))
-    .map((match) => match[1] ?? unturtleString(match[2]))
-}
-
-function readFirstNumber(source: string, predicate: string): number | null {
-  const value = source.match(new RegExp(`${predicatePattern(predicate)}\\s+(-?\\d+(?:\\.\\d+)?)`))?.[1]
-  if (!value) return null
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function readBlankNodeObjects(source: string, predicate: string): string[] {
-  const inlineObjects = Array.from(source.matchAll(new RegExp(`${predicatePattern(predicate)}\\s+((?:\\[[\\s\\S]*?\\]\\s*(?:,\\s*)?)+)`, 'g')))
-    .flatMap((match) => Array.from(match[1].matchAll(/\[([\s\S]*?)\]/g)))
-    .map((match) => match[1])
-  const labeledObjects = Array.from(source.matchAll(new RegExp(`${predicatePattern(predicate)}\\s+((?:_:[A-Za-z][A-Za-z0-9_-]*\\s*(?:[,;.]\\s*)?)+)`, 'g')))
-    .flatMap((match) => Array.from(match[1].matchAll(/_:[A-Za-z][A-Za-z0-9_-]*/g)).map((labelMatch) => labelMatch[0]))
-    .map((label) => {
-      const statementPattern = new RegExp(`(?:^|\\n)\\s*${escapeRegExp(label)}\\s+([\\s\\S]*?\\.)(?=\\s*(?:\\n|$))`, 'g')
-      const statements = Array.from(source.matchAll(statementPattern)).map((match) => match[1])
-      if (statements.length > 0) return statements.join('\n')
-      const subjectLinePattern = new RegExp(`^\\s*${escapeRegExp(label)}\\s+`, 'm')
-      return source
-        .split('\n')
-        .filter((line) => subjectLinePattern.test(line))
-        .join('\n')
-    })
-    .filter(Boolean)
-  return [...inlineObjects, ...labeledObjects]
-}
-
-function renderOptionalIriOrLiteralLine(predicate: string, value: string | null) {
-  if (!value) return []
-  return [`  ${predicate} ${iriOrStringObject(value)} ;`]
-}
-
-function renderStructuredKanbanBoardLines(board: StructuredKanbanBoardMetadataV1 | null | undefined) {
-  if (!board) return []
-  const normalized = normalizeStructuredKanbanBoardMetadata(board)
-  return [
-    `  udfs:kanbanBoardVersion ${normalized.version} ;`,
-    ...normalized.laneOrder.map((laneId, index) => (
-      `  udfs:kanbanLaneOrder [ udfs:lane ${turtleString(laneId)} ; udfs:index ${index} ] ;`
-    )),
-    ...normalized.collapsedLaneIds.map((laneId) => (
-      `  udfs:kanbanCollapsedLane ${turtleString(laneId)} ;`
-    )),
-    `  udfs:kanbanScrollLeft ${normalized.scrollLeft} ;`,
-    ...Object.entries(normalized.cardOrder).flatMap(([laneId, subjects]) => (
-      unique(subjects).map((subject, index) => (
-        `  udfs:kanbanBoardCardOrder [ udfs:lane ${turtleString(laneId)} ; udfs:subject ${turtleString(subject)} ; udfs:index ${index} ] ;`
-      ))
-    )),
-  ]
-}
-
-function renderStructuredWhiteboardSnapshotLines(snapshot: StructuredWhiteboardSnapshotV1 | null | undefined) {
-  if (!snapshot) return []
-  const normalized = normalizeStructuredWhiteboardSnapshotMetadata(snapshot)
-  return [
-    `  udfs:whiteboardSnapshotVersion ${normalized.version} ;`,
-    `  udfs:whiteboardCamera [ udfs:x ${normalized.camera.x} ; udfs:y ${normalized.camera.y} ; udfs:z ${normalized.camera.z} ] ;`,
-    ...normalized.nodes.map((node) => [
-      `  udfs:whiteboardNode [ udfs:resource ${turtleString(node.resourceUri)} ;`,
-      node.shapeId ? ` udfs:shapeId ${turtleString(node.shapeId)} ;` : '',
-      ` udfs:kind ${turtleString(node.kind)} ; udfs:x ${node.x} ; udfs:y ${node.y} ; udfs:width ${node.w} ; udfs:height ${node.h} ; udfs:z ${node.z}`,
-      node.groupId ? ` ; udfs:group ${turtleString(node.groupId)}` : '',
-      ' ] ;',
-    ].join('')),
-    ...normalized.groups.map((group) => (
-      `  udfs:whiteboardGroup [ udfs:id ${turtleString(group.id)} ; udfs:title ${turtleString(group.title)} ; udfs:color ${turtleString(group.color)} ] ;`
-    )),
-    ...normalized.visualRelations.map((relation) => [
-      `  udfs:whiteboardSnapshotRelation [ udfs:id ${turtleString(relation.id)} ; udfs:fromSubject ${turtleString(relation.from)} ; udfs:toSubject ${turtleString(relation.to)}`,
-      relation.label !== undefined ? ` ; udfs:label ${turtleString(relation.label)}` : '',
-      relation.predicate ? ` ; udfs:predicate ${iriOrStringObject(relation.predicate)}` : '',
-      ' ] ;',
-    ].join('')),
-  ]
-}
-
-export function renderStructuredViewMetadataTurtle(metadata: StructuredViewMetadata) {
-  const kanbanOrderLines = Object.entries(metadata.kanbanOrder ?? {})
-    .flatMap(([columnId, subjects]) => unique(subjects).map((subject, index) => (
-      `  udfs:kanbanCardOrder [ udfs:column ${turtleString(columnId)} ; udfs:subject ${turtleString(subject)} ; udfs:index ${index} ] ;`
-    )))
-  const columnLines = Object.entries(metadata.columnSizing)
-    .filter(([, width]) => Number.isFinite(width) && width > 0)
-    .map(([predicate, width]) => (
-      `  udfs:columnWidth [ udfs:predicate ${iriOrStringObject(predicate)} ; udfs:width ${Math.round(width)} ] ;`
-    ))
-  const selectedSubjectLines = metadata.whiteboard.selectedSubjects.map((subject) => (
-    `  udfs:selectedSubject ${turtleString(subject)} ;`
-  ))
-  const positionLines = Object.entries(metadata.whiteboard.positions)
-    .filter(([, position]) => Number.isFinite(position.x) && Number.isFinite(position.y))
-    .map(([subject, position]) => (
-      `  udfs:whiteboardPosition [ udfs:subject ${turtleString(subject)} ; udfs:x ${Math.round(position.x)} ; udfs:y ${Math.round(position.y)} ] ;`
-    ))
-  const visualRelationLines = (metadata.whiteboard.visualRelations ?? [])
-    .filter((relation) => relation.id && relation.from && relation.to)
-    .map((relation) => (
-      `  udfs:whiteboardVisualRelation [ udfs:id ${turtleString(relation.id)} ; udfs:fromSubject ${turtleString(relation.from)} ; udfs:toSubject ${turtleString(relation.to)} ; udfs:label ${turtleString(relation.label)} ] ;`
-    ))
-
-  return [
-    '@prefix udfs: <https://undefineds.co/vocab/> .',
-    '@prefix dcterms: <http://purl.org/dc/terms/> .',
-    '',
-    '<#view> a udfs:StructuredViewMetadata ;',
-    `  udfs:document <${metadata.documentUri}> ;`,
-    `  udfs:viewMode ${turtleString(metadata.viewMode)} ;`,
-    ...renderOptionalIriOrLiteralLine('udfs:classScope', metadata.classScope),
-    `  udfs:searchText ${turtleString(metadata.searchText)} ;`,
-    ...renderOptionalIriOrLiteralLine('udfs:sortKey', metadata.sortKey),
-    `  udfs:sortDirection ${turtleString(metadata.sortDirection)} ;`,
-    ...unique(metadata.hiddenPredicates).map((predicate) => `  udfs:hiddenPredicate ${iriOrStringObject(predicate)} ;`),
-    ...renderOptionalIriOrLiteralLine('udfs:kanbanGroupPredicate', metadata.kanbanGroupPredicate),
-    ...kanbanOrderLines,
-    ...renderStructuredKanbanBoardLines(metadata.kanbanBoard),
-    ...columnLines,
-    ...selectedSubjectLines,
-    ...positionLines,
-    ...visualRelationLines,
-    ...renderStructuredWhiteboardSnapshotLines(metadata.whiteboard.snapshot),
-    '  udfs:writesCanonicalData false .',
-  ].join('\n')
-}
-
-function parseColumnSizing(source: string): StructuredColumnSizingState {
-  const sizing: StructuredColumnSizingState = {}
-  const pattern = new RegExp(`${predicatePattern('udfs:columnWidth')}\\s+\\[\\s+${predicatePattern('udfs:predicate')}\\s+(?:<([^>]+)>|"((?:\\\\.|[^"\\\\])*)")\\s+;\\s+${predicatePattern('udfs:width')}\\s+(-?\\d+(?:\\.\\d+)?)\\s+\\]`, 'g')
-  for (const match of source.matchAll(pattern)) {
-    const predicate = match[1] ?? unturtleString(match[2])
-    const width = Number(match[3])
-    if (!predicate || !Number.isFinite(width) || width <= 0) continue
-    sizing[predicate] = Math.round(width)
-  }
-  return sizing
-}
-
-function parseKanbanOrder(source: string): StructuredKanbanOrderState {
-  const indexedByColumn = new Map<string, Array<{ subject: string; index: number }>>()
-  const pattern = new RegExp(`${predicatePattern('udfs:kanbanCardOrder')}\\s+\\[\\s+${predicatePattern('udfs:column')}\\s+"((?:\\\\.|[^"\\\\])*)"\\s*;\\s+${predicatePattern('udfs:subject')}\\s+"((?:\\\\.|[^"\\\\])*)"\\s*;\\s+${predicatePattern('udfs:index')}\\s+(-?\\d+(?:\\.\\d+)?)\\s+\\]`, 'g')
-  for (const match of source.matchAll(pattern)) {
-    const columnId = unturtleString(match[1])
-    const subject = unturtleString(match[2])
-    const index = Number(match[3])
-    if (!columnId || !subject || !Number.isInteger(index) || index < 0) continue
-    const entries = indexedByColumn.get(columnId) ?? []
-    entries.push({ subject, index })
-    indexedByColumn.set(columnId, entries)
-  }
-
-  const order: StructuredKanbanOrderState = {}
-  for (const [columnId, entries] of indexedByColumn.entries()) {
-    const seenSubjects = new Set<string>()
-    const subjects = entries
-      .sort((left, right) => left.index - right.index)
-      .map((entry) => entry.subject)
-      .filter((subject) => {
-        if (seenSubjects.has(subject)) return false
-        seenSubjects.add(subject)
-        return true
-      })
-    if (subjects.length > 0) order[columnId] = subjects
-  }
-  return order
-}
-
-function parseKanbanBoardLaneOrder(source: string): string[] {
-  const lanes: Array<{ laneId: string; index: number }> = []
-  for (const block of readBlankNodeObjects(source, 'udfs:kanbanLaneOrder')) {
-    const laneId = readFirstLiteral(block, 'udfs:lane')
-    const index = readFirstNumber(block, 'udfs:index')
-    if (!laneId || index === null || !Number.isInteger(index) || index < 0) continue
-    lanes.push({ laneId, index })
-  }
-  const seen = new Set<string>()
-  return lanes
-    .sort((left, right) => left.index - right.index)
-    .map((entry) => entry.laneId)
-    .filter((laneId) => {
-      if (seen.has(laneId)) return false
-      seen.add(laneId)
-      return true
-    })
-}
-
-function parseKanbanBoardCardOrder(source: string): StructuredKanbanOrderState {
-  const indexedByLane = new Map<string, Array<{ subject: string; index: number }>>()
-  for (const block of readBlankNodeObjects(source, 'udfs:kanbanBoardCardOrder')) {
-    const laneId = readFirstLiteral(block, 'udfs:lane')
-    const subject = readFirstLiteral(block, 'udfs:subject')
-    const index = readFirstNumber(block, 'udfs:index')
-    if (!laneId || !subject || index === null || !Number.isInteger(index) || index < 0) continue
-    const entries = indexedByLane.get(laneId) ?? []
-    entries.push({ subject, index })
-    indexedByLane.set(laneId, entries)
-  }
-
-  const order: StructuredKanbanOrderState = {}
-  for (const [laneId, entries] of indexedByLane.entries()) {
-    const seenSubjects = new Set<string>()
-    const subjects = entries
-      .sort((left, right) => left.index - right.index)
-      .map((entry) => entry.subject)
-      .filter((subject) => {
-        if (seenSubjects.has(subject)) return false
-        seenSubjects.add(subject)
-        return true
-      })
-    if (subjects.length > 0) order[laneId] = subjects
-  }
-  return order
-}
-
-function parseKanbanBoardMetadata(source: string, legacyCardOrder: StructuredKanbanOrderState): StructuredKanbanBoardMetadataV1 {
-  const version = readFirstNumber(source, 'udfs:kanbanBoardVersion')
-  if (version !== 1) return normalizeStructuredKanbanBoardMetadata(null, legacyCardOrder)
-  return normalizeStructuredKanbanBoardMetadata({
-    version: 1,
-    laneOrder: parseKanbanBoardLaneOrder(source),
-    collapsedLaneIds: readRepeatedLiterals(source, 'udfs:kanbanCollapsedLane'),
-    scrollLeft: readFirstNumber(source, 'udfs:kanbanScrollLeft') ?? 0,
-    cardOrder: parseKanbanBoardCardOrder(source),
-  }, legacyCardOrder)
-}
-
-function parseWhiteboardPositions(source: string): Record<string, StructuredWhiteboardPosition> {
-  const positions: Record<string, StructuredWhiteboardPosition> = {}
-  for (const block of readBlankNodeObjects(source, 'udfs:whiteboardPosition')) {
-    const subject = readFirstLiteral(block, 'udfs:subject')
-    const x = readFirstNumber(block, 'udfs:x')
-    const y = readFirstNumber(block, 'udfs:y')
-    if (!subject || x === null || y === null) continue
-    positions[subject] = { x: Math.round(x), y: Math.round(y) }
-  }
-  return positions
-}
-
-function parseWhiteboardVisualRelations(source: string): StructuredWhiteboardVisualRelation[] {
-  const relations: StructuredWhiteboardVisualRelation[] = []
-  const seen = new Set<string>()
-  for (const block of readBlankNodeObjects(source, 'udfs:whiteboardVisualRelation')) {
-    const relation = {
-      id: readFirstLiteral(block, 'udfs:id') ?? '',
-      from: readFirstLiteral(block, 'udfs:fromSubject') ?? '',
-      to: readFirstLiteral(block, 'udfs:toSubject') ?? '',
-      label: readFirstLiteral(block, 'udfs:label') ?? '',
-    }
-    if (!relation.id || !relation.from || !relation.to || seen.has(relation.id)) continue
-    seen.add(relation.id)
-    relations.push(relation)
-  }
-  return relations
-}
-
-function parseWhiteboardCamera(source: string): StructuredWhiteboardCamera {
-  const block = readBlankNodeObjects(source, 'udfs:whiteboardCamera')[0]
-  if (!block) return { x: 0, y: 0, z: 1 }
-  return normalizeStructuredWhiteboardSnapshotMetadata({
-    version: 1,
-    camera: {
-      x: readFirstNumber(block, 'udfs:x') ?? 0,
-      y: readFirstNumber(block, 'udfs:y') ?? 0,
-      z: readFirstNumber(block, 'udfs:z') ?? 1,
-    },
-    nodes: [],
-    groups: [],
-    visualRelations: [],
-  }).camera
-}
-
-function parseWhiteboardSnapshotNodes(source: string): StructuredWhiteboardSnapshotNode[] {
-  return normalizeStructuredWhiteboardSnapshotMetadata({
-    version: 1,
-    camera: { x: 0, y: 0, z: 1 },
-    nodes: readBlankNodeObjects(source, 'udfs:whiteboardNode').map((block) => ({
-      resourceUri: readFirstLiteral(block, 'udfs:resource') ?? '',
-      shapeId: readFirstLiteral(block, 'udfs:shapeId') ?? undefined,
-      kind: readFirstLiteral(block, 'udfs:kind') ?? undefined,
-      x: readFirstNumber(block, 'udfs:x') ?? 0,
-      y: readFirstNumber(block, 'udfs:y') ?? 0,
-      w: readFirstNumber(block, 'udfs:width') ?? 288,
-      h: readFirstNumber(block, 'udfs:height') ?? 160,
-      z: readFirstNumber(block, 'udfs:z') ?? 0,
-      groupId: readFirstLiteral(block, 'udfs:group') ?? undefined,
-    })),
-    groups: [],
-    visualRelations: [],
-  }).nodes
-}
-
-function parseWhiteboardSnapshotGroups(source: string): StructuredWhiteboardSnapshotGroup[] {
-  return normalizeStructuredWhiteboardSnapshotMetadata({
-    version: 1,
-    camera: { x: 0, y: 0, z: 1 },
-    nodes: [],
-    groups: readBlankNodeObjects(source, 'udfs:whiteboardGroup').map((block) => ({
-      id: readFirstLiteral(block, 'udfs:id') ?? '',
-      title: readFirstLiteral(block, 'udfs:title') ?? '',
-      color: readFirstLiteral(block, 'udfs:color') ?? '',
-    })),
-    visualRelations: [],
-  }).groups
-}
-
-function parseWhiteboardSnapshotVisualRelations(source: string): StructuredWhiteboardSnapshotVisualRelation[] {
-  return normalizeStructuredWhiteboardSnapshotMetadata({
-    version: 1,
-    camera: { x: 0, y: 0, z: 1 },
-    nodes: [],
-    groups: [],
-    visualRelations: readBlankNodeObjects(source, 'udfs:whiteboardSnapshotRelation').map((block) => ({
-      id: readFirstLiteral(block, 'udfs:id') ?? '',
-      from: readFirstLiteral(block, 'udfs:fromSubject') ?? '',
-      to: readFirstLiteral(block, 'udfs:toSubject') ?? '',
-      label: readFirstLiteral(block, 'udfs:label') ?? undefined,
-      predicate: readFirstIri(block, 'udfs:predicate') ?? readFirstLiteral(block, 'udfs:predicate') ?? undefined,
-    })),
-  }).visualRelations
-}
-
-function parseWhiteboardSnapshot(
-  source: string,
-  legacy: {
-    positions: Record<string, StructuredWhiteboardPosition>
-    visualRelations: StructuredWhiteboardVisualRelation[]
-  },
-): StructuredWhiteboardSnapshotV1 {
-  const version = readFirstNumber(source, 'udfs:whiteboardSnapshotVersion')
-  if (version !== 1) return normalizeStructuredWhiteboardSnapshotMetadata(null, legacy)
-  return normalizeStructuredWhiteboardSnapshotMetadata({
-    version: 1,
-    camera: parseWhiteboardCamera(source),
-    nodes: parseWhiteboardSnapshotNodes(source),
-    groups: parseWhiteboardSnapshotGroups(source),
-    visualRelations: parseWhiteboardSnapshotVisualRelations(source),
-  }, legacy)
-}
-
-export function parseStructuredViewMetadataTurtle(source: string, fallbackDocumentUri: string): Required<StructuredViewMetadata> {
-  const documentUri = readFirstIri(source, 'udfs:document') ?? fallbackDocumentUri
-  const kanbanOrder = parseKanbanOrder(source)
-  const whiteboardPositions = parseWhiteboardPositions(source)
-  const whiteboardVisualRelations = parseWhiteboardVisualRelations(source)
-  return {
-    documentUri,
-    viewMode: normalizeViewMode(readFirstLiteral(source, 'udfs:viewMode')),
-    classScope: readFirstIri(source, 'udfs:classScope') ?? readFirstLiteral(source, 'udfs:classScope'),
-    searchText: readFirstLiteral(source, 'udfs:searchText') ?? '',
-    sortKey: readFirstIri(source, 'udfs:sortKey') ?? readFirstLiteral(source, 'udfs:sortKey'),
-    sortDirection: normalizeSortDirection(readFirstLiteral(source, 'udfs:sortDirection')),
-    hiddenPredicates: unique(readRepeatedLiteralOrIri(source, 'udfs:hiddenPredicate')),
-    kanbanGroupPredicate: readFirstIri(source, 'udfs:kanbanGroupPredicate') ?? readFirstLiteral(source, 'udfs:kanbanGroupPredicate'),
-    kanbanOrder,
-    kanbanBoard: parseKanbanBoardMetadata(source, kanbanOrder),
-    columnSizing: parseColumnSizing(source),
-    whiteboard: {
-      selectedSubjects: unique(readRepeatedLiterals(source, 'udfs:selectedSubject')),
-      positions: whiteboardPositions,
-      visualRelations: whiteboardVisualRelations,
-      snapshot: parseWhiteboardSnapshot(source, {
-        positions: whiteboardPositions,
-        visualRelations: whiteboardVisualRelations,
-      }),
-    },
-    writesCanonicalData: false,
-  }
-}

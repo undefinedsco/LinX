@@ -118,6 +118,48 @@ describe('files store whiteboard layout persistence', () => {
     })
   })
 
+  it('accumulates opened structured views and restores them per document', () => {
+    const stateUri = 'https://pod.example/.data/state.ttl'
+    const state = useFilesStore.getState()
+
+    state.selectFile(stateUri)
+    useFilesStore.getState().setStructuredViewMode('kanban')
+    useFilesStore.getState().setStructuredViewMode('whiteboard')
+
+    expect(useFilesStore.getState().structuredOpenViews).toEqual(['kanban', 'whiteboard'])
+    expect(useFilesStore.getState().structuredViewMode).toBe('whiteboard')
+
+    useFilesStore.getState().setStructuredViewMode('kanban')
+    expect(useFilesStore.getState().structuredOpenViews).toEqual(['kanban', 'whiteboard'])
+
+    useFilesStore.getState().selectFile('https://pod.example/.data/other.ttl')
+    expect(useFilesStore.getState().structuredOpenViews).toEqual([])
+
+    useFilesStore.getState().selectFile(stateUri)
+    expect(useFilesStore.getState().structuredOpenViews).toEqual(['kanban', 'whiteboard'])
+    expect(useFilesStore.getState().structuredViewMode).toBe('kanban')
+  })
+
+  it('closes an open structured view and falls back to the previous tab', () => {
+    const stateUri = 'https://pod.example/.data/state.ttl'
+    const state = useFilesStore.getState()
+
+    state.selectFile(stateUri)
+    useFilesStore.getState().setStructuredViewMode('kanban')
+    useFilesStore.getState().setStructuredViewMode('whiteboard')
+
+    useFilesStore.getState().closeStructuredView('kanban')
+    expect(useFilesStore.getState().structuredOpenViews).toEqual(['whiteboard'])
+    expect(useFilesStore.getState().structuredViewMode).toBe('whiteboard')
+
+    useFilesStore.getState().closeStructuredView('whiteboard')
+    expect(useFilesStore.getState().structuredOpenViews).toEqual([])
+    expect(useFilesStore.getState().structuredViewMode).toBe('table')
+
+    useFilesStore.getState().closeStructuredView('table')
+    expect(useFilesStore.getState().structuredViewMode).toBe('table')
+  })
+
   it('sets structured sort direction explicitly without toggling menu actions', () => {
     const stateUri = 'https://pod.example/.data/state.ttl'
 

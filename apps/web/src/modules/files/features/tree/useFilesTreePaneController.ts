@@ -1,22 +1,30 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { useFilesStore } from '../../app/store'
 import {
   filesFavoriteHooks,
-  useActiveFilesWorkspaceContext,
   useContainerChildTreeNodes,
+  useFilesContainerEntries,
   useFilesFavoriteList,
   useFilesRootNodes,
+  useFilesTreeSearchEntries,
+  useSelectedFilesLocation,
 } from '../../data/queries'
 import {
+  type FilesEntry,
   type FilesTreeNode,
 } from '../../domain/resource/resource-model'
+import { projectFilesAddContainerUri } from '../../domain/list/files-add-menu-model'
 import {
+  createContainerNodeId,
+  createResourceNodeId,
+  pinFavoriteTreeNodesFirst,
   projectFilesTreeChildrenState,
   projectFilesTreeChromeModel,
   projectFilesTreeContentState,
-  projectFilesTreeHeaderDescription,
+  projectFilesTreeFooterLabel,
   projectFilesTreeNodeViewState,
+  projectFilesTreeSearchResults,
 } from '../../domain/resource/tree-model'
 
 export type FilesTreeNodeViewModel = {
@@ -71,6 +79,7 @@ function useFilesTreeNodeState(options?: { rootLoading?: boolean }) {
 
   return {
     expandedTreeNodeIds,
+    favorites,
     projectNode,
     selectedTreeNodeId,
     selectTreeNode,
@@ -79,9 +88,6 @@ function useFilesTreeNodeState(options?: { rootLoading?: boolean }) {
 }
 
 export function useFilesTreePaneController() {
-  const resourceRailCollapsed = useFilesStore((state) => state.resourceRailCollapsed)
-  const toggleResourceRail = useFilesStore((state) => state.toggleResourceRail)
-  const { workspaceUri, threadTitle } = useActiveFilesWorkspaceContext()
   const { data, isLoading, error } = useFilesRootNodes()
   const treeNodes = useMemo(() => data?.nodes ?? [], [data?.nodes])
   const contentState = projectFilesTreeContentState({
@@ -91,16 +97,47 @@ export function useFilesTreePaneController() {
   })
   const chrome = useMemo(() => projectFilesTreeChromeModel(), [])
   const nodeState = useFilesTreeNodeState({ rootLoading: isLoading })
-  const description = projectFilesTreeHeaderDescription({ threadTitle, workspaceUri })
+  const footerLabel = projectFilesTreeFooterLabel({
+    selectedTreeNodeId: nodeState.selectedTreeNodeId,
+    treeNodes,
+  })
+
+  const [searchText, setSearchText] = useState('')
+  const searchActive = searchText.trim().length > 0
+  const searchEntriesQuery = useFilesTreeSearchEntries(searchActive)
+  const searchResults = useMemo(() => projectFilesTreeSearchResults({
+    entries: searchEntriesQuery.data ?? [],
+    query: searchText,
+  }), [searchEntriesQuery.data, searchText])
+  const openSearchResult = useCallback((entry: FilesEntry) => {
+    if (entry.kind === 'container') {
+      nodeState.selectTreeNode(createContainerNodeId(entry.uri), entry.uri)
+      return
+    }
+    nodeState.selectTreeNode(createResourceNodeId(entry.uri), entry.uri)
+  }, [nodeState.selectTreeNode])
+
+  const selection = useSelectedFilesLocation(nodeState.selectedTreeNodeId)
+  const addContainerUri = useMemo(() => projectFilesAddContainerUri(selection), [selection])
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const addEntriesQuery = useFilesContainerEntries(addContainerUri, addMenuOpen)
 
   return {
+    addContainerUri,
+    addEntries: addEntriesQuery.data ?? [],
+    addMenuOpen,
     chrome,
     contentState,
-    description,
-    resourceRailCollapsed,
+    footerLabel,
+    onAddMenuOpenChange: setAddMenuOpen,
+    onSearchTextChange: setSearchText,
+    openSearchResult,
+    searchActive,
+    searchLoading: searchActive && searchEntriesQuery.isLoading,
+    searchResults,
+    searchText,
     selectedTreeNodeId: nodeState.selectedTreeNodeId,
     selectTreeNode: nodeState.selectTreeNode,
-    toggleResourceRail,
     treeNodes,
     projectNode: nodeState.projectNode,
   }
@@ -108,16 +145,17 @@ export function useFilesTreePaneController() {
 
 export function useFilesTreeChildrenController(parentNode: FilesTreeNode) {
   const { data: childNodes = [], isLoading } = useContainerChildTreeNodes(parentNode)
+  const nodeState = useFilesTreeNodeState()
+  const sortedChildNodes = useMemo(() => pinFavoriteTreeNodesFirst(childNodes, nodeState.favorites), [childNodes, nodeState.favorites])
   const childrenState = projectFilesTreeChildrenState({
-    childNodes,
+    childNodes: sortedChildNodes,
     isLoading,
   })
   const chrome = useMemo(() => projectFilesTreeChromeModel(), [])
-  const nodeState = useFilesTreeNodeState()
 
   return {
     childrenState,
-    childNodes,
+    childNodes: sortedChildNodes,
     chrome,
     projectNode: nodeState.projectNode,
   }

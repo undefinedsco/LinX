@@ -42,7 +42,7 @@ describe('StructuredTableCellPrimitives', () => {
     expect(source).toContain('openAffordance')
     expect(source).not.toContain('openHintText')
     expect(source).not.toContain('openTitle')
-    expect(source).not.toContain('单击打开预览；Enter 或双击打开资源。')
+    expect(source).not.toContain('单击或 Enter 打开资源；空格预览。')
     expect(source).not.toContain('单击打开预览；在预览中选择打开动作。')
     expect(source).not.toContain('replace(/。$/,')
   })
@@ -426,8 +426,8 @@ describe('StructuredTableCellPrimitives', () => {
             canNavigateDirectly: true,
           }}
           openAffordance={{
-            ariaDescription: '单击打开预览；Enter 或双击打开资源。',
-            title: 'https://pod.example/.data/tasks.ttl#Task\n单击打开预览；Enter 或双击打开资源',
+            ariaDescription: '单击或 Enter 打开资源；空格预览。',
+            title: 'https://pod.example/.data/tasks.ttl#Task\n单击或 Enter 打开资源；空格预览',
           }}
           onOpenSubject={onOpenSubject}
         />
@@ -439,9 +439,9 @@ describe('StructuredTableCellPrimitives', () => {
     expect(subjectButton).toHaveAttribute('data-structured-row-index', '3')
     expect(subjectButton).toHaveAttribute(
       'title',
-      'https://pod.example/.data/tasks.ttl#Task\n单击打开预览；Enter 或双击打开资源',
+      'https://pod.example/.data/tasks.ttl#Task\n单击或 Enter 打开资源；空格预览',
     )
-    expect(subjectButton).toHaveAttribute('aria-description', '单击打开预览；Enter 或双击打开资源。')
+    expect(subjectButton).toHaveAttribute('aria-description', '单击或 Enter 打开资源；空格预览。')
     expect(subjectButton).toHaveClass('text-foreground/80')
     expect(subjectButton).toHaveClass('hover:bg-muted/50')
     expect(subjectButton).not.toHaveClass('text-primary')
@@ -451,15 +451,15 @@ describe('StructuredTableCellPrimitives', () => {
       '#Task',
       'https://pod.example/.data/tasks.ttl#Task',
       'resource',
-      { navigate: false, rowIndex: 3 },
+      { navigate: true, rowIndex: 3 },
     )
 
-    fireEvent.doubleClick(subjectButton)
+    fireEvent.keyDown(subjectButton, { key: ' ' })
     expect(onOpenSubject).toHaveBeenLastCalledWith(
       '#Task',
       'https://pod.example/.data/tasks.ttl#Task',
       'resource',
-      { navigate: true, rowIndex: 3 },
+      { navigate: false, rowIndex: 3 },
     )
 
     fireEvent.keyDown(subjectButton, { key: 'Enter' })
@@ -470,6 +470,14 @@ describe('StructuredTableCellPrimitives', () => {
       { navigate: true, rowIndex: 3 },
     )
     expect(onParentKeyDown).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '预览 #Task' }))
+    expect(onOpenSubject).toHaveBeenLastCalledWith(
+      '#Task',
+      'https://pod.example/.data/tasks.ttl#Task',
+      'resource',
+      { navigate: false, rowIndex: 3 },
+    )
 
     rerender(
       <StructuredSubjectCell
@@ -482,8 +490,8 @@ describe('StructuredTableCellPrimitives', () => {
           canNavigateDirectly: true,
         }}
         openAffordance={{
-          ariaDescription: '单击打开预览；Enter 或双击打开资源。',
-          title: 'https://pod.example/.data/repositories/repository.ttl#Repository\n单击打开预览；Enter 或双击打开资源',
+          ariaDescription: '单击或 Enter 打开资源；空格预览。',
+          title: 'https://pod.example/.data/repositories/repository.ttl#Repository\n单击或 Enter 打开资源；空格预览',
         }}
         onOpenSubject={onOpenSubject}
       />,
@@ -501,7 +509,7 @@ describe('StructuredTableCellPrimitives', () => {
       'https://pod.example/.data/repositories/repository.ttl#Repository',
       'https://pod.example/.data/repositories/repository.ttl#Repository',
       'resource',
-      { navigate: false, rowIndex: 4 },
+      { navigate: true, rowIndex: 4 },
     )
   })
 
@@ -520,8 +528,8 @@ describe('StructuredTableCellPrimitives', () => {
             canNavigateDirectly: true,
           }}
           openAffordance={{
-            ariaDescription: '单击打开预览；Enter 或双击打开资源。',
-            title: 'https://pod.example/.data/tasks.ttl#Task\n单击打开预览；Enter 或双击打开资源',
+            ariaDescription: '单击或 Enter 打开资源；空格预览。',
+            title: 'https://pod.example/.data/tasks.ttl#Task\n单击或 Enter 打开资源；空格预览',
           }}
           onOpenSubject={onOpenSubject}
         />
@@ -536,7 +544,7 @@ describe('StructuredTableCellPrimitives', () => {
       '#Task',
       'https://pod.example/.data/tasks.ttl#Task',
       'resource',
-      { navigate: false, rowIndex: 2, scrollTop: 184 },
+      { navigate: true, rowIndex: 2, scrollTop: 184 },
     )
   })
 

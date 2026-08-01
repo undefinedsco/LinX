@@ -21,6 +21,7 @@ export function useFolderDetailNavigationController({
   const selectTreeNode = useFilesStore((state) => state.selectTreeNode)
   const selectFile = useFilesStore((state) => state.selectFile)
   const setDetailTab = useFilesStore((state) => state.setDetailTab)
+  const requestEditableFileInlineEdit = useFilesStore((state) => state.requestEditableFileInlineEdit)
   const [sheetChild, setSheetChild] = useState<FilesDetail | null>(null)
 
   useEffect(() => {
@@ -39,6 +40,11 @@ export function useFolderDetailNavigationController({
     switch (effect.type) {
       case 'browse-container':
         selectTreeNode(effect.treeNodeId, child.uri)
+        break
+      case 'open-editable-inline':
+        selectFile(effect.file.uri)
+        setDetailTab('preview')
+        requestEditableFileInlineEdit(effect.file.uri)
         break
       case 'open-editable-sheet':
         setSheetChild(effect.file)

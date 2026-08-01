@@ -16,6 +16,7 @@ import {
   Table2,
   Tags,
   Text,
+  X,
 } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
@@ -58,6 +59,8 @@ export function StructuredResourceToolbar({
   onOpenClassProposal,
   viewMode,
   onViewModeChange,
+  openViews,
+  onCloseView,
   searchText,
   onSearchTextChange,
   warningRowsOnly,
@@ -104,6 +107,8 @@ export function StructuredResourceToolbar({
   onOpenClassProposal: (proposalResourceUri: string) => void
   viewMode: StructuredResourceViewMode
   onViewModeChange: (mode: StructuredResourceViewMode) => void
+  openViews: readonly StructuredResourceViewMode[]
+  onCloseView: (mode: StructuredResourceViewMode) => void
   searchText: string
   onSearchTextChange: (value: string) => void
   warningRowsOnly: boolean
@@ -159,6 +164,7 @@ export function StructuredResourceToolbar({
     classDefinitionOpen,
     classOptions,
     hiddenPredicates,
+    openViews,
     pendingWritesOnly,
     predicateNamespaceFilter,
     predicateTypeFilter,
@@ -360,19 +366,35 @@ export function StructuredResourceToolbar({
             {toolbarModel.activeViewTabRows.map((row) => {
               const ViewIcon = viewIcons[row.value]
               return (
-                <button
-                  key={row.value}
-                  aria-label={row.label}
-                  title={row.label}
-                  className={cn(
-                    'flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-[11px] transition-colors',
-                    row.active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
-                  )}
-                  onClick={() => onViewModeChange(row.value)}
-                >
-                  <ViewIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                  {row.label}
-                </button>
+                <span key={row.value} className="group/view-tab relative flex shrink-0 items-center">
+                  <button
+                    aria-label={row.label}
+                    title={row.label}
+                    className={cn(
+                      'flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-[11px] transition-colors',
+                      row.closable ? 'pr-5' : '',
+                      row.active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+                    )}
+                    onClick={() => onViewModeChange(row.value)}
+                  >
+                    <ViewIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                    {row.label}
+                  </button>
+                  {row.closable ? (
+                    <button
+                      type="button"
+                      aria-label={row.closeLabel}
+                      title={row.closeLabel}
+                      className="absolute right-1 top-1/2 flex h-3.5 w-3.5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/view-tab:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onCloseView(row.value)
+                      }}
+                    >
+                      <X className="h-2.5 w-2.5" aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </span>
               )
             })}
             <DropdownMenu>
@@ -419,7 +441,7 @@ export function StructuredResourceToolbar({
         className="contents"
       >
         <div className="group/search order-[4] relative h-7 w-7 shrink-0 transition-[width] focus-within:w-44">
-          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchText}
             onChange={(event) => onSearchTextChange(event.target.value)}
@@ -442,6 +464,9 @@ export function StructuredResourceToolbar({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
+              <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {toolbarModel.filterSectionLabels.subject}
+              </div>
               {toolbarModel.subjectFilterRows.map((row) => (
                 <DropdownMenuCheckboxItem
                   key={row.id}
@@ -459,7 +484,10 @@ export function StructuredResourceToolbar({
                   key={row.value}
                   onSelect={() => onPredicateTypeFilterChange(row.value)}
                 >
-                  {row.label}
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                    {row.checked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{row.label}</span>
                 </DropdownMenuItem>
               ))}
               <div className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -470,7 +498,10 @@ export function StructuredResourceToolbar({
                   key={row.value ?? 'all'}
                   onSelect={() => onPredicateNamespaceFilterChange(row.value)}
                 >
-                  {row.label}
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                    {row.checked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate" title={row.value ?? undefined}>{row.label}</span>
                 </DropdownMenuItem>
               ))}
               <div className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -481,7 +512,10 @@ export function StructuredResourceToolbar({
                   key={row.value}
                   onSelect={() => onVocabTermFilterChange(row.value)}
                 >
-                  {row.label}
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                    {row.checked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{row.label}</span>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
