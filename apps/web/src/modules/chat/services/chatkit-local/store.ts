@@ -311,6 +311,22 @@ function parseStoredThreadItem(value: unknown, fallbackThreadId: string, fallbac
   }
 }
 
+function parseStoredUserAttachments(value: unknown): Attachment[] {
+  if (typeof value !== 'string' || !value.trim()) return []
+
+  try {
+    const parsed = JSON.parse(value) as { attachments?: unknown } | null
+    if (!parsed || !Array.isArray(parsed.attachments)) return []
+    return parsed.attachments.filter((attachment): attachment is Attachment => (
+      typeof attachment === 'object'
+      && attachment !== null
+      && typeof (attachment as { id?: unknown }).id === 'string'
+    ))
+  } catch {
+    return []
+  }
+}
+
 function threadItemToMessageRecord(item: ThreadItem): {
   content: string
   role: string
@@ -318,6 +334,9 @@ function threadItemToMessageRecord(item: ThreadItem): {
   richContent: string | null
 } {
   if (item.type === 'user_message') {
+    const attachments = Array.isArray((item as any).attachments)
+      ? (item as any).attachments
+      : []
     return {
       content: (item as any).content
         .filter((contentPart: any) => contentPart.type === 'input_text')
@@ -325,7 +344,7 @@ function threadItemToMessageRecord(item: ThreadItem): {
         .join('\n'),
       role: MessageRole.USER,
       status: null,
-      richContent: null,
+      richContent: attachments.length > 0 ? JSON.stringify({ attachments }) : null,
     }
   }
 
@@ -367,7 +386,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
       thread_id: threadId,
       type: 'user_message',
       content: [{ type: 'input_text', text: record.content || '' }],
-      attachments: [],
+      attachments: parseStoredUserAttachments(record.richContent),
       created_at: createdAt,
     } as ThreadItem
   }

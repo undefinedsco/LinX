@@ -1335,9 +1335,24 @@ export class LocalChatKitService {
       { role: 'system', content: this.systemPrompt },
     ]
 
-    const items = await this.store.loadThreadItems(threadId, undefined, 100, 'asc', context)
+    // Model requests must be reconstructed from the complete durable thread.
+    // Keep this paginated: a fixed first-page limit silently drops older turns
+    // once a conversation grows beyond that limit, and Pod-backed threads must
+    // behave the same after signing in on another browser or device.
+    const threadItems: ThreadItem[] = []
+    let after: string | undefined
+    do {
+      const page = await this.store.loadThreadItems(threadId, after, 100, 'asc', context)
+      threadItems.push(...page.data)
+      if (!page.has_more || page.data.length === 0) break
+
+      const nextAfter = page.last_id ?? page.data[page.data.length - 1]?.id
+      if (!nextAfter || nextAfter === after) break
+      after = nextAfter
+    } while (true)
+
     let includesCurrentUserMessage = false
-    for (const item of items.data) {
+    for (const item of threadItems) {
       if (item.id === currentUserMessage?.id) {
         includesCurrentUserMessage = true
       }

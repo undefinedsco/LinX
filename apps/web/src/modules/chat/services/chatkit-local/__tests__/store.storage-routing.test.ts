@@ -250,6 +250,79 @@ describe('LocalChatKitStore storage routing', () => {
     expect((messageInsert?.metadata as any)?.reconciler?.latest?.wakeJobs?.[0]?.targetRole).toBe('primary-agent')
   })
 
+  it('archives user image attachments in richContent and restores them from Pod messages', async () => {
+    const inserts: Array<Record<string, unknown>> = []
+    const attachment = {
+      id: 'attach-image-1',
+      attachment_id: 'attach-image-1',
+      name: 'screen.png',
+      mime_type: 'image/png',
+      data_url: 'data:image/png;base64,aW1hZ2U=',
+      preview_url: 'data:image/png;base64,aW1hZ2U=',
+    }
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'http://localhost:5737/cuilinsu/' }),
+      findById: vi.fn(async (_resource: unknown, id: string) => id.includes('#thread-1')
+        ? { id, parent: 'http://localhost:5737/cuilinsu/.data/chat/default/index.ttl#this' }
+        : null),
+      insert: vi.fn(() => ({
+        values(values: Record<string, unknown>) {
+          inserts.push(values)
+          return { execute: vi.fn(async () => undefined) }
+        },
+      })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({ execute: vi.fn(async () => []) })),
+      })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'http://localhost:5737/cuilinsu/profile/card#me',
+      vi.fn() as any,
+    )
+    store.bindThreadToChat('thread-1', 'default')
+
+    await store.addThreadItem('thread-1', {
+      id: 'user-message-1',
+      thread_id: 'thread-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: '看看这张图' }],
+      attachments: [attachment],
+      created_at: 0,
+    } as any, {})
+
+    const inserted = inserts.find((entry) => entry.role === 'user')
+    expect(JSON.parse(String(inserted?.richContent))).toEqual({ attachments: [attachment] })
+
+    const reloadedDb = {
+      ...db,
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            execute: vi.fn(async () => [{
+              id: 'chat/default/1970/01/01/messages.ttl#user-message-1',
+              role: 'user',
+              content: '看看这张图',
+              richContent: inserted?.richContent,
+              createdAt: new Date(0),
+            }]),
+          })),
+        })),
+      })),
+    }
+    const reloadedStore = new LocalChatKitStore(
+      reloadedDb as any,
+      'http://localhost:5737/cuilinsu/profile/card#me',
+      vi.fn() as any,
+    )
+    reloadedStore.bindThreadToChat('thread-1', 'default')
+
+    await expect(reloadedStore.loadThreadItems('thread-1', undefined, 20, 'asc', {}))
+      .resolves.toMatchObject({
+        data: [expect.objectContaining({ attachments: [attachment] })],
+      })
+  })
+
   it('fails closed instead of deriving storage from a Cloud WebID when the selected SP Pod URL is missing', async () => {
     const db = {
       getDialect: () => ({
