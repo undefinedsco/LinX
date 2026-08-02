@@ -18,6 +18,33 @@ function leaseFor(subscribeToPod: SubscribeToPod): CollectionSubscriptionLease<o
   return lease
 }
 
+export async function acquirePodCollectionSubscription(
+  identity: object,
+  subscribeToPod: SubscribeToPod,
+  signal?: AbortSignal,
+): Promise<CollectionSubscriptionRelease> {
+  if (signal?.aborted) return () => undefined
+  const releaseLease = await leaseFor(subscribeToPod).acquire(identity)
+  let released = false
+
+  const release = async () => {
+    if (released) return
+    released = true
+    signal?.removeEventListener('abort', releaseOnAbort)
+    await releaseLease()
+  }
+  const releaseOnAbort = () => {
+    void release()
+  }
+
+  if (signal?.aborted) {
+    await release()
+  } else {
+    signal?.addEventListener('abort', releaseOnAbort, { once: true })
+  }
+  return release
+}
+
 export function usePodCollectionSubscription(
   enabled: boolean,
   identity: object | null | undefined,
@@ -28,7 +55,7 @@ export function usePodCollectionSubscription(
 
     let active = true
     let release: CollectionSubscriptionRelease | undefined
-    void leaseFor(subscribeToPod).acquire(identity).then((nextRelease) => {
+    void acquirePodCollectionSubscription(identity, subscribeToPod).then((nextRelease) => {
       if (!active) {
         void nextRelease()
         return

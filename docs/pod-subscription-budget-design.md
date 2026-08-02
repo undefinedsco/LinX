@@ -120,6 +120,26 @@ interface LogicalSubscriptionRegistry {
 
 `PodCollectionsBootstrap` 只负责 database/session 初始化与 DeviceNotificationSession 生命周期，不再全量调用 Chat、Files、Favorites、Inbox、Symphony 的 `subscribeToPod()`。
 
+### 3.4 MicroAppRuntime 激活与 handoff
+
+模块订阅所有权由壳层显式交接，不从 React 组件是否 mount 推断：
+
+```ts
+interface MicroAppRuntime {
+  activate(context: {
+    db: SolidDatabase
+    signal: AbortSignal
+  }): Promise<() => void | Promise<void>>
+}
+```
+
+- 视觉 `microAppRegistry` 与数据 `microAppRuntimeRegistry` 分离，纯 UI 组件不持有 Collection 或网络连接。
+- 布局切换模块或 database identity 时，先 abort 旧 activation 并调用其 release，再激活新 runtime。
+- activation 异步完成前发生 handoff 时，晚到的 lease 必须立即释放。
+- 没有 Pod 数据面的模块不注册 runtime；不能用空订阅伪装激活。
+- runtime 只取得 Collection lease；topic 去重、ref-count 和单 WSS 复用仍由下层订阅池负责。
+- Symphony 等非主导航面板也使用同一 lease API，但由自身明确的 open/close 状态激活，不进入主模块 handoff。
+
 ## 4. 事件协议
 
 建议 envelope 至少包含：

@@ -232,12 +232,15 @@ yarn workspace @linx/stores vitest run test/collection-subscription-lease.test.t
 
 - [ ] **Step 5: Commit**
 
-## Task 6: Move LinX Business Subscriptions To Visible Module Lifecycles
+## Task 6: Move LinX Business Subscriptions To Explicit Module Runtimes
 
 **Files:**
 - Create: `apps/web/src/lib/data/use-pod-collection-subscription.ts`
+- Create: `apps/web/src/modules/layout/micro-app-runtime.ts`
+- Create: `apps/web/src/modules/layout/micro-app-runtime-registry.ts`
+- Create: `apps/web/src/modules/layout/use-active-micro-app-runtime.ts`
 - Modify: `apps/web/src/providers/pod-collections-bootstrap.tsx`
-- Modify: visible roots for Chat, Files, Favorites, Inbox, Contacts, and Symphony
+- Modify: runtime entry points for Chat, Files, Favorites, Inbox, Contacts, and Symphony
 - Test: `apps/web/src/providers/pod-collections-bootstrap.test.tsx`
 - Create: `apps/web/src/lib/data/use-pod-collection-subscription.test.tsx`
 
@@ -245,13 +248,13 @@ yarn workspace @linx/stores vitest run test/collection-subscription-lease.test.t
 
 Assert Bootstrap initializes Collections and Secretary state but calls no business `subscribeToPod`. Preserve DB-switch cleanup and welcome behavior.
 
-- [ ] **Step 2: Add hook lifecycle tests**
+- [ ] **Step 2: Add lease and runtime handoff tests**
 
-Assert mount acquires, unmount releases, hidden/non-active module does not acquire, active module switch transfers leases, and Strict Mode produces one logical registration.
+Assert repeated consumers share one lease, module activation acquires, handoff aborts and releases the old runtime, late activation completion is released, modules without a runtime do not acquire, and Strict Mode produces one logical registration.
 
-- [ ] **Step 3: Implement the React adapter**
+- [ ] **Step 3: Implement explicit runtime activation and the React adapter**
 
-The hook accepts an enabled flag and a lease acquisition function. It must not expose transport details to components.
+Each data-aware module exports a `MicroAppRuntime.activate()` implementation. The layout coordinator owns handoff and the React hook only bridges the active module id/database identity into that coordinator. It must not expose transport details to components or mix runtime data concerns into the visual registry.
 
 - [ ] **Step 4: Migrate modules incrementally**
 

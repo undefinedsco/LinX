@@ -1,7 +1,10 @@
 import { StrictMode } from 'react'
 import { act, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { usePodCollectionSubscription } from './use-pod-collection-subscription'
+import {
+  acquirePodCollectionSubscription,
+  usePodCollectionSubscription,
+} from './use-pod-collection-subscription'
 
 function Consumer({
   enabled,
@@ -115,5 +118,46 @@ describe('usePodCollectionSubscription', () => {
     })
 
     expect(release).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('acquirePodCollectionSubscription', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('shares one connection for the same collection and database identity', async () => {
+    vi.useFakeTimers()
+    const disconnect = vi.fn()
+    const subscribe = vi.fn().mockResolvedValue(disconnect)
+    const db = {}
+
+    const releaseFirst = await acquirePodCollectionSubscription(db, subscribe)
+    const releaseSecond = await acquirePodCollectionSubscription(db, subscribe)
+
+    expect(subscribe).toHaveBeenCalledTimes(1)
+    await releaseFirst()
+    await vi.advanceTimersByTimeAsync(250)
+    expect(disconnect).not.toHaveBeenCalled()
+    await releaseSecond()
+    await vi.advanceTimersByTimeAsync(250)
+    expect(disconnect).toHaveBeenCalledTimes(1)
+  })
+
+  it('immediately gives back a lease acquired after its activation was aborted', async () => {
+    vi.useFakeTimers()
+    let finish!: (release: () => void) => void
+    const disconnect = vi.fn()
+    const subscribe = vi.fn(() => new Promise<() => void>((resolve) => {
+      finish = resolve
+    }))
+    const controller = new AbortController()
+
+    const acquisition = acquirePodCollectionSubscription({}, subscribe, controller.signal)
+    await Promise.resolve()
+    controller.abort()
+    finish(disconnect)
+    await acquisition
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(disconnect).toHaveBeenCalledTimes(1)
   })
 })
