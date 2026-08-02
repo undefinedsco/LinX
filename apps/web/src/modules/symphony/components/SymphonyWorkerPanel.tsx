@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { useChatStore } from '@/modules/chat/store'
 import { runAndPersistWebSymphonyWorkerGoal, type RunAndPersistWebSymphonyWorkerGoalInput } from '../service'
 import { symphonyControlOps, useSymphonyControlSnapshot } from '../collections'
+import { usePodCollectionSubscription } from '@/lib/data/use-pod-collection-subscription'
 
 type Snapshot = Awaited<ReturnType<typeof symphonyControlOps.fetchSnapshot>>
 type RunWorker = (input: RunAndPersistWebSymphonyWorkerGoalInput) => Promise<unknown>
@@ -43,6 +44,7 @@ export function SymphonyWorkerPanel({
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectedThreadId = useChatStore((state) => state.selectedThreadId)
   const [isOpen, setIsOpen] = useState(false)
+  usePodCollectionSubscription(isOpen && !!db, db, symphonyControlOps.subscribeToPod)
   const [requestedSnapshot, setRequestedSnapshot] = useState<Snapshot | null>(null)
   const [objective, setObjective] = useState('')
   const [workspacePath, setWorkspacePath] = useState(defaultWorkspacePath)

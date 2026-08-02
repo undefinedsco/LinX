@@ -28,24 +28,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
   const setListFilter = useContactStore((state) => state.setListFilter)
 
   useEffect(() => {
-    if (!db) {
-      setFetchError(null)
-      return
-    }
-    let active = true
-    let cleanup: (() => void) | undefined
     setFetchError(null)
-    void contactOps.subscribeToPod().then((unsubscribe) => {
-      if (active) {
-        cleanup = unsubscribe
-      } else {
-        unsubscribe()
-      }
-    })
-    return () => {
-      active = false
-      cleanup?.()
-    }
   }, [db])
 
   const retryContacts = useCallback(() => {

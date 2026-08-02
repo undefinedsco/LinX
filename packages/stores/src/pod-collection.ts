@@ -15,6 +15,7 @@ import {
   type PodResource as PodResourceSchema,
 } from '@undefineds.co/drizzle-solid'
 import { deleteExactRecord, updateExactRecord } from './exact-records'
+import { createCollectionSubscriptionLease } from './collection-subscription-lease'
 import {
   createOrderedWindowPolicy,
   evictOrderedWindowPages,
@@ -573,12 +574,6 @@ export function createPodCollection<
     return collection.toArray as TData[]
   }
 
-  type SharedSubscription = {
-    references: number
-    unsubscribePromise: Promise<() => void>
-  }
-  const sharedSubscriptions = new WeakMap<object, SharedSubscription>()
-
   const connectToPod = async (db: SolidDatabase<any>) => {
     if (typeof (db as any).subscribe !== 'function') {
       console.warn('[PodCollection] db.subscribe not available')
@@ -758,38 +753,10 @@ export function createPodCollection<
     }
   }
 
-  // Concurrent consumers share one physical Pod channel per collection and database.
-  const subscribeToPod = async (db: SolidDatabase<any>) => {
-    const key = db as object
-    let shared = sharedSubscriptions.get(key)
-    if (!shared) {
-      shared = {
-        references: 0,
-        unsubscribePromise: connectToPod(db),
-      }
-      sharedSubscriptions.set(key, shared)
-      void shared.unsubscribePromise.catch(() => {
-        if (sharedSubscriptions.get(key) === shared) {
-          sharedSubscriptions.delete(key)
-        }
-      })
-    }
-    shared.references += 1
+  const subscriptionLease = createCollectionSubscriptionLease(connectToPod, { graceMs: 0 })
 
-    let released = false
-    return async () => {
-      if (released) return
-      released = true
-      shared.references -= 1
-      if (shared.references > 0) return
-      const unsubscribe = await shared.unsubscribePromise
-      if (shared.references > 0) return
-      if (sharedSubscriptions.get(key) === shared) {
-        sharedSubscriptions.delete(key)
-      }
-      unsubscribe()
-    }
-  }
+  // Concurrent consumers share one physical Pod channel per collection and database.
+  const subscribeToPod = (db: SolidDatabase<any>) => subscriptionLease.acquire(db)
 
   // Extend the collection object with helper methods
   const baseInsert = collection.insert.bind(collection)

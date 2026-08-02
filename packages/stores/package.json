@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.js",
+    "./collection-subscription-lease": "./dist/collection-subscription-lease.js",
     "./login": "./dist/login.js",
     "./current-pod-base": "./dist/current-pod-base.js",
     "./exact-records": "./dist/exact-records.js",

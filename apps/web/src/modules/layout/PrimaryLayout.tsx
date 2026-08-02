@@ -38,6 +38,7 @@ import { AboutDialog } from './AboutDialog'
 import { useAppUpdateStatus } from './use-app-update-status'
 import { useThemeMode } from './use-theme-mode'
 import { OPEN_SERVICE_MANAGEMENT_EVENT } from '@/modules/settings/app/events'
+import { useVisibleModuleSubscription } from './use-visible-module-subscription'
 
 interface PrimaryLayoutProps {
   microAppId: MicroAppId
@@ -105,6 +106,7 @@ function MicroAppContentRenderer({
   compactNavigation?: React.ReactNode
   listPanelHidden?: boolean
 }) {
+  useVisibleModuleSubscription(microAppId)
   const activeMicroApp = microAppRegistry[microAppId]
   const ListPane = activeMicroApp.ListPane
   const ContentPane = activeMicroApp.ContentPane
