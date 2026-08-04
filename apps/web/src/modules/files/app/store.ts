@@ -16,16 +16,20 @@ import {
 } from '../domain/list/folder-history'
 import type { StructuredWhiteboardVisualRelation } from '../domain/structured/structured-projections'
 import { shouldRequestEditableSheetForStructuredSubjectTarget } from '../domain/resource/resource-semantics'
+import { parseTreeNodeId } from '../domain/resource/tree-model'
 import {
   DEFAULT_STRUCTURED_VIEW_CONFIG,
+  normalizeStructuredOpenViews,
   normalizeStructuredViewConfig,
   normalizeStructuredWhiteboardLayouts,
+  type StructuredKanbanBoardMetadataV1,
   type StructuredColumnSizingState,
   type StructuredKanbanOrderState,
   type StructuredResourceViewMode,
   type StructuredSortDirection,
   type StructuredViewConfig,
   type StructuredWhiteboardPosition,
+  type StructuredWhiteboardSnapshotV1,
 } from '../domain/structured/structured-view-metadata'
 export type {
   StructuredColumnSizingState,
@@ -41,6 +45,11 @@ export type { StructuredWhiteboardVisualRelation } from '../domain/structured/st
 
 const STRUCTURED_WHITEBOARD_LAYOUT_STORAGE_KEY = 'linx.files.structuredWhiteboardLayouts.v1'
 const STRUCTURED_VIEW_CONFIG_STORAGE_KEY = 'linx.files.structuredViewConfigs.v1'
+const WHITEBOARD_DEFAULT_START = 40
+// Keep default cards separated; subject shapes are 288 x 160 before users resize them.
+const WHITEBOARD_DEFAULT_STEP_X = 320
+const WHITEBOARD_DEFAULT_STEP_Y = 192
+const WHITEBOARD_DEFAULT_COLUMNS = 3
 
 // ============================================================================
 // Types
@@ -70,6 +79,11 @@ export interface TreeNode {
 
 /** Detail pane tab (section 8.4) */
 export type FileDetailTab = 'preview' | 'metadata' | 'lineage'
+export type FilesSidecarAction = 'meta' | 'access'
+export interface FilesSidecarActionRequest {
+  uri: string
+  action: FilesSidecarAction
+}
 export type StructuredColumnSizingUpdater =
   | StructuredColumnSizingState
   | ((old: StructuredColumnSizingState) => StructuredColumnSizingState)
@@ -96,10 +110,12 @@ export interface StructuredScrollRestoration {
 
 export interface StructuredViewMetadataHydrationInput extends StructuredViewConfig {
   documentUri: string
+  kanbanBoard?: StructuredKanbanBoardMetadataV1 | null
   whiteboard: {
     selectedSubjects: string[]
     positions: Record<string, StructuredWhiteboardPosition>
     visualRelations?: StructuredWhiteboardVisualRelation[]
+    snapshot?: StructuredWhiteboardSnapshotV1 | null
   }
 }
 
@@ -115,7 +131,6 @@ interface FilesStore {
   // Tree navigation
   selectedTreeNodeId: string | null
   expandedTreeNodeIds: Set<string>
-  resourceRailCollapsed: boolean
   folderHistory: FolderHistoryEntry[]
 
   // File list
@@ -131,7 +146,11 @@ interface FilesStore {
   // Detail pane
   detailTab: FileDetailTab
   editableFileSheetOpenRequestUri: string | null
+  editableFileOpenRequestMode: 'inline' | 'modal'
+  sidecarActionRequest: FilesSidecarActionRequest | null
+  metaSidebarOpen: boolean
   structuredViewMode: StructuredResourceViewMode
+  structuredOpenViews: StructuredResourceViewMode[]
   structuredClassScope: string | null
   structuredSearchText: string
   structuredSortKey: string | null
@@ -145,13 +164,14 @@ interface FilesStore {
   structuredWhiteboardRelationsByDocument: Record<string, StructuredWhiteboardVisualRelation[]>
   structuredKanbanGroupPredicate: string | null
   structuredKanbanOrderByDocument: Record<string, StructuredKanbanOrderState>
+  structuredKanbanBoardByDocument: Record<string, StructuredKanbanBoardMetadataV1>
+  structuredWhiteboardSnapshotByDocument: Record<string, StructuredWhiteboardSnapshotV1>
   structuredSubjectReturnContext: StructuredSubjectReturnContext | null
   structuredScrollRestoration: StructuredScrollRestoration | null
 
   // Actions: tree
-  selectTreeNode: (id: string | null) => void
+  selectTreeNode: (id: string | null, detailResourceUri?: string | null) => void
   toggleTreeNode: (id: string) => void
-  toggleResourceRail: () => void
   enterFolder: (input: { treeNodeId: string; containerUri: string; scrollKey?: string | null }) => void
   goBackFolder: () => void
   clearFolderHistory: () => void
@@ -173,9 +193,14 @@ interface FilesStore {
 
   // Actions: detail
   setDetailTab: (tab: FileDetailTab) => void
+  setMetaSidebarOpen: (open: boolean) => void
   requestEditableFileSheetOpen: (uri: string) => void
+  requestEditableFileInlineEdit: (uri: string) => void
   consumeEditableFileSheetOpenRequest: (uri: string) => void
+  requestSidecarAction: (request: FilesSidecarActionRequest) => void
+  consumeSidecarActionRequest: (uri: string, action: FilesSidecarAction) => void
   setStructuredViewMode: (mode: StructuredResourceViewMode) => void
+  closeStructuredView: (mode: StructuredResourceViewMode) => void
   setStructuredClassScope: (className: string | null) => void
   setStructuredSearchText: (searchText: string) => void
   setStructuredSortKey: (sortKey: string) => void
@@ -192,6 +217,8 @@ interface FilesStore {
   clearStructuredWhiteboardSubjects: (documentUri: string) => void
   setStructuredKanbanGroupPredicate: (predicate: string | null) => void
   setStructuredKanbanColumnOrder: (documentUri: string, columnId: string, subjects: string[]) => void
+  setStructuredKanbanBoard: (documentUri: string, board: StructuredKanbanBoardMetadataV1) => void
+  setStructuredWhiteboardSnapshot: (documentUri: string, snapshot: StructuredWhiteboardSnapshotV1) => void
   returnToStructuredSubject: () => void
   clearStructuredScrollRestoration: () => void
 }
@@ -243,6 +270,7 @@ function structuredConfigFromState(state: FilesStore): StructuredViewConfig {
   const documentUri = state.selectedFileId ?? ''
   return {
     viewMode: state.structuredViewMode,
+    openViews: state.structuredOpenViews,
     classScope: state.structuredClassScope,
     searchText: state.structuredSearchText,
     sortKey: state.structuredSortKey,
@@ -275,11 +303,12 @@ function updateStructuredViewConfig(
 function structuredSelectionState(
   state: FilesStore,
   documentUri: string | null,
-): Pick<FilesStore, 'structuredViewMode' | 'structuredClassScope' | 'structuredSearchText' | 'structuredSortKey' | 'structuredSortDirection' | 'structuredHiddenPredicates' | 'structuredKanbanGroupPredicate'> {
+): Pick<FilesStore, 'structuredViewMode' | 'structuredOpenViews' | 'structuredClassScope' | 'structuredSearchText' | 'structuredSortKey' | 'structuredSortDirection' | 'structuredHiddenPredicates' | 'structuredKanbanGroupPredicate'> {
   const config = documentUri ? state.structuredViewConfigsByDocument[documentUri] : null
   const resolved = config ?? DEFAULT_STRUCTURED_VIEW_CONFIG
   return {
     structuredViewMode: resolved.viewMode,
+    structuredOpenViews: resolved.openViews,
     structuredClassScope: resolved.classScope,
     structuredSearchText: resolved.searchText,
     structuredSortKey: resolved.sortKey,
@@ -297,7 +326,6 @@ export const useFilesStore = create<FilesStore>((set) => ({
   // Tree navigation
   selectedTreeNodeId: 'all',
   expandedTreeNodeIds: new Set<string>(),
-  resourceRailCollapsed: false,
   folderHistory: [],
 
   // File list
@@ -313,7 +341,11 @@ export const useFilesStore = create<FilesStore>((set) => ({
   // Detail pane
   detailTab: 'preview',
   editableFileSheetOpenRequestUri: null,
+  editableFileOpenRequestMode: 'inline',
+  sidecarActionRequest: null,
+  metaSidebarOpen: false,
   structuredViewMode: 'table',
+  structuredOpenViews: [],
   structuredClassScope: null,
   structuredSearchText: '',
   structuredSortKey: null,
@@ -331,27 +363,37 @@ export const useFilesStore = create<FilesStore>((set) => ({
   structuredKanbanOrderByDocument: Object.fromEntries(
     Object.entries(readStructuredViewConfigsFromStorage()).map(([documentUri, config]) => [documentUri, config.kanbanOrder]),
   ),
+  structuredKanbanBoardByDocument: {},
+  structuredWhiteboardSnapshotByDocument: {},
   structuredSubjectReturnContext: null,
   structuredScrollRestoration: null,
 
   // Actions: tree
-  selectTreeNode: (id) =>
-    set({
-      selectedTreeNodeId: id,
-      selectedFileId: null,
-      selectedFileIds: new Set<string>(),
-      detailTab: 'preview',
-      editableFileSheetOpenRequestUri: null,
-      structuredViewMode: 'table',
-      structuredClassScope: null,
-      structuredSearchText: '',
-      structuredSortKey: null,
-      structuredSortDirection: 'asc',
-      structuredHiddenPredicates: new Set<string>(),
-      structuredKanbanGroupPredicate: null,
-      structuredSubjectReturnContext: null,
-      structuredScrollRestoration: null,
-      folderHistory: [],
+  selectTreeNode: (id, detailResourceUri) =>
+    set(() => {
+      const parsedNode = parseTreeNodeId(id)
+      const inferredDetailResourceUri = parsedNode?.kind === 'container' || parsedNode?.kind === 'workspace'
+        ? parsedNode.uri ?? null
+        : null
+
+      return {
+        selectedTreeNodeId: id,
+        selectedFileId: detailResourceUri ?? inferredDetailResourceUri,
+        selectedFileIds: new Set<string>(),
+        detailTab: 'preview',
+        editableFileSheetOpenRequestUri: null,
+        structuredViewMode: 'table',
+        structuredOpenViews: [],
+        structuredClassScope: null,
+        structuredSearchText: '',
+        structuredSortKey: null,
+        structuredSortDirection: 'asc',
+        structuredHiddenPredicates: new Set<string>(),
+        structuredKanbanGroupPredicate: null,
+        structuredSubjectReturnContext: null,
+        structuredScrollRestoration: null,
+        folderHistory: [],
+      }
     }),
   toggleTreeNode: (id) =>
     set((state) => {
@@ -360,8 +402,6 @@ export const useFilesStore = create<FilesStore>((set) => ({
       else next.add(id)
       return { expandedTreeNodeIds: next }
     }),
-  toggleResourceRail: () =>
-    set((state) => ({ resourceRailCollapsed: !state.resourceRailCollapsed })),
   enterFolder: ({ treeNodeId, containerUri, scrollKey = null }) =>
     set((state) => ({
       folderHistory: pushFolderHistory(state.folderHistory, {
@@ -452,6 +492,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
         ? state.editableFileSheetOpenRequestUri
         : null,
       structuredViewMode: viewMode,
+      structuredOpenViews: state.structuredViewConfigsByDocument[targetUri]?.openViews ?? [],
       structuredClassScope: classScope,
       structuredSearchText: searchText,
       structuredSortKey: sortKey,
@@ -489,16 +530,42 @@ export const useFilesStore = create<FilesStore>((set) => ({
 
   // Actions: detail
   setDetailTab: (detailTab) => set({ detailTab }),
-  requestEditableFileSheetOpen: (editableFileSheetOpenRequestUri) => set({ editableFileSheetOpenRequestUri }),
+  setMetaSidebarOpen: (metaSidebarOpen) => set({ metaSidebarOpen }),
+  requestEditableFileSheetOpen: (editableFileSheetOpenRequestUri) => set({ editableFileSheetOpenRequestUri, editableFileOpenRequestMode: 'modal' }),
+  requestEditableFileInlineEdit: (editableFileSheetOpenRequestUri) => set({ editableFileSheetOpenRequestUri, editableFileOpenRequestMode: 'inline' }),
   consumeEditableFileSheetOpenRequest: (uri) =>
     set((state) => state.editableFileSheetOpenRequestUri === uri
       ? { editableFileSheetOpenRequestUri: null }
       : {}),
+  requestSidecarAction: (sidecarActionRequest) => set({ sidecarActionRequest }),
+  consumeSidecarActionRequest: (uri, action) =>
+    set((state) => state.sidecarActionRequest?.uri === uri && state.sidecarActionRequest.action === action
+      ? { sidecarActionRequest: null }
+      : {}),
   setStructuredViewMode: (structuredViewMode) =>
-    set((state) => ({
-      structuredViewMode,
-      structuredViewConfigsByDocument: updateStructuredViewConfig(state, state.selectedFileId, { viewMode: structuredViewMode }),
-    })),
+    set((state) => {
+      const structuredOpenViews = structuredViewMode === 'table' || state.structuredOpenViews.includes(structuredViewMode)
+        ? state.structuredOpenViews
+        : [...state.structuredOpenViews, structuredViewMode]
+      return {
+        structuredViewMode,
+        structuredOpenViews,
+        structuredViewConfigsByDocument: updateStructuredViewConfig(state, state.selectedFileId, { viewMode: structuredViewMode, openViews: structuredOpenViews }),
+      }
+    }),
+  closeStructuredView: (mode) =>
+    set((state) => {
+      if (mode === 'table' || !state.structuredOpenViews.includes(mode)) return {}
+      const structuredOpenViews = state.structuredOpenViews.filter((openView) => openView !== mode)
+      const structuredViewMode = state.structuredViewMode === mode
+        ? structuredOpenViews[structuredOpenViews.length - 1] ?? 'table'
+        : state.structuredViewMode
+      return {
+        structuredViewMode,
+        structuredOpenViews,
+        structuredViewConfigsByDocument: updateStructuredViewConfig(state, state.selectedFileId, { viewMode: structuredViewMode, openViews: structuredOpenViews }),
+      }
+    }),
   setStructuredClassScope: (structuredClassScope) =>
     set((state) => ({
       structuredClassScope,
@@ -558,8 +625,10 @@ export const useFilesStore = create<FilesStore>((set) => ({
     }),
   hydrateStructuredViewMetadata: (metadata, whiteboardLayoutKey) =>
     set((state) => {
+      const openViews = normalizeStructuredOpenViews(metadata.openViews, metadata.viewMode)
       const nextConfig: StructuredViewConfig = {
         viewMode: metadata.viewMode,
+        openViews,
         classScope: metadata.classScope,
         searchText: metadata.searchText,
         sortKey: metadata.sortKey,
@@ -583,6 +652,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
         ...(state.selectedFileId === metadata.documentUri
           ? {
               structuredViewMode: metadata.viewMode,
+              structuredOpenViews: openViews,
               structuredClassScope: metadata.classScope,
               structuredSearchText: metadata.searchText,
               structuredSortKey: metadata.sortKey,
@@ -600,6 +670,12 @@ export const useFilesStore = create<FilesStore>((set) => ({
           ...state.structuredKanbanOrderByDocument,
           [metadata.documentUri]: metadata.kanbanOrder,
         },
+        structuredKanbanBoardByDocument: metadata.kanbanBoard
+          ? {
+              ...state.structuredKanbanBoardByDocument,
+              [metadata.documentUri]: metadata.kanbanBoard,
+            }
+          : state.structuredKanbanBoardByDocument,
         structuredWhiteboardSubjectsByDocument: {
           ...state.structuredWhiteboardSubjectsByDocument,
           [metadata.documentUri]: metadata.whiteboard.selectedSubjects,
@@ -609,6 +685,12 @@ export const useFilesStore = create<FilesStore>((set) => ({
           [metadata.documentUri]: metadata.whiteboard.visualRelations ?? [],
         },
         structuredWhiteboardLayoutsByDocument: nextLayouts,
+        structuredWhiteboardSnapshotByDocument: metadata.whiteboard.snapshot
+          ? {
+              ...state.structuredWhiteboardSnapshotByDocument,
+              [metadata.documentUri]: metadata.whiteboard.snapshot,
+            }
+          : state.structuredWhiteboardSnapshotByDocument,
       }
     }),
   markStructuredViewMetadataDirty: (documentUri) =>
@@ -644,15 +726,42 @@ export const useFilesStore = create<FilesStore>((set) => ({
         [documentUri]: relations.filter((relation) => relation.id && relation.from && relation.to),
       },
     })),
+  setStructuredWhiteboardSnapshot: (documentUri, snapshot) =>
+    set((state) => ({
+      structuredWhiteboardSnapshotByDocument: {
+        ...state.structuredWhiteboardSnapshotByDocument,
+        [documentUri]: snapshot,
+      },
+    })),
   addStructuredWhiteboardSubject: (documentUri, subject) =>
     set((state) => {
       const current = state.structuredWhiteboardSubjectsByDocument[documentUri] ?? []
       if (current.includes(subject)) return {}
+      const currentLayout = state.structuredWhiteboardLayoutsByDocument[documentUri] ?? {}
+      const nextLayout = currentLayout[subject]
+        ? currentLayout
+        : {
+            ...currentLayout,
+            [subject]: {
+              x: WHITEBOARD_DEFAULT_START + (current.length % WHITEBOARD_DEFAULT_COLUMNS) * WHITEBOARD_DEFAULT_STEP_X,
+              y: WHITEBOARD_DEFAULT_START + Math.floor(current.length / WHITEBOARD_DEFAULT_COLUMNS) * WHITEBOARD_DEFAULT_STEP_Y,
+            },
+          }
+      if (nextLayout !== currentLayout) writeStructuredWhiteboardLayoutsToStorage({
+        ...state.structuredWhiteboardLayoutsByDocument,
+        [documentUri]: nextLayout,
+      })
       return {
         structuredWhiteboardSubjectsByDocument: {
           ...state.structuredWhiteboardSubjectsByDocument,
           [documentUri]: [...current, subject],
         },
+        structuredWhiteboardLayoutsByDocument: nextLayout === currentLayout
+          ? state.structuredWhiteboardLayoutsByDocument
+          : {
+              ...state.structuredWhiteboardLayoutsByDocument,
+              [documentUri]: nextLayout,
+            },
       }
     }),
   removeStructuredWhiteboardSubject: (documentUri, subject) =>
@@ -705,6 +814,17 @@ export const useFilesStore = create<FilesStore>((set) => ({
         },
       }
     }),
+  setStructuredKanbanBoard: (documentUri, board) =>
+    set((state) => ({
+      structuredKanbanBoardByDocument: {
+        ...state.structuredKanbanBoardByDocument,
+        [documentUri]: board,
+      },
+      structuredKanbanOrderByDocument: {
+        ...state.structuredKanbanOrderByDocument,
+        [documentUri]: board.cardOrder,
+      },
+    })),
   returnToStructuredSubject: () =>
     set((state) => {
       const context = state.structuredSubjectReturnContext
@@ -713,6 +833,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
         selectedFileId: context.documentUri,
         detailTab: 'preview',
         structuredViewMode: context.viewMode,
+        structuredOpenViews: state.structuredViewConfigsByDocument[context.documentUri]?.openViews ?? [],
         structuredClassScope: context.classScope,
         structuredSearchText: context.searchText,
         structuredSortKey: context.sortKey,

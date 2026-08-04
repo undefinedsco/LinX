@@ -18,7 +18,7 @@ export interface FriendSearchState {
 const initialCreateForm: ContactCreationForm = {
   name: '',
   instructions: '',
-  model: 'openai/gpt-4o',
+  model: 'undefineds/linx-lite',
 }
 
 const initialFriendSearch: FriendSearchState = {

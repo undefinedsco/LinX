@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useLiveQuery } from '@tanstack/react-db'
 import {
   buildAIConfigMutationPlan,
@@ -7,7 +7,6 @@ import {
   sameAIConfigProviderFamily,
   selectAIConfigCredential,
 } from '@undefineds.co/models'
-import { useSolidDatabase } from '@/providers/solid-database-provider'
 import {
   credentialCollection,
   providerCollection,
@@ -59,16 +58,6 @@ async function compensatePersistedWrites(compensations: Array<() => Promise<void
 }
 
 export function useModelServices() {
-  const { db } = useSolidDatabase()
-
-  useEffect(() => {
-    if (!db) return
-
-    credentialCollection.startSyncImmediate()
-    providerCollection.startSyncImmediate()
-    modelCollection.startSyncImmediate()
-  }, [db])
-
   const credentialQuery = useLiveQuery((q) => q.from({ c: credentialCollection }))
   const providerQuery = useLiveQuery((q) => q.from({ p: providerCollection }))
   const modelQuery = useLiveQuery((q) => q.from({ m: modelCollection }))

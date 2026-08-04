@@ -27,7 +27,7 @@ const localOnboardingState = {
     provisionCode: null,
     provisionUrl: null,
     nodeId: null,
-    message: '首次使用时先确认本地空间的启动方式。服务准备好后，再继续登录。',
+    message: '首次使用时先确认本机空间的启动方式。服务准备好后，再继续登录。',
     errorCode: null,
     canRetry: false,
     canOpenSettings: true,
@@ -43,7 +43,7 @@ const localOnboardingState = {
   isDesktop: true,
 }
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {
@@ -96,7 +96,7 @@ describe('LocalOnboardingPage', () => {
       provisionCode: null,
       provisionUrl: null,
       nodeId: null,
-      message: '首次使用时先确认本地空间的启动方式。服务准备好后，再继续登录。',
+      message: '首次使用时先确认本机空间的启动方式。服务准备好后，再继续登录。',
       errorCode: null,
       canRetry: false,
       canOpenSettings: true,
@@ -106,7 +106,7 @@ describe('LocalOnboardingPage', () => {
   it('starts Local by default', async () => {
     render(<LocalOnboardingPage />)
 
-    expect(screen.getByText('正在启动本地空间…')).toBeTruthy()
+    expect(screen.getByText('正在启动本机空间…')).toBeTruthy()
     await waitFor(() => {
       expect(chooseSpaceMock).toHaveBeenCalledWith('local')
       expect(continueLocalMock).toHaveBeenCalledTimes(1)
@@ -120,7 +120,7 @@ describe('LocalOnboardingPage', () => {
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       capabilities: null,
-      message: '本地空间尚未运行。你可以先启动本地空间，或先配置启动参数。',
+      message: '本机空间尚未运行。你可以先启动本机空间，或先配置启动参数。',
       errorCode: null,
       canRetry: true,
       canOpenSettings: true,
@@ -128,7 +128,7 @@ describe('LocalOnboardingPage', () => {
 
     render(<LocalOnboardingPage />)
 
-    expect(screen.getByText('正在启动本地空间…')).toBeTruthy()
+    expect(screen.getByText('正在启动本机空间…')).toBeTruthy()
     await waitFor(() => {
       expect(continueLocalMock).toHaveBeenCalledTimes(1)
     })
@@ -156,7 +156,7 @@ describe('LocalOnboardingPage', () => {
 
     render(<LocalOnboardingPage />)
 
-    expect(screen.getByText('本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')).toBeTruthy()
+    expect(screen.getByText('本机空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本机空间设置修复。')).toBeTruthy()
     expect(screen.queryByText(/Cannot find module/)).toBeNull()
     expect(screen.queryByText(/Application Support/)).toBeNull()
     expect(screen.queryByText(/localhost:5737/)).toBeNull()
@@ -184,7 +184,7 @@ describe('LocalOnboardingPage', () => {
 
     render(<LocalOnboardingPage />)
 
-    expect(screen.getByText('本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')).toBeTruthy()
+    expect(screen.getByText('本机空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本机空间设置修复。')).toBeTruthy()
     expect(screen.queryByText(/Invalid resource IRI/)).toBeNull()
     expect(screen.queryByText(/Application Support/)).toBeNull()
     expect(screen.queryByText(/localhost:5737/)).toBeNull()
@@ -209,7 +209,7 @@ describe('LocalOnboardingPage', () => {
       provisionCode: null,
       provisionUrl: null,
       nodeId: null,
-      message: '本地空间已准备好，可以继续登录。',
+      message: '本机空间已准备好，可以继续登录。',
       errorCode: null,
       canRetry: true,
       canOpenSettings: true,
@@ -254,7 +254,7 @@ describe('LocalOnboardingPage', () => {
       provisionCode: 'pc-123',
       provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
       nodeId: 'node-123',
-      message: '本地空间已准备好，可以继续登录。',
+      message: '本机空间已准备好，可以继续登录。',
       errorCode: null,
       canRetry: true,
       canOpenSettings: true,
@@ -301,7 +301,7 @@ describe('LocalOnboardingPage', () => {
         provisionCode: null,
         provisionUrl: null,
         nodeId: null,
-        message: '本地空间已准备好，可以继续登录。',
+        message: '本机空间已准备好，可以继续登录。',
         errorCode: null,
         canRetry: true,
         canOpenSettings: true,
@@ -360,7 +360,7 @@ describe('LocalOnboardingPage', () => {
       provisionCode: 'pc-123',
       provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
       nodeId: 'node-123',
-      message: '本地空间已准备好，可以继续登录。',
+      message: '本机空间已准备好，可以继续登录。',
       errorCode: null,
       canRetry: true,
       canOpenSettings: true,
@@ -374,7 +374,7 @@ describe('LocalOnboardingPage', () => {
     expect(screen.getByLabelText('本机可以访问：是')).toBeTruthy()
     expect(screen.getByLabelText('公网可以访问：否')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /高级配置/ })).toBeNull()
-    expect(screen.queryByText('拿到本地空间域名')).toBeNull()
+    expect(screen.queryByText('拿到本机空间域名')).toBeNull()
     expect(screen.queryByText('配置 Cloudflare Tunnel')).toBeNull()
     expect(screen.queryByText('测试联通性')).toBeNull()
     expect(screen.queryByText('https://node-0000.undefineds.co/')).toBeNull()
@@ -405,7 +405,7 @@ describe('LocalOnboardingPage', () => {
       provisionCode: null,
       provisionUrl: null,
       nodeId: null,
-      message: '要让其他设备接入本地空间，首次启动前需要先准备固定公网地址。',
+      message: '要让其他设备接入本机空间，首次启动前需要先准备固定公网地址。',
       errorCode: 'LOCAL_REMOTE_READY_REQUIRES_SETUP',
       canRetry: true,
       canOpenSettings: true,
@@ -413,10 +413,10 @@ describe('LocalOnboardingPage', () => {
 
     render(<LocalOnboardingPage />)
 
-    expect(screen.getByText('还差一步让其他设备接入本地空间')).toBeTruthy()
+    expect(screen.getByText('还差一步让其他设备接入本机空间')).toBeTruthy()
     expect(screen.getByText('如果只想账号和数据都留在本机，请返回空间选择并选择独立空间。')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '去完成本地空间设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '去完成本机空间设置' }))
     expect(openAdvancedSettingsMock).toHaveBeenCalledTimes(1)
   })
 
@@ -433,7 +433,7 @@ describe('LocalOnboardingPage', () => {
       provisionCode: null,
       provisionUrl: null,
       nodeId: null,
-      message: '要让其他设备接入本地空间，首次启动前需要先准备固定公网地址。',
+      message: '要让其他设备接入本机空间，首次启动前需要先准备固定公网地址。',
       errorCode: 'LOCAL_REMOTE_READY_REQUIRES_SETUP',
       canRetry: true,
       canOpenSettings: true,
@@ -441,10 +441,10 @@ describe('LocalOnboardingPage', () => {
 
     render(<LocalOnboardingPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: '去完成本地空间设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '去完成本机空间设置' }))
 
     await waitFor(() => {
-      expect(screen.getByText('本地空间设置没有打开。请稍后重试。')).toBeTruthy()
+      expect(screen.getByText('本机空间设置没有打开。请稍后重试。')).toBeTruthy()
     })
     expect(screen.queryByText('xpod dashboard unavailable')).toBeNull()
   })
@@ -461,7 +461,7 @@ describe('LocalOnboardingPage', () => {
       provisionCode: null,
       provisionUrl: null,
       nodeId: null,
-      message: '要让其他设备接入本地空间，首次启动前需要先准备固定公网地址。',
+      message: '要让其他设备接入本机空间，首次启动前需要先准备固定公网地址。',
       errorCode: 'LOCAL_REMOTE_READY_REQUIRES_SETUP',
       canRetry: true,
       canOpenSettings: true,

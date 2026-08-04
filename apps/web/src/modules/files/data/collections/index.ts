@@ -10,9 +10,6 @@ import {
 import {
   createSourceIngestCacheCollections,
 } from '../cache/source-ingest-cache'
-import {
-  createStructuredViewMetadataCacheCollection,
-} from '../cache/structured-view-metadata-cache'
 import { fetchFilesInboxApprovals } from './inbox-approval-source'
 import { createProposalCollections } from './proposal-collections'
 import { createResourceCollection } from './resource-collection'
@@ -22,7 +19,6 @@ import {
 } from './resource-query-collection'
 import { FILES_COLLECTION_QUERY_KEYS, filesResourceQueryKeys } from './query-keys'
 import { createFilesDatabaseRuntime } from './runtime'
-import { createSidecarMutationCollection } from './sidecar-mutation-collection'
 import { createSidecarQueryCollection } from './sidecar-query-collection'
 import { createSourceIngestCollection } from './source-ingest-collection'
 import { createFilesSubscriptionCollection } from './subscription-collection'
@@ -59,10 +55,6 @@ export {
   type SourceIngestCreateCacheSnapshot,
   type SourceIngestRefreshCacheSnapshot,
 } from '../cache/source-ingest-cache'
-
-export {
-  type FilesStructuredViewMetadataCacheSnapshot,
-} from '../cache/structured-view-metadata-cache'
 
 const filesDatabaseRuntime = createFilesDatabaseRuntime()
 
@@ -117,13 +109,6 @@ const {
   sourceProposalQueryKey: (documentUri) => sourceUpdateProposalCollection.queryKey(documentUri),
 })
 
-const filesStructuredViewMetadataCacheCollection = createStructuredViewMetadataCacheCollection({
-  structuredViewMetadata: FILES_COLLECTION_QUERY_KEYS.structuredViewMetadata,
-  metaSidecar: FILES_COLLECTION_QUERY_KEYS.metaSidecar,
-})
-
-export { filesStructuredViewMetadataCacheCollection }
-
 const filesResourceCollection = createResourceCollection({
   getDb,
   confirmedEntryTransferOverlays,
@@ -151,12 +136,6 @@ const filesResourceMutationCollection = createResourceMutationCollection({
 })
 
 export { filesResourceMutationCollection }
-
-const filesSidecarMutationCollection = createSidecarMutationCollection({
-  filesStructuredViewMetadataCacheCollection,
-})
-
-export { filesSidecarMutationCollection }
 
 const {
   filesVocabDiscoveryCollection,

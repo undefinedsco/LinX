@@ -71,12 +71,12 @@ export function SetupView({
             </div>
             <div>
               <CardTitle>首次配置 LinX 服务</CardTitle>
-              <CardDescription>这里只保存配置，不会自动启动本地空间。</CardDescription>
+              <CardDescription>这里只保存配置，不会自动启动本机空间。</CardDescription>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary">保存到本机配置</Badge>
-            <Badge variant="outline">本地空间默认自动分配登录地址</Badge>
+            <Badge variant="outline">本机空间默认自动分配登录地址</Badge>
             <Badge variant="outline">外网访问可稍后配置</Badge>
           </div>
         </CardHeader>
@@ -110,7 +110,7 @@ export function SetupView({
               onValueChange={(value) => updateDraft({ spaceKind: value as ServiceSpaceKind })}
             >
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="local">本地空间</TabsTrigger>
+                <TabsTrigger value="local">本机空间</TabsTrigger>
                 <TabsTrigger value="standalone">独立空间</TabsTrigger>
               </TabsList>
             </Tabs>

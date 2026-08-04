@@ -10,6 +10,7 @@ export type FilesListSelectionProjection = {
 }
 
 export type FilesListBatchSelectionActions = {
+  cancelLabel: string
   copyLabel: string
   deleteLabel: string
 }
@@ -82,6 +83,7 @@ export function projectFilesListSelectionProjection({
 
   return {
     batchSelectionActions: {
+      cancelLabel: '取消选择',
       copyLabel: '复制所选 URI',
       deleteLabel: '删除所选项',
     },

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { VocabTermProposal } from '../../domain/structured/structured-table'
-import { projectStructuredResourceToolbarModel } from './structured-resource-toolbar-model'
+import {
+  projectStructuredResourceToolbarModel,
+  projectStructuredViewSaveIndicator,
+} from './structured-resource-toolbar-model'
 
 function vocabTermProposal(overrides: Partial<VocabTermProposal> = {}): VocabTermProposal {
   return {
@@ -27,6 +30,21 @@ function vocabTermProposal(overrides: Partial<VocabTermProposal> = {}): VocabTer
 }
 
 describe('projectStructuredResourceToolbarModel', () => {
+  it('projects compact durable view metadata save states', () => {
+    expect(projectStructuredViewSaveIndicator('synced', null)).toBeNull()
+    expect(projectStructuredViewSaveIndicator('saving', null)).toEqual({
+      ariaLabel: '正在同步视图配置',
+      kind: 'saving',
+      retryable: false,
+      title: '正在同步 .meta',
+    })
+    expect(projectStructuredViewSaveIndicator('error', 'network unavailable')).toEqual({
+      ariaLabel: '视图配置未同步，点击重试',
+      kind: 'error',
+      retryable: true,
+      title: 'network unavailable',
+    })
+  })
   it('projects toolbar filters, views, sort rows, class options, and pending class proposals outside the renderer', () => {
     const approvalProposal = vocabTermProposal({
       proposalResourceUri: 'https://pod.example/.data/proposals/accepted.ttl#proposal',
@@ -45,6 +63,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       classDefinitionOpen: true,
       classOptions: ['rdf:type', 'https://schema.org/Task'],
       hiddenPredicates: new Set(['https://schema.org/dateCreated']),
+      openViews: ['kanban'],
       pendingWritesOnly: false,
       predicateNamespaceFilter: 'https://schema.org/',
       predicateTypeFilter: 'relation',
@@ -75,8 +94,8 @@ describe('projectStructuredResourceToolbarModel', () => {
       warningRowsOnly: true,
     })).toEqual({
       activeViewTabRows: [
-        { value: 'table', label: 'Table', active: false },
-        { value: 'kanban', label: 'Kanban', active: true },
+        { value: 'table', label: 'Table', active: false, closable: false, closeLabel: '关闭 Table 视图' },
+        { value: 'kanban', label: 'Kanban', active: true, closable: true, closeLabel: '关闭 Kanban 视图' },
       ],
       availablePredicateNamespaces: ['https://schema.org/', 'https://undefineds.co/vocab/'],
       byline: {
@@ -123,9 +142,10 @@ describe('projectStructuredResourceToolbarModel', () => {
         label: '视图',
       },
       filterSectionLabels: {
-        namespace: '命名空间',
-        predicateType: 'predicate 类型',
-        vocabTerm: '词表定义',
+        subject: '行（subject）',
+        namespace: '列 · 命名空间',
+        predicateType: '列 · predicate 类型',
+        vocabTerm: '列 · 词表定义',
       },
       hasActiveFilters: true,
       filterTool: {
@@ -150,9 +170,9 @@ describe('projectStructuredResourceToolbarModel', () => {
         title: '命名空间',
       },
       namespaceFilterRows: [
-        { value: null, label: '全部命名空间' },
-        { value: 'https://schema.org/', label: 'https://schema.org/' },
-        { value: 'https://undefineds.co/vocab/', label: 'https://undefineds.co/vocab/' },
+        { value: null, label: '全部命名空间', checked: false },
+        { value: 'https://schema.org/', label: 'https://schema.org/', checked: true },
+        { value: 'https://undefineds.co/vocab/', label: 'https://undefineds.co/vocab/', checked: false },
       ],
       pendingClassProposals: [
         {
@@ -187,13 +207,13 @@ describe('projectStructuredResourceToolbarModel', () => {
         },
       ],
       predicateTypeFilterRows: [
-        { value: 'all', label: '全部类型' },
-        { value: 'enum', label: 'enum' },
-        { value: 'boolean', label: 'boolean' },
-        { value: 'number', label: 'number' },
-        { value: 'date', label: 'date' },
-        { value: 'relation', label: 'relation' },
-        { value: 'text', label: 'text' },
+        { value: 'all', label: '全部类型', checked: false },
+        { value: 'enum', label: 'enum', checked: false },
+        { value: 'boolean', label: 'boolean', checked: false },
+        { value: 'number', label: 'number', checked: false },
+        { value: 'date', label: 'date', checked: false },
+        { value: 'relation', label: 'relation', checked: true },
+        { value: 'text', label: 'text', checked: false },
       ],
       predicateVisibilityRows: [
         { label: 'dateCreated', predicate: 'https://schema.org/dateCreated', visible: false },
@@ -243,7 +263,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       showNamespaceSwitch: true,
       showPredicateVisibilityTool: true,
       predicateVisibilityTool: {
-        ariaLabel: '隐藏 predicate',
+        ariaLabel: '列显示',
       },
       showSortTool: true,
       sortTool: {
@@ -254,9 +274,9 @@ describe('projectStructuredResourceToolbarModel', () => {
       },
       sortToolLabel: 'dateCreated 降序',
       vocabTermFilterRows: [
-        { value: 'all', label: '全部词表定义' },
-        { value: 'defined', label: '已定义 predicate' },
-        { value: 'observed', label: '仅观察到 predicate' },
+        { value: 'all', label: '全部词表定义', checked: false },
+        { value: 'defined', label: '已定义 predicate', checked: true },
+        { value: 'observed', label: '仅观察到 predicate', checked: false },
       ],
     })
   })
@@ -268,6 +288,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       classDefinitionOpen: false,
       classOptions: [],
       hiddenPredicates: new Set(),
+      openViews: [],
       pendingWritesOnly: false,
       predicateNamespaceFilter: null,
       predicateTypeFilter: 'all',
@@ -328,7 +349,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       toggleLabel: '定义',
     })
     expect(model.pendingClassProposals).toEqual([])
-    expect(model.activeViewTabRows).toEqual([{ value: 'table', label: 'Table', active: true }])
+    expect(model.activeViewTabRows).toEqual([{ value: 'table', label: 'Table', active: true, closable: false, closeLabel: '关闭 Table 视图' }])
     expect(model.extraViewOptionRows).toEqual([
       { value: 'kanban', label: 'Kanban' },
       { value: 'whiteboard', label: 'Whiteboard' },
@@ -339,9 +360,10 @@ describe('projectStructuredResourceToolbarModel', () => {
       label: '视图',
     })
     expect(model.filterSectionLabels).toEqual({
-      namespace: '命名空间',
-      predicateType: 'predicate 类型',
-      vocabTerm: '词表定义',
+      subject: '行（subject）',
+      namespace: '列 · 命名空间',
+      predicateType: '列 · predicate 类型',
+      vocabTerm: '列 · 词表定义',
     })
     expect(model.filterTool).toEqual({
       ariaLabel: '筛选',
@@ -361,7 +383,7 @@ describe('projectStructuredResourceToolbarModel', () => {
     })
     expect(model.showPredicateVisibilityTool).toBe(false)
     expect(model.predicateVisibilityTool).toEqual({
-      ariaLabel: '隐藏 predicate',
+      ariaLabel: '列显示',
     })
     expect(model.showSortTool).toBe(false)
     expect(model.sortTool).toEqual({
@@ -372,7 +394,7 @@ describe('projectStructuredResourceToolbarModel', () => {
     })
     expect(model.sortToolLabel).toBe('排序')
     expect(model.namespaceFilterRows).toEqual([
-      { value: null, label: '全部命名空间' },
+      { value: null, label: '全部命名空间', checked: true },
     ])
   })
 })

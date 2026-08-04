@@ -1,5 +1,4 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import ts from 'typescript'
 import { expect } from 'vitest'
 
 export function readModuleSource(filePath: string): string {
@@ -39,22 +38,27 @@ export function expectNoForbiddenImports(rootPath: string, forbidden: RegExp[]):
   }
 }
 
+function sourceWithoutComments(source: string): string {
+  return source
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('//'))
+    .join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
 export function expectExportOnlyFacade(filePath: string): void {
   const source = readModuleSource(filePath)
-  const sourceFile = ts.createSourceFile(
-    filePath,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-  )
-  const invalidStatements = sourceFile.statements.filter(
-    (statement) => !ts.isExportDeclaration(statement) && !ts.isExportAssignment(statement),
-  )
+  const invalidSource = sourceWithoutComments(source)
+    .replace(
+      /export(?:\s+type)?\s+(?:(?:\*\s+from)|(?:\{[\s\S]*?\}\s+from))\s+['"][^'"]+['"];?|export\s+\{\s*\};?|export\s+default\s+[^;]+;?/g,
+      '',
+    )
+    .trim()
+
   expect(
-    invalidStatements.map((statement) => ts.SyntaxKind[statement.kind]),
+    invalidSource,
     `${filePath} must contain export declarations only`,
-  ).toEqual([])
+  ).toBe('')
 }
 
 export const domainForbiddenImports = [

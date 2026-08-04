@@ -40,9 +40,13 @@ const actionIcons = {
 export function FilesAddMenu({
   containerUri,
   entries,
+  open,
+  onOpenChange,
 }: {
   containerUri: string | null
   entries: FilesEntry[]
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const addMenu = useFilesAddMenuController({ containerUri, entries })
 
@@ -71,7 +75,7 @@ export function FilesAddMenu({
         multiple
         onChange={(event) => void addMenu.folderUpload.uploadPickedFolder(event)}
       />
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"

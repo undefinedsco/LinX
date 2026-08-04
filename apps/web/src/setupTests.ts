@@ -36,6 +36,16 @@ function createTestClientRectList(): DOMRectList {
 }
 
 if (typeof window !== 'undefined') {
+  if (!window.CSS) {
+    Object.defineProperty(window, 'CSS', {
+      configurable: true,
+      value: {},
+    })
+  }
+  if (typeof window.CSS.supports !== 'function') {
+    window.CSS.supports = vi.fn(() => false)
+  }
+
   const getClientRects = () => createTestClientRectList()
   const getBoundingClientRect = () => createTestClientRect()
 

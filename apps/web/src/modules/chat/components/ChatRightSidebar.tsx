@@ -9,7 +9,7 @@
  */
 
 import { useState, useMemo, type FC } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { 
   User, 
   MessageCircle, 
@@ -50,7 +50,7 @@ interface RoleSettingsCardProps {
 }
 
 const RoleSettingsCard: FC<RoleSettingsCardProps> = ({ systemPrompt, onEdit }) => {
-  const [isOpen, setIsOpen] = useState(true)
+  const [isOpen, setIsOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingPrompt, setEditingPrompt] = useState(systemPrompt)
 
@@ -157,7 +157,7 @@ const ThreadListCard: FC<ThreadListCardProps> = ({
   onStarThread,
   onCreateThread,
 }) => {
-  const [isOpen, setIsOpen] = useState(true)
+  const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
 
   // 排序并过滤
@@ -339,6 +339,12 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
     }))
   }, [rawThreads])
 
+  // 当前 Thread 工作现场（基准 page-mindset-ascii：右栏展示当前 Thread，而非仅话题列表导航）
+  const currentThread = useMemo(
+    () => threads.find((thread) => thread.id === selectedThreadId) ?? null,
+    [threads, selectedThreadId],
+  )
+
   // 处理编辑系统提示词 - 更新 Agent.instructions
   const handleEditSystemPrompt = async (newPrompt: string) => {
     if (!agentId) {
@@ -398,14 +404,39 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
 
   return (
     <div className="h-full flex flex-col bg-card/50">
-      {/* Header - WeChat Style Height (64px) */}
-      <div className="h-16 px-4 flex items-center border-b border-border/50 shrink-0">
-        <h3 className="text-sm font-medium">设置</h3>
+      {/* Header - 48px shell boundary; 标题反映当前对象，而非“设置”页 */}
+      <div className="h-12 px-4 flex items-center border-b border-border/50 shrink-0">
+        <h3 className="text-sm font-medium truncate">{contact?.name || agent?.name || '工作现场'}</h3>
       </div>
 
       {/* Content */}
       <ScrollArea className="flex-1 p-3">
         <div className="space-y-3">
+          {/* 工作现场：当前对象 + 当前话题（基准：右栏是工作现场，不是说明书/配置页） */}
+          <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-2">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">工作现场</p>
+            {contact || agent ? (
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-bold text-primary">
+                  {(contact?.name || agent?.name || '?').slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{contact?.name || agent?.name}</p>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {contact && isAgentContact(contact) ? 'Agent' : '联系人'}
+                    {agent?.provider ? ` · ${agent.provider}` : ''}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            {currentThread ? (
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="shrink-0 text-muted-foreground/70">当前话题</span>
+                <span className="truncate text-foreground/80" title={currentThread.title}>{currentThread.title}</span>
+              </div>
+            ) : null}
+          </div>
+
           {/* 角色设定 */}
           <RoleSettingsCard
             systemPrompt={(agent?.instructions as string) || ''}

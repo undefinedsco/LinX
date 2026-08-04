@@ -1,4 +1,8 @@
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import type { FilesDetail } from '../../domain/resource/resource-model'
+import { createStructuredCellWriteProposal } from '../../domain/structured/structured-table'
 import { StructuredKanbanView } from './StructuredKanbanView'
 import {
   StructuredProjectionWarningsAlert,
@@ -21,11 +25,15 @@ import { useStructuredSubjectNavigationController } from './useStructuredSubject
 import { useStructuredVocabProposalWorkflowController } from './useStructuredVocabProposalWorkflowController'
 import { useStructuredViewportController } from './useStructuredViewportController'
 import { useStructuredViewStateController } from './useStructuredViewStateController'
+import { planStructuredSubjectCreation } from './structured-subject-creation-model'
+import { projectStructuredRelationPredicateOptions } from './structured-projection-filter-model'
 
 export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
+  const [classScopeMenuOpen, setClassScopeMenuOpen] = useState(false)
   const {
     currentPodRootUri,
     projection,
+    structuredSourceLoading,
     structuredSourceUnavailable,
     structuredWritesSupported,
     vocabDefinitionIndex,
@@ -36,13 +44,18 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     addWhiteboardSubjectFromUi,
     classScope,
     clearWhiteboardSubjectsFromUi,
+    closeStructuredViewFromUi,
     columnSizing,
     effectiveClassScope,
     hiddenPredicates,
+    kanbanBoard,
     kanbanGroupPredicate,
     kanbanOrder,
+    openViews,
     removeWhiteboardSubjectFromUi,
+    retryViewMetadataSave,
     setKanbanColumnOrderFromUi,
+    setKanbanBoardFromUi,
     setKanbanGroupPredicateFromUi,
     setStructuredClassScopeFromUi,
     setStructuredColumnSizingFromUi,
@@ -52,14 +65,18 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     setStructuredViewModeFromUi,
     setWhiteboardNodePositionFromUi,
     setWhiteboardVisualRelationsFromUi,
+    setWhiteboardSnapshotFromUi,
     structuredSearchText,
     structuredSortDirection,
     structuredSortKey,
     togglePredicateVisibilityFromUi,
     viewMode,
+    viewMetadataSaveError,
+    viewMetadataSaveStatus,
     whiteboardPositions,
     whiteboardSubjects,
     whiteboardVisualRelations,
+    whiteboardSnapshot,
   } = useStructuredViewStateController({
     file,
     projection,
@@ -187,6 +204,67 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     hiddenPredicates,
     kanbanGroupPredicate,
   })
+  const whiteboardRelationPredicateOptions = projectStructuredRelationPredicateOptions(
+    effectiveViewProjection,
+    vocabDefinitionIndex,
+  )
+  const createKanbanSubject = async ({
+    columnId,
+    columnValue,
+    subject,
+  }: {
+    columnId: string
+    columnValue: string | null
+    subject: string
+  }) => {
+    const plan = planStructuredSubjectCreation({
+      classScope: scopedProjection.className,
+      existingSubjects: effectiveViewProjection.rows.map((row) => row.subject),
+      pendingSubjects: [...allPendingWriteSubjects],
+      subjectDraft: subject,
+    })
+    if (plan.kind !== 'create') return false
+
+    const created = await commitViewCellWriteProposal(createStructuredCellWriteProposal({
+      documentUri: file.uri,
+      subject: plan.subject,
+      predicate: plan.typePredicate,
+      previousValues: [],
+      nextValues: plan.typeValues,
+    }))
+    if (created === false) return false
+
+    if (kanbanGroupPredicate && columnId !== 'ungrouped' && columnValue) {
+      return commitViewCellWriteProposal(createStructuredCellWriteProposal({
+        documentUri: file.uri,
+        subject: plan.subject,
+        predicate: kanbanGroupPredicate,
+        previousValues: [],
+        nextValues: [columnValue],
+      }))
+    }
+    return true
+  }
+  const createWhiteboardSubject = async (subject: string) => {
+    const plan = planStructuredSubjectCreation({
+      classScope: scopedProjection.className,
+      existingSubjects: effectiveViewProjection.rows.map((row) => row.subject),
+      pendingSubjects: [...allPendingWriteSubjects],
+      subjectDraft: subject,
+    })
+    if (plan.kind !== 'create') return false
+
+    const created = await commitViewCellWriteProposal(createStructuredCellWriteProposal({
+      documentUri: file.uri,
+      subject: plan.subject,
+      predicate: plan.typePredicate,
+      previousValues: [],
+      nextValues: plan.typeValues,
+    }))
+    if (created === false) return false
+    addWhiteboardSubjectFromUi(plan.subject)
+    return true
+  }
 
   return (
     <div className="relative min-h-full w-full min-w-0 max-w-full overflow-hidden p-2 space-y-2">
@@ -215,8 +293,12 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           onApprovePendingClassProposal={approvePendingClassProposal}
           onDiscardPendingClassProposal={discardPendingClassProposal}
           onOpenClassProposal={openClassProposal}
+          classScopeMenuOpen={classScopeMenuOpen}
+          onClassScopeMenuOpenChange={setClassScopeMenuOpen}
           viewMode={viewMode}
           onViewModeChange={setStructuredViewModeFromUi}
+          openViews={openViews}
+          onCloseView={closeStructuredViewFromUi}
           searchText={structuredSearchText}
           onSearchTextChange={setStructuredSearchTextFromUi}
           warningRowsOnly={warningRowsOnly}
@@ -240,11 +322,48 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           onShowNamespacesChange={setShowNamespaces}
           hiddenPredicates={hiddenPredicates}
           onTogglePredicateVisibility={togglePredicateVisibilityFromUi}
+          viewMetadataSaveStatus={viewMetadataSaveStatus}
+          viewMetadataSaveError={viewMetadataSaveError}
+          onRetryViewMetadataSave={retryViewMetadataSave}
         />
         {structuredSourceUnavailable ? <StructuredSourceUnavailableAlert /> : null}
         <StructuredShapeWarningsAlert warnings={shapeWarnings} />
         <div className="mt-2">
-          {viewMode === 'table' && (
+          {structuredSourceLoading && viewMode === 'table' ? (
+            <StructuredTableLoadingSkeleton />
+          ) : viewMode === 'table' && projection.rows.length === 0 && !scopedProjection.className ? (
+            <FilesEmptyState
+              title="这个文档还没有数据"
+              description="文档中还没有任何 subject。先创建一个 class，再为该 class 添加 subject。"
+              action={(
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setClassScopeMenuOpen(true)}
+                >
+                  创建 class
+                </Button>
+              )}
+            />
+          ) : viewMode === 'table' && !scopedProjection.className ? (
+            <FilesEmptyState
+              title="尚未选择 class"
+              description="先选择或创建一个 class，再查看该 class 的 subject 和 predicate。"
+              action={(
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setClassScopeMenuOpen(true)}
+                >
+                  选择或创建 class
+                </Button>
+              )}
+            />
+          ) : viewMode === 'table' ? (
             <StructuredProjectionTable
               documentUri={file.uri}
               projection={tableProjection}
@@ -275,16 +394,23 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               targetVocabUri={vocabTermsUri}
               targetShapesUri={vocabShapesUri}
             />
-          )}
+          ) : null}
           {viewMode === 'kanban' && (
             <StructuredKanbanView
               documentUri={file.uri}
               projection={effectiveViewProjection}
               groupPredicate={kanbanGroupPredicate}
               kanbanOrder={kanbanOrder}
+              laneOrder={kanbanBoard.laneOrder}
+              initialCollapsedLaneIds={kanbanBoard.collapsedLaneIds}
+              initialScrollLeft={kanbanBoard.scrollLeft}
               onGroupPredicateChange={setKanbanGroupPredicateFromUi}
               onColumnOrderChange={setKanbanColumnOrderFromUi}
+              onLaneOrderChange={(laneOrder) => setKanbanBoardFromUi({ ...kanbanBoard, laneOrder })}
+              onCollapsedLaneIdsChange={(collapsedLaneIds) => setKanbanBoardFromUi({ ...kanbanBoard, collapsedLaneIds })}
+              onHorizontalScrollLeftChange={(scrollLeft) => setKanbanBoardFromUi({ ...kanbanBoard, scrollLeft })}
               onCommitCellWriteProposal={structuredWritesSupported ? commitViewCellWriteProposal : undefined}
+              onCreateSubject={structuredWritesSupported ? createKanbanSubject : undefined}
               onOpenSubject={subjectNavigation.openAlternativeViewSubject}
             />
           )}
@@ -295,12 +421,17 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               projection={effectiveViewProjection}
               selectedSubjects={whiteboardSubjects}
               visualRelations={whiteboardVisualRelations}
+              snapshot={whiteboardSnapshot}
+              relationPredicateOptions={whiteboardRelationPredicateOptions}
               onAddSubject={addWhiteboardSubjectFromUi}
+              onCreateSubject={structuredWritesSupported ? createWhiteboardSubject : undefined}
               onRemoveSubject={removeWhiteboardSubjectFromUi}
               onClearSubjects={clearWhiteboardSubjectsFromUi}
               onNodePositionChange={setWhiteboardNodePositionFromUi}
               onVisualRelationsChange={setWhiteboardVisualRelationsFromUi}
+              onSnapshotChange={setWhiteboardSnapshotFromUi}
               onOpenSubject={subjectNavigation.openAlternativeViewSubject}
+              onCommitCellWriteProposal={structuredWritesSupported ? commitViewCellWriteProposal : undefined}
             />
           )}
           {viewMode === 'raw' && (
@@ -323,6 +454,25 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           onOpenSubjectResource={subjectNavigation.openPeekedSubjectResource}
         />
       </StructuredSubjectPeekDrawer>
+    </div>
+  )
+}
+
+function StructuredTableLoadingSkeleton() {
+  return (
+    <div aria-label="结构化表加载中" className="overflow-hidden rounded-md border border-border/30">
+      <div className="grid grid-cols-[minmax(120px,1fr)_repeat(3,minmax(110px,1fr))] border-b border-border/30 bg-muted/20 px-3 py-2">
+        {[0, 1, 2, 3].map((cell) => (
+          <span key={cell} className="h-3 w-16 animate-pulse rounded bg-muted" />
+        ))}
+      </div>
+      {[0, 1, 2, 3].map((row) => (
+        <div key={row} className="grid grid-cols-[minmax(120px,1fr)_repeat(3,minmax(110px,1fr))] gap-3 border-b border-border/20 px-3 py-3 last:border-0">
+          {[0, 1, 2, 3].map((cell) => (
+            <span key={cell} className="h-3 animate-pulse rounded bg-muted/70" style={{ width: `${48 + ((row + cell) % 3) * 18}%` }} />
+          ))}
+        </div>
+      ))}
     </div>
   )
 }

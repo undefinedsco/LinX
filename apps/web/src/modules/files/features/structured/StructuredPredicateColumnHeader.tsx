@@ -31,6 +31,7 @@ export function StructuredPredicateColumnHeader({
   onOpenVocabTermProposal,
   predicate,
   proposal,
+  showNamespaces = false,
   sortIcon,
   onSort,
 }: {
@@ -45,6 +46,7 @@ export function StructuredPredicateColumnHeader({
   onOpenVocabTermProposal?: (proposal: VocabTermProposal) => void
   predicate: string
   proposal?: StructuredPredicateColumnProposal
+  showNamespaces?: boolean
   sortIcon: ReactNode
   onSort?: () => void
 }) {
@@ -54,6 +56,7 @@ export function StructuredPredicateColumnHeader({
     observedValues,
     predicate,
     proposal,
+    showNamespaces,
   })
 
   if (header.kind === 'pending') {

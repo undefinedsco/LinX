@@ -70,61 +70,22 @@ vi.mock('@/modules/inbox/collections', () => ({
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
 }))
 
-vi.mock('../ui/RichTextFileEditor', () => ({
-  RichTextFileEditor: ({
-    content,
-    onSaveText,
-    onSubmitProposal,
-    editable = false,
-    proposalLabel = 'AI 修改审批',
-  }: {
-    content: { text?: string | null }
-    onSaveText?: (content: string) => void
-    onSubmitProposal?: (content: string, documentSummary: { title: string | null; links: string[] }) => void
-    editable?: boolean
-    proposalLabel?: string
-  }) => {
-    const visibleText = (content.text ?? '')
-      .split('\n')
-      .filter((line) => !/^\s*<!--\s*\/?linx-source-(?:block|conflict)\b[^>]*-->\s*$/.test(line))
-      .join('\n')
-      .trim()
-    const heading = visibleText.match(/^#\s+(.+)$/m)?.[1] ?? null
-    const body = visibleText
-      .replace(/^#\s+.+$/m, '')
-      .trim()
-
-    return (
-      <div data-testid="rich-text-file-editor">
-        {heading ? <h1>{heading}</h1> : null}
-        {body ? <p>{body}</p> : null}
-        {editable ? (
-          <>
-            <button type="button" onClick={() => onSaveText?.('# Project note\n\n- first\n- second')}>
-              保存富文本 Markdown
-            </button>
-            <button
-              type="button"
-              onClick={() => onSubmitProposal?.('# AI candidate\n\n- serialized rich draft', {
-                title: 'AI candidate',
-                links: ['https://source.example/report.pdf'],
-              })}
-            >
-              提交富文本 {proposalLabel}
-            </button>
-            <span>{onSaveText ? 'rich-save-enabled' : 'rich-save-disabled'}</span>
-          </>
-        ) : null}
-      </div>
-    )
-  },
-}))
 
 const { FileDetailPane } = await import('./FileDetailPane')
 
 function switchEditorToRawSource(scope: typeof screen | ReturnType<typeof within> = screen) {
   fireEvent.pointerDown(scope.getByRole('button', { name: '更多文件操作' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '源码' }))
+}
+
+function setRichDraft(scope: typeof screen | ReturnType<typeof within>, content: string) {
+  const editor = scope.getByTestId('rich-text-file-editor').querySelector('.ProseMirror') as HTMLElement
+  fireEvent.paste(editor, { clipboardData: { getData: (type: string) => (type === 'text/plain' ? content : '') } })
+}
+
+function editRichText(scope: typeof screen | ReturnType<typeof within>, content: string) {
+  setRichDraft(scope, content)
+  fireEvent.blur(scope.getByTestId('rich-text-file-editor').querySelector('.ProseMirror') as HTMLElement)
 }
 
 function mockFileDetail(mimeType = 'text/markdown') {
@@ -389,8 +350,8 @@ describe('FileDetailPane rich text save wiring', () => {
   it('saves serialized markdown from the rich editor through the raw resource mutation', () => {
     render(<FileDetailPane />)
 
-    expect(screen.getByText('rich-save-enabled')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '保存富文本 Markdown' }))
+    expect(screen.getByTestId('rich-text-file-editor')).toBeInTheDocument()
+    editRichText(screen, '# Project note\n\n- first\n- second')
 
     expect(mockMutateRaw).toHaveBeenCalledWith({
       resource: expect.objectContaining({
@@ -439,7 +400,8 @@ describe('FileDetailPane rich text save wiring', () => {
   it('submits a dirty rich text draft as an AI change proposal without saving canonical content', async () => {
     render(<FileDetailPane />)
 
-    fireEvent.click(screen.getByRole('button', { name: '提交富文本 AI 修改审批' }))
+    setRichDraft(screen, '# AI candidate\n\n- serialized rich draft')
+    fireEvent.click(screen.getByRole('button', { name: '提交 AI 修改审批' }))
 
     await vi.waitFor(() => expect(mockMutateAiChange).toHaveBeenCalledTimes(1))
     expect(mockMutateAiChange).toHaveBeenCalledWith(expect.objectContaining({
@@ -463,19 +425,16 @@ describe('FileDetailPane rich text save wiring', () => {
     expect(screen.getByRole('heading', { name: 'Quarterly report' })).toBeInTheDocument()
     expect(screen.getByText(/Ingest draft body/)).toBeInTheDocument()
     expect(screen.queryByText(/Ingest staged body/)).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '编辑正文' }))
     const editorDialog = screen.getByRole('dialog', { name: 'Quarterly report' })
     expect(editorDialog).toBeInTheDocument()
     expect(within(editorDialog).getByTestId('rich-text-file-editor')).toBeInTheDocument()
-    expect(screen.getByText('rich-save-disabled')).toBeInTheDocument()
     expect(screen.getAllByText('Source').length).toBeGreaterThan(0)
     expect(screen.getAllByText('https://source.example/report.pdf').length).toBeGreaterThan(0)
-    const metaTails = screen.getAllByLabelText('文件 meta')
-    expect(metaTails).toHaveLength(1)
-    expect(within(editorDialog).getByLabelText('文件 meta')).toBeInTheDocument()
+    expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '提交富文本 Ingest 审批' }))
+    setRichDraft(within(editorDialog), '# AI candidate\n\n[report](https://source.example/report.pdf)')
+    fireEvent.click(within(editorDialog).getByRole('button', { name: '提交 Ingest 审批' }))
 
     await vi.waitFor(() => expect(mockMutateSourceUpdate).toHaveBeenCalledTimes(1))
     expect(mockMutateSourceUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -488,7 +447,7 @@ describe('FileDetailPane rich text save wiring', () => {
       ingestVersion: 'pdf-parser-v1',
       sourceHash: 'sha256-report',
       operation: 'replace-blocks',
-      proposedContent: '# AI candidate\n\n- serialized rich draft',
+      proposedContent: '# AI candidate\n\n[report](https://source.example/report.pdf)',
       summary: '审阅 Quarterly report 的本地编辑。',
       diff: '本地富文本草稿与 https://source.example/report.pdf 不一致。',
       cardMetadata: {
@@ -546,7 +505,8 @@ describe('FileDetailPane rich text save wiring', () => {
     expect(within(editorDialog).getByTestId('rich-text-file-editor')).toBeInTheDocument()
     expect(screen.queryByText('完整内容暂时不可用，不能进入编辑。')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '提交富文本 Ingest 审批' }))
+    setRichDraft(within(editorDialog), '# AI candidate\n\n- serialized rich draft')
+    fireEvent.click(within(editorDialog).getByRole('button', { name: '提交 Ingest 审批' }))
 
     await vi.waitFor(() => expect(mockMutateSourceUpdate).toHaveBeenCalledTimes(1))
     expect(mockMutateSourceUpdate).toHaveBeenCalledWith(expect.objectContaining({

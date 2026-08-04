@@ -8,13 +8,16 @@ const configureChatContactsPortMock = vi.fn()
 const configureContactsChatPortMock = vi.fn()
 const initializeContactCollectionsMock = vi.fn()
 const initializeFavoriteCollectionsMock = vi.fn()
+const subscribeFavoritesToPodMock = vi.fn()
 const initializeFilesCollectionsMock = vi.fn()
 const subscribeFilesToPodMock = vi.fn()
 const initializeInboxCollectionsMock = vi.fn()
+const subscribeInboxToPodMock = vi.fn()
 const initializeModelCollectionsMock = vi.fn()
 const initializeSymphonyControlCollectionsMock = vi.fn()
 const subscribeSymphonyControlToPodMock = vi.fn()
 const ensureLinxWelcomeMock = vi.fn()
+const stageLinxDefaultSecretaryMock = vi.fn()
 const subscribeToPodMock = vi.fn()
 const invalidateQueriesMock = vi.fn()
 const toastMock = vi.fn()
@@ -39,6 +42,7 @@ vi.mock('@/modules/chat/collections', () => ({
   },
   chatOps: {
     ensureLinxWelcome: (...args: unknown[]) => ensureLinxWelcomeMock(...args),
+    stageLinxDefaultSecretary: (...args: unknown[]) => stageLinxDefaultSecretaryMock(...args),
     subscribeToPod: (...args: unknown[]) => subscribeToPodMock(...args),
   },
 }))
@@ -78,6 +82,9 @@ vi.mock('@/modules/chat/matrix-service', () => ({
 
 vi.mock('@/modules/favorites/collections', () => ({
   initializeFavoriteCollections: (...args: unknown[]) => initializeFavoriteCollectionsMock(...args),
+  favoriteOps: {
+    subscribeToPod: (...args: unknown[]) => subscribeFavoritesToPodMock(...args),
+  },
 }))
 
 vi.mock('@/modules/files/collections', () => ({
@@ -89,6 +96,9 @@ vi.mock('@/modules/files/collections', () => ({
 
 vi.mock('@/modules/inbox/collections', () => ({
   initializeInboxCollections: (...args: unknown[]) => initializeInboxCollectionsMock(...args),
+  inboxOps: {
+    subscribeToPod: (...args: unknown[]) => subscribeInboxToPodMock(...args),
+  },
 }))
 
 vi.mock('@/modules/model-services/data/collections', () => ({
@@ -108,7 +118,9 @@ describe('PodCollectionsBootstrap', () => {
     useSolidDatabaseMock.mockReturnValue({ db: null })
     ensureLinxWelcomeMock.mockResolvedValue(null)
     subscribeToPodMock.mockResolvedValue(() => undefined)
+    subscribeFavoritesToPodMock.mockResolvedValue(() => undefined)
     subscribeFilesToPodMock.mockResolvedValue(() => undefined)
+    subscribeInboxToPodMock.mockResolvedValue(() => undefined)
     subscribeSymphonyControlToPodMock.mockResolvedValue(() => undefined)
     invalidateQueriesMock.mockResolvedValue(undefined)
     chatStoreState = {
@@ -145,7 +157,9 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(null)
     expect(ensureLinxWelcomeMock).not.toHaveBeenCalled()
     expect(subscribeToPodMock).not.toHaveBeenCalled()
+    expect(subscribeFavoritesToPodMock).not.toHaveBeenCalled()
     expect(subscribeFilesToPodMock).not.toHaveBeenCalled()
+    expect(subscribeInboxToPodMock).not.toHaveBeenCalled()
     expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
   })
 
@@ -196,11 +210,15 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(db)
-    expect(subscribeToPodMock).toHaveBeenCalledTimes(1)
-    expect(subscribeFilesToPodMock).toHaveBeenCalledTimes(1)
-    expect(subscribeSymphonyControlToPodMock).toHaveBeenCalledTimes(1)
+    expect(subscribeToPodMock).not.toHaveBeenCalled()
+    expect(subscribeFavoritesToPodMock).not.toHaveBeenCalled()
+    expect(subscribeFilesToPodMock).not.toHaveBeenCalled()
+    expect(subscribeInboxToPodMock).not.toHaveBeenCalled()
+    expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })
+    expect(stageLinxDefaultSecretaryMock).toHaveBeenCalledTimes(1)
+    expect(stageLinxDefaultSecretaryMock).toHaveBeenCalledWith(db)
     expect(selectChatMock).toHaveBeenCalledWith('__secretary__/index.ttl#this')
     expect(selectThreadMock).not.toHaveBeenCalled()
     expect(screen.queryByText('正在准备默认助手')).toBeNull()
@@ -253,9 +271,7 @@ describe('PodCollectionsBootstrap', () => {
     expect(screen.queryByText('默认助手准备失败')).toBeNull()
     expect(screen.queryByText('Pod write failed')).toBeNull()
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
-    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
-      variant: 'destructive',
-    }))
+    expect(toastMock).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 
@@ -342,11 +358,8 @@ describe('PodCollectionsBootstrap', () => {
 
     render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
 
-    await waitFor(() => {
-      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
-        variant: 'destructive',
-      }))
-    })
+    await waitFor(() => expect(warnSpy).toHaveBeenCalled())
+    expect(toastMock).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(localAuthKey)).toBe('local-token')
     expect(window.sessionStorage.getItem(sessionAuthKey)).toBe('session-token')
 

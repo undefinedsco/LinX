@@ -1,3 +1,20 @@
+const DESKTOP_AUTH_REDIRECT_STORAGE_KEY = 'linx-desktop-auth-redirect-url'
+
+export function rememberDesktopAuthRedirectUrl(url: string) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(DESKTOP_AUTH_REDIRECT_STORAGE_KEY, url)
+}
+
+export function getRememberedDesktopAuthRedirectUrl(): string | null {
+  if (typeof window === 'undefined') return null
+  return window.sessionStorage.getItem(DESKTOP_AUTH_REDIRECT_STORAGE_KEY)
+}
+
+export function clearRememberedDesktopAuthRedirectUrl() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(DESKTOP_AUTH_REDIRECT_STORAGE_KEY)
+}
+
 export function normalizeDesktopAuthRedirectUrl(url: string): string {
   if (typeof window === 'undefined') return url
 

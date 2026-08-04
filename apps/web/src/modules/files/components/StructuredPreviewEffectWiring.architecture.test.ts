@@ -23,8 +23,7 @@ describe('Structured preview effect wiring architecture boundary', () => {
     expect(viewStateControllerSource).not.toMatch(/\btoast:/)
     expect(viewStateControllerSource).not.toMatch(/\btoast,\n/)
 
-    expect(viewMetadataControllerSource).toContain("@/components/ui/use-toast")
-    expect(viewMetadataControllerSource).toContain('const { toast } = useToast()')
+    expect(viewMetadataControllerSource).not.toContain("@/components/ui/use-toast")
     expect(vocabWorkflowControllerSource).toContain("@/components/ui/use-toast")
     expect(vocabWorkflowControllerSource).toContain('const { toast } = useToast()')
     expect(cellWorkflowControllerSource).toContain("@/components/ui/use-toast")

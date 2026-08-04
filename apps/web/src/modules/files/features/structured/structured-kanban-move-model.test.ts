@@ -100,6 +100,23 @@ describe('structured-kanban-move-model', () => {
     expect(projectStructuredKanbanPendingMoveView(undefined)).toBeUndefined()
   })
 
+  it('projects a pending cross-column move before its hovered target card', () => {
+    const model = projectStructuredKanbanMoveModel({
+      sourceColumns: [todoColumn, doneColumn],
+      pendingMoves: {
+        '#a': {
+          columnId: 'done',
+          columnLabel: 'Done',
+          overSubject: '#c',
+          predicate: 'https://schema.org/status',
+          status: 'pending',
+        },
+      },
+    })
+
+    expect(model.displayColumns[1]?.cards.map((card) => card.subject)).toEqual(['#a', '#c'])
+  })
+
   it('projects pending move staging, approval staging, and discard transitions', () => {
     const staged = projectStructuredStagedKanbanPendingMoves({
       current: {},

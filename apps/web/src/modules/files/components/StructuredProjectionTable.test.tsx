@@ -92,7 +92,7 @@ describe('StructuredProjectionTable', () => {
       />,
     )
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'https://pod.example/public/report.md' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'report.md' }), { key: 'Enter' })
 
     expect(onOpenSubjectResource).toHaveBeenCalledWith(
       'https://pod.example/public/report.md',
@@ -130,7 +130,7 @@ describe('StructuredProjectionTable', () => {
       />,
     )
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'https://source.example/report.pdf' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'report.pdf' }), { key: 'Enter' })
 
     expect(onOpenSubjectResource).toHaveBeenCalledWith(
       'https://source.example/report.pdf',
@@ -190,7 +190,7 @@ describe('StructuredProjectionTable', () => {
       />,
     )
 
-    const titleCell = screen.getByRole('cell', { name: '"Alpha"' })
+    const titleCell = screen.getByRole('cell', { name: 'Alpha' })
 
     expect(titleCell).toHaveClass('border-b')
     expect(titleCell).toHaveClass('border-border/5')

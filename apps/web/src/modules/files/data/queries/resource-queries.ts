@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useMemo } from 'react'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { parseLocalWorkspaceUri } from '@/lib/data/workspace-uri'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import {
@@ -18,11 +18,13 @@ import {
   createContainerNodeId,
   parseTreeNodeId,
 } from '../../domain/resource/tree-model'
+import { normalizeContainerUri } from '../../domain/resource/resource-semantics'
 import type { FilesEntryScope } from '../../domain/list/entry-scope'
 import {
   filesResourceMutationCollection,
   filesResourceQueryCollection,
 } from '../collections'
+import { projectContainerEntriesToTreeNodes } from '../pod-adapter'
 import {
   useActiveFilesWorkspaceContext,
   useFilesChatMessages,
@@ -43,12 +45,16 @@ export function useFilesRootNodes() {
 export function useContainerChildTreeNodes(parentNode: FilesTreeNode | null) {
   const { db } = useSolidDatabase()
   const rootQuery = useFilesRootNodes()
+  const containerUri = parentNode?.uri && parentNode.type !== 'local-workspace'
+    ? normalizeContainerUri(parentNode.uri)
+    : null
 
-  return useQuery<FilesTreeNode[]>(filesResourceQueryCollection.children({
-    parentNode,
-    podRootUri: rootQuery.data?.podRootUri ?? null,
-    db,
-  }))
+  return useQuery({
+    ...filesResourceQueryCollection.containerEntries({ containerUri, db }),
+    select: (entries) => parentNode
+      ? projectContainerEntriesToTreeNodes(entries, parentNode.id, rootQuery.data?.podRootUri ?? null)
+      : [],
+  })
 }
 
 export function resolveSelectedFilesNode(
@@ -98,17 +104,104 @@ export function useFilesEntries(selectedTreeNodeId: string | null, entryScope: F
       .join('|')
   }, [entryScope, messageQuery.data])
 
-  return useQuery<FilesEntry[]>(filesResourceQueryCollection.entries({
-    entryScope,
-    selectedTreeNodeId: selectedTreeNodeId ?? ALL_FILES_NODE_ID,
-    selection,
-    workspaceUri,
-    threadId,
-    chatPodRootUri,
-    chatFileFingerprint,
-    messages: messageQuery.data ?? [],
+  const isContainerProjection = entryScope !== 'chat-files'
+    && selection.kind === 'container'
+    && !!selection.containerUri
+  const queryOptions = isContainerProjection
+    ? filesResourceQueryCollection.containerEntries({
+        containerUri: normalizeContainerUri(selection.containerUri!),
+        db,
+      })
+    : filesResourceQueryCollection.entries({
+        entryScope,
+        selectedTreeNodeId: selectedTreeNodeId ?? ALL_FILES_NODE_ID,
+        selection,
+        workspaceUri,
+        threadId,
+        chatPodRootUri,
+        chatFileFingerprint,
+        messages: messageQuery.data ?? [],
+        db,
+      })
+  const rootEntries = entryScope === 'all' && selection.kind === 'all'
+    ? rootQuery.data?.entries
+    : undefined
+
+  return useQuery<FilesEntry[]>({
+    ...queryOptions,
+    initialData: rootEntries,
+    initialDataUpdatedAt: rootEntries ? Date.now() : undefined,
+    select: isContainerProjection && selection.containerUri === workspaceUri
+      ? (entries) => entries.map((entry) => ({ ...entry, sourceLabel: '当前话题' }))
+      : undefined,
+  })
+}
+
+export function useFilesTreeSearchEntries(enabled: boolean) {
+  const { db } = useSolidDatabase()
+  const { workspaceUri } = useActiveFilesWorkspaceContext()
+  return useQuery<FilesEntry[]>(filesResourceQueryCollection.treeSearchEntries({ workspaceUri, enabled, db }))
+}
+
+export function useFilesContainerEntries(containerUri: string | null, enabled = true) {
+  const { db } = useSolidDatabase()
+  const queryOptions = filesResourceQueryCollection.containerEntries({
+    containerUri: containerUri ?? undefined,
     db,
-  }))
+  })
+  return useQuery<FilesEntry[]>({
+    ...queryOptions,
+    enabled: queryOptions.enabled && enabled,
+  })
+}
+
+export function useFilesExpandedContainerEntries({
+  expandedContainerUris,
+}: {
+  entryScope: FilesEntryScope
+  expandedContainerUris: readonly string[]
+}) {
+  const { db } = useSolidDatabase()
+
+  const childQueries = useQueries({
+    queries: expandedContainerUris.map((containerUri) => {
+      const normalizedContainerUri = normalizeContainerUri(containerUri)
+      return filesResourceQueryCollection.containerEntries({ containerUri: normalizedContainerUri, db })
+    }),
+  })
+
+  const childEntriesByContainerUri = useMemo(
+    () => Object.fromEntries(expandedContainerUris.map((containerUri, index) => [
+      normalizeContainerUri(containerUri),
+      childQueries[index]?.data ?? [],
+    ])),
+    [childQueries, expandedContainerUris],
+  )
+  const loadingContainerUris = useMemo<Set<string>>(
+    () => new Set(expandedContainerUris
+      .filter((_, index) => childQueries[index]?.isLoading)
+      .map(normalizeContainerUri)),
+    [childQueries, expandedContainerUris],
+  )
+  const errorByContainerUri = useMemo(
+    () => Object.fromEntries(expandedContainerUris
+      .map((containerUri, index) => [normalizeContainerUri(containerUri), childQueries[index]?.error] as const)
+      .filter(([, error]) => error)),
+    [childQueries, expandedContainerUris],
+  )
+  const retryContainer = useCallback((containerUri: string) => {
+    const normalizedContainerUri = normalizeContainerUri(containerUri)
+    const index = expandedContainerUris.findIndex((uri) => normalizeContainerUri(uri) === normalizedContainerUri)
+    if (index < 0) return
+    void childQueries[index]?.refetch()
+  }, [childQueries, expandedContainerUris])
+
+  return {
+    childEntriesByContainerUri,
+    loadingContainerUris,
+    errorByContainerUri,
+    retryContainer,
+  }
 }
 
 export function useSelectedFilesLocation(selectedTreeNodeId: string | null) {
@@ -118,8 +211,23 @@ export function useSelectedFilesLocation(selectedTreeNodeId: string | null) {
 
 export function useFileDetail(fileUri: string | null) {
   const { db } = useSolidDatabase()
+  const normalizedContainerUri = fileUri?.endsWith('/') ? normalizeContainerUri(fileUri) : null
+  const detailQuery = useQuery<FilesDetail>(filesResourceQueryCollection.detail({ fileUri, db }))
+  const containerEntriesQuery = useQuery(filesResourceQueryCollection.containerEntries({
+    containerUri: normalizedContainerUri,
+    db,
+  }))
 
-  return useQuery<FilesDetail>(filesResourceQueryCollection.detail({ fileUri, db }))
+  return useMemo(() => ({
+    ...detailQuery,
+    data: detailQuery.data && normalizedContainerUri
+      ? { ...detailQuery.data, childEntries: containerEntriesQuery.data ?? [] }
+      : detailQuery.data,
+    error: detailQuery.error ?? containerEntriesQuery.error,
+    isError: detailQuery.isError || containerEntriesQuery.isError,
+    isFetching: detailQuery.isFetching || containerEntriesQuery.isFetching,
+    isLoading: detailQuery.isLoading || containerEntriesQuery.isLoading,
+  }), [containerEntriesQuery, detailQuery, normalizedContainerUri])
 }
 
 export function useRawTextResource(fileUri: string | null, enabled = true) {

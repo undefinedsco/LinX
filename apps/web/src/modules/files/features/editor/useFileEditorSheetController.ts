@@ -9,7 +9,6 @@ import {
   useCreateAiChangeProposal,
   useCreateSourceUpdateProposal,
   useFilesCurrentPodRootUri,
-  useFilesMetaSidecar,
   useRawTextResource,
   useSaveRawTextResource,
 } from '../../data/queries'
@@ -17,11 +16,9 @@ import { createAiChangeProposal } from '../../domain/proposal/ai-change-approval
 import { FilesSaveConflictError, type FilesDetail } from '../../domain/resource/resource-model'
 import { createSourceUpdateProposal, type SourceUpdateCardMetadata } from '../../domain/source/source-approval-model'
 import {
-  createFileEditorMetaTailId,
   createFileEditorSheetState,
   type FileEditorContentViewMode,
   getFileEditorMarkdownNoteTitle,
-  projectFileEditorBylineItems,
   projectFileEditorCapabilities,
   projectFileEditorRawSourceResource,
   projectFileEditorRichContentState,
@@ -36,7 +33,6 @@ import {
   type FileEditorSourceLinkedDescriptor,
 } from './file-editor-sheet-model'
 import { projectFileEditorRawSourceState } from './file-editor-raw-source-model'
-import { projectResourceMetaSidecarContent } from '../sidecars/resource-meta-sidecar-content-model'
 
 export type { FileEditorSourceLinkedDescriptor } from './file-editor-sheet-model'
 
@@ -59,14 +55,6 @@ export function useFileEditorSheetController({
   const createAiProposal = useCreateAiChangeProposal()
   const createSourceProposal = useCreateSourceUpdateProposal()
   const rawQuery = useRawTextResource(file.uri, open)
-  const metaQuery = useFilesMetaSidecar(file, open)
-  const metaContent = projectResourceMetaSidecarContent({
-    file,
-    isLoading: metaQuery.isLoading,
-    error: metaQuery.error,
-    meta: metaQuery.data,
-  })
-  const metaTailId = useMemo(() => createFileEditorMetaTailId(file.uri), [file.uri])
   const filesRouteBridge = useFilesRouteBridge()
   const structuredSubjectReturnContext = useFilesStore((state) => state.structuredSubjectReturnContext)
   const returnToStructuredSubject = useFilesStore((state) => state.returnToStructuredSubject)
@@ -134,15 +122,6 @@ export function useFileEditorSheetController({
     mimeType: sourceLinkedDescriptor ? 'text/markdown' : rawResource?.mimeType ?? file.mimeType,
     previewText: sourceLinkedDescriptor ? sourceLinkedDraft : file.previewText,
     sourceText: richTextSourceInput.sourceText,
-  })
-  const bylineItems = projectFileEditorBylineItems({
-    file,
-    rawLoading: rawQuery.isLoading,
-    hasRawResource: !!rawResource,
-    metaLoading: metaContent.status === 'loading',
-    metaState: metaContent.metaState ?? undefined,
-    isSourceLinkedEditor,
-    canSaveRichText,
   })
   const sheetChrome = projectFileEditorSheetChrome({
     file,
@@ -253,12 +232,8 @@ export function useFileEditorSheetController({
   ])
 
   return {
-    metaContent,
-    metaTailId,
     rawSourceEditorState,
     richContentState,
-    noteTitle: sheetState.noteTitle,
-    bylineItems,
     sheetChrome,
     richEditorContent,
     richEditorWarning: richTextSourceInput.warning,

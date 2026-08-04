@@ -1,10 +1,10 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { StructuredCellWriteProposal, StructuredTableProjection } from '../../domain/structured/structured-table'
 import type { StructuredCardProjection, StructuredKanbanColumn } from '../../domain/structured/structured-projections'
 import {
   projectStructuredApprovalStagedKanbanPendingMoves,
-  projectStructuredDiscardedKanbanPendingMoves,
+  projectStructuredFailedKanbanPendingMoves,
   projectStructuredKanbanColumnSubjectReorder,
   projectStructuredKanbanMoveModel,
   projectStructuredKanbanPendingMoveView,
@@ -45,6 +45,21 @@ export function useStructuredKanbanMoveController({
     [pendingMoves],
   )
 
+  useEffect(() => {
+    setPendingMoves((current) => {
+      let changed = false
+      const next = { ...current }
+      for (const [subject, move] of Object.entries(current)) {
+        if (move.status !== 'approval-staged') continue
+        const targetColumn = sourceColumns.find((column) => column.id === move.columnId)
+        if (!targetColumn?.cards.some((card) => card.subject === subject)) continue
+        delete next[subject]
+        changed = true
+      }
+      return changed ? next : current
+    })
+  }, [sourceColumns])
+
   const commitKanbanMove = useCallback(async (
     card: StructuredCardProjection,
     targetColumn: StructuredKanbanMoveTarget,
@@ -58,23 +73,44 @@ export function useStructuredKanbanMoveController({
       subject: card.subject,
       targetColumn,
     }))
-    const saved = await onCommitCellWriteProposal(createCellWriteProposal({
-      subject: card.subject,
-      predicate,
-      nextValues: targetColumn.value ? [targetColumn.value] : [],
-    }))
-    if (saved === false) {
-      setPendingMoves((current) => projectStructuredDiscardedKanbanPendingMoves({
+    try {
+      const saved = await onCommitCellWriteProposal(createCellWriteProposal({
+        subject: card.subject,
+        predicate,
+        nextValues: targetColumn.value ? [targetColumn.value] : [],
+      }))
+      if (saved === false) {
+        setPendingMoves((current) => projectStructuredFailedKanbanPendingMoves({
+          current,
+          subject: card.subject,
+        }))
+        return false
+      }
+      setPendingMoves((current) => projectStructuredApprovalStagedKanbanPendingMoves({
         current,
         subject: card.subject,
       }))
-      return
+      return true
+    } catch {
+      setPendingMoves((current) => projectStructuredFailedKanbanPendingMoves({
+        current,
+        subject: card.subject,
+      }))
+      return false
     }
-    setPendingMoves((current) => projectStructuredApprovalStagedKanbanPendingMoves({
-      current,
-      subject: card.subject,
-    }))
   }, [createCellWriteProposal, groupPredicate, onCommitCellWriteProposal])
+
+  const retryKanbanMove = useCallback(async (subject: string) => {
+    const failedMove = pendingMoves[subject]
+    if (failedMove?.status !== 'error') return false
+    const card = sourceColumns.flatMap((column) => column.cards).find((candidate) => candidate.subject === subject)
+    const targetColumn = sourceColumns.find((column) => column.id === failedMove.columnId)
+    if (!card || !targetColumn) return false
+    return commitKanbanMove(card, {
+      ...targetColumn,
+      ...(failedMove.overSubject ? { overSubject: failedMove.overSubject } : {}),
+    })
+  }, [commitKanbanMove, pendingMoves, sourceColumns])
 
   const reorderColumnSubjects = useCallback((columnId: string, subject: string, overSubject: string) => {
     const nextSubjects = projectStructuredKanbanColumnSubjectReorder({
@@ -94,6 +130,7 @@ export function useStructuredKanbanMoveController({
     displayColumns,
     pendingMoveForSubject,
     pendingMoveViewForSubject,
+    retryKanbanMove,
     reorderColumnSubjects,
   }
 }

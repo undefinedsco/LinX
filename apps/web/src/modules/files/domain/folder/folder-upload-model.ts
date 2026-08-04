@@ -103,7 +103,11 @@ export function projectFolderUploadBatchPlan({
     }
 
     const resourcePlan = projectFolderUploadResourcePlan({
-      uploadedFile: { ...uploadedFile, name: fileName },
+      uploadedFile: {
+        name: fileName,
+        type: uploadedFile.type,
+        webkitRelativePath: uploadedFile.webkitRelativePath,
+      },
       containerUri: parentUri,
     })
     if (!resourcePlan) return

@@ -65,6 +65,9 @@ export function FilesBrowser({
 }) {
   const [expanded, setExpanded] = useState<Set<FilesFolderId>>(() => {
     const initial = new Set<FilesFolderId>(['files'])
+    if (selection === 'structuredVocab' || selection === 'structuredVocabShapes' || selection === 'structuredVocabNamespaces') {
+      initial.add('vocab')
+    }
     let cursor: FilesFolderId | undefined = folder
     const chain: FilesFolderId[] = []
     while (cursor) {
@@ -152,6 +155,7 @@ export function FilesBrowser({
     setMenuFor(null)
     setFocusId(row.id)
     anchorRef.current = row.id
+    onMobileClose?.()
     if (row.isFolder) {
       const target = row.child?.targetFolder ?? row.folderId
       if (!expanded.has(target)) toggleExpand(target)

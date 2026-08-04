@@ -3,7 +3,7 @@ import dotenv from 'dotenv'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomInt } from 'node:crypto'
 import { createWriteStream, existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -60,6 +60,13 @@ interface LocalSeedConfig {
   podName: string
 }
 
+export interface SharedXpodRuntimeConfig {
+  baseUrl: string
+  webId: string
+  podUrl: string
+  accessToken: string
+}
+
 interface AccountPayload {
   controls?: {
     account?: {
@@ -78,6 +85,20 @@ export interface XpodIntegrationContext<TSchema extends Record<string, unknown>>
   webId: string
   podUrl: string
   apiKey?: string
+  authenticatedFetch: typeof fetch
+  requestMetrics: Array<{
+    startedAtMs: number
+    durationMs: number
+    method: string
+    url: string
+  }>
+  setupMetrics: {
+    totalMs: number
+    runtimeStartMs: number
+    authenticationMs: number
+    databaseInitMs: number
+  }
+  sharedRuntimeConfig?: SharedXpodRuntimeConfig
   stop: () => Promise<void>
 }
 
@@ -91,8 +112,26 @@ const LOCAL_RUNTIME_PORT_MIN = 30_000
 const LOCAL_RUNTIME_PORT_RANGE = 20_000
 const LOCAL_RUNTIME_PORT_BLOCK = 10
 const LOCAL_RUNTIME_START_RETRIES = 6
-const LOCAL_RUNTIME_READY_TIMEOUT_MS = 20_000
+const LOCAL_RUNTIME_READY_TIMEOUT_MS = readPositiveTimeout(
+  process.env.XPOD_TEST_RUNTIME_READY_TIMEOUT_MS,
+  60_000,
+)
 const LOCAL_RUNTIME_STOP_TIMEOUT_MS = 2_000
+
+function readPositiveTimeout(value: string | undefined, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function isPerfLoggingEnabled(): boolean {
+  return process.env.XPOD_TEST_PERF === '1' || process.env.XPOD_TEST_PERF === 'true'
+}
+
+function logPerf(label: string, metrics: Record<string, unknown>): void {
+  if (isPerfLoggingEnabled()) {
+    console.info(`[xpod-perf] ${label}`, metrics)
+  }
+}
 
 function readJson<T>(filePath: string): T | null {
   try {
@@ -100,6 +139,11 @@ function readJson<T>(filePath: string): T | null {
   } catch {
     return null
   }
+}
+
+function readSharedRuntimeConfig(): SharedXpodRuntimeConfig | null {
+  const configPath = process.env.XPOD_TEST_SHARED_CONTEXT_PATH
+  return configPath ? readJson<SharedXpodRuntimeConfig>(configPath) : null
 }
 
 function getRequestedMode(): RequestedMode {
@@ -193,7 +237,13 @@ async function waitForLocalRuntimeReady(options: {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
 
-  throw new Error('Timed out waiting for local xpod runtime to become ready')
+  const errorText = existsSync(options.errorPath)
+    ? readFileSync(options.errorPath, 'utf-8').trim()
+    : ''
+  throw new Error([
+    `Timed out after ${options.timeoutMs}ms waiting for local xpod runtime to become ready`,
+    errorText ? formatLocalRuntimeStartupError(errorText) : null,
+  ].filter(Boolean).join('\n'))
 }
 
 async function stopLocalRuntimeProcess(child: ChildProcess): Promise<void> {
@@ -749,6 +799,8 @@ async function createAuthenticatedContext<TSchema extends Record<string, unknown
   config: ExternalAuthConfig,
   options: XpodIntegrationOptions<TSchema>,
 ): Promise<XpodIntegrationContext<TSchema>> {
+  const setupStartedAt = performance.now()
+  const authenticationStartedAt = performance.now()
   const session = new Session()
   await session.login({
     clientId: config.clientId,
@@ -760,6 +812,7 @@ async function createAuthenticatedContext<TSchema extends Record<string, unknown
   if (!session.info.isLoggedIn) {
     throw new Error(`Failed to authenticate against xpod (${config.source})`)
   }
+  const authenticationMs = performance.now() - authenticationStartedAt
 
   const webId = session.info.webId ?? config.webId
   const podUrl = config.podUrl ?? resolvePodUrlFromWebId(webId, config.url)
@@ -769,7 +822,16 @@ async function createAuthenticatedContext<TSchema extends Record<string, unknown
     schema: options.schema,
   })
 
+  const databaseInitStartedAt = performance.now()
   await initializeIntegrationDatabase(db, options)
+  const databaseInitMs = performance.now() - databaseInitStartedAt
+  const setupMetrics = {
+    totalMs: performance.now() - setupStartedAt,
+    runtimeStartMs: 0,
+    authenticationMs,
+    databaseInitMs,
+  }
+  logPerf('external setup', setupMetrics)
 
   return {
     mode: 'external-auth',
@@ -778,6 +840,9 @@ async function createAuthenticatedContext<TSchema extends Record<string, unknown
     webId,
     podUrl,
     apiKey: buildApiKey(config.clientId, config.clientSecret),
+    authenticatedFetch: session.fetch.bind(session),
+    requestMetrics: [],
+    setupMetrics,
     stop: async () => {
       await db.disconnect().catch(() => undefined)
       await session.logout()
@@ -788,13 +853,19 @@ async function createAuthenticatedContext<TSchema extends Record<string, unknown
 async function createLocalSeededContext<TSchema extends Record<string, unknown>>(
   options: XpodIntegrationOptions<TSchema>,
 ): Promise<XpodIntegrationContext<TSchema>> {
-  const runtimeRoot = await mkdtemp(join(tmpdir(), 'linx-xpod-runtime-'))
+  const setupStartedAt = performance.now()
+  // startXpodRuntime recreates its runtime root. Keep the seed file in the
+  // parent test directory so the CSS seed initializer can still read it.
+  const testRoot = await mkdtemp(join(tmpdir(), 'linx-xpod-runtime-'))
+  const runtimeRoot = join(testRoot, 'runtime')
+  await mkdir(runtimeRoot, { recursive: true })
   let runtime: { child: ChildProcess; baseUrl: string } | null = null
 
   try {
-    const seed = await prepareLocalSeedConfig(runtimeRoot)
+    const seed = await prepareLocalSeedConfig(testRoot)
     let lastStartError: unknown
 
+    const runtimeStartStartedAt = performance.now()
     for (let attempt = 0; attempt < LOCAL_RUNTIME_START_RETRIES; attempt += 1) {
       const ports = pickLocalRuntimePorts()
 
@@ -815,6 +886,7 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
         }
       }
     }
+    const runtimeStartMs = performance.now() - runtimeStartStartedAt
 
     if (!runtime) {
       throw lastStartError instanceof Error ? lastStartError : new Error('Failed to start local xpod runtime')
@@ -828,6 +900,7 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
       return fetch(input, init)
     }
 
+    const authenticationStartedAt = performance.now()
     const accountToken = await loginSeedAccount(fetchFn, activeRuntime.baseUrl, seed.email, seed.password)
     const accountPayload = await getAccountPayload(fetchFn, activeRuntime.baseUrl, accountToken)
     const { webId, podUrl } = await ensureSeedPod(fetchFn, {
@@ -853,7 +926,9 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
       clientId: credentials.clientId,
       clientSecret: credentials.clientSecret,
     })
+    const authenticationMs = performance.now() - authenticationStartedAt
 
+    const requestMetrics: XpodIntegrationContext<TSchema>['requestMetrics'] = []
     const session: SolidAuthSession = {
       info: {
         isLoggedIn: true,
@@ -863,10 +938,20 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
       fetch: async (input, init) => {
         const headers = closeConnectionHeaders(init?.headers)
         headers.set('Authorization', `Bearer ${accessToken}`)
-        return fetchFn(input, {
-          ...init,
-          headers,
-        })
+        const startedAt = performance.now()
+        try {
+          return await fetchFn(input, {
+            ...init,
+            headers,
+          })
+        } finally {
+          requestMetrics.push({
+            startedAtMs: startedAt,
+            durationMs: performance.now() - startedAt,
+            method: init?.method ?? 'GET',
+            url: typeof input === 'string' || input instanceof URL ? String(input) : input.url,
+          })
+        }
       },
     }
 
@@ -876,7 +961,16 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
       schema: options.schema,
     })
 
+    const databaseInitStartedAt = performance.now()
     await initializeIntegrationDatabase(db, options)
+    const databaseInitMs = performance.now() - databaseInitStartedAt
+    const setupMetrics = {
+      totalMs: performance.now() - setupStartedAt,
+      runtimeStartMs,
+      authenticationMs,
+      databaseInitMs,
+    }
+    logPerf('local setup', setupMetrics)
 
     return {
       mode: 'local-seeded-auth',
@@ -885,26 +979,122 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
       webId,
       podUrl,
       apiKey: buildApiKey(credentials.clientId, credentials.clientSecret),
+      authenticatedFetch: session.fetch,
+      requestMetrics,
+      setupMetrics,
+      sharedRuntimeConfig: {
+        baseUrl: runtime.baseUrl,
+        webId,
+        podUrl,
+        accessToken,
+      },
       stop: async () => {
+        logPerf('local requests', summarizeRequests(requestMetrics))
         await db.disconnect().catch(() => undefined)
         if (runtime) {
           await stopLocalRuntimeProcess(runtime.child).catch(() => undefined)
         }
-        await rm(runtimeRoot, { recursive: true, force: true })
+        await rm(testRoot, { recursive: true, force: true })
       },
     }
   } catch (error) {
     if (runtime) {
       await stopLocalRuntimeProcess(runtime.child).catch(() => undefined)
     }
-    await rm(runtimeRoot, { recursive: true, force: true }).catch(() => undefined)
+    await rm(testRoot, { recursive: true, force: true }).catch(() => undefined)
     throw error
+  }
+}
+
+async function createSharedLocalContext<TSchema extends Record<string, unknown>>(
+  config: SharedXpodRuntimeConfig,
+  options: XpodIntegrationOptions<TSchema>,
+): Promise<XpodIntegrationContext<TSchema>> {
+  const setupStartedAt = performance.now()
+  const requestMetrics: XpodIntegrationContext<TSchema>['requestMetrics'] = []
+  const session: SolidAuthSession = {
+    info: {
+      isLoggedIn: true,
+      webId: config.webId,
+      sessionId: 'xpod-shared-integration',
+    },
+    fetch: async (input, init) => {
+      const headers = closeConnectionHeaders(init?.headers)
+      headers.set('Authorization', `Bearer ${config.accessToken}`)
+      const startedAt = performance.now()
+      try {
+        return await fetch(
+          typeof input === 'string' || input instanceof URL
+            ? new URL(String(input), config.baseUrl)
+            : input,
+          { ...init, headers },
+        )
+      } finally {
+        requestMetrics.push({
+          startedAtMs: startedAt,
+          durationMs: performance.now() - startedAt,
+          method: init?.method ?? 'GET',
+          url: typeof input === 'string' || input instanceof URL ? String(input) : input.url,
+        })
+      }
+    },
+  }
+  const db = drizzle<TSchema>(session, {
+    disableInteropDiscovery: true,
+    podUrl: config.podUrl,
+    schema: options.schema,
+  })
+  const databaseInitStartedAt = performance.now()
+  await initializeIntegrationDatabase(db, options)
+  const databaseInitMs = performance.now() - databaseInitStartedAt
+  const setupMetrics = {
+    totalMs: performance.now() - setupStartedAt,
+    runtimeStartMs: 0,
+    authenticationMs: 0,
+    databaseInitMs,
+  }
+  logPerf('shared context setup', setupMetrics)
+
+  return {
+    mode: 'local-seeded-auth',
+    db,
+    baseUrl: config.baseUrl,
+    webId: config.webId,
+    podUrl: config.podUrl,
+    authenticatedFetch: session.fetch,
+    requestMetrics,
+    setupMetrics,
+    stop: async () => {
+      logPerf('shared context requests', summarizeRequests(requestMetrics))
+      await db.disconnect().catch(() => undefined)
+    },
+  }
+}
+
+function summarizeRequests(
+  requestMetrics: XpodIntegrationContext<Record<string, unknown>>['requestMetrics'],
+): Record<string, number> {
+  const summary = requestMetrics.reduce((result, request) => {
+    result.totalMs += request.durationMs
+    result.slowestMs = Math.max(result.slowestMs, request.durationMs)
+    return result
+  }, { totalMs: 0, slowestMs: 0 })
+  return {
+    count: requestMetrics.length,
+    totalMs: Number(summary.totalMs.toFixed(2)),
+    slowestMs: Number(summary.slowestMs.toFixed(2)),
+    averageMs: Number((summary.totalMs / Math.max(requestMetrics.length, 1)).toFixed(2)),
   }
 }
 
 export async function createXpodIntegrationContext<TSchema extends Record<string, unknown>>(
   options: XpodIntegrationOptions<TSchema>,
 ): Promise<XpodIntegrationContext<TSchema>> {
+  const sharedRuntime = readSharedRuntimeConfig()
+  if (sharedRuntime) {
+    return createSharedLocalContext(sharedRuntime, options)
+  }
+
   const requestedMode = getRequestedMode()
   const external = requestedMode === 'local' ? null : resolveExternalAuthConfigFromEnv()
 

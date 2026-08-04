@@ -8,12 +8,13 @@ const uiDetailPreviewPrimitivesPath = 'src/modules/files/ui/FileDetailPreviewPri
 const uiEmptyStatePath = 'src/modules/files/ui/FilesEmptyState.tsx'
 const uiRowPath = 'src/modules/files/ui/FilesListRow.tsx'
 const uiColumnHeaderPath = 'src/modules/files/ui/FilesListColumnHeader.tsx'
-const uiRichTextEditorPath = 'src/modules/files/ui/RichTextFileEditor.tsx'
+const uiExplorerRowPath = 'src/modules/files/ui/FilesExplorerRow.tsx'
+const uiExplorerRowTypesPath = 'src/modules/files/ui/files-explorer-row-types.ts'
+const uiBlockNoteEditorPath = 'src/modules/files/ui/BlockNoteFileEditor.tsx'
 const uiRichTextEditorModelPath = 'src/modules/files/ui/rich-text-file-editor-model.ts'
-const richTextEditorShimPath = 'src/modules/files/components/RichTextFileEditor.tsx'
 const uiRootPath = 'src/modules/files/ui'
 const listPanePath = 'src/modules/files/features/list/FilesListPane.tsx'
-const editorSheetPath = 'src/modules/files/features/editor/FileEditorSheet.tsx'
+const editorSheetPath = 'src/modules/files/features/editor/FileEditorSurface.tsx'
 const sourceLinkedCardPreviewPath = 'src/modules/files/features/detail/FileDetailSourceLinkedCardPreview.tsx'
 const structuredProjectionTablePath = 'src/modules/files/features/structured/StructuredProjectionTable.tsx'
 const forbiddenUiDependencyPatterns = [
@@ -101,29 +102,32 @@ describe('Files UI boundary', () => {
     expect(listPaneSource).not.toMatch(/\nfunction EmptyState\(/)
   })
 
-  it('keeps list row as data-free Files UI', () => {
-    expect(existsSync(uiRowPath)).toBe(true)
-    if (!existsSync(uiRowPath)) return
+  it('keeps explorer row as data-free Files UI', () => {
+    expect(existsSync(uiExplorerRowPath)).toBe(true)
+    expect(existsSync(uiExplorerRowTypesPath)).toBe(true)
+    if (!existsSync(uiExplorerRowPath) || !existsSync(uiExplorerRowTypesPath)) return
 
-    const uiSource = readFileSync(uiRowPath, 'utf8')
+    const uiSource = readFileSync(uiExplorerRowPath, 'utf8')
+    const uiTypesSource = readFileSync(uiExplorerRowTypesPath, 'utf8')
     const listPaneSource = readFileSync(listPanePath, 'utf8')
 
-    expect(uiSource).toMatch(/\nexport function FilesListRow\(/)
+    expect(uiSource).toMatch(/\nexport function FilesExplorerRow\(/)
+    expect(uiSource).toContain("from './files-explorer-row-types'")
+    expect(uiTypesSource).toContain("export type FilesExplorerRowOpenTrigger = 'double-click' | 'enter'")
     expect(uiSource).not.toContain('FilesEntry')
     expect(uiSource).not.toContain('getFilesEntrySemanticLabel')
     expect(uiSource).not.toContain("'container'")
     expect(uiSource).not.toContain("'resource'")
     expect(uiSource).not.toContain("kind === 'container'")
-    expect(listPaneSource).toContain("from '../../ui/FilesListRow'")
+    expect(listPaneSource).toContain("from '../../ui/FilesExplorerRow'")
     expect(listPaneSource).not.toMatch(/\nfunction FileRow\(/)
   })
 
-  it('keeps list column header as data-free Files UI', () => {
+  it('allows legacy list column header to remain data-free Files UI without requiring explorer reuse', () => {
     expect(existsSync(uiColumnHeaderPath)).toBe(true)
     if (!existsSync(uiColumnHeaderPath)) return
 
     const uiSource = readFileSync(uiColumnHeaderPath, 'utf8')
-    const listPaneSource = readFileSync(listPanePath, 'utf8')
 
     expect(uiSource).toMatch(/\nexport function FilesListColumnHeader(?:<[^>]+>)?\(/)
     expect(uiSource).not.toContain('useFilesStore')
@@ -133,41 +137,24 @@ describe('Files UI boundary', () => {
     expect(uiSource).not.toContain("'modifiedAt'")
     expect(uiSource).not.toMatch(/onSort\('[^']+'\)/)
     expect(uiSource).not.toMatch(/field="[^"]+"/)
-    expect(listPaneSource).toContain("from '../../ui/FilesListColumnHeader'")
-    expect(listPaneSource).not.toMatch(/\nfunction ColumnHeader\(/)
   })
 
-  it('keeps rich text editor surface as data-free Files UI', () => {
-    expect(existsSync(uiRichTextEditorPath)).toBe(true)
-    expect(existsSync(richTextEditorShimPath)).toBe(true)
+  it('keeps block note editor surface as data-free Files UI', () => {
+    expect(existsSync(uiBlockNoteEditorPath)).toBe(true)
     expect(existsSync(uiRichTextEditorModelPath)).toBe(true)
-    if (!existsSync(uiRichTextEditorPath) || !existsSync(richTextEditorShimPath) || !existsSync(uiRichTextEditorModelPath)) return
+    if (!existsSync(uiBlockNoteEditorPath) || !existsSync(uiRichTextEditorModelPath)) return
 
-    const uiSource = readFileSync(uiRichTextEditorPath, 'utf8')
+    const uiSource = readFileSync(uiBlockNoteEditorPath, 'utf8')
     const modelSource = readFileSync(uiRichTextEditorModelPath, 'utf8')
-    const shimSource = readFileSync(richTextEditorShimPath, 'utf8')
     const editorSheetSource = readFileSync(editorSheetPath, 'utf8')
     const sourceLinkedCardPreviewSource = readFileSync(sourceLinkedCardPreviewPath, 'utf8')
 
-    expect(uiSource).toMatch(/\nexport function RichTextFileEditor\(/)
+    expect(uiSource).toMatch(/\nexport function BlockNoteFileEditor\(/)
     expect(uiSource).toContain("from './rich-text-file-editor-model'")
-    expect(uiSource).not.toContain('const [isDirty, setIsDirty]')
-    expect(uiSource).not.toContain("useState<'saved' | 'dirty' | 'saving' | 'error'>")
-    expect(uiSource).not.toContain('const [linkMenuOpen, setLinkMenuOpen]')
-    expect(uiSource).not.toContain('const [linkHref, setLinkHref]')
-    expect(uiSource).not.toContain('const [blockMenuOpen, setBlockMenuOpen]')
-    expect(uiSource).not.toContain('const [blockMenuActiveIndex, setBlockMenuActiveIndex]')
-    expect(uiSource).not.toContain('const [blockMoveMenuOpen, setBlockMoveMenuOpen]')
-    expect(uiSource).toContain('export type RichTextEditorContent')
+    expect(uiSource).toContain('export type BlockNoteEditorContent')
     expect(uiSource).toContain('RichTextEditorDocumentSummary')
-    expect(uiSource).toContain('extractRichTextEditorDocumentSummary')
-    expect(uiSource).not.toContain('TiptapCardMetadata')
-    expect(uiSource).not.toContain('extractTiptapCardMetadata')
-    expect(uiSource).not.toContain('onSubmitAiProposal')
-    expect(uiSource).not.toContain('aiProposalPending')
     expect(uiSource).toContain('onSubmitProposal')
     expect(uiSource).toContain('proposalPending')
-    expect(uiSource).not.toContain('RichTextFileContent')
     expect(uiSource).not.toContain('FilesDetail')
     expect(uiSource).not.toContain("from '../browser'")
     expect(uiSource).not.toContain('mimeType')
@@ -175,25 +162,19 @@ describe('Files UI boundary', () => {
     expect(uiSource).not.toContain('sourceText')
     expect(uiSource).not.toContain('linx-source')
     expect(uiSource).not.toContain('Ingest')
-    expect(uiSource).not.toContain('AI 修改审批')
     expect(modelSource).toContain('projectRichTextEditorSaveStateAfterDirtyComparison')
-    expect(modelSource).toContain('projectRichTextEditorLinkMenuToggled')
-    expect(modelSource).toContain('projectRichTextEditorBlockCommandMenuMoved')
-    expect(modelSource).toContain('projectRichTextEditorBlockMoveMenuToggled')
     expect(modelSource).toContain('export type RichTextEditorDocumentSummary')
-    expect(modelSource).toContain('extractRichTextEditorDocumentSummary')
     expect(modelSource).not.toContain('from \'react\'')
     expect(modelSource).not.toContain('from "react"')
     expect(modelSource).not.toContain('FilesDetail')
     expect(modelSource).not.toContain('mimeType')
     expect(modelSource).not.toContain('sourceText')
-    expect(shimSource).toMatch(/^export \* from '..\/ui\/RichTextFileEditor'\n?$/)
-    expect(editorSheetSource).toContain("from '../../ui/RichTextFileEditor'")
+    expect(editorSheetSource).toContain("from '@/modules/files/ui/BlockNoteFileEditor'")
     expect(editorSheetSource).toContain('content={editor.richEditorContent}')
-    expect(sourceLinkedCardPreviewSource).toContain("from '../../ui/RichTextFileEditor'")
+    expect(sourceLinkedCardPreviewSource).toContain("from '@/modules/files/ui/BlockNoteFileEditor'")
     expect(sourceLinkedCardPreviewSource).toContain('content={content.bodyRichEditorContent}')
-    expect(editorSheetSource).not.toContain("from '../../components/RichTextFileEditor'")
-    expect(sourceLinkedCardPreviewSource).not.toContain("from '../../components/RichTextFileEditor'")
+    expect(editorSheetSource).not.toContain("from '../../ui/RichTextFileEditor'")
+    expect(sourceLinkedCardPreviewSource).not.toContain("from '../../ui/RichTextFileEditor'")
   })
 
   it('keeps all files UI modules free of module data dependencies', () => {
@@ -204,7 +185,9 @@ describe('Files UI boundary', () => {
       uiColumnHeaderPath,
       uiDetailPreviewPrimitivesPath,
       uiEmptyStatePath,
-      uiRichTextEditorPath,
+      uiExplorerRowPath,
+      uiExplorerRowTypesPath,
+      uiBlockNoteEditorPath,
       uiRowPath,
       uiSheetPath,
     ]))

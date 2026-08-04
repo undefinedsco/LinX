@@ -112,7 +112,7 @@ describe('files list open decisions', () => {
     }
   })
 
-  it('opens editable files through the sheet flow on open triggers', () => {
+  it('opens editable files inline on open triggers and as a modal on modifier click', () => {
     const file = entry({
       uri: 'https://pod.example/public/README.md',
       semanticKind: 'file',
@@ -121,9 +121,14 @@ describe('files list open decisions', () => {
 
     for (const trigger of ['double-click', 'enter', 'explicit-open'] satisfies FilesListOpenTrigger[]) {
       expect(resolveFilesListOpenDecision(file, trigger)).toEqual({
-        type: 'open-editable-sheet',
+        type: 'open-editable-inline',
         fileUri: 'https://pod.example/public/README.md',
       })
     }
+
+    expect(resolveFilesListOpenDecision(file, 'modifier-click')).toEqual({
+      type: 'open-editable-sheet',
+      fileUri: 'https://pod.example/public/README.md',
+    })
   })
 })

@@ -28,6 +28,7 @@ interface ModelSelectorProps {
   value?: string
   onChange?: (value: string) => void
   type?: 'chat' | 'voice' | 'video'
+  models?: ModelOption[]
   placeholder?: string
   className?: string
 }
@@ -100,13 +101,16 @@ const ProviderIcon = ({ name }: { name: string }) => {
   )
 }
 
-export function ModelSelector({ value, onChange, type = 'chat', placeholder, className }: ModelSelectorProps) {
+export function ModelSelector({ value, onChange, type = 'chat', models: suppliedModels, placeholder, className }: ModelSelectorProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const [selectedTags, setSelectedTags] = React.useState<ModelCapability[]>([])
   
-  const models = React.useMemo(() => MOCK_MODELS[type] || [], [type])
-  const selectedValue = React.useMemo(() => normalizeChatModelId(value ?? ""), [value])
+  const models = React.useMemo(() => suppliedModels ?? (MOCK_MODELS[type] || []), [suppliedModels, type])
+  const selectedValue = React.useMemo(
+    () => suppliedModels ? (value ?? '').trim() : normalizeChatModelId(value ?? ""),
+    [suppliedModels, value],
+  )
   const selectedModel = React.useMemo(() => models.find(m => m.id === selectedValue), [models, selectedValue])
 
   const availableTags = React.useMemo(() => {

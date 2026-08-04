@@ -7,7 +7,7 @@
  * Includes `contactOps` for business logic that spans multiple collections.
  */
 
-import { like, or } from '@undefineds.co/drizzle-solid'
+import { asc, like, or } from '@undefineds.co/drizzle-solid'
 import {
   chatResource,
   contactResource,
@@ -523,6 +523,8 @@ export const contactOps = {
             like(contactResource.about as any, pattern)
           )
         )
+        .orderBy(asc(contactResource.name), asc(contactResource.id))
+        .limit(100)
         .execute()
 
       return results as ContactRow[]
@@ -1143,7 +1145,7 @@ export const contactOps = {
   /**
    * Fetch contacts from Pod (initial load)
    */
-  async fetch(): Promise<ContactRow[]> {
-    return await contactCollection.fetch()
+  async fetch(options: { refetch?: boolean } = {}): Promise<ContactRow[]> {
+    return await contactCollection.fetch(options)
   },
 }

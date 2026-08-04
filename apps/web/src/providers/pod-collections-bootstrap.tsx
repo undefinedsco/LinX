@@ -13,7 +13,6 @@ import {
 } from '@/modules/chat/collections'
 import { createMatrixGroupRoom, loadMatrixChatRow, loadMatrixThreadRow } from '@/modules/chat/matrix-service'
 import { useChatStore } from '@/modules/chat/store'
-import { useToast } from '@/components/ui/use-toast'
 import {
   agentCollection,
   configureContactsChatPort,
@@ -21,11 +20,10 @@ import {
   initializeContactCollections,
 } from '@/modules/contacts/data/collections'
 import { initializeFavoriteCollections } from '@/modules/favorites/collections'
-import { filesOps, initializeFilesCollections } from '@/modules/files/collections'
+import { initializeFilesCollections } from '@/modules/files/collections'
 import { initializeInboxCollections } from '@/modules/inbox/collections'
-import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { initializeModelCollections } from '@/modules/model-services/data/collections'
-import { initializeSymphonyControlCollections, symphonyControlOps } from '@/modules/symphony/collections'
+import { initializeSymphonyControlCollections } from '@/modules/symphony/collections'
 
 interface PodCollectionsBootstrapProps {
   children?: ReactNode
@@ -37,7 +35,6 @@ function useSelectChat() {
 
 export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapProps) {
   const { db } = useSolidDatabase()
-  const { toast } = useToast()
   const lastStartedRef = useRef<SolidDatabase | null>(null)
 
   configureChatContactsPort({ agentCollection, contactCollection })
@@ -66,49 +63,11 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     }
 
     let cancelled = false
-    let unsubscribe: (() => void) | null = null
-    let unsubscribeFiles: (() => void) | null = null
-    let unsubscribeSymphony: (() => void) | null = null
     const started = lastStartedRef.current
     const force = !!started && started !== db
 
     lastStartedRef.current = db
-
-    void chatOps.subscribeToPod()
-      .then((nextUnsubscribe) => {
-        if (cancelled) {
-          nextUnsubscribe()
-          return
-        }
-        unsubscribe = nextUnsubscribe
-      })
-      .catch((error) => {
-        console.warn('[PodCollectionsBootstrap] Failed to subscribe chat collections:', error)
-      })
-
-    void filesOps.subscribeToPod()
-      .then((nextUnsubscribe) => {
-        if (cancelled) {
-          nextUnsubscribe()
-          return
-        }
-        unsubscribeFiles = nextUnsubscribe
-      })
-      .catch((error) => {
-        console.warn('[PodCollectionsBootstrap] Failed to subscribe files collections:', error)
-      })
-
-    void symphonyControlOps.subscribeToPod()
-      .then((nextUnsubscribe) => {
-        if (cancelled) {
-          nextUnsubscribe()
-          return
-        }
-        unsubscribeSymphony = nextUnsubscribe
-      })
-      .catch((error) => {
-        console.warn('[PodCollectionsBootstrap] Failed to subscribe Symphony control collections:', error)
-      })
+    chatOps.stageLinxDefaultSecretary(db)
 
     const welcomePromise = chatOps.ensureLinxWelcome({ force })
     const isCurrentBootstrap = () => !cancelled && lastStartedRef.current === db
@@ -142,19 +101,12 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
         void queryClient.invalidateQueries({ queryKey: ['chats'] }).catch((error) => {
           console.warn('[PodCollectionsBootstrap] Failed to refresh chats after LinX welcome failure:', error)
         })
-        toast({
-          description: formatLoginErrorForUser(nextError, '默认助手暂时无法保存到当前空间。请稍后重试。'),
-          variant: 'destructive',
-        })
       })
 
     return () => {
       cancelled = true
-      unsubscribe?.()
-      unsubscribeFiles?.()
-      unsubscribeSymphony?.()
     }
-  }, [db, toast])
+  }, [db])
 
   return <>{children}</>
 }

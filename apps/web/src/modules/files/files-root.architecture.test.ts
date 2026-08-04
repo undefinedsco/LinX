@@ -1,5 +1,4 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 const filesRootPath = 'src/modules/files'
@@ -48,10 +47,19 @@ function sourceWithoutLineComments(source: string): string {
     .join('\n')
 }
 
-function isExportOnlyRootFacade(source: string): boolean {
-  const sourceFile = ts.createSourceFile('files-root-facade.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+function sourceWithoutComments(source: string): string {
+  return sourceWithoutLineComments(source).replace(/\/\*[\s\S]*?\*\//g, '')
+}
 
-  return sourceFile.statements.every((statement) => ts.isExportDeclaration(statement))
+function isExportOnlyRootFacade(source: string): boolean {
+  const remainingSource = sourceWithoutComments(source)
+    .replace(
+      /export(?:\s+type)?\s+(?:(?:\*\s+from)|(?:\{[\s\S]*?\}\s+from))\s+['"][^'"]+['"];?|export\s+\{\s*\};?/g,
+      '',
+    )
+    .trim()
+
+  return remainingSource.length === 0
 }
 
 function isSimpleStarShim(source: string): boolean {
@@ -79,19 +87,12 @@ function resolveRelativeImportTarget(filePath: string, importSpecifier: string):
 }
 
 function importSpecifiers(source: string): string[] {
-  const sourceFile = ts.createSourceFile('files-imports.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-
-  return sourceFile.statements.flatMap((statement) => {
-    if (
-      (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement))
-      && statement.moduleSpecifier
-      && ts.isStringLiteral(statement.moduleSpecifier)
-    ) {
-      return [statement.moduleSpecifier.text]
-    }
-
-    return []
-  })
+  return Array.from(
+    source.matchAll(
+      /\bimport\s+(?:type\s+)?(?:['"]([^'"]+)['"]|[\s\S]*?\s+from\s+['"]([^'"]+)['"])|\bexport(?:\s+type)?\s+(?:\*|\{[\s\S]*?\})\s+from\s+['"]([^'"]+)['"]/g,
+    ),
+    (match) => match[1] ?? match[2] ?? match[3],
+  )
 }
 
 describe('Files root module boundary', () => {

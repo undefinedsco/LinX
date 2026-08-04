@@ -1,8 +1,10 @@
 import { useMemo } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { useLiveQuery } from '@tanstack/react-db'
 import { isGroupContact } from '@undefineds.co/models'
 import { useToast } from '@/components/ui/use-toast'
+import type { ModelOption } from '@/components/ui/model-selector'
+import { useModelServices } from '@/modules/model-services/data/use-model-services'
 import { useContactStore } from '../../app/store'
 import { contactCollection, getContactsChatCollection } from '../../data/collections'
 import { projectContactDetail } from '../../domain/contact-projection'
@@ -26,6 +28,7 @@ export function useContactDetailController() {
   const openInviteMemberDialog = useContactStore((state) => state.openInviteMemberDialog)
   const closeInviteMemberDialog = useContactStore((state) => state.closeInviteMemberDialog)
   const chatCollection = getContactsChatCollection()
+  const { providers: modelProviders } = useModelServices()
   const contactQuery = useLiveQuery(contactCollection)
   const chatQuery = useLiveQuery(chatCollection)
   const contacts = contactQuery.data ?? []
@@ -45,8 +48,8 @@ export function useContactDetailController() {
       : null
   const retryDetailQueries = () => {
     void Promise.all([
-      contactCollection.fetch(),
-      chatCollection.fetch(),
+      contactCollection.fetch({ refetch: true }),
+      chatCollection.fetch({ refetch: true }),
     ]).catch(() => {
       notify.error('联系人详情加载失败，请重试。')
     })
@@ -86,7 +89,6 @@ export function useContactDetailController() {
   const group = useContactGroupMembershipController({
     groupContactId: isGroup ? persistedContact.id : null,
     currentUserRef,
-    inviteMemberDialogOpen,
     inviteTargetGroupId,
     closeInviteMemberDialog,
     notify,
@@ -97,6 +99,19 @@ export function useContactDetailController() {
   const contactInbox = typeof contactRecord?.inbox === 'string' && contactRecord.inbox.length > 0
     ? contactRecord.inbox
     : null
+  const availableAgentModels = useMemo<ModelOption[]>(() => (
+    Object.values(modelProviders)
+      .filter((provider) => provider.enabled || provider.id === 'undefineds')
+      .flatMap((provider) => provider.models
+        .filter((model) => model.enabled !== false)
+        .map((model) => ({
+          id: `${provider.id}/${model.id}`,
+          name: model.name || model.id,
+          providerId: provider.id,
+          providerName: provider.name,
+          capabilities: [],
+        })))
+  ), [modelProviders])
 
   return {
     detail: {
@@ -158,6 +173,7 @@ export function useContactDetailController() {
       open: createDialogOpen,
       type: createType,
       form: creation.createForm,
+      availableAgentModels,
       friendSearch: creation.friendSearch,
       onUpdateForm: (patch: Partial<typeof creation.createForm>) => {
         creation.setCreateForm((current) => ({ ...current, ...patch }))

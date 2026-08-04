@@ -51,7 +51,7 @@ describe('createLocalChatKitFetch', () => {
     const body = await response.json()
 
     expect(response.status).toBe(500)
-    expect(body.error.message).toBe('本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')
+    expect(body.error.message).toBe('本机空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本机空间设置修复。')
     expect(body.error.message).not.toMatch(/jsonld|Require stack|Application Support|\/Users|xpod/i)
   })
 })

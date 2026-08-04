@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { useFilesRouteBridge } from '../../app/FilesRouteContext'
 import {
@@ -17,6 +17,7 @@ import {
 import { createContainerNodeId } from '../../domain/resource/tree-model'
 import {
   planFileDetailFavoriteToggle,
+  projectFileDetailChrome,
   projectFileDetailControllerState,
   projectFileDetailFavoriteState,
   projectFileDetailStructuredReturnAction,
@@ -34,17 +35,28 @@ export function useFileDetailPaneController() {
   const structuredViewMode = useFilesStore((state) => state.structuredViewMode)
   const structuredSubjectReturnContext = useFilesStore((state) => state.structuredSubjectReturnContext)
   const returnToStructuredSubject = useFilesStore((state) => state.returnToStructuredSubject)
+  const sidecarActionRequest = useFilesStore((state) => state.sidecarActionRequest)
+  const consumeSidecarActionRequest = useFilesStore((state) => state.consumeSidecarActionRequest)
+  const metaSidebarOpen = useFilesStore((state) => state.metaSidebarOpen)
+  const setMetaSidebarOpen = useFilesStore((state) => state.setMetaSidebarOpen)
   const filesRouteBridge = useFilesRouteBridge()
-  const { data: file, isLoading, error } = useFileDetail(selectedFileId)
+  const { data: file, isLoading, error, refetch } = useFileDetail(selectedFileId)
   const { data: favorites = [] } = useFilesFavoriteList({ sourceModule: 'files' })
-  const [metaDrawerOpen, setMetaDrawerOpen] = useState(false)
   const detailScrollAreaRef = useRef<HTMLDivElement | null>(null)
+  const previousSelectedFileIdRef = useRef(selectedFileId)
 
   const isFavorite = projectFileDetailFavoriteState({ file, favorites })
 
   useEffect(() => {
-    setMetaDrawerOpen(false)
-  }, [selectedFileId])
+    if (!error || !selectedFileId) return
+    console.warn('[files] 读取文件详情失败', selectedFileId, error)
+  }, [selectedFileId, error])
+
+  useEffect(() => {
+    if (previousSelectedFileIdRef.current === selectedFileId) return
+    previousSelectedFileIdRef.current = selectedFileId
+    setMetaSidebarOpen(false)
+  }, [selectedFileId, setMetaSidebarOpen])
 
   useEffect(() => {
     if (!shouldResetFileDetailHorizontalScroll({ structuredViewMode })) return
@@ -56,12 +68,12 @@ export function useFileDetailPaneController() {
   }, [selectedFileId, structuredViewMode])
 
   const closeMetaDrawer = useCallback(() => {
-    setMetaDrawerOpen(false)
-  }, [])
+    setMetaSidebarOpen(false)
+  }, [setMetaSidebarOpen])
 
   const openMetaDrawer = useCallback(() => {
-    setMetaDrawerOpen(true)
-  }, [])
+    setMetaSidebarOpen(true)
+  }, [setMetaSidebarOpen])
 
   const handleCopyUri = useCallback(() => {
     if (!file) return
@@ -79,7 +91,7 @@ export function useFileDetailPaneController() {
 
   const handleEnterParentContainer = useCallback(() => {
     if (!file) return
-    selectTreeNode(createContainerNodeId(file.parentUri))
+    selectTreeNode(createContainerNodeId(file.parentUri), file.parentUri)
   }, [file, selectTreeNode])
 
   const handleReturnToStructuredSubject = useCallback(() => {
@@ -98,6 +110,10 @@ export function useFileDetailPaneController() {
     await filesFavoriteHooks.onStarredChange(plan.sourceModule, plan.sourceId, plan.starred, plan.metadata)
   }, [file, isFavorite, selectedTreeNodeId])
 
+  const retryDetail = useCallback(() => {
+    void refetch()
+  }, [refetch])
+
   const detailState = projectFileDetailControllerState({
     selectedFileId,
     isLoading,
@@ -110,10 +126,33 @@ export function useFileDetailPaneController() {
     file,
     returnContext: structuredSubjectReturnContext,
   })
+  const detailChrome = file ? projectFileDetailChrome(file) : null
+
+  const consumeRequestedSidecarAction = useCallback((): 'access' | null => {
+    if (!sidecarActionRequest || sidecarActionRequest.uri !== selectedFileId) return null
+    if (isLoading) return null
+    const { action, uri } = sidecarActionRequest
+    if (!file) {
+      consumeSidecarActionRequest(uri, action)
+      return null
+    }
+    if (action === 'meta') openMetaDrawer()
+    consumeSidecarActionRequest(uri, action)
+    return action === 'access' ? 'access' : null
+  }, [
+    consumeSidecarActionRequest,
+    file,
+    isLoading,
+    openMetaDrawer,
+    selectedFileId,
+    sidecarActionRequest,
+  ])
 
   return {
     activeDetailTab: detailState.activeDetailTab,
     closeMetaDrawer,
+    consumeRequestedSidecarAction,
+    detailChrome,
     detailScrollAreaRef,
     emptyState: detailState.emptyState,
     file,
@@ -124,16 +163,18 @@ export function useFileDetailPaneController() {
     handleSystemOpen,
     handleToggleFavorite,
     isFavorite,
-    metaDrawerOpen,
+    metaDrawerOpen: metaSidebarOpen,
     openMetaDrawer,
     resourceActions: detailState.resourceActions,
+    isLoading,
+    retryDetail,
     selectedFileId,
     setDetailTab,
-    showHeadSidecarActions: detailState.showHeadSidecarActions,
-    showMetaDrawer: detailState.showMetaDrawer,
+    showFileDrawerMetadata: detailState.showFileDrawerMetadata,
     showSourceLinkedDrawerMetadata: detailState.showSourceLinkedDrawerMetadata,
     showTabs: detailState.showTabs,
     sidecarOwnerTarget: detailState.sidecarOwnerTarget,
     structuredReturnAction,
+    sidecarActionRequest,
   }
 }

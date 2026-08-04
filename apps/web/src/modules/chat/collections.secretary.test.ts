@@ -100,17 +100,63 @@ vi.mock('@/providers/solid-database-provider', () => ({
 }))
 
 import {
+  chatCollection,
   chatOps,
   configureChatContactsPort,
   initializeChatCollections,
   isLinxDefaultSecretaryBootstrapSettling,
   LINX_DEFAULT_SECRETARY,
+  messageCollection,
   SECRETARY_BOOTSTRAP_TIMEOUT_MS,
+  threadCollection,
 } from './collections'
 
 configureChatContactsPort({
   agentCollection: createCollectionMock({ queryKey: ['agents'] }) as any,
   contactCollection: createCollectionMock({ queryKey: ['contacts'] }) as any,
+})
+
+describe('chatOps collection subscriptions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    collectionStates.forEach((state) => state.clear())
+  })
+
+  afterEach(() => {
+    initializeChatCollections(null)
+  })
+
+  it('returns a no-op subscription when no database is available', async () => {
+    initializeChatCollections(null)
+
+    const unsubscribe = await chatOps.subscribeToPod()
+
+    expect(unsubscribe).toBeTypeOf('function')
+    expect(chatCollection.subscribeToPod).not.toHaveBeenCalled()
+    expect(threadCollection.subscribeToPod).not.toHaveBeenCalled()
+    expect(messageCollection.subscribeToPod).not.toHaveBeenCalled()
+  })
+
+  it('subscribes to chat, thread, and message collections and disposes all subscriptions', async () => {
+    const db = { name: 'chat-db' }
+    const unsubscribeChat = vi.fn()
+    const unsubscribeThread = vi.fn()
+    const unsubscribeMessage = vi.fn()
+    vi.mocked(chatCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeChat)
+    vi.mocked(threadCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeThread)
+    vi.mocked(messageCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeMessage)
+    initializeChatCollections(db as any)
+
+    const unsubscribe = await chatOps.subscribeToPod()
+    unsubscribe()
+
+    expect(chatCollection.subscribeToPod).toHaveBeenCalledWith(db)
+    expect(threadCollection.subscribeToPod).toHaveBeenCalledWith(db)
+    expect(messageCollection.subscribeToPod).toHaveBeenCalledWith(db)
+    expect(unsubscribeChat).toHaveBeenCalledTimes(1)
+    expect(unsubscribeThread).toHaveBeenCalledTimes(1)
+    expect(unsubscribeMessage).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('AI Secretary bootstrap', () => {
@@ -306,6 +352,42 @@ describe('AI Secretary bootstrap', () => {
     })
   })
 
+  it('normalizes legacy Secretary labels in the local projection', () => {
+    const { db, rows } = createSecretaryDb()
+    initializeChatCollections(db as any)
+    collectionStates.get('chats')?.set(LINX_DEFAULT_SECRETARY.chatId, {
+      ...rows.chatRow,
+      title: 'AI Secretary',
+    })
+    collectionStates.get('contacts')?.set(LINX_DEFAULT_SECRETARY.contactId, {
+      ...rows.contactRow,
+      name: 'AI Secretary',
+    })
+
+    chatOps.stageLinxDefaultSecretary(db as any)
+
+    expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
+      title: LINX_DEFAULT_SECRETARY.title,
+    })
+    expect(collectionStates.get('contacts')?.get(LINX_DEFAULT_SECRETARY.contactId)).toMatchObject({
+      name: LINX_DEFAULT_SECRETARY.title,
+    })
+  })
+
+  it('stages the Secretary contact when a persisted chat exists before contacts sync', () => {
+    const { db, rows } = createSecretaryDb()
+    initializeChatCollections(db as any)
+    collectionStates.get('chats')?.set(LINX_DEFAULT_SECRETARY.chatId, rows.chatRow)
+
+    chatOps.stageLinxDefaultSecretary(db as any)
+
+    expect(collectionStates.get('contacts')?.get(LINX_DEFAULT_SECRETARY.contactId)).toMatchObject({
+      id: LINX_DEFAULT_SECRETARY.contactId,
+      name: LINX_DEFAULT_SECRETARY.title,
+      '@id': rows.contactIri,
+    })
+  })
+
   it('does not require full chat collection queries when Secretary resources already exist', async () => {
     const { db, insertedRows } = createSecretaryDb({
       chatSelectError: new Error('SPARQL unavailable'),
@@ -364,7 +446,7 @@ describe('AI Secretary bootstrap', () => {
     })
 
     expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(true)
-    await expect(chatOps.fetchChats()).resolves.toEqual([
+    await expect(chatCollection.fetch()).resolves.toEqual([
       expect.objectContaining({
         id: LINX_DEFAULT_SECRETARY.chatId,
         '@id': rows.chatIri,
@@ -376,7 +458,7 @@ describe('AI Secretary bootstrap', () => {
 
     await timeoutResult
     expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(false)
-    await expect(chatOps.fetchChats()).resolves.toEqual([
+    await expect(chatCollection.fetch()).resolves.toEqual([
       expect.objectContaining({
         id: LINX_DEFAULT_SECRETARY.chatId,
         '@id': rows.chatIri,
@@ -415,14 +497,14 @@ describe('AI Secretary bootstrap', () => {
     await timeoutResult
 
     expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(false)
-    await expect(chatOps.fetchChats()).resolves.toEqual([
+    await expect(chatCollection.fetch()).resolves.toEqual([
       expect.objectContaining({
         id: LINX_DEFAULT_SECRETARY.chatId,
         '@id': rows.chatIri,
         title: LINX_DEFAULT_SECRETARY.title,
       }),
     ])
-    expect(db.select).toHaveBeenCalledTimes(1)
+    expect(db.select).not.toHaveBeenCalled()
   })
 
   it('does not publish an older account bootstrap after a new database is active', async () => {
@@ -513,7 +595,7 @@ describe('AI Secretary bootstrap', () => {
     const secondBootstrap = chatOps.ensureLinxWelcome({ force: true })
     void secondBootstrap.catch(() => undefined)
 
-    await expect(chatOps.fetchChats()).resolves.toEqual([
+    await expect(chatCollection.fetch()).resolves.toEqual([
       expect.objectContaining({
         id: LINX_DEFAULT_SECRETARY.chatId,
         '@id': secondRows.chatIri,
@@ -550,7 +632,7 @@ describe('AI Secretary bootstrap', () => {
     initializeChatCollections(db as any)
     const bootstrapPromise = chatOps.ensureLinxWelcome({ force: true })
 
-    await expect(chatOps.fetchChats()).resolves.toEqual([
+    await expect(chatCollection.fetch()).resolves.toEqual([
       expect.objectContaining({
         id: LINX_DEFAULT_SECRETARY.chatId,
         '@id': rows.chatIri,
@@ -562,9 +644,8 @@ describe('AI Secretary bootstrap', () => {
     expect(bootstrapPromise).toBeInstanceOf(Promise)
   })
 
-  it('keeps the staged Secretary chat when an older remote chat query resolves empty', async () => {
+  it('reads the staged Secretary without starting a parallel remote chat query', async () => {
     const { db, rows } = createSecretaryDb()
-    let resolveChatSelect: ((rows: unknown[]) => void) | null = null
     let resolveContactInsert: (() => void) | null = null
     let resolveChatInsert: (() => void) | null = null
 
@@ -584,24 +665,10 @@ describe('AI Secretary bootstrap', () => {
         }
       },
     }))
-    db.select = vi.fn(() => ({
-      from() {
-        const query = {
-          orderBy: vi.fn(() => query),
-          where: vi.fn(() => query),
-          execute: vi.fn(async () => new Promise((resolve) => {
-            resolveChatSelect = resolve
-          })),
-        }
-        return query
-      },
-    }))
-
     initializeChatCollections(db as any)
-    const initialFetch = chatOps.fetchChats()
     const bootstrapPromise = chatOps.ensureLinxWelcome({ force: true })
+    const initialFetch = chatCollection.fetch()
 
-    resolveChatSelect?.([])
     await expect(initialFetch).resolves.toEqual([
       expect.objectContaining({
         id: LINX_DEFAULT_SECRETARY.chatId,
@@ -609,7 +676,12 @@ describe('AI Secretary bootstrap', () => {
         title: LINX_DEFAULT_SECRETARY.title,
       }),
     ])
+    expect(db.select).not.toHaveBeenCalled()
 
+    await vi.waitFor(() => {
+      expect(resolveContactInsert).toBeTypeOf('function')
+      expect(resolveChatInsert).toBeTypeOf('function')
+    })
     resolveContactInsert?.()
     resolveChatInsert?.()
     await expect(bootstrapPromise).resolves.toEqual({

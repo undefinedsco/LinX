@@ -53,8 +53,8 @@ export type FileDetailLineageModel = {
   rows: FileDetailLineageRow[]
 }
 
-export type ImageFilePreviewModel = {
-  kind: 'image'
+export type MediaFilePreviewModel = {
+  kind: 'image' | 'document' | 'audio' | 'video'
   alt: string
   loadingMessage: string
   mimeType: string | null
@@ -68,7 +68,7 @@ export type ReadonlyFilePreviewModel =
     kind: 'raw-text'
     rawText: string
   }
-  | ImageFilePreviewModel
+  | MediaFilePreviewModel
   | {
     kind: 'unsupported'
     mimeTypeLabel: string
@@ -129,14 +129,15 @@ export function projectReadonlyFilePreviewModel(file: FilesDetail): ReadonlyFile
     }
   }
 
-  if (file.mimeType?.startsWith('image/')) {
+  const media = resolveMediaPreview(file)
+  if (media) {
     return {
       alt: file.name,
-      kind: 'image',
+      kind: media.kind,
       loadingMessage: '正在加载预览...',
-      mimeType: file.mimeType,
-      mimeTypeLabel: file.mimeType,
-      unavailableReason: file.previewUnavailableReason ?? '当前图像暂时不能内联预览。',
+      mimeType: media.mimeType,
+      mimeTypeLabel: media.mimeType,
+      unavailableReason: file.previewUnavailableReason ?? '当前资源暂不支持内联预览。',
       uri: file.uri,
     }
   }
@@ -148,8 +149,47 @@ export function projectReadonlyFilePreviewModel(file: FilesDetail): ReadonlyFile
   }
 }
 
+type MediaExtensionTypes = {
+  [extension: string]: { kind: MediaFilePreviewModel['kind']; mimeType: string }
+}
+
+const MEDIA_EXTENSION_TYPES: MediaExtensionTypes = {
+  '.avif': { kind: 'image', mimeType: 'image/avif' },
+  '.gif': { kind: 'image', mimeType: 'image/gif' },
+  '.jpeg': { kind: 'image', mimeType: 'image/jpeg' },
+  '.jpg': { kind: 'image', mimeType: 'image/jpeg' },
+  '.png': { kind: 'image', mimeType: 'image/png' },
+  '.svg': { kind: 'image', mimeType: 'image/svg+xml' },
+  '.webp': { kind: 'image', mimeType: 'image/webp' },
+  '.pdf': { kind: 'document', mimeType: 'application/pdf' },
+  '.aac': { kind: 'audio', mimeType: 'audio/aac' },
+  '.flac': { kind: 'audio', mimeType: 'audio/flac' },
+  '.m4a': { kind: 'audio', mimeType: 'audio/mp4' },
+  '.mp3': { kind: 'audio', mimeType: 'audio/mpeg' },
+  '.oga': { kind: 'audio', mimeType: 'audio/ogg' },
+  '.ogg': { kind: 'audio', mimeType: 'audio/ogg' },
+  '.wav': { kind: 'audio', mimeType: 'audio/wav' },
+  '.m4v': { kind: 'video', mimeType: 'video/mp4' },
+  '.mov': { kind: 'video', mimeType: 'video/quicktime' },
+  '.mp4': { kind: 'video', mimeType: 'video/mp4' },
+  '.ogv': { kind: 'video', mimeType: 'video/ogg' },
+  '.webm': { kind: 'video', mimeType: 'video/webm' },
+}
+
+function resolveMediaPreview(file: FilesDetail) {
+  const normalizedMimeType = file.mimeType?.split(';')[0]?.trim().toLowerCase() ?? ''
+  if (normalizedMimeType.startsWith('image/')) return { kind: 'image' as const, mimeType: normalizedMimeType }
+  if (normalizedMimeType === 'application/pdf') return { kind: 'document' as const, mimeType: normalizedMimeType }
+  if (normalizedMimeType.startsWith('audio/')) return { kind: 'audio' as const, mimeType: normalizedMimeType }
+  if (normalizedMimeType.startsWith('video/')) return { kind: 'video' as const, mimeType: normalizedMimeType }
+
+  const normalizedName = file.name.toLowerCase()
+  const extension = Object.keys(MEDIA_EXTENSION_TYPES).find((candidate) => normalizedName.endsWith(candidate))
+  return extension ? MEDIA_EXTENSION_TYPES[extension] : null
+}
+
 export function projectAuthenticatedImagePreviewRenderState(
-  preview: ImageFilePreviewModel,
+  preview: MediaFilePreviewModel,
   resource: AuthenticatedImagePreviewResourceState,
 ): AuthenticatedImagePreviewRenderState {
   if (resource.isLoading) {

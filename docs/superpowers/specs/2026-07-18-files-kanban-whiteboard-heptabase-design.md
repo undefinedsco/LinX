@@ -139,6 +139,7 @@ Do not let tldraw records become the business data source. The Files resource mo
 - Desktop and browser screenshots are verified at wide and narrow viewports.
 - Canvas pixel checks prove the tldraw scene is nonblank and correctly framed.
 - Real Pod integration proves `.ttl` and `.meta` writes stay separated.
+- Production builds provide a valid tldraw license through `VITE_TLDRAW_LICENSE_KEY`; hiding or covering the SDK license watermark is not an acceptable substitute.
 
 ## Explicit Non-Goals
 

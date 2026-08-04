@@ -87,7 +87,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {
@@ -101,6 +101,10 @@ vi.mock('@/components/ui/use-toast', () => ({
   useToast: () => ({
     toast: mockToast,
   }),
+}))
+
+vi.mock('@/modules/model-services/data/use-model-services', () => ({
+  useModelServices: () => ({ providers: {} }),
 }))
 
 vi.mock('@/lib/data/use-entity', () => ({

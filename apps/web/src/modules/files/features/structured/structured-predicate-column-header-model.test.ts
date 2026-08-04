@@ -69,6 +69,18 @@ describe('projectStructuredPredicateColumnHeader', () => {
     })
   })
 
+  it('shows the full predicate URI as the header label when namespace visibility is on', () => {
+    expect(projectStructuredPredicateColumnHeader({
+      observedValues: ['42'],
+      predicate,
+      showNamespaces: true,
+    })).toMatchObject({
+      kind: 'defined',
+      displayLabel: predicate,
+      label: predicate,
+    })
+  })
+
   it('falls back predicate definition chrome from observed values when vocab definition is absent', () => {
     expect(projectStructuredPredicateColumnHeader({
       observedValues: ['42'],

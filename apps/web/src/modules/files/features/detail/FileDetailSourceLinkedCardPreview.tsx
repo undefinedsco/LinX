@@ -3,13 +3,13 @@ import { ExternalLink, FileText, GitBranch, Pencil, RefreshCw } from 'lucide-rea
 import { Button } from '@/components/ui/button'
 
 import type { FilesDetail } from '../../domain/resource/resource-model'
-import { FileEditorSheet } from '../editor/FileEditorSheet'
+import { DocumentEditorModal } from '../editor/DocumentEditorModal'
 import {
   DetailRows,
   ModeCard,
   RawTextBlock,
 } from '../../ui/FileDetailPreviewPrimitives'
-import { RichTextFileEditor } from '../../ui/RichTextFileEditor'
+import { BlockNoteFileEditor } from '@/modules/files/ui/BlockNoteFileEditor'
 import type { SourceLinkedCardPrimaryActionIcon } from './source-linked-card-preview-model'
 import { useSourceLinkedCardPreviewController } from './useSourceLinkedCardPreviewController'
 
@@ -78,7 +78,7 @@ export function SourceLinkedCardPreview({ file }: { file: FilesDetail }) {
           </p>
         ) : null}
         <div className="mt-3">
-          <RichTextFileEditor
+          <BlockNoteFileEditor
             content={content.bodyRichEditorContent}
             warning={content.bodyRichTextWarning}
             editable={false}
@@ -139,7 +139,7 @@ export function SourceLinkedCardPreview({ file }: { file: FilesDetail }) {
         </ModeCard>
       ) : null}
       {preview.editorSheet ? (
-        <FileEditorSheet
+        <DocumentEditorModal
           file={preview.editorSheet.file}
           open={preview.editorSheet.open}
           onOpenChange={preview.setSheetOpen}

@@ -1,5 +1,5 @@
 export interface RebindablePodCollection<TKey extends string | number> {
-  startSyncImmediate(): void
+  isReady(): boolean
   keys(): IterableIterator<TKey>
   utils: unknown
 }
@@ -10,6 +10,11 @@ interface PodCollectionRebindUtils<TKey extends string | number> {
 }
 
 export interface PodCollectionRebindOptions {
+  cancelInFlight?: () => Promise<unknown>
+}
+
+export interface PodCollectionRebindBinding {
+  collection: RebindablePodCollection<string | number>
   cancelInFlight?: () => Promise<unknown>
 }
 
@@ -29,7 +34,6 @@ export async function rebindPodCollection<TKey extends string | number>(
   options: PodCollectionRebindOptions = {},
 ): Promise<void> {
   const cancellation = options.cancelInFlight?.()
-  collection.startSyncImmediate()
   const utils = requireRebindUtils(collection)
 
   const previousKeys = Array.from(collection.keys())
@@ -39,7 +43,20 @@ export async function rebindPodCollection<TKey extends string | number>(
 
   await cancellation
 
-  if (hasDatabase) {
+  if (!hasDatabase) {
+    return
+  }
+
+  if (collection.isReady()) {
     await utils.refetch({ throwOnError: true })
   }
+}
+
+export async function rebindPodCollections(
+  bindings: readonly PodCollectionRebindBinding[],
+  hasDatabase: boolean,
+): Promise<void> {
+  await Promise.all(bindings.map(({ collection, cancelInFlight }) => (
+    rebindPodCollection(collection, hasDatabase, { cancelInFlight })
+  )))
 }

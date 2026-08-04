@@ -40,7 +40,7 @@ function folderChildButtonClassName({
     selected && 'bg-primary/10',
     viewMode === 'icons'
       ? 'flex min-h-24 flex-col items-center justify-center gap-2 rounded-md border border-border/30 px-3 py-3 text-center text-xs transition-colors hover:bg-muted/50'
-      : 'grid w-full grid-cols-[minmax(0,1.4fr)_112px_112px_72px] items-center gap-3 border-b border-border/15 px-3 py-2 text-left text-xs transition-colors last:border-0 hover:bg-muted/50',
+      : 'grid h-7 w-full grid-cols-[minmax(0,1.4fr)_112px_112px_72px] items-center gap-3 border-b border-border/20 px-3 text-left text-xs transition-colors last:border-0 hover:bg-layout-list-hover',
   )
 }
 
@@ -133,7 +133,7 @@ export function FolderChildCollectionView({
 
   const handleAction = (action: FolderChildActionKind, child: FilesEntry) => {
     if (action === 'open') {
-      onOpen(child, 'explicit-open')
+      window.setTimeout(() => onOpen(child, 'explicit-open'), 0)
       return
     }
     if (action === 'copy-uri') {
@@ -186,7 +186,8 @@ export function FolderChildCollectionView({
               })}
               onClick={(event) => {
                 onSelect(child, event)
-                onOpen(child, 'click')
+                const isMultiSelectGesture = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+                if (child.kind !== 'container' && !isMultiSelectGesture) onOpen(child, 'click')
               }}
               onContextMenu={() => onContextMenuSelect(child)}
               onDoubleClick={() => onOpen(child, 'double-click')}

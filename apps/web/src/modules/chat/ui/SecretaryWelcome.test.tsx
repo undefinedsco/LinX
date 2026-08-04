@@ -21,14 +21,17 @@ describe('SecretaryWelcome', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: '你好，我是 LinX Secretary' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '你好，我是 LinX 主理人' })).toBeInTheDocument()
     expect(screen.getByText('我可以帮你整理信息、规划工作，并在当前空间中推进任务。')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /整理今天的工作|查找空间中的资料|规划下一步/ })).toHaveLength(3)
-    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toBeVisible()
     expect(screen.getByRole('status')).toHaveTextContent('可以立即开始；对话记录会在空间准备好后同步。')
 
     const welcome = screen.getByTestId('secretary-welcome')
     expect(welcome.className).not.toMatch(/shadow-|backdrop-blur/)
+
+    const composerForm = screen.getByRole('textbox', { name: '给主理人发消息' }).closest('form')
+    expect(composerForm?.className).not.toMatch(/border-t/)
   })
 
   it('delegates starter, draft, and submit interactions through props', () => {
@@ -50,12 +53,12 @@ describe('SecretaryWelcome', () => {
     fireEvent.click(screen.getByRole('button', { name: /整理今天的工作/ }))
     expect(onStarterAction).toHaveBeenCalledWith(starterActions[0])
 
-    fireEvent.change(screen.getByRole('textbox', { name: '给 Secretary 发消息' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: '给主理人发消息' }), {
       target: { value: '新的请求' },
     })
     expect(onComposerValueChange).toHaveBeenCalledWith('新的请求')
 
-    fireEvent.submit(screen.getByRole('textbox', { name: '给 Secretary 发消息' }).closest('form')!)
+    fireEvent.submit(screen.getByRole('textbox', { name: '给主理人发消息' }).closest('form')!)
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 })

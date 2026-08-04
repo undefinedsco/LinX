@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 
 import type { FilesDetail, FilesMetaSidecar } from '../../domain/resource/resource-model'
 import type { SourceLinkedCardDescriptor } from '../../domain/source/source-ingest'
+import { useFilesMetaSidecar } from '../../data/queries'
+import { getFileEditorMarkdownNoteTitle } from '../editor/file-editor-sheet-model'
 import {
   type DetailMetaPredicateProposalStatus,
 } from './file-detail-metadata-panels-model'
@@ -199,5 +201,14 @@ export function SourceLinkedCardDrawerMetadata({ file }: { file: FilesDetail }) 
 
   return (
     <DetailRdfMetadataPanel {...model} />
+  )
+}
+
+export function FileDrawerMetadata({ file }: { file: FilesDetail }) {
+  const { data: meta } = useFilesMetaSidecar(file, true)
+  const title = getFileEditorMarkdownNoteTitle(file.previewText, file.name)
+
+  return (
+    <FileRdfMetadataPanel file={file} title={title} meta={meta ?? undefined} />
   )
 }

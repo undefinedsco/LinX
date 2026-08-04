@@ -1,6 +1,5 @@
 import type { SolidDatabase } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
-import type { StructuredViewMetadata } from '../../domain/structured/structured-view-metadata'
 import { mergeChatFileEntries, projectChatFileEntries } from '../../domain/list/chat-files-projection'
 import { getParentContainerUri } from '../../domain/resource/resource-semantics'
 import type { ConfirmedEntryTransferOverlayStore } from '../cache/entry-transfer-overlays'
@@ -20,9 +19,7 @@ import {
   readFilesAccessBasics,
   readFilesMetaSidecar,
   readRawTextResource,
-  readStructuredViewMetadata,
   saveRawTextResource,
-  saveStructuredViewMetadata,
   type FilesBlobResource,
   type FilesDetail,
   type FilesEntry,
@@ -30,7 +27,6 @@ import {
   type FilesRawTextResource,
   type FilesResourceTransferInput,
   type FilesRootData,
-  type FilesStructuredViewMetadataSidecar,
   type FilesTreeNode,
 } from '../pod-adapter'
 import type { FilesEntryListInput } from './resource-query-collection'
@@ -114,12 +110,13 @@ export function createResourceCollection(dependencies: ResourceCollectionDepende
       containerUri: string,
       sourceLabel?: string,
       dbOverride?: SolidDatabase | null,
+      options?: { enrichMetadata?: boolean },
     ): Promise<FilesEntry[]> {
-      return listContainerEntries(requireFilesDb(dbOverride), containerUri, sourceLabel)
+      return listContainerEntries(requireFilesDb(dbOverride), containerUri, sourceLabel, options)
     },
 
     async readDetail(resourceUri: string, dbOverride?: SolidDatabase | null): Promise<FilesDetail> {
-      return readFileDetail(requireFilesDb(dbOverride), resourceUri)
+      return readFileDetail(requireFilesDb(dbOverride), resourceUri, { includeContainerEntries: false })
     },
 
     async readRawText(resourceUri: string, dbOverride?: SolidDatabase | null): Promise<FilesRawTextResource> {
@@ -142,21 +139,6 @@ export function createResourceCollection(dependencies: ResourceCollectionDepende
       dbOverride?: SolidDatabase | null,
     ) {
       return readFilesMetaSidecar(requireFilesDb(dbOverride), file)
-    },
-
-    async readStructuredViewMetadata(
-      file: Pick<FilesDetail, 'uri' | 'kind'>,
-      dbOverride?: SolidDatabase | null,
-    ): Promise<FilesStructuredViewMetadataSidecar> {
-      return readStructuredViewMetadata(requireFilesDb(dbOverride), file)
-    },
-
-    async saveStructuredViewMetadata(
-      file: Pick<FilesDetail, 'uri' | 'kind'>,
-      metadata: StructuredViewMetadata,
-      dbOverride?: SolidDatabase | null,
-    ): Promise<FilesStructuredViewMetadataSidecar> {
-      return saveStructuredViewMetadata(requireFilesDb(dbOverride), file, metadata)
     },
 
     async saveRawText(

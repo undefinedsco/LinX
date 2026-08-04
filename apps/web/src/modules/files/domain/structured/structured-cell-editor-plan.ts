@@ -96,6 +96,7 @@ export function isStructuredCellRelationLikeValue(value: string) {
     || normalized.startsWith('../')
     || normalized.startsWith('/')
     || /^https?:\/\//.test(normalized)
+    || /^[A-Za-z][\w-]*:[^\s"<>]+$/.test(normalized)
 }
 
 function valueType(definition?: StructuredCellEditorPredicateDefinition) {

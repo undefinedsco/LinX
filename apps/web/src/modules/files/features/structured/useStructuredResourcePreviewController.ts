@@ -20,7 +20,12 @@ export function useStructuredResourcePreviewController(file: FilesDetail) {
     documentUri: file.uri,
     vocabDiscovery: null,
   })
-  const vocabDiscoveryQuery = useFilesVocabRegistryDiscovery({ localVocabUri: fallbackVocabUris.localVocabUri })
+  const structuredSource = projectStructuredResourcePreviewSource({ file, rawResource: rawQuery })
+  const enrichmentEnabled = structuredSource !== null && structuredSource !== undefined
+  const vocabDiscoveryQuery = useFilesVocabRegistryDiscovery({
+    enabled: enrichmentEnabled,
+    localVocabUri: fallbackVocabUris.localVocabUri,
+  })
   const {
     vocabNamespacesUri,
     vocabShapesUri,
@@ -30,10 +35,9 @@ export function useStructuredResourcePreviewController(file: FilesDetail) {
     documentUri: file.uri,
     vocabDiscovery: vocabDiscoveryQuery.data,
   })
-  const structuredSource = projectStructuredResourcePreviewSource({ file, rawResource: rawQuery })
-  const vocabTermsQuery = useRawTextResource(vocabTermsUri)
-  const vocabShapesQuery = useRawTextResource(vocabShapesUri)
-  const vocabNamespacesQuery = useRawTextResource(vocabNamespacesUri)
+  const vocabTermsQuery = useRawTextResource(vocabTermsUri, enrichmentEnabled)
+  const vocabShapesQuery = useRawTextResource(vocabShapesUri, enrichmentEnabled)
+  const vocabNamespacesQuery = useRawTextResource(vocabNamespacesUri, enrichmentEnabled)
   const vocabDefinitionIndex = useMemo(() => (
     projectStructuredResourcePreviewVocabDefinitionIndex({
       terms: {
@@ -63,6 +67,7 @@ export function useStructuredResourcePreviewController(file: FilesDetail) {
     currentPodRootUri,
     projection,
     structuredWritesSupported: supportsStructuredWriteProposals(file),
+    structuredSourceLoading: rawQuery.isLoading,
     structuredSourceUnavailable: !!rawQuery.error && !rawQuery.data,
     vocabDefinitionIndex,
     vocabShapesUri,

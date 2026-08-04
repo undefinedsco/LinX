@@ -1,8 +1,13 @@
 import { useCallback, useMemo } from 'react'
 
 import { copyFilesText } from '../../app/platform-actions'
-import { useFilesStore } from '../../app/store'
-import { useFilesEntries, useSelectedFilesLocation } from '../../data/queries'
+import { useFilesStore, type FilesSidecarAction } from '../../app/store'
+import {
+  filesFavoriteHooks,
+  useFilesEntries,
+  useFilesFavoriteList,
+  useSelectedFilesLocation,
+} from '../../data/queries'
 import {
   projectFilesListCopyText,
   projectFilesListContentState,
@@ -16,6 +21,7 @@ import {
 } from '../../domain/list/list-view-model'
 import { resolveFilesListOpenDecision, type FilesListOpenTrigger } from '../../domain/list/list-open'
 import { projectCurrentFolderPath } from '../../domain/list/folder-history'
+import { projectFilesExplorerRows } from '../../domain/list/explorer-tree-model'
 import { projectFilesAddContainerUri } from '../../domain/list/files-add-menu-model'
 import {
   getVisibleMimeTypeOptions,
@@ -27,13 +33,14 @@ import { getFilesListErrorState } from '../../domain/resource/files-error-state'
 import type { FilesEntry } from '../../domain/resource/resource-model'
 import { ALL_FILES_NODE_ID, RECENT_FILES_NODE_ID } from '../../domain/resource/resource-model'
 import { projectFilesListColumnHeaders, projectFilesListSortOptions } from './files-list-column-header-model'
+import {
+  planFileDetailFavoriteToggle,
+  projectFileDetailFavoriteState,
+} from '../detail/file-detail-pane-model'
 
 export function useFilesListPaneController() {
   const selectFile = useFilesStore((s) => s.selectFile)
   const selectedTreeNodeId = useFilesStore((s) => s.selectedTreeNodeId)
-  const enterFolder = useFilesStore((s) => s.enterFolder)
-  const folderHistory = useFilesStore((s) => s.folderHistory)
-  const goBackFolder = useFilesStore((s) => s.goBackFolder)
   const searchText = useFilesStore((s) => s.searchText)
   const setSearchText = useFilesStore((s) => s.setSearchText)
   const mimeTypeFilter = useFilesStore((s) => s.mimeTypeFilter)
@@ -50,7 +57,13 @@ export function useFilesListPaneController() {
   const selectTreeNode = useFilesStore((s) => s.selectTreeNode)
   const setDetailTab = useFilesStore((s) => s.setDetailTab)
   const requestEditableFileSheetOpen = useFilesStore((s) => s.requestEditableFileSheetOpen)
-  const { data: rawEntries = [], isLoading, error } = useFilesEntries(selectedTreeNodeId, entryScope)
+  const requestEditableFileInlineEdit = useFilesStore((s) => s.requestEditableFileInlineEdit)
+  const requestSidecarAction = useFilesStore((s) => s.requestSidecarAction)
+  const folderHistory = useFilesStore((s) => s.folderHistory)
+  const goBackFolder = useFilesStore((s) => s.goBackFolder)
+  const enterFolder = useFilesStore((s) => s.enterFolder)
+  const { data: rawEntries = [], isLoading, error, refetch: refetchEntries } = useFilesEntries(selectedTreeNodeId, entryScope)
+  const { data: favorites = [] } = useFilesFavoriteList({ sourceModule: 'files' })
   const selection = useSelectedFilesLocation(selectedTreeNodeId)
   const currentPathLabel = useMemo(() => projectCurrentFolderPath(selection), [selection])
   const addContainerUri = useMemo(() => projectFilesAddContainerUri(selection), [selection])
@@ -90,6 +103,17 @@ export function useFilesListPaneController() {
     () => projectFilesListVisibleRows(files, { showParentPath: showRecentScopeHeader }),
     [files, showRecentScopeHeader],
   )
+  const explorerRows = useMemo(
+    () => projectFilesExplorerRows({
+      rootEntries: files,
+      expandedUris: new Set(),
+      childEntriesByContainerUri: {},
+      loadingContainerUris: new Set(),
+      errorByContainerUri: {},
+      searchText: '',
+    }),
+    [files],
+  )
 
   const openFile = useCallback(
     (file: FilesEntry, trigger: FilesListOpenTrigger) => {
@@ -105,6 +129,11 @@ export function useFilesListPaneController() {
           selectFile(decision.fileUri)
           setDetailTab('preview')
           break
+        case 'open-editable-inline':
+          selectFile(decision.fileUri)
+          setDetailTab('preview')
+          requestEditableFileInlineEdit(decision.fileUri)
+          break
         case 'open-editable-sheet':
           selectFile(decision.fileUri)
           setDetailTab('preview')
@@ -112,7 +141,7 @@ export function useFilesListPaneController() {
           break
       }
     },
-    [enterFolder, requestEditableFileSheetOpen, selectFile, setDetailTab],
+    [enterFolder, requestEditableFileInlineEdit, requestEditableFileSheetOpen, selectFile, setDetailTab],
   )
 
   const sortList = useCallback((field: FilesListSortField) => {
@@ -126,6 +155,26 @@ export function useFilesListPaneController() {
   const copyFiles = useCallback((filesToCopy: FilesEntry[]) => {
     void copyFilesText(projectFilesListCopyText(filesToCopy))
   }, [])
+
+  const openSidecar = useCallback((file: FilesEntry, action: FilesSidecarAction) => {
+    selectFile(file.uri)
+    requestSidecarAction({ uri: file.uri, action })
+  }, [requestSidecarAction, selectFile])
+
+  const isFileFavorite = useCallback(
+    (file: FilesEntry) => projectFileDetailFavoriteState({ file, favorites }),
+    [favorites],
+  )
+
+  const toggleFileFavorite = useCallback(async (file: FilesEntry) => {
+    const plan = planFileDetailFavoriteToggle({
+      file,
+      isFavorite: projectFileDetailFavoriteState({ file, favorites }),
+      selectedTreeNodeId,
+    })
+    if (!plan) return
+    await filesFavoriteHooks.onStarredChange(plan.sourceModule, plan.sourceId, plan.starred, plan.metadata)
+  }, [favorites, selectedTreeNodeId])
 
   const changeBrowserScope = useCallback((scope: FilesBrowserScopeId) => {
     if (scope === 'chat-files') {
@@ -154,17 +203,21 @@ export function useFilesListPaneController() {
     contentState,
     copyFiles,
     emptyState,
+    entryScope,
     error,
     errorState,
     files,
     hasVisibleFiles,
     isLoading,
+    isFileFavorite,
     canFilterByTag,
     canGoBack: folderHistory.length > 0,
     currentPathLabel,
     mimeTypeFilter,
     mimeTypeOptions,
     openFile,
+    openSidecar,
+    retryEntries: () => { void refetchEntries() },
     goBackFolder,
     searchText,
     scopeControl,
@@ -183,6 +236,8 @@ export function useFilesListPaneController() {
     tagFilter,
     tagOptions,
     toolbarChrome,
+    toggleFileFavorite,
+    explorerRows,
     visibleRows,
   }
 }

@@ -73,7 +73,10 @@ async function createLinxSolidDatabaseUncached(
   const instance = drizzle(runtimeSession as any, {
     disableInteropDiscovery: true,
     notifications: {
-      preferredChannels: ['websocket', 'streaming-http'],
+      // SSE first: the server advertises updatesViaStreamingHttp2023 and SSE
+      // connects directly without a subscription POST, while wss connections
+      // fail on current deployments and leak a server-side channel per attempt.
+      preferredChannels: ['streaming-http', 'websocket'],
     },
     podUrl: normalizePodUrl(options.podUrl),
     resourcePreparation: 'best-effort',

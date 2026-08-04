@@ -165,6 +165,23 @@ export function resolveStructuredSourceLinkedCardOpenTarget(
   }
 }
 
+const PREFIXED_NAME_PATTERN = /^([A-Za-z][\w-]*)?:([^\s]+)$/
+
+export function expandStructuredPrefixedName(
+  value: string,
+  projection?: StructuredTableProjection,
+): string {
+  if (!projection) return value
+  const trimmed = value.trim()
+  if (trimmed.startsWith('#') || trimmed.startsWith('./') || trimmed.startsWith('../') || trimmed.startsWith('/')) {
+    return value
+  }
+  const match = trimmed.match(PREFIXED_NAME_PATTERN)
+  if (!match) return value
+  const base = projection.prefixes[match[1] ?? '']
+  return base ? `${base}${match[2]}` : value
+}
+
 export function resolveStructuredSubjectOpenTarget(
   documentUri: string,
   subject: string,
@@ -173,7 +190,9 @@ export function resolveStructuredSubjectOpenTarget(
   const sourceLinkedCardTarget = resolveStructuredSourceLinkedCardOpenTarget(documentUri, subject, options.projection)
   if (sourceLinkedCardTarget) return sourceLinkedCardTarget
 
-  const externalTargetUri = resolveStructuredSubjectExternalUri(documentUri, subject)
+  const expandedSubject = expandStructuredPrefixedName(subject, options.projection)
+
+  const externalTargetUri = resolveStructuredSubjectExternalUri(documentUri, expandedSubject)
   if (externalTargetUri) {
     return {
       targetUri: externalTargetUri,
@@ -182,7 +201,7 @@ export function resolveStructuredSubjectOpenTarget(
     }
   }
 
-  const resourceTargetUri = resolveStructuredSubjectResourceUri(documentUri, subject)
+  const resourceTargetUri = resolveStructuredSubjectResourceUri(documentUri, expandedSubject)
   if (resourceTargetUri) {
     return {
       targetUri: resourceTargetUri,
@@ -191,7 +210,7 @@ export function resolveStructuredSubjectOpenTarget(
     }
   }
 
-  const containingTargetUri = resolveStructuredSubjectContainingResourceUri(documentUri, subject)
+  const containingTargetUri = resolveStructuredSubjectContainingResourceUri(documentUri, expandedSubject)
   if (containingTargetUri) {
     return {
       targetUri: containingTargetUri,
@@ -214,8 +233,12 @@ export function resolveStructuredSubjectOpenTarget(
 export function resolveStructuredRelationOpenTarget(
   documentUri: string,
   value: string,
+  projection?: StructuredTableProjection,
 ): StructuredSubjectOpenTarget | null {
-  const normalizedValue = normalizeStructuredCellResourceValue(value).trim()
+  const normalizedValue = expandStructuredPrefixedName(
+    normalizeStructuredCellResourceValue(value).trim(),
+    projection,
+  )
 
   const externalTargetUri = resolveStructuredSubjectExternalUri(documentUri, normalizedValue)
   if (externalTargetUri) {

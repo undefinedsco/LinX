@@ -12,7 +12,7 @@ const accessDialogModelPath = 'src/modules/files/domain/resource/access-policy-d
 const accessDialogModelRootShimPath = 'src/modules/files/access-policy-dialog-model.ts'
 const sidecarsConsumers = [
   ['src/modules/files/features/detail/FileDetailPane.tsx', '../sidecars/ResourceSidecars'],
-  ['src/modules/files/features/editor/FileEditorSheet.tsx', '../sidecars/ResourceSidecars'],
+  ['src/modules/files/features/editor/FileEditorSurface.tsx', '../sidecars/ResourceSidecars'],
   ['src/modules/files/features/folder/FolderChildPreview.tsx', '../sidecars/ResourceSidecars'],
   ['src/modules/files/features/structured/StructuredSubjectPeekActions.tsx', '../sidecars/ResourceSidecars'],
 ] as const
@@ -248,19 +248,5 @@ describe('Resource sidecars architecture boundary', () => {
     expect(sidecarsSource).toContain('onOpenPolicySource={accessDialog.openPolicySource}')
     expect(controllerSource).toContain('function openPolicySource')
     expect(controllerSource).toContain('openFilesExternalUri')
-  })
-
-  it('keeps editor meta tail independent from data hook query shape', () => {
-    const editorMetaTailPath = 'src/modules/files/features/editor/FileEditorSheetMetaTail.tsx'
-
-    expect(existsSync(editorMetaTailPath)).toBe(true)
-    if (!existsSync(editorMetaTailPath)) return
-
-    const editorMetaTailSource = readFileSync(editorMetaTailPath, 'utf8')
-
-    expect(editorMetaTailSource).not.toContain('useFilesMetaSidecar')
-    expect(editorMetaTailSource).not.toContain('ReturnType<typeof')
-    expect(editorMetaTailSource).not.toContain('query.data')
-    expect(editorMetaTailSource).toContain('content.meta')
   })
 })

@@ -2,12 +2,12 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query'
 
 export type FilesQueryInvalidationRoots = {
   roots: QueryKey
+  containerEntries: QueryKey
   children: QueryKey
   entries: QueryKey
   detail: QueryKey
   accessBasics: QueryKey
   metaSidecar: QueryKey
-  structuredViewMetadata: QueryKey
   rawText: QueryKey
   blob: QueryKey
   structuredCellProposals: QueryKey
@@ -94,6 +94,7 @@ export function createFilesResourceCacheInvalidationCollection(
     const client = resolveCacheClient(cacheClient)
     await Promise.all([
       client.invalidateQueries({ queryKey: queryKeys.roots }),
+      client.invalidateQueries({ queryKey: queryKeys.containerEntries }),
       client.invalidateQueries({ queryKey: queryKeys.children }),
       client.invalidateQueries({
         queryKey: queryKeys.entries,
@@ -104,7 +105,6 @@ export function createFilesResourceCacheInvalidationCollection(
       client.invalidateQueries({ queryKey: queryKeys.blob }),
       client.invalidateQueries({ queryKey: queryKeys.accessBasics }),
       client.invalidateQueries({ queryKey: queryKeys.metaSidecar }),
-      client.invalidateQueries({ queryKey: queryKeys.structuredViewMetadata }),
       client.invalidateQueries({ queryKey: queryKeys.vocabDiscovery }),
     ])
   }
@@ -167,6 +167,7 @@ export function createFilesResourceCacheInvalidationCollection(
   ) {
     await Promise.all([
       cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
+      cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
       cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
       cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, input.targetResourceUri] }),
       cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, input.targetResourceUri] }),
@@ -213,6 +214,7 @@ export function createFilesResourceCacheInvalidationCollection(
   ) {
     await Promise.all([
       cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
+      cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
       cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
       cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, input.termsResourceUri] }),
       cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, input.termsResourceUri] }),

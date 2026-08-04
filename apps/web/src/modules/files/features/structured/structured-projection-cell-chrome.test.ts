@@ -173,8 +173,8 @@ describe('projectStructuredSubjectCellChrome', () => {
       rowIndex: 2,
       pending: true,
       openAffordance: {
-        ariaDescription: '单击打开预览；在预览中选择打开动作。',
-        title: `${documentUri}\n单击打开预览；在预览中选择打开动作`,
+        ariaDescription: '单击或 Enter 打开预览；在预览中选择打开动作。',
+        title: `${documentUri}\n单击或 Enter 打开预览；在预览中选择打开动作`,
       },
       openTarget: {
         targetUri: documentUri,
@@ -208,14 +208,141 @@ describe('projectStructuredSubjectCellChrome', () => {
     expect(chrome.pendingMarker).toBeNull()
   })
 
+  it('shows the file name when the subject is the document itself', () => {
+    const chrome = projectStructuredSubjectCellChrome({
+      documentUri: 'https://pod.example/.data/agents/assistant.ttl',
+      projection: { prefixes: {}, predicates: [], rows: [], warnings: [] },
+      row: {
+        subject: 'https://pod.example/.data/agents/assistant.ttl',
+        cells: {},
+      },
+      rowIndex: 0,
+    })
+
+    expect(chrome.displayLabel).toBe('assistant.ttl')
+  })
+
+  it('shows container-relative labels for sibling subjects', () => {
+    const chrome = projectStructuredSubjectCellChrome({
+      documentUri: 'https://pod.example/.data/agents/assistant.ttl',
+      projection: { prefixes: {}, predicates: [], rows: [], warnings: [] },
+      row: {
+        subject: 'https://pod.example/.data/agents/other.ttl#Thing',
+        cells: {},
+      },
+      rowIndex: 0,
+    })
+
+    expect(chrome.displayLabel).toBe('other.ttl#Thing')
+  })
+
+  it('shows the document basename for same-origin subjects outside the document container', () => {
+    const chrome = projectStructuredSubjectCellChrome({
+      documentUri: 'https://pod.example/.data/agents/assistant.ttl',
+      projection: { prefixes: {}, predicates: [], rows: [], warnings: [] },
+      row: {
+        subject: 'https://pod.example/.data/projects/demo.ttl',
+        cells: {},
+      },
+      rowIndex: 0,
+    })
+
+    expect(chrome.displayLabel).toBe('demo.ttl')
+  })
+
+  it('shows the document basename with hash for cross-origin subjects', () => {
+    const chrome = projectStructuredSubjectCellChrome({
+      documentUri: 'https://pod.example/.data/agents/assistant.ttl',
+      projection: { prefixes: {}, predicates: [], rows: [], warnings: [] },
+      row: {
+        subject: 'https://other.example/x/y/report.ttl#Thing',
+        cells: {},
+      },
+      rowIndex: 0,
+    })
+
+    expect(chrome.displayLabel).toBe('report.ttl#Thing')
+  })
+
+  it('resolves default-prefix compacted subjects to the containing document peek target', () => {
+    const chrome = projectStructuredSubjectCellChrome({
+      documentUri,
+      projection: {
+        prefixes: { '': `${documentUri}#` },
+        predicates: [],
+        rows: [],
+        warnings: [],
+      },
+      row: {
+        subject: ':idea-1',
+        cells: {},
+      },
+      rowIndex: 0,
+    })
+
+    expect(chrome.displayLabel).toBe(':idea-1')
+    expect(chrome.openTarget).toEqual({
+      targetUri: documentUri,
+      kind: 'resource',
+      canNavigateDirectly: false,
+    })
+    expect(chrome.openAffordance).not.toBeNull()
+  })
+
+  it('resolves named-prefix compacted subjects through the projection prefixes', () => {
+    const chrome = projectStructuredSubjectCellChrome({
+      documentUri,
+      projection: {
+        prefixes: { cards: 'https://pod.example/cards/' },
+        predicates: [],
+        rows: [],
+        warnings: [],
+      },
+      row: {
+        subject: 'cards:report.md',
+        cells: {},
+      },
+      rowIndex: 1,
+    })
+
+    expect(chrome.openTarget).toEqual({
+      targetUri: 'https://pod.example/cards/report.md',
+      kind: 'resource',
+      canNavigateDirectly: true,
+    })
+  })
+
+  it('falls back to the containing document when a compacted subject has no known prefix', () => {
+    const chrome = projectStructuredSubjectCellChrome({
+      documentUri,
+      projection: {
+        prefixes: {},
+        predicates: [],
+        rows: [],
+        warnings: [],
+      },
+      row: {
+        subject: ':orphan',
+        cells: {},
+      },
+      rowIndex: 0,
+    })
+
+    expect(chrome.openTarget).toEqual({
+      targetUri: documentUri,
+      kind: 'resource',
+      canNavigateDirectly: false,
+    })
+  })
+
   it('projects subject open affordance copy for direct and peek-first targets', () => {
     expect(projectStructuredSubjectCellOpenAffordance({
       canNavigateDirectly: true,
       kind: 'resource',
       targetUri: 'https://pod.example/cards/report.md',
     })).toEqual({
-      ariaDescription: '单击打开预览；Enter 或双击打开资源。',
-      title: 'https://pod.example/cards/report.md\n单击打开预览；Enter 或双击打开资源',
+      ariaDescription: '单击或 Enter 打开资源；空格预览。',
+      title: 'https://pod.example/cards/report.md\n单击或 Enter 打开资源；空格预览',
     })
 
     expect(projectStructuredSubjectCellOpenAffordance({
@@ -223,8 +350,8 @@ describe('projectStructuredSubjectCellChrome', () => {
       kind: 'resource',
       targetUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
     })).toEqual({
-      ariaDescription: '单击打开预览；在预览中选择打开动作。',
-      title: 'https://pod.example/.data/workspaces/ws-1/state.ttl\n单击打开预览；在预览中选择打开动作',
+      ariaDescription: '单击或 Enter 打开预览；在预览中选择打开动作。',
+      title: 'https://pod.example/.data/workspaces/ws-1/state.ttl\n单击或 Enter 打开预览；在预览中选择打开动作',
     })
 
     expect(projectStructuredSubjectCellOpenAffordance(null)).toBeNull()

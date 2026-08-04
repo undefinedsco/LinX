@@ -6,17 +6,10 @@ export {
   resolveStructuredSubjectExternalUri,
   resolveStructuredSubjectResourceUri,
 } from '../../domain/resource/structured-subject-uri'
-import {
-  parseStructuredViewMetadataTurtle,
-  renderStructuredViewMetadataTurtle,
-  type StructuredViewMetadata,
-} from '../../domain/structured/structured-view-metadata'
-import { PodRequestError, withPodRequestBoundary } from './pod-request-boundary'
 import { summarizeWacAclPolicy } from '../../domain/resource/access-policy-model'
 import {
   classifyFilesEntry,
   getEntryName,
-  getFilesEntryOpenMode,
   getParentContainerUri,
   isFilesSidecarSemanticKind,
   isTextLikeMimeType,
@@ -45,10 +38,8 @@ import {
   type FilesFolderCreateInput,
   type FilesMetaSidecar,
   type FilesRawTextResource,
-  type FilesResourceReadErrorKind,
   type FilesResourceTransferInput,
   type FilesRootData,
-  type FilesStructuredViewMetadataSidecar,
   type FilesTreeNode,
 } from '../../domain/resource/resource-model'
 import {
@@ -59,10 +50,11 @@ import {
 import {
   createContainerNodeId,
   createLocalWorkspaceNodeId,
+  createResourceNodeId,
   createWorkspaceNodeId,
   getContainerLabel,
+  getPodRootLabel,
   parseTreeNodeId,
-  resolvePodChildContainerUri,
 } from '../../domain/resource/tree-model'
 
 export {
@@ -72,6 +64,7 @@ export {
   FilesSaveConflictError,
   createContainerNodeId,
   createLocalWorkspaceNodeId,
+  createResourceNodeId,
   createWorkspaceNodeId,
   getContainerLabel,
   getPodRootUri,
@@ -138,6 +131,7 @@ interface ResourceMetadata {
   mimeType: string | null
   size: number | null
   modifiedAt: string | null
+  bodyText?: string
 }
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -312,156 +306,6 @@ function isSameOriginUri(candidateUri: string, ownerUri: string): boolean {
   }
 }
 
-function replaceStructuredViewMetadataBlock(content: string, renderedViewMetadata: string) {
-  const existingBlock = /(?:^|\n)<#view>\s+a\s+udfs:StructuredViewMetadata\s*;[\s\S]*?udfs:writesCanonicalData\s+(?:true|false)\s*\./m
-  const trimmedRendered = renderedViewMetadata.trim()
-  if (existingBlock.test(content)) {
-    return content.replace(existingBlock, (match) => {
-      const prefix = match.startsWith('\n') ? '\n' : ''
-      return `${prefix}${trimmedRendered}`
-    }).trimEnd()
-  }
-
-  const separator = content.trim() ? '\n\n' : ''
-  return `${content.trimEnd()}${separator}${trimmedRendered}`.trimStart()
-}
-
-function headersForMetaPatch(meta: FilesMetaSidecar): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/sparql-update',
-  }
-
-  if (meta.state === 'exists') {
-    if (meta.etag) {
-      headers['If-Match'] = meta.etag
-    }
-  } else {
-    headers['If-None-Match'] = '*'
-  }
-
-  return headers
-}
-
-function canFallbackFromStructuredViewPatch(response: Response) {
-  return response.status === 405 || response.status === 501
-}
-
-function structuredViewMetadataInsertTriples(metadata: StructuredViewMetadata) {
-  return renderStructuredViewMetadataTurtle(metadata)
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('@prefix '))
-    .join('\n')
-    .trim()
-}
-
-function buildStructuredViewMetadataPatch(metaUri: string, metadata: StructuredViewMetadata) {
-  return [
-    `BASE <${metaUri}>`,
-    'PREFIX udfs: <https://undefineds.co/vocab/>',
-    'PREFIX dcterms: <http://purl.org/dc/terms/>',
-    '',
-    'DELETE {',
-    '  <#view> ?predicate ?object .',
-    '  ?object ?nestedPredicate ?nestedObject .',
-    '} WHERE {',
-    '  <#view> ?predicate ?object .',
-    '  OPTIONAL {',
-    '    ?object ?nestedPredicate ?nestedObject .',
-    '    FILTER(isBlank(?object))',
-    '  }',
-    '};',
-    '',
-    'INSERT DATA {',
-    structuredViewMetadataInsertTriples(metadata),
-    '}',
-  ].join('\n')
-}
-
-function buildStructuredViewMetadataBasicGraphPatch(metaUri: string, metadata: StructuredViewMetadata) {
-  return [
-    `BASE <${metaUri}>`,
-    'PREFIX udfs: <https://undefineds.co/vocab/>',
-    'PREFIX dcterms: <http://purl.org/dc/terms/>',
-    '',
-    'DELETE {',
-    '  <#view> ?predicate ?object .',
-    '} WHERE {',
-    '  <#view> ?predicate ?object .',
-    '};',
-    '',
-    'INSERT DATA {',
-    structuredViewMetadataInsertTriples(metadata),
-    '}',
-  ].join('\n')
-}
-
-export async function readStructuredViewMetadata(
-  db: SolidDatabase,
-  entry: Pick<FilesEntry, 'uri' | 'kind'>,
-): Promise<FilesStructuredViewMetadataSidecar> {
-  const meta = await readFilesMetaSidecar(db, entry)
-  return {
-    ...meta,
-    metadata: meta.content
-      ? parseStructuredViewMetadataTurtle(meta.content, meta.ownerUri)
-      : null,
-  }
-}
-
-export async function saveStructuredViewMetadata(
-  db: SolidDatabase,
-  entry: Pick<FilesEntry, 'uri' | 'kind'>,
-  metadata: StructuredViewMetadata,
-): Promise<FilesStructuredViewMetadataSidecar> {
-  const meta = await readFilesMetaSidecar(db, entry, { discoverLinked: false })
-  if (meta.state === 'inaccessible') {
-    throw new Error(`无法保存视图配置: .meta 不可访问 (${meta.status ?? 'unknown'})`)
-  }
-  if (meta.state === 'unknown') {
-    throw new Error(`无法保存视图配置: .meta 状态未知 (${meta.status ?? 'unknown'})`)
-  }
-
-  const content = replaceStructuredViewMetadataBlock(
-    meta.content ?? '',
-    renderStructuredViewMetadataTurtle(metadata),
-  )
-  const authFetch = getAuthenticatedFetch(db)
-  let response = await authFetch(meta.metaUri, {
-    method: 'PATCH',
-    headers: headersForMetaPatch(meta),
-    body: buildStructuredViewMetadataPatch(meta.metaUri, metadata),
-  })
-
-  if (response.status === 412) {
-    throw new FilesSaveConflictError(meta.metaUri)
-  }
-  if (!response.ok && canFallbackFromStructuredViewPatch(response)) {
-    response = await authFetch(meta.metaUri, {
-      method: 'PATCH',
-      headers: headersForMetaPatch(meta),
-      body: buildStructuredViewMetadataBasicGraphPatch(meta.metaUri, metadata),
-    })
-    if (response.status === 412) {
-      throw new FilesSaveConflictError(meta.metaUri)
-    }
-  }
-  if (!response.ok) {
-    throw new Error(`保存视图配置失败: HTTP ${response.status}`)
-  }
-
-  const etag = response.headers.get('etag')
-  return {
-    ownerUri: meta.ownerUri,
-    metaUri: meta.metaUri,
-    state: 'exists',
-    status: response.status,
-    content,
-    mimeType: 'text/turtle',
-    etag,
-    size: content.length,
-    metadata: parseStructuredViewMetadataTurtle(content, metadata.documentUri),
-  }
-}
 
 function parseLinkHeader(linkHeader: string | null, baseUri: string): Record<string, string[]> {
   if (!linkHeader) return {}
@@ -684,7 +528,9 @@ export async function readFilesAccessBasics(
 }
 
 function getMimeTypeFromHeaders(headers: Record<string, string>, fallback?: string | null): string | null {
-  return headers['content-type']?.split(';')[0]?.trim() ?? fallback ?? null
+  const headerMimeType = headers['content-type']?.split(';')[0]?.trim()
+  if (!headerMimeType || headerMimeType === 'application/octet-stream') return fallback ?? headerMimeType ?? null
+  return headerMimeType
 }
 
 function assertRawTextIsSaveable(mimeType: string, content: string): void {
@@ -703,18 +549,36 @@ function toIsoString(value: string | null): string | null {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString()
 }
 
-async function readMetadata(db: SolidDatabase, uri: string): Promise<ResourceMetadata> {
+async function readMetadata(
+  db: SolidDatabase,
+  uri: string,
+  options: { includeBody?: boolean } = {},
+): Promise<ResourceMetadata> {
   const authFetch = getAuthenticatedFetch(db)
   let response: Response | null = null
+  let bodyText: string | undefined
 
   try {
-    response = await authFetch(uri, { method: 'HEAD' })
-    if (response.status === 405) {
-      response = await authFetch(uri, { method: 'GET' })
+    response = await authFetch(uri, options.includeBody ? {
+      method: 'GET',
+      headers: {
+        Accept: `${guessMimeType(uri, false) ?? 'text/plain'}, text/plain;q=0.9, */*;q=0.1`,
+      },
+    } : { method: 'HEAD' })
+    if (options.includeBody && response.ok) {
       try {
-        await response.body?.cancel?.()
+        bodyText = await response.text()
       } catch {
-        // ignore
+        // Keep metadata usable when the body stream cannot be read.
+      }
+    } else if (response.status === 405 || response.status >= 500) {
+      response = await authFetch(uri, { method: 'GET' })
+      if (response.ok) {
+        try {
+          bodyText = await response.text()
+        } catch {
+          // Keep metadata usable when the fallback body stream cannot be read.
+        }
       }
     }
   } catch (error) {
@@ -736,33 +600,7 @@ async function readMetadata(db: SolidDatabase, uri: string): Promise<ResourceMet
     mimeType,
     size: Number.isFinite(parsedSize) ? parsedSize : null,
     modifiedAt: toIsoString(headers['last-modified'] ?? null),
-  }
-}
-
-function createUnavailableMetadata(uri: string, kind: FilesEntryKind, error: unknown): ResourceMetadata & {
-  metadataState: 'unavailable'
-  metadataErrorKind: FilesResourceReadErrorKind
-  metadataError: string
-} {
-  const message = error instanceof Error ? error.message : String(error)
-  const metadataErrorKind = error instanceof FilesResourceReadError
-    ? error.kind
-    : error instanceof PodRequestError
-      ? error.kind === 'unauthorized' || error.kind === 'forbidden' || error.kind === 'missing'
-        ? error.kind
-        : error.kind === 'timeout' || error.kind === 'offline' || error.kind === 'aborted'
-          ? 'network'
-          : 'unknown'
-      : 'unknown'
-
-  return {
-    headers: {},
-    mimeType: guessMimeType(uri, kind === 'container'),
-    size: null,
-    modifiedAt: null,
-    metadataState: 'unavailable',
-    metadataErrorKind,
-    metadataError: message,
+    bodyText,
   }
 }
 
@@ -775,6 +613,31 @@ function sortEntries(entries: FilesEntry[]): FilesEntry[] {
   })
 }
 
+const inFlightContainerListings = new WeakMap<object, Map<string, Promise<string[]>>>()
+
+function listContainerResourceUris(db: SolidDatabase, containerUri: string): Promise<string[]> {
+  const dbKey = db as object
+  const normalizedContainerUri = normalizeContainerUri(containerUri)
+  let listingsByUri = inFlightContainerListings.get(dbKey)
+  if (!listingsByUri) {
+    listingsByUri = new Map()
+    inFlightContainerListings.set(dbKey, listingsByUri)
+  }
+
+  const existing = listingsByUri.get(normalizedContainerUri)
+  if (existing) return existing
+
+  const request = getContainerLister(db)(normalizedContainerUri)
+  listingsByUri.set(normalizedContainerUri, request)
+  const release = () => {
+    if (listingsByUri?.get(normalizedContainerUri) === request) {
+      listingsByUri.delete(normalizedContainerUri)
+    }
+  }
+  void request.then(release, release)
+  return request
+}
+
 async function listContainerEntryStubs(
   db: SolidDatabase,
   containerUri: string,
@@ -782,7 +645,7 @@ async function listContainerEntryStubs(
 ): Promise<FilesEntry[]> {
   const normalizedContainerUri = normalizeContainerUri(containerUri)
   const podRootUri = getPodRootUri(db)
-  const resourceUris = await getContainerLister(db)(normalizedContainerUri)
+  const resourceUris = await listContainerResourceUris(db, normalizedContainerUri)
   const entries = resourceUris.flatMap((uri): FilesEntry[] => {
     const normalizedUri = uri.endsWith('/') ? normalizeContainerUri(uri) : uri
     const kind: FilesEntryKind = normalizedUri.endsWith('/') ? 'container' : 'resource'
@@ -804,52 +667,33 @@ async function listContainerEntryStubs(
   return sortEntries(entries)
 }
 
+const CONTAINER_METADATA_ENRICH_MAX_ENTRIES = 100
+
+async function enrichEntryWithMetadata(db: SolidDatabase, entry: FilesEntry): Promise<FilesEntry> {
+  try {
+    const metadata = await readMetadata(db, entry.uri)
+    return {
+      ...entry,
+      mimeType: entry.kind === 'container' ? entry.mimeType : (metadata.mimeType ?? entry.mimeType),
+      size: entry.kind === 'container' ? null : metadata.size,
+      modifiedAt: metadata.modifiedAt,
+      metadataState: 'available',
+    }
+  } catch {
+    return { ...entry, metadataState: 'unavailable' }
+  }
+}
+
 export async function listContainerEntries(
   db: SolidDatabase,
   containerUri: string,
   sourceLabel?: string,
+  options: { enrichMetadata?: boolean } = {},
 ): Promise<FilesEntry[]> {
-  const normalizedContainerUri = normalizeContainerUri(containerUri)
-  const podRootUri = getPodRootUri(db)
-  const listContainerResources = getContainerLister(db)
-  const resourceUris = await listContainerResources(normalizedContainerUri)
-
-  const entries = await Promise.all(resourceUris.map(async (uri): Promise<FilesEntry | null> => {
-    const normalizedUri = uri.endsWith('/') ? normalizeContainerUri(uri) : uri
-    const kind: FilesEntryKind = normalizedUri.endsWith('/') ? 'container' : 'resource'
-    const pathSemanticKind = classifyFilesEntry(normalizedUri, kind === 'container', podRootUri)
-    if (isFilesSidecarSemanticKind(pathSemanticKind)) return null
-    const metadata = await withPodRequestBoundary(
-      () => readMetadata(db, normalizedUri),
-      { timeoutMs: 2_500 },
-    )
-      .then((resourceMetadata) => ({
-        ...resourceMetadata,
-        metadataState: 'available' as const,
-        metadataErrorKind: undefined,
-        metadataError: undefined,
-      }))
-      .catch((error) => createUnavailableMetadata(normalizedUri, kind, error))
-    const semanticKind = classifyFilesEntry(normalizedUri, kind === 'container', podRootUri, metadata.mimeType)
-
-    return {
-      id: normalizedUri,
-      uri: normalizedUri,
-      name: getEntryName(normalizedUri),
-      kind,
-      semanticKind,
-      parentUri: normalizedContainerUri,
-      mimeType: metadata.mimeType,
-      size: metadata.size,
-      modifiedAt: metadata.modifiedAt,
-      metadataState: metadata.metadataState,
-      metadataErrorKind: metadata.metadataErrorKind,
-      metadataError: metadata.metadataError,
-      sourceLabel,
-    } satisfies FilesEntry
-  }))
-
-  return sortEntries(entries.filter((entry): entry is FilesEntry => entry !== null))
+  const entries = await listContainerEntryStubs(db, containerUri, sourceLabel)
+  if (!options.enrichMetadata) return entries
+  if (entries.length === 0 || entries.length > CONTAINER_METADATA_ENRICH_MAX_ENTRIES) return entries
+  return Promise.all(entries.map((entry) => enrichEntryWithMetadata(db, entry)))
 }
 
 export async function listAllBrowsableEntries(
@@ -863,17 +707,19 @@ export async function listAllBrowsableEntries(
   if (workspaceUri && !isLocalWorkspaceUri(workspaceUri)) {
     sources.push({ uri: normalizeContainerUri(workspaceUri), label: '当前话题' })
   }
-  sources.push({ uri: podRootUri, label: 'Pod 根目录' })
+  sources.push({ uri: podRootUri, label: getPodRootLabel(podRootUri) })
 
   const entriesByUri = new Map<string, FilesEntry>()
-  const visitedContainers = new Set<string>()
 
-  for (const source of sources) {
-    if (options.recursive) {
-      await collectBrowsableEntries(db, source, entriesByUri, visitedContainers, 0)
-      continue
-    }
-    const entries = await listContainerEntries(db, source.uri, source.label)
+  if (options.recursive) {
+    await collectBrowsableEntries(db, sources, entriesByUri)
+    return sortEntries(Array.from(entriesByUri.values()))
+  }
+
+  const listings = await Promise.all(
+    sources.map((source) => listContainerEntries(db, source.uri, source.label)),
+  )
+  for (const entries of listings) {
     for (const entry of entries) {
       if (!entriesByUri.has(entry.uri)) {
         entriesByUri.set(entry.uri, entry)
@@ -884,39 +730,50 @@ export async function listAllBrowsableEntries(
   return sortEntries(Array.from(entriesByUri.values()))
 }
 
+const ALL_BROWSABLE_LISTING_CONCURRENCY = 4
+
+type BrowsableListingSource = { uri: string; label: string; depth: number }
+
 async function collectBrowsableEntries(
   db: SolidDatabase,
-  source: { uri: string; label: string },
+  sources: Array<{ uri: string; label: string }>,
   entriesByUri: Map<string, FilesEntry>,
-  visitedContainers: Set<string>,
-  depth: number,
 ): Promise<void> {
-  const containerUri = normalizeContainerUri(source.uri)
-  if (visitedContainers.has(containerUri)) return
-  if (depth > ALL_BROWSABLE_MAX_DEPTH) return
-  if (entriesByUri.size >= ALL_BROWSABLE_MAX_ENTRIES) return
+  const visitedContainers = new Set<string>()
+  const queue: BrowsableListingSource[] = sources.map((source) => ({ ...source, depth: 0 }))
 
-  visitedContainers.add(containerUri)
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      if (entriesByUri.size >= ALL_BROWSABLE_MAX_ENTRIES) return
+      const source = queue.shift()
+      if (!source) return
 
-  let entries: FilesEntry[]
-  try {
-    entries = await listContainerEntries(db, containerUri, source.label)
-  } catch {
-    return
+      const containerUri = normalizeContainerUri(source.uri)
+      if (visitedContainers.has(containerUri)) continue
+      if (source.depth > ALL_BROWSABLE_MAX_DEPTH) continue
+      visitedContainers.add(containerUri)
+
+      let entries: FilesEntry[]
+      try {
+        entries = await listContainerEntries(db, containerUri, source.label, { enrichMetadata: false })
+      } catch {
+        continue
+      }
+
+      for (const entry of entries) {
+        if (!entriesByUri.has(entry.uri)) {
+          entriesByUri.set(entry.uri, entry)
+        }
+        if (entry.kind === 'container' && source.depth < ALL_BROWSABLE_MAX_DEPTH) {
+          queue.push({ uri: entry.uri, label: source.label, depth: source.depth + 1 })
+        }
+      }
+    }
   }
 
-  for (const entry of entries) {
-    if (!entriesByUri.has(entry.uri)) {
-      entriesByUri.set(entry.uri, entry)
-    }
-    if (
-      entry.kind === 'container'
-      && entriesByUri.size < ALL_BROWSABLE_MAX_ENTRIES
-      && depth < ALL_BROWSABLE_MAX_DEPTH
-    ) {
-      await collectBrowsableEntries(db, { uri: entry.uri, label: source.label }, entriesByUri, visitedContainers, depth + 1)
-    }
-  }
+  await Promise.all(
+    Array.from({ length: ALL_BROWSABLE_LISTING_CONCURRENCY }, () => worker()),
+  )
 }
 
 export async function buildRootNodes(
@@ -924,7 +781,7 @@ export async function buildRootNodes(
   workspaceUri?: string | null,
 ): Promise<FilesRootData> {
   const podRootUri = getPodRootUri(db)
-  const podRootEntriesPromise = listContainerEntryStubs(db, podRootUri, 'Pod 根目录')
+  const podRootEntriesPromise = listContainerEntryStubs(db, podRootUri, getPodRootLabel(podRootUri))
 
   let workspaceNode: FilesTreeNode | null = null
   let workspaceEntries: FilesEntry[] = []
@@ -979,39 +836,31 @@ export async function buildRootNodes(
     nodes.push(workspaceNode)
   }
 
-  const agentsRootUri = resolvePodChildContainerUri(podRootUri, '.data/agents/')
-  const workspacesRootUri = resolvePodChildContainerUri(podRootUri, '.data/workspaces/')
-  const repositoriesRootUri = resolvePodChildContainerUri(podRootUri, '.data/repositories/')
-  nodes.push(
-    {
-      id: AGENTS_ROOT_NODE_ID,
-      label: 'Agent homes',
-      type: 'agents-root',
-      uri: agentsRootUri,
-    },
-    {
-      id: WORKSPACES_ROOT_NODE_ID,
-      label: 'Workspaces',
-      type: 'workspaces-root',
-      uri: workspacesRootUri,
-    },
-    {
-      id: REPOSITORIES_ROOT_NODE_ID,
-      label: 'Repositories',
-      type: 'repositories-root',
-      uri: repositoriesRootUri,
-    },
-  )
-
   nodes.push({
     id: POD_ROOT_NODE_ID,
-    label: 'Pod 根目录',
+    label: getPodRootLabel(podRootUri),
     type: 'container',
     uri: podRootUri,
     count: podRootEntries.length,
   })
 
-  return { nodes, podRootUri }
+  return { nodes, podRootUri, entries: sortEntries(allEntries) }
+}
+
+export function projectContainerEntriesToTreeNodes(
+  entries: FilesEntry[],
+  parentId: string,
+  podRootUri?: string | null,
+): FilesTreeNode[] {
+  return entries
+    .filter((entry) => !isFilesSidecarSemanticKind(entry.semanticKind))
+    .map((entry) => ({
+      id: entry.kind === 'container' ? createContainerNodeId(entry.uri) : createResourceNodeId(entry.uri),
+      label: entry.kind === 'container' ? getContainerLabel(entry.uri, podRootUri) : getEntryName(entry.uri),
+      type: entry.kind === 'container' ? 'container' as const : 'resource' as const,
+      uri: entry.uri,
+      parentId,
+    }))
 }
 
 export async function listContainerChildNodes(
@@ -1021,22 +870,21 @@ export async function listContainerChildNodes(
   podRootUri?: string | null,
 ): Promise<FilesTreeNode[]> {
   const entries = await listContainerEntries(db, containerUri)
-  return entries
-    .filter((entry) => entry.kind === 'container')
-    .map((entry) => ({
-      id: createContainerNodeId(entry.uri),
-      label: getContainerLabel(entry.uri, podRootUri),
-      type: 'container' as const,
-      uri: entry.uri,
-      parentId,
-    }))
+  return projectContainerEntriesToTreeNodes(entries, parentId, podRootUri)
 }
 
-export async function readFileDetail(db: SolidDatabase, resourceUri: string): Promise<FilesDetail> {
+export async function readFileDetail(
+  db: SolidDatabase,
+  resourceUri: string,
+  options: { includeContainerEntries?: boolean } = {},
+): Promise<FilesDetail> {
   const normalizedUri = resourceUri.endsWith('/') ? normalizeContainerUri(resourceUri) : resourceUri
   const kind: FilesEntryKind = normalizedUri.endsWith('/') ? 'container' : 'resource'
   const podRootUri = getPodRootUri(db)
-  const metadata = await readMetadata(db, normalizedUri)
+  const inferredMimeType = guessMimeType(normalizedUri, kind === 'container')
+  const metadata = await readMetadata(db, normalizedUri, {
+    includeBody: kind === 'resource' && isTextLikeMimeType(inferredMimeType),
+  })
   const semanticKind = classifyFilesEntry(normalizedUri, kind === 'container', podRootUri, metadata.mimeType)
   const parentUri = getParentContainerUri(normalizedUri) ?? podRootUri
 
@@ -1044,30 +892,32 @@ export async function readFileDetail(db: SolidDatabase, resourceUri: string): Pr
   let childEntries: FilesEntry[] | undefined
   let previewUnavailableReason: string | undefined
 
-  if (
-    kind === 'resource' &&
-    isTextLikeMimeType(metadata.mimeType) &&
-    getFilesEntryOpenMode({ kind, semanticKind, mimeType: metadata.mimeType }) !== 'editable-file-sheet'
-  ) {
-    try {
-      const response = await getAuthenticatedFetch(db)(normalizedUri, {
-        method: 'GET',
-        headers: {
-          Accept: `${metadata.mimeType ?? 'text/plain'}, text/plain;q=0.9, */*;q=0.1`,
-        },
-      })
-      if (response.ok) {
-        const text = await response.text()
-        previewText = text.length > 12000 ? `${text.slice(0, 12000)}\n\n…` : text
-      } else {
+  if (kind === 'resource' && isTextLikeMimeType(metadata.mimeType)) {
+    if (metadata.bodyText !== undefined) {
+      previewText = metadata.bodyText.length > 12000 ? `${metadata.bodyText.slice(0, 12000)}\n\n…` : metadata.bodyText
+    } else {
+      try {
+        const response = await getAuthenticatedFetch(db)(normalizedUri, {
+          method: 'GET',
+          headers: {
+            Accept: `${metadata.mimeType ?? 'text/plain'}, text/plain;q=0.9, */*;q=0.1`,
+          },
+        })
+        if (response.ok) {
+          const text = await response.text()
+          previewText = text.length > 12000 ? `${text.slice(0, 12000)}\n\n…` : text
+        } else {
+          previewUnavailableReason = FILE_PREVIEW_ERROR_MESSAGE
+        }
+      } catch (error) {
+        console.warn('[Files] Preview load failed:', error)
         previewUnavailableReason = FILE_PREVIEW_ERROR_MESSAGE
       }
-    } catch (error) {
-      console.warn('[Files] Preview load failed:', error)
-      previewUnavailableReason = FILE_PREVIEW_ERROR_MESSAGE
     }
   } else if (kind === 'container') {
-    childEntries = await listContainerEntries(db, normalizedUri)
+    if (options.includeContainerEntries ?? true) {
+      childEntries = await listContainerEntries(db, normalizedUri)
+    }
     previewUnavailableReason = '容器不提供文本预览，可双击进入继续浏览。'
   } else if (metadata.mimeType?.startsWith('image/')) {
     previewUnavailableReason = '图像资源暂不内联预览，请直接打开原始 URI。'
@@ -1127,7 +977,7 @@ export async function readBlobResource(db: SolidDatabase, resourceUri: string): 
   const response = await getAuthenticatedFetch(db)(normalizedUri, {
     method: 'GET',
     headers: {
-      Accept: 'image/*, application/octet-stream;q=0.8, */*;q=0.1',
+      Accept: 'image/*, application/pdf, audio/*, video/*, application/octet-stream;q=0.8, */*;q=0.1',
     },
   })
 
@@ -1193,14 +1043,25 @@ export async function createRawTextResource(
   })
 
   if (response.status === 412) {
-    throw new FilesSaveConflictError(resource.uri)
+    throw new FilesSaveConflictError(resource.uri, { reason: 'exists' })
   }
 
   if (!response.ok) {
     throw new Error(`创建文件失败: HTTP ${response.status}`)
   }
 
-  return readRawTextResource(db, resource.uri)
+  try {
+    return await readRawTextResource(db, resource.uri)
+  } catch (error) {
+    console.warn('[files] 创建成功但回读失败，使用 PUT 响应兜底', resource.uri, error)
+    return {
+      uri: resource.uri,
+      mimeType: resource.mimeType,
+      content,
+      etag: response.headers.get('etag'),
+      headers: {},
+    }
+  }
 }
 
 export async function createBlobResource(

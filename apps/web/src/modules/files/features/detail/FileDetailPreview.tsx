@@ -1,4 +1,5 @@
-import { FileText } from 'lucide-react'
+import { FileText, Pencil, SquareArrowOutUpRight } from 'lucide-react'
+import { useRef } from 'react'
 
 import { Button } from '@/components/ui/button'
 
@@ -8,7 +9,8 @@ import {
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import { LockedVocabTablePreview } from '../structured/LockedVocabTablePreview'
 import { StructuredResourcePreview } from '../structured/StructuredTablePreview'
-import { FileEditorSheet } from '../editor/FileEditorSheet'
+import { DocumentEditorModal } from '../editor/DocumentEditorModal'
+import { FileEditorSurface, type FileEditorSurfaceHandle } from '../editor/FileEditorSurface'
 import { SourceLinkedCardPreview } from './FileDetailSourceLinkedCardPreview'
 import { ModeCard, RawTextBlock } from '../../ui/FileDetailPreviewPrimitives'
 import { FolderDetailPreview } from '../folder/FolderDetailPreview'
@@ -20,7 +22,7 @@ import {
   projectFileDetailLineageModel,
   projectFileDetailSidecarPreviewModel,
   projectReadonlyFilePreviewModel,
-  type ImageFilePreviewModel,
+  type MediaFilePreviewModel,
 } from './file-detail-preview-model'
 
 function EditableFilePreview({
@@ -30,23 +32,61 @@ function EditableFilePreview({
   file: FilesDetail
   onOpenSheet?: () => void
 }) {
+  const surfaceRef = useRef<FileEditorSurfaceHandle>(null)
   const {
+    editing,
     handlePreviewKeyDown,
-    openSheet,
+    openModal,
+    setEditing,
     setSheetOpen,
     sheetOpen,
+    startInlineEdit,
   } = useEditableFilePreviewController({
     fileUri: file.uri,
     onOpenSheet,
   })
   const editablePreview = projectEditableFilePreviewModel(file)
 
+  if (editing) {
+    return (
+      <div className="flex min-h-full flex-col" aria-label="可编辑文件预览">
+        <div className="flex h-11 shrink-0 items-center justify-end gap-1 border-b border-border/30 px-4">
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => surfaceRef.current?.requestClose()}>
+            完成编辑
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            aria-label="在新窗口中编辑"
+            title="在新窗口中编辑（⌘/Ctrl + 单击文件）"
+            onClick={openModal}
+          >
+            <SquareArrowOutUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+        <FileEditorSurface
+          ref={surfaceRef}
+          file={file}
+          open
+          variant="inline"
+          onExited={() => setEditing(false)}
+        />
+        <DocumentEditorModal
+          file={file}
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+        />
+      </div>
+    )
+  }
+
   return (
     <div
       aria-label="可编辑文件预览"
       className="flex min-h-full items-start justify-center px-6 py-8 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       tabIndex={0}
-      onDoubleClick={openSheet}
+      onDoubleClick={startInlineEdit}
       onKeyDown={handlePreviewKeyDown}
     >
       <section className="w-full max-w-xl">
@@ -65,24 +105,43 @@ function EditableFilePreview({
               ))}
             </p>
           </div>
-          <Button size="sm" className="h-7 shrink-0 text-xs" onClick={openSheet}>
-            {editablePreview.openLabel}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button size="sm" className="h-7 text-xs" onClick={startInlineEdit}>
+              <Pencil className="mr-1 h-3 w-3" aria-hidden="true" />
+              {editablePreview.openLabel}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              aria-label="在新窗口中编辑"
+              title="在新窗口中编辑（⌘/Ctrl + 单击文件）"
+              onClick={openModal}
+            >
+              <SquareArrowOutUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
-        <dl className="mt-4 grid gap-2 text-xs">
-          {editablePreview.rows.map((row) => (
-            <div key={row.label} className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
-              <dt className="text-muted-foreground">{row.label}</dt>
-              <dd
-                className={row.kind === 'uri' ? 'truncate text-foreground/80' : 'text-foreground/80'}
-                title={row.kind === 'uri' ? row.value : undefined}
-              >
-                {row.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <FileEditorSheet
+        <div className="mt-4 space-y-3">
+          <RawTextBlock text={file.previewText} />
+          {!file.previewText ? (
+            <ModeCard title="正文暂不可用" description="可以打开文件详情继续编辑，或稍后重试读取。" />
+          ) : null}
+          <dl className="grid gap-2 text-xs">
+            {editablePreview.rows.filter((row) => row.label !== '内容').map((row) => (
+              <div key={row.label} className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
+                <dt className="text-muted-foreground">{row.label}</dt>
+                <dd
+                  className={row.kind === 'uri' ? 'truncate text-foreground/80' : 'text-foreground/80'}
+                  title={row.kind === 'uri' ? row.value : undefined}
+                >
+                  {row.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <DocumentEditorModal
           file={file}
           open={sheetOpen}
           onOpenChange={setSheetOpen}
@@ -132,8 +191,8 @@ function ReadonlyPreview({ file }: { file: FilesDetail }) {
     )
   }
 
-  if (readonlyPreview.kind === 'image') {
-    return <AuthenticatedImagePreview preview={readonlyPreview} />
+  if (readonlyPreview.kind !== 'unsupported') {
+    return <AuthenticatedMediaPreview preview={readonlyPreview} />
   }
 
   return (
@@ -145,10 +204,9 @@ function ReadonlyPreview({ file }: { file: FilesDetail }) {
   )
 }
 
-function AuthenticatedImagePreview({ preview }: { preview: ImageFilePreviewModel }) {
+function AuthenticatedMediaPreview({ preview }: { preview: MediaFilePreviewModel }) {
   const imagePreview = useAuthenticatedImagePreviewController({
     enabled: true,
-    mimeType: preview.mimeType,
     uri: preview.uri,
   })
   const renderState = projectAuthenticatedImagePreviewRenderState(preview, imagePreview)
@@ -171,13 +229,34 @@ function AuthenticatedImagePreview({ preview }: { preview: ImageFilePreviewModel
     )
   }
 
-  return (
+  if (preview.kind === 'image') return (
     <div className="flex h-full min-h-[320px] items-center justify-center bg-muted/15 p-4">
       <img
         src={renderState.objectUrl}
         alt={renderState.alt}
         className="max-h-[70vh] max-w-full rounded-md border border-border/30 bg-background object-contain shadow-sm"
       />
+    </div>
+  )
+
+  if (preview.kind === 'document') return (
+    <iframe
+      aria-label={`${preview.alt} 预览`}
+      className="h-full min-h-[70vh] w-full border-0 bg-background"
+      src={renderState.objectUrl}
+      title={preview.alt}
+    />
+  )
+
+  if (preview.kind === 'audio') return (
+    <div className="flex h-full min-h-[240px] items-center justify-center bg-muted/15 p-6">
+      <audio aria-label={`${preview.alt} 预览`} className="w-full max-w-xl" controls src={renderState.objectUrl} />
+    </div>
+  )
+
+  return (
+    <div className="flex h-full min-h-[320px] items-center justify-center bg-black/95 p-4">
+      <video aria-label={`${preview.alt} 预览`} className="max-h-[75vh] max-w-full" controls src={renderState.objectUrl} />
     </div>
   )
 }

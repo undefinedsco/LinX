@@ -7,6 +7,7 @@ const toolbarModelPath = 'src/modules/files/features/structured/structured-resou
 const previewHeaderModelPath = 'src/modules/files/features/structured/structured-resource-preview-header-model.ts'
 const classScopeMenuControllerPath = 'src/modules/files/features/structured/useStructuredClassScopeMenuController.ts'
 const classScopeMenuModelPath = 'src/modules/files/features/structured/structured-class-scope-menu-model.ts'
+const resourceViewBarPath = 'src/modules/files/ui/ResourceViewBar.tsx'
 const toolbarShimPath = 'src/modules/files/components/StructuredResourceToolbar.tsx'
 
 describe('StructuredResourceToolbar architecture boundary', () => {
@@ -18,13 +19,15 @@ describe('StructuredResourceToolbar architecture boundary', () => {
     expect(existsSync(previewHeaderModelPath)).toBe(true)
     expect(existsSync(classScopeMenuControllerPath)).toBe(true)
     expect(existsSync(classScopeMenuModelPath)).toBe(true)
-    if (!existsSync(toolbarPath) || !existsSync(toolbarModelPath) || !existsSync(previewHeaderModelPath) || !existsSync(classScopeMenuControllerPath) || !existsSync(classScopeMenuModelPath)) return
+    expect(existsSync(resourceViewBarPath)).toBe(true)
+    if (!existsSync(toolbarPath) || !existsSync(toolbarModelPath) || !existsSync(previewHeaderModelPath) || !existsSync(classScopeMenuControllerPath) || !existsSync(classScopeMenuModelPath) || !existsSync(resourceViewBarPath)) return
 
     const toolbarSource = readFileSync(toolbarPath, 'utf8')
     const toolbarModelSource = readFileSync(toolbarModelPath, 'utf8')
     const previewHeaderModelSource = readFileSync(previewHeaderModelPath, 'utf8')
     const classScopeMenuControllerSource = readFileSync(classScopeMenuControllerPath, 'utf8')
     const classScopeMenuModelSource = readFileSync(classScopeMenuModelPath, 'utf8')
+    const resourceViewBarSource = readFileSync(resourceViewBarPath, 'utf8')
     const toolbarShimSource = readFileSync(toolbarShimPath, 'utf8')
 
     expect(previewSource).toContain("from './StructuredResourceToolbar'")
@@ -41,17 +44,17 @@ describe('StructuredResourceToolbar architecture boundary', () => {
     expect(previewSource).not.toContain('classDefinition?.label || pendingClassScopeProposal?.label')
 
     expect(toolbarSource).toMatch(/\nexport function StructuredResourceToolbar\(/)
-    expect(toolbarSource).toContain('aria-label={toolbarModel.byline.ariaLabel}')
+    expect(toolbarSource).toContain('ariaLabel={toolbarModel.byline.ariaLabel}')
     expect(toolbarSource).toContain('aria-label={toolbarModel.structuredTools.ariaLabel}')
     expect(toolbarSource).toContain('data-control-placement="structured-byline"')
+    expect(toolbarSource).toContain("from '../../ui/ResourceViewBar'")
+    expect(toolbarSource).toContain('<ResourceViewBar')
+    expect(toolbarSource).toContain('flex h-10 min-w-0 items-center gap-1 overflow-hidden border-b border-border/30')
     expect(toolbarSource).toContain('data-structured-toolbar-scroll="view-actions"')
     expect(toolbarSource).toContain('data-structured-toolbar-scroll="subject-tools"')
-    expect(toolbarSource).toContain('grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2')
-    expect(toolbarSource).toContain('grid min-w-0 grid-cols-[minmax(10rem,1fr)_auto] items-center gap-1.5 overflow-hidden')
-    expect(toolbarSource).toContain('overflow-x-auto')
-    expect(toolbarSource).toContain('min-w-max')
+    expect(toolbarSource).toContain('order-1 flex min-w-0 items-center gap-0.5 overflow-x-auto')
+    expect(toolbarSource).toContain('order-[3] ml-auto flex h-7 w-7')
     expect(toolbarSource).not.toContain('max-w-[72%]')
-    expect(toolbarSource).not.toContain('ml-auto')
     expect(toolbarSource).toContain('DropdownMenu')
     expect(toolbarSource).toContain('ListFilter')
     expect(toolbarSource).toContain('Search')
@@ -85,7 +88,8 @@ describe('StructuredResourceToolbar architecture boundary', () => {
     expect(toolbarSource).not.toContain('aria-label="排序"')
     expect(toolbarSource).not.toContain('aria-label="隐藏 predicate"')
     expect(toolbarSource).not.toContain('predicate 类型')
-    expect(toolbarSource).not.toContain('命名空间')
+    expect(toolbarSource).toContain('onShowNamespacesChange')
+    expect(toolbarSource).toContain('onTogglePredicateVisibility')
     expect(toolbarSource).not.toContain('词表定义')
     expect(toolbarSource).not.toContain('classDefinition?.label')
     expect(toolbarSource).not.toContain('classDefinition?.uri')
@@ -193,6 +197,10 @@ describe('StructuredResourceToolbar architecture boundary', () => {
     expect(toolbarModelSource).toContain('subjectFilterRows')
     expect(toolbarModelSource).not.toContain('<DropdownMenu')
     expect(toolbarModelSource).not.toContain('<Input')
+    expect(resourceViewBarSource).toContain('export function ResourceViewBar')
+    expect(resourceViewBarSource).not.toContain('@inrupt')
+    expect(resourceViewBarSource).not.toContain('rdf')
+    expect(resourceViewBarSource).not.toContain('pod')
     expect(previewHeaderModelSource).toContain('export function projectStructuredResourcePreviewHeaderModel')
     expect(previewHeaderModelSource).toContain("from '../../domain/structured/structured-table-vocab'")
     expect(previewHeaderModelSource).not.toContain('<StructuredResourceToolbar')

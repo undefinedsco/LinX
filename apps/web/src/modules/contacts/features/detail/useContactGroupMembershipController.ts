@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { ContactType, isGroupContact, type ChatRow, type ContactRow } from '@undefineds.co/models'
 import { contactOps } from '../../data/collections'
 import { getShortContactId } from '../../domain/contact-projection'
@@ -9,7 +8,6 @@ import type { ContactDetailNotifier } from './controller-types'
 interface ContactGroupMembershipControllerOptions {
   groupContactId: string | null
   currentUserRef?: string
-  inviteMemberDialogOpen: boolean
   inviteTargetGroupId: string | null
   closeInviteMemberDialog(): void
   notify: ContactDetailNotifier
@@ -20,7 +18,6 @@ interface ContactGroupMembershipControllerOptions {
 export function useContactGroupMembershipController({
   groupContactId,
   currentUserRef,
-  inviteMemberDialogOpen,
   inviteTargetGroupId,
   closeInviteMemberDialog,
   notify,
@@ -54,12 +51,7 @@ export function useContactGroupMembershipController({
   }))
   const currentUserRole = currentUserRef ? roleMap[currentUserRef] : undefined
 
-  const { data: fetchedInviteContacts = [] } = useQuery({
-    queryKey: ['contacts', 'group-invite', inviteTargetGroupId],
-    queryFn: () => contactOps.getAll(),
-    enabled: inviteMemberDialogOpen && !!inviteTargetGroupId,
-  })
-  const inviteContacts = contacts.length > 0 ? contacts : fetchedInviteContacts
+  const inviteContacts = contacts
   const existingMembers = new Set(
     inviteTargetGroupId ? contactOps.getGroupMembers(inviteTargetGroupId, contacts, chats) : [],
   )

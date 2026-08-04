@@ -2,7 +2,7 @@ import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
-import { ContactType } from '@undefineds.co/models'
+import { ContactType, contactResource } from '@undefineds.co/models'
 
 const {
   mockNavigate,
@@ -87,7 +87,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {
@@ -119,6 +119,10 @@ vi.mock('@/lib/data/use-entity', () => ({
 
 vi.mock('@/components/ui/model-selector', () => ({
   ModelSelector: ({ value }: { value: string }) => <div data-testid="model-selector">{value}</div>,
+}))
+
+vi.mock('@/modules/model-services/data/use-model-services', () => ({
+  useModelServices: () => ({ providers: {} }),
 }))
 
 vi.mock('./CreateGroupDialog', () => ({
@@ -242,6 +246,36 @@ describe('ContactDetailPane', () => {
     expect(screen.queryByText('标签')).not.toBeInTheDocument()
   })
 
+  it('hides the delete action for the default secretary contact (no delete pressure)', async () => {
+    const secretaryId = contactResource.buildId({ id: '__secretary__' })
+    const contact = makeContact({ id: secretaryId, name: 'LinX 主理人', contactType: ContactType.AGENT })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    // 头部 button 顺序：[分享, 更多菜单触发器, ...]；Radix 下拉由 pointerdown 打开
+    fireEvent.pointerDown(screen.getAllByRole('button')[1], { button: 0 })
+    await waitFor(() => {
+      // 证明菜单确实打开，而非整体未渲染
+      expect(screen.getByRole('menuitem', { name: /设为星标|取消星标/ })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('menuitem', { name: /删除联系人/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the delete action for ordinary contacts', async () => {
+    const contact = makeContact({ id: 'contact-ordinary-1', name: 'Bob' })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    fireEvent.pointerDown(screen.getAllByRole('button')[1], { button: 0 })
+    await waitFor(() => {
+      expect(screen.getByRole('menuitem', { name: /删除联系人/ })).toBeInTheDocument()
+    })
+  })
+
   it('reacts when the selected Contact row changes in the live collection', async () => {
     const contact = makeContact({
       id: 'contact-solid-1',
@@ -295,7 +329,7 @@ describe('ContactDetailPane', () => {
 
     render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
 
-    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|读取资源头信息失败|alice\.example/i)).not.toBeInTheDocument()
   })
 
@@ -321,6 +355,18 @@ describe('ContactDetailPane', () => {
       to: '/$microAppId',
       params: { microAppId: 'chat' },
     })
+  })
+
+  it('shows chat, voice, and video as the primary contact actions', () => {
+    const contact = makeContact({ id: 'contact-solid-1', name: 'Alice' })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    expect(screen.getByRole('button', { name: '聊天' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '语音' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '视频' })).toBeInTheDocument()
   })
 
   it('renders local agent configuration and allows opening tools editor', async () => {

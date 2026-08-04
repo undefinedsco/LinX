@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSession } from "@inrupt/solid-ui-react";
+import { useSession } from "@/providers/solid-session-context";
 import { useQuery } from "@tanstack/react-query";
 import {
-  solidProfileResource,
   type SolidProfileRow,
   type SolidProfileUpdate,
 } from "@undefineds.co/models";
@@ -14,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatErrorForUser } from "@/lib/user-facing-errors";
 import { useSolidDatabase } from "@/providers/solid-database-provider";
+import { readProfile } from "./collections";
 import { useLoginStore } from "@linx/stores/login";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ type SpaceMarkerKind = "local" | "standalone";
 function resolveSpaceMarkerKind(storageProviderLabel?: string, storageProviderUrl?: string): SpaceMarkerKind | null {
   const label = storageProviderLabel?.trim().toLowerCase();
   if (label === "standalone") return "standalone";
-  if (label === "local" || label === "本地空间") return "local";
+  if (label === "local" || label === "本机空间" || label === "本地空间") return "local";
   if (!storageProviderUrl) return null;
 
   try {
@@ -185,8 +185,7 @@ export function SelfProfileCard() {
     queryKey: ["profile", webId],
     queryFn: async () => {
       if (!db || !webId) return null;
-      const record = await (db as any).findByIri(solidProfileResource, webId);
-      return record as SolidProfileRow | null;
+      return await readProfile(db, webId);
     },
     enabled: !!db && !!webId,
   });

@@ -131,6 +131,17 @@ describe('structured-kanban-view-model', () => {
 
     expect(projectStructuredKanbanDndDragEndPlan({
       displayColumns,
+      overId: '#c',
+      subject: '#a',
+    })).toEqual({
+      kind: 'cross-column',
+      overSubject: '#c',
+      subject: '#a',
+      targetColumn: expect.objectContaining({ id: 'Done', value: '"Done"' }),
+    })
+
+    expect(projectStructuredKanbanDndDragEndPlan({
+      displayColumns,
       overId: 'missing',
       subject: '#a',
     })).toEqual({ kind: 'none' })

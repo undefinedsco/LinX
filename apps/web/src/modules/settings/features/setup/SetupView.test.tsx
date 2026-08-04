@@ -39,7 +39,7 @@ describe('SetupView', () => {
     render(<SetupView />)
 
     expect(await screen.findByDisplayValue('/tmp/linx-pod')).toBeInTheDocument()
-    expect(screen.getByText('这里只保存配置，不会自动启动本地空间。')).toBeInTheDocument()
+    expect(screen.getByText('这里只保存配置，不会自动启动本机空间。')).toBeInTheDocument()
     expect(screen.queryByText(/保存后服务会继续启动/)).not.toBeInTheDocument()
     expect(screen.getByText(/LinX 自动分配可登录地址/)).toBeInTheDocument()
     expect(screen.queryByLabelText('自有公网域名（可选）')).not.toBeInTheDocument()

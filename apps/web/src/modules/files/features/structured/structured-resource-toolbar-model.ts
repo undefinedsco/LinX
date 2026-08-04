@@ -15,6 +15,36 @@ export type StructuredToolbarClassProposal = {
 }
 
 export type StructuredToolbarSubjectFilterId = 'warningRowsOnly' | 'pendingWritesOnly' | 'sourceUpdatesOnly'
+export type StructuredViewMetadataSaveStatus = 'synced' | 'dirty' | 'saving' | 'error'
+
+export function projectStructuredViewSaveIndicator(
+  status: StructuredViewMetadataSaveStatus,
+  error: string | null,
+) {
+  if (status === 'synced') return null
+  if (status === 'saving') {
+    return {
+      ariaLabel: '正在同步视图配置',
+      kind: 'saving' as const,
+      retryable: false,
+      title: '正在同步 .meta',
+    }
+  }
+  if (status === 'error') {
+    return {
+      ariaLabel: '视图配置未同步，点击重试',
+      kind: 'error' as const,
+      retryable: true,
+      title: error || '视图配置未同步',
+    }
+  }
+  return {
+    ariaLabel: '视图配置尚未同步',
+    kind: 'dirty' as const,
+    retryable: false,
+    title: '等待同步 .meta',
+  }
+}
 
 const EXTRA_VIEW_OPTIONS: Exclude<StructuredResourceViewMode, 'table'>[] = ['kanban', 'whiteboard', 'raw']
 const PREDICATE_TYPE_FILTER_OPTIONS: StructuredPredicateTypeFilter[] = ['all', 'enum', 'boolean', 'number', 'date', 'relation', 'text']
@@ -37,6 +67,8 @@ function projectStructuredActiveViewModeRow(value: StructuredResourceViewMode, a
   return {
     ...projectStructuredViewModeRow(value),
     active: value === activeViewMode,
+    closable: value !== 'table',
+    closeLabel: `关闭 ${VIEW_LABELS[value]} 视图`,
   }
 }
 
@@ -79,9 +111,10 @@ function projectStructuredFilterTool() {
 
 function projectStructuredFilterSectionLabels() {
   return {
-    namespace: '命名空间',
-    predicateType: 'predicate 类型',
-    vocabTerm: '词表定义',
+    subject: '行（subject）',
+    namespace: '列 · 命名空间',
+    predicateType: '列 · predicate 类型',
+    vocabTerm: '列 · 词表定义',
   }
 }
 
@@ -189,16 +222,20 @@ function projectStructuredNamespaceSwitch(showNamespaces: boolean) {
 
 function projectStructuredPredicateVisibilityTool() {
   return {
-    ariaLabel: '隐藏 predicate',
+    ariaLabel: '列显示',
   }
 }
 
-function projectStructuredNamespaceFilterRows(availablePredicateNamespaces: readonly string[]) {
+function projectStructuredNamespaceFilterRows(
+  availablePredicateNamespaces: readonly string[],
+  predicateNamespaceFilter: string | null,
+) {
   return [
-    { label: '全部命名空间', value: null },
+    { label: '全部命名空间', value: null, checked: predicateNamespaceFilter === null },
     ...availablePredicateNamespaces.map((namespace) => ({
       label: namespace,
       value: namespace,
+      checked: namespace === predicateNamespaceFilter,
     })),
   ]
 }
@@ -231,6 +268,7 @@ export function projectStructuredResourceToolbarModel({
   classDefinitionOpen,
   classOptions,
   hiddenPredicates,
+  openViews,
   pendingWritesOnly,
   predicateNamespaceFilter,
   predicateTypeFilter,
@@ -252,6 +290,7 @@ export function projectStructuredResourceToolbarModel({
   classDefinitionOpen: boolean
   classOptions: readonly string[]
   hiddenPredicates: ReadonlySet<string>
+  openViews: readonly StructuredResourceViewMode[]
   pendingWritesOnly: boolean
   predicateNamespaceFilter: string | null
   predicateTypeFilter: StructuredPredicateTypeFilter
@@ -275,7 +314,11 @@ export function projectStructuredResourceToolbarModel({
   const sortRows = projectStructuredSortRows(schemaPredicateControls)
   const namespaceSwitch = projectStructuredNamespaceSwitch(showNamespaces)
   return {
-    activeViewTabRows: (['table', ...(viewMode === 'table' ? [] : [viewMode])] as StructuredResourceViewMode[])
+    activeViewTabRows: ([
+      'table',
+      ...openViews.filter((mode) => mode !== 'table'),
+      ...(viewMode !== 'table' && !openViews.includes(viewMode) ? [viewMode] : []),
+    ] as StructuredResourceViewMode[])
       .map((mode) => projectStructuredActiveViewModeRow(mode, viewMode)),
     availablePredicateNamespaces: [...availablePredicateNamespaces],
     byline: projectStructuredByline(),
@@ -291,7 +334,7 @@ export function projectStructuredResourceToolbarModel({
       selectedClassName,
     }),
     extraViewOptionRows: EXTRA_VIEW_OPTIONS
-      .filter((mode) => mode !== viewMode)
+      .filter((mode) => mode !== viewMode && !openViews.includes(mode))
       .map(projectStructuredViewModeRow),
     extraViewTrigger: projectStructuredExtraViewTrigger(),
     filterSectionLabels: projectStructuredFilterSectionLabels(),
@@ -309,7 +352,7 @@ export function projectStructuredResourceToolbarModel({
     }),
     namespaceSwitch,
     namespaceSwitchChecked: namespaceSwitch.checked,
-    namespaceFilterRows: projectStructuredNamespaceFilterRows(availablePredicateNamespaces),
+    namespaceFilterRows: projectStructuredNamespaceFilterRows(availablePredicateNamespaces, predicateNamespaceFilter),
     pendingClassProposals: structuredWritesSupported
       ? visiblePendingClassProposals.map((proposal) => {
           const label = proposal.label || localPredicateLabel(proposal.uri)
@@ -334,6 +377,7 @@ export function projectStructuredResourceToolbarModel({
         })
       : [],
     predicateTypeFilterRows: PREDICATE_TYPE_FILTER_OPTIONS.map((filter) => ({
+      checked: filter === predicateTypeFilter,
       label: structuredPredicateTypeFilterLabel(filter),
       value: filter,
     })),
@@ -353,6 +397,7 @@ export function projectStructuredResourceToolbarModel({
     sortToolLabel: sortTool.label,
     structuredTools: projectStructuredTools(),
     vocabTermFilterRows: VOCAB_TERM_FILTER_OPTIONS.map((filter) => ({
+      checked: filter === vocabTermFilter,
       label: structuredVocabTermFilterLabel(filter),
       value: filter,
     })),

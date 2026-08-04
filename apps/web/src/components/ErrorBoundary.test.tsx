@@ -17,7 +17,7 @@ describe('ErrorBoundary', () => {
     )
 
     expect(screen.getByText('页面暂时无法显示')).toBeInTheDocument()
-    expect(screen.getByText('本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')).toBeInTheDocument()
+    expect(screen.getByText('本机空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本机空间设置修复。')).toBeInTheDocument()
     expect(screen.queryByText(/Require stack|jsonld|Application Support|\/Users/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '刷新页面' })).not.toHaveAttribute('style')
 

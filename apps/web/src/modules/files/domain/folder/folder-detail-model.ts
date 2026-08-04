@@ -3,6 +3,15 @@ import type { FolderChildOpenTrigger } from './folder-child-open'
 import { formatBytes, formatDateTime } from '../detail/detail-metadata'
 import { getFilesEntrySemanticLabel } from '../resource/resource-semantics'
 
+export function projectFolderDetailPathLabel(containerUri: string): string {
+  try {
+    const url = new URL(containerUri)
+    return decodeURIComponent(url.pathname) || '/'
+  } catch {
+    return containerUri
+  }
+}
+
 export type FolderSortState = {
   key: 'name' | 'type' | 'modified' | 'size'
   direction: 'asc' | 'desc'
@@ -57,8 +66,8 @@ export type FolderColumnPanelModel = {
 }
 
 export type FolderDetailCollectionViewMode = 'list' | 'icons'
-export type FolderDetailViewMode = FolderDetailCollectionViewMode | 'columns'
-export type FolderDetailViewModeIconKind = 'list' | 'columns' | 'icons'
+export type FolderDetailViewMode = FolderDetailCollectionViewMode
+export type FolderDetailViewModeIconKind = 'list' | 'icons'
 
 export type FolderChildCollectionChrome = {
   ariaLabel: string
@@ -85,7 +94,6 @@ export type FolderDetailEmptyStateChrome = {
 
 export type FolderDetailContentState =
   | { kind: 'empty'; emptyState: FolderDetailEmptyStateChrome }
-  | { kind: 'columns' }
   | { kind: 'collection'; viewMode: FolderDetailCollectionViewMode }
 
 export type FolderDescendantColumnState =
@@ -215,7 +223,7 @@ export function projectFolderDetailViewMode({
 }): FolderDetailViewState {
   return {
     ...current,
-    viewMode,
+    viewMode: normalizeFolderDetailViewMode(viewMode),
   }
 }
 
@@ -291,9 +299,8 @@ function folderChildIconKind(entry: FilesEntry): FolderChildCollectionRow['iconK
 }
 
 const FOLDER_DETAIL_VIEW_MODE_OPTIONS: Array<Omit<FolderDetailViewModeOption, 'active'>> = [
-  { mode: 'list', label: '列表视图', iconKind: 'list' },
-  { mode: 'columns', label: '分栏视图', iconKind: 'columns' },
-  { mode: 'icons', label: '图标视图', iconKind: 'icons' },
+  { mode: 'list', label: '列表', iconKind: 'list' },
+  { mode: 'icons', label: '网格', iconKind: 'icons' },
 ]
 
 const FOLDER_DETAIL_TOOLBAR_CHROME: FolderDetailToolbarChrome = {
@@ -431,7 +438,7 @@ export function projectFolderDetailContentState({
   viewMode,
 }: {
   hasVisibleChildren: boolean
-  viewMode: FolderDetailViewMode
+  viewMode: FolderDetailViewMode | string
 }): FolderDetailContentState {
   if (!hasVisibleChildren) {
     return {
@@ -439,8 +446,11 @@ export function projectFolderDetailContentState({
       emptyState: FOLDER_DETAIL_EMPTY_STATE_CHROME,
     }
   }
-  if (viewMode === 'columns') return { kind: 'columns' }
-  return { kind: 'collection', viewMode }
+  return { kind: 'collection', viewMode: normalizeFolderDetailViewMode(viewMode) }
+}
+
+function normalizeFolderDetailViewMode(viewMode: FolderDetailViewMode | string): FolderDetailViewMode {
+  return viewMode === 'icons' ? 'icons' : 'list'
 }
 
 export function projectNextFolderSortState(current: FolderSortState, key: FolderSortState['key']): FolderSortState {

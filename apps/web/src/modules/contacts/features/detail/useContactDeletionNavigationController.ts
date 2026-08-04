@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { isGroupContact, type ContactRow } from '@undefineds.co/models'
 import { contactOps, useContactsChatSelection } from '../../data/collections'
+import { isDefaultSecretaryContactId } from '../../domain/default-secretary'
 import type { UnifiedContact } from '../../domain/types'
 import type { ContactDetailNotifier } from './controller-types'
 
@@ -52,6 +53,11 @@ export function useContactDeletionNavigationController({
 
   const handleDelete = useCallback(async () => {
     if (!contact || !selectedId) return
+    // 纵深防御：即便绕过 UI 直接调用，默认助手也不可删除
+    if (isDefaultSecretaryContactId(selectedId)) {
+      notify.error('默认助手不可删除')
+      return
+    }
     setIsDeleting(true)
     try {
       await contactOps.deleteContact(selectedId)

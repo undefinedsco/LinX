@@ -10,6 +10,7 @@ import {
   projectStructuredPredicateTypeFilter,
   projectStructuredVocabTermFilter,
   structuredPredicateNamespace,
+  structuredPredicateMatchesTypeFilter,
   type StructuredPredicateTypeFilter,
   type StructuredVocabTermFilter,
 } from '../../domain/structured/structured-view-projection'
@@ -182,4 +183,13 @@ export function projectStructuredExistingPredicateSelection({
     shouldRevealPredicate: selection.shouldRevealPredicate,
     vocabTermFilter: selection.filterState.vocabTermFilter,
   }
+}
+
+export function projectStructuredRelationPredicateOptions(
+  projection: StructuredTableProjection,
+  vocabDefinitionIndex: StructuredVocabDefinitionIndex,
+): string[] {
+  return projection.predicates.filter((predicate) => (
+    structuredPredicateMatchesTypeFilter(projection, predicate, 'relation', vocabDefinitionIndex)
+  ))
 }

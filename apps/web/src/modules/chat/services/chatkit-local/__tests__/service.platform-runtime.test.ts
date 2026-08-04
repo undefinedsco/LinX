@@ -311,7 +311,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       type: 'error',
       error: expect.objectContaining({
         code: 'internal_error',
-        message: '本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。',
+        message: '本机空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本机空间设置修复。',
       }),
     }))
     expect(JSON.stringify(events)).not.toMatch(/jsonld|Require stack|Application Support|\/Users|xpod/i)
@@ -531,7 +531,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       type: 'error',
       error: expect.objectContaining({
         code: 'generation_error',
-        message: '服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本地空间。',
+        message: '服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本机空间。',
       }),
     }))
   })
@@ -567,7 +567,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       model: 'undefineds/linx-lite',
     }, 'https://node-0000.undefineds.co/alice/')
     const authFetch = vi.fn(async () => createSseResponse([
-      'data: {"choices":[{"delta":{"content":"本地空间"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"本机空间"}}]}\n\n',
       'data: [DONE]\n\n',
     ]))
     const service = new LocalChatKitService({
@@ -589,7 +589,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       'https://api.undefineds.co/v1/chat/completions',
       expect.anything(),
     )
-    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地空间')).toBe(true)
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本机空间')).toBe(true)
   })
 
   it('resolves an Agent contact about IRI with findByIri instead of deriving a row id from the IRI', async () => {

@@ -45,6 +45,29 @@ describe('ModelSelector', () => {
       render(<ModelSelector value="undefineds/linx-lite" />)
       expect(screen.getByText('LinX Lite')).toBeInTheDocument()
     })
+
+    it('uses the supplied workspace model options instead of the static catalog', async () => {
+      render(
+        <ModelSelector
+          models={[
+            {
+              id: 'workspace-model',
+              name: 'Workspace Model',
+              providerId: 'workspace',
+              providerName: 'Workspace Provider',
+              capabilities: [],
+            },
+          ]}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Workspace Model')).toBeInTheDocument()
+        expect(screen.queryByText('GPT-4o')).not.toBeInTheDocument()
+      })
+    })
   })
 
   describe('Dialog Interaction', () => {

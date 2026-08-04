@@ -14,7 +14,7 @@ const mockUseChatStore = vi.fn()
 const mockUseEntity = vi.fn()
 const mockUseChatList = vi.fn()
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {

@@ -60,7 +60,7 @@ export function FolderColumnPanel({
 
   const handleAction = (action: FolderChildActionKind, child: FilesEntry) => {
     if (action === 'open') {
-      onOpen(child, 'explicit-open')
+      window.setTimeout(() => onOpen(child, 'explicit-open'), 0)
       return
     }
     if (action === 'copy-uri') {
@@ -104,7 +104,11 @@ export function FolderColumnPanel({
                     'grid w-full grid-cols-[18px_minmax(0,1fr)_16px] items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                     selected && 'bg-primary/10 text-foreground',
                   )}
-                  onClick={() => onSelect(parentFile, entries, child, columnDepth)}
+                  onClick={(event) => {
+                    onSelect(parentFile, entries, child, columnDepth)
+                    const isMultiSelectGesture = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+                    if (child.kind !== 'container' && !isMultiSelectGesture) onOpen(child, 'click')
+                  }}
                   onDoubleClick={() => onOpen(child, 'double-click')}
                   onContextMenu={() => onContextMenuSelect(parentFile, entries, child, columnDepth)}
                   onKeyDown={(event) => {

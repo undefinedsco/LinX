@@ -48,6 +48,7 @@ describe('structured predicate static cell model', () => {
         pressed: true,
         title: 'true',
       },
+      editable: true,
       value: 'true',
     })
 
@@ -88,17 +89,40 @@ describe('structured predicate static cell model', () => {
 
     expect(projectStructuredPredicateStaticCellDisplay({
       documentUri,
+      editable: true,
+      predicate,
+      proposals: [],
+      values: ['linx:Todo'],
+    })).toEqual({
+      kind: 'relation',
+      values: [
+        {
+          value: 'linx:Todo',
+          displayLabel: 'Todo',
+          external: false,
+          openAction: {
+            ariaLabel: 'Open predicate linx:Todo',
+            external: false,
+            title: 'linx:Todo',
+            value: 'linx:Todo',
+          },
+        },
+      ],
+    })
+
+    expect(projectStructuredPredicateStaticCellDisplay({
+      documentUri,
       editable: false,
       predicate,
       proposals: [],
       values: ['"Done"'],
     })).toEqual({
       kind: 'scalar',
-      labels: ['"Done"'],
+      labels: ['Done'],
     })
   })
 
-  it('does not treat readonly booleans as toggle displays', () => {
+  it('projects readonly booleans as disabled toggle displays', () => {
     expect(projectStructuredPredicateStaticCellDisplay({
       documentUri,
       editable: false,
@@ -106,8 +130,33 @@ describe('structured predicate static cell model', () => {
       proposals: [],
       values: ['false'],
     })).toEqual({
-      kind: 'scalar',
-      labels: ['false'],
+      kind: 'boolean',
+      toggle: {
+        ariaLabel: '切换布尔值 false',
+        pressed: false,
+        title: 'false',
+      },
+      editable: false,
+      value: 'false',
+    })
+  })
+
+  it('projects typed boolean literals as toggle displays', () => {
+    expect(projectStructuredPredicateStaticCellDisplay({
+      documentUri,
+      editable: true,
+      predicate,
+      proposals: [],
+      values: ['"false"^^xsd:boolean'],
+    })).toEqual({
+      kind: 'boolean',
+      toggle: {
+        ariaLabel: '切换布尔值 false',
+        pressed: false,
+        title: 'false',
+      },
+      editable: true,
+      value: 'false',
     })
   })
 })

@@ -13,7 +13,7 @@ const loginStoreState = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {

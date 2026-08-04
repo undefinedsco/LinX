@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Copy,
   FileText,
@@ -8,7 +9,7 @@ import {
   X,
   ListFilter,
   ChevronLeft,
-  FolderTree,
+  RefreshCw,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -38,13 +39,13 @@ import type {
 } from '../../domain/list/list-view-model'
 import type { FilesEntry } from '../../domain/resource/resource-model'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
-import { FilesListColumnHeader } from '../../ui/FilesListColumnHeader'
-import { FilesListRow } from '../../ui/FilesListRow'
+import { FilesExplorerRow } from '../../ui/FilesExplorerRow'
 import { FilesOperationSheet } from '../../ui/FilesOperationSheet'
 import { FilesAddMenu } from '../add/FilesAddMenu'
 import { useFilesListPaneController } from './useFilesListPaneController'
 import { useFilesListOperationController } from './useFilesListOperationController'
 import { useFilesListSelectionController } from './useFilesListSelectionController'
+import { useFilesExplorerDataController } from './useFilesExplorerDataController'
 
 const LIST_EMPTY_STATE_ICON = {
   file: FileText,
@@ -71,12 +72,15 @@ function ListSearchBar({
   sortDirection,
   sortOptions,
   onSort,
-  canGoBack,
-  onBack,
   scopeControl,
   onScopeChange,
   addContainerUri,
   addEntries,
+  addMenuOpen,
+  onAddMenuOpenChange,
+  canGoBack,
+  currentPathLabel,
+  onGoBack,
 }: {
   toolbarChrome: FilesListToolbarChromeModel
   value: string
@@ -92,49 +96,41 @@ function ListSearchBar({
   sortDirection: 'asc' | 'desc'
   sortOptions: ReadonlyArray<{ id: FilesListSortField; label: string }>
   onSort: (field: FilesListSortField) => void
-  canGoBack: boolean
-  onBack: () => void
   scopeControl: FilesListScopeControlModel
   onScopeChange: (scope: FilesBrowserScopeId) => void
   addContainerUri: string | null
   addEntries: FilesEntry[]
+  addMenuOpen: boolean
+  onAddMenuOpenChange: (open: boolean) => void
+  canGoBack: boolean
+  currentPathLabel: string
+  onGoBack: () => void
 }) {
   const currentSortLabel = sortOptions.find((option) => option.id === sortField)?.label ?? sortField
   const directionActionLabel = sortDirection === 'desc' ? '升序' : '降序'
 
   return (
-    <div aria-label={toolbarChrome.toolbarLabel} className="flex items-center gap-2 px-4 py-2 border-b border-border/50 shrink-0">
-      <button
-        type="button"
-        aria-label="返回上一个文件夹"
-        title="返回上一个文件夹"
-        disabled={!canGoBack}
-        onClick={onBack}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground disabled:opacity-30"
-      >
-        <ChevronLeft strokeWidth={1.5} className="h-3.5 w-3.5" />
-      </button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+    <div aria-label={toolbarChrome.toolbarLabel} className="flex h-12 items-center gap-2 border-b border-border/50 px-3 shrink-0">
+      {canGoBack ? (
+        <>
           <button
             type="button"
-            aria-label={scopeControl.ariaLabel}
-            title={scopeControl.label}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+            aria-label="返回上一级文件夹"
+            title={`返回上一级：${currentPathLabel}`}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+            onClick={onGoBack}
           >
-            <FolderTree strokeWidth={1.5} className="h-3.5 w-3.5" />
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-36">
-          <DropdownMenuRadioGroup value={scopeControl.id} onValueChange={(value) => onScopeChange(value as FilesBrowserScopeId)}>
-            {scopeControl.options.map((option) => (
-              <DropdownMenuRadioItem key={option.id} value={option.id}>
-                {option.label}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          <span
+            aria-label="当前文件夹路径"
+            className="max-w-28 shrink-0 truncate text-[11px] text-muted-foreground"
+            title={currentPathLabel}
+          >
+            {currentPathLabel}
+          </span>
+        </>
+      ) : null}
       <div className="relative flex-1 min-w-0">
         <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground">
           <Search strokeWidth={1.5} className="h-3.5 w-3.5" />
@@ -157,7 +153,12 @@ function ListSearchBar({
           </button>
         )}
       </div>
-      <FilesAddMenu containerUri={addContainerUri} entries={addEntries} />
+      <FilesAddMenu
+        containerUri={addContainerUri}
+        entries={addEntries}
+        open={addMenuOpen}
+        onOpenChange={onAddMenuOpenChange}
+      />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -172,6 +173,17 @@ function ListSearchBar({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-52">
+          <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+            范围
+          </DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={scopeControl.id} onValueChange={(value) => onScopeChange(value as FilesBrowserScopeId)}>
+            {scopeControl.options.map((option) => (
+              <DropdownMenuRadioItem key={option.id} value={option.id}>
+                {option.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
           <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
             {toolbarChrome.mimeTypeFilterLabel}
           </DropdownMenuLabel>
@@ -227,13 +239,22 @@ function ListSearchBar({
 // ============================================================================
 
 export function FilesListPane(_props: MicroAppPaneProps) {
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
   const listPane = useFilesListPaneController()
+  const explorer = useFilesExplorerDataController({
+    entryScope: listPane.entryScope,
+    rootEntries: listPane.files,
+    searchText: listPane.searchText,
+  })
+  const explorerEntries = explorer.rows
+    .filter((row) => row.kind === 'entry')
+    .map((row) => row.entry)
   const listSelection = useFilesListSelectionController({
-    files: listPane.files,
-    openFile: listPane.openFile,
+    files: explorerEntries,
+    openFile: explorer.openEntry,
   })
   const listOperation = useFilesListOperationController({
-    baseEntries: listPane.baseEntries,
+    baseEntries: explorerEntries,
     clearListSelection: listSelection.clearListSelection,
     replaceFileSelection: listSelection.replaceFileSelection,
     selectFile: listPane.selectFile,
@@ -244,13 +265,15 @@ export function FilesListPane(_props: MicroAppPaneProps) {
     listOperation.openDeleteFiles(listSelection.selectedVisibleFiles)
   }
 
+  const openFileEditor = (file: FilesEntry) => listPane.openFile(file, 'explicit-open')
+
   const renderFileContextMenu = (file: FilesEntry) => {
     const contextMenuView = listSelection.contextMenuViewForFile(file)
     return (
       <ContextMenuContent className="w-40">
         {contextMenuView.showSingleFileActions ? (
           <>
-            <ContextMenuItem onSelect={() => listSelection.runContextMenuAction(() => listPane.openFile(file, 'explicit-open'))}>
+            <ContextMenuItem onSelect={() => listSelection.runContextMenuAction(() => openFileEditor(file))}>
               {contextMenuView.openLabel}
             </ContextMenuItem>
             <ContextMenuSeparator />
@@ -284,8 +307,56 @@ export function FilesListPane(_props: MicroAppPaneProps) {
     )
   }
 
+  const renderFileActionsMenu = (file: FilesEntry) => {
+    const contextMenuView = listSelection.contextMenuViewForFile(file)
+    return (
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem
+          onClick={(event) => {
+            event.stopPropagation()
+            openFileEditor(file)
+          }}
+          onSelect={() => openFileEditor(file)}
+        >
+          编辑
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => listPane.copyFiles([file])}>
+          复制 URI
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => {
+          listPane.openSidecar(file, 'meta')
+        }}>
+          查看 .meta
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => {
+          listPane.openSidecar(file, 'access')
+        }}>
+          查看 Access 来源
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => listOperation.openRenameContextFile(file)}>
+          {contextMenuView.renameLabel}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => listOperation.openTransferContextFile(file, 'copy')}>
+          {contextMenuView.copyToLabel}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => listOperation.openTransferContextFile(file, 'move')}>
+          {contextMenuView.moveToLabel}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onSelect={() => listOperation.openDeleteFiles([file], { defer: true })}
+        >
+          {contextMenuView.deleteLabel}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    )
+  }
+
   return (
-    <div className="flex flex-col h-full">
+    <div aria-label="文件列表" className="flex h-full flex-col">
       <ListSearchBar
         toolbarChrome={listPane.toolbarChrome}
         value={listPane.searchText}
@@ -301,20 +372,16 @@ export function FilesListPane(_props: MicroAppPaneProps) {
         sortDirection={listPane.sortDirection}
         sortOptions={listPane.sortOptions}
         onSort={listPane.sortList}
-        canGoBack={listPane.canGoBack}
-        onBack={listPane.goBackFolder}
         scopeControl={listPane.scopeControl}
         onScopeChange={listPane.changeBrowserScope}
         addContainerUri={listPane.addContainerUri}
         addEntries={listPane.baseEntries}
+        addMenuOpen={addMenuOpen}
+        onAddMenuOpenChange={setAddMenuOpen}
+        canGoBack={listPane.canGoBack}
+        currentPathLabel={listPane.currentPathLabel}
+        onGoBack={listPane.goBackFolder}
       />
-      <div
-        aria-label="当前文件夹路径"
-        className="shrink-0 truncate border-b border-border/30 px-4 py-1.5 text-[11px] text-muted-foreground"
-        title={listPane.currentPathLabel}
-      >
-        {listPane.currentPathLabel}
-      </div>
       {listPane.scopeHeader ? (
         <div className="border-b border-border/30 px-3 py-1.5 text-xs font-medium text-foreground">
           {listPane.scopeHeader.label}
@@ -343,40 +410,119 @@ export function FilesListPane(_props: MicroAppPaneProps) {
             >
               <Trash2 strokeWidth={1.5} className="h-3.5 w-3.5" />
             </button>
+            <button
+              type="button"
+              aria-label={listSelection.batchSelectionActions.cancelLabel}
+              title={listSelection.batchSelectionActions.cancelLabel}
+              className="flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+              onClick={() => listSelection.clearListSelection()}
+            >
+              <X strokeWidth={1.5} className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       ) : null}
-      <FilesListColumnHeader
-        columns={listPane.columnHeaders}
-        sortKey={listPane.sortField}
-        sortDirection={listPane.sortDirection}
-        onSort={listPane.sortList}
-      />
       {listPane.contentState.kind === 'loading' ? (
         <FilesEmptyState {...listPane.contentState.loadingState} />
       ) : listPane.contentState.kind === 'error' ? (
-        <FilesEmptyState {...listPane.errorState} />
+        <FilesEmptyState
+          {...listPane.errorState}
+          action={(
+            <button type="button" className="text-xs text-primary hover:underline" onClick={listPane.retryEntries}>
+              重新读取
+            </button>
+          )}
+        />
       ) : listPane.contentState.kind === 'empty' ? (
         <FilesEmptyState
           title={listPane.emptyState.title}
           description={listPane.emptyState.description}
           icon={LIST_EMPTY_STATE_ICON[listPane.emptyState.iconKind]}
+          action={listPane.searchText || listPane.mimeTypeFilter || listPane.tagFilter ? (
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline"
+              onClick={() => {
+                listPane.setSearchText('')
+                listPane.setMimeTypeFilter(null)
+                listPane.setTagFilter(null)
+              }}
+            >
+              清除筛选
+            </button>
+          ) : listPane.emptyState.iconKind === 'folder' ? (
+            <button type="button" className="text-xs text-primary hover:underline" onClick={() => setAddMenuOpen(true)}>
+              添加资源
+            </button>
+          ) : undefined}
         />
       ) : (
         <ScrollArea className="flex-1">
-          <div className="divide-y divide-border/20">
-            {listPane.visibleRows.map(({ file, row }) => {
+          <div role="tree" aria-label="文件资源树" className="w-full max-w-full overflow-hidden py-1">
+            {explorer.rows.map((row) => {
+              if (row.kind !== 'entry') {
+                return (
+                  <div
+                    key={row.id}
+                    role="treeitem"
+                    tabIndex={row.kind === 'error' ? 0 : undefined}
+                    aria-level={row.depth + 1}
+                    className="flex h-7 items-center truncate px-2 text-xs text-muted-foreground"
+                    style={{ paddingLeft: `${28 + row.depth * 14}px` }}
+                    onKeyDown={(event) => {
+                      if (row.kind === 'error' && event.key === 'Enter') {
+                        event.preventDefault()
+                        explorer.retryContainer?.(row.containerUri)
+                      }
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{row.label}</span>
+                    {row.kind === 'error' ? (
+                      <button
+                        type="button"
+                        aria-label={`重试读取 ${row.containerUri}`}
+                        title="重试"
+                        className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                        onClick={() => explorer.retryContainer?.(row.containerUri)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            explorer.retryContainer?.(row.containerUri)
+                          }
+                        }}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                )
+              }
+              const file = row.entry
               return (
-                <FilesListRow
-                  key={file.id}
-                  {...row}
-                  isSelected={listSelection.selectedFileId === file.uri || listSelection.selectedFileIds.has(file.uri)}
-                  isContextTarget={listSelection.contextMenuTargetUri === file.uri}
-                  onClick={(event) => listSelection.selectVisibleFile(file, event)}
+                <FilesExplorerRow
+                  key={row.id}
+                  uri={file.uri}
+                  name={file.name}
+                  iconKind={row.iconKind}
+                  depth={row.depth}
+                  expandable={row.expandable}
+                  expanded={row.expanded}
+                  selected={listSelection.selectedFileId === file.uri || listSelection.selectedFileIds.has(file.uri)}
+                  focusable={listSelection.selectedFileId === file.uri || (
+                    !listSelection.selectedFileId && explorerEntries[0]?.uri === file.uri
+                  )}
+                  favorite={listPane.isFileFavorite(file)}
+                  contextTarget={listSelection.contextMenuTargetUri === file.uri}
+                  metadataWarning={row.metadataWarning}
+                  onToggle={() => explorer.toggleFolder(file.uri)}
+                  onSelect={(event) => listSelection.selectVisibleFile(file, event)}
+                  onOpen={(trigger) => explorer.openEntry(file, trigger)}
+                  onToggleFavorite={() => { void listPane.toggleFileFavorite(file) }}
                   onContextMenu={() => listSelection.prepareContextMenuSelection(file)}
                   onContextMenuOpenChange={(open) => listSelection.handleContextMenuOpenChange(file, open)}
-                  onOpen={(trigger) => listPane.openFile(file, trigger)}
+                  onKeyCommand={(key) => explorer.handleRowKeyDown(file.uri, key)}
                   renderContextMenu={() => renderFileContextMenu(file)}
+                  renderActionsMenu={() => renderFileActionsMenu(file)}
                 />
               )
             })}

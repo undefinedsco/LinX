@@ -295,8 +295,7 @@ describe('Files domain boundary', () => {
     const rootShimSource = readFileSync(rootStructuredViewMetadataShimPath, 'utf8')
 
     expect(metadataSource).toContain('export interface StructuredViewConfig')
-    expect(metadataSource).toContain('export function renderStructuredViewMetadataTurtle')
-    expect(metadataSource).toContain('export function parseStructuredViewMetadataTurtle')
+    expect(metadataSource).toContain('export function normalizeStructuredViewConfig')
     expect(metadataSource).not.toMatch(/from\s+['"][^'"]*(?:\.\.\/)+store(?:['"]|\/)/)
     expect(rootShimSource).toMatch(/^export \* from '.\/domain\/structured\/structured-view-metadata'\n?$/)
   })

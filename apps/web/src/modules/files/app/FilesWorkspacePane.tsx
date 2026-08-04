@@ -16,6 +16,7 @@ import { FilesTreePane } from '../features/tree/FilesTreePane'
 import { useFilesStore } from './store'
 import { structuredSubjectRouteFromBrowser, structuredSubjectRouteFromSearchObject } from './route-state'
 import { useFilesRouteBridge } from './FilesRouteContext'
+import { FilesPrivateCloudBenchmark } from './FilesPrivateCloudBenchmark'
 
 function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
   const { compact = false, compactNavigation, theme } = props
@@ -147,7 +148,12 @@ function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
 }
 
 export function FilesWorkspacePane(props: MicroAppPaneProps) {
-  return <FilesWorkspacePaneContent {...props} />
+  return (
+    <>
+      <FilesWorkspacePaneContent {...props} />
+      <FilesPrivateCloudBenchmark />
+    </>
+  )
 }
 
 export default FilesWorkspacePane

@@ -11,10 +11,33 @@ export async function loginToSeededXpod(page: Page, runtime: SeededXpodRuntime):
   await page.getByRole('button', { name: /添加供应商/ }).click()
   await page.getByPlaceholder('https://pod.example.com').fill(runtime.baseUrl)
 
-  await Promise.all([
-    page.waitForURL(new RegExp(escapeRegex(new URL(runtime.baseUrl).origin)), { timeout: 30_000 }),
-    page.getByRole('button', { name: '连接' }).click(),
-  ])
+  const providerOrigin = new URL(runtime.baseUrl).origin
+  const appOrigin = new URL(page.url()).origin
+  await page.getByRole('button', { name: '连接' }).click()
+
+  await expect.poll(async () => {
+    const currentUrl = new URL(page.url())
+    if (currentUrl.origin === providerOrigin) return 'provider'
+    if (currentUrl.origin !== appOrigin || !currentUrl.pathname.startsWith('/chat')) return 'pending'
+
+    return page.evaluate(() => {
+      const db = (window as any).__SOLID_DB__
+      const podUrl = (window as any).__SOLID_DB_POD_URL__
+      const authFetch = db?.getDialect?.()?.getAuthenticatedFetch?.()
+      return (window as any).__SOLID_DB_STATUS__ === 'ready'
+        && typeof podUrl === 'string'
+        && podUrl.length > 0
+        && typeof authFetch === 'function'
+        ? 'restored'
+        : 'pending'
+    }).catch(() => 'pending')
+  }, { timeout: 30_000 }).toMatch(/^(provider|restored)$/)
+
+  const connectedUrl = new URL(page.url())
+  if (connectedUrl.origin === appOrigin) {
+    await assertSeededLoginReady(page, runtime)
+    return
+  }
 
   await signInToSeededRuntime(page, runtime)
   await authorizeSeededRuntime(page, runtime)
@@ -75,7 +98,10 @@ export async function assertSeededLoginReady(page: Page, runtime: SeededXpodRunt
     await expect(page.getByRole('dialog', { name: '登录 LinX' })).toHaveCount(0)
   } catch (error) {
     const debugState = await readSeededAuthDebugState(page)
-    throw new Error(`expected login route to be ready\n${JSON.stringify(debugState, null, 2)}`, { cause: error })
+    throw new Error(`expected login route to be ready\n${JSON.stringify({
+      ...debugState,
+      browserCookies: await page.context().cookies(),
+    }, null, 2)}`, { cause: error })
   }
 
   await expect.poll(async () => {

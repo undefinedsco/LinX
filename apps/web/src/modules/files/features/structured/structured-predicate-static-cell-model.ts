@@ -6,6 +6,7 @@ import {
   isStructuredCellEnumDefinition,
   isStructuredCellRelationLikeValue,
 } from '../../domain/structured/structured-cell-editor-plan'
+import { displayStructuredFactValue } from '../../domain/structured/structured-subject-peek'
 import {
   projectStructuredEnumValueLabels,
   projectStructuredRelationValues,
@@ -20,6 +21,7 @@ type StructuredStaticBooleanDisplay = {
     pressed: boolean
     title: string
   }
+  editable: boolean
   value: 'true' | 'false'
 }
 
@@ -59,16 +61,19 @@ export function projectStructuredPredicateStaticCellDisplay({
   proposals: readonly VocabTermProposal[]
   values: readonly string[]
 }): StructuredPredicateStaticCellDisplay {
-  if (editable && values.length === 1 && (values[0] === 'true' || values[0] === 'false')) {
-    const value = values[0]
-    return {
-      kind: 'boolean',
-      toggle: {
-        ariaLabel: `切换布尔值 ${value}`,
-        pressed: value === 'true',
-        title: value,
-      },
-      value,
+  if (values.length === 1) {
+    const lexical = displayStructuredFactValue(values[0])
+    if (lexical === 'true' || lexical === 'false') {
+      return {
+        kind: 'boolean',
+        toggle: {
+          ariaLabel: `切换布尔值 ${lexical}`,
+          pressed: lexical === 'true',
+          title: lexical,
+        },
+        editable,
+        value: lexical,
+      }
     }
   }
 

@@ -33,7 +33,16 @@ import {
   renderStructuredCellChangeProposalTurtle,
 } from '@/modules/files/structured-cell-approval'
 import { createVocabTermProposal, renderVocabTermProposalTurtle } from '@/modules/files/structured-table'
-import { approvalCollection, buildRuntimeToolResponse, findLatestApprovalByTarget, inboxOps, initializeInboxCollections } from './collections'
+import {
+  approvalCollection,
+  auditCollection,
+  buildRuntimeToolResponse,
+  findLatestApprovalByTarget,
+  inboxNotificationCollection,
+  inboxOps,
+  initializeInboxCollections,
+  inputRequestCollection,
+} from './collections'
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -73,9 +82,66 @@ describe('findLatestApprovalByTarget', () => {
   })
 })
 
+describe('inbox aggregate query model', () => {
+  it('bounds every Inbox collection resident window by creation time', () => {
+    const source = readFileSync('src/modules/inbox/data/collections.ts', 'utf8')
+    const collectionNames = [
+      'approvalCollection',
+      'auditCollection',
+      'inboxNotificationCollection',
+      'inputRequestCollection',
+    ]
+
+    for (const collectionName of collectionNames) {
+      expect(source).toMatch(new RegExp(
+        `export const ${collectionName} = createPodCollection[\\s\\S]*?` +
+        `window:\\s*{[\\s\\S]*?` +
+        `limit:\\s*100,[\\s\\S]*?` +
+        `orderBy:\\s*\\[\\{\\s*column:\\s*'createdAt',\\s*direction:\\s*'desc'\\s*\\}\\],[\\s\\S]*?` +
+        `maxResidentPages:\\s*3,[\\s\\S]*?` +
+        `}\\s*,[\\s\\S]*?` +
+        `getKey:`,
+      ))
+    }
+  })
+
+  it('keeps subscriptions lazy while no database is bound', async () => {
+    initializeInboxCollections(null)
+    const subscribe = vi.spyOn(approvalCollection, 'subscribeToPod')
+
+    const unsubscribe = await inboxOps.subscribeToPod()
+
+    expect(subscribe).not.toHaveBeenCalled()
+    expect(unsubscribe()).toBeUndefined()
+  })
+
+  it('subscribes and disposes every resource in the aggregate', async () => {
+    const db = { id: 'inbox-db' }
+    const collections = [
+      approvalCollection,
+      auditCollection,
+      inboxNotificationCollection,
+      inputRequestCollection,
+    ]
+    const disposers = collections.map(() => vi.fn())
+    for (const [index, collection] of collections.entries()) {
+      vi.spyOn(collection, 'subscribeToPod').mockResolvedValueOnce(disposers[index])
+    }
+    initializeInboxCollections(db as any)
+
+    const unsubscribe = await inboxOps.subscribeToPod()
+    unsubscribe()
+
+    for (const [index, collection] of collections.entries()) {
+      expect(collection.subscribeToPod).toHaveBeenCalledWith(db)
+      expect(disposers[index]).toHaveBeenCalledOnce()
+    }
+  })
+})
+
 describe('buildRuntimeToolResponse', () => {
   it('keeps Files proposal application behind the Files collection boundary', () => {
-    const source = readFileSync('src/modules/inbox/collections.ts', 'utf8')
+    const source = readFileSync('src/modules/inbox/data/collections.ts', 'utf8')
 
     expect(source).toContain('filesProposalApplicationCollection.applyApprovalDecision')
     expect(source).not.toMatch(/\bapprove(?:VocabTerm|SourceUpdate|AccessPolicy|AiChange|StructuredCellChange)ProposalFromInbox\b/)

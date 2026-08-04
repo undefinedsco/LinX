@@ -107,7 +107,7 @@ export function ServiceManagementDialog({
                   <span className="text-sm font-medium">未运行</span>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  xpod 当前没有运行。请在登录页选择本地空间或独立空间启动。
+                  xpod 当前没有运行。请在登录页选择本机空间或独立空间启动。
                 </div>
               </div>
             ) : !serviceSetupReady ? null : (
@@ -119,7 +119,7 @@ export function ServiceManagementDialog({
                     onValueChange={(value) => updateDraft({ spaceKind: value as ServiceSpaceKind })}
                   >
                     <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="local">本地空间</TabsTrigger>
+                      <TabsTrigger value="local">本机空间</TabsTrigger>
                       <TabsTrigger value="standalone">独立空间</TabsTrigger>
                     </TabsList>
                   </Tabs>
@@ -275,7 +275,7 @@ export function ServiceManagementDialog({
                   onClick={() => void openExternalUrl(`${podBaseUrl}/app/`)}
                   disabled={!podBaseUrl}
                 >
-                  <ExternalLink className="mr-2 h-4 w-4" /> 打开本地空间应用
+                  <ExternalLink className="mr-2 h-4 w-4" /> 打开本机空间应用
                 </Button>
                 <Button
                   variant="outline"
@@ -283,7 +283,7 @@ export function ServiceManagementDialog({
                   onClick={() => void openExternalUrl(`${podBaseUrl}/dashboard/`)}
                   disabled={!podBaseUrl}
                 >
-                  <ExternalLink className="mr-2 h-4 w-4" /> 打开本地空间管理页
+                  <ExternalLink className="mr-2 h-4 w-4" /> 打开本机空间管理页
                 </Button>
               </div>
 

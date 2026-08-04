@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
@@ -53,7 +53,7 @@ import {
 } from '../runtime-client'
 import { buildWorkspaceSummary } from '../workspace-summary'
 import { restoreChatMessageAnchor } from '../message-anchor'
-import { projectChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
+import { projectChatContentState, type ChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
 import {
   SecretaryWelcome,
   type SecretaryStarterAction,
@@ -103,6 +103,9 @@ const CONTENT_FAILURE_COPY: Partial<Record<ChatContentStateKind, { title: string
     description: '读取当前空间时发生错误。请检查连接后重试。',
   },
 }
+
+const LOGIN_REQUIRED_RETRY_DELAY_MS = 250
+const LOGIN_REQUIRED_GRACE_MS = 2000
 
 function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
@@ -536,7 +539,7 @@ function ChatKitPanel({
       colorScheme: theme,
       color: {
         accent: {
-          primary: '#7C3AED',
+          primary: '#735FC4',
           level: 2,
         },
       },
@@ -707,7 +710,8 @@ function ChatKitPanel({
   )
 }
 
-export function ChatContentPane(_props: ChatContentPaneProps) {
+export function ChatContentPane(props: ChatContentPaneProps) {
+  const compact = props.compact === true
   const { session } = useSession()
   const {
     db,
@@ -843,6 +847,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     if (!selectedThreadId) return null
     return threads.find((thread) => thread.id === selectedThreadId) ?? null
   }, [selectedThreadId, threads])
+  const isStagedSecretaryWelcome = isSecretary && !activeThread
 
   useEffect(() => {
     if (
@@ -948,7 +953,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   ])
 
   const isAuthenticated = Boolean(session.info.webId && session.fetch)
-  const contentState = projectChatContentState({
+  const rawContentState = projectChatContentState({
     isAuthenticated,
     isLoading: !isReady
       || !db
@@ -958,11 +963,30 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
     isChatLoading: !db || databaseStatus === 'initializing' || isChatsLoading,
     error: databaseStatus === 'error'
       ? databaseError ?? new Error('Solid database initialization failed.')
-      : chatError ?? threadError,
+      : isStagedSecretaryWelcome ? null : chatError ?? threadError,
     activeChat,
     isSecretary,
     hasThread: Boolean(selectedThreadId && activeThread),
   })
+  const isErrorDerivedLoginRequired = rawContentState.kind === 'login-required' && isAuthenticated
+  const [loginRequiredGraceExpired, setLoginRequiredGraceExpired] = useState(false)
+
+  useEffect(() => {
+    if (!isErrorDerivedLoginRequired) {
+      setLoginRequiredGraceExpired(false)
+      return
+    }
+    const retryTimer = window.setTimeout(() => retryContentQueries(), LOGIN_REQUIRED_RETRY_DELAY_MS)
+    const graceTimer = window.setTimeout(() => setLoginRequiredGraceExpired(true), LOGIN_REQUIRED_GRACE_MS)
+    return () => {
+      window.clearTimeout(retryTimer)
+      window.clearTimeout(graceTimer)
+    }
+  }, [isErrorDerivedLoginRequired, retryContentQueries])
+
+  const contentState: ChatContentState = isErrorDerivedLoginRequired && !loginRequiredGraceExpired
+    ? { kind: 'loading', recoverable: true }
+    : rawContentState
   const readyWarning = contentState.kind === 'ready' && databaseStatus === 'error'
     ? {
         title: '当前空间连接已失效',
@@ -975,7 +999,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
           description: '当前显示缓存内容。空间连接恢复前暂时不能发送。',
           actionLabel: '重试连接',
         }
-      : contentState.kind === 'ready' && (chatError || threadError)
+      : contentState.kind === 'ready' && (chatError || threadError) && !isStagedSecretaryWelcome
       ? {
           title: '聊天同步失败，当前显示缓存内容',
           description: '可以继续查看和输入；重试后会刷新当前聊天。',
@@ -984,15 +1008,17 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       : null
 
   if (!selectedChatId) {
+    if (compact) {
+      return (
+        <div className="flex min-h-0 flex-1" aria-label="聊天列表">
+          <ChatListPane {...props} />
+        </div>
+      )
+    }
     return (
-      <>
-        <div className="hidden min-h-0 flex-1 md:flex">
-          <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与文件夹。" />
-        </div>
-        <div className="flex min-h-0 flex-1 md:hidden" aria-label="聊天列表">
-          <ChatListPane {..._props} />
-        </div>
-      </>
+      <div className="flex min-h-0 flex-1">
+        <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与文件夹。" />
+      </div>
     )
   }
 

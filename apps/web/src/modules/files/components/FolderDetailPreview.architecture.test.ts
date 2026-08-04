@@ -18,6 +18,7 @@ const folderSelectionControllerPath = 'src/modules/files/features/folder/useFold
 const folderUploadControllerPath = 'src/modules/files/features/folder/useFolderDetailUploadController.ts'
 const folderOperationControllerPath = 'src/modules/files/features/folder/useFolderDetailOperationController.ts'
 const folderModelPath = 'src/modules/files/domain/folder/folder-detail-model.ts'
+const resourceViewBarPath = 'src/modules/files/ui/ResourceViewBar.tsx'
 const folderColumnViewShimPath = 'src/modules/files/components/FolderDetailColumnView.tsx'
 const folderChildViewsShimPath = 'src/modules/files/components/FolderDetailChildViews.tsx'
 
@@ -41,6 +42,7 @@ describe('FolderDetailPreview architecture boundary', () => {
     expect(existsSync(folderUploadControllerPath)).toBe(true)
     expect(existsSync(folderOperationControllerPath)).toBe(true)
     expect(existsSync(folderModelPath)).toBe(true)
+    expect(existsSync(resourceViewBarPath)).toBe(true)
     expect(existsSync(folderColumnViewShimPath)).toBe(true)
     expect(existsSync(folderChildViewsShimPath)).toBe(true)
     if (
@@ -60,6 +62,7 @@ describe('FolderDetailPreview architecture boundary', () => {
       || !existsSync(folderUploadControllerPath)
       || !existsSync(folderOperationControllerPath)
       || !existsSync(folderModelPath)
+      || !existsSync(resourceViewBarPath)
       || !existsSync(folderColumnViewShimPath)
       || !existsSync(folderChildViewsShimPath)
     ) return
@@ -80,6 +83,7 @@ describe('FolderDetailPreview architecture boundary', () => {
     const folderUploadControllerSource = readFileSync(folderUploadControllerPath, 'utf8')
     const folderOperationControllerSource = readFileSync(folderOperationControllerPath, 'utf8')
     const folderModelSource = readFileSync(folderModelPath, 'utf8')
+    const resourceViewBarSource = readFileSync(resourceViewBarPath, 'utf8')
     const folderColumnViewShimSource = readFileSync(folderColumnViewShimPath, 'utf8')
     const folderChildViewsShimSource = readFileSync(folderChildViewsShimPath, 'utf8')
 
@@ -94,7 +98,8 @@ describe('FolderDetailPreview architecture boundary', () => {
 
     expect(detailPreviewSource).toContain("from '../folder/FolderDetailPreview'")
     expect(folderDetailSource).toMatch(/\nexport function FolderDetailPreview\(/)
-    expect(folderDetailSource).toContain("from './FolderDetailColumnView'")
+    expect(folderDetailSource).not.toContain("from './FolderDetailColumnView'")
+    expect(folderDetailSource).toContain("from '../../ui/ResourceViewBar'")
     expect(folderDetailSource).toContain("from './FolderDetailChildViews'")
     expect(folderDetailSource).not.toContain("from '../../components/FolderDetailColumnView'")
     expect(folderDetailSource).not.toContain("from '../../components/FolderDetailChildViews'")
@@ -102,7 +107,7 @@ describe('FolderDetailPreview architecture boundary', () => {
     expect(folderDetailSource).not.toMatch(/\nfunction FolderDescendantColumn\(/)
     expect(folderDetailSource).not.toMatch(/\n\s*const childButtonClassName = /)
     expect(folderDetailSource).not.toMatch(/\n\s*const renderChildButton = /)
-    expect(folderDetailSource).toContain("from './FolderChildPreview'")
+    expect(folderDetailSource).not.toContain("from './FolderChildPreview'")
     expect(folderDetailSource).not.toMatch(/\nfunction FolderChildPreview\(/)
     expect(folderDetailSource).not.toMatch(/\nfunction getFolderChildPreviewSummary\(/)
     expect(folderDetailSource).not.toContain('ResourceMetaDrawer')
@@ -112,11 +117,11 @@ describe('FolderDetailPreview architecture boundary', () => {
     expect(folderDetailSource).not.toContain('getFilesEntrySemanticLabel')
     expect(folderDetailSource).not.toContain('getFilesEntryOpenMode')
     expect(folderDetailSource).not.toContain('setMetaDrawerOpen')
-    expect(folderDetailSource).toContain("from '../editor/FileEditorSheet'")
+    expect(folderDetailSource).toContain("from '../editor/DocumentEditorModal'")
     expect(folderDetailSource).not.toContain("from '../../components/FileEditorSheet'")
     expect(folderDetailSource).toContain("from './FolderChildOperationSheet'")
     expect(folderDetailSource).toContain("from './useFolderDetailViewController'")
-    expect(folderDetailSource).toContain("from './useFolderDetailColumnController'")
+    expect(folderDetailSource).not.toContain("from './useFolderDetailColumnController'")
     expect(folderDetailSource).toContain("from './useFolderDetailNavigationController'")
     expect(folderDetailSource).toContain("from './useFolderDetailSelectionController'")
     expect(folderDetailSource).toContain("from './useFolderDetailUploadController'")
@@ -131,9 +136,10 @@ describe('FolderDetailPreview architecture boundary', () => {
     expect(folderDetailSource).not.toContain('新建文件夹')
     expect(folderDetailSource).not.toContain('新建 Markdown 文件')
     expect(folderDetailSource).not.toContain('选择上传文件')
-    expect(folderDetailSource).not.toContain('上传文件')
+    expect(folderDetailSource).toContain("from '../../ui/FilesEmptyState'")
     expect(folderDetailSource).toContain('viewModeOptions.map')
     expect(folderDetailSource).toContain('option.active')
+    expect(folderDetailSource).toContain('<ResourceViewBar')
     expect(folderDetailSource).toContain('toolbarChrome.createFolderLabel')
     expect(folderDetailSource).toContain('toolbarChrome.createMarkdownLabel')
     expect(folderDetailSource).toContain('toolbarChrome.uploadInputLabel')
@@ -147,7 +153,7 @@ describe('FolderDetailPreview architecture boundary', () => {
     expect(folderDetailSource).not.toContain('visibleChildren.length')
     expect(folderDetailSource).not.toContain('selectedChildren.length')
     expect(folderDetailSource).not.toContain('columnPreviewSiblings.length')
-    expect(folderDetailSource).toContain('visibleChildCount')
+    expect(folderDetailSource).not.toContain('visibleChildCount')
     expect(folderDetailSource).not.toContain('selectedChildCount')
     expect(folderDetailSource).not.toContain('已选择')
     expect(folderDetailSource).not.toContain('复制所选 URI')
@@ -155,7 +161,7 @@ describe('FolderDetailPreview architecture boundary', () => {
     expect(folderDetailSource).toContain('folderSelection.batchSelectionLabel')
     expect(folderDetailSource).toContain('folderSelection.batchSelectionActions.copyLabel')
     expect(folderDetailSource).toContain('folderSelection.batchSelectionActions.deleteLabel')
-    expect(folderDetailSource).toContain('columnPreviewChildCount')
+    expect(folderDetailSource).not.toContain('columnPreviewChildCount')
     expect(folderDetailSource).not.toMatch(/\n\s*const visibleChildren = /)
     expect(folderDetailSource).not.toMatch(/\n\s*const sortedChildren = /)
     expect(folderDetailSource).not.toMatch(/\n\s*const \[viewMode, setViewMode\] = /)
@@ -179,6 +185,8 @@ describe('FolderDetailPreview architecture boundary', () => {
     expect(folderDetailSource).not.toContain('setColumnContainerPath')
     expect(folderDetailSource).not.toContain('setColumnSelectionByContainer')
     expect(folderDetailSource).not.toContain('setColumnPreviewTarget')
+    expect(folderDetailSource).not.toContain('FolderColumnPanel')
+    expect(folderDetailSource).not.toContain('FolderDescendantColumn')
     expect(folderDetailSource).not.toMatch(/\n\s*const columnContainerPath = /)
     expect(folderDetailSource).not.toMatch(/\n\s*const columnSelectionByContainer = /)
     expect(folderDetailSource).not.toMatch(/\n\s*const columnPreviewTarget = /)
@@ -301,6 +309,13 @@ describe('FolderDetailPreview architecture boundary', () => {
     expect(folderViewControllerSource).toContain('viewMode')
     expect(folderViewControllerSource).toContain('viewModel')
     expect(folderViewControllerSource).toContain('setSortKey')
+    expect(folderModelSource).toContain('visibleChildCount')
+    expect(folderModelSource).not.toContain("'columns'")
+    expect(folderModelSource).not.toContain('分栏视图')
+    expect(resourceViewBarSource).toContain('export function ResourceViewBar')
+    expect(resourceViewBarSource).not.toContain('@inrupt')
+    expect(resourceViewBarSource).not.toContain('rdf')
+    expect(resourceViewBarSource).not.toContain('pod')
     expect(folderViewControllerSource).toMatch(/\n\s*const \[viewState, setViewState\] = useState\(createFolderDetailViewState\)/)
     expect(folderViewControllerSource).not.toMatch(/\n\s*const \[viewMode, setViewMode\] = useState/)
     expect(folderViewControllerSource).not.toMatch(/\n\s*const \[sort, setSort\] = useState/)

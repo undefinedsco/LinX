@@ -45,8 +45,17 @@ export interface MicroAppLayoutConfig {
   mainTitle?: ReactNode
   subtitle?: string
   topActions?: ReactNode
+  listPanel?: {
+    defaultWidth?: number
+    minWidth?: number
+    maxWidth?: number
+  }
   rightSidebar?: ReactNode
   rightSidebarWidth?: number
+  rightSidebarToggle?: {
+    open: boolean
+    onToggle: () => void
+  }
   hideIcon?: boolean
   hideHeader?: boolean
 }
@@ -106,7 +115,7 @@ const FavoriteContentPane = lazyPane(() =>
   import('@/modules/favorites/components/FavoriteContentPane').then((mod) => ({ default: mod.FavoriteContentPane })),
 )
 const FilesListPane = lazyPane(() =>
-  import('@/modules/files/features/list/FilesListPane').then((mod) => ({ default: mod.FilesListPane })),
+  import('@/modules/files/features/tree/FilesTreePane').then((mod) => ({ default: mod.FilesTreePane })),
 )
 const FilesWorkspacePane = lazyPane(() =>
   import('@/modules/files/app/FilesWorkspacePane').then((mod) => ({ default: mod.FilesWorkspacePane })),
@@ -128,6 +137,9 @@ const ChatLayoutConfigBridge = lazyBridge(() =>
 )
 const ModelServicesLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/model-services/app/ModelServicesLayoutConfigBridge').then((mod) => ({ default: mod.ModelServicesLayoutConfigBridge })),
+)
+const FilesLayoutConfigBridge = lazyBridge(() =>
+  import('@/modules/files/app/FilesLayoutConfigBridge').then((mod) => ({ default: mod.FilesLayoutConfigBridge })),
 )
 
 export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
@@ -183,6 +195,7 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     },
     ListPane: FilesListPane,
     ContentPane: FilesWorkspacePane,
+    LayoutConfigBridge: FilesLayoutConfigBridge,
     hidePrimaryRailOnCompact: true,
     hideContentHeaderOnCompact: true,
   },

@@ -10,7 +10,8 @@
  */
 
 import { useState, useMemo, useCallback } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useLiveQuery } from '@tanstack/react-db'
+import { useSession } from '@/providers/solid-session-context'
 import {
   Dialog,
   DialogContent,
@@ -22,9 +23,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Users, AlertCircle } from 'lucide-react'
-import { contactOps } from '../../data/collections'
+import { contactCollection, contactOps } from '../../data/collections'
 import { isGroupContact, type ContactRow } from '@undefineds.co/models'
-import { useQuery } from '@tanstack/react-query'
 import { SelectableContactList } from '../../ui/SelectableContactList'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 
@@ -43,11 +43,7 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
   const [error, setError] = useState<string | null>(null)
   const ownerRef = session.info.webId ?? undefined
 
-  const { data: allContacts = [] } = useQuery({
-    queryKey: ['contacts', 'for-group-dialog'],
-    queryFn: () => contactOps.getAll(),
-    enabled: open,
-  })
+  const { data: allContacts = [] } = useLiveQuery(contactCollection)
 
   const candidateContacts = useMemo(
     () => allContacts.filter((c: ContactRow) =>

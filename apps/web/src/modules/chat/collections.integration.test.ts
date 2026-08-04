@@ -13,10 +13,12 @@ import {
 } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 import {
+  chatCollection,
   chatOps,
   configureChatContactsPort,
   initializeChatCollections,
   LINX_DEFAULT_SECRETARY,
+  messageCollection,
 } from './collections'
 import {
   agentCollection,
@@ -88,7 +90,7 @@ describe('chat collections integration', () => {
       metadata,
     }).execute()
 
-    const chats = await chatOps.fetchChats()
+    const chats = await chatCollection.fetch({ refetch: true })
     const roundTripped = chats.find((row) => row.id === id || extractChatIdFromChatRef(row.id) === id)
     expect(roundTripped).toBeDefined()
     expect(roundTripped?.participants).toEqual(expect.arrayContaining([assistantUri]))
@@ -119,7 +121,8 @@ describe('chat collections integration', () => {
     )
     expect(message).toBeDefined()
 
-    const msgRows = await chatOps.fetchMessages(thread.id, chatId)
+    const msgRows = (await messageCollection.fetch({ refetch: true }))
+      .filter((row) => row.thread === thread.id || row.thread?.includes(thread.id))
     const messageIri = (message as Record<string, unknown>)['@id']
     const roundTripped = msgRows.find((row) => row.id === message.id || (row as Record<string, unknown>)['@id'] === messageIri)
     expect(roundTripped).toBeDefined()

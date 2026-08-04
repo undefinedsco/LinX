@@ -16,10 +16,13 @@
  * - 右键: 上下文菜单 (置顶、静音、标记未读、删除)
  * - 悬停: 显示更多操作按钮
  */
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useRef } from 'react'
+import type { KeyboardEvent } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
 import {
+  LINX_DEFAULT_SECRETARY,
+  isLinxDefaultSecretaryChat,
   useChatList,
   useChatMutations,
   useChatInit,
@@ -30,6 +33,10 @@ import {
   orderChatItems,
   projectSecretaryListCapabilities,
 } from '../domain/secretary-entry-model'
+import {
+  projectChatListFolderSections,
+  type ChatListFolderFilter,
+} from '../domain/chat-list-folder-model'
 import { resolveThreadChatId } from '@/lib/data/resource-identity'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
@@ -51,6 +58,8 @@ import {
   Users,
   User,
   Terminal,
+  ListFilter,
+  Check,
 } from 'lucide-react'
 import { AddChatDialog } from './AddChatDialog'
 import { Button } from '@/components/ui/button'
@@ -216,6 +225,9 @@ function compareRuntimeSessions(left: RuntimeSessionRecord, right: RuntimeSessio
 interface ChatItemProps {
   chat: ChatItemData
   isActive: boolean
+  tabIndex: number
+  itemRef: (node: HTMLDivElement | null) => void
+  onRovingKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
   onClick: () => void
   onStar: () => void
   onMute: () => void
@@ -227,6 +239,9 @@ interface ChatItemProps {
 function ChatItem({
   chat,
   isActive,
+  tabIndex,
+  itemRef,
+  onRovingKeyDown,
   onClick,
   onStar,
   onMute,
@@ -246,25 +261,28 @@ function ChatItem({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          ref={itemRef}
           data-testid="chat-list-item"
           data-chat-id={chat.id}
           role="option"
           aria-label={chat.title}
           aria-selected={isActive}
-          tabIndex={0}
+          tabIndex={tabIndex}
           onClick={onClick}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget) return
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault()
               onClick()
+              return
             }
+            onRovingKeyDown(event)
           }}
           onMouseEnter={() => setIsHovering(true)}
           onMouseLeave={() => setIsHovering(false)}
           className={cn(
             // WeChat Desktop: 64px 高度, 无圆角, 紧凑间距
-            'group relative flex items-center gap-3 h-16 px-3 cursor-pointer select-none',
+            'group relative flex items-center gap-3 h-16 px-3 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
             'transition-colors duration-150',
             // 选中状态
             isActive
@@ -294,7 +312,7 @@ function ChatItem({
               <Avatar className="h-12 w-12 border border-border/30 rounded-sm">
                 <AvatarImage src={chat.providerLogo} className="rounded-sm object-cover" />
                 <AvatarFallback className="rounded-sm bg-primary/10 text-primary text-sm">
-                  {chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatIcon(chat)}
+                  {chat.isProtected ? <Bot strokeWidth={1.5} className="h-5 w-5" /> : chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatIcon(chat)}
                 </AvatarFallback>
               </Avatar>
             )}
@@ -463,6 +481,7 @@ interface ListHeaderProps {
   onAddGroup?: () => void
   addButtonLabel?: string
   variant?: 'search' | 'title'
+  filterControl?: React.ReactNode
 }
 
 function ListHeader({ 
@@ -473,7 +492,8 @@ function ListHeader({
   onAddFriend,
   onAddGroup,
   addButtonLabel,
-  variant = 'title'
+  variant = 'title',
+  filterControl,
 }: ListHeaderProps) {
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
 
@@ -505,6 +525,7 @@ function ListHeader({
             </button>
           )}
         </div>
+        {filterControl}
         {onAddClick && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -615,6 +636,8 @@ export function ChatListPane(_props: ChatListPaneProps) {
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectChat = useChatStore((state) => state.selectChat)
   const openAddDialog = useChatStore((state) => state.openAddDialog)
+  const [folderFilter, setFolderFilter] = useState<ChatListFolderFilter>('all')
+  const optionRefs = useRef<Array<HTMLDivElement | null>>([])
 
   // Use new collection-based hooks
   const { data: rawChats, isLoading: isChatsLoading } = useChatList(search ? { search } : undefined)
@@ -633,7 +656,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   // 格式化 Chat 列表 - 添加标星排序
   const chats: ChatItemData[] = useMemo(() => {
-    if (!rawChats) return []
+    const sourceChats = rawChats ?? []
 
     const threadsByChatId = new Map<string, string[]>()
     const workspaceBackedChatIds = new Set<string>()
@@ -657,7 +680,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
       }
     }
 
-    return orderChatItems(rawChats).map((chat): ChatItemData => {
+    const projectedChats = orderChatItems(sourceChats).map((chat): ChatItemData => {
       const id = chat.id ?? 'unknown'
       const capabilities = projectSecretaryListCapabilities(chat)
       const pendingItems = inboxItems.filter((item) => item.chatId === id)
@@ -676,7 +699,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
       return {
         id,
-        title: chat.title ?? '未命名聊天',
+        title: capabilities.isProtected ? LINX_DEFAULT_SECRETARY.title : chat.title ?? '未命名聊天',
         preview: chat.lastMessagePreview ?? '暂无消息',
         timestamp: formatTimestamp(chat.lastActiveAt ?? chat.updatedAt),
         starred: capabilities.isPinned,
@@ -697,7 +720,60 @@ export function ChatListPane(_props: ChatListPaneProps) {
         canDelete: capabilities.canDelete,
       }
     })
-  }, [inboxItems, rawChats, runtimeSessions, threads])
+
+    const hasSecretary = sourceChats.some((chat) => (
+      chat.id === LINX_DEFAULT_SECRETARY.chatId || isLinxDefaultSecretaryChat(chat)
+    ))
+    const normalizedSearch = search.trim().toLocaleLowerCase()
+    const matchesSecretary = normalizedSearch.length === 0
+      || LINX_DEFAULT_SECRETARY.title.toLocaleLowerCase().includes(normalizedSearch)
+
+    if (hasSecretary || !matchesSecretary) return projectedChats
+
+    // The Secretary is a built-in entry point. Keep it visible while Pod bootstrap
+    // or a remote refresh is pending; persistence remains owned by collections.
+    return [{
+      id: LINX_DEFAULT_SECRETARY.chatId,
+      title: LINX_DEFAULT_SECRETARY.title,
+      preview: '暂无消息',
+      timestamp: '',
+      starred: true,
+      muted: false,
+      unreadCount: 0,
+      conversationKind: 'one',
+      threadMode: 'chat',
+      isProtected: true,
+      canTogglePin: false,
+      canDelete: false,
+    }, ...projectedChats]
+  }, [inboxItems, rawChats, runtimeSessions, search, threads])
+
+  const chatListSections = useMemo(
+    () => projectChatListFolderSections(chats, folderFilter),
+    [chats, folderFilter],
+  )
+
+  const visibleChats = useMemo(
+    () => [...chatListSections.pinned, ...chatListSections.unpinned],
+    [chatListSections],
+  )
+  const selectedIndex = visibleChats.findIndex((c) => c.id === selectedChatId)
+
+  const registerItemRef = useCallback((index: number, node: HTMLDivElement | null) => {
+    optionRefs.current[index] = node
+  }, [])
+
+  const onItemKeyDown = useCallback((index: number, event: KeyboardEvent<HTMLDivElement>) => {
+    let nextIndex: number
+    if (event.key === 'ArrowDown') nextIndex = Math.min(index + 1, visibleChats.length - 1)
+    else if (event.key === 'ArrowUp') nextIndex = Math.max(index - 1, 0)
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = visibleChats.length - 1
+    else return
+    event.preventDefault()
+    selectChat(visibleChats[nextIndex].id)
+    optionRefs.current[nextIndex]?.focus()
+  }, [visibleChats, selectChat])
 
   // Handlers
   const handleAddChat = useCallback(() => {
@@ -797,6 +873,26 @@ export function ChatListPane(_props: ChatListPaneProps) {
     }
   }, [chats, toast])
 
+  const renderChatItem = (chat: ChatItemData, flatIndex: number) => {
+    const tabbable = selectedChatId === chat.id || (selectedIndex < 0 && flatIndex === 0)
+    return (
+      <ChatItem
+        key={chat.id}
+        chat={chat}
+        isActive={selectedChatId === chat.id}
+        tabIndex={tabbable ? 0 : -1}
+        itemRef={(node) => registerItemRef(flatIndex, node)}
+        onRovingKeyDown={(event) => onItemKeyDown(flatIndex, event)}
+        onClick={() => handleChatClick(chat.id)}
+        onStar={() => handleStarChat(chat.id)}
+        onMute={() => handleMuteChat(chat.id)}
+        onMarkUnread={() => handleMarkAsUnread(chat.id)}
+        onCopyLog={() => handleCopyLog(chat.id)}
+        onDelete={() => handleDeleteChat(chat.id)}
+      />
+    )
+  }
+
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
       <ListHeader
@@ -808,10 +904,38 @@ export function ChatListPane(_props: ChatListPaneProps) {
         onAddGroup={handleAddGroup}
         addButtonLabel="新建聊天"
         variant="search"
+        filterControl={(
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className={cn(
+                  'h-8 w-8 shrink-0 rounded-sm',
+                  folderFilter !== 'all' ? 'bg-primary/10 text-primary' : 'bg-muted/50 hover:bg-muted/80 text-muted-foreground',
+                )}
+                title="筛选会话"
+                aria-label="筛选会话"
+              >
+                <ListFilter strokeWidth={1.5} className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-32">
+              <DropdownMenuItem onClick={() => setFolderFilter('all')}>
+                <Check strokeWidth={1.5} className={cn('mr-2 h-4 w-4', folderFilter === 'all' ? 'opacity-100' : 'opacity-0')} />
+                <span>全部</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFolderFilter('unread')}>
+                <Check strokeWidth={1.5} className={cn('mr-2 h-4 w-4', folderFilter === 'unread' ? 'opacity-100' : 'opacity-0')} />
+                <span>未读</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       />
       
       <ScrollArea className="flex-1">
-        {isChatsLoading ? (
+        {isChatsLoading && chats.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...
@@ -821,20 +945,25 @@ export function ChatListPane(_props: ChatListPaneProps) {
             暂无聊天
           </div>
         ) : (
-          <div role="listbox" aria-label="聊天" className="divide-y divide-border/30 animate-fade-in">
-            {chats.map((chat) => (
-              <ChatItem
-                key={chat.id}
-                chat={chat}
-                isActive={selectedChatId === chat.id}
-                onClick={() => handleChatClick(chat.id)}
-                onStar={() => handleStarChat(chat.id)}
-                onMute={() => handleMuteChat(chat.id)}
-                onMarkUnread={() => handleMarkAsUnread(chat.id)}
-                onCopyLog={() => handleCopyLog(chat.id)}
-                onDelete={() => handleDeleteChat(chat.id)}
-              />
-            ))}
+          <div role="listbox" aria-label="聊天" aria-orientation="vertical" className="animate-fade-in">
+            {chatListSections.pinned.length > 0 ? (
+              <div role="group" aria-label="置顶" className="divide-y divide-border/30">
+                {chatListSections.pinned.map((chat, i) => renderChatItem(chat, i))}
+              </div>
+            ) : null}
+            {chatListSections.pinned.length > 0 && chatListSections.unpinned.length > 0 ? (
+              <div role="presentation" className="border-t border-border/60" />
+            ) : null}
+            {chatListSections.unpinned.length > 0 ? (
+              <div role="group" aria-label={folderFilter === 'unread' ? '未读会话' : '会话'} className="divide-y divide-border/30">
+                {chatListSections.unpinned.map((chat, i) => renderChatItem(chat, chatListSections.pinned.length + i))}
+              </div>
+            ) : null}
+            {chatListSections.pinned.length === 0 && chatListSections.unpinned.length === 0 ? (
+              <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
+                该筛选下暂无会话
+              </div>
+            ) : null}
           </div>
         )}
       </ScrollArea>

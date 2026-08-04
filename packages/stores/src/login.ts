@@ -165,6 +165,7 @@ export interface LoginStore {
   // 数据
   storedAccount: StoredAccount | null
   customProviders: ProviderOption[]
+  preferredSpace: 'cloud' | 'local'
 
   // Actions
   setState: (state: LoginState) => void
@@ -172,6 +173,7 @@ export interface LoginStore {
   setStoredAccount: (account: StoredAccount | null) => void
   addCustomProvider: (provider: ProviderOption) => void
   removeCustomProvider: (url: string) => void
+  setPreferredSpace: (space: 'cloud' | 'local') => void
 
   // 复合 Actions
   loginSuccess: (account: StoredAccount) => void
@@ -190,6 +192,7 @@ export const useLoginStore = create<LoginStore>()(
       error: null,
       storedAccount: null,
       customProviders: [],
+      preferredSpace: 'cloud' as const,
 
       // 基础 Actions
       setState: (state) => set((current) => current.state === state ? current : { state }),
@@ -211,6 +214,9 @@ export const useLoginStore = create<LoginStore>()(
         customProviders: s.customProviders.filter(p => p.url !== url)
       })),
 
+      setPreferredSpace: (space) => set((current) =>
+        current.preferredSpace === space ? current : { preferredSpace: space }),
+
       // 复合 Actions
       loginSuccess: (account) => set(() => {
         persistRememberedAccount(account)
@@ -231,12 +237,13 @@ export const useLoginStore = create<LoginStore>()(
     }),
     {
       name: 'linx-login',
-      version: 1,
+      version: 2,
       migrate: (persistedState) => {
-        const state = persistedState as { storedAccount?: unknown; customProviders?: unknown }
+        const state = persistedState as { storedAccount?: unknown; customProviders?: unknown; preferredSpace?: unknown }
         return {
           storedAccount: migrateStoredAccount(state.storedAccount),
           customProviders: Array.isArray(state.customProviders) ? state.customProviders : [],
+          preferredSpace: state.preferredSpace === 'local' ? 'local' : 'cloud',
         }
       },
       storage: createJSONStorage(() => {
@@ -255,6 +262,7 @@ export const useLoginStore = create<LoginStore>()(
       partialize: (state) => ({
         storedAccount: state.storedAccount,
         customProviders: state.customProviders,
+        preferredSpace: state.preferredSpace,
       }),
     }
   )

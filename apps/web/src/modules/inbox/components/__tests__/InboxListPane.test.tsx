@@ -5,11 +5,11 @@ const mockUseInboxStore = vi.fn()
 const mockUseInboxItems = vi.fn()
 const mockUseInboxSummary = vi.fn()
 
-vi.mock('../../store', () => ({
+vi.mock('../../app/store', () => ({
   useInboxStore: (selector: (state: unknown) => unknown) => mockUseInboxStore(selector),
 }))
 
-vi.mock('../../collections', () => ({
+vi.mock('../../data/collections', () => ({
   useInboxItems: () => mockUseInboxItems(),
   useInboxSummary: () => mockUseInboxSummary(),
 }))
@@ -86,7 +86,7 @@ describe('InboxListPane', () => {
 
     expect(screen.getByText('待认证')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /认证请求 · oauth2/i }))
+    fireEvent.click(screen.getByRole('option', { name: /认证请求 · oauth2/i }))
 
     expect(selectItem).toHaveBeenCalledWith('audit:pending-auth')
   })

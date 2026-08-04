@@ -76,7 +76,7 @@ vi.mock('@undefineds.co/models', async (importOriginal) => {
 })
 
 // Mock solid session
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: { info: { isLoggedIn: true } },
     sessionRequestInProgress: false,
@@ -231,7 +231,7 @@ describe('ChatListPane', () => {
       expect(selectChat).toHaveBeenCalledWith('chat-keyboard')
     })
 
-    it('shows loading state', () => {
+    it('keeps the built-in Secretary available while the chat list loads', () => {
       mockUseChatList.mockReturnValue({
         data: [],
         isLoading: true,
@@ -241,10 +241,11 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('正在加载...')).toBeInTheDocument()
+      expect(screen.getByRole('option', { name: 'AI Secretary' })).toBeInTheDocument()
+      expect(screen.queryByText('正在加载...')).not.toBeInTheDocument()
     })
 
-    it('does not prepare AI Secretary from the chat list when chat list is empty', () => {
+    it('projects the built-in Secretary at the top when the Pod list is empty', () => {
       const mockSelectChat = vi.fn()
       const mockSelectThread = vi.fn()
       mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => {
@@ -262,13 +263,13 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('暂无聊天')).toBeInTheDocument()
+      expect(screen.getByRole('option', { name: 'AI Secretary' })).toBeInTheDocument()
       expect(mockMutations.ensureLinxWelcome.mutate).not.toHaveBeenCalled()
       expect(mockSelectChat).not.toHaveBeenCalled()
       expect(mockSelectThread).not.toHaveBeenCalled()
     })
 
-    it('keeps the empty chat list on the collection empty state while AI Secretary persistence is pending', () => {
+    it('keeps the built-in Secretary visible while its persistence is pending', () => {
       mockUseChatList.mockReturnValue({
         data: [],
         isLoading: false,
@@ -279,7 +280,7 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('暂无聊天')).toBeInTheDocument()
+      expect(screen.getByRole('option', { name: 'AI Secretary' })).toBeInTheDocument()
       expect(screen.queryByText('正在准备默认助手...')).not.toBeInTheDocument()
       expect(screen.queryByText('默认助手暂时还没准备好，可以先进入 LinX。')).not.toBeInTheDocument()
     })
@@ -341,7 +342,7 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('暂无聊天')).toBeInTheDocument()
+      expect(screen.queryByRole('option', { name: 'AI Secretary' })).not.toBeInTheDocument()
       expect(mockMutations.ensureLinxWelcome.mutate).not.toHaveBeenCalled()
     })
 

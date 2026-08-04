@@ -70,4 +70,23 @@ describe('useStructuredResourcePreviewController', () => {
 
     expect(result.current.structuredWritesSupported).toBe(false)
   })
+
+  it('keeps vocab enrichment off the critical path until the resource body is available', () => {
+    mockUseRawTextResource.mockImplementation((uri: string, enabled = true) => ({
+      data: undefined,
+      error: null,
+      isLoading: enabled && uri.endsWith('tasks.ttl'),
+    }))
+
+    renderHook(() => useStructuredResourcePreviewController(detail({
+      uri: 'https://pod.example/.data/tasks.ttl',
+      previewText: null,
+    })))
+
+    expect(mockUseRawTextResource).toHaveBeenCalledWith('https://pod.example/.data/tasks.ttl')
+    expect(mockUseRawTextResource).toHaveBeenCalledWith('https://pod.example/.vocab/terms.ttl', false)
+    expect(mockUseRawTextResource).toHaveBeenCalledWith('https://pod.example/.vocab/shapes.ttl', false)
+    expect(mockUseRawTextResource).toHaveBeenCalledWith('https://pod.example/.vocab/namespaces.ttl', false)
+    expect(mockUseFilesVocabRegistryDiscovery).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }))
+  })
 })

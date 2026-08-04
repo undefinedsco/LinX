@@ -49,7 +49,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: mockSession,
   }),
@@ -194,10 +194,20 @@ describe('ChatContentPane', () => {
     storeState.selectedChatId = null
     storeState.selectedThreadId = null
 
-    render(<ChatContentPane theme="light" />)
+    render(<ChatContentPane theme="light" compact />)
 
     expect(screen.getByTestId('compact-chat-list')).toBeInTheDocument()
+    expect(screen.queryByText('选择或创建一个聊天')).not.toBeInTheDocument()
+  })
+
+  it('shows the empty prompt instead of the inline list on desktop when no chat is selected', () => {
+    storeState.selectedChatId = null
+    storeState.selectedThreadId = null
+
+    render(<ChatContentPane theme="light" />)
+
     expect(screen.getByText('选择或创建一个聊天')).toBeInTheDocument()
+    expect(screen.queryByTestId('compact-chat-list')).not.toBeInTheDocument()
   })
 
   it('passes selected thread as the initial ChatKit thread without unsafe pre-upgrade method calls', () => {
@@ -252,10 +262,10 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    expect(screen.getByRole('heading', { name: '你好，我是 LinX Secretary' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toBeEnabled()
+    expect(screen.getByRole('heading', { name: '你好，我是 LinX 主理人' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: /整理今天的工作/ }))
-    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toHaveValue('帮我整理今天需要推进的工作')
+    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toHaveValue('帮我整理今天需要推进的工作')
     expect(screen.queryByText('正在准备话题...')).not.toBeInTheDocument()
     expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
   })
@@ -355,6 +365,28 @@ describe('ChatContentPane', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试同步' }))
     expect(mockChatRefetch).toHaveBeenCalledTimes(1)
     expect(mockThreadRefetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not turn a staged Secretary welcome into a chat-sync failure banner', () => {
+    storeState.selectedChatId = '__secretary__/index.ttl#this'
+    storeState.selectedThreadId = null
+    mockUseChatList.mockReturnValue({
+      data: [{ id: '__secretary__/index.ttl#this', title: 'AI Secretary' }],
+      isLoading: false,
+      error: Object.assign(new Error('HTTP 403'), { status: 403 }),
+      refetch: mockChatRefetch,
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: Object.assign(new Error('request timed out'), { name: 'TimeoutError' }),
+      refetch: mockThreadRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByTestId('secretary-welcome')).toBeInTheDocument()
+    expect(screen.queryByText('聊天同步失败，当前显示缓存内容')).not.toBeInTheDocument()
   })
 
   it('keeps cached content visible but disables sending while the database is invalid', () => {
@@ -540,7 +572,7 @@ describe('ChatContentPane', () => {
     })
     view.rerender(<ChatContentPane theme="light" />)
 
-    expect(screen.getByRole('textbox', { name: '给 Secretary 发消息' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toHaveValue('')
     expect(screen.getByRole('button', { name: '开始对话' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: '重试创建话题' })).not.toBeInTheDocument()
     expect(screen.queryByText(/old account thread failure/)).not.toBeInTheDocument()
@@ -585,6 +617,35 @@ describe('ChatContentPane', () => {
     expect(screen.getByText('请先完成登录，再开始聊天。')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument()
   })
+
+  it('treats an authenticated 401 query failure as transient loading and auto-retries', async () => {
+    mockUseChatList.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: Object.assign(new Error('Request failed'), { status: 401 }),
+      refetch: mockChatRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.queryByText('登录未完成')).not.toBeInTheDocument()
+    expect(screen.getByText('正在加载聊天')).toBeInTheDocument()
+    await waitFor(() => expect(mockChatRefetch).toHaveBeenCalled(), { timeout: 1000 })
+  })
+
+  it('shows login-required only after the grace period when an authenticated 401 persists', async () => {
+    mockUseChatList.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: Object.assign(new Error('Request failed'), { status: 401 }),
+      refetch: mockChatRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.queryByText('登录未完成')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('登录未完成')).toBeInTheDocument(), { timeout: 4000 })
+  }, 6000)
 
   it('creates a random-id initial thread and binds the default Pod workspace after bootstrap when no thread exists', async () => {
     storeState.selectedChatId = 'chat-1'
@@ -810,7 +871,7 @@ describe('ChatContentPane', () => {
       })
     })
 
-    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|node\.example|__secretary__|Pod container/i)).not.toBeInTheDocument()
   })
 

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import {
   createFolderDetailViewState,
+  projectFolderDetailPathLabel,
   projectFolderDetailSortKey,
   projectFolderDetailViewMode,
   projectFolderDetailViewModel,
@@ -14,8 +15,10 @@ export type { FolderDetailViewMode, FolderDetailViewModeIconKind } from '../../d
 
 export function useFolderDetailViewController({
   children,
+  containerUri,
 }: {
   children: FilesEntry[]
+  containerUri: string
 }) {
   const [viewState, setViewState] = useState(createFolderDetailViewState)
   const { sort, viewMode } = viewState
@@ -24,6 +27,7 @@ export function useFolderDetailViewController({
     sort,
     viewMode,
   }), [children, sort, viewMode])
+  const folderPathLabel = useMemo(() => projectFolderDetailPathLabel(containerUri), [containerUri])
 
   const setSortKey = useCallback((key: FolderSortState['key']) => {
     setViewState((current) => projectFolderDetailSortKey({ current, key }))
@@ -38,6 +42,7 @@ export function useFolderDetailViewController({
 
   return {
     ...viewModel,
+    folderPathLabel,
     setSortKey,
     setViewMode,
     sort,

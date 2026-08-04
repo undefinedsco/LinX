@@ -24,7 +24,7 @@ export function useLocalOnboarding() {
     provisionCode: null,
     provisionUrl: null,
     nodeId: null,
-    message: '本地空间引导只在桌面端可用。',
+    message: '本机空间引导只在桌面端可用。',
     errorCode: 'LOCAL_DESKTOP_ONLY',
     canRetry: false,
     canOpenSettings: false,

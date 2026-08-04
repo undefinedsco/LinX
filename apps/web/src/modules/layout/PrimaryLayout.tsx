@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import linxLogoUrl from '@/assets/linx-logo.png'
-import { Moon, Sun, Settings, Bot, Info, Activity, LogOut, Menu } from 'lucide-react'
+import { Moon, Sun, Settings, Bot, Info, Activity, LogOut, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   microAppRegistry,
@@ -15,6 +15,7 @@ import {
 } from './micro-app-registry'
 import { linxLayout } from '@/theme/spacing'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { useDefaultLayout } from 'react-resizable-panels'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +38,7 @@ import { AboutDialog } from './AboutDialog'
 import { useAppUpdateStatus } from './use-app-update-status'
 import { useThemeMode } from './use-theme-mode'
 import { OPEN_SERVICE_MANAGEMENT_EVENT } from '@/modules/settings/app/events'
+import { useActiveMicroAppRuntime } from './use-active-micro-app-runtime'
 
 interface PrimaryLayoutProps {
   microAppId: MicroAppId
@@ -60,7 +62,8 @@ function PaneFallback() {
   return <div className="h-full w-full animate-pulse bg-muted/10" />
 }
 
-const compactViewportQuery = '(max-width: 767px)'
+// Preserve the desktop two-pane workflow in narrow side-by-side windows.
+const compactViewportQuery = '(max-width: 559px)'
 
 function readCompactViewport() {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -94,13 +97,16 @@ function MicroAppContentRenderer({
   onToggleTheme,
   isCompactViewport,
   compactNavigation,
+  listPanelHidden = false,
 }: {
   microAppId: MicroAppId
   theme: ThemeMode
   onToggleTheme: () => void
   isCompactViewport: boolean
   compactNavigation?: React.ReactNode
+  listPanelHidden?: boolean
 }) {
+  useActiveMicroAppRuntime(microAppId)
   const activeMicroApp = microAppRegistry[microAppId]
   const ListPane = activeMicroApp.ListPane
   const ContentPane = activeMicroApp.ContentPane
@@ -114,9 +120,14 @@ function MicroAppContentRenderer({
   )
 
   const rightSidebarWidth = layoutConfig?.rightSidebar ? layoutConfig.rightSidebarWidth ?? 320 : 0
-  const listPanelWidth = linxLayout.listPanel.defaultWidth
-  const listPanelMinWidth = linxLayout.listPanel.minWidth
-  const listPanelMaxWidth = linxLayout.listPanel.maxWidth
+  const listPanelWidth = layoutConfig?.listPanel?.defaultWidth ?? linxLayout.listPanel.defaultWidth
+  const listPanelMinWidth = layoutConfig?.listPanel?.minWidth ?? linxLayout.listPanel.minWidth
+  const listPanelMaxWidth = layoutConfig?.listPanel?.maxWidth ?? linxLayout.listPanel.maxWidth
+  const panelIds = isCompactViewport ? ['main'] : ['list', 'main']
+  const persistedLayout = useDefaultLayout({
+    id: `linx-primary-layout-${microAppId}-${isCompactViewport ? 'compact' : 'desktop'}`,
+    panelIds,
+  })
 
   return (
     <>
@@ -125,10 +136,17 @@ function MicroAppContentRenderer({
           <LayoutConfigBridge onConfigChange={handleLayoutConfigChange} />
         </Suspense>
       ) : null}
-      <ResizablePanelGroup direction="horizontal" className="h-full w-full">
-        {!isCompactViewport ? (
+      <ResizablePanelGroup
+        direction="horizontal"
+        id={`linx-primary-layout-${microAppId}`}
+        defaultLayout={persistedLayout.defaultLayout}
+        onLayoutChanged={persistedLayout.onLayoutChanged}
+        className="h-full w-full"
+      >
+        {!isCompactViewport && !listPanelHidden ? (
           <>
             <ResizablePanel
+              id="list"
               defaultSize={listPanelWidth}
               minSize={listPanelMinWidth}
               maxSize={listPanelMaxWidth}
@@ -140,7 +158,7 @@ function MicroAppContentRenderer({
               }}
             >
               <section
-                className="flex h-full min-w-0 flex-col overflow-hidden border-r border-border/40 bg-layout-list-item"
+                className="flex h-full min-w-0 flex-col overflow-hidden bg-layout-list-item"
                 data-testid="micro-app-list-panel"
                 style={{
                   minWidth: listPanelMinWidth,
@@ -158,44 +176,50 @@ function MicroAppContentRenderer({
           </>
         ) : null}
 
-        <ResizablePanel defaultSize={getMainPanelDefaultSize(isCompactViewport)} className="min-w-0 overflow-hidden">
+        <ResizablePanel id="main" defaultSize={getMainPanelDefaultSize(isCompactViewport)} className="min-w-0 overflow-hidden">
           <section className="h-full flex bg-layout-content">
             <div className="flex-1 flex flex-col min-h-0">
               {!layoutConfig?.hideHeader && !(isCompactViewport && activeMicroApp.hideContentHeaderOnCompact) && (
                 <div data-testid="micro-app-content-head" className="h-12 flex items-center border-b border-border bg-layout-content">
-                  {layoutConfig?.header ? (
-                    <div className="flex-1 h-full">
-                      {layoutConfig.header}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2 min-w-[100px] px-4">
-                        {!layoutConfig?.hideIcon && (
-                          <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
-                            <activeMicroApp.icon className="w-3.5 h-3.5 text-primary" />
-                          </div>
+                  <div className="flex h-full min-w-0 flex-1 items-center">
+                    {layoutConfig?.header ? layoutConfig.header : (
+                      <div className="min-w-0 px-4 text-left" data-micro-app-title-slot="true">
+                        <h3 className="text-sm font-medium truncate" data-default-micro-app-title="true">
+                          {layoutConfig?.mainTitle ?? activeMicroApp.header.moduleTitle}
+                        </h3>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex h-full shrink-0 items-center gap-1 px-4">
+                    {layoutConfig?.topActions}
+                    {layoutConfig?.rightSidebarToggle ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        aria-label={layoutConfig.rightSidebarToggle.open ? '收起右侧面板' : '展开右侧面板'}
+                        title={layoutConfig.rightSidebarToggle.open ? '收起右侧面板' : '展开右侧面板'}
+                        aria-expanded={layoutConfig.rightSidebarToggle.open}
+                        onClick={layoutConfig.rightSidebarToggle.onToggle}
+                      >
+                        {layoutConfig.rightSidebarToggle.open ? (
+                          <PanelRightClose className="w-4 h-4" />
+                        ) : (
+                          <PanelRightOpen className="w-4 h-4" />
                         )}
-                      </div>
-
-                      <div className="flex-1 text-center">
-                        <h3 className="text-sm font-medium truncate">{layoutConfig?.mainTitle ?? activeMicroApp.header.moduleTitle}</h3>
-                      </div>
-
-                      <div className="flex items-center gap-1 min-w-[100px] justify-end px-4">
-                        {layoutConfig?.topActions}
-                        <InboxBellButton />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={onToggleTheme}
-                          title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-                        >
-                          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                        </Button>
-                      </div>
-                    </>
-                  )}
+                      </Button>
+                    ) : null}
+                    <InboxBellButton />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={onToggleTheme}
+                      title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+                    >
+                      {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                    </Button>
+                  </div>
                 </div>
               )}
               <div className="flex-1 min-h-0 flex flex-col">
@@ -283,6 +307,10 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   const isCompactViewport = useCompactViewport()
   const [isServiceMgmtOpen, setIsServiceMgmtOpen] = useState(false)
   const [isAboutOpen, setIsAboutOpen] = useState(false)
+  const [listPanelHidden, setListPanelHidden] = useState(false)
+  useEffect(() => {
+    setListPanelHidden(false)
+  }, [microAppId])
   const appUpdate = useAppUpdateStatus()
   const isWorkspaceReady = session.info.isLoggedIn && !sessionRequestInProgress
 
@@ -295,6 +323,10 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   }, [])
 
   const handleNavigate = (id: MicroAppId) => {
+    if (id === microAppId && !isCompactViewport) {
+      setListPanelHidden((current) => !current)
+      return
+    }
     onNavigate?.(id, 'default')
     navigate({ to: '/$microAppId', params: { microAppId: id } })
   }
@@ -457,6 +489,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
             onToggleTheme={toggleTheme}
             isCompactViewport={isCompactViewport}
             compactNavigation={compactNavigation}
+            listPanelHidden={listPanelHidden}
           />
         </div>
       </div>

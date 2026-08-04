@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.js",
+    "./collection-subscription-lease": "./dist/collection-subscription-lease.js",
     "./login": "./dist/login.js",
     "./current-pod-base": "./dist/current-pod-base.js",
     "./exact-records": "./dist/exact-records.js",
@@ -19,7 +20,7 @@
   "dependencies": {
     "@linx/agent-runtime": "*",
     "@undefineds.co/models": "0.2.45",
-    "@undefineds.co/drizzle-solid": "0.3.17",
+    "@undefineds.co/drizzle-solid": "0.3.20",
     "@tanstack/query-db-collection": "^1.0.37",
     "@tanstack/react-db": "^0.1.84",
     "@tanstack/react-query": "^5.100.11",
@@ -27,6 +28,6 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }

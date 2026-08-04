@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 
 const mockNavigate = vi.fn()
 const mockSessionState = vi.hoisted(() => ({
@@ -134,6 +134,52 @@ describe('PrimaryLayout', () => {
     expect(listPanel.className).toContain('overflow-hidden')
   })
 
+  it('applies the Files module list panel width contract from layout config', async () => {
+    render(<PrimaryLayout microAppId="files" />)
+
+    const listPanel = await screen.findByTestId('micro-app-list-panel')
+    await waitFor(() => {
+      expect(listPanel.style.minWidth).toBe('232px')
+    })
+    expect(listPanel.style.width).toBe('100%')
+    expect(listPanel.style.maxWidth).toBe('360px')
+    expect(listPanel.parentElement?.style.minWidth).toBe('232px')
+    expect(listPanel.parentElement?.style.width).toBe('240px')
+    expect(listPanel.parentElement?.style.maxWidth).toBe('360px')
+  })
+
+  it('toggles the list panel when clicking the active rail icon', async () => {
+    const onNavigate = vi.fn()
+    render(<PrimaryLayout microAppId="files" onNavigate={onNavigate} />)
+
+    const filesButton = screen.getByRole('button', { name: '文件' })
+    expect(screen.getByTestId('micro-app-list-panel')).toBeTruthy()
+
+    filesButton.click()
+    await waitFor(() => {
+      expect(screen.queryByTestId('micro-app-list-panel')).toBeNull()
+    })
+    expect(mockNavigate).not.toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
+
+    filesButton.click()
+    await waitFor(() => {
+      expect(screen.getByTestId('micro-app-list-panel')).toBeTruthy()
+    })
+    expect(mockNavigate).not.toHaveBeenCalled()
+  })
+
+  it('keeps normal navigation for non-active rail icons', () => {
+    const onNavigate = vi.fn()
+    render(<PrimaryLayout microAppId="files" onNavigate={onNavigate} />)
+
+    screen.getByRole('button', { name: '聊天' }).click()
+
+    expect(screen.getByTestId('micro-app-list-panel')).toBeTruthy()
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'chat' } })
+    expect(onNavigate).toHaveBeenCalledWith('chat', 'default')
+  })
+
   it('allocates the main workspace as a percentage instead of an 80px panel', () => {
     expect(getMainPanelDefaultSize(false)).toBe('80%')
     expect(getMainPanelDefaultSize(true)).toBe('100%')
@@ -144,7 +190,7 @@ describe('PrimaryLayout', () => {
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation((query: string) => ({
-        matches: query.includes('max-width: 767px'),
+        matches: query.includes('max-width: 559px'),
         media: query,
         onchange: null,
         addListener: vi.fn(),
@@ -173,6 +219,25 @@ describe('PrimaryLayout', () => {
 
     expect(screen.getByTestId('micro-app-content-head').className).toContain('h-12')
     expect(screen.getByTestId('micro-app-content-head').className).not.toContain('h-16')
+  })
+
+  it('offers a collapsed-by-default right sidebar toggle wired to the module state', async () => {
+    const { useFilesStore } = await import('@/modules/files/app/store')
+    useFilesStore.setState({ metaSidebarOpen: false })
+
+    render(<PrimaryLayout microAppId="files" />)
+
+    const toggle = await screen.findByRole('button', { name: '展开右侧面板' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    toggle.click()
+
+    await waitFor(() => {
+      expect(useFilesStore.getState().metaSidebarOpen).toBe(true)
+    })
+    expect(await screen.findByRole('button', { name: '收起右侧面板' })).toHaveAttribute('aria-expanded', 'true')
+
+    useFilesStore.setState({ metaSidebarOpen: false })
   })
 
   it('aligns the profile avatar top with the compact head/body boundary', () => {

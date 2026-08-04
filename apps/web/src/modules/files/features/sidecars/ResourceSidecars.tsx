@@ -1,9 +1,11 @@
-import { useState, type ReactNode } from 'react'
-import { FileCog, Shield, ExternalLink, InfoIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { FileCog, Shield, ExternalLink, InfoIcon, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { SidecarDrawer } from '@/components/ui/sidecar-drawer'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -98,10 +100,22 @@ export function ResourceMetaSidecarContent({
 
   return (
     <div className="space-y-3">
-      {showUserMetadata && content.userRows.length > 0 ? (
+      {content.fileRows.length > 0 ? (
+        <section aria-label="文件信息">
+          <p className="mb-1.5 text-[11px] font-medium text-foreground/80">文件</p>
+          <MetaRows rows={content.fileRows} compact />
+        </section>
+      ) : null}
+      {showUserMetadata ? (
         <section aria-label="用户元数据">
           <p className="mb-1.5 text-[11px] font-medium text-foreground/80">元数据</p>
-          <MetaRows rows={content.userRows} compact />
+          {content.userRows.length > 0 ? (
+            <MetaRows rows={content.userRows} compact />
+          ) : (
+            <p className="rounded-md bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+              暂无标题、标签等元数据。
+            </p>
+          )}
         </section>
       ) : null}
       {content.showSemanticRows ? (
@@ -118,7 +132,7 @@ export function ResourceMetaSidecarContent({
       ) : null}
       {content.rawPanel?.kind === 'notice' ? <SidecarRawPanel panel={content.rawPanel} /> : null}
       <details className="rounded-md border border-border/30 bg-muted/10">
-        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">技术信息</summary>
+        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">.meta 原始内容</summary>
         <div className="space-y-3 border-t border-border/20 p-3">
           {content.showFolderRows ? (
             <section>
@@ -134,79 +148,69 @@ export function ResourceMetaSidecarContent({
   )
 }
 
-export function ResourceMetaTail({
-  id = 'files-file-meta-tail',
-  content,
-  children,
-}: {
-  id?: string
-  content: ResourceMetaSidecarContentModel
-  children?: ReactNode
-}) {
-  const [expanded, setExpanded] = useState(true)
-
-  return (
-    <section id={id} className="border-t border-border/30 bg-background px-8 py-5" aria-label="文件 meta">
-      <div className="mx-auto flex w-full max-w-[760px] items-center justify-between border-b border-border/30 pb-3">
-        <div className="flex items-center gap-2 text-base font-medium text-foreground/70">
-          <InfoIcon className="h-4 w-4" />
-          Info
-        </div>
-        <button
-          type="button"
-          aria-expanded={expanded}
-          className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground/75 transition-colors hover:bg-muted/80"
-          data-resource-meta-tail-toggle="true"
-          onClick={() => setExpanded((current) => !current)}
-        >
-          {expanded ? 'Hide' : 'Show'}
-        </button>
-      </div>
-      {expanded ? (
-        <div className="mx-auto mt-4 w-full max-w-[760px] space-y-3">
-          <div className="rounded-md border border-border/30 bg-background px-3 py-2">
-            <p className="mb-1.5 text-[11px] font-medium text-foreground/80">文件</p>
-            <MetaRows rows={content.fileRows} compact />
-          </div>
-          {children}
-          <ResourceMetaSidecarContent content={content} showUserMetadata={false} />
-        </div>
-      ) : null}
-    </section>
-  )
-}
-
 export function ResourceMetaDrawer({
   file,
   target,
   open,
+  defaultOpen = false,
   onClose,
   children,
+  variant = 'aside',
+  className,
+  showUserMetadata = true,
 }: {
   file: FilesDetail
   target: Pick<FilesEntry, 'uri' | 'kind'>
-  open: boolean
+  open?: boolean
+  defaultOpen?: boolean
   onClose: () => void
   children?: ReactNode
+  variant?: 'aside' | 'embedded'
+  className?: string
+  showUserMetadata?: boolean
 }) {
-  const { metaQuery } = useResourceMetaDrawerController({ open, target })
+  const isOpen = open ?? defaultOpen
+  const { metaQuery } = useResourceMetaDrawerController({ open: isOpen, target })
   const content = useResourceMetaSidecarContentController({ file, query: metaQuery })
 
-  if (!open) return null
+  if (!isOpen) return null
+
+  const body = (
+    <>
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <InfoIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <p className="truncate text-sm font-medium text-foreground">.meta</p>
+        </div>
+        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="关闭 .meta inspector" onClick={onClose}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-4">
+          {children}
+          <ResourceMetaSidecarContent content={content} showUserMetadata={showUserMetadata} />
+        </div>
+      </ScrollArea>
+    </>
+  )
+
+  if (variant === 'embedded') {
+    return (
+      <div aria-label="Resource .meta inspector" data-sidecar-coverage="content" className="flex h-full min-h-0 flex-col">
+        {body}
+      </div>
+    )
+  }
 
   return (
-    <SidecarDrawer
-      open={open}
-      ariaLabel="Resource .meta inspector"
-      title=".meta"
-      icon={<InfoIcon className="h-3.5 w-3.5" />}
-      closeLabel="关闭 .meta inspector"
-      coverage="content"
-      onClose={onClose}
+    <aside
+      aria-label="Resource .meta inspector"
+      data-sidecar-coverage="content"
+      className={cn('flex w-[320px] max-w-[40%] shrink-0 flex-col border-l border-border/50 bg-background', className)}
     >
-      {children}
-      <ResourceMetaSidecarContent content={content} />
-    </SidecarDrawer>
+      {body}
+    </aside>
   )
 }
 
@@ -369,7 +373,7 @@ export function AccessPolicyDialog({
           </div>
           <details className="rounded-md border border-border/40 bg-muted/10">
             <summary className="cursor-pointer px-3 py-2 font-medium text-muted-foreground">
-              技术信息
+              来源详情
             </summary>
             <div className="grid gap-4 border-t border-border/20 p-3">
               <div>
@@ -525,5 +529,41 @@ export function ResourceSidecarActions({
         onOpenChange={sidecarActions.setAccessDialogOpen}
       />
     </div>
+  )
+}
+
+export function ResourceSidecarMenuItems({
+  file,
+  onMeta,
+  onAccess,
+  showMeta = true,
+}: {
+  file: ResourceSidecarActionTarget
+  onMeta?: () => void
+  onAccess?: () => void
+  showMeta?: boolean
+}) {
+  const sidecarActions = useResourceSidecarActionsController(file)
+
+  return (
+    <>
+      {showMeta ? (
+        <DropdownMenuItem onSelect={onMeta}>
+          <FileCog className="mr-2 h-3.5 w-3.5" />
+          查看 .meta
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem onSelect={onAccess ?? sidecarActions.openAccessDialog}>
+        <Shield className="mr-2 h-3.5 w-3.5" />
+        查看 Access 来源
+      </DropdownMenuItem>
+      {onAccess ? null : (
+        <AccessPolicyDialog
+          file={file}
+          open={sidecarActions.accessOpen}
+          onOpenChange={sidecarActions.setAccessDialogOpen}
+        />
+      )}
+    </>
   )
 }

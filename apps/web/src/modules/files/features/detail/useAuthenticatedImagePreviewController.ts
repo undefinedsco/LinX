@@ -4,14 +4,12 @@ import { useBlobResource } from '../../data/queries'
 
 export function useAuthenticatedImagePreviewController({
   enabled,
-  mimeType,
   uri,
 }: {
   enabled: boolean
-  mimeType?: string | null
   uri: string
 }) {
-  const blobQuery = useBlobResource(uri, enabled && (mimeType?.startsWith('image/') ?? false))
+  const blobQuery = useBlobResource(uri, enabled)
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
 
   useEffect(() => {

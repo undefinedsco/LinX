@@ -25,6 +25,8 @@ import {
   type TaskInsert,
   type TaskRow,
 } from '@undefineds.co/models'
+import { useLiveQuery } from '@tanstack/react-db'
+import { useMemo } from 'react'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
 
@@ -44,6 +46,7 @@ export const symphonyIssueCollection = createPodCollection<typeof issueResource,
   queryClient,
   getDb,
   orderBy: { column: 'updatedAt', direction: 'desc' },
+  window: { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
   getKey: (item) => {
     if (!item.id) throw new Error('Symphony Issue row is missing id.')
     return item.id
@@ -56,6 +59,7 @@ export const symphonyTaskCollection = createPodCollection<typeof taskResource, T
   queryClient,
   getDb,
   orderBy: { column: 'updatedAt', direction: 'desc' },
+  window: { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
   getKey: (item) => {
     if (!item.id) throw new Error('Symphony Task row is missing id.')
     return item.id
@@ -68,6 +72,7 @@ export const symphonyDeliveryCollection = createPodCollection<typeof deliveryRes
   queryClient,
   getDb,
   orderBy: { column: 'updatedAt', direction: 'desc' },
+  window: { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
   getKey: (item) => {
     if (!item.id) throw new Error('Symphony Delivery row is missing id.')
     return item.id
@@ -80,6 +85,7 @@ export const symphonySessionCollection = createPodCollection<typeof sessionResou
   queryClient,
   getDb,
   orderBy: { column: 'updatedAt', direction: 'desc' },
+  window: { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
   getKey: (item) => {
     if (!item.id) throw new Error('Symphony Session row is missing id.')
     return item.id
@@ -92,6 +98,7 @@ export const symphonyRunCollection = createPodCollection<typeof runResource, Run
   queryClient,
   getDb,
   orderBy: { column: 'updatedAt', direction: 'desc' },
+  window: { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
   getKey: (item) => {
     if (!item.id) throw new Error('Symphony Run row is missing id.')
     return item.id
@@ -104,6 +111,7 @@ export const symphonyRunStepCollection = createPodCollection<typeof runStepResou
   queryClient,
   getDb,
   orderBy: { column: 'createdAt', direction: 'desc' },
+  window: { limit: 100, orderBy: [{ column: 'createdAt', direction: 'desc' }], maxResidentPages: 3 },
   getKey: (item) => {
     if (!item.id) throw new Error('Symphony RunStep row is missing id.')
     return item.id
@@ -116,6 +124,7 @@ export const symphonyEvidenceCollection = createPodCollection<typeof evidenceRes
   queryClient,
   getDb,
   orderBy: { column: 'createdAt', direction: 'desc' },
+  window: { limit: 100, orderBy: [{ column: 'createdAt', direction: 'desc' }], maxResidentPages: 3 },
   getKey: (item) => {
     if (!item.id) throw new Error('Symphony Evidence row is missing id.')
     return item.id
@@ -128,6 +137,7 @@ export const symphonyReportCollection = createPodCollection<typeof reportResourc
   queryClient,
   getDb,
   orderBy: { column: 'updatedAt', direction: 'desc' },
+  window: { limit: 100, orderBy: [{ column: 'updatedAt', direction: 'desc' }], maxResidentPages: 3 },
   getKey: (item) => {
     if (!item.id) throw new Error('Symphony Report row is missing id.')
     return item.id
@@ -169,18 +179,55 @@ export const symphonyControlOps = {
     }
   },
 
-  async fetchSnapshot() {
+  async fetchSnapshot(options: { refetch?: boolean } = {}) {
     const [issues, tasks, deliveries, sessions, runs, runSteps, evidence, reports] = await Promise.all([
-      symphonyIssueCollection.fetch(),
-      symphonyTaskCollection.fetch(),
-      symphonyDeliveryCollection.fetch(),
-      symphonySessionCollection.fetch(),
-      symphonyRunCollection.fetch(),
-      symphonyRunStepCollection.fetch(),
-      symphonyEvidenceCollection.fetch(),
-      symphonyReportCollection.fetch(),
+      symphonyIssueCollection.fetch(options),
+      symphonyTaskCollection.fetch(options),
+      symphonyDeliveryCollection.fetch(options),
+      symphonySessionCollection.fetch(options),
+      symphonyRunCollection.fetch(options),
+      symphonyRunStepCollection.fetch(options),
+      symphonyEvidenceCollection.fetch(options),
+      symphonyReportCollection.fetch(options),
     ])
 
     return { issues, tasks, deliveries, sessions, runs, runSteps, evidence, reports }
   },
+}
+
+export function useSymphonyControlSnapshot() {
+  const issues = useLiveQuery(symphonyIssueCollection)
+  const tasks = useLiveQuery(symphonyTaskCollection)
+  const deliveries = useLiveQuery(symphonyDeliveryCollection)
+  const sessions = useLiveQuery(symphonySessionCollection)
+  const runs = useLiveQuery(symphonyRunCollection)
+  const runSteps = useLiveQuery(symphonyRunStepCollection)
+  const evidence = useLiveQuery(symphonyEvidenceCollection)
+  const reports = useLiveQuery(symphonyReportCollection)
+  const queries = [issues, tasks, deliveries, sessions, runs, runSteps, evidence, reports]
+  const data = useMemo(() => ({
+    issues: issues.data ?? [],
+    tasks: tasks.data ?? [],
+    deliveries: deliveries.data ?? [],
+    sessions: sessions.data ?? [],
+    runs: runs.data ?? [],
+    runSteps: runSteps.data ?? [],
+    evidence: evidence.data ?? [],
+    reports: reports.data ?? [],
+  }), [
+    deliveries.data,
+    evidence.data,
+    issues.data,
+    reports.data,
+    runs.data,
+    runSteps.data,
+    sessions.data,
+    tasks.data,
+  ])
+
+  return {
+    data,
+    isLoading: queries.some((query) => query.isLoading),
+    isError: queries.some((query) => query.isError),
+  }
 }

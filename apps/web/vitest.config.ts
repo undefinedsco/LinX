@@ -24,21 +24,33 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/setupTests.ts'],
     globals: true,
+    // Threads avoid repeated jsdom/module bootstrap overhead. Four workers was the
+    // fastest stable setting in the collection-suite benchmark on the dev machine.
+    pool: 'threads',
+    maxWorkers: 4,
     // Load .env from project root
     env: {
       dir: path.resolve(__dirname, '../..'),
     },
-    // Exclude Playwright E2E tests (*.spec.ts) and benchmark tests
-    exclude: ['**/node_modules/**', '**/dist/**', '**/*.spec.ts', '**/*benchmark*.test.ts'],
-    // Limit concurrency for integration tests to avoid Solid server lock contention
-    // Integration tests (*.integration.test.ts) access the same Pod and can cause
-    // file lock race conditions if run in parallel
-    maxConcurrency: 1,
-    fileParallelism: false,
+    // Real xpod tests have their own serial config. Keep ordinary unit tests parallel.
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/*.spec.ts',
+      '**/*.integration.test.ts',
+      '**/*.integration.test.tsx',
+      '**/*benchmark*.test.ts',
+    ],
   },
   resolve: {
     preserveSymlinks: true,
     alias: {
+      'tldraw/tldraw.css': path.resolve(__dirname, './src/test/empty.css'),
+      'tldraw': path.resolve(__dirname, './src/test/tldraw-test-double.tsx'),
+      '@/modules/files/ui/BlockNoteFileEditor': path.resolve(
+        __dirname,
+        './src/modules/files/ui/__tests__/fake-block-note-file-editor.tsx',
+      ),
       '@': path.resolve(__dirname, './src'),
       '@linx/agent-runtime': path.resolve(repoRoot, 'packages/agent-runtime/src'),
       '@linx/agent-runtime/pod-resource-identity': path.resolve(

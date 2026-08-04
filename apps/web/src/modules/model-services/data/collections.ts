@@ -7,7 +7,7 @@ import {
   type CredentialRow,
 } from '@undefineds.co/models'
 import { createPodCollection } from '@/lib/data/pod-collection'
-import { rebindPodCollection } from '@/lib/data/pod-collection-rebind'
+import { rebindPodCollections } from '@/lib/data/pod-collection-rebind'
 import { queryClient } from '@/providers/query-provider'
 import type { SolidDatabase } from '@undefineds.co/models'
 
@@ -53,17 +53,20 @@ export async function initializeModelCollections(db: SolidDatabase | null): Prom
   setDatabaseGetter(() => db)
 
   try {
-    await Promise.all([
-      rebindPodCollection(credentialCollection, Boolean(db), {
+    await rebindPodCollections([
+      {
+        collection: credentialCollection,
         cancelInFlight: () => queryClient.cancelQueries({ queryKey: credentialQueryKey, exact: true }),
-      }),
-      rebindPodCollection(providerCollection, Boolean(db), {
+      },
+      {
+        collection: providerCollection,
         cancelInFlight: () => queryClient.cancelQueries({ queryKey: providerQueryKey, exact: true }),
-      }),
-      rebindPodCollection(modelCollection, Boolean(db), {
+      },
+      {
+        collection: modelCollection,
         cancelInFlight: () => queryClient.cancelQueries({ queryKey: modelQueryKey, exact: true }),
-      }),
-    ])
+      },
+    ], Boolean(db))
   } catch (error) {
     if (activeDatabase === db) {
       activeDatabase = undefined

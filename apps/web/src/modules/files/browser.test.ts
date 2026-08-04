@@ -10,7 +10,6 @@ import {
   readFileDetail,
   readFilesAccessBasics,
   readFilesMetaSidecar,
-  readStructuredViewMetadata,
   readBlobResource,
   readRawTextResource,
   probeFilesAccessSource,
@@ -24,7 +23,6 @@ import {
   createRawTextResource,
   deleteFileResource,
   moveFileResource,
-  saveStructuredViewMetadata,
   saveRawTextResource,
   summarizeWacAclPolicy,
   FilesSaveConflictError,
@@ -85,7 +83,73 @@ function createDb(overrides?: {
 }
 
 describe('files browser', () => {
-  it('lists container entries using real container resources and metadata', async () => {
+  it('coalesces concurrent reads of the same container without sharing presentation labels', async () => {
+    const listingResolvers: Array<(uris: string[]) => void> = []
+    const listContainerResources = vi.fn(() => new Promise<string[]>((resolve) => {
+      listingResolvers.push(resolve)
+    }))
+    const db = createDb({ listContainerResources })
+
+    const currentTopic = listContainerEntries(db, 'https://pod.example/public/', '当前话题')
+    const podRoot = listContainerEntries(db, 'https://pod.example/public/', 'Pod 根目录')
+    await Promise.resolve()
+    for (const resolve of listingResolvers) resolve(['https://pod.example/public/README.md'])
+
+    const [currentTopicEntries, podRootEntries] = await Promise.all([currentTopic, podRoot])
+
+    expect(listContainerResources).toHaveBeenCalledTimes(1)
+    expect(currentTopicEntries[0]?.sourceLabel).toBe('当前话题')
+    expect(podRootEntries[0]?.sourceLabel).toBe('Pod 根目录')
+  })
+
+  it('shares one container listing between tree/list projection and folder detail', async () => {
+    const listingResolvers: Array<(uris: string[]) => void> = []
+    const listContainerResources = vi.fn(() => new Promise<string[]>((resolve) => {
+      listingResolvers.push(resolve)
+    }))
+    const db = createDb({ listContainerResources })
+
+    const treeListing = listContainerEntries(db, 'https://pod.example/public/')
+    const folderDetail = readFileDetail(db, 'https://pod.example/public/')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(listContainerResources).toHaveBeenCalledTimes(1)
+    for (const resolve of listingResolvers) resolve(['https://pod.example/public/README.md'])
+
+    const [entries, detail] = await Promise.all([treeListing, folderDetail])
+
+    expect(entries).toHaveLength(1)
+    expect(detail.childEntries).toHaveLength(1)
+    expect(listContainerResources).toHaveBeenCalledTimes(1)
+  })
+
+  it('can read folder metadata without issuing a second child listing', async () => {
+    const listContainerResources = vi.fn().mockResolvedValue(['https://pod.example/public/README.md'])
+    const db = createDb({ listContainerResources })
+
+    const detail = await readFileDetail(db, 'https://pod.example/public/', {
+      includeContainerEntries: false,
+    })
+
+    expect(detail.kind).toBe('container')
+    expect(detail.childEntries).toBeUndefined()
+    expect(listContainerResources).not.toHaveBeenCalled()
+  })
+
+  it('does not wait for per-child metadata before returning a container listing', async () => {
+    const metadataFetch = vi.fn(() => new Promise<Response>(() => {})) as typeof fetch
+    const db = createDb({ fetch: metadataFetch })
+
+    const result = await Promise.race([
+      listContainerEntries(db, 'https://pod.example/public/'),
+      new Promise<'timed-out'>((resolve) => setTimeout(() => resolve('timed-out'), 50)),
+    ])
+
+    expect(result).not.toBe('timed-out')
+    expect(metadataFetch).not.toHaveBeenCalled()
+  })
+
+  it('lists container entries from resource identities without eager metadata', async () => {
     const db = createDb()
 
     const entries = await listContainerEntries(db, 'https://pod.example/public/', '当前话题')
@@ -150,7 +214,8 @@ describe('files browser', () => {
     })
   })
 
-  it('keeps container entries visible when one child metadata read fails', async () => {
+  it('keeps container entries visible without probing child metadata', async () => {
+    const metadataFetch = vi.fn(async () => new Response('', { status: 403 })) as typeof fetch
     const db = createDb({
       listContainerResources: async (containerUrl: string) => {
         if (containerUrl === 'https://pod.example/public/') {
@@ -162,18 +227,7 @@ describe('files browser', () => {
         }
         return []
       },
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method === 'HEAD' && url.endsWith('/private.md')) {
-          throw new Error('Forbidden')
-        }
-
-        return createResponse('', {
-          'content-type': url.endsWith('/') ? 'text/turtle' : 'text/markdown',
-          'content-length': url.endsWith('/') ? '0' : '17',
-          'last-modified': 'Sat, 01 Mar 2026 10:00:00 GMT',
-        })
-      }) as typeof fetch,
+      fetch: metadataFetch,
     })
 
     const entries = await listContainerEntries(db, 'https://pod.example/public/')
@@ -189,11 +243,11 @@ describe('files browser', () => {
       mimeType: 'text/markdown',
       size: null,
       modifiedAt: null,
-      metadataState: 'unavailable',
     })
+    expect(metadataFetch).not.toHaveBeenCalled()
   })
 
-  it('keeps permission metadata failures explicit on container entries', async () => {
+  it('defers permission failures until the resource detail is selected', async () => {
     const db = createDb({
       listContainerResources: async (containerUrl: string) => {
         if (containerUrl === 'https://pod.example/public/') {
@@ -203,7 +257,7 @@ describe('files browser', () => {
       },
       fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
-        if (init?.method === 'HEAD' && url.endsWith('/private.md')) {
+        if (url.endsWith('/private.md')) {
           return new Response('', { status: 403 })
         }
 
@@ -217,9 +271,8 @@ describe('files browser', () => {
 
     expect(entries[0]).toMatchObject({
       uri: 'https://pod.example/public/private.md',
-      metadataState: 'unavailable',
-      metadataErrorKind: 'forbidden',
     })
+    await expect(readFileDetail(db, entries[0].uri)).rejects.toMatchObject({ kind: 'forbidden' })
   })
 
   it('keeps .meta and access policy sidecars out of browsable container entries and counts', async () => {
@@ -275,9 +328,6 @@ describe('files browser', () => {
       expect.objectContaining({ id: 'smart-root:recent', label: '最近文件', type: 'recent' }),
       expect.objectContaining({ id: 'workspace:https://pod.example/public/', count: 2 }),
       expect.objectContaining({ id: 'pod-root', count: 1 }),
-      expect.objectContaining({ id: 'smart-root:agents' }),
-      expect.objectContaining({ id: 'smart-root:workspaces' }),
-      expect.objectContaining({ id: 'smart-root:repositories' }),
     ]))
   })
 
@@ -314,7 +364,7 @@ describe('files browser', () => {
     expect(parseTreeNodeId('smart-root:recent')).toEqual({ kind: 'recent' })
   })
 
-  it('uses fetched RDF content type to classify extensionless data and generic vocab resources', async () => {
+  it('classifies extensionless RDF after its detail metadata is fetched', async () => {
     const db = createDb({
       listContainerResources: async (containerUrl: string) => {
         if (containerUrl === 'https://pod.example/.data/workspaces/ws-1/') {
@@ -338,13 +388,13 @@ describe('files browser', () => {
 
     expect(dataEntries[0]).toMatchObject({
       uri: 'https://pod.example/.data/workspaces/ws-1/state',
-      semanticKind: 'structured-data',
-      mimeType: 'text/turtle',
+      semanticKind: 'file',
+      mimeType: null,
     })
     expect(vocabEntries[0]).toMatchObject({
       uri: 'https://pod.example/.vocab/domain',
-      semanticKind: 'structured-data',
-      mimeType: 'text/turtle',
+      semanticKind: 'file',
+      mimeType: null,
     })
     expect(detail.semanticKind).toBe('structured-data')
   })
@@ -642,482 +692,6 @@ describe('files browser', () => {
       'GET https://pod.example/public/README.md.meta',
       'HEAD https://pod.example/public/README.md',
     ])
-  })
-
-  it('reads structured view metadata from an app meta sidecar', async () => {
-    const db = createDb({
-      fetch: vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url === 'https://pod.example/.data/files/files.ttl.meta') {
-          return new Response([
-            '@prefix udfs: <https://undefineds.co/vocab/> .',
-            '',
-            '<#view> a udfs:StructuredViewMetadata ;',
-            '  udfs:document <https://pod.example/.data/files/files.ttl> ;',
-            '  udfs:viewMode "kanban" ;',
-            '  udfs:classScope <https://pod.example/.vocab/terms.ttl#FileResource> ;',
-            '  udfs:kanbanGroupPredicate <https://pod.example/.vocab/terms.ttl#mode> ;',
-            '  udfs:selectedSubject "#FileResource" ;',
-            '  udfs:writesCanonicalData false .',
-          ].join('\n'), {
-            status: 200,
-            headers: { 'Content-Type': 'text/turtle', ETag: '"meta-view-1"' },
-          })
-        }
-        return new Response('', { status: 404 })
-      }) as typeof fetch,
-    })
-
-    await expect(readStructuredViewMetadata(db, {
-      uri: 'https://pod.example/.data/files/files.ttl',
-      kind: 'resource',
-    })).resolves.toMatchObject({
-      state: 'exists',
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-      etag: '"meta-view-1"',
-      metadata: {
-        documentUri: 'https://pod.example/.data/files/files.ttl',
-        viewMode: 'kanban',
-        classScope: 'https://pod.example/.vocab/terms.ttl#FileResource',
-        kanbanGroupPredicate: 'https://pod.example/.vocab/terms.ttl#mode',
-        whiteboard: {
-          selectedSubjects: ['#FileResource'],
-          positions: {},
-        },
-      },
-    })
-  })
-
-  it('saves structured view metadata by patching only the view triples in meta sidecar', async () => {
-    const saved: Array<{ url: string; init: RequestInit }> = []
-    const db = createDb({
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method === 'PATCH') {
-          saved.push({ url, init })
-          return new Response(null, { status: 204, headers: { ETag: '"meta-view-2"' } })
-        }
-        if (url === 'https://pod.example/.data/files/files.ttl.meta') {
-          return new Response([
-            '@prefix ex: <https://example.com/> .',
-            '@prefix udfs: <https://undefineds.co/vocab/> .',
-            '',
-            '<#owner> ex:note "Keep this unrelated metadata" .',
-            '<#view> a udfs:StructuredViewMetadata ;',
-            '  udfs:document <https://pod.example/.data/files/files.ttl> ;',
-            '  udfs:viewMode "table" ;',
-            '  udfs:writesCanonicalData false .',
-          ].join('\n'), {
-            status: 200,
-            headers: { 'Content-Type': 'text/turtle', ETag: '"meta-view-1"' },
-          })
-        }
-        return new Response('', { status: 404 })
-      }) as typeof fetch,
-    })
-
-    await expect(saveStructuredViewMetadata(db, {
-      uri: 'https://pod.example/.data/files/files.ttl',
-      kind: 'resource',
-    }, {
-      documentUri: 'https://pod.example/.data/files/files.ttl',
-      viewMode: 'whiteboard',
-      classScope: 'https://pod.example/.vocab/terms.ttl#FileResource',
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: null,
-      columnSizing: { subject: 144 },
-      whiteboard: {
-        selectedSubjects: ['#FileResource'],
-        positions: { '#FileResource': { x: 24, y: 40 } },
-        visualRelations: [
-          {
-            id: 'visual-file-folder',
-            from: '#FileResource',
-            to: '#FolderResource',
-            label: 'sketch link',
-          },
-        ],
-      },
-    })).resolves.toMatchObject({
-      state: 'exists',
-      etag: '"meta-view-2"',
-    })
-
-    expect(saved).toHaveLength(1)
-    expect(saved[0].url).toBe('https://pod.example/.data/files/files.ttl.meta')
-    expect(saved[0].init.headers).toEqual({
-      'Content-Type': 'application/sparql-update',
-      'If-Match': '"meta-view-1"',
-    })
-    expect(saved[0].init.body).toContain('DELETE {')
-    expect(saved[0].init.body).toContain('<#view> ?predicate ?object .')
-    expect(saved[0].init.body).toContain('?object ?nestedPredicate ?nestedObject .')
-    expect(saved[0].init.body).toContain('FILTER(isBlank(?object))')
-    expect(saved[0].init.body).toContain('INSERT DATA')
-    expect(saved[0].init.body).toContain('udfs:viewMode "whiteboard"')
-    expect(saved[0].init.body).toContain('udfs:selectedSubject "#FileResource"')
-    expect(saved[0].init.body).toContain('udfs:whiteboardVisualRelation [ udfs:id "visual-file-folder" ; udfs:fromSubject "#FileResource" ; udfs:toSubject "#FolderResource" ; udfs:label "sketch link" ]')
-    expect(saved[0].init.body).not.toContain('<#owner> ex:note')
-    expect(saved[0].init.body).not.toContain('udfs:viewMode "table"')
-  })
-
-  it('does not patch linked metadata resources when saving structured view metadata', async () => {
-    const saved: Array<{ url: string; init: RequestInit }> = []
-    const db = createDb({
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method === 'PATCH') {
-          saved.push({ url, init })
-          return new Response(null, { status: 201, headers: { ETag: '"path-meta-new-1"' } })
-        }
-        if (url === 'https://pod.example/.data/files/files.ttl.meta') {
-          return new Response('', { status: 404 })
-        }
-        if (url === 'https://pod.example/.data/files/files.ttl' && init?.method === 'HEAD') {
-          return new Response('', {
-            status: 200,
-            headers: {
-              Link: '<https://pod.example/.meta/readonly-files.ttl>; rel="describedby"',
-            },
-          })
-        }
-        if (url === 'https://pod.example/.meta/readonly-files.ttl') {
-          return new Response('<#view> a <https://undefineds.co/vocab/StructuredViewMetadata> .', {
-            status: 200,
-            headers: { 'Content-Type': 'text/turtle', ETag: '"linked-meta-1"' },
-          })
-        }
-        return new Response('', { status: 404 })
-      }) as typeof fetch,
-    })
-
-    await expect(saveStructuredViewMetadata(db, {
-      uri: 'https://pod.example/.data/files/files.ttl',
-      kind: 'resource',
-    }, {
-      documentUri: 'https://pod.example/.data/files/files.ttl',
-      viewMode: 'table',
-      classScope: null,
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: null,
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: [],
-        positions: {},
-        visualRelations: [],
-      },
-      writesCanonicalData: false,
-    })).resolves.toMatchObject({
-      state: 'exists',
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-      etag: '"path-meta-new-1"',
-    })
-
-    expect(saved).toHaveLength(1)
-    expect(saved[0].url).toBe('https://pod.example/.data/files/files.ttl.meta')
-    expect(saved[0].init.headers).toEqual({
-      'Content-Type': 'application/sparql-update',
-      'If-None-Match': '*',
-    })
-  })
-
-  it('creates a missing meta sidecar when saving structured view metadata through metadata patch', async () => {
-    const saved: Array<{ url: string; init: RequestInit }> = []
-    const db = createDb({
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method === 'PATCH') {
-          saved.push({ url, init })
-          return new Response(null, { status: 201, headers: { ETag: '"meta-view-new-1"' } })
-        }
-        if (url === 'https://pod.example/.data/files/files.ttl.meta') return new Response('', { status: 404 })
-        return new Response('', { status: 404 })
-      }) as typeof fetch,
-    })
-
-    await expect(saveStructuredViewMetadata(db, {
-      uri: 'https://pod.example/.data/files/files.ttl',
-      kind: 'resource',
-    }, {
-      documentUri: 'https://pod.example/.data/files/files.ttl',
-      viewMode: 'kanban',
-      classScope: null,
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: 'mode',
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: [],
-        positions: {},
-      },
-    })).resolves.toMatchObject({
-      state: 'exists',
-      etag: '"meta-view-new-1"',
-      metadata: {
-        viewMode: 'kanban',
-        kanbanGroupPredicate: 'mode',
-      },
-    })
-
-    expect(saved).toHaveLength(1)
-    expect(saved[0].url).toBe('https://pod.example/.data/files/files.ttl.meta')
-    expect(saved[0].init.headers).toEqual({
-      'Content-Type': 'application/sparql-update',
-      'If-None-Match': '*',
-    })
-    expect(saved[0].init.body).toContain('<#view> a udfs:StructuredViewMetadata')
-    expect(saved[0].init.body).toContain('udfs:writesCanonicalData false')
-  })
-
-  it('does not create a centralized .meta container before creating structured view metadata', async () => {
-    const calls: Array<{ url: string; method: string }> = []
-    const db = createDb({
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        const method = init?.method ?? 'GET'
-        calls.push({ url, method })
-        if (url === 'https://pod.example/.data/files/files.ttl.meta' && method === 'GET') {
-          return new Response('', { status: 404 })
-        }
-        if (url === 'https://pod.example/' && method === 'POST') {
-          throw new Error('must not create a centralized .meta container')
-        }
-        if (url === 'https://pod.example/.data/files/files.ttl.meta' && method === 'PATCH') {
-          return new Response(null, { status: 201, headers: { ETag: '"meta-view-new-1"' } })
-        }
-        return new Response('', { status: 404 })
-      }) as typeof fetch,
-    })
-
-    await expect(saveStructuredViewMetadata(db, {
-      uri: 'https://pod.example/.data/files/files.ttl',
-      kind: 'resource',
-    }, {
-      documentUri: 'https://pod.example/.data/files/files.ttl',
-      viewMode: 'table',
-      classScope: null,
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: null,
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: [],
-        positions: {},
-      },
-    })).resolves.toMatchObject({
-      state: 'exists',
-      metaUri: 'https://pod.example/.data/files/files.ttl.meta',
-    })
-
-    expect(calls).toEqual([
-      { url: 'https://pod.example/.data/files/files.ttl.meta', method: 'GET' },
-      { url: 'https://pod.example/.data/files/files.ttl.meta', method: 'PATCH' },
-    ])
-  })
-
-  it('patches existing metadata resources even when the Pod omits a meta ETag', async () => {
-    const saved: Array<{ url: string; init: RequestInit }> = []
-    const db = createDb({
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method === 'PATCH') {
-          saved.push({ url, init })
-          return new Response(null, { status: 204 })
-        }
-        if (url === 'https://pod.example/.data/files/files.ttl.meta') {
-          return new Response([
-            '@prefix udfs: <https://undefineds.co/vocab/> .',
-            '<files.ttl> a <http://www.w3.org/ns/ldp#Resource> .',
-          ].join('\n'), {
-            status: 200,
-            headers: { 'Content-Type': 'text/turtle' },
-          })
-        }
-        return new Response('', { status: 404 })
-      }) as typeof fetch,
-    })
-
-    await expect(saveStructuredViewMetadata(db, {
-      uri: 'https://pod.example/.data/files/files.ttl',
-      kind: 'resource',
-    }, {
-      documentUri: 'https://pod.example/.data/files/files.ttl',
-      viewMode: 'kanban',
-      classScope: null,
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: 'mode',
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: [],
-        positions: {},
-      },
-    })).resolves.toMatchObject({
-      state: 'exists',
-      metadata: {
-        viewMode: 'kanban',
-      },
-    })
-
-    expect(saved).toHaveLength(1)
-    expect(saved[0].init.headers).toEqual({
-      'Content-Type': 'application/sparql-update',
-    })
-    expect(saved[0].init.body).toContain('udfs:viewMode "kanban"')
-  })
-
-  it('falls back to a BGP-only metadata PATCH when structured view metadata PATCH is unsupported', async () => {
-    const saved: Array<{ url: string; init: RequestInit }> = []
-    const db = createDb({
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method === 'PATCH') {
-          saved.push({ url, init })
-          if (saved.length > 1) {
-            return new Response(null, { status: 204, headers: { ETag: '"meta-view-bgp-2"' } })
-          }
-          return new Response(JSON.stringify({
-            name: 'NotImplementedHttpError',
-            message: 'Non-BGP WHERE statements are not supported',
-          }), {
-            status: 501,
-            headers: { 'Content-Type': 'application/json' },
-          })
-        }
-        if (url === 'https://pod.example/.data/files/files.ttl.meta') {
-          return new Response([
-            '@prefix ex: <https://example.com/> .',
-            '@prefix udfs: <https://undefineds.co/vocab/> .',
-            '',
-            '<#owner> ex:note "Keep this unrelated metadata" .',
-            '<#view> a udfs:StructuredViewMetadata ;',
-            '  udfs:document <https://pod.example/.data/files/files.ttl> ;',
-            '  udfs:viewMode "table" ;',
-            '  udfs:writesCanonicalData false .',
-          ].join('\n'), {
-            status: 200,
-            headers: { 'Content-Type': 'text/turtle', ETag: '"meta-view-put-1"' },
-          })
-        }
-        return new Response('', { status: 404 })
-      }) as typeof fetch,
-    })
-
-    await expect(saveStructuredViewMetadata(db, {
-      uri: 'https://pod.example/.data/files/files.ttl',
-      kind: 'resource',
-    }, {
-      documentUri: 'https://pod.example/.data/files/files.ttl',
-      viewMode: 'kanban',
-      classScope: null,
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: 'mode',
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: [],
-        positions: {},
-      },
-    })).resolves.toMatchObject({
-      state: 'exists',
-      etag: '"meta-view-bgp-2"',
-      metadata: {
-        viewMode: 'kanban',
-        kanbanGroupPredicate: 'mode',
-      },
-    })
-
-    expect(saved).toHaveLength(2)
-    expect(saved[0].init.method).toBe('PATCH')
-    expect(saved[0].init.body).toContain('OPTIONAL')
-    expect(saved[1].url).toBe('https://pod.example/.data/files/files.ttl.meta')
-    expect(saved[1].init.method).toBe('PATCH')
-    expect(saved[1].init.headers).toEqual({
-      'Content-Type': 'application/sparql-update',
-      'If-Match': '"meta-view-put-1"',
-    })
-    expect(saved[1].init.body).toContain('<#view> ?predicate ?object .')
-    expect(saved[1].init.body).not.toContain('OPTIONAL')
-    expect(saved[1].init.body).not.toContain('FILTER')
-    expect(saved[1].init.body).toContain('udfs:viewMode "kanban"')
-    expect(saved[1].init.body).toContain('udfs:kanbanGroupPredicate "mode"')
-    expect(saved[1].init.body).not.toContain('udfs:viewMode "table"')
-  })
-
-  it('does not full-PUT the meta sidecar when structured view metadata PATCH is unsupported', async () => {
-    const saved: Array<{ url: string; method: string | undefined; body: unknown }> = []
-    const db = createDb({
-      fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method) {
-          saved.push({ url, method: init.method, body: init.body })
-        }
-        if (init?.method === 'PATCH') {
-          return new Response(JSON.stringify({
-            name: 'NotImplementedHttpError',
-            message: 'PATCH is not supported by this Pod.',
-          }), {
-            status: 501,
-            headers: { 'Content-Type': 'application/json' },
-          })
-        }
-        if (init?.method === 'PUT') {
-          return new Response(null, { status: 204, headers: { ETag: '"meta-view-put-2"' } })
-        }
-        if (url === 'https://pod.example/.data/files/files.ttl.meta') {
-          return new Response([
-            '@prefix ex: <https://example.com/> .',
-            '@prefix udfs: <https://undefineds.co/vocab/> .',
-            '',
-            '<#owner> ex:note "Keep this unrelated metadata" .',
-            '<#view> a udfs:StructuredViewMetadata ;',
-            '  udfs:document <https://pod.example/.data/files/files.ttl> ;',
-            '  udfs:viewMode "table" ;',
-            '  udfs:writesCanonicalData false .',
-          ].join('\n'), {
-            status: 200,
-            headers: { 'Content-Type': 'text/turtle', ETag: '"meta-view-put-1"' },
-          })
-        }
-        return new Response('', { status: 404 })
-      }) as typeof fetch,
-    })
-
-    await expect(saveStructuredViewMetadata(db, {
-      uri: 'https://pod.example/.data/files/files.ttl',
-      kind: 'resource',
-    }, {
-      documentUri: 'https://pod.example/.data/files/files.ttl',
-      viewMode: 'whiteboard',
-      classScope: null,
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: null,
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: ['#FileResource'],
-        positions: { '#FileResource': { x: 24, y: 40 } },
-      },
-    })).rejects.toThrow('保存视图配置失败: HTTP 501')
-
-    expect(saved.filter((call) => call.method === 'PATCH')).toHaveLength(2)
-    expect(saved.some((call) => call.method === 'PUT')).toBe(false)
   })
 
   it('reports missing and inaccessible meta sidecars without reading owner metadata', async () => {
@@ -1452,32 +1026,19 @@ describe('files browser', () => {
         count: 1,
       }),
       expect.objectContaining({
-        id: 'smart-root:agents',
-        label: 'Agent homes',
-        type: 'agents-root',
-        uri: 'https://pod.example/.data/agents/',
-      }),
-      expect.objectContaining({
-        id: 'smart-root:workspaces',
-        label: 'Workspaces',
-        type: 'workspaces-root',
-        uri: 'https://pod.example/.data/workspaces/',
-      }),
-      expect.objectContaining({
-        id: 'smart-root:repositories',
-        label: 'Repositories',
-        type: 'repositories-root',
-        uri: 'https://pod.example/.data/repositories/',
-      }),
-      expect.objectContaining({
         id: 'pod-root',
         type: 'container',
         count: 2,
       }),
     ])
+    expect(rootData.entries?.map((entry) => entry.uri)).toEqual([
+      'https://pod.example/private/',
+      'https://pod.example/public/',
+      'https://pod.example/.data/workspaces/ws-1/session.log',
+    ])
   })
 
-  it('does not recursively scan or fetch metadata while building the visible root', async () => {
+  it('does not recursively scan, fetch metadata, or probe fixed scopes while building the visible root', async () => {
     const listContainerResources = vi.fn(async (containerUrl: string) => {
       if (containerUrl === 'https://pod.example/') {
         return ['https://pod.example/public/', 'https://pod.example/README.md']
@@ -1504,24 +1065,37 @@ describe('files browser', () => {
     expect(authFetch).not.toHaveBeenCalled()
   })
 
+  it('builds root nodes without probing fixed scope containers', async () => {
+    const authFetch = vi.fn(async () => new Response('', { status: 404 })) as typeof fetch
+    const db = createDb({
+      fetch: authFetch,
+    })
+
+    const rootData = await buildRootNodes(db)
+
+    const nodeIds = rootData.nodes.map((node) => node.id)
+    expect(nodeIds).toEqual(['all', 'smart-root:recent', 'pod-root'])
+    expect(authFetch).not.toHaveBeenCalled()
+  })
+
   it('parses path-backed smart root ids as container-backed roots', () => {
     expect(parseTreeNodeId('smart-root:agents')).toEqual({ kind: 'agents-root' })
     expect(parseTreeNodeId('smart-root:workspaces')).toEqual({ kind: 'workspaces-root' })
     expect(parseTreeNodeId('smart-root:repositories')).toEqual({ kind: 'repositories-root' })
   })
 
-  it('reads metadata without body preview for a selected ordinary editable text file', async () => {
+  it('reads metadata and a bounded body preview for a selected ordinary editable text file', async () => {
     const db = createDb()
 
     const detail = await readFileDetail(db, 'https://pod.example/public/README.md')
 
     expect(detail.name).toBe('README.md')
     expect(detail.semanticKind).toBe('file')
-    expect(detail.previewText).toBeNull()
+    expect(detail.previewText).toBe('# LinX\n真实预览')
     expect(detail.parentUri).toBe('https://pod.example/public/')
   })
 
-  it('does not body GET ordinary editable text file detail on selection', async () => {
+  it('loads metadata and a body preview with one GET for an ordinary editable text file detail', async () => {
     const authFetch = vi.fn(async () => createResponse('body must not be read on selection', {
       'content-type': 'text/css',
       'content-length': '34',
@@ -1533,16 +1107,56 @@ describe('files browser', () => {
 
     expect(detail.semanticKind).toBe('file')
     expect(detail.mimeType).toBe('text/css')
-    expect(detail.previewText).toBeNull()
+    expect(detail.previewText).toBe('body must not be read on selection')
     expect(authFetch).toHaveBeenCalledTimes(1)
-    expect(authFetch).toHaveBeenCalledWith('https://pod.example/public/site.css', { method: 'HEAD' })
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://pod.example/public/site.css',
+      expect.objectContaining({ method: 'GET' }),
+    )
+  })
+
+  it('does not probe metadata with HEAD before reading a text resource', async () => {
+    const authFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        return new Response('', { status: 500 })
+      }
+
+      return createResponse('# Notes', {
+        'content-type': 'text/markdown',
+        'content-length': '7',
+        'last-modified': 'Sat, 01 Mar 2026 10:00:00 GMT',
+      })
+    }) as typeof fetch
+    const db = createDb({ fetch: authFetch })
+
+    const detail = await readFileDetail(db, 'https://pod.example/public/notes.md')
+
+    expect(detail).toMatchObject({
+      name: 'notes.md',
+      mimeType: 'text/markdown',
+      size: 7,
+    })
+    expect(authFetch.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual(['GET'])
+    expect(detail.previewText).toBe('# Notes')
+  })
+
+  it('uses the filename type when the Pod reports a generic binary MIME type', async () => {
+    const authFetch = vi.fn(async () => createResponse('', {
+      'content-type': 'application/octet-stream',
+    })) as typeof fetch
+    const db = createDb({ fetch: authFetch })
+
+    const detail = await readFileDetail(db, 'https://pod.example/public/notes.md')
+
+    expect(detail.mimeType).toBe('text/markdown')
+    expect(getFilesEntryOpenMode(detail)).toBe('editable-file-sheet')
   })
 
   it('rejects inaccessible file metadata instead of rendering a fake detail', async () => {
     const db = createDb({
       fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
-        if (init?.method === 'HEAD' && url.endsWith('/private.md')) {
+        if (url.endsWith('/private.md')) {
           return new Response('', { status: 403 })
         }
 
@@ -1620,7 +1234,7 @@ describe('files browser', () => {
     expect(detail.previewText).toContain('@prefix')
   })
 
-  it('does not surface body transport preview errors for ordinary editable text detail', async () => {
+  it('surfaces a failed resource GET instead of rendering metadata from a separate probe', async () => {
     const db = createDb({
       fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
@@ -1636,11 +1250,9 @@ describe('files browser', () => {
       }) as typeof fetch,
     })
 
-    const detail = await readFileDetail(db, 'https://pod.example/public/README.md')
-
-    expect(detail.previewText).toBeNull()
-    expect(detail.previewUnavailableReason).toBe('当前文件类型暂不提供内联预览。')
-    expect(detail.previewUnavailableReason).not.toMatch(/HTTP|500|https?:\/\//i)
+    await expect(readFileDetail(db, 'https://pod.example/public/README.md')).rejects.toMatchObject({
+      status: 500,
+    })
   })
 
   it('reads complete raw text with etag through explicit raw text open', async () => {
@@ -1666,7 +1278,7 @@ describe('files browser', () => {
     const detail = await readFileDetail(db, 'https://pod.example/public/README.md')
     const raw = await readRawTextResource(db, 'https://pod.example/public/README.md')
 
-    expect(detail.previewText).toBeNull()
+    expect(detail.previewText).toBe(`${'a'.repeat(12000)}\n\n…`)
     expect(raw.content).toBe(fullText)
     expect(raw.etag).toBe('"raw-1"')
     expect(raw.mimeType).toBe('text/markdown')
@@ -1738,7 +1350,7 @@ describe('files browser', () => {
       expect(String(input)).toBe('https://pod.example/private/diagram.png')
       expect(init?.method).toBe('GET')
       expect(init?.headers).toEqual({
-        Accept: 'image/*, application/octet-stream;q=0.8, */*;q=0.1',
+        Accept: 'image/*, application/pdf, audio/*, video/*, application/octet-stream;q=0.8, */*;q=0.1',
       })
       return new Response(imageBytes, {
         status: 200,
@@ -1984,7 +1596,7 @@ describe('files browser', () => {
       { url: 'https://pod.example/public/report-renamed.md', method: 'PUT' },
       { url: 'https://pod.example/public/report.md.meta', method: 'GET' },
       { url: 'https://pod.example/public/report.md', method: 'DELETE' },
-      { url: 'https://pod.example/public/report-renamed.md', method: 'HEAD' },
+      { url: 'https://pod.example/public/report-renamed.md', method: 'GET' },
     ])
     expect(calls[2].init).toEqual(expect.objectContaining({
       method: 'PUT',
@@ -2045,7 +1657,7 @@ describe('files browser', () => {
       { url: 'https://pod.example/public/report.md', method: 'GET' },
       { url: 'https://pod.example/public/report-copy.md', method: 'PUT' },
       { url: 'https://pod.example/public/report.md.meta', method: 'GET' },
-      { url: 'https://pod.example/public/report-copy.md', method: 'HEAD' },
+      { url: 'https://pod.example/public/report-copy.md', method: 'GET' },
     ])
     expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(false)
     await expect(new Response(calls[2].init?.body as BodyInit).text()).resolves.toBe('copied body')
@@ -2164,7 +1776,7 @@ describe('files browser', () => {
       { url: 'https://pod.example/public/archive/report.md', method: 'PUT' },
       { url: 'https://pod.example/public/report.md.meta', method: 'GET' },
       { url: 'https://pod.example/public/report.md', method: 'DELETE' },
-      { url: 'https://pod.example/public/archive/report.md', method: 'HEAD' },
+      { url: 'https://pod.example/public/archive/report.md', method: 'GET' },
     ])
     await expect(new Response(calls[2].init?.body as BodyInit).text()).resolves.toBe('moved body')
   })

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
-import { Bot, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Star } from 'lucide-react'
+import { useSession } from '@/providers/solid-session-context'
+import { Bot, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -16,11 +16,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ModelSelector } from '@/components/ui/model-selector'
 import { useToast } from '@/components/ui/use-toast'
-import { InboxBellButton } from '@/modules/inbox/components/InboxBellButton'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useChatList, useChatMutations } from '../collections'
-import { projectSecretaryListCapabilities } from '../domain/secretary-entry-model'
 import { useEntity } from '@/lib/data/use-entity'
 import {
   normalizeAIConfigProviderId,
@@ -58,10 +56,6 @@ export function ChatHeader() {
     () => chats?.find((c) => c.id === selectedChatId) ?? null,
     [chats, selectedChatId],
   )
-  const chatCapabilities = useMemo(
-    () => chat ? projectSecretaryListCapabilities(chat) : null,
-    [chat],
-  )
 
   const contactUri = getPrimaryParticipantUri(chat, session.info.webId)
   const { data: contact, refresh: refreshContact } = useEntity(contactResource, contactUri)
@@ -83,18 +77,6 @@ export function ChatHeader() {
   }, [modelDraft])
   const isSavingAgentProfile = mutations.updateAgentProfile.isPending
   const isSavingModel = mutations.updateAgentModel.isPending
-
-  const handleToggleStar = useCallback(async () => {
-    if (!chat || !selectedChatId || !chatCapabilities?.canTogglePin) return
-    try {
-      await mutations.updateChat.mutateAsync({
-        id: selectedChatId,
-        starred: !chatCapabilities.isPinned,
-      })
-    } catch (e) {
-      console.error('Toggle star failed', e)
-    }
-  }, [chat, chatCapabilities, selectedChatId, mutations])
 
   useEffect(() => {
     if (!isAgentDialogOpen) return
@@ -282,18 +264,6 @@ export function ChatHeader() {
 
         {chat && (
           <div className="flex items-center gap-1 shrink-0 ml-2">
-            <InboxBellButton />
-            {chatCapabilities?.canTogglePin && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                onClick={handleToggleStar}
-                title={chatCapabilities.isPinned ? '取消收藏' : '收藏'}
-              >
-                <Star className={`w-5 h-5 ${chatCapabilities.isPinned ? 'fill-primary text-primary' : ''}`} />
-              </Button>
-            )}
             <Button
               variant="ghost"
               size="icon"

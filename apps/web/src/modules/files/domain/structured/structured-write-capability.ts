@@ -15,5 +15,6 @@ export function supportsStructuredWriteProposals(resource: StructuredWriteCapabi
   }
 
   const isTurtle = normalizedMimeType === 'text/turtle' || pathname.endsWith('.ttl')
-  return isTurtle && pathname.includes('/.data/') && !isFilesReservedResourceUri(resource.uri)
+  const isPublicResource = pathname.includes('/public/')
+  return isTurtle && !isPublicResource && !isFilesReservedResourceUri(resource.uri)
 }

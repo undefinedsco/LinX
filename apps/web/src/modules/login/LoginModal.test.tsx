@@ -99,6 +99,8 @@ function createProps(overrides: Partial<LoginModalProps> = {}): LoginModalProps 
     connectingProvider: null,
     localOnboarding: null,
     localProviderSource: 'local',
+    preferredSpace: 'cloud',
+    onSelectSpace: vi.fn(),
     ...overrides,
   }
 }
@@ -179,7 +181,7 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('需要创建空间')).toBeTruthy()
-    expect(screen.getByText(/这个账号还没有完成当前本地空间的创建/)).toBeTruthy()
+    expect(screen.getByText(/这个账号还没有完成当前本机空间的创建/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '创建当前空间' }))
     expect(props.onOpenCurrentSpacePodSetup).toHaveBeenCalledTimes(1)
@@ -214,19 +216,43 @@ describe('LoginModal', () => {
 
     expect(screen.getByText('Ganlu')).toBeTruthy()
     expect(screen.getByText('Cloud · 云端空间')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '重新登录 Ganlu' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '进入' })).toBeTruthy()
     expect(screen.queryByText('数据保存位置')).toBeNull()
     expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /本机/ })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: '重新登录 Ganlu' }))
+    fireEvent.click(screen.getByRole('button', { name: '进入' }))
     expect(props.onContinueStoredAccount).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: '切换账号' }))
     expect(props.onSwitchAccount).toHaveBeenCalledTimes(1)
   })
 
-  it('shows continue action when a restorable remembered session exists', () => {
+  it('presents an expired Solid session as a re-login state instead of a generic error', () => {
+    const props = createProps({
+      state: 'idle',
+      error: 'Write failed to http://localhost:5737/ganlu/messages.ttl: 401 Unauthorized',
+      hasRestorableSession: true,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderLabel: 'Local',
+      },
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('会话已过期')).toBeTruthy()
+    expect(screen.getByText(/账号和已有数据不会丢失/)).toBeTruthy()
+    expect(screen.queryByText('登录状态已失效。请重新登录。')).toBeNull()
+    expect(screen.queryByRole('button', { name: '关闭错误提示' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '进入' }))
+    expect(props.onContinueStoredAccount).toHaveBeenCalledTimes(1)
+  })
+
+  it('labels the remembered-account primary action as enter', () => {
     const props = createProps({
       hasRestorableSession: true,
       state: 'idle',
@@ -241,7 +267,7 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByRole('button', { name: '继续使用 Ganlu' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '进入' })).toBeTruthy()
   })
 
   it('does not expose raw internal login errors in the provider selection banner', () => {
@@ -270,40 +296,48 @@ describe('LoginModal', () => {
     expect(container.querySelector('.bg-muted')).toBeTruthy()
   })
 
-  it('shows compact first login with undefineds Cloud/Local data-space choice', () => {
+  it('shows compact first login with one-tap continue and remembered space hint', () => {
     const props = createProps()
 
     const { container } = render(<LoginModal {...props} />)
 
     expect(screen.getByText('LinX')).toBeTruthy()
-    expect(screen.getByText('使用 undefineds 账号')).toBeTruthy()
-    expect(screen.getByText('数据保存位置')).toBeTruthy()
-    expect(screen.getByRole('button', { name: /云端/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /本机/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '继续' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '其他账号供应商' })).toBeTruthy()
+    expect(screen.getByText('你的数据，存在你选的地方')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '登录' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '更多选项' })).toBeTruthy()
+    expect(screen.getByText('数据保存位置：云端空间')).toBeTruthy()
     const loginCard = container.querySelector('[data-login-card-size="compact"]')
     expect(loginCard?.classList.contains('bg-card')).toBe(true)
     expect(loginCard?.classList.contains('border')).toBe(true)
     expect(loginCard?.classList.contains('border-border/50')).toBe(true)
     expect(loginCard?.classList.contains('warm-card')).toBe(false)
 
+    expect(screen.queryByText('使用 undefineds 账号')).toBeNull()
     expect(screen.queryByText('选择空间')).toBeNull()
-    expect(screen.queryByText('登录方式')).toBeNull()
     expect(screen.queryByText('独立空间')).toBeNull()
     expect(screen.queryByText('IDP')).toBeNull()
     expect(screen.queryByText('SP')).toBeNull()
     expect(screen.queryByText('provisionCode')).toBeNull()
   })
 
-  it('continues with selected undefineds data space only after clicking Continue', () => {
+  it('continues with the preferred provider on the welcome view', () => {
+    const props = createProps({ preferredSpace: 'local' })
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('数据保存位置：本机空间')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    expect(props.onConnect).toHaveBeenCalledWith('local')
+  })
+
+  it('connects directly from the space chips in the login method list', () => {
     const props = createProps()
     render(<LoginModal {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /本机/ }))
-    expect(props.onConnect).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '更多选项' }))
+    fireEvent.click(screen.getByRole('button', { name: '本机空间' }))
 
-    fireEvent.click(screen.getByRole('button', { name: '继续' }))
+    expect(props.onSelectSpace).toHaveBeenCalledWith('local')
     expect(props.onConnect).toHaveBeenCalledWith('local')
   })
 
@@ -318,7 +352,7 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('正在启动本机空间…')).toBeTruthy()
-    expect(screen.getByText('使用 undefineds 账号')).toBeTruthy()
+    expect(screen.getByText('你的数据，存在你选的地方')).toBeTruthy()
   })
 
   it('shows compact Local preparation copy without raw progress detail', () => {
@@ -409,7 +443,7 @@ describe('LoginModal', () => {
 
     expect(screen.getByText('Alice')).toBeTruthy()
     expect(screen.getByText('undefineds · 本机空间')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '重新登录 Alice' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '进入' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '切换账号' })).toBeTruthy()
     expect(screen.queryByText('数据保存位置')).toBeNull()
     expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
@@ -434,7 +468,7 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('undefineds · 云端空间')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '继续使用 Bob' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '进入' })).toBeTruthy()
   })
 
   it('marks remembered Standalone accounts with the standalone avatar badge', () => {
@@ -490,18 +524,19 @@ describe('LoginModal', () => {
   it('does not ship a default third-party provider catalog', () => {
     render(<LoginModal {...createProps()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '其他账号供应商' }))
+    fireEvent.click(screen.getByRole('button', { name: '更多选项' }))
 
-    expect(screen.getByText('其他账号供应商')).toBeTruthy()
-    expect(screen.getByText('undefineds')).toBeTruthy()
-    expect(screen.getByText('支持云端空间和本机空间')).toBeTruthy()
-    expect(screen.getByText('+ 添加供应商')).toBeTruthy()
+    expect(screen.getByText('更多选项')).toBeTruthy()
+    expect(screen.getByText('LinX 账号')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '云端空间' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '本机空间' })).toBeTruthy()
+    expect(screen.getByText('添加登录方式')).toBeTruthy()
     expect(screen.queryByText('Google')).toBeNull()
     expect(screen.queryByText('GitHub')).toBeNull()
     expect(screen.queryByText('企业 SSO')).toBeNull()
   })
 
-  it('lists only configured third-party providers', () => {
+  it('lists only configured third-party providers and connects them directly', () => {
     const props = createProps({
       providers: [
         ...createProps().providers,
@@ -525,28 +560,25 @@ describe('LoginModal', () => {
     })
     render(<LoginModal {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '其他账号供应商' }))
+    fireEvent.click(screen.getByRole('button', { name: '更多选项' }))
     fireEvent.click(screen.getByRole('button', { name: /Acme SSO/ }))
 
-    expect(screen.getByText('使用 Acme SSO 登录')).toBeTruthy()
-    expect(screen.getByText('此供应商不支持本机空间选择')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /本机/ })).toBeNull()
+    expect(props.onConnect).toHaveBeenCalledWith('acme-sso')
   })
 
   it('keeps an invalid custom provider URL in place and explains how to fix it', () => {
     const props = createProps()
     render(<LoginModal {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '其他账号供应商' }))
-    fireEvent.click(screen.getByRole('button', { name: '+ 添加供应商' }))
-    fireEvent.change(screen.getByRole('textbox', { name: '供应商地址' }), {
+    fireEvent.click(screen.getByRole('button', { name: '更多选项' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加登录方式' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '登录方式地址' }), {
       target: { value: 'https://' },
     })
     fireEvent.click(screen.getByRole('button', { name: '连接' }))
 
     expect(screen.getByRole('alert')).toHaveTextContent('请输入有效的 http(s) 地址')
-    expect(screen.getByRole('textbox', { name: '供应商地址' })).toHaveValue('https://')
+    expect(screen.getByRole('textbox', { name: '登录方式地址' })).toHaveValue('https://')
     expect(props.onAddProvider).not.toHaveBeenCalled()
     expect(props.onConnect).not.toHaveBeenCalled()
   })
@@ -723,7 +755,7 @@ describe('LoginModal', () => {
     expect(screen.getByText('本机空间')).toBeTruthy()
     expect(screen.getByText('node-0000.undefineds.co')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '换一个空间' }))
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(props.onCancelConnecting).toHaveBeenCalledTimes(1)
   })
 

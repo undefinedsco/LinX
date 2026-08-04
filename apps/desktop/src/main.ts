@@ -32,6 +32,7 @@ import {
   resolveManagedDomainFromEnv,
 } from './lib/local-provider-config';
 import {
+  AUTH_SESSION_PARTITION,
   installLocalSpSessionRoutes,
   resolveLocalSpOidcIssuer,
   updateLocalSpSessionRouteFromSnapshot,
@@ -255,6 +256,7 @@ async function ensureMainWindowReadyForAuthRedirect(): Promise<void> {
 
 function queueAuthRedirect(url: string): void {
   if (!isDesktopAuthCallbackUrl(url)) {
+    console.warn('[Desktop] queueAuthRedirect rejected: not a desktop callback url');
     return;
   }
 
@@ -462,7 +464,7 @@ async function openAuthorizationWindow(url: string, options?: AuthorizationWindo
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      partition: 'persist:linx-auth',
+      partition: AUTH_SESSION_PARTITION,
     },
   });
 

@@ -11,8 +11,7 @@ export interface FileDetailShellState {
   activeDetailTab: FileDetailShellTab
   openMode: FilesOpenMode
   resourceActions: FilesResourceAction[]
-  showHeadSidecarActions: boolean
-  showMetaDrawer: boolean
+  showFileDrawerMetadata: boolean
   showSourceLinkedDrawerMetadata: boolean
   showTabs: boolean
   sidecarOwnerTarget: {
@@ -33,16 +32,16 @@ export function projectFileDetailShellState({
   const openMode = getFilesEntryOpenMode(file)
   const isEmbeddedStructuredMode = openMode === 'structured-data-table' || openMode === 'locked-vocab-table'
   const isEditableSheetMode = openMode === 'editable-file-sheet'
+  const isContainerMode = openMode === 'browse-container'
   const sidecarOwnerTarget = resolveFilesSidecarOwnerTarget(file)
 
   return {
     activeDetailTab: detailTab === 'metadata' ? 'preview' : detailTab,
     openMode,
     resourceActions: getFilesResourceActions(file, { systemOpen: hasSystemOpen }),
-    showHeadSidecarActions: !isEditableSheetMode,
-    showMetaDrawer: !isEditableSheetMode,
+    showFileDrawerMetadata: isEditableSheetMode,
     showSourceLinkedDrawerMetadata: openMode === 'source-linked-card-preview',
-    showTabs: !isEditableSheetMode && !isEmbeddedStructuredMode,
+    showTabs: !isEditableSheetMode && !isEmbeddedStructuredMode && !isContainerMode,
     sidecarOwnerTarget: {
       uri: sidecarOwnerTarget.uri,
       kind: sidecarOwnerTarget.kind,

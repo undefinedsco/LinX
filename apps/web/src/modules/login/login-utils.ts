@@ -9,6 +9,7 @@ import {
 
 const POST_LOGIN_MICRO_APP_KEY = 'linx-post-login-micro-app'
 const PENDING_LOGIN_ATTEMPT_KEY = 'linx-pending-login-attempt'
+const PENDING_LOGIN_MAX_AGE_MS = 15 * 60 * 1000
 const CALLBACK_ERROR_KEY = 'linx-pending-callback-error'
 const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
 const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
@@ -93,6 +94,17 @@ function hasRestorableSessionMetadata(parsed: Record<string, unknown>): boolean 
     || parsed.isLoggedIn === true
     || typeof parsed.webId === 'string'
     || typeof parsed.refreshToken === 'string'
+    || (
+      typeof parsed.issuer === 'string'
+      && typeof parsed.redirectUrl === 'string'
+      && typeof parsed.clientId === 'string'
+      && (
+        parsed.dpop === 'true'
+        || parsed.dpop === true
+        || parsed.keepAlive === 'true'
+        || parsed.keepAlive === true
+      )
+    )
 }
 
 function isSolidAuthStorageKey(key: string): boolean {
@@ -305,6 +317,54 @@ export function consumePendingLoginAttempt(): PendingLoginAttempt | null {
 export function clearPendingLoginAttempt() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(PENDING_LOGIN_ATTEMPT_KEY)
+}
+
+export function cleanupExpiredLoginTransaction(
+  now = Date.now(),
+  maxAgeMs = PENDING_LOGIN_MAX_AGE_MS,
+): boolean {
+  if (typeof window === 'undefined') return false
+  const raw = window.sessionStorage.getItem(PENDING_LOGIN_ATTEMPT_KEY)
+  if (!raw) return false
+
+  try {
+    const parsed = JSON.parse(raw) as PendingLoginPayload
+    const transactionPayload = parsed.loginTransaction ?? parsed.transaction
+    const createdAt = transactionPayload
+      && typeof transactionPayload === 'object'
+      && !Array.isArray(transactionPayload)
+      && typeof (transactionPayload as { createdAt?: unknown }).createdAt === 'number'
+        ? (transactionPayload as { createdAt: number }).createdAt
+        : typeof parsed.createdAt === 'number' ? parsed.createdAt : null
+    if (createdAt && createdAt <= now && now - createdAt <= maxAgeMs) {
+      return false
+    }
+  } catch {
+    // Malformed transient auth state is never useful for a future login.
+  }
+
+  clearPendingLoginAttempt()
+  return true
+}
+
+export function clearServiceLoopbackAuthState(): boolean {
+  const storedSession = getStoredSolidSession()
+  if (!storedSession?.issuerUrl || !isLoopbackUrl(storedSession.issuerUrl)) return false
+
+  clearSolidAuthClientState()
+  clearPendingPostLoginMicroAppId()
+  clearPendingLoginAttempt()
+  clearPendingCallbackError()
+  return true
+}
+
+function isLoopbackUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url)
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+  } catch {
+    return false
+  }
 }
 
 function normalizeStoredUrl(url?: string | null): string | null {
