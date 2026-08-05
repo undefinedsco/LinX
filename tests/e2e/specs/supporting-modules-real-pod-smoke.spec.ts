@@ -69,7 +69,7 @@ test.describe('Files-standard supporting modules real Pod smoke', () => {
 
     await page.getByRole('button', { name: '设置', exact: true }).click()
     await page.getByRole('menuitem', { name: '模型服务' }).click()
-    await expect(page.locator('[data-applet-id="model-services"]')).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('[data-applet-id="ai-connections"]')).toBeVisible({ timeout: 30_000 })
     const providerList = page.getByRole('listbox', { name: '模型提供商' })
     await expect(providerList).toBeVisible({ timeout: 30_000 })
     const providerOption = providerList.getByRole('option').first()

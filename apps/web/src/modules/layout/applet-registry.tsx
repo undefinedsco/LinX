@@ -17,7 +17,7 @@ export const appletIds = [
   'files',
   'favorites',
   'settings',
-  'model-services',
+  'ai-connections',
 ] as const
 
 export type AppletId = (typeof appletIds)[number]
@@ -120,11 +120,11 @@ const FilesListPane = lazyPane(() =>
 const FilesWorkspacePane = lazyPane(() =>
   import('@/modules/files/app/FilesWorkspacePane').then((mod) => ({ default: mod.FilesWorkspacePane })),
 )
-const ModelServicesListPane = lazyPane(() =>
-  import('@/modules/model-services/features/list/ModelServicesListPane').then((mod) => ({ default: mod.ModelServicesListPane })),
+const AiConnectionsListPane = lazyPane(() =>
+  import('@/modules/ai-connections/features/list/AiConnectionsListPane').then((mod) => ({ default: mod.AiConnectionsListPane })),
 )
-const ModelServicesContentPane = lazyPane(() =>
-  import('@/modules/model-services/features/detail/ModelServicesContentPane').then((mod) => ({ default: mod.ModelServicesContentPane })),
+const AiConnectionsContentPane = lazyPane(() =>
+  import('@/modules/ai-connections/features/detail/AiConnectionsContentPane').then((mod) => ({ default: mod.AiConnectionsContentPane })),
 )
 const SettingsListPane = lazyPane(() =>
   import('@/modules/settings/features/list/SettingsListPane').then((mod) => ({ default: mod.SettingsListPane })),
@@ -135,8 +135,8 @@ const SettingsContentPane = lazyPane(() =>
 const ChatLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/chat/layout/ChatLayoutConfigBridge').then((mod) => ({ default: mod.ChatLayoutConfigBridge })),
 )
-const ModelServicesLayoutConfigBridge = lazyBridge(() =>
-  import('@/modules/model-services/app/ModelServicesLayoutConfigBridge').then((mod) => ({ default: mod.ModelServicesLayoutConfigBridge })),
+const AiConnectionsLayoutConfigBridge = lazyBridge(() =>
+  import('@/modules/ai-connections/app/AiConnectionsLayoutConfigBridge').then((mod) => ({ default: mod.AiConnectionsLayoutConfigBridge })),
 )
 const FilesLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/files/app/FilesLayoutConfigBridge').then((mod) => ({ default: mod.FilesLayoutConfigBridge })),
@@ -225,19 +225,19 @@ export const appletRegistry: Record<AppletId, AppletDefinition> = {
     ListPane: SettingsListPane,
     ContentPane: SettingsContentPane,
   },
-  'model-services': {
-    id: 'model-services',
-    label: '模型服务',
+  'ai-connections': {
+    id: 'ai-connections',
+    label: 'AI 连接',
     icon: Bot, // Using Bot icon for AI Model Services
     header: {
-      moduleTitle: '模型服务',
+      moduleTitle: 'AI 连接',
       moduleSubtitle: '配置 AI 提供商及模型',
       itemTitle: '提供商详情',
       itemSubtitle: 'API Key & Model Management',
     },
-    ListPane: ModelServicesListPane,
-    ContentPane: ModelServicesContentPane,
-    LayoutConfigBridge: ModelServicesLayoutConfigBridge,
+    ListPane: AiConnectionsListPane,
+    ContentPane: AiConnectionsContentPane,
+    LayoutConfigBridge: AiConnectionsLayoutConfigBridge,
   },
 }
 

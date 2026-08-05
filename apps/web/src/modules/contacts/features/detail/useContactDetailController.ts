@@ -4,7 +4,7 @@ import { useLiveQuery } from '@tanstack/react-db'
 import { isGroupContact } from '@undefineds.co/models'
 import { useToast } from '@/components/ui/use-toast'
 import type { ModelOption } from '@/components/ui/model-selector'
-import { useModelServices } from '@/modules/model-services/data/use-model-services'
+import { useAiConnections } from '@/modules/ai-connections/data/use-ai-connections'
 import { useContactStore } from '../../app/store'
 import { contactCollection, getContactsChatCollection } from '../../data/collections'
 import { projectContactDetail } from '../../domain/contact-projection'
@@ -28,7 +28,7 @@ export function useContactDetailController() {
   const openInviteMemberDialog = useContactStore((state) => state.openInviteMemberDialog)
   const closeInviteMemberDialog = useContactStore((state) => state.closeInviteMemberDialog)
   const chatCollection = getContactsChatCollection()
-  const { providers: modelProviders } = useModelServices()
+  const { providers: modelProviders } = useAiConnections()
   const contactQuery = useLiveQuery(contactCollection)
   const chatQuery = useLiveQuery(chatCollection)
   const contacts = contactQuery.data ?? []

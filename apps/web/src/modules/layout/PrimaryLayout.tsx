@@ -277,9 +277,9 @@ function SettingsMenu({
           <Settings className="mr-2 h-4 w-4" strokeWidth={1.5} />
           <span>通用设置</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onNavigate('model-services')} className="cursor-pointer">
+        <DropdownMenuItem onSelect={() => onNavigate('ai-connections')} className="cursor-pointer">
           <Bot className="mr-2 h-4 w-4" strokeWidth={1.5} />
-          <span>模型服务</span>
+          <span>AI 连接</span>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onOpenServiceManagement} className="cursor-pointer text-boundary focus:text-boundary">
           <Activity className="mr-2 h-4 w-4" strokeWidth={1.5} />

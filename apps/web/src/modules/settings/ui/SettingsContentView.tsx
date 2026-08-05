@@ -25,7 +25,7 @@ export interface SettingsContentViewProps {
   toggleTheme: () => void
   checkForUpdates: () => Promise<void>
   openReleasePage: () => Promise<void>
-  openModelServices: () => void
+  openAiConnections: () => void
   openServiceManagement: () => void
 }
 
@@ -137,7 +137,7 @@ function UpdatesCard({
   )
 }
 
-function RuntimeCard({ shell, openModelServices, openServiceManagement }: SettingsContentViewProps) {
+function RuntimeCard({ shell, openAiConnections, openServiceManagement }: SettingsContentViewProps) {
   return (
     <Card>
       <CardHeader>
@@ -156,9 +156,9 @@ function RuntimeCard({ shell, openModelServices, openServiceManagement }: Settin
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={openModelServices}>
+          <Button variant="outline" onClick={openAiConnections}>
             <Bot className="mr-2 h-4 w-4" />
-            打开模型服务
+            打开 AI 连接
           </Button>
           <Button variant="outline" onClick={openServiceManagement}>
             <Wrench className="mr-2 h-4 w-4" />

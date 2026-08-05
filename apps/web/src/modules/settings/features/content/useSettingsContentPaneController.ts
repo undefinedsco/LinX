@@ -28,8 +28,8 @@ export function useSettingsContentPaneController() {
     await openUpdateReleasePage()
   }, [openUpdateReleasePage])
 
-  const openModelServices = useCallback(() => {
-    void navigate({ to: '/$appletId', params: { appletId: 'model-services' } })
+  const openAiConnections = useCallback(() => {
+    void navigate({ to: '/$appletId', params: { appletId: 'ai-connections' } })
   }, [navigate])
 
   const selectTheme = useCallback((value: ThemeMode) => {
@@ -53,7 +53,7 @@ export function useSettingsContentPaneController() {
     toggleTheme,
     checkForUpdates,
     openReleasePage,
-    openModelServices,
+    openAiConnections,
     openServiceManagement: requestOpenServiceManagement,
   }
 }

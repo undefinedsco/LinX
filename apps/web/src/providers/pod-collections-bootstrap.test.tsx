@@ -101,7 +101,7 @@ vi.mock('@/modules/inbox/collections', () => ({
   },
 }))
 
-vi.mock('@/modules/model-services/data/collections', () => ({
+vi.mock('@/modules/ai-connections/data/collections', () => ({
   initializeModelCollections: (...args: unknown[]) => initializeModelCollectionsMock(...args),
 }))
 

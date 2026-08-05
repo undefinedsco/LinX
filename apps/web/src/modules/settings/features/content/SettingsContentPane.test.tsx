@@ -140,12 +140,12 @@ describe('SettingsContentPane', () => {
     render(<SettingsContentPane theme="dark" />)
 
     fireEvent.click(screen.getByText('检查更新'))
-    fireEvent.click(screen.getByText('打开模型服务'))
+    fireEvent.click(screen.getByText('打开 AI 连接'))
 
     expect(mockRefresh).toHaveBeenCalledWith(true, 'manual')
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/$appletId',
-      params: { appletId: 'model-services' },
+      params: { appletId: 'ai-connections' },
     })
   })
 

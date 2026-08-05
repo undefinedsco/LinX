@@ -121,8 +121,8 @@ vi.mock('@/components/ui/model-selector', () => ({
   ModelSelector: ({ value }: { value: string }) => <div data-testid="model-selector">{value}</div>,
 }))
 
-vi.mock('@/modules/model-services/data/use-model-services', () => ({
-  useModelServices: () => ({ providers: {} }),
+vi.mock('@/modules/ai-connections/data/use-ai-connections', () => ({
+  useAiConnections: () => ({ providers: {} }),
 }))
 
 vi.mock('./CreateGroupDialog', () => ({

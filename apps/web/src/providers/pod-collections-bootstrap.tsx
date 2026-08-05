@@ -24,7 +24,7 @@ import { initializeFavoriteCollections } from '@/modules/favorites/collections'
 import { initializeFilesCollections } from '@/modules/files/collections'
 import { initializeInboxCollections } from '@/modules/inbox/collections'
 import { subscribeInboxToPod } from '@/modules/inbox/runtime'
-import { initializeModelCollections } from '@/modules/model-services/data/collections'
+import { initializeModelCollections } from '@/modules/ai-connections/data/collections'
 import { initializeSymphonyControlCollections } from '@/modules/symphony/collections'
 
 interface PodCollectionsBootstrapProps {

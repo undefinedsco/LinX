@@ -248,7 +248,7 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
   // ============================================================================
 
   it('provider.list - fetch all providers', { timeout: 30000 }, async () => {
-    await measure('ModelServices', 'providerCollection.fetch()', async () => {
+    await measure('AiConnections', 'providerCollection.fetch()', async () => {
       return await db!.select().from(aiProviderResource).execute()
     })
   })
