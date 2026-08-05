@@ -42,7 +42,7 @@ LinX app                                xpod
 - Pod origin 解析：复用现有 `podUrl`（Solid 会话已有）；本地 xpod 与云端 xpod 同一机制
 - iframe 与外壳的视觉接缝：applet 背景/字体/token 与 LinX 外壳一致（两边已是同一套 shadcn 语义 token，见 §3）
 
-**登录态：Solid SSO 天然覆盖，非风险项**。xpod 既是 Pod server 又是 IdP；用户在 LinX app 登录时已在 xpod origin 建立 OP 会话 cookie。iframe 与 IdP **同源**，OP cookie 在 iframe 内是一方 cookie（不受三方 cookie 拦截）；dashboard 启动若无自身会话，自动走 OIDC `/authorize` 重定向，IdP 会话已存在则静默签发，用户无感知。所有 Solid app 共享 IdP 级登录态是协议设计意图。落地时只需实测验证：iframe 内 dashboard 首次加载的 OIDC 重定向链无交互完成（含 xpod 对自家 dashboard client 的 consent 自动放行）；失败兜底为"外部浏览器打开"按钮。
+**登录态：Solid SSO 天然覆盖，已实测验证**（2026-08-05，`tests/e2e/specs/applet-sso-embed.spec.ts`，2/2 绿）。xpod 既是 Pod server 又是 IdP；用户在 LinX app 登录时已在 xpod origin 建立 OP 会话 cookie。iframe 与 IdP **同源**，OP cookie 在 iframe 内是一方 cookie（不受三方 cookie 拦截）；dashboard 启动若无自身会话，点一次"登录"走 OIDC `/authorize` 重定向，IdP 会话已存在则静默签发，**全程无密码输入**。实测确认：dashboard 标签页 SSO 免密（13.6s）、LinX 页面内 iframe 嵌入同样免密（3.6s），且 xpod 未设置 X-Frame-Options/frame-ancestors 拦截。所有 Solid app 共享 IdP 级登录态是协议设计意图。失败兜底为"外部浏览器打开"按钮。
 
 ### 2.2 功能并集（xpod applet 侧补齐清单）
 
