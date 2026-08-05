@@ -6,9 +6,8 @@ export async function loginToSeededXpod(page: Page, runtime: SeededXpodRuntime):
   await page.goto('/')
   await expect(page.getByRole('dialog', { name: '登录 LinX' })).toBeVisible({ timeout: 15_000 })
 
-  await page.getByRole('button', { name: '其他账号供应商' }).click()
-  await expect(page.getByRole('heading', { name: '其他账号供应商' })).toBeVisible()
-  await page.getByRole('button', { name: /添加供应商/ }).click()
+  await page.getByRole('button', { name: '更多选项' }).click()
+  await page.getByRole('button', { name: /添加登录方式/ }).click()
   await page.getByPlaceholder('https://pod.example.com').fill(runtime.baseUrl)
 
   const providerOrigin = new URL(runtime.baseUrl).origin

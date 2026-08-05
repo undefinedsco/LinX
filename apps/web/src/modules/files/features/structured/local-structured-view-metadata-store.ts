@@ -4,6 +4,7 @@ import {
   normalizeStructuredOpenViews,
   normalizeStructuredSortDirection,
   normalizeStructuredViewMode,
+  normalizeStructuredWhiteboardSnapshotMetadata,
   type StructuredViewMetadata,
 } from '../../domain/structured/structured-view-metadata'
 
@@ -47,6 +48,12 @@ function normalizeStoredMetadata(value: unknown, documentUri: string): Required<
       selectedSubjects: Array.isArray(whiteboard.selectedSubjects) ? whiteboard.selectedSubjects : [],
       positions: whiteboard.positions ?? {},
       visualRelations: Array.isArray(whiteboard.visualRelations) ? whiteboard.visualRelations : [],
+      // Sections and camera live in the snapshot; dropping it on reload would
+      // silently erase grouped whiteboard content.
+      snapshot: normalizeStructuredWhiteboardSnapshotMetadata(whiteboard.snapshot, {
+        positions: whiteboard.positions ?? {},
+        visualRelations: Array.isArray(whiteboard.visualRelations) ? whiteboard.visualRelations : [],
+      }),
     },
     writesCanonicalData: false,
   }

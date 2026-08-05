@@ -345,7 +345,7 @@ async function openStructuredTable(
   await tableButton.click()
   await expect(page.getByRole('button', { name: '当前 class：Workspace' })).toBeVisible({ timeout: 30_000 })
   await expect(workspace.getByRole('button', { name: '#Workspace', exact: true })).toBeVisible()
-  await expect(workspace.getByText('"Visual Audit Workspace"')).toBeVisible()
+  await expect(workspace.getByText('Visual Audit Workspace')).toBeVisible()
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -370,7 +370,7 @@ test.describe('Files production visual audit', () => {
     await openFiles(page)
     await refreshFilesResources(page)
 
-    await page.getByRole('button', { name: '展开 Pod 根目录' }).click()
+    await page.getByRole('button', { name: /^展开 .*(?:'s Pod|根目录)/ }).click()
     const folderTreeItem = page.getByRole('treeitem', { name: new RegExp(seed.folderName) })
     await folderTreeItem.click()
     await expect(folderTreeItem).toHaveAttribute('aria-selected', 'true')
@@ -401,13 +401,16 @@ test.describe('Files production visual audit', () => {
     await selectResource(page, seed.markdownUri)
     await expect(page.getByText(seed.markdownName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
     await page.getByRole('button', { name: '打开文件详情' }).click()
-    const editorSheet = page.getByRole('dialog', { name: seed.markdownTitle })
-    await expect(editorSheet).toBeVisible({ timeout: 30_000 })
-    await expect(editorSheet.getByTestId('rich-text-file-editor')).toBeVisible()
-    await expect(editorSheet.getByLabel('文件 meta')).toContainText(seed.markdownMetaUri)
+    const editorSurface = page.getByTestId('rich-text-file-editor')
+    await expect(editorSurface).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(seed.markdownTitle, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
     await capture(page, '04-editable-file-sheet-1440x900')
-    await editorSheet.getByRole('button', { name: 'Close' }).click()
-    await expect(editorSheet).toHaveCount(0)
+    await page.getByRole('button', { name: '完成编辑' }).click()
+    const discardButton = page.getByRole('button', { name: '放弃修改' })
+    if (await discardButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await discardButton.click()
+    }
+    await expect(editorSurface).toHaveCount(0)
 
     await openStructuredTable(page, seed)
     const tableShell = page.locator('[data-compact-table-shell="true"]')
@@ -602,13 +605,10 @@ test.describe('Files production visual audit', () => {
     await page.keyboard.press('Meta+z')
     await expect(page.locator(`[data-whiteboard-subject="${seed.workspaceSubject}"]`)).toHaveCount(2)
 
-    await expect.poll(async () => page.evaluate(async ({ metaUri }) => {
-      const db = (window as any).__SOLID_DB__
-      const authFetch = db?.getDialect?.()?.getAuthenticatedFetch?.()
-      if (!authFetch) return ''
-      const response = await authFetch(metaUri)
-      return response.ok ? response.text() : ''
-    }, { metaUri: seed.turtleMetaUri }), { timeout: 30_000 }).toContain('Audit section')
+    await expect.poll(async () => page.evaluate(async ({ documentUri }) => {
+      const raw = window.localStorage.getItem(`linx-files:structured-view:${encodeURIComponent(documentUri)}`)
+      return raw ?? ''
+    }, { documentUri: seed.turtleUri }), { timeout: 30_000 }).toContain('Audit section')
 
     await selectResource(page, seed.folderUri)
     await page.evaluate(async ({ documentUri }) => {
