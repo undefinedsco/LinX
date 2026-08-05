@@ -225,7 +225,7 @@ describe('PodCollectionsBootstrap', () => {
     expect(selectThreadMock).not.toHaveBeenCalled()
     expect(screen.queryByText('正在准备默认助手')).toBeNull()
     expect(screen.getByText('ready app')).toBeTruthy()
-    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats'] })
+    expect(invalidateQueriesMock).toHaveBeenCalledWith()
 
     await act(async () => {
       resolveWelcome?.({ chatId: 'secretary-chat', created: true })
@@ -233,7 +233,7 @@ describe('PodCollectionsBootstrap', () => {
     })
 
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats'] })
-    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats', 'secretary-chat', 'threads'] })
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['threads'] })
     expect(screen.getByText('ready app')).toBeTruthy()
   })
 
@@ -330,7 +330,7 @@ describe('PodCollectionsBootstrap', () => {
     })
 
     expect(invalidateQueriesMock).not.toHaveBeenCalledWith({
-      queryKey: ['chats', 'first-account-chat', 'threads'],
+      queryKey: ['threads'],
     })
 
     await act(async () => {
@@ -339,7 +339,7 @@ describe('PodCollectionsBootstrap', () => {
     })
 
     expect(invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: ['chats', 'second-account-chat', 'threads'],
+      queryKey: ['threads'],
     })
   })
 

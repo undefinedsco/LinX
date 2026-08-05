@@ -95,15 +95,18 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
       selectInitialSecretary(result.chatId, result.threadId)
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['chats'] }),
-        queryClient.invalidateQueries({ queryKey: ['chats', result.chatId, 'threads'] }),
+        queryClient.invalidateQueries({ queryKey: ['threads'] }),
       ]).catch((error) => {
         console.warn('[PodCollectionsBootstrap] Failed to refresh LinX welcome queries:', error)
       })
     }
 
     selectInitialSecretary(LINX_DEFAULT_SECRETARY.chatId)
-    void queryClient.invalidateQueries({ queryKey: ['chats'] }).catch((error) => {
-      console.warn('[PodCollectionsBootstrap] Failed to refresh staged LinX welcome chat:', error)
+    // Collections may have been preloaded while db was null and cached empty
+    // results under the default staleTime; invalidate everything so every
+    // module refetches against the ready database, not just chats.
+    void queryClient.invalidateQueries().catch((error) => {
+      console.warn('[PodCollectionsBootstrap] Failed to refresh collections for the ready database:', error)
     })
 
     void welcomePromise

@@ -1508,7 +1508,7 @@ export const chatOps = {
     writeCollectionRow(threadCollection, { ...threadData, id: threadResourceId } as ThreadRow, threadResourceId)
     
     // Invalidate threads query
-    queryClient.invalidateQueries({ queryKey: ['chats', chatId, 'threads'] })
+    queryClient.invalidateQueries({ queryKey: ['threads'] })
     
     return { ...threadData, id: threadResourceId } as ThreadRow
   },
@@ -1543,7 +1543,7 @@ export const chatOps = {
       await this.updateThread(thread.id, { workspace: workspaceUri })
       const chatId = resolveThreadChatRowId(thread)
       if (chatId) {
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
+        queryClient.invalidateQueries({ queryKey: ['threads'] })
       }
     }
 
@@ -1580,7 +1580,7 @@ export const chatOps = {
    */
   async toggleThreadStar(id: string, chatId: string, currentStarred: boolean): Promise<void> {
     await this.updateThread(id, { starred: !currentStarred })
-    queryClient.invalidateQueries({ queryKey: ['chats', chatId, 'threads'] })
+    queryClient.invalidateQueries({ queryKey: ['threads'] })
   },
 
   /**
@@ -1599,7 +1599,7 @@ export const chatOps = {
     await tx.isPersisted.promise
     
     // Invalidate threads query
-    queryClient.invalidateQueries({ queryKey: ['chats', chatId, 'threads'] })
+    queryClient.invalidateQueries({ queryKey: ['threads'] })
   },
 
   // ==========================================================================
@@ -1672,7 +1672,7 @@ export const chatOps = {
     })
     
     // Invalidate messages query
-    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.messages(chatId, threadId) })
+    queryClient.invalidateQueries({ queryKey: ['messages'] })
     
     return { ...msgData, id: messageResourceId } as MessageRow
   },
@@ -1751,7 +1751,7 @@ export const chatOps = {
     })
     
     // Invalidate messages query
-    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.messages(chatId, threadId) })
+    queryClient.invalidateQueries({ queryKey: ['messages'] })
     
     return persistedMessage
   },
@@ -1764,7 +1764,7 @@ export const chatOps = {
     await tx.isPersisted.promise
 
     const chatId = getCachedThreadChatId(threadId) || ''
-    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.messages(chatId, threadId) })
+    queryClient.invalidateQueries({ queryKey: ['messages'] })
   },
 
   // ==========================================================================
