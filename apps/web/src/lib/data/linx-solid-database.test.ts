@@ -71,6 +71,48 @@ describe('createLinxSolidDatabase', () => {
     })
   })
 
+  it('prefers WebSocket notification channels for plain-HTTP Pods', async () => {
+    const session = { info: { webId: 'http://localhost:3000/alice/profile/card#me' } }
+    const db = {
+      id: 'db',
+      getDialect: vi.fn(() => ({
+        getPodUrl: () => 'http://localhost:3000/alice/',
+      })),
+    }
+    drizzleMock.mockReturnValue(db)
+    initializeLinxPodStorageMock.mockResolvedValue(undefined)
+
+    await createLinxSolidDatabase(session, { podUrl: 'http://localhost:3000/alice/' })
+
+    expect(drizzleMock).toHaveBeenCalledWith(session, {
+      disableInteropDiscovery: true,
+      notifications: {
+        preferredChannels: ['websocket', 'streaming-http'],
+      },
+      podUrl: 'http://localhost:3000/alice/',
+      resourcePreparation: 'best-effort',
+      schema: { chat: 'schema' },
+    })
+  })
+
+  it('switches to WebSocket-first channels when the plain-HTTP Pod URL appears after initialization', async () => {
+    const session = { info: { webId: 'http://localhost:3000/alice/profile/card#me' } }
+    const dialectConfig: { preferredChannels?: string[] } = {}
+    const db = {
+      id: 'db',
+      getDialect: vi.fn(() => ({
+        config: dialectConfig,
+        getPodUrl: () => 'http://localhost:3000/alice/',
+      })),
+    }
+    drizzleMock.mockReturnValue(db)
+    initializeLinxPodStorageMock.mockResolvedValue(undefined)
+
+    await createLinxSolidDatabase(session)
+
+    expect(dialectConfig.preferredChannels).toEqual(['websocket', 'streaming-http'])
+  })
+
   it('wraps authenticated fetch for local transport while preserving canonical Pod URLs', async () => {
     const originalFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('ok'))
     const session = {

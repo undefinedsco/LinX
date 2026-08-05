@@ -73,10 +73,18 @@ async function createLinxSolidDatabaseUncached(
   const instance = drizzle(runtimeSession as any, {
     disableInteropDiscovery: true,
     notifications: {
-      // SSE first: the server advertises updatesViaStreamingHttp2023 and SSE
-      // connects directly without a subscription POST, while wss connections
-      // fail on current deployments and leak a server-side channel per attempt.
-      preferredChannels: ['streaming-http', 'websocket'],
+      // SSE first on HTTPS: the server advertises updatesViaStreamingHttp2023
+      // and SSE connects directly without a subscription POST, while wss
+      // connections fail on current deployments and leak a server-side channel
+      // per attempt. Plain-HTTP pods (local xpod over HTTP/1.1) prefer
+      // WebSocket: every SSE subscription pins one browser connection and
+      // Chromium allows only six per host, while upgraded WebSocket sockets
+      // live outside that pool. Servers advertising the xpod notification
+      // descriptor bypass this preference entirely and multiplex all topics
+      // over a single WebSocket.
+      preferredChannels: isPlainHttpPodUrl(options.podUrl)
+        ? ['websocket', 'streaming-http']
+        : ['streaming-http', 'websocket'],
     },
     podUrl: normalizePodUrl(options.podUrl),
     resourcePreparation: 'best-effort',
@@ -108,6 +116,11 @@ async function createLinxSolidDatabaseUncached(
   }
 
   assertExplicitPodUrlApplied(instance, options.podUrl, 'after Pod initialization')
+
+  const effectivePodUrl = options.podUrl ?? readDialectPodUrl(instance)
+  if (isPlainHttpPodUrl(effectivePodUrl) && !isPlainHttpPodUrl(options.podUrl)) {
+    preferWebSocketNotificationChannels(instance)
+  }
   report({ stage: 'database:init:done' })
 
   return instance
@@ -372,6 +385,25 @@ function assertExplicitPodUrlApplied(db: SolidDatabase, podUrl: string | null | 
   }
 
   throw new Error(`Selected SP Pod URL was not applied ${phase}: expected ${expected}, got ${actual ?? 'unavailable'}`)
+}
+
+function isPlainHttpPodUrl(podUrl?: string | null): boolean {
+  return typeof podUrl === 'string' && podUrl.trim().toLowerCase().startsWith('http:')
+}
+
+function readDialectPodUrl(db: SolidDatabase): string | null {
+  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
+  return typeof podUrl === 'string' ? podUrl : null
+}
+
+// NotificationsClient is created lazily on first subscribe and reads the
+// dialect channel preference at that point, so mutating the config here is
+// enough when the pod URL only becomes known after initialization.
+function preferWebSocketNotificationChannels(db: SolidDatabase): void {
+  const dialect = (db as any).getDialect?.()
+  if (dialect?.config) {
+    dialect.config.preferredChannels = ['websocket', 'streaming-http']
+  }
 }
 
 function normalizePodUrl(podUrl?: string | null): string | undefined {
