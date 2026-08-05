@@ -1,13 +1,13 @@
 # Pod 订阅预算与按需化设计
 
 - Status: **已落地（原生协议版）**（2026-08-05）
-- **硬约束（钉死，任何后续方案不得违反）**：浏览器与 Pod 之间只使用**标准 Solid 通知协议**（StreamingHTTPChannel2023 / WebSocketChannel2023），不依赖任何私有 wire format；xpod multiplex（`xpod.notifications.v1`）方案已否决，descriptor 不得向浏览器客户端广播。
+- **硬约束（钉死，任何后续方案不得违反）**：浏览器侧关键特性（实时同步、离线水化等）一律由**标准 Solid 协议**承载，不另行发明私有 wire format。协议级优化必须在标准语义内做（topic 拓扑、传输分档、水化策略）；xpod multiplex（`xpod.notifications.v1`）正是因此被否决——它是为了绕开优化工作而新造的协议。
 - 原始 Proposal（2026-08-02）基于"每 topic 一条 SSE channel"；后经 multiplex 私有协议绕行，最终被"原生协议三杠杆"取代。本文档记录最终形态。
 
 ## 0. 为什么否决 multiplex（私有协议）
 
-1. `xpod.notifications.v1` 是私有 wire format，只有 drizzle-solid ≥0.3.20 懂，违背 Solid 互操作目标
-2. 其事件扇入依赖 `ObservableResourceStore.addGlobalListener`——进程内静态注册表，hub 在 API 子进程，CSS 子进程的用户数据变更**根本流不过去**（跨进程缺口），订阅会静默无实时
+1. 原则问题：浏览器实时同步是关键特性，必须由标准 Solid 协议承载；`xpod.notifications.v1` 只有 drizzle-solid ≥0.3.20 懂，是为绕开优化工作另造的协议
+2. 其实现也不成立：事件扇入依赖 `ObservableResourceStore.addGlobalListener`——进程内静态注册表，hub 在 API 子进程，CSS 子进程的用户数据变更**根本流不过去**（跨进程缺口），订阅会静默无实时
 3. 补齐该缺口需要在 CSS 进程与 API 进程之间再造一条事件通道，复杂度远超收益
 
 ## 1. 最终架构：原生协议三杠杆
@@ -43,7 +43,7 @@
 | dev-only 逻辑订阅预算 warn（12） | `use-pod-collection-subscription.ts` | `d248acf7` |
 | Files runtime 归入 data 层 | `files/data/runtime.ts` | `13a2522d` |
 | e2e seeded xpod models 版本分裂 | package.json | `6e887313` |
-| ~~xpod gateway descriptor 广播~~ **已 revert**：私有协议否决后 descriptor 不得广播（测试钉死）；`/v1/notifications/ws` 升级路由保留 | xpod | `17653f96` → `04a1ea8e` |
+| ~~xpod gateway descriptor 广播~~ **已 revert**：关键特性走原生协议的原则确立后，multiplex 路径不再向浏览器开放 | xpod | `17653f96` → `04a1ea8e` |
 
 ## 3. 待办
 
