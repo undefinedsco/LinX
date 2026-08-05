@@ -3,7 +3,7 @@
 - Status: Proposal（2026-08-05）
 - 决策人拍板记录：
   - 管理端唯一实现 = xpod 的页面（`@undefineds.co/ai-connection` applet，挂在 dashboard `/settings/models`）
-  - LinX 端**不保留** `model-services` 自实现，改为调用/嵌入 xpod 页面
+  - LinX 端**不保留** `ai-connections` 自实现，改为调用/嵌入 xpod 页面
   - 视觉与产品感觉**向 LinX 看齐**（LinX 是主产品面）
   - chat 推理改走 chatkit（xpod 服务端）——**另行立项，本 spec 不含**
 
@@ -11,7 +11,7 @@
 
 两套模型管理产品并存：
 
-| | LinX `model-services`（apps/web） | xpod `ai-connection`（packages/ + dashboard） |
+| | LinX `ai-connections`（apps/web） | xpod `ai-connection`（packages/ + dashboard） |
 | --- | --- | --- |
 | Provider 目录 | 13 家 | 5 家 |
 | 凭据 | 明文直写 Pod | 加密经服务端 vault |
@@ -27,7 +27,7 @@
 ```
 LinX app                                xpod
 ┌─────────────────────────┐             ┌──────────────────────────────┐
-│ model-services applet    │  npm 包     │ @undefineds.co/ai-connection │
+│ ai-connections applet    │  npm 包     │ @undefineds.co/ai-connection │
 │ （壳 + WebExtensionHost）│ ──────────▶ │  （功能并集 + LinX 视觉）      │
 │  - 原生 mount applet slot │  Solid     │  - connect/quota/keys/client │
 │  - 只读投影（contacts 用）│ authFetch─▶ │  - 模型 CRUD（新增，自 LinX）  │
@@ -47,7 +47,7 @@ LinX app                                xpod
 
 ### 2.2 功能并集（xpod applet 侧补齐清单）
 
-从 LinX `model-services` 搬入 applet（视觉按 LinX 现行）：
+从 LinX `ai-connections` 搬入 applet（视觉按 LinX 现行）：
 
 | 功能 | 来源 | 落点 |
 | --- | --- | --- |
@@ -58,11 +58,11 @@ LinX app                                xpod
 
 applet 独有保留：connect 流程、配额卡、网关 Key 管理、编码客户端配置。
 
-LinX 侧删除：`modules/model-services/ui/`、`features/`、`data/collections.ts` 的写路径、`ModelEditorDialog`、provider 目录副本。
+LinX 侧删除：`modules/ai-connections/ui/`、`features/`、`data/collections.ts` 的写路径、`ModelEditorDialog`、provider 目录副本。
 
 ### 2.3 LinX 侧保留的只读投影
 
-- `contacts` 详情读 `useModelServices().providers`（显示 agent provider）——改为轻量只读 hook（`aiProviderResource` 集合 + catalog 投影），不依赖被删的 UI 模块
+- `contacts` 详情读 `useAiConnections().providers`（显示 agent provider）——改为轻量只读 hook（`aiProviderResource` 集合 + catalog 投影），不依赖被删的 UI 模块
 - `initializeModelCollections`（bootstrap）只保留 provider/model/credential 的**只读**集合（订阅照旧走 lease 体系）
 - chat 推理读凭据现状**不动**（chatkit 迁移另立项；明文凭据在迁移前仍是事实通路，applet 写入的加密凭据与 LinX 明文并存的冲突期在产品上接受——两端写同一 `credentialResource` 不同字段，读侧各自取自己能解的）
 
@@ -79,8 +79,8 @@ LinX 侧删除：`modules/model-services/ui/`、`features/`、`data/collections.
 1. **xpod applet 视觉对齐**（xpod 仓）：theme.css token 对齐 LinX；shared-ui 补组件原语；列表/详情交互按 LinX 改版
 2. **xpod applet 功能补齐**：模型区（只读）→ 验证按钮服务端化 → 模型 CRUD（含 xpod 写路由）
 3. **applet 发包 + LinX host**（两侧）：`@undefineds.co/ai-connection` 发 npm；LinX 实现 `WebExtensionHost` 并原生 mount（含 `/api/ai/gateway/keys` 404 缺口确认）；iframe `?embed=1` + 自动 login 作为降级路径备着
-4. **LinX 整合**（linx 仓）：model-services 壳切换为原生 host 渲染 applet；导航/布局配置保留；删旧 UI 与写路径；contacts 只读投影切换
-5. **清理**：models 目录旧副本删除、文档更新、e2e（嵌入 smoke：model-services 路由渲出 iframe 且 applet 加载）
+4. **LinX 整合**（linx 仓）：ai-connections 壳切换为原生 host 渲染 applet；导航/布局配置保留；删旧 UI 与写路径；contacts 只读投影切换
+5. **清理**：models 目录旧副本删除、文档更新、e2e（嵌入 smoke：ai-connections 路由渲出 iframe 且 applet 加载）
 
 ## 5. 风险与回退
 
