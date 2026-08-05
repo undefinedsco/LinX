@@ -27,22 +27,23 @@
 ```
 LinX app                                xpod
 ┌─────────────────────────┐             ┌──────────────────────────────┐
-│ model-services applet │  iframe    │ dashboard /settings/models   │
-│ （壳：双栏框架 + 导航）   │ ────────▶  │  = ai-connection applet      │
-│  - 列表/详情区域嵌页面    │             │  （功能并集 + LinX 视觉）      │
-│  - 只读投影（contacts 用）│ Pod-direct │  - connect/quota/keys/client │
-└─────────────────────────┘             │  - 模型 CRUD（新增，自 LinX）  │
+│ model-services applet    │  npm 包     │ @undefineds.co/ai-connection │
+│ （壳 + WebExtensionHost）│ ──────────▶ │  （功能并集 + LinX 视觉）      │
+│  - 原生 mount applet slot │  Solid     │  - connect/quota/keys/client │
+│  - 只读投影（contacts 用）│ authFetch─▶ │  - 模型 CRUD（新增，自 LinX）  │
+└─────────────────────────┘  跨域 API    │  （dashboard 同样 host 它）   │
                                         └──────────────────────────────┘
 ```
 
-### 2.1 嵌入方式：iframe
+### 2.1 集成方式：native host（主），iframe（降级）
 
-- LinX `model-services` applet 保留路由/导航/双栏壳，内容区改为 iframe 指向 `{podOrigin}/settings/models?embed=1`
-- `embed=1` 参数让 dashboard 隐藏自身 chrome（顶栏/侧边导航），只渲染 applet 双栏，避免"页面套页面"
-- Pod origin 解析：复用现有 `podUrl`（Solid 会话已有）；本地 xpod 与云端 xpod 同一机制
-- iframe 与外壳的视觉接缝：applet 背景/字体/token 与 LinX 外壳一致（两边已是同一套 shadcn 语义 token，见 §3）
+**主方案——LinX 作为 extension-sdk host 原生运行 applet**：`@undefineds.co/ai-connection` 本就是可发布 npm 包（applet 组件 + 类型化 client + host 契约），LinX 实现 `WebExtensionHost`（参照 `xpod/ui/src/extensions/ai-connection-host.ts`），把 applet 的 list/main slot 直接 mount 进 LinX 自己的 applet 双栏壳。
 
-**登录态：Solid SSO 天然覆盖，已实测验证**（2026-08-05，`tests/e2e/specs/applet-sso-embed.spec.ts`，2/2 绿）。xpod 既是 Pod server 又是 IdP；用户在 LinX app 登录时已在 xpod origin 建立 OP 会话 cookie。iframe 与 IdP **同源**，OP cookie 在 iframe 内是一方 cookie（不受三方 cookie 拦截）；dashboard 启动若无自身会话，点一次"登录"走 OIDC `/authorize` 重定向，IdP 会话已存在则静默签发，**全程无密码输入**。实测确认：dashboard 标签页 SSO 免密（13.6s）、LinX 页面内 iframe 嵌入同样免密（3.6s），且 xpod 未设置 X-Frame-Options/frame-ancestors 拦截。所有 Solid app 共享 IdP 级登录态是协议设计意图。失败兜底为"外部浏览器打开"按钮。
+- **零 iframe、零第二次 OIDC**：applet client 用 LinX 已有 Solid 会话的 authFetch 调 xpod 管理 API；视觉天然统一（跑在 LinX 壳内）
+- **可行性已实测**（2026-08-05，`tests/e2e/specs/applet-native-host-auth.spec.ts`）：LinX origin 跨域 DPoP authFetch 调 `/api/ai/connections/providers`、`/api/applets/service-access/ai-connection`、`/api/ai/client-configuration/capability`、`/v1/models` 全部 200，CORS 无拦截。已知缺口：`/api/ai/gateway/keys` 在 0.3.71 seeded 包 404（xpod 源码侧确认注册）
+- 前置：`@undefineds.co/ai-connection` 发布 npm（`private:false` 已备，尚无 README）
+
+**降级方案——iframe 嵌 `{podOrigin}/settings/models?embed=1`**：`embed=1` 隐藏 dashboard chrome + 无会话时自动发起 login（SSO 链静默，消掉那次点击）。登录态已实测（`applet-sso-embed.spec.ts`：标签页/iframe 均免密，无 X-Frame-Options 拦截）。native host 受阻（如发包/契约缺口）时先用 iframe 交付。
 
 ### 2.2 功能并集（xpod applet 侧补齐清单）
 
@@ -77,8 +78,8 @@ LinX 侧删除：`modules/model-services/ui/`、`features/`、`data/collections.
 0. **provider 目录收敛**（models 仓）：13+5 并集为单一目录，UI extras（docs/apiKey URL/placeholder）作为目录字段下沉；发新版 models；xpod applet 与 LinX 只读投影都改消费它
 1. **xpod applet 视觉对齐**（xpod 仓）：theme.css token 对齐 LinX；shared-ui 补组件原语；列表/详情交互按 LinX 改版
 2. **xpod applet 功能补齐**：模型区（只读）→ 验证按钮服务端化 → 模型 CRUD（含 xpod 写路由）
-3. **embed 模式**（xpod 仓）：dashboard 支持 `?embed=1` 隐藏 chrome；本地 xpod iframe 登录态实测，不行则一次性令牌桥立项
-4. **LinX 嵌入壳**（linx 仓）：model-services 壳改 iframe；导航/布局配置保留；删旧 UI 与写路径；contacts 只读投影切换
+3. **applet 发包 + LinX host**（两侧）：`@undefineds.co/ai-connection` 发 npm；LinX 实现 `WebExtensionHost` 并原生 mount（含 `/api/ai/gateway/keys` 404 缺口确认）；iframe `?embed=1` + 自动 login 作为降级路径备着
+4. **LinX 整合**（linx 仓）：model-services 壳切换为原生 host 渲染 applet；导航/布局配置保留；删旧 UI 与写路径；contacts 只读投影切换
 5. **清理**：models 目录旧副本删除、文档更新、e2e（嵌入 smoke：model-services 路由渲出 iframe 且 applet 加载）
 
 ## 5. 风险与回退
