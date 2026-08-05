@@ -63,13 +63,15 @@
 | thread/message 失效键 `['chats',id,'threads']` 永远匹配不到集合键 → 写后兜底失效是死的 | 指向真实集合键 `['threads']`/`['messages']` |
 | db 未就绪时集合缓存空列表 5 分钟，登录后仅 `['chats']` 被失效 | db 就绪时全量失效（`01b385f8`） |
 
-### 推迟（架构级，需单独立项）
+### 推迟（架构级，各有独立 spec）
 
-- **F10**：thread/message 集合无窗口无过滤，首次使用全表扫描 Pod（聊天冷启动主成本）——需参数化集合（per-thread query key）或服务端 where
-- **F11**：`hydrateChatRows` 每个 chat 行一次 GET（N+1），且 `createAIChat` 后全量重复——需写入期持久化参与者/元数据或按 chat id 缓存水化
-- **F12**：无本地快照持久化，每次冷启动全量网络拉取——需 IndexedDB query persister（首屏快照秒渲染）
-- **F9**：任何整表 refetch 会把多页驻留窗口塌缩回第 1 页——refetch 时按驻留页数重建
-- **F17**：Pod 不可达时集合渲染为空列表而非错误面（错误被 hook 层吃掉）——需把 query 错误透出到 UI
+| 问题 | Spec | 建议顺序 |
+| --- | --- | --- |
+| F12：无本地快照持久化，每次冷启动全量网络拉取 | `docs/design/collection-local-snapshot-persistence.md` | 1（水化杠杆主体） |
+| F17：Pod 不可达时集合渲染为空列表而非错误面（错误被 hook 层吃掉） | `docs/design/collection-error-surface.md` | 2（小、独立、即时收益） |
+| F9：任何整表 refetch 会把多页驻留窗口塌缩回第 1 页 | `docs/design/collection-refetch-window-preservation.md` | 3（F16 修复使整表失效真实发生，塌缩从理论变现实） |
+| F10：thread/message 集合无窗口无过滤，首次使用全表扫描 Pod（聊天冷启动主成本） | `docs/design/chat-thread-message-parameterized-collections.md` | 4（聊天侧最大收益，改动面最大） |
+| F11：`hydrateChatRows` 每个 chat 行一次 GET（N+1），且 `createAIChat` 后全量重复 | `docs/design/chat-hydration-dedup.md` | 5（F10 之后水化触发面已收窄） |
 
 ## 4. 待办
 
