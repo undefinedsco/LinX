@@ -10244,7 +10244,7 @@
     sparqljs "^3.7.3"
     zod "^4.1.8"
 
-"@undefineds.co/models@0.2.45", "@undefineds.co/models@0.2.47":
+"@undefineds.co/models@0.2.45", "@undefineds.co/models@0.2.48":
   version "0.2.45"
   resolved "https://registry.npmjs.org/@undefineds.co/models/-/models-0.2.45.tgz"
   integrity sha512-2f2qgXZSqWIMH7X0566gIGCZ7CRM4Lf9Hp62GhhYm+Obd/UkuuZHuMga9dSmaUfIP2uIkAE6BYpfPACVVKLnmA==
@@ -10255,10 +10255,10 @@
     n3 "^1.26.0"
     zod "^3.22.4"
 
-"@undefineds.co/xpod@0.3.68":
-  version "0.3.68"
-  resolved "https://registry.npmjs.org/@undefineds.co/xpod/-/xpod-0.3.68.tgz#e3e6ebed2a78923b072ddf13252f36488bbf7249"
-  integrity sha512-Ys7RVj0aliqkZOZ2kMZ71UYkOFcMN76mu8Q2B2chX2/GBenl3PsWi/Z9l4XcIj9kALSj+cavLNR2vVR8UPrHqQ==
+"@undefineds.co/xpod@0.3.71":
+  version "0.3.71"
+  resolved "https://registry.npmjs.org/@undefineds.co/xpod/-/xpod-0.3.71.tgz#188ad7d779062a7307fb3df50c593ee74c843b8b"
+  integrity sha512-v6Jxz/jgoo9jh/MendBUiHt09+eIMbTFKFpBmnAnwSp+OEyU3HhFIAHUtTsY+HdLlwFMxmDwn8aVeRfQ7zqgyw==
   dependencies:
     "@agentclientprotocol/sdk" "^0.14.1"
     "@ai-sdk/openai" "^3.0.2"
@@ -10274,7 +10274,7 @@
     "@mariozechner/pi-coding-agent" "^0.55.1"
     "@radix-ui/react-slot" "^1.2.4"
     "@solid/community-server" "8.0.0-alpha.1"
-    "@undefineds.co/models" "0.2.47"
+    "@undefineds.co/models" "0.2.48"
     abstract-level "^1.0.4"
     acme-client "^5.1.3"
     ai "^6.0.6"
@@ -10297,7 +10297,7 @@
     quadstore "^15.4.1"
     quadstore-comunica "^6.3.1"
     react "^19.2.0"
-    react-dom "^18.2.0"
+    react-dom "^19.2.0"
     react-i18next "^13.3.1"
     react-router-dom "^6.22.3"
     sqlite-vec "^0.1.7-alpha.2"
@@ -16807,7 +16807,7 @@ rdfxml-streaming-parser@^2.2.3:
     relative-to-absolute-iri "^1.0.0"
     validate-iri "^1.0.0"
 
-react-dom@19.2.6, react-dom@^18.2.0, react-dom@^19.2.6:
+react-dom@19.2.6, react-dom@^19.2.0, react-dom@^19.2.6:
   version "19.2.6"
   resolved "https://registry.npmjs.org/react-dom/-/react-dom-19.2.6.tgz"
   integrity sha512-0prMI+hvBbPjsWnxDLxlCGyM8PN6UuWjEUCYmZhO67xIV9Xasa/r/vDnq+Xyq4Lo27g8QSbO5YzARu0D1Sps3g==
