@@ -1,34 +1,34 @@
 import type { SolidDatabase } from '@undefineds.co/models'
-import type { MicroAppId } from './micro-app-registry'
+import type { AppletId } from './applet-registry'
 
-export type MicroAppRuntimeRelease = () => void | Promise<void>
+export type AppletRuntimeRelease = () => void | Promise<void>
 
-export interface MicroAppRuntimeContext {
+export interface AppletRuntimeContext {
   db: SolidDatabase
   signal: AbortSignal
 }
 
-export interface MicroAppRuntime {
-  activate(context: MicroAppRuntimeContext): Promise<MicroAppRuntimeRelease>
+export interface AppletRuntime {
+  activate(context: AppletRuntimeContext): Promise<AppletRuntimeRelease>
 }
 
-export type MicroAppRuntimeRegistry = Partial<Record<MicroAppId, MicroAppRuntime>>
+export type AppletRuntimeRegistry = Partial<Record<AppletId, AppletRuntime>>
 
-export interface MicroAppRuntimeCoordinator {
-  activate(microAppId: MicroAppId, db: SolidDatabase): Promise<void>
+export interface AppletRuntimeCoordinator {
+  activate(appletId: AppletId, db: SolidDatabase): Promise<void>
   deactivate(): Promise<void>
 }
 
 interface ActiveRuntime {
-  microAppId: MicroAppId
+  appletId: AppletId
   db: SolidDatabase
   controller: AbortController
-  release?: MicroAppRuntimeRelease
+  release?: AppletRuntimeRelease
 }
 
-export function createMicroAppRuntimeCoordinator(
-  registry: MicroAppRuntimeRegistry,
-): MicroAppRuntimeCoordinator {
+export function createAppletRuntimeCoordinator(
+  registry: AppletRuntimeRegistry,
+): AppletRuntimeCoordinator {
   let active: ActiveRuntime | undefined
 
   const deactivate = async (): Promise<void> => {
@@ -40,15 +40,15 @@ export function createMicroAppRuntimeCoordinator(
   }
 
   return {
-    async activate(microAppId, db) {
-      if (active?.microAppId === microAppId && active.db === db) return
+    async activate(appletId, db) {
+      if (active?.appletId === appletId && active.db === db) return
       await deactivate()
 
-      const runtime = registry[microAppId]
+      const runtime = registry[appletId]
       if (!runtime) return
 
       const activation: ActiveRuntime = {
-        microAppId,
+        appletId,
         db,
         controller: new AbortController(),
       }

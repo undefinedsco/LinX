@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useActiveMicroAppRuntime } from './use-active-micro-app-runtime'
+import { useActiveAppletRuntime } from './use-active-applet-runtime'
 
 const mocks = vi.hoisted(() => ({
   activate: vi.fn().mockResolvedValue(undefined),
@@ -12,25 +12,25 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => mocks.database,
 }))
 
-vi.mock('./micro-app-runtime', () => ({
-  createMicroAppRuntimeCoordinator: () => ({
+vi.mock('./applet-runtime', () => ({
+  createAppletRuntimeCoordinator: () => ({
     activate: mocks.activate,
     deactivate: mocks.deactivate,
   }),
 }))
 
-vi.mock('./micro-app-runtime-registry', () => ({
-  microAppRuntimeRegistry: {},
+vi.mock('./applet-runtime-registry', () => ({
+  appletRuntimeRegistry: {},
 }))
 
-describe('useActiveMicroAppRuntime', () => {
+describe('useActiveAppletRuntime', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.database.db = {}
   })
 
   it('hands the active module and database identity to the runtime coordinator', async () => {
-    const view = renderHook(({ moduleId }) => useActiveMicroAppRuntime(moduleId), {
+    const view = renderHook(({ moduleId }) => useActiveAppletRuntime(moduleId), {
       initialProps: { moduleId: 'chat' as const },
     })
     await act(async () => Promise.resolve())
@@ -46,7 +46,7 @@ describe('useActiveMicroAppRuntime', () => {
 
   it('deactivates instead of activating without a database', async () => {
     mocks.database.db = null
-    renderHook(() => useActiveMicroAppRuntime('settings'))
+    renderHook(() => useActiveAppletRuntime('settings'))
     await act(async () => Promise.resolve())
 
     expect(mocks.activate).not.toHaveBeenCalled()

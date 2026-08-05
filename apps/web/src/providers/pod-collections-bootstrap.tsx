@@ -72,7 +72,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     chatOps.stageLinxDefaultSecretary(db)
 
     // Pinned: the navigation bell renders inbox summaries globally, so its
-    // subscription must stay live even while another micro-app is active.
+    // subscription must stay live even while another applet is active.
     // Ref-counted with the inbox runtime activation via a shared lease.
     let releasePinnedInbox: (() => void | Promise<void>) | undefined
     let pinnedInboxActive = true

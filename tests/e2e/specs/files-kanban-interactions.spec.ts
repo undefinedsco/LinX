@@ -169,7 +169,7 @@ async function seedKanbanBoard(page: Page) {
 
 async function openKanbanBoard(page: Page, resourceUri: string, fileName: string) {
   await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-  await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
   await page.evaluate(async ({ selectedResourceUri }) => {
     const { useFilesStore } = await import('/src/modules/files/store.ts')

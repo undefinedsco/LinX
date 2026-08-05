@@ -304,7 +304,7 @@ describe('SolidDatabaseProvider', () => {
       issuerUrl: 'https://id.undefineds.co',
       storageProviderUrl: 'https://id.undefineds.co',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     useLoginStore.setState({
       state: 'idle',
@@ -349,7 +349,7 @@ describe('SolidDatabaseProvider', () => {
         provisionCode: 'pc-123',
       },
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -382,7 +382,7 @@ describe('SolidDatabaseProvider', () => {
         provisionCode: 'pc-123',
       },
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -427,7 +427,7 @@ describe('SolidDatabaseProvider', () => {
         provisionCode: 'pc-123',
       },
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -470,7 +470,7 @@ describe('SolidDatabaseProvider', () => {
         provisionCode: 'pc-123',
       },
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -495,7 +495,7 @@ describe('SolidDatabaseProvider', () => {
       storageProviderUrl: 'http://127.0.0.1:5737',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -522,7 +522,7 @@ describe('SolidDatabaseProvider', () => {
       storageProviderUrl: 'https://id.undefineds.co',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -554,7 +554,7 @@ describe('SolidDatabaseProvider', () => {
         provisionCode: 'pc-123',
       },
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -656,7 +656,7 @@ describe('SolidDatabaseProvider', () => {
         provisionCode: 'pc-123',
       },
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -855,7 +855,7 @@ describe('SolidDatabaseProvider', () => {
       issuerUrl: 'http://localhost:30250',
       storageProviderUrl: 'http://localhost:30250',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -891,7 +891,7 @@ describe('SolidDatabaseProvider', () => {
       storageProviderUrl: 'https://solid.example.net',
       storageProviderLabel: 'Example Solid',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -933,7 +933,7 @@ describe('SolidDatabaseProvider', () => {
       storageProviderUrl: 'https://solid.example.net',
       storageProviderLabel: 'Example Solid',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -971,7 +971,7 @@ describe('SolidDatabaseProvider', () => {
       issuerUrl: 'https://solid.example.net',
       storageProviderUrl: 'https://solid.example.net',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -1006,7 +1006,7 @@ describe('SolidDatabaseProvider', () => {
       storageProviderUrl: 'https://solid.example.net',
       storageProviderLabel: 'Example Solid',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(
@@ -1048,7 +1048,7 @@ describe('SolidDatabaseProvider', () => {
         provisionCode: 'pc-123',
       },
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
 
     render(

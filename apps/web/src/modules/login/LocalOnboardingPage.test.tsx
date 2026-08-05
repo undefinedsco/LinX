@@ -388,8 +388,8 @@ describe('LocalOnboardingPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '返回空间选择' }))
     expect(navigateMock).toHaveBeenCalledWith({
-      to: '/$microAppId',
-      params: { microAppId: 'chat' },
+      to: '/$appletId',
+      params: { appletId: 'chat' },
     })
   })
 
@@ -475,8 +475,8 @@ describe('LocalOnboardingPage', () => {
     await waitFor(() => {
       expect(chooseSpaceMock).not.toHaveBeenCalled()
       expect(navigateMock).toHaveBeenCalledWith({
-        to: '/$microAppId',
-        params: { microAppId: 'chat' },
+        to: '/$appletId',
+        params: { appletId: 'chat' },
       })
     })
   })

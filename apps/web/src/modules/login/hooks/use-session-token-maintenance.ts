@@ -64,7 +64,7 @@ export function useSessionTokenMaintenance() {
     try {
       await oidc.connect(issuerUrl, {
         authorizationSurface: attempt?.authorizationSurface ?? (isDesktopRuntime() ? 'embedded' : 'window'),
-        returnToMicroAppId: attempt?.returnToMicroAppId,
+        returnToAppletId: attempt?.returnToAppletId,
         accountIssuerLabel: attempt?.accountIssuerLabel ?? storedAccount?.issuerLabel,
         storageProviderUrl: attempt?.storageProviderUrl ?? storedAccount?.storageProviderUrl,
         storageProviderLabel: attempt?.storageProviderLabel ?? storedAccount?.storageProviderLabel,

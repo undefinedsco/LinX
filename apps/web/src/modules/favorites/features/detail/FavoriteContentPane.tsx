@@ -1,5 +1,5 @@
 import { ChevronLeft } from 'lucide-react'
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { Button } from '@/components/ui/button'
 import { useFavoriteStore } from '../../app/store'
 import { EmptyState, FavoriteDetail } from '../../ui/FavoriteDetail'
@@ -20,7 +20,7 @@ function FavoriteContentEnabled() {
   )
 }
 
-export function FavoriteContentPane({ compact = false, theme }: MicroAppPaneProps) {
+export function FavoriteContentPane({ compact = false, theme }: AppletPaneProps) {
   const selectedFavoriteId = useFavoriteStore((s) => s.selectedFavoriteId)
   const select = useFavoriteStore((s) => s.select)
 

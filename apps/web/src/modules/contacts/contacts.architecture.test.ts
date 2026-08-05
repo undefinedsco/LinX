@@ -104,7 +104,7 @@ describe('contacts module architecture', () => {
   })
 
   it('routes shell composition to canonical feature owners', () => {
-    const registry = readModuleSource('src/modules/layout/micro-app-registry.tsx')
+    const registry = readModuleSource('src/modules/layout/applet-registry.tsx')
     expect(registry).toContain("@/modules/contacts/features/list/ContactListPane")
     expect(registry).toContain("@/modules/contacts/features/detail/ContactDetailPane")
   })

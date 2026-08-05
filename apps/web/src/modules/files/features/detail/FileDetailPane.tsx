@@ -42,7 +42,7 @@ const TABS: { value: FileDetailTab; label: string; icon: typeof Eye }[] = [
 
 function ResourceLayoutTitle({ slot, name, subtitle }: { slot: HTMLElement; name: string; subtitle?: string }) {
   useLayoutEffect(() => {
-    const fallback = slot.querySelector<HTMLElement>('[data-default-micro-app-title="true"]')
+    const fallback = slot.querySelector<HTMLElement>('[data-default-applet-title="true"]')
     if (fallback) fallback.hidden = true
     return () => {
       if (fallback) fallback.hidden = false
@@ -148,7 +148,7 @@ export function FileDetailPane() {
       ? <FileDrawerMetadata file={file} />
       : null
 
-  const titleSlot = document.querySelector<HTMLElement>('[data-micro-app-title-slot="true"]')
+  const titleSlot = document.querySelector<HTMLElement>('[data-applet-title-slot="true"]')
 
   const detailActions = (
     <>

@@ -27,7 +27,7 @@
 ```
 LinX app                                xpod
 ┌─────────────────────────┐             ┌──────────────────────────────┐
-│ model-services micro-app │  iframe    │ dashboard /settings/models   │
+│ model-services applet │  iframe    │ dashboard /settings/models   │
 │ （壳：双栏框架 + 导航）   │ ────────▶  │  = ai-connection applet      │
 │  - 列表/详情区域嵌页面    │             │  （功能并集 + LinX 视觉）      │
 │  - 只读投影（contacts 用）│ Pod-direct │  - connect/quota/keys/client │
@@ -37,7 +37,7 @@ LinX app                                xpod
 
 ### 2.1 嵌入方式：iframe
 
-- LinX `model-services` micro-app 保留路由/导航/双栏壳，内容区改为 iframe 指向 `{podOrigin}/settings/models?embed=1`
+- LinX `model-services` applet 保留路由/导航/双栏壳，内容区改为 iframe 指向 `{podOrigin}/settings/models?embed=1`
 - `embed=1` 参数让 dashboard 隐藏自身 chrome（顶栏/侧边导航），只渲染 applet 双栏，避免"页面套页面"
 - Pod origin 解析：复用现有 `podUrl`（Solid 会话已有）；本地 xpod 与云端 xpod 同一机制
 - iframe 与外壳的视觉接缝：applet 背景/字体/token 与 LinX 外壳一致（两边已是同一套 shadcn 语义 token，见 §3）
@@ -69,7 +69,7 @@ LinX 侧删除：`modules/model-services/ui/`、`features/`、`data/collections.
 
 - token：两边已是同一套 shadcn 语义 token（`foreground/muted-foreground/border/primary`），xpod `shared-ui/theme.css` 与 LinX `apps/web` token 值对齐为同一组（以 LinX 为准，差异项逐个 diff）
 - 组件：applet 继续使用 `@undefineds.co/shared-ui`，缺的组件原语（Switch/Dialog/Tooltip/Badge 变体）从 LinX `components/ui` 移植进 shared-ui（同一套 radix + tailwind 写法，机械搬运）
-- 交互范式：以 LinX 双栏 micro-app 为准——列表栏（avatar+名称+状态点+搜索+键盘导航）、详情栏（header 开关、连接配置区、模型区）、中文文案风格、toast 语义
+- 交互范式：以 LinX 双栏 applet 为准——列表栏（avatar+名称+状态点+搜索+键盘导航）、详情栏（header 开关、连接配置区、模型区）、中文文案风格、toast 语义
 - iframe 接缝：applet 根背景透明/同底色，隐藏 dashboard chrome（`embed=1`），禁用 applet 内自身的页面级滚动条（滚动归 LinX 外壳）
 
 ## 4. 落地步骤

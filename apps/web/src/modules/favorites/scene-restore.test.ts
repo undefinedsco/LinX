@@ -26,7 +26,7 @@ describe('resolveFavoriteScene', () => {
       sourceModule: 'chat',
       sourceId: 'chat-1',
     }))).toEqual({
-      microAppId: 'chat',
+      appletId: 'chat',
       chatId: 'chat-1',
       threadId: null,
       messageId: null,
@@ -39,7 +39,7 @@ describe('resolveFavoriteScene', () => {
       sourceId: 'thread-9',
       targetUri: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-9',
     }))).toEqual({
-      microAppId: 'chat',
+      appletId: 'chat',
       chatId: 'chat-1',
       threadId: 'thread-9',
       messageId: null,
@@ -56,7 +56,7 @@ describe('resolveFavoriteScene', () => {
         threadId: 'thread-2',
       }),
     }))).toEqual({
-      microAppId: 'chat',
+      appletId: 'chat',
       chatId: 'chat-1',
       threadId: 'thread-2',
       messageId: 'msg-3',
@@ -69,7 +69,7 @@ describe('resolveFavoriteScene', () => {
       sourceId: 'contact-1',
       targetUri: 'https://alice.example/profile/card#me',
     }))).toEqual({
-      microAppId: 'contacts',
+      appletId: 'contacts',
       contactId: 'contact-1',
     })
 
@@ -78,7 +78,7 @@ describe('resolveFavoriteScene', () => {
       sourceId: 'file-1',
       snapshotMeta: JSON.stringify({ treeNodeId: 'starred' }),
     }))).toEqual({
-      microAppId: 'files',
+      appletId: 'files',
       fileId: 'file-1',
       treeNodeId: 'starred',
     })

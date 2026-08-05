@@ -7,12 +7,12 @@ import linxLogoUrl from '@/assets/linx-logo.png'
 import { Moon, Sun, Settings, Bot, Info, Activity, LogOut, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  microAppRegistry,
-  MicroAppId,
+  appletRegistry,
+  AppletId,
   ThemeMode,
-  type MicroAppLayoutConfig,
-  type MicroAppNavigationIntent,
-} from './micro-app-registry'
+  type AppletLayoutConfig,
+  type AppletNavigationIntent,
+} from './applet-registry'
 import { linxLayout } from '@/theme/spacing'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { useDefaultLayout } from 'react-resizable-panels'
@@ -38,11 +38,11 @@ import { AboutDialog } from './AboutDialog'
 import { useAppUpdateStatus } from './use-app-update-status'
 import { useThemeMode } from './use-theme-mode'
 import { OPEN_SERVICE_MANAGEMENT_EVENT } from '@/modules/settings/app/events'
-import { useActiveMicroAppRuntime } from './use-active-micro-app-runtime'
+import { useActiveAppletRuntime } from './use-active-applet-runtime'
 
 interface PrimaryLayoutProps {
-  microAppId: MicroAppId
-  onNavigate?: (id: MicroAppId, intent: MicroAppNavigationIntent) => void
+  appletId: AppletId
+  onNavigate?: (id: AppletId, intent: AppletNavigationIntent) => void
 }
 
 export function getMainPanelDefaultSize(isCompactViewport: boolean): '100%' | '80%' {
@@ -55,8 +55,8 @@ export function getMainPanelDefaultSize(isCompactViewport: boolean): '100%' | '8
  * Experimental surfaces stay routeable for internal work, but are hidden from
  * the main sidebar until they reach a releasable quality bar.
  */
-const primaryNavIds: MicroAppId[] = ['chat', 'contacts', 'files', 'favorites']
-const secondaryNavIds: MicroAppId[] = []
+const primaryNavIds: AppletId[] = ['chat', 'contacts', 'files', 'favorites']
+const secondaryNavIds: AppletId[] = []
 
 function PaneFallback() {
   return <div className="h-full w-full animate-pulse bg-muted/10" />
@@ -91,29 +91,29 @@ function useCompactViewport() {
 }
 
 // Inner component that is safe to use varying hooks because it's keyed
-function MicroAppContentRenderer({
-  microAppId,
+function AppletContentRenderer({
+  appletId,
   theme,
   onToggleTheme,
   isCompactViewport,
   compactNavigation,
   listPanelHidden = false,
 }: {
-  microAppId: MicroAppId
+  appletId: AppletId
   theme: ThemeMode
   onToggleTheme: () => void
   isCompactViewport: boolean
   compactNavigation?: React.ReactNode
   listPanelHidden?: boolean
 }) {
-  useActiveMicroAppRuntime(microAppId)
-  const activeMicroApp = microAppRegistry[microAppId]
-  const ListPane = activeMicroApp.ListPane
-  const ContentPane = activeMicroApp.ContentPane
-  const LayoutConfigBridge = activeMicroApp.LayoutConfigBridge
-  const [layoutConfig, setLayoutConfig] = useState<MicroAppLayoutConfig | undefined>(undefined)
+  useActiveAppletRuntime(appletId)
+  const activeApplet = appletRegistry[appletId]
+  const ListPane = activeApplet.ListPane
+  const ContentPane = activeApplet.ContentPane
+  const LayoutConfigBridge = activeApplet.LayoutConfigBridge
+  const [layoutConfig, setLayoutConfig] = useState<AppletLayoutConfig | undefined>(undefined)
   const handleLayoutConfigChange = useCallback(
-    (nextConfig: MicroAppLayoutConfig | undefined) => {
+    (nextConfig: AppletLayoutConfig | undefined) => {
       setLayoutConfig(nextConfig)
     },
     [],
@@ -125,7 +125,7 @@ function MicroAppContentRenderer({
   const listPanelMaxWidth = layoutConfig?.listPanel?.maxWidth ?? linxLayout.listPanel.maxWidth
   const panelIds = isCompactViewport ? ['main'] : ['list', 'main']
   const persistedLayout = useDefaultLayout({
-    id: `linx-primary-layout-${microAppId}-${isCompactViewport ? 'compact' : 'desktop'}`,
+    id: `linx-primary-layout-${appletId}-${isCompactViewport ? 'compact' : 'desktop'}`,
     panelIds,
   })
 
@@ -138,7 +138,7 @@ function MicroAppContentRenderer({
       ) : null}
       <ResizablePanelGroup
         direction="horizontal"
-        id={`linx-primary-layout-${microAppId}`}
+        id={`linx-primary-layout-${appletId}`}
         defaultLayout={persistedLayout.defaultLayout}
         onLayoutChanged={persistedLayout.onLayoutChanged}
         className="h-full w-full"
@@ -159,7 +159,7 @@ function MicroAppContentRenderer({
             >
               <section
                 className="flex h-full min-w-0 flex-col overflow-hidden bg-layout-list-item"
-                data-testid="micro-app-list-panel"
+                data-testid="applet-list-panel"
                 style={{
                   minWidth: listPanelMinWidth,
                   width: '100%',
@@ -179,13 +179,13 @@ function MicroAppContentRenderer({
         <ResizablePanel id="main" defaultSize={getMainPanelDefaultSize(isCompactViewport)} className="min-w-0 overflow-hidden">
           <section className="h-full flex bg-layout-content">
             <div className="flex-1 flex flex-col min-h-0">
-              {!layoutConfig?.hideHeader && !(isCompactViewport && activeMicroApp.hideContentHeaderOnCompact) && (
-                <div data-testid="micro-app-content-head" className="h-12 flex items-center border-b border-border bg-layout-content">
+              {!layoutConfig?.hideHeader && !(isCompactViewport && activeApplet.hideContentHeaderOnCompact) && (
+                <div data-testid="applet-content-head" className="h-12 flex items-center border-b border-border bg-layout-content">
                   <div className="flex h-full min-w-0 flex-1 items-center">
                     {layoutConfig?.header ? layoutConfig.header : (
-                      <div className="min-w-0 px-4 text-left" data-micro-app-title-slot="true">
-                        <h3 className="text-sm font-medium truncate" data-default-micro-app-title="true">
-                          {layoutConfig?.mainTitle ?? activeMicroApp.header.moduleTitle}
+                      <div className="min-w-0 px-4 text-left" data-applet-title-slot="true">
+                        <h3 className="text-sm font-medium truncate" data-default-applet-title="true">
+                          {layoutConfig?.mainTitle ?? activeApplet.header.moduleTitle}
                         </h3>
                       </div>
                     )}
@@ -252,7 +252,7 @@ function SettingsMenu({
   onSignOut,
   aboutLabel,
 }: {
-  onNavigate: (id: MicroAppId) => void
+  onNavigate: (id: AppletId) => void
   onOpenServiceManagement: () => void
   onOpenAbout: () => void
   onSignOut: () => void
@@ -300,7 +300,7 @@ function SettingsMenu({
   )
 }
 
-export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
+export function PrimaryLayout({ appletId, onNavigate }: PrimaryLayoutProps) {
   const navigate = useNavigate()
   const { session, sessionRequestInProgress } = useSession()
   const [theme, toggleTheme] = useThemeMode()
@@ -310,29 +310,29 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   const [listPanelHidden, setListPanelHidden] = useState(false)
   useEffect(() => {
     setListPanelHidden(false)
-  }, [microAppId])
+  }, [appletId])
   const appUpdate = useAppUpdateStatus()
   const isWorkspaceReady = session.info.isLoggedIn && !sessionRequestInProgress
 
-  const primaryApps = useMemo(() => primaryNavIds.map((id) => microAppRegistry[id]), [])
-  const secondaryApps = useMemo(() => secondaryNavIds.map((id) => microAppRegistry[id]), [])
+  const primaryApps = useMemo(() => primaryNavIds.map((id) => appletRegistry[id]), [])
+  const secondaryApps = useMemo(() => secondaryNavIds.map((id) => appletRegistry[id]), [])
   const aboutLabel = appUpdate.status.available ? '关于（有更新）' : '关于'
 
   const handleSignOut = useCallback(() => {
     requestSignOut()
   }, [])
 
-  const handleNavigate = (id: MicroAppId) => {
-    if (id === microAppId && !isCompactViewport) {
+  const handleNavigate = (id: AppletId) => {
+    if (id === appletId && !isCompactViewport) {
       setListPanelHidden((current) => !current)
       return
     }
     onNavigate?.(id, 'default')
-    navigate({ to: '/$microAppId', params: { microAppId: id } })
+    navigate({ to: '/$appletId', params: { appletId: id } })
   }
 
   const sidebarWidth = linxLayout.sidebar.defaultWidth // This is the leftmost App Nav width
-  const hidePrimaryRail = Boolean(microAppRegistry[microAppId].hidePrimaryRailOnCompact && isCompactViewport)
+  const hidePrimaryRail = Boolean(appletRegistry[appletId].hidePrimaryRailOnCompact && isCompactViewport)
   const compactNavigation = isCompactViewport ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -353,7 +353,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           return (
             <DropdownMenuItem
               key={app.id}
-              disabled={app.id === microAppId}
+              disabled={app.id === appletId}
               onSelect={() => handleNavigate(app.id)}
             >
               <Icon className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -381,7 +381,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   }
 
   return (
-    <div className="h-screen w-screen bg-background text-foreground overflow-hidden" data-micro-app-id={microAppId}>
+    <div className="h-screen w-screen bg-background text-foreground overflow-hidden" data-applet-id={appletId}>
       <div className="flex h-full w-full">
         {/* Leftmost Fixed Application Navigation Sidebar */}
         {!hidePrimaryRail ? (
@@ -414,7 +414,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           <nav className="flex-1 py-4 flex flex-col items-center gap-4">
             {primaryApps.map((app) => {
               const Icon = app.icon
-              const isActive = app.id === microAppId
+              const isActive = app.id === appletId
               const navLabel = app.label
               return (
                 <div key={app.id} className="relative">
@@ -446,7 +446,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           <div className="py-4 flex flex-col items-center gap-4 w-full">
             {secondaryApps.map((app) => {
               const Icon = app.icon
-              const isActive = app.id === microAppId
+              const isActive = app.id === appletId
               return (
                 <Button
                   key={app.id}
@@ -480,11 +480,11 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           </aside>
         ) : null}
 
-        {/* Resizable MicroApp Content Area */}
+        {/* Resizable Applet Content Area */}
         <div className="flex-1 min-w-0">
-          <MicroAppContentRenderer
-            key={microAppId}
-            microAppId={microAppId}
+          <AppletContentRenderer
+            key={appletId}
+            appletId={appletId}
             theme={theme}
             onToggleTheme={toggleTheme}
             isCompactViewport={isCompactViewport}

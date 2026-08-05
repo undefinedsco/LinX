@@ -1,9 +1,9 @@
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { useSettingsStore } from '../../app/store'
 import { SETTINGS_SECTIONS } from '../../domain/section-model'
 import { SettingsNavigation } from '../../ui/SettingsNavigation'
 
-export function SettingsListPane({}: MicroAppPaneProps) {
+export function SettingsListPane({}: AppletPaneProps) {
   const selectedSection = useSettingsStore((state) => state.selectedSection)
   const selectSection = useSettingsStore((state) => state.selectSection)
 

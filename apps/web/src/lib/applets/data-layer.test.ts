@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDataLayer } from './data-layer'
 
-describe('micro-app data layer row identity', () => {
+describe('applet data layer row identity', () => {
   it('requires base-relative row ids when hydrating list rows', () => {
     const layer = createDataLayer({
       id: 'chat' as any,

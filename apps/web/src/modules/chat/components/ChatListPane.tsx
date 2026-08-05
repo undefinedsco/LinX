@@ -18,7 +18,7 @@
  */
 import { useMemo, useState, useCallback, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { useChatStore } from '../store'
 import {
   LINX_DEFAULT_SECRETARY,
@@ -625,7 +625,7 @@ function ListHeader({
 // Main Component
 // ============================================
 
-export interface ChatListPaneProps extends MicroAppPaneProps {}
+export interface ChatListPaneProps extends AppletPaneProps {}
 
 export function ChatListPane(_props: ChatListPaneProps) {
   // Initialize chat collections with database

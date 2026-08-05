@@ -731,8 +731,8 @@ describe('ChatContentPane', () => {
     expect(mockSetInboxFilter).toHaveBeenCalledWith('pending')
     expect(mockSelectInboxItem).toHaveBeenCalledWith('approval:1')
     expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/$microAppId',
-      params: { microAppId: 'inbox' },
+      to: '/$appletId',
+      params: { appletId: 'inbox' },
     })
   })
 

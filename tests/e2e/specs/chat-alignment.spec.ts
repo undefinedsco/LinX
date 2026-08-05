@@ -17,7 +17,7 @@ test.describe('Chat Module - Visual Alignment', () => {
   test.describe('列表视觉规范', () => {
     test('列表头与内容头应使用同一条 48px 基线', async ({ page }) => {
       const listHeader = page.getByTestId('chat-list-header')
-      const contentHeader = page.getByTestId('micro-app-content-head')
+      const contentHeader = page.getByTestId('applet-content-head')
 
       await expect(listHeader).toBeVisible()
       await expect(contentHeader).toBeVisible()

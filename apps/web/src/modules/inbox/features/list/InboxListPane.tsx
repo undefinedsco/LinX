@@ -1,8 +1,8 @@
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { InboxList } from '../../ui/InboxList'
 import { useInboxListPaneController } from './useInboxListPaneController'
 
-export function InboxListPane(_props: MicroAppPaneProps) {
+export function InboxListPane(_props: AppletPaneProps) {
   const controller = useInboxListPaneController()
 
   return <InboxList {...controller} />

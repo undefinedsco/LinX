@@ -3,14 +3,14 @@ import { createRouter, createRootRoute, createRoute, Outlet, redirect, createHas
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { PrimaryLayout } from './modules/layout/PrimaryLayout'
 import {
-  defaultMicroAppId,
-  isValidMicroAppId,
-  MicroAppId,
-  type MicroAppNavigationIntent,
-} from './modules/layout/micro-app-registry'
+  defaultAppletId,
+  isValidAppletId,
+  AppletId,
+  type AppletNavigationIntent,
+} from './modules/layout/applet-registry'
 import { SolidLoginOverlay } from './modules/login'
 import { formatLoginErrorForUser } from './modules/login/error-messages'
-import { consumePendingPostLoginMicroAppId, setPendingPostLoginMicroAppId } from './modules/login/login-utils'
+import { consumePendingPostLoginAppletId, setPendingPostLoginAppletId } from './modules/login/login-utils'
 import {
   validateFilesRouteSearch,
   withStructuredSubjectRouteSearch,
@@ -154,8 +154,8 @@ function AuthCallbackRouteComponent() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <SolidAuthCallback
-        onSuccess={() => navigate({ to: '/$microAppId', params: { microAppId: consumePendingPostLoginMicroAppId() }, replace: true })}
-        onError={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId }, replace: true })}
+        onSuccess={() => navigate({ to: '/$appletId', params: { appletId: consumePendingPostLoginAppletId() }, replace: true })}
+        onError={() => navigate({ to: '/$appletId', params: { appletId: defaultAppletId }, replace: true })}
       />
     </Suspense>
   )
@@ -168,26 +168,26 @@ const callbackRoute = createRoute({
   component: AuthCallbackRouteComponent,
 })
 
-const microAppRoute = createRoute({
+const appletRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/$microAppId',
+  path: '/$appletId',
   validateSearch: validateFilesRouteSearch,
   beforeLoad: ({ params }) => {
-    if (!isValidMicroAppId(params.microAppId)) {
+    if (!isValidAppletId(params.appletId)) {
       throw redirect({
-        to: '/$microAppId',
-        params: { microAppId: defaultMicroAppId },
+        to: '/$appletId',
+        params: { appletId: defaultAppletId },
       })
     }
   },
-  component: function MicroAppRouteComponent() {
-    const { microAppId: routeMicroAppId } = useParams({ from: microAppRoute.id })
-    const microAppId = isValidMicroAppId(routeMicroAppId) ? routeMicroAppId : defaultMicroAppId
-    const navigate = useNavigate({ from: microAppRoute.id })
-    const search = useSearch({ from: microAppRoute.id }) as FilesRouteSearch
+  component: function AppletRouteComponent() {
+    const { appletId: routeAppletId } = useParams({ from: appletRoute.id })
+    const appletId = isValidAppletId(routeAppletId) ? routeAppletId : defaultAppletId
+    const navigate = useNavigate({ from: appletRoute.id })
+    const search = useSearch({ from: appletRoute.id }) as FilesRouteSearch
     useEffect(() => {
-      setPendingPostLoginMicroAppId(microAppId)
-    }, [microAppId])
+      setPendingPostLoginAppletId(appletId)
+    }, [appletId])
 
     const filesRouteBridge = useMemo(() => ({
       search,
@@ -204,7 +204,7 @@ const microAppRoute = createRoute({
       },
     }), [navigate, search])
 
-    const handleMicroAppNavigation = useCallback((id: MicroAppId, intent: MicroAppNavigationIntent) => {
+    const handleAppletNavigation = useCallback((id: AppletId, intent: AppletNavigationIntent) => {
       if (id !== 'files') return
       if (intent === 'chat-files') {
         useFilesStore.getState().openChatFilesScope()
@@ -215,7 +215,7 @@ const microAppRoute = createRoute({
 
     return (
       <FilesRouteBridgeProvider bridge={filesRouteBridge}>
-        <PrimaryLayout microAppId={microAppId as MicroAppId} onNavigate={handleMicroAppNavigation} />
+        <PrimaryLayout appletId={appletId as AppletId} onNavigate={handleAppletNavigation} />
       </FilesRouteBridgeProvider>
     )
   },
@@ -226,20 +226,20 @@ const homeRedirectRoute = createRoute({
   path: '/',
   beforeLoad: () => {
     throw redirect({
-      to: '/$microAppId',
-      params: { microAppId: defaultMicroAppId },
+      to: '/$appletId',
+      params: { appletId: defaultAppletId },
     })
   },
   component: () => null,
 })
 
-const prefixedMicroAppRoute = createRoute({
+const prefixedAppletRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/app/$microAppId',
+  path: '/app/$appletId',
   beforeLoad: ({ params }) => {
     throw redirect({
-      to: '/$microAppId',
-      params: { microAppId: isValidMicroAppId(params.microAppId) ? (params.microAppId as MicroAppId) : defaultMicroAppId },
+      to: '/$appletId',
+      params: { appletId: isValidAppletId(params.appletId) ? (params.appletId as AppletId) : defaultAppletId },
     })
   },
   component: () => null,
@@ -250,8 +250,8 @@ const appDemoRoute = createRoute({
   path: '/app/demo',
   beforeLoad: () => {
     throw redirect({
-      to: '/$microAppId',
-      params: { microAppId: defaultMicroAppId },
+      to: '/$appletId',
+      params: { appletId: defaultAppletId },
     })
   },
   component: () => null,
@@ -268,8 +268,8 @@ const routeTree = rootRoute.addChildren([
   setupRoute,
   callbackRoute,
   homeRedirectRoute,
-  microAppRoute,
-  prefixedMicroAppRoute,
+  appletRoute,
+  prefixedAppletRoute,
   appDemoRoute,
 ])
 

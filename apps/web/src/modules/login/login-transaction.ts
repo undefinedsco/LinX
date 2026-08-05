@@ -1,4 +1,4 @@
-import { defaultMicroAppId, isValidMicroAppId, type MicroAppId } from '@/modules/layout/micro-app-registry'
+import { defaultAppletId, isValidAppletId, type AppletId } from '@/modules/layout/applet-registry'
 
 export type LoginRoute = 'cloud' | 'local' | 'standalone' | 'custom'
 export type AuthorizationSurface = 'window' | 'embedded' | 'external'
@@ -11,7 +11,7 @@ export interface LoginTransaction {
   accountIssuerUrl: string
   accountIssuerLabel?: string
   authorizationSurface: AuthorizationSurface
-  returnToMicroAppId: MicroAppId
+  returnToAppletId: AppletId
   storageProviderUrl: string
   storageProviderLabel?: string
   authorizationQuery?: Record<string, string>
@@ -29,7 +29,7 @@ export interface LoginTransactionInput {
   accountIssuerUrl?: string | null
   accountIssuerLabel?: string | null
   authorizationSurface?: AuthorizationSurface | null
-  returnToMicroAppId?: MicroAppId | string | null
+  returnToAppletId?: AppletId | string | null
   storageProviderUrl?: string | null
   providerUrl?: string | null
   storageProviderLabel?: string | null
@@ -76,9 +76,9 @@ export function createLoginTransaction(input: LoginTransactionInput): LoginTrans
   const authorizationSurface = isAuthorizationSurface(input.authorizationSurface)
     ? input.authorizationSurface
     : 'window'
-  const returnToMicroAppId = isValidMicroAppId(input.returnToMicroAppId ?? undefined)
-    ? input.returnToMicroAppId as MicroAppId
-    : defaultMicroAppId
+  const returnToAppletId = isValidAppletId(input.returnToAppletId ?? undefined)
+    ? input.returnToAppletId as AppletId
+    : defaultAppletId
   const authorizationQuery = sanitizeAuthorizationQuery(input.authorizationQuery)
   const createdAt = typeof input.createdAt === 'number' && Number.isFinite(input.createdAt) && input.createdAt > 0
     ? input.createdAt
@@ -95,7 +95,7 @@ export function createLoginTransaction(input: LoginTransactionInput): LoginTrans
     accountIssuerUrl,
     ...(accountIssuerLabel ? { accountIssuerLabel } : {}),
     authorizationSurface,
-    returnToMicroAppId,
+    returnToAppletId,
     storageProviderUrl,
     ...(storageProviderLabel ? { storageProviderLabel } : {}),
     ...(authorizationQuery ? { authorizationQuery } : {}),

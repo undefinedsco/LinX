@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { getRuntimeShellInfo } from '@/lib/runtime-shell'
 import { useAppUpdateStatus } from '@/modules/layout/use-app-update-status'
 import { useThemeMode } from '@/modules/layout/use-theme-mode'
-import type { ThemeMode } from '@/modules/layout/micro-app-registry'
+import type { ThemeMode } from '@/modules/layout/applet-registry'
 import { requestOpenServiceManagement } from '../../data/platform-actions'
 import { useSettingsStore } from '../../app/store'
 
@@ -29,7 +29,7 @@ export function useSettingsContentPaneController() {
   }, [openUpdateReleasePage])
 
   const openModelServices = useCallback(() => {
-    void navigate({ to: '/$microAppId', params: { microAppId: 'model-services' } })
+    void navigate({ to: '/$appletId', params: { appletId: 'model-services' } })
   }, [navigate])
 
   const selectTheme = useCallback((value: ThemeMode) => {

@@ -2,13 +2,13 @@ import { useCallback, useRef } from 'react'
 import { useSession } from '@/providers/solid-session-context'
 import {
   clearPendingLoginAttempt,
-  clearPendingPostLoginMicroAppId,
+  clearPendingPostLoginAppletId,
   clearSolidAuthClientState,
   clearStoredSolidSession,
-  getPendingPostLoginMicroAppId,
-  ensurePendingPostLoginMicroAppId,
+  getPendingPostLoginAppletId,
+  ensurePendingPostLoginAppletId,
   isInvalidClientError,
-  resolvePostLoginMicroAppId,
+  resolvePostLoginAppletId,
   setPendingLoginAttempt,
 } from '../login-utils'
 import {
@@ -28,7 +28,7 @@ const CANCELLED = Symbol('oidc-connect-cancelled')
 
 interface OidcConnectOptions {
   authorizationSurface?: 'window' | 'embedded' | 'external'
-  returnToMicroAppId?: Parameters<typeof ensurePendingPostLoginMicroAppId>[0]
+  returnToAppletId?: Parameters<typeof ensurePendingPostLoginAppletId>[0]
   route?: LoginRoute
   accountIssuerUrl?: string
   accountIssuerLabel?: string
@@ -130,11 +130,11 @@ export function useOidcConnect() {
       if (resolvedIssuerResult === CANCELLED) return
       const resolvedIssuerUrl = resolvedIssuerResult
       const oidcEntryUrl = normalizedEntryUrl
-      const returnToMicroAppId =
-        options?.returnToMicroAppId
-        ?? getPendingPostLoginMicroAppId()
-        ?? resolvePostLoginMicroAppId()
-      ensurePendingPostLoginMicroAppId(returnToMicroAppId)
+      const returnToAppletId =
+        options?.returnToAppletId
+        ?? getPendingPostLoginAppletId()
+        ?? resolvePostLoginAppletId()
+      ensurePendingPostLoginAppletId(returnToAppletId)
       const oidcIssuerUrl = resolvedIssuerUrl
       const accountIssuerUrl = explicitAccountIssuerUrl ?? oidcIssuerUrl
       const storageProviderUrl = explicitStorageProviderUrl ?? requestedEntryUrl
@@ -155,7 +155,7 @@ export function useOidcConnect() {
         accountIssuerUrl,
         accountIssuerLabel,
         authorizationSurface: options?.authorizationSurface ?? 'window',
-        returnToMicroAppId,
+        returnToAppletId,
         storageProviderUrl,
         storageProviderLabel: options?.storageProviderLabel,
         authorizationQuery,
@@ -168,7 +168,7 @@ export function useOidcConnect() {
         accountIssuerUrl: explicitAccountIssuerUrl ?? undefined,
         accountIssuerLabel: explicitAccountIssuerUrl ? accountIssuerLabel : undefined,
         authorizationSurface: options?.authorizationSurface ?? 'window',
-        returnToMicroAppId,
+        returnToAppletId,
         storageProviderUrl,
         storageProviderLabel: options?.storageProviderLabel,
         authorizationQuery,
@@ -278,7 +278,7 @@ export function useOidcConnect() {
             continue
           }
           clearPendingLoginAttempt()
-          clearPendingPostLoginMicroAppId()
+          clearPendingPostLoginAppletId()
           if (isInvalidClientError(error)) {
             // The provider rejected a stale/invalid client. Drop the cached Solid
             // session so the next login attempt registers a fresh client.

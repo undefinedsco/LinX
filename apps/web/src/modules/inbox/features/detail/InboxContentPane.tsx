@@ -1,11 +1,11 @@
 import { ChevronLeft } from 'lucide-react'
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { Button } from '@/components/ui/button'
 import { InboxDetail } from '../../ui/InboxDetail'
 import { InboxListPane } from '../list/InboxListPane'
 import { useInboxContentPaneController } from './useInboxContentPaneController'
 
-export function InboxContentPane({ compact = false, theme }: MicroAppPaneProps) {
+export function InboxContentPane({ compact = false, theme }: AppletPaneProps) {
   const controller = useInboxContentPaneController()
 
   if (controller.isLoading) {

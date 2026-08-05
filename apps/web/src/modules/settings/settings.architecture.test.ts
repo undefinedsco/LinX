@@ -175,7 +175,7 @@ describe('settings module architecture', () => {
   })
 
   it('routes shell composition to canonical feature owners', () => {
-    const registry = readModuleSource('src/modules/layout/micro-app-registry.tsx')
+    const registry = readModuleSource('src/modules/layout/applet-registry.tsx')
     const primaryLayout = readModuleSource('src/modules/layout/PrimaryLayout.tsx')
     expect(registry).toContain("@/modules/settings/features/list/SettingsListPane")
     expect(registry).toContain("@/modules/settings/features/content/SettingsContentPane")

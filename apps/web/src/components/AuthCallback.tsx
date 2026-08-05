@@ -8,7 +8,7 @@ import {
   capturePendingCallbackError,
   clearPendingCallbackError,
   clearPendingLoginAttempt,
-  clearPendingPostLoginMicroAppId,
+  clearPendingPostLoginAppletId,
   clearStoredSolidSession,
   getPendingCallbackError,
   getPendingLoginAttempt,
@@ -73,7 +73,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
         : pendingAttempt.issuerUrl
       await oidc.connect(retryEntryUrl, {
         authorizationSurface: pendingAttempt.authorizationSurface,
-        returnToMicroAppId: pendingAttempt.returnToMicroAppId,
+        returnToAppletId: pendingAttempt.returnToAppletId,
         route: pendingTransaction?.route,
         accountIssuerUrl: pendingTransaction?.accountIssuerUrl ?? pendingAttempt.accountIssuerUrl,
         accountIssuerLabel: pendingTransaction?.accountIssuerLabel ?? pendingAttempt.accountIssuerLabel,
@@ -463,7 +463,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
       // user is trying to escape.
       const retryOptions = {
         authorizationSurface: pendingAttempt.authorizationSurface,
-        returnToMicroAppId: pendingAttempt.returnToMicroAppId,
+        returnToAppletId: pendingAttempt.returnToAppletId,
         route: pendingTransaction?.route,
         accountIssuerUrl: pendingTransaction?.accountIssuerUrl ?? pendingAttempt.accountIssuerUrl,
         accountIssuerLabel: pendingTransaction?.accountIssuerLabel ?? pendingAttempt.accountIssuerLabel,
@@ -486,7 +486,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
   const handleBack = () => {
     clearPendingCallbackError()
     clearPendingLoginAttempt()
-    clearPendingPostLoginMicroAppId()
+    clearPendingPostLoginAppletId()
     clearSilentRestoreFallback()
     onError?.(formatLoginErrorForUser(error ?? '登录未完成', '登录未完成，请重试。'))
   }

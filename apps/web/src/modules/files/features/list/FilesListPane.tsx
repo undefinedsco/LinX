@@ -29,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import type {
   FilesListEmptyStateIconKind,
   FilesListSortField,
@@ -238,7 +238,7 @@ function ListSearchBar({
 // Main Component
 // ============================================================================
 
-export function FilesListPane(_props: MicroAppPaneProps) {
+export function FilesListPane(_props: AppletPaneProps) {
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const listPane = useFilesListPaneController()
   const explorer = useFilesExplorerDataController({

@@ -67,7 +67,7 @@ export function useInboxContentPaneController() {
     if (selectedItem.threadId) {
       selectThread(selectedItem.threadId)
     }
-    navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
+    navigate({ to: '/$appletId', params: { appletId: 'chat' } })
   }
 
   const auditTime = selectedItem?.audit ? formatTime(String(selectedItem.audit.createdAt ?? '')) : null

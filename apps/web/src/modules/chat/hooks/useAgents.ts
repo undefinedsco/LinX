@@ -9,7 +9,7 @@ function useContactsSharedSubscription() {
   const { db } = useSolidDatabase()
   // Agent data is owned by the contacts module: acquire its subscription
   // while chat surfaces render it, so cross-module edits stay live even when
-  // the contacts micro-app is not active.
+  // the contacts applet is not active.
   usePodCollectionSubscription(!!db, db, subscribeContactsToPod)
 }
 

@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { FilesListPane } from '../features/list/FilesListPane'
 import { FileDetailPane } from '../features/detail/FileDetailPane'
 import { FilesTreePane } from '../features/tree/FilesTreePane'
@@ -18,7 +18,7 @@ import { structuredSubjectRouteFromBrowser, structuredSubjectRouteFromSearchObje
 import { useFilesRouteBridge } from './FilesRouteContext'
 import { FilesPrivateCloudBenchmark } from './FilesPrivateCloudBenchmark'
 
-function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
+function FilesWorkspacePaneContent(props: AppletPaneProps) {
   const { compact = false, compactNavigation, theme } = props
   const entryScope = useFilesStore((state) => state.entryScope)
   const selectedFileId = useFilesStore((state) => state.selectedFileId)
@@ -147,7 +147,7 @@ function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
   )
 }
 
-export function FilesWorkspacePane(props: MicroAppPaneProps) {
+export function FilesWorkspacePane(props: AppletPaneProps) {
   return (
     <>
       <FilesWorkspacePaneContent {...props} />

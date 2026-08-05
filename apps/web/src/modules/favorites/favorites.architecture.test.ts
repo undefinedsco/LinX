@@ -13,7 +13,7 @@ const root = 'src/modules/favorites'
 
 // domain must not depend on any upper or sibling module. scene-restore expresses its
 // navigation target via the local FavoriteSceneAppId literal union instead of importing
-// layout's MicroAppId, so layout is also forbidden and the domain boundary is fully closed.
+// layout's AppletId, so layout is also forbidden and the domain boundary is fully closed.
 const domainForbiddenImports = [
   /from ['"]react(?:\/|['"])/,
   /from ['"]zustand(?:\/|['"])/,

@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import type { FilesEntry, FilesTreeNode } from '../../domain/resource/resource-model'
 import {
   useFilesTreeChildrenController,
@@ -395,7 +395,7 @@ function TreeChildren({
   })
 }
 
-export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { forceExpanded?: boolean }) {
+export function FilesTreePane({ forceExpanded = false }: AppletPaneProps & { forceExpanded?: boolean }) {
   const tree = useFilesTreePaneController()
 
   return (

@@ -15,7 +15,7 @@ const rootFeatureFlagsShimPath = 'src/modules/files/feature-flags.ts'
 const appStorePath = 'src/modules/files/app/store.ts'
 const rootStoreShimPath = 'src/modules/files/store.ts'
 const rootIndexPath = 'src/modules/files/index.ts'
-const microAppRegistryPath = 'src/modules/layout/micro-app-registry.tsx'
+const appletRegistryPath = 'src/modules/layout/applet-registry.tsx'
 const primaryLayoutPath = 'src/modules/layout/PrimaryLayout.tsx'
 const routerPath = 'src/router.tsx'
 const rootFacadeSourcePattern = /^(?:(?:\/\/[^\n]*(?:\n|$))|\s|export(?:\s+type)?\s+(?:\*\s+from|\{[\s\S]*?\}\s+from)\s+['"]\.\/(?:app|data|domain|features|ui)\/[^'"]+['"];?|export\s+\{\};?)+$/
@@ -115,35 +115,35 @@ describe('Files app shell architecture boundary', () => {
     expect(rootFeatureFlagsShimSource).toMatch(/^export \* from '.\/app\/feature-flags'\n?$/)
   })
 
-  it('keeps workspace shell and micro-app routing in the app layer', () => {
+  it('keeps workspace shell and applet routing in the app layer', () => {
     expect(existsSync(appWorkspacePanePath)).toBe(true)
     expect(existsSync(workspacePaneShimPath)).toBe(true)
     if (!existsSync(appWorkspacePanePath) || !existsSync(workspacePaneShimPath)) return
 
     const appWorkspaceSource = readFileSync(appWorkspacePanePath, 'utf8')
     const shimSource = readFileSync(workspacePaneShimPath, 'utf8')
-    const microAppRegistrySource = readFileSync(microAppRegistryPath, 'utf8')
+    const appletRegistrySource = readFileSync(appletRegistryPath, 'utf8')
 
     expect(appWorkspaceSource).toContain('export function FilesWorkspacePane')
     expect(appWorkspaceSource).toContain('FilesWorkspacePaneContent')
     expect(appWorkspaceSource).not.toContain('FilesRouteBridgeProvider')
     expect(shimSource).toMatch(/^export \{ FilesWorkspacePane \} from '..\/app\/FilesWorkspacePane'\nexport \{ default \} from '..\/app\/FilesWorkspacePane'\n?$/)
-    expect(microAppRegistrySource).toContain("import('@/modules/files/app/FilesWorkspacePane')")
-    expect(microAppRegistrySource).toContain("import('@/modules/files/features/tree/FilesTreePane')")
-    expect(microAppRegistrySource).not.toContain("import('@/modules/files/features/list/FilesListPane')")
-    expect(microAppRegistrySource).not.toContain("import('@/modules/files/components/FilesWorkspacePane')")
-    expect(microAppRegistrySource).not.toContain("import('@/modules/files/components/FilesTreePane')")
+    expect(appletRegistrySource).toContain("import('@/modules/files/app/FilesWorkspacePane')")
+    expect(appletRegistrySource).toContain("import('@/modules/files/features/tree/FilesTreePane')")
+    expect(appletRegistrySource).not.toContain("import('@/modules/files/features/list/FilesListPane')")
+    expect(appletRegistrySource).not.toContain("import('@/modules/files/components/FilesWorkspacePane')")
+    expect(appletRegistrySource).not.toContain("import('@/modules/files/components/FilesTreePane')")
   })
 
   it('locks the desktop shell to one persistent resource tree beside one selected-resource workspace', () => {
     const appWorkspaceSource = readFileSync(appWorkspacePanePath, 'utf8')
     const detailPaneSource = readFileSync(featureDetailPanePath, 'utf8')
-    const microAppRegistrySource = readFileSync(microAppRegistryPath, 'utf8')
+    const appletRegistrySource = readFileSync(appletRegistryPath, 'utf8')
     const desktopBranchStart = appWorkspaceSource.indexOf('if (!compact)')
     const desktopBranch = appWorkspaceSource.match(/if \(!compact\) \{([\s\S]*?)\n  \}\n\n  return \(/)?.[1] ?? ''
 
     expect(desktopBranchStart, `${appWorkspacePanePath} should have an explicit desktop branch`).toBeGreaterThanOrEqual(0)
-    expect(microAppRegistrySource, 'desktop Files should mount the persistent resource tree through the shared left list pane').toContain("import('@/modules/files/features/tree/FilesTreePane')")
+    expect(appletRegistrySource, 'desktop Files should mount the persistent resource tree through the shared left list pane').toContain("import('@/modules/files/features/tree/FilesTreePane')")
     expect(desktopBranch, 'desktop Files should mount one selected-resource workspace beside the tree').toContain("renderDetailSurface('flex')")
     expect(desktopBranch, 'desktop Files must not keep a third persistent list/preview pane between tree and workspace').not.toMatch(/<FilesListPane(?:\s|>)/)
     expect(desktopBranch, 'desktop Files must not add a second persistent resource tree inside the workspace').not.toMatch(/<FilesTreePane(?:\s|>)/)

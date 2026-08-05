@@ -45,7 +45,7 @@ async function openInboxFromBell(page: Page) {
   const openInboxAction = page.getByRole('button', { name: /处理待办|打开收件箱/ })
   await expect(openInboxAction).toBeVisible({ timeout: 10_000 })
   await openInboxAction.click()
-  await expect(page.locator('[data-micro-app-id="inbox"]')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('[data-applet-id="inbox"]')).toBeVisible({ timeout: 10_000 })
 }
 
 function inboxApprovalButtonForTarget(page: Page, target: string) {
@@ -282,7 +282,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByLabel('文件列表')).toBeVisible({ timeout: 30_000 })
     await expect(page.getByLabel('文件工作区')).toBeVisible()
 
@@ -421,7 +421,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
     const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
     await expect(fileRow).toBeVisible({ timeout: 30_000 })
@@ -710,7 +710,7 @@ test.describe('Files real Pod smoke', () => {
     })
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     await page.evaluate(async ({ chatId, threadId }) => {
       const { useChatStore } = await import('/src/modules/chat/store.ts')
       const { useFilesStore } = await import('/src/modules/files/store.ts')
@@ -860,10 +860,10 @@ test.describe('Files real Pod smoke', () => {
     })
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     const fileList = page.getByLabel('文件列表')
     const workspace = page.getByLabel('文件工作区')
-    const contentHead = page.getByTestId('micro-app-content-head')
+    const contentHead = page.getByTestId('applet-content-head')
     const search = page.getByPlaceholder('搜索当前范围...')
     await expect(fileList).toBeVisible({ timeout: 30_000 })
 
@@ -987,7 +987,7 @@ test.describe('Files real Pod smoke', () => {
     })
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
     const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
@@ -1003,14 +1003,14 @@ test.describe('Files real Pod smoke', () => {
     await fileRow.getByRole('button', { name: `收藏 ${smoke.fileName}`, exact: true }).click()
 
     await page.getByRole('navigation').getByRole('button', { name: '收藏', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="favorites"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="favorites"]')).toBeVisible({ timeout: 10_000 })
     await page.getByPlaceholder('搜索收藏').fill(smoke.fileName)
     await expect(page.getByText(smoke.fileName, { exact: true })).toBeVisible({ timeout: 30_000 })
     await page.getByText(smoke.fileName, { exact: true }).click()
     await expect(page.getByRole('button', { name: '打开原对象' })).toBeVisible()
 
     await page.getByRole('button', { name: '打开原对象' }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByLabel('文件工作区').getByText(smoke.fileName, { exact: true }).first()).toBeVisible({ timeout: 30_000 })
   })
 
@@ -1054,7 +1054,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
     const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
@@ -1205,7 +1205,7 @@ test.describe('Files real Pod smoke', () => {
     })
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
     const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
@@ -1386,7 +1386,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     const fileList = page.getByLabel('文件列表')
     await expect(fileList).toBeVisible({ timeout: 30_000 })
 
@@ -1568,7 +1568,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     const fileList = page.getByLabel('文件列表')
     await expect(fileList).toBeVisible({ timeout: 30_000 })
 
@@ -1688,14 +1688,14 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.evaluate(async ({ resourceUri }) => {
       const { useFilesStore } = await import('/src/modules/files/store.ts')
       useFilesStore.getState().selectFile(resourceUri)
     }, smoke)
     const workspace = page.getByLabel('文件工作区')
-    await expect(page.getByTestId('micro-app-content-head').getByRole('heading', { name: smoke.fileName, exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('applet-content-head').getByRole('heading', { name: smoke.fileName, exact: true })).toBeVisible({ timeout: 30_000 })
 
     await expect(page.getByRole('button', { name: 'Table' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: '当前 class：Workspace' })).toBeVisible()
@@ -1890,14 +1890,14 @@ test.describe('Files real Pod smoke', () => {
     })
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     await page.evaluate(async ({ resourceUri }) => {
       const { useFilesStore } = await import('/src/modules/files/store.ts')
       useFilesStore.getState().selectFile(resourceUri)
     }, smoke)
 
     const workspace = page.getByLabel('文件工作区')
-    await expect(page.getByTestId('micro-app-content-head').getByRole('heading', { name: smoke.fileName, exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('applet-content-head').getByRole('heading', { name: smoke.fileName, exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: '当前 class：Workspace' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('columnheader', { name: /owner/ })).toBeVisible()
     await expect(workspace.getByText(/1 个校验提醒/)).toBeVisible()
@@ -2023,14 +2023,14 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.evaluate(async ({ tableUri }) => {
       const { useFilesStore } = await import('/src/modules/files/store.ts')
       useFilesStore.getState().selectFile(tableUri)
     }, smoke)
     const workspace = page.getByLabel('文件工作区')
-    const contentHead = page.getByTestId('micro-app-content-head')
+    const contentHead = page.getByTestId('applet-content-head')
     await expect(contentHead.getByRole('heading', { name: smoke.tableName, exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: 'Table' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: '当前 class：Workspace' })).toBeVisible()
@@ -2131,13 +2131,13 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.evaluate(async ({ resourceUri }) => {
       const { useFilesStore } = await import('/src/modules/files/store.ts')
       useFilesStore.getState().selectFile(resourceUri)
     }, smoke)
-    await expect(page.getByTestId('micro-app-content-head').getByRole('heading', { name: smoke.fileName, exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('applet-content-head').getByRole('heading', { name: smoke.fileName, exact: true })).toBeVisible({ timeout: 30_000 })
 
     await expect(page.getByRole('button', { name: 'Table' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('#Workspace')).toBeVisible()
@@ -2305,7 +2305,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButtonAfterReload = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButtonAfterReload).toBeVisible({ timeout: 10_000 })
     await filesNavButtonAfterReload.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     await page.evaluate(async ({ resourceUri }) => {
       const { useFilesStore } = await import('/src/modules/files/store.ts')
       useFilesStore.getState().selectFile(resourceUri)
@@ -2458,7 +2458,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     const podRootTreeItem = page.getByRole('treeitem', { name: /Pod 根目录/ })
     await expect(podRootTreeItem).toBeVisible({ timeout: 30_000 })
     await page.evaluate(() => {
@@ -2931,7 +2931,7 @@ test.describe('Files real Pod smoke', () => {
     }, { actorWebId })
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     const podRootTreeItem = page.getByRole('treeitem', { name: /Pod 根目录/ })
     await expect(podRootTreeItem).toBeVisible({ timeout: 30_000 })
     await page.evaluate(() => {
@@ -3149,7 +3149,7 @@ test.describe('Files real Pod smoke', () => {
     })
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     const podRootTreeItem = page.getByRole('treeitem', { name: /Pod 根目录/ })
     await expect(podRootTreeItem).toBeVisible({ timeout: 30_000 })
     await page.evaluate(() => {
@@ -3346,7 +3346,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByLabel('文件列表')).toBeVisible({ timeout: 30_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.folderName)
@@ -3547,7 +3547,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByLabel('文件列表')).toBeVisible({ timeout: 30_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.folderName)
@@ -3689,7 +3689,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     const tree = page.getByRole('tree', { name: '文件分组树' })
     const fileList = page.getByLabel('文件列表')
     const search = page.getByPlaceholder('搜索当前范围...')
@@ -3793,7 +3793,7 @@ test.describe('Files real Pod smoke', () => {
     })
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.getByPlaceholder('搜索当前范围...').fill(smoke.fileName)
     const fileRow = filesListRow(page.getByLabel('文件列表'), smoke.fileName)
@@ -3986,7 +3986,7 @@ test.describe('Files real Pod smoke', () => {
     const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
     await expect(filesNavButton).toBeVisible()
     await filesNavButton.click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.evaluate(async ({ resourceUri }) => {
       const { useFilesStore } = await import('/src/modules/files/store.ts')
@@ -4184,7 +4184,7 @@ test.describe('Files real Pod smoke', () => {
     })
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
 
     await page.evaluate(async ({ resourceUri }) => {
       const { useFilesStore } = await import('/src/modules/files/store.ts')
@@ -4480,7 +4480,7 @@ test.describe('Files real Pod smoke', () => {
     expect(persisted.namespaces.text).toMatch(/(?:udfs:VocabNamespaceRegistry|<https:\/\/undefineds\.co\/vocab\/VocabNamespaceRegistry>)/)
 
     await page.getByRole('navigation').getByRole('button', { name: '文件', exact: true }).click()
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
     await page.evaluate(async ({ termsUri }) => {
       const { useFilesStore } = await import('/src/modules/files/store.ts')
       useFilesStore.getState().selectFile(termsUri)

@@ -144,8 +144,8 @@ describe('SettingsContentPane', () => {
 
     expect(mockRefresh).toHaveBeenCalledWith(true, 'manual')
     expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/$microAppId',
-      params: { microAppId: 'model-services' },
+      to: '/$appletId',
+      params: { appletId: 'model-services' },
     })
   })
 

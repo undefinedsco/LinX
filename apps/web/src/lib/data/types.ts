@@ -1,4 +1,4 @@
-import type { MicroAppId } from '@/modules/layout/micro-app-registry'
+import type { AppletId } from '@/modules/layout/applet-registry'
 import type { RepositoryQueries } from './query-factory'
 
 export interface ListConfig<Row = unknown> {
@@ -17,8 +17,8 @@ export interface DetailConfig<DetailState extends DetailViewStateBase> {
   initialViewState: () => DetailState
 }
 
-export interface MicroAppStore<RowView, DetailState extends DetailViewStateBase> {
-  useStore: <Selector>(selector: (state: MicroAppStoreState<RowView, DetailState>) => Selector) => Selector
+export interface AppletStore<RowView, DetailState extends DetailViewStateBase> {
+  useStore: <Selector>(selector: (state: AppletStoreState<RowView, DetailState>) => Selector) => Selector
   actions: {
     setSearch: (value: string) => void
     select: (id: string | null) => void
@@ -27,7 +27,7 @@ export interface MicroAppStore<RowView, DetailState extends DetailViewStateBase>
   }
 }
 
-export interface MicroAppStoreState<RowView, DetailState extends DetailViewStateBase> {
+export interface AppletStoreState<RowView, DetailState extends DetailViewStateBase> {
   entities: Record<string, RowView>
   ids: string[]
   search: string
@@ -35,7 +35,7 @@ export interface MicroAppStoreState<RowView, DetailState extends DetailViewState
   detailView: DetailState
 }
 
-export interface MicroAppDataLayer<
+export interface AppletDataLayer<
   Row extends Record<string, unknown>,
   DetailState extends DetailViewStateBase,
   ViewModel = Row,
@@ -43,11 +43,11 @@ export interface MicroAppDataLayer<
   Update = Insert,
   Filters extends Record<string, unknown> = Record<string, unknown>
 > {
-  id: MicroAppId
+  id: AppletId
   listConfig: ListConfig<Row>
   detailConfig: DetailConfig<DetailState>
   queries: RepositoryQueries<Row, Insert, Update, Filters>
-  store: MicroAppStore<ViewModel, DetailState>
+  store: AppletStore<ViewModel, DetailState>
   hydrateList: (rows?: Row[] | null) => ViewModel[]
   hydrateDetail: (row?: Row | null) => ViewModel | undefined
 }

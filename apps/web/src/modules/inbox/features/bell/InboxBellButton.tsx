@@ -47,7 +47,7 @@ export function InboxBellButton() {
     setFilter(filter)
     selectItem(null)
     setOpen(false)
-    navigate({ to: '/$microAppId', params: { microAppId: 'inbox' } })
+    navigate({ to: '/$appletId', params: { appletId: 'inbox' } })
   }, [navigate, selectItem, setFilter])
 
   return (

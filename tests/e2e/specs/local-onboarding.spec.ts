@@ -53,7 +53,7 @@ type DesktopScenario = {
 type PendingLoginAttempt = {
   issuerUrl: string
   authorizationSurface: 'window' | 'embedded' | 'external'
-  returnToMicroAppId: string
+  returnToAppletId: string
 }
 
 const SPACE_REQUIRED_SNAPSHOT: Snapshot = {
@@ -378,11 +378,11 @@ async function installDesktopBridge(page: Page, scenario: DesktopScenario = {}) 
 }
 
 async function installPendingLoginState(page: Page, input: {
-  microAppId: string
+  appletId: string
   attempt: PendingLoginAttempt
 }) {
-  await page.addInitScript((state: { microAppId: string; attempt: PendingLoginAttempt }) => {
-    window.sessionStorage.setItem('linx-post-login-micro-app', state.microAppId)
+  await page.addInitScript((state: { appletId: string; attempt: PendingLoginAttempt }) => {
+    window.sessionStorage.setItem('linx-post-login-applet', state.appletId)
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify(state.attempt))
   }, input)
 }
@@ -599,11 +599,11 @@ test.describe('Local onboarding', () => {
       initialSnapshot: READY_LOCAL_SNAPSHOT,
     })
     await installPendingLoginState(page, {
-      microAppId: 'files',
+      appletId: 'files',
       attempt: {
         issuerUrl: 'http://localhost:5737',
         authorizationSurface: 'window',
-        returnToMicroAppId: 'files',
+        returnToAppletId: 'files',
       },
     })
     await installMockOidcProvider(page)
@@ -614,14 +614,14 @@ test.describe('Local onboarding', () => {
     await expect(page.getByText('Denied')).toBeVisible()
     await expect(page.getByRole('button', { name: '重试本地空间' })).toBeVisible()
 
-    expect(await page.evaluate(() => window.sessionStorage.getItem('linx-post-login-micro-app'))).toBe('files')
+    expect(await page.evaluate(() => window.sessionStorage.getItem('linx-post-login-applet'))).toBe('files')
 
     await page.getByRole('button', { name: '重试本地空间' }).click()
 
     await expect.poll(async () => {
       const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
       const pendingAttempt = await page.evaluate(() => window.sessionStorage.getItem('linx-pending-login-attempt'))
-      const pendingTarget = await page.evaluate(() => window.sessionStorage.getItem('linx-post-login-micro-app'))
+      const pendingTarget = await page.evaluate(() => window.sessionStorage.getItem('linx-post-login-applet'))
       return {
         authWindowOpenCalls: playState.authWindowOpenCalls,
         pendingAttempt,

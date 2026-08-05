@@ -10,7 +10,7 @@ import {
   Bot,
 } from 'lucide-react'
 
-export const microAppIds = [
+export const appletIds = [
   'chat',
   'inbox',
   'contacts',
@@ -20,27 +20,27 @@ export const microAppIds = [
   'model-services',
 ] as const
 
-export type MicroAppId = (typeof microAppIds)[number]
+export type AppletId = (typeof appletIds)[number]
 export type ThemeMode = 'light' | 'dark'
-export type MicroAppNavigationIntent = 'default' | 'chat-files'
+export type AppletNavigationIntent = 'default' | 'chat-files'
 
-export interface MicroAppPaneProps {
+export interface AppletPaneProps {
   theme: ThemeMode
   compact?: boolean
   compactNavigation?: ReactNode
 }
 
-export type MicroAppListPane = ComponentType<MicroAppPaneProps>
-export type MicroAppContentPane = ComponentType<MicroAppPaneProps>
+export type AppletListPane = ComponentType<AppletPaneProps>
+export type AppletContentPane = ComponentType<AppletPaneProps>
 
-export interface MicroAppHeaderMeta {
+export interface AppletHeaderMeta {
   moduleTitle: string
   moduleSubtitle: string
   itemTitle?: string
   itemSubtitle?: string
 }
 
-export interface MicroAppLayoutConfig {
+export interface AppletLayoutConfig {
   header?: ReactNode
   mainTitle?: ReactNode
   subtitle?: string
@@ -60,20 +60,20 @@ export interface MicroAppLayoutConfig {
   hideHeader?: boolean
 }
 
-export interface MicroAppLayoutConfigBridgeProps {
-  onConfigChange: (config: MicroAppLayoutConfig | undefined) => void
+export interface AppletLayoutConfigBridgeProps {
+  onConfigChange: (config: AppletLayoutConfig | undefined) => void
 }
 
-export type MicroAppLayoutConfigBridge = ComponentType<MicroAppLayoutConfigBridgeProps>
+export type AppletLayoutConfigBridge = ComponentType<AppletLayoutConfigBridgeProps>
 
-export interface MicroAppDefinition {
-  id: MicroAppId
+export interface AppletDefinition {
+  id: AppletId
   label: string
   icon: LucideIcon
-  header: MicroAppHeaderMeta
-  ListPane: MicroAppListPane
-  ContentPane: MicroAppContentPane
-  LayoutConfigBridge?: MicroAppLayoutConfigBridge
+  header: AppletHeaderMeta
+  ListPane: AppletListPane
+  ContentPane: AppletContentPane
+  LayoutConfigBridge?: AppletLayoutConfigBridge
   hidePrimaryRailOnCompact?: boolean
   hideContentHeaderOnCompact?: boolean
 }
@@ -142,7 +142,7 @@ const FilesLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/files/app/FilesLayoutConfigBridge').then((mod) => ({ default: mod.FilesLayoutConfigBridge })),
 )
 
-export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
+export const appletRegistry: Record<AppletId, AppletDefinition> = {
   chat: {
     id: 'chat',
     label: '聊天',
@@ -241,7 +241,7 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
   },
 }
 
-export const defaultMicroAppId: MicroAppId = 'chat'
+export const defaultAppletId: AppletId = 'chat'
 
-export const isValidMicroAppId = (value: string | undefined): value is MicroAppId =>
-  Boolean(value && microAppIds.includes(value as MicroAppId))
+export const isValidAppletId = (value: string | undefined): value is AppletId =>
+  Boolean(value && appletIds.includes(value as AppletId))

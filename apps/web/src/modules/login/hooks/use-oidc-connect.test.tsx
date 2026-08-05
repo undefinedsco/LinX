@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  consumePendingPostLoginMicroAppId,
-  ensurePendingPostLoginMicroAppId,
+  consumePendingPostLoginAppletId,
+  ensurePendingPostLoginAppletId,
   getPendingLoginAttempt,
   getPendingLoginTransaction,
 } from '../login-utils'
@@ -243,7 +243,7 @@ describe('useOidcConnect', () => {
       clientName: 'LinX',
       tokenType: 'DPoP',
     })
-    expect(consumePendingPostLoginMicroAppId()).toBe('files')
+    expect(consumePendingPostLoginAppletId()).toBe('files')
 
     await options.handleRedirect('https://idp.example.com/authorize')
     expect(openAuthorizationWindowMock).toHaveBeenCalledWith('https://idp.example.com/authorize', {
@@ -275,7 +275,7 @@ describe('useOidcConnect', () => {
     fireEvent.click(screen.getByRole('button', { name: 'connect safely' }))
 
     await waitFor(() => {
-      expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+      expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
       expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
     })
     expect(loginMock).not.toHaveBeenCalled()
@@ -288,7 +288,7 @@ describe('useOidcConnect', () => {
     fireEvent.click(screen.getByRole('button', { name: 'connect standalone' }))
 
     await waitFor(() => {
-      expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+      expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
       expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
     })
     expect(fetchMock).toHaveBeenCalledWith(
@@ -406,7 +406,7 @@ describe('useOidcConnect', () => {
       })
     })
     await waitFor(() => {
-      expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+      expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
       expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
     })
   })
@@ -423,7 +423,7 @@ describe('useOidcConnect', () => {
 
       expect(loginMock).toHaveBeenCalledTimes(1)
       expect(openAuthorizationWindowMock).not.toHaveBeenCalled()
-      expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+      expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
       expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
     } finally {
       vi.useRealTimers()
@@ -449,7 +449,7 @@ describe('useOidcConnect', () => {
   })
 
   it('uses embedded desktop authorization when requested', async () => {
-    ensurePendingPostLoginMicroAppId('contacts')
+    ensurePendingPostLoginAppletId('contacts')
     window.history.replaceState({}, '', '/chat')
     render(<EmbeddedTestComponent />)
 
@@ -460,11 +460,11 @@ describe('useOidcConnect', () => {
     })
 
     const options = loginMock.mock.calls[0][0]
-    expect(consumePendingPostLoginMicroAppId()).toBe('contacts')
+    expect(consumePendingPostLoginAppletId()).toBe('contacts')
     expect(getPendingLoginAttempt()).toEqual({
       issuerUrl: 'http://localhost:5737',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'contacts',
+      returnToAppletId: 'contacts',
       storageProviderUrl: 'http://localhost:5737',
       storageProviderLabel: 'Local',
       authorizationQuery: {
@@ -544,7 +544,7 @@ describe('useOidcConnect', () => {
       expect(loginMock).toHaveBeenCalledTimes(1)
     })
 
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
   })
 
@@ -728,7 +728,7 @@ describe('useOidcConnect', () => {
       await vi.advanceTimersByTimeAsync(10_000)
 
       expect(loginMock).toHaveBeenCalledTimes(1)
-      expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+      expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
       expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
     } finally {
       vi.useRealTimers()

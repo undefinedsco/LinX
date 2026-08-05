@@ -74,7 +74,7 @@ describe('PrimaryLayout', () => {
   })
 
   it('shows only stable first-slice modules in primary navigation', () => {
-    render(<PrimaryLayout microAppId="chat" />)
+    render(<PrimaryLayout appletId="chat" />)
 
     expect(screen.getByLabelText('聊天')).toBeTruthy()
     expect(screen.getByLabelText('联系人')).toBeTruthy()
@@ -83,7 +83,7 @@ describe('PrimaryLayout', () => {
   })
 
   it('does not duplicate Files with a second chat-files shortcut in the global rail', () => {
-    render(<PrimaryLayout microAppId="chat" />)
+    render(<PrimaryLayout appletId="chat" />)
 
     expect(screen.queryByRole('button', { name: '聊天文件' })).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: '文件' })).toHaveLength(1)
@@ -91,43 +91,43 @@ describe('PrimaryLayout', () => {
 
   it('opens the primary Files navigation in the full files scope', () => {
     const onNavigate = vi.fn()
-    render(<PrimaryLayout microAppId="chat" onNavigate={onNavigate} />)
+    render(<PrimaryLayout appletId="chat" onNavigate={onNavigate} />)
 
     screen.getByRole('button', { name: '文件' }).click()
 
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'files' } })
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/$appletId', params: { appletId: 'files' } })
     expect(onNavigate).toHaveBeenCalledWith('files', 'default')
   })
 
   it('marks the active micro app on the layout root for route smoke tests', () => {
-    const { container } = render(<PrimaryLayout microAppId="files" />)
+    const { container } = render(<PrimaryLayout appletId="files" />)
 
-    expect(container.querySelector('[data-micro-app-id="files"]')).not.toBeNull()
+    expect(container.querySelector('[data-applet-id="files"]')).not.toBeNull()
   })
 
   it('hides unfinished modules from the primary navigation', () => {
-    render(<PrimaryLayout microAppId="chat" />)
+    render(<PrimaryLayout appletId="chat" />)
 
     expect(screen.queryByLabelText('收件箱')).toBeNull()
   })
 
   it('does not expose the unfinished import utility', () => {
-    render(<PrimaryLayout microAppId="chat" />)
+    render(<PrimaryLayout appletId="chat" />)
 
     expect(screen.queryByLabelText('导入')).toBeNull()
     expect(screen.getByLabelText('设置')).toBeTruthy()
   })
 
   it('exposes the self profile trigger as an accessible button', () => {
-    render(<PrimaryLayout microAppId="chat" />)
+    render(<PrimaryLayout appletId="chat" />)
 
     expect(screen.getByRole('button', { name: '个人资料' })).toBeTruthy()
   })
 
   it('keeps the module list pane at a usable desktop width', () => {
-    render(<PrimaryLayout microAppId="chat" />)
+    render(<PrimaryLayout appletId="chat" />)
 
-    const listPanel = screen.getByTestId('micro-app-list-panel')
+    const listPanel = screen.getByTestId('applet-list-panel')
     expect(listPanel.style.minWidth).toBe('180px')
     expect(listPanel.style.width).toBe('100%')
     expect(listPanel.style.maxWidth).toBe('400px')
@@ -135,9 +135,9 @@ describe('PrimaryLayout', () => {
   })
 
   it('applies the Files module list panel width contract from layout config', async () => {
-    render(<PrimaryLayout microAppId="files" />)
+    render(<PrimaryLayout appletId="files" />)
 
-    const listPanel = await screen.findByTestId('micro-app-list-panel')
+    const listPanel = await screen.findByTestId('applet-list-panel')
     await waitFor(() => {
       expect(listPanel.style.minWidth).toBe('232px')
     })
@@ -150,33 +150,33 @@ describe('PrimaryLayout', () => {
 
   it('toggles the list panel when clicking the active rail icon', async () => {
     const onNavigate = vi.fn()
-    render(<PrimaryLayout microAppId="files" onNavigate={onNavigate} />)
+    render(<PrimaryLayout appletId="files" onNavigate={onNavigate} />)
 
     const filesButton = screen.getByRole('button', { name: '文件' })
-    expect(screen.getByTestId('micro-app-list-panel')).toBeTruthy()
+    expect(screen.getByTestId('applet-list-panel')).toBeTruthy()
 
     filesButton.click()
     await waitFor(() => {
-      expect(screen.queryByTestId('micro-app-list-panel')).toBeNull()
+      expect(screen.queryByTestId('applet-list-panel')).toBeNull()
     })
     expect(mockNavigate).not.toHaveBeenCalled()
     expect(onNavigate).not.toHaveBeenCalled()
 
     filesButton.click()
     await waitFor(() => {
-      expect(screen.getByTestId('micro-app-list-panel')).toBeTruthy()
+      expect(screen.getByTestId('applet-list-panel')).toBeTruthy()
     })
     expect(mockNavigate).not.toHaveBeenCalled()
   })
 
   it('keeps normal navigation for non-active rail icons', () => {
     const onNavigate = vi.fn()
-    render(<PrimaryLayout microAppId="files" onNavigate={onNavigate} />)
+    render(<PrimaryLayout appletId="files" onNavigate={onNavigate} />)
 
     screen.getByRole('button', { name: '聊天' }).click()
 
-    expect(screen.getByTestId('micro-app-list-panel')).toBeTruthy()
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'chat' } })
+    expect(screen.getByTestId('applet-list-panel')).toBeTruthy()
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/$appletId', params: { appletId: 'chat' } })
     expect(onNavigate).toHaveBeenCalledWith('chat', 'default')
   })
 
@@ -202,10 +202,10 @@ describe('PrimaryLayout', () => {
     })
 
     try {
-      render(<PrimaryLayout microAppId="files" />)
-      expect(screen.queryByTestId('micro-app-list-panel')).toBeNull()
+      render(<PrimaryLayout appletId="files" />)
+      expect(screen.queryByTestId('applet-list-panel')).toBeNull()
       expect(screen.queryByRole('button', { name: '文件' })).toBeNull()
-      expect(screen.queryByTestId('micro-app-content-head')).toBeNull()
+      expect(screen.queryByTestId('applet-content-head')).toBeNull()
     } finally {
       Object.defineProperty(window, 'matchMedia', {
         writable: true,
@@ -215,17 +215,17 @@ describe('PrimaryLayout', () => {
   })
 
   it('keeps the main content head at the compact Files design height', () => {
-    render(<PrimaryLayout microAppId="chat" />)
+    render(<PrimaryLayout appletId="chat" />)
 
-    expect(screen.getByTestId('micro-app-content-head').className).toContain('h-12')
-    expect(screen.getByTestId('micro-app-content-head').className).not.toContain('h-16')
+    expect(screen.getByTestId('applet-content-head').className).toContain('h-12')
+    expect(screen.getByTestId('applet-content-head').className).not.toContain('h-16')
   })
 
   it('offers a collapsed-by-default right sidebar toggle wired to the module state', async () => {
     const { useFilesStore } = await import('@/modules/files/app/store')
     useFilesStore.setState({ metaSidebarOpen: false })
 
-    render(<PrimaryLayout microAppId="files" />)
+    render(<PrimaryLayout appletId="files" />)
 
     const toggle = await screen.findByRole('button', { name: '展开右侧面板' })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
@@ -241,7 +241,7 @@ describe('PrimaryLayout', () => {
   })
 
   it('aligns the profile avatar top with the compact head/body boundary', () => {
-    render(<PrimaryLayout microAppId="chat" />)
+    render(<PrimaryLayout appletId="chat" />)
 
     expect(screen.getByTestId('primary-profile-avatar-slot').className).toContain('pt-[48px]')
   })
@@ -249,7 +249,7 @@ describe('PrimaryLayout', () => {
   it('hides the application shell after sign out', () => {
     mockSessionState.isLoggedIn = false
 
-    render(<PrimaryLayout microAppId="chat" />)
+    render(<PrimaryLayout appletId="chat" />)
 
     expect(screen.queryByLabelText('聊天')).toBeNull()
     expect(screen.queryByLabelText('个人资料')).toBeNull()

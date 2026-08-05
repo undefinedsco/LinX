@@ -78,7 +78,7 @@ export function useSetupViewController({ onComplete }: SetupViewControllerOption
   }, [draft, onComplete])
 
   const returnToMain = useCallback(() => {
-    void navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
+    void navigate({ to: '/$appletId', params: { appletId: 'chat' } })
   }, [navigate])
 
   return {

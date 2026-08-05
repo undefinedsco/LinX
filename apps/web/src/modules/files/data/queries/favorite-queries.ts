@@ -17,7 +17,7 @@ export function useFilesFavoriteList(filters?: {
   const { db } = useSolidDatabase()
   // Star state is shared data owned by the favorites module: acquire its
   // subscription while this pane is visible so cross-module updates stay
-  // live even when the favorites micro-app is not active.
+  // live even when the favorites applet is not active.
   usePodCollectionSubscription(!!db, db, subscribeFavoritesToPod)
 
   const liveQuery = useLiveQuery((query) => (

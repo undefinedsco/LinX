@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo } from 'react'
-import type { MicroAppLayoutConfig } from '@/modules/layout/micro-app-registry'
+import type { AppletLayoutConfig } from '@/modules/layout/applet-registry'
 import { useFilesStore } from './store'
 
 const FilesMetaSidebar = lazy(() =>
@@ -32,11 +32,11 @@ function readPersistedTreeWidth(): number {
 export function FilesLayoutConfigBridge({
   onConfigChange,
 }: {
-  onConfigChange: (config: MicroAppLayoutConfig | undefined) => void
+  onConfigChange: (config: AppletLayoutConfig | undefined) => void
 }) {
   const metaSidebarOpen = useFilesStore((state) => state.metaSidebarOpen)
   const setMetaSidebarOpen = useFilesStore((state) => state.setMetaSidebarOpen)
-  const config = useMemo<MicroAppLayoutConfig>(() => ({
+  const config = useMemo<AppletLayoutConfig>(() => ({
     listPanel: {
       defaultWidth: readPersistedTreeWidth(),
       minWidth: FILES_TREE_WIDTH_MIN,

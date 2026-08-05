@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ThemeMode } from './micro-app-registry'
+import type { ThemeMode } from './applet-registry'
 
 const THEME_STORAGE_KEY = 'linx-theme'
 

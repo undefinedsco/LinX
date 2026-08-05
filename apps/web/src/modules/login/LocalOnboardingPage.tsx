@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { defaultMicroAppId } from '@/modules/layout/micro-app-registry'
+import { defaultAppletId } from '@/modules/layout/applet-registry'
 import { LocalOnboardingScreen } from './LocalOnboardingCard'
 
 export function LocalOnboardingPage() {
@@ -7,7 +7,7 @@ export function LocalOnboardingPage() {
 
   return (
     <LocalOnboardingScreen
-      onBack={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId } })}
+      onBack={() => navigate({ to: '/$appletId', params: { appletId: defaultAppletId } })}
     />
   )
 }

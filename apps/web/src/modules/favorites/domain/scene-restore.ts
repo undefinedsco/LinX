@@ -12,7 +12,7 @@ interface FavoriteSnapshotMeta {
 }
 
 export interface FavoriteSceneTarget {
-  microAppId: FavoriteSceneAppId
+  appletId: FavoriteSceneAppId
   chatId?: string | null
   threadId?: string | null
   messageId?: string | null
@@ -64,7 +64,7 @@ function resolveChatScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | nu
   const uriTarget = parseChatTargetUri(favorite.targetUri)
 
   return {
-    microAppId: 'chat',
+    appletId: 'chat',
     chatId: meta?.chatId ?? favorite.sourceId ?? uriTarget.chatId ?? null,
     threadId: meta?.threadId ?? uriTarget.threadId ?? null,
     messageId: meta?.messageId ?? uriTarget.messageId ?? null,
@@ -75,7 +75,7 @@ function resolveThreadScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | 
   const uriTarget = parseChatTargetUri(favorite.targetUri)
 
   return {
-    microAppId: 'chat',
+    appletId: 'chat',
     chatId: meta?.chatId ?? uriTarget.chatId ?? null,
     threadId: meta?.threadId ?? favorite.sourceId ?? uriTarget.threadId ?? null,
     messageId: meta?.messageId ?? null,
@@ -86,7 +86,7 @@ function resolveMessageScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta |
   const uriTarget = parseChatTargetUri(favorite.targetUri)
 
   return {
-    microAppId: 'chat',
+    appletId: 'chat',
     chatId: meta?.chatId ?? uriTarget.chatId ?? null,
     threadId: meta?.threadId ?? null,
     messageId: meta?.messageId ?? favorite.sourceId ?? uriTarget.messageId ?? null,
@@ -95,14 +95,14 @@ function resolveMessageScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta |
 
 function resolveContactScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
   return {
-    microAppId: 'contacts',
+    appletId: 'contacts',
     contactId: meta?.contactId ?? favorite.sourceId ?? favorite.targetUri ?? null,
   }
 }
 
 function resolveFileScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
   return {
-    microAppId: 'files',
+    appletId: 'files',
     fileId: meta?.fileId ?? favorite.sourceId ?? null,
     treeNodeId: meta?.treeNodeId ?? null,
   }
@@ -126,7 +126,7 @@ export function resolveFavoriteScene(favorite: FavoriteRow): FavoriteSceneTarget
       const uriTarget = parseChatTargetUri(favorite.targetUri)
       if (uriTarget.chatId || uriTarget.threadId || uriTarget.messageId) {
         return {
-          microAppId: 'chat',
+          appletId: 'chat',
           chatId: uriTarget.chatId ?? null,
           threadId: uriTarget.threadId ?? null,
           messageId: uriTarget.messageId ?? null,
@@ -135,7 +135,7 @@ export function resolveFavoriteScene(favorite: FavoriteRow): FavoriteSceneTarget
 
       if (favorite.sourceId) {
         return {
-          microAppId: 'chat',
+          appletId: 'chat',
           chatId: favorite.sourceId,
         }
       }

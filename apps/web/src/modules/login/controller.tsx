@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { useSession } from '@/providers/solid-session-context'
 import { useNavigate } from '@tanstack/react-router'
 import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
-import { defaultMicroAppId } from '@/modules/layout/micro-app-registry'
+import { defaultAppletId } from '@/modules/layout/applet-registry'
 import { isLocalAccessUrl } from '@/lib/local-access-url'
 import { getRememberedAccount, useLoginStore, type StoredAccount } from '@linx/stores/login'
 import { useSessionRestore } from './hooks/use-session-restore'
@@ -12,17 +12,17 @@ import { useEmbeddedAuthorizationState } from './hooks/use-embedded-authorizatio
 import {
   clearPendingCallbackError,
   clearPendingLoginAttempt,
-  clearPendingPostLoginMicroAppId,
+  clearPendingPostLoginAppletId,
   clearStoredSolidSession,
-  consumePendingPostLoginMicroAppId,
-  ensurePendingPostLoginMicroAppId,
+  consumePendingPostLoginAppletId,
+  ensurePendingPostLoginAppletId,
   getPendingLoginAttempt,
   getPendingLoginTransaction,
   getStoredSolidSession,
   getPendingCallbackError,
   isInvalidClientError,
   isInvalidClientErrorCode,
-  resolvePostLoginMicroAppId,
+  resolvePostLoginAppletId,
   SIGN_OUT_EVENT,
 } from './login-utils'
 import {
@@ -311,15 +311,15 @@ export function useLoginController() {
       // Purge the cached session and send the user back to re-login.
       clearStoredSolidSession()
       clearPendingLoginAttempt()
-      clearPendingPostLoginMicroAppId()
+      clearPendingPostLoginAppletId()
       setConnectingProvider(null)
       setError(formatLoginErrorForUser(
         callbackError.description ?? callbackError.error,
         '登录凭据已失效（OIDC 客户端未注册），请重新登录。',
       ))
       navigate({
-        to: '/$microAppId',
-        params: { microAppId: defaultMicroAppId },
+        to: '/$appletId',
+        params: { appletId: defaultAppletId },
         replace: true,
       })
       setState('idle')
@@ -338,7 +338,7 @@ export function useLoginController() {
         : pendingAttempt.issuerUrl
       void oidc.connect(retryEntryUrl, {
         authorizationSurface: pendingAttempt.authorizationSurface,
-        returnToMicroAppId: pendingAttempt.returnToMicroAppId,
+        returnToAppletId: pendingAttempt.returnToAppletId,
         route: pendingTransaction?.route,
         accountIssuerUrl: pendingTransaction?.accountIssuerUrl ?? pendingAttempt.accountIssuerUrl,
         accountIssuerLabel: pendingTransaction?.accountIssuerLabel ?? pendingAttempt.accountIssuerLabel,
@@ -367,13 +367,13 @@ export function useLoginController() {
     if (!callbackRestoreFailed) return
 
     clearPendingLoginAttempt()
-    clearPendingPostLoginMicroAppId()
+    clearPendingPostLoginAppletId()
     setConnectingProvider(null)
     setError('登录未完成，请重试。')
 
     navigate({
-      to: '/$microAppId',
-      params: { microAppId: defaultMicroAppId },
+      to: '/$appletId',
+      params: { appletId: defaultAppletId },
       replace: true,
     })
 
@@ -411,7 +411,7 @@ export function useLoginController() {
     if (state === 'connecting' || view === 'local' || connectingProvider) {
       oidc.cancel()
       clearPendingLoginAttempt()
-      clearPendingPostLoginMicroAppId()
+      clearPendingPostLoginAppletId()
       clearPendingCallbackError()
       setStorageConflict(null)
       setStoredAccount(null)
@@ -508,7 +508,7 @@ export function useLoginController() {
         resetDesktopAuthState()
         clearPendingCallbackError()
         clearPendingLoginAttempt()
-        clearPendingPostLoginMicroAppId()
+        clearPendingPostLoginAppletId()
         try {
           await logout()
         } catch {
@@ -532,8 +532,8 @@ export function useLoginController() {
 
       const path = window.location.pathname
       if (path === '/' || path.startsWith('/auth/callback')) {
-        const microAppId = consumePendingPostLoginMicroAppId()
-        navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
+        const appletId = consumePendingPostLoginAppletId()
+        navigate({ to: '/$appletId', params: { appletId }, replace: true })
       }
     }
 
@@ -556,7 +556,7 @@ export function useLoginController() {
       setConnectingProvider(null)
       clearPendingCallbackError()
       clearPendingLoginAttempt()
-      clearPendingPostLoginMicroAppId()
+      clearPendingPostLoginAppletId()
       try {
         await logout()
       } catch {
@@ -601,7 +601,7 @@ export function useLoginController() {
     setState('idle')
     setConnectingProvider(null)
     resetDesktopAuthState()
-    ensurePendingPostLoginMicroAppId(resolvePostLoginMicroAppId())
+    ensurePendingPostLoginAppletId(resolvePostLoginAppletId())
     setView('local')
     setActiveLocalProviderSource(source)
     setLocalLoginActive(false)
@@ -742,7 +742,7 @@ export function useLoginController() {
     suppressAutoLoginRef.current = false
     setStorageConflict(null)
     setError(null)
-    ensurePendingPostLoginMicroAppId(resolvePostLoginMicroAppId())
+    ensurePendingPostLoginAppletId(resolvePostLoginAppletId())
 
     const targetStorageProviderUrl =
       normalizeRememberedUrl(storedAccount?.storageProviderUrl)
@@ -966,7 +966,7 @@ export function useLoginController() {
     setStorageConflict(null)
     clearPendingCallbackError()
     clearPendingLoginAttempt()
-    clearPendingPostLoginMicroAppId()
+    clearPendingPostLoginAppletId()
     setView('default')
     setActiveLocalProviderSource('local')
     setLocalLoginActive(false)
@@ -992,7 +992,7 @@ export function useLoginController() {
     resetDesktopAuthState()
     clearPendingCallbackError()
     clearPendingLoginAttempt()
-    clearPendingPostLoginMicroAppId()
+    clearPendingPostLoginAppletId()
     if (state === 'connecting') {
       setState('idle')
     }
@@ -1008,7 +1008,7 @@ export function useLoginController() {
       // ignore
     }
     clearPendingLoginAttempt()
-    clearPendingPostLoginMicroAppId()
+    clearPendingPostLoginAppletId()
     clearStoredSolidSession()
     setError(null)
     setStorageConflict(null)
@@ -1032,7 +1032,7 @@ export function useLoginController() {
       // ignore
     }
     clearPendingLoginAttempt()
-    clearPendingPostLoginMicroAppId()
+    clearPendingPostLoginAppletId()
     clearStoredSolidSession()
     setStorageConflict(null)
     setView('default')

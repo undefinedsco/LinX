@@ -1,11 +1,11 @@
 import { useEffect } from 'react'
 import { useModelServicesLayoutConfig } from './use-model-services-layout-config'
-import type { MicroAppLayoutConfig } from '@/modules/layout/micro-app-registry'
+import type { AppletLayoutConfig } from '@/modules/layout/applet-registry'
 
 export function ModelServicesLayoutConfigBridge({
   onConfigChange,
 }: {
-  onConfigChange: (config: MicroAppLayoutConfig | undefined) => void
+  onConfigChange: (config: AppletLayoutConfig | undefined) => void
 }) {
   const config = useModelServicesLayoutConfig()
 

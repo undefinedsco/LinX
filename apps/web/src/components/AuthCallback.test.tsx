@@ -2,8 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearPendingLoginAttempt,
-  clearPendingPostLoginMicroAppId,
-  ensurePendingPostLoginMicroAppId,
+  clearPendingPostLoginAppletId,
+  ensurePendingPostLoginAppletId,
   setPendingLoginAttempt,
 } from '@/modules/login/login-utils'
 
@@ -64,7 +64,7 @@ describe('AuthCallback', () => {
     onRedirectMock.mockReturnValue(() => {})
     sessionErrorListeners.clear()
     clearPendingLoginAttempt()
-    clearPendingPostLoginMicroAppId()
+    clearPendingPostLoginAppletId()
     window.localStorage.removeItem('solidClientAuthn:currentSession')
     window.localStorage.removeItem('solidClientAuthenticationUser:session-1')
     window.sessionStorage.clear()
@@ -319,7 +319,7 @@ describe('AuthCallback', () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'files',
+      returnToAppletId: 'files',
     })
     window.history.replaceState({}, '', '/auth/callback?error=access_denied&error_description=Denied')
 
@@ -331,7 +331,7 @@ describe('AuthCallback', () => {
     await waitFor(() => {
       expect(connectMock).toHaveBeenCalledWith('https://cloud.example.com', expect.objectContaining({
         authorizationSurface: 'window',
-        returnToMicroAppId: 'files',
+        returnToAppletId: 'files',
         accountIssuerUrl: 'https://cloud.example.com',
         storageProviderUrl: 'https://cloud.example.com',
         authorizationQuery: undefined,
@@ -345,7 +345,7 @@ describe('AuthCallback', () => {
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
       storageProviderUrl: 'https://node-0000.undefineds.co',
       storageProviderLabel: 'Local',
       authorizationQuery: {
@@ -361,7 +361,7 @@ describe('AuthCallback', () => {
     await waitFor(() => {
       expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
         authorizationSurface: 'embedded',
-        returnToMicroAppId: 'chat',
+        returnToAppletId: 'chat',
         route: 'local',
         accountIssuerUrl: 'https://id.undefineds.co',
         accountIssuerLabel: 'Cloud',
@@ -380,7 +380,7 @@ describe('AuthCallback', () => {
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
       storageProviderUrl: 'https://node-0000.undefineds.co',
       storageProviderLabel: 'Local',
       authorizationQuery: {
@@ -395,7 +395,7 @@ describe('AuthCallback', () => {
     await waitFor(() => {
       expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
         authorizationSurface: 'embedded',
-        returnToMicroAppId: 'chat',
+        returnToAppletId: 'chat',
         route: 'local',
         accountIssuerUrl: 'https://id.undefineds.co',
         accountIssuerLabel: 'Cloud',
@@ -438,7 +438,7 @@ describe('AuthCallback', () => {
       accountIssuerUrl: 'http://localhost:5737',
       accountIssuerLabel: 'Standalone',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
       storageProviderUrl: 'http://localhost:5737',
       storageProviderLabel: 'Standalone',
       prompt: 'none',
@@ -458,7 +458,7 @@ describe('AuthCallback', () => {
     await waitFor(() => {
       expect(connectMock).toHaveBeenCalledWith('http://localhost:5737', expect.objectContaining({
         authorizationSurface: 'embedded',
-        returnToMicroAppId: 'chat',
+        returnToAppletId: 'chat',
       }))
     })
     expect(screen.queryByText(/account cookie is required/)).toBeNull()
@@ -468,7 +468,7 @@ describe('AuthCallback', () => {
     setPendingLoginAttempt({
       issuerUrl: 'http://localhost:5737',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     })
     window.history.replaceState({}, '', '/auth/callback?error=server_error')
 
@@ -481,7 +481,7 @@ describe('AuthCallback', () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'files',
+      returnToAppletId: 'files',
     })
     window.history.replaceState({}, '', '/auth/callback?error=server_error')
 
@@ -506,9 +506,9 @@ describe('AuthCallback', () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'files',
+      returnToAppletId: 'files',
     })
-    ensurePendingPostLoginMicroAppId('files')
+    ensurePendingPostLoginAppletId('files')
     window.history.replaceState({}, '', '/auth/callback?error=server_error')
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
@@ -516,22 +516,22 @@ describe('AuthCallback', () => {
     fireEvent.click(screen.getByRole('button', { name: '重新登录' }))
 
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
   })
 
   it('keeps the original post-login target available while showing a callback error', async () => {
     setPendingLoginAttempt({
       issuerUrl: 'http://localhost:5737',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'files',
+      returnToAppletId: 'files',
     })
-    ensurePendingPostLoginMicroAppId('files')
+    ensurePendingPostLoginAppletId('files')
     window.history.replaceState({}, '', '/auth/callback?error=access_denied')
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
     expect(screen.getByRole('button', { name: '重试本机空间' })).toBeTruthy()
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBe('files')
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBe('files')
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).not.toBeNull()
   })
 
@@ -540,7 +540,7 @@ describe('AuthCallback', () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     })
     window.history.replaceState({}, '', '/auth/callback?error=access_denied')
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useSession } from '@/providers/solid-session-context'
 import { useLiveQuery } from '@tanstack/react-db'
 import type { ContactRow } from '@undefineds.co/models'
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useContactStore } from '../../app/store'
 import { contactCollection, contactOps } from '../../data/collections'
@@ -13,7 +13,7 @@ import {
 import type { GroupContactInfo } from '../../domain/types'
 import { ContactList } from '../../ui/ContactList'
 
-export function ContactListPane({}: MicroAppPaneProps) {
+export function ContactListPane({}: AppletPaneProps) {
   const { session } = useSession()
   const { db, status: databaseStatus, error: databaseError, retry: retryDatabase } = useSolidDatabase()
   const [fetchError, setFetchError] = useState<Error | null>(null)

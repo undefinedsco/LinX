@@ -45,7 +45,7 @@ async function openFiles(page: Page) {
   const filesNavButton = page.getByRole('navigation').getByRole('button', { name: '文件', exact: true })
   await expect(filesNavButton).toBeVisible({ timeout: 30_000 })
   await filesNavButton.click()
-  await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('[data-applet-id="files"]')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByLabel('文件工作区')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText('正在加载容器...')).toHaveCount(0, { timeout: 30_000 })
 }
@@ -636,9 +636,9 @@ test.describe('Files production visual audit', () => {
 
     await page.setViewportSize({ width: 390, height: 844 })
     await selectResource(page, seed.turtleUri)
-    await expect(page.locator('[data-micro-app-id="files"]')).toBeVisible()
+    await expect(page.locator('[data-applet-id="files"]')).toBeVisible()
     await expect(page.getByLabel('文件工作区')).toHaveCount(1)
-    await expect(page.getByTestId('micro-app-list-panel')).toHaveCount(0)
+    await expect(page.getByTestId('applet-list-panel')).toHaveCount(0)
     const mobileWorkspaceBox = await page.getByLabel('文件工作区').boundingBox()
     expect(mobileWorkspaceBox?.x ?? Number.POSITIVE_INFINITY).toBeLessThan(72)
     await expect(page.locator('[data-structured-toolbar-scroll="view-actions"]')).toBeVisible()

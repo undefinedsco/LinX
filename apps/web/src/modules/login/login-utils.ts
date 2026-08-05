@@ -1,4 +1,4 @@
-import { defaultMicroAppId, isValidMicroAppId, type MicroAppId } from '@/modules/layout/micro-app-registry'
+import { defaultAppletId, isValidAppletId, type AppletId } from '@/modules/layout/applet-registry'
 import {
   createLoginTransaction,
   normalizeLoginTransaction,
@@ -7,7 +7,7 @@ import {
   type LoginTransaction,
 } from './login-transaction'
 
-const POST_LOGIN_MICRO_APP_KEY = 'linx-post-login-micro-app'
+const POST_LOGIN_APPLET_KEY = 'linx-post-login-applet'
 const PENDING_LOGIN_ATTEMPT_KEY = 'linx-pending-login-attempt'
 const PENDING_LOGIN_MAX_AGE_MS = 15 * 60 * 1000
 const CALLBACK_ERROR_KEY = 'linx-pending-callback-error'
@@ -21,7 +21,7 @@ export interface PendingLoginAttempt {
   accountIssuerUrl?: string
   accountIssuerLabel?: string
   authorizationSurface: 'window' | 'embedded' | 'external'
-  returnToMicroAppId: MicroAppId
+  returnToAppletId: AppletId
   storageProviderUrl?: string
   storageProviderLabel?: string
   authorizationQuery?: Record<string, string>
@@ -157,45 +157,45 @@ export const clearStoredSolidSession = (_storageKey?: string) => {
       localStorage.removeItem(key)
     }
   }
-  clearPendingPostLoginMicroAppId()
+  clearPendingPostLoginAppletId()
   clearPendingLoginAttempt()
   clearPendingCallbackError()
 }
 
-export function resolvePostLoginMicroAppId(pathname?: string): MicroAppId {
-  const fallback = defaultMicroAppId
+export function resolvePostLoginAppletId(pathname?: string): AppletId {
+  const fallback = defaultAppletId
   const candidatePath = pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '')
   const segment = candidatePath.replace(/^\//, '').split('/')[0]
-  return isValidMicroAppId(segment) ? segment : fallback
+  return isValidAppletId(segment) ? segment : fallback
 }
 
-export function getPendingPostLoginMicroAppId(): MicroAppId | null {
+export function getPendingPostLoginAppletId(): AppletId | null {
   if (typeof window === 'undefined') return null
-  const value = window.sessionStorage.getItem(POST_LOGIN_MICRO_APP_KEY)
-  return isValidMicroAppId(value ?? undefined) ? (value as MicroAppId) : null
+  const value = window.sessionStorage.getItem(POST_LOGIN_APPLET_KEY)
+  return isValidAppletId(value ?? undefined) ? (value as AppletId) : null
 }
 
-export function ensurePendingPostLoginMicroAppId(microAppId: MicroAppId) {
+export function ensurePendingPostLoginAppletId(appletId: AppletId) {
   if (typeof window === 'undefined') return
-  if (getPendingPostLoginMicroAppId()) return
-  window.sessionStorage.setItem(POST_LOGIN_MICRO_APP_KEY, microAppId)
+  if (getPendingPostLoginAppletId()) return
+  window.sessionStorage.setItem(POST_LOGIN_APPLET_KEY, appletId)
 }
 
-export function setPendingPostLoginMicroAppId(microAppId: MicroAppId) {
+export function setPendingPostLoginAppletId(appletId: AppletId) {
   if (typeof window === 'undefined') return
-  window.sessionStorage.setItem(POST_LOGIN_MICRO_APP_KEY, microAppId)
+  window.sessionStorage.setItem(POST_LOGIN_APPLET_KEY, appletId)
 }
 
-export function consumePendingPostLoginMicroAppId(): MicroAppId {
-  if (typeof window === 'undefined') return defaultMicroAppId
-  const value = getPendingPostLoginMicroAppId()
-  window.sessionStorage.removeItem(POST_LOGIN_MICRO_APP_KEY)
-  return value ?? defaultMicroAppId
+export function consumePendingPostLoginAppletId(): AppletId {
+  if (typeof window === 'undefined') return defaultAppletId
+  const value = getPendingPostLoginAppletId()
+  window.sessionStorage.removeItem(POST_LOGIN_APPLET_KEY)
+  return value ?? defaultAppletId
 }
 
-export function clearPendingPostLoginMicroAppId() {
+export function clearPendingPostLoginAppletId() {
   if (typeof window === 'undefined') return
-  window.sessionStorage.removeItem(POST_LOGIN_MICRO_APP_KEY)
+  window.sessionStorage.removeItem(POST_LOGIN_APPLET_KEY)
 }
 
 export function getPendingLoginAttempt(): PendingLoginAttempt | null {
@@ -241,7 +241,7 @@ export function getPendingLoginTransaction(): LoginTransaction | null {
       accountIssuerUrl: attempt.accountIssuerUrl,
       accountIssuerLabel: attempt.accountIssuerLabel,
       authorizationSurface: attempt.authorizationSurface,
-      returnToMicroAppId: attempt.returnToMicroAppId,
+      returnToAppletId: attempt.returnToAppletId,
       storageProviderUrl: attempt.storageProviderUrl,
       storageProviderLabel: attempt.storageProviderLabel,
       authorizationQuery: attempt.authorizationQuery,
@@ -258,7 +258,7 @@ export function setPendingLoginAttempt(attempt: PendingLoginAttempt, loginTransa
   const persisted: PendingLoginAttempt = {
     issuerUrl: attempt.issuerUrl,
     authorizationSurface: attempt.authorizationSurface,
-    returnToMicroAppId: attempt.returnToMicroAppId,
+    returnToAppletId: attempt.returnToAppletId,
   }
   const accountIssuerUrl = normalizeStoredUrl(attempt.accountIssuerUrl)
   if (accountIssuerUrl) {
@@ -290,7 +290,7 @@ export function setPendingLoginAttempt(attempt: PendingLoginAttempt, loginTransa
       accountIssuerUrl: persisted.accountIssuerUrl,
       accountIssuerLabel: persisted.accountIssuerLabel,
       authorizationSurface: persisted.authorizationSurface,
-      returnToMicroAppId: persisted.returnToMicroAppId,
+      returnToAppletId: persisted.returnToAppletId,
       storageProviderUrl: persisted.storageProviderUrl,
       storageProviderLabel: persisted.storageProviderLabel,
       authorizationQuery: persisted.authorizationQuery,
@@ -352,7 +352,7 @@ export function clearServiceLoopbackAuthState(): boolean {
   if (!storedSession?.issuerUrl || !isLoopbackUrl(storedSession.issuerUrl)) return false
 
   clearSolidAuthClientState()
-  clearPendingPostLoginMicroAppId()
+  clearPendingPostLoginAppletId()
   clearPendingLoginAttempt()
   clearPendingCallbackError()
   return true
@@ -377,7 +377,7 @@ function normalizePendingLoginAttemptPayload(parsed: PendingLoginPayload): Pendi
     || !(parsed.authorizationSurface === 'window'
       || parsed.authorizationSurface === 'embedded'
       || parsed.authorizationSurface === 'external')
-    || !isValidMicroAppId(parsed.returnToMicroAppId)
+    || !isValidAppletId(parsed.returnToAppletId)
   ) {
     return null
   }
@@ -388,7 +388,7 @@ function normalizePendingLoginAttemptPayload(parsed: PendingLoginPayload): Pendi
   const attempt: PendingLoginAttempt = {
     issuerUrl: parsed.issuerUrl,
     authorizationSurface: parsed.authorizationSurface,
-    returnToMicroAppId: parsed.returnToMicroAppId,
+    returnToAppletId: parsed.returnToAppletId,
   }
   const accountIssuerUrl = normalizeStoredUrl(parsed.accountIssuerUrl)
   if (accountIssuerUrl) {
@@ -482,7 +482,7 @@ export async function performSignOut(
     // ignore
   }
   clearPendingLoginAttempt()
-  clearPendingPostLoginMicroAppId()
+  clearPendingPostLoginAppletId()
   clearStoredSolidSession()
   const { useLoginStore } = await import('@linx/stores/login')
   useLoginStore.getState().reset()

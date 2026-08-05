@@ -169,7 +169,7 @@ describe('useLoginController', () => {
       await result.current.connect('local')
     })
 
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBe('files')
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBe('files')
     expect(result.current.view).toBe('local')
     expect(result.current.localLoginStatus.active).toBe(false)
     expect(startLocalMock).toHaveBeenCalledTimes(1)
@@ -567,9 +567,9 @@ describe('useLoginController', () => {
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-post-login-applet', 'chat')
     window.sessionStorage.setItem('linx-pending-callback-error', JSON.stringify({
       error: 'access_denied',
       description: null,
@@ -584,7 +584,7 @@ describe('useLoginController', () => {
     expect(result.current.connectingProvider).toBeNull()
     expect(embeddedAuthorizationState.close).toHaveBeenCalledTimes(1)
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
     expect(window.sessionStorage.getItem('linx-pending-callback-error')).toBeNull()
   })
 
@@ -718,7 +718,7 @@ describe('useLoginController', () => {
     expect(result.current.connectingProvider).toBeNull()
     expect(cancelMock).toHaveBeenCalledTimes(1)
     expect(startLocalMock).not.toHaveBeenCalled()
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
   })
 
@@ -795,7 +795,7 @@ describe('useLoginController', () => {
       result.current.continueStoredAccount()
     })
 
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBe('contacts')
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBe('contacts')
     expect(result.current.view).toBe('local')
     expect(result.current.localLoginStatus.active).toBe(false)
     expect(startLocalMock).toHaveBeenCalledTimes(1)
@@ -1349,7 +1349,7 @@ describe('useLoginController', () => {
       storageProviderUrl: 'http://192.168.1.23:5737/',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
@@ -1911,7 +1911,7 @@ describe('useLoginController', () => {
     expect(result.current.connectingProvider).toBeNull()
     expect(useLoginStore.getState().error).toBeNull()
     expect(cancelMock).toHaveBeenCalledTimes(1)
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
   })
 
@@ -2037,7 +2037,7 @@ describe('useLoginController', () => {
       auth: {},
     } as any
     restoreState.restoreFailed = true
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-post-login-applet', 'chat')
     window.sessionStorage.setItem('linx-pending-callback-error', JSON.stringify({
       error: 'login_required',
       description: null,
@@ -2049,7 +2049,7 @@ describe('useLoginController', () => {
       storageProviderUrl: 'https://node-0000.undefineds.co/',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -2061,7 +2061,7 @@ describe('useLoginController', () => {
     await waitFor(() => {
       expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
         authorizationSurface: 'embedded',
-        returnToMicroAppId: 'chat',
+        returnToAppletId: 'chat',
         route: 'local',
         accountIssuerUrl: 'https://id.undefineds.co',
         accountIssuerLabel: 'Cloud',
@@ -2116,11 +2116,11 @@ describe('useLoginController', () => {
         source: 'cloud',
       },
     ]
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'favorites')
+    window.sessionStorage.setItem('linx-post-login-applet', 'favorites')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'favorites',
+      returnToAppletId: 'favorites',
     }))
     window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
     sessionState.info.isLoggedIn = true
@@ -2138,8 +2138,8 @@ describe('useLoginController', () => {
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
-        to: '/$microAppId',
-        params: { microAppId: 'favorites' },
+        to: '/$appletId',
+        params: { appletId: 'favorites' },
         replace: true,
       })
     })
@@ -2150,7 +2150,7 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().storedAccount?.issuerLabel).toBe('Cloud')
     expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('https://cloud.example.com')
     expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Cloud')
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
   })
 
@@ -2178,11 +2178,11 @@ describe('useLoginController', () => {
         'solid:storage': { '@id': 'https://id.undefineds.co/ganbb/' },
       }),
     })
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-post-login-applet', 'chat')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
     sessionState.info.isLoggedIn = true
@@ -2227,11 +2227,11 @@ describe('useLoginController', () => {
         'solid:storage': { '@id': 'https://id.undefineds.co/ganbb/' },
       }),
     })
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-post-login-applet', 'chat')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
     sessionState.info.isLoggedIn = true
@@ -2278,11 +2278,11 @@ describe('useLoginController', () => {
         },
       },
     ]
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-post-login-applet', 'chat')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     useLoginStore.setState({
       state: 'idle',
@@ -2339,13 +2339,13 @@ describe('useLoginController', () => {
         },
       },
     ]
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-post-login-applet', 'chat')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://cloud.example.com',
       storageProviderUrl: 'https://node-0000.undefineds.co/',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://alice.example/profile/card#me'
@@ -2385,7 +2385,7 @@ describe('useLoginController', () => {
         },
       },
     ]
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-post-login-applet', 'chat')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://id.undefineds.co',
       accountIssuerUrl: 'https://id.undefineds.co',
@@ -2393,7 +2393,7 @@ describe('useLoginController', () => {
       storageProviderUrl: 'https://node-0000.undefineds.co/',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
@@ -2476,7 +2476,7 @@ describe('useLoginController', () => {
       storageProviderUrl: 'http://localhost:5737',
       storageProviderLabel: 'Standalone',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -2543,7 +2543,7 @@ describe('useLoginController', () => {
       storageProviderUrl: 'http://localhost:5737',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
@@ -2619,7 +2619,7 @@ describe('useLoginController', () => {
       storageProviderUrl: 'https://node-abc123.undefineds.co/',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
@@ -2701,7 +2701,7 @@ describe('useLoginController', () => {
       storageProviderUrl: 'https://node-abc123.undefineds.co/',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
@@ -2778,7 +2778,7 @@ describe('useLoginController', () => {
       storageProviderUrl: 'https://node-abc123.undefineds.co/',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
@@ -2819,7 +2819,7 @@ describe('useLoginController', () => {
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://solid.example.net',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://solid.example.net/bob/profile/card#me'
@@ -2874,11 +2874,11 @@ describe('useLoginController', () => {
 
   it('returns to chat with an error when callback restore fails without an explicit provider error', async () => {
     restoreState.restoreFailed = true
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'contacts')
+    window.sessionStorage.setItem('linx-post-login-applet', 'contacts')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'contacts',
+      returnToAppletId: 'contacts',
     }))
     window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
 
@@ -2886,25 +2886,25 @@ describe('useLoginController', () => {
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
-        to: '/$microAppId',
-        params: { microAppId: 'chat' },
+        to: '/$appletId',
+        params: { appletId: 'chat' },
         replace: true,
       })
     })
 
     expect(useLoginStore.getState().state).toBe('idle')
     expect(useLoginStore.getState().error).toBe('登录未完成，请重试。')
-    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+    expect(window.sessionStorage.getItem('linx-post-login-applet')).toBeNull()
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
   })
 
   it('returns connecting flows to idle without error when restore fails on a non-callback path', async () => {
     restoreState.restoreFailed = true
-    window.sessionStorage.setItem('linx-post-login-micro-app', 'files')
+    window.sessionStorage.setItem('linx-post-login-applet', 'files')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'files',
+      returnToAppletId: 'files',
     }))
     window.history.replaceState({}, '', '/chat')
     useLoginStore.setState({

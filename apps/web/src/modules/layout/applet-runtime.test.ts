@@ -1,27 +1,27 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  createMicroAppRuntimeCoordinator,
-  type MicroAppRuntime,
-  type MicroAppRuntimeRegistry,
-} from './micro-app-runtime'
+  createAppletRuntimeCoordinator,
+  type AppletRuntime,
+  type AppletRuntimeRegistry,
+} from './applet-runtime'
 
-function runtime(activate: MicroAppRuntime['activate']): MicroAppRuntime {
+function runtime(activate: AppletRuntime['activate']): AppletRuntime {
   return { activate }
 }
 
-describe('createMicroAppRuntimeCoordinator', () => {
+describe('createAppletRuntimeCoordinator', () => {
   it('hands ownership from the previous module to the next module', async () => {
     const releaseChat = vi.fn()
     const releaseFiles = vi.fn()
     let chatSignal: AbortSignal | undefined
-    const registry: MicroAppRuntimeRegistry = {
+    const registry: AppletRuntimeRegistry = {
       chat: runtime(async ({ signal }) => {
         chatSignal = signal
         return releaseChat
       }),
       files: runtime(async () => releaseFiles),
     }
-    const coordinator = createMicroAppRuntimeCoordinator(registry)
+    const coordinator = createAppletRuntimeCoordinator(registry)
     const db = {}
 
     await coordinator.activate('chat', db)
@@ -35,13 +35,13 @@ describe('createMicroAppRuntimeCoordinator', () => {
   it('releases an activation that resolves after a handoff', async () => {
     let finishChat!: (release: () => void) => void
     const lateRelease = vi.fn()
-    const registry: MicroAppRuntimeRegistry = {
+    const registry: AppletRuntimeRegistry = {
       chat: runtime(() => new Promise((resolve) => {
         finishChat = resolve
       })),
       files: runtime(async () => () => undefined),
     }
-    const coordinator = createMicroAppRuntimeCoordinator(registry)
+    const coordinator = createAppletRuntimeCoordinator(registry)
     const db = {}
 
     const chatActivation = coordinator.activate('chat', db)
@@ -54,7 +54,7 @@ describe('createMicroAppRuntimeCoordinator', () => {
 
   it('does nothing for modules without a data runtime', async () => {
     const activate = vi.fn()
-    const coordinator = createMicroAppRuntimeCoordinator({
+    const coordinator = createAppletRuntimeCoordinator({
       chat: runtime(activate),
     })
 
@@ -68,7 +68,7 @@ describe('createMicroAppRuntimeCoordinator', () => {
     const activate = vi.fn()
       .mockResolvedValueOnce(releases[0])
       .mockResolvedValueOnce(releases[1])
-    const coordinator = createMicroAppRuntimeCoordinator({
+    const coordinator = createAppletRuntimeCoordinator({
       files: runtime(activate),
     })
 

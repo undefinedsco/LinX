@@ -6,13 +6,13 @@ import type {
   DetailConfig,
   DetailViewStateBase,
   ListConfig,
-  MicroAppDataLayer,
-  MicroAppStore,
-  MicroAppStoreState,
+  AppletDataLayer,
+  AppletStore,
+  AppletStoreState,
 } from '@/lib/data/types'
-import type { MicroAppId } from '@/modules/layout/micro-app-registry'
+import type { AppletId } from '@/modules/layout/applet-registry'
 
-const dataLayers = new Map<MicroAppId, MicroAppDataLayer<any, any, any, any, any, any>>()
+const dataLayers = new Map<AppletId, AppletDataLayer<any, any, any, any, any, any>>()
 
 export const registerDataLayer = <
   Row extends Record<string, unknown>,
@@ -21,11 +21,11 @@ export const registerDataLayer = <
   Insert = Row,
   Update = Insert,
   Filters extends Record<string, unknown> = Record<string, unknown>
->(layer: MicroAppDataLayer<Row, DetailState, ViewModel, Insert, Update, Filters>) => {
+>(layer: AppletDataLayer<Row, DetailState, ViewModel, Insert, Update, Filters>) => {
   dataLayers.set(layer.id, layer)
 }
 
-export const getDataLayer = (id: MicroAppId) => dataLayers.get(id)
+export const getDataLayer = (id: AppletId) => dataLayers.get(id)
 
 export interface CreateDataLayerOptions<
   Row extends Record<string, unknown>,
@@ -35,7 +35,7 @@ export interface CreateDataLayerOptions<
   Update = Insert,
   Filters extends Record<string, unknown> = Record<string, unknown>
 > {
-  id: MicroAppId
+  id: AppletId
   descriptor: PodRepositoryDescriptor<any, Row, Insert, Update, Filters>
   listConfig: ListConfig<Row>
   detailConfig: DetailConfig<DetailState>
@@ -44,7 +44,7 @@ export interface CreateDataLayerOptions<
 }
 
 const deriveIdentifier = <RowSource>(view: RowSource): string | undefined => {
-  return requireRowResourceId(view as { id?: string | null }, 'micro-app row')
+  return requireRowResourceId(view as { id?: string | null }, 'applet row')
 }
 
 export function createDataLayer<
@@ -62,7 +62,7 @@ export function createDataLayer<
 
   const buildDetailState = () => detailConfig.initialViewState()
 
-  const useStore = create<MicroAppStoreState<ViewModel, DetailState>>(() => ({
+  const useStore = create<AppletStoreState<ViewModel, DetailState>>(() => ({
     entities: {},
     ids: [],
     search: '',
@@ -77,10 +77,10 @@ export function createDataLayer<
     if (fromSource) return fromSource
     const fallback = deriveIdentifier(view)
     if (fallback) return fallback
-    throw new Error(`Unable to derive identifier for micro-app ${id}`)
+    throw new Error(`Unable to derive identifier for applet ${id}`)
   }
 
-  const store: MicroAppStore<ViewModel, DetailState> = {
+  const store: AppletStore<ViewModel, DetailState> = {
     useStore,
     actions: {
       setSearch: (value: string) => useStore.setState({ search: value }),
@@ -141,7 +141,7 @@ export function createDataLayer<
     return viewModel
   }
 
-  const layer: MicroAppDataLayer<Row, DetailState, ViewModel, Insert, Update, Filters> = {
+  const layer: AppletDataLayer<Row, DetailState, ViewModel, Insert, Update, Filters> = {
     id,
     listConfig: normalizedListConfig,
     detailConfig,

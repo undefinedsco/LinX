@@ -1,11 +1,11 @@
 import { useEffect } from 'react'
 import { useChatLayoutConfig } from './useChatLayoutConfig'
-import type { MicroAppLayoutConfig } from '@/modules/layout/micro-app-registry'
+import type { AppletLayoutConfig } from '@/modules/layout/applet-registry'
 
 export function ChatLayoutConfigBridge({
   onConfigChange,
 }: {
-  onConfigChange: (config: MicroAppLayoutConfig | undefined) => void
+  onConfigChange: (config: AppletLayoutConfig | undefined) => void
 }) {
   const config = useChatLayoutConfig()
 

@@ -114,7 +114,7 @@ describe('model-services module architecture', () => {
   })
 
   it('routes shell composition and bootstrap to canonical owners', () => {
-    const registry = readModuleSource('src/modules/layout/micro-app-registry.tsx')
+    const registry = readModuleSource('src/modules/layout/applet-registry.tsx')
     const bootstrap = readModuleSource('src/providers/pod-collections-bootstrap.tsx')
 
     expect(registry).toContain("@/modules/model-services/features/list/ModelServicesListPane")

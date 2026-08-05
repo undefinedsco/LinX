@@ -77,7 +77,7 @@ describe('useSessionTokenMaintenance', () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'files',
+      returnToAppletId: 'files',
     })
     renderHook(() => useSessionTokenMaintenance())
 
@@ -88,7 +88,7 @@ describe('useSessionTokenMaintenance', () => {
 
     expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'files',
+      returnToAppletId: 'files',
     }))
   })
 

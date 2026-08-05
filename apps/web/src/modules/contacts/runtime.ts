@@ -1,5 +1,5 @@
 import { acquirePodCollectionSubscription } from '@/lib/data/use-pod-collection-subscription'
-import type { MicroAppRuntime } from '@/modules/layout/micro-app-runtime'
+import type { AppletRuntime } from '@/modules/layout/applet-runtime'
 import { contactOps } from './data/collections'
 
 const subscribe = () => contactOps.subscribeToPod()
@@ -9,6 +9,6 @@ const subscribe = () => contactOps.subscribeToPod()
 // of opening duplicate subscriptions.
 export const subscribeContactsToPod = subscribe
 
-export const contactsRuntime: MicroAppRuntime = {
+export const contactsRuntime: AppletRuntime = {
   activate: ({ db, signal }) => acquirePodCollectionSubscription(db, subscribe, signal),
 }

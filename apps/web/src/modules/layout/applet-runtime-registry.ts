@@ -1,8 +1,8 @@
-import type { MicroAppRuntime, MicroAppRuntimeRegistry } from './micro-app-runtime'
+import type { AppletRuntime, AppletRuntimeRegistry } from './applet-runtime'
 
-type RuntimeLoader = () => Promise<MicroAppRuntime>
+type RuntimeLoader = () => Promise<AppletRuntime>
 
-function lazyRuntime(load: RuntimeLoader): MicroAppRuntime {
+function lazyRuntime(load: RuntimeLoader): AppletRuntime {
   return {
     async activate(context) {
       const runtime = await load()
@@ -11,7 +11,7 @@ function lazyRuntime(load: RuntimeLoader): MicroAppRuntime {
   }
 }
 
-export const microAppRuntimeRegistry: MicroAppRuntimeRegistry = {
+export const appletRuntimeRegistry: AppletRuntimeRegistry = {
   chat: lazyRuntime(() => import('@/modules/chat/runtime').then(({ chatRuntime }) => chatRuntime)),
   contacts: lazyRuntime(() => import('@/modules/contacts/runtime').then(({ contactsRuntime }) => contactsRuntime)),
   favorites: lazyRuntime(() => import('@/modules/favorites/runtime').then(({ favoritesRuntime }) => favoritesRuntime)),

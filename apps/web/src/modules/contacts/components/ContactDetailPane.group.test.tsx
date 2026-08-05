@@ -335,8 +335,8 @@ describe('ContactDetailPane group flows', () => {
     expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
     expect(mockFindOrCreateChat).not.toHaveBeenCalled()
     expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/$microAppId',
-      params: { microAppId: 'chat' },
+      to: '/$appletId',
+      params: { appletId: 'chat' },
     })
   })
 
@@ -435,8 +435,8 @@ describe('ContactDetailPane group flows', () => {
       expect(mockStoreState.select).toHaveBeenCalledWith('group-new')
       expect(mockSelectChat).toHaveBeenCalledWith('chat-new')
       expect(mockNavigate).toHaveBeenCalledWith({
-        to: '/$microAppId',
-        params: { microAppId: 'chat' },
+        to: '/$appletId',
+        params: { appletId: 'chat' },
       })
     })
   })

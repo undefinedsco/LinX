@@ -1,5 +1,5 @@
 import { ChevronLeft } from 'lucide-react'
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { Button } from '@/components/ui/button'
 import { useContactStore } from '@/modules/contacts/app/store'
 import { ContactDetail } from '../../ui/ContactDetail'
@@ -7,7 +7,7 @@ import { ContactListPane } from '../list/ContactListPane'
 import { CreateGroupDialog } from '../groups/CreateGroupDialog'
 import { useContactDetailController } from './useContactDetailController'
 
-export function ContactDetailPane({ compact = false, theme }: MicroAppPaneProps) {
+export function ContactDetailPane({ compact = false, theme }: AppletPaneProps) {
   const controller = useContactDetailController()
   const selectedId = useContactStore((state) => state.selectedId)
   const select = useContactStore((state) => state.select)

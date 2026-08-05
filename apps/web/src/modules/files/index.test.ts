@@ -11,7 +11,7 @@ const collectionFacadePath = 'src/modules/files/data/collections/index.ts'
 const resourceCollectionPath = 'src/modules/files/data/collections/resource-collection.ts'
 
 describe('files public module exports', () => {
-  it('keeps the module root export surface to micro-app entrypoints only', () => {
+  it('keeps the module root export surface to applet entrypoints only', () => {
     expect(Object.keys(filesModule).sort()).toEqual([
       'FileDetailPane',
       'FilesListPane',

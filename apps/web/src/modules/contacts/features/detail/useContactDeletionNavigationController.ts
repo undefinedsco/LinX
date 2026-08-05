@@ -33,7 +33,7 @@ export function useContactDeletionNavigationController({
 
   const navigateToChat = useCallback((chatId: string) => {
     selectChat(chatId)
-    navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
+    navigate({ to: '/$appletId', params: { appletId: 'chat' } })
   }, [navigate, selectChat])
 
   const handleStartChat = useCallback(async () => {

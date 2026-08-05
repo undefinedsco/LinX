@@ -17,7 +17,7 @@
 ### 杠杆 1：topic 拓扑收敛（订阅面最小化）
 
 - **订阅原则**：谁活跃（可见/可交互）且需要实时合并，谁订阅；历史/只读数据走 revalidation。唯一后台例外是 pinned inbox（导航徽标）
-- 单活跃 micro-app 协调器：activate 订阅 / deactivate 释放（`micro-app-runtime.ts`）
+- 单活跃 applet 协调器：activate 订阅 / deactivate 释放（`applet-runtime.ts`）
 - 引用计数 lease 去重（`@linx/stores/collection-subscription-lease`，250ms grace）
 - **订阅跟着数据走**：跨模块渲染共享数据时，消费方通过共享 lease 引用（同一函数引用）acquire 属主模块的订阅——已落地两处：files 详情页 → favorites 星标、chat 选择器 → contacts agents（`agentCollection` 此前无人订阅，已并入 `contactOps.subscribeToPod`）
 - 典型稳态 topic 数 1~4（+pinned inbox 4）；symphony 面板打开时 +6 属正常——面板打开即活跃场景（观看运行中的 workflow 正是需要实时的面）

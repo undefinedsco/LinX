@@ -11,7 +11,7 @@ import { useSession } from '@/providers/solid-session-context'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -59,7 +59,7 @@ import {
   type SecretaryStarterAction,
 } from '../ui/SecretaryWelcome'
 
-export interface ChatContentPaneProps extends MicroAppPaneProps {}
+export interface ChatContentPaneProps extends AppletPaneProps {}
 
 interface PendingSecretaryDraft {
   text: string
@@ -176,7 +176,7 @@ function InboxActionBanner({
     if (!primaryItem) return
     setFilter('pending')
     selectItem(primaryItem.id)
-    navigate({ to: '/$microAppId', params: { microAppId: 'inbox' } })
+    navigate({ to: '/$appletId', params: { appletId: 'inbox' } })
   }, [navigate, primaryItem, selectItem, setFilter])
 
   if (!primaryItem) {

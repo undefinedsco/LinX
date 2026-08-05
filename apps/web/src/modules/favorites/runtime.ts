@@ -1,5 +1,5 @@
 import { acquirePodCollectionSubscription } from '@/lib/data/use-pod-collection-subscription'
-import type { MicroAppRuntime } from '@/modules/layout/micro-app-runtime'
+import type { AppletRuntime } from '@/modules/layout/applet-runtime'
 import { favoriteOps } from './collections'
 
 const subscribe = () => favoriteOps.subscribeToPod()
@@ -9,6 +9,6 @@ const subscribe = () => favoriteOps.subscribeToPod()
 // ref-counted lease instead of opening duplicate subscriptions.
 export const subscribeFavoritesToPod = subscribe
 
-export const favoritesRuntime: MicroAppRuntime = {
+export const favoritesRuntime: AppletRuntime = {
   activate: ({ db, signal }) => acquirePodCollectionSubscription(db, subscribe, signal),
 }

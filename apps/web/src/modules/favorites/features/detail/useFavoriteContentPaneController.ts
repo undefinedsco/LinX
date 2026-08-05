@@ -37,7 +37,7 @@ export function useFavoriteContentPaneController() {
     const scene = resolveFavoriteScene(favorite)
     if (!scene) return
 
-    if (scene.microAppId === 'chat') {
+    if (scene.appletId === 'chat') {
       if (scene.chatId) {
         selectChat(scene.chatId)
       }
@@ -49,11 +49,11 @@ export function useFavoriteContentPaneController() {
       setMessageAnchor(null)
     }
 
-    if (scene.microAppId === 'contacts' && scene.contactId) {
+    if (scene.appletId === 'contacts' && scene.contactId) {
       selectContact(scene.contactId)
     }
 
-    if (scene.microAppId === 'files') {
+    if (scene.appletId === 'files') {
       if (scene.treeNodeId) {
         selectTreeNode(scene.treeNodeId)
       }
@@ -63,8 +63,8 @@ export function useFavoriteContentPaneController() {
     }
 
     navigate({
-      to: '/$microAppId',
-      params: { microAppId: scene.microAppId },
+      to: '/$appletId',
+      params: { appletId: scene.appletId },
     })
   }, [favorite, navigate, selectChat, selectContact, selectFile, selectThread, selectTreeNode, setMessageAnchor])
 

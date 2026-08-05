@@ -110,8 +110,8 @@ describe('InboxContentPane', () => {
     expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
     expect(mockSelectThread).toHaveBeenCalledWith('thread-1')
     expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/$microAppId',
-      params: { microAppId: 'chat' },
+      to: '/$appletId',
+      params: { appletId: 'chat' },
     })
   })
 

@@ -44,8 +44,8 @@ describe('InboxBellButton', () => {
     expect(mockSetFilter).toHaveBeenCalledWith('pending')
     expect(mockSelectItem).toHaveBeenCalledWith(null)
     expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/$microAppId',
-      params: { microAppId: 'inbox' },
+      to: '/$appletId',
+      params: { appletId: 'inbox' },
     })
   })
 
@@ -57,8 +57,8 @@ describe('InboxBellButton', () => {
 
     expect(mockSetFilter).toHaveBeenCalledWith('audit')
     expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/$microAppId',
-      params: { microAppId: 'inbox' },
+      to: '/$appletId',
+      params: { appletId: 'inbox' },
     })
   })
 })

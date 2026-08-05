@@ -1,9 +1,9 @@
-import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import type { AppletPaneProps } from '@/modules/layout/applet-registry'
 import { SettingsContentView } from '../../ui/SettingsContentView'
 import { LocalNetworkSettingsCard } from '../network/LocalNetworkSettingsCard'
 import { useSettingsContentPaneController } from './useSettingsContentPaneController'
 
-export function SettingsContentPane({}: MicroAppPaneProps) {
+export function SettingsContentPane({}: AppletPaneProps) {
   const controller = useSettingsContentPaneController()
   return <SettingsContentView {...controller} networkContent={<LocalNetworkSettingsCard />} />
 }

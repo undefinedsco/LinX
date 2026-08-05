@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from '@/providers/solid-session-context'
 import {
-  ensurePendingPostLoginMicroAppId,
+  ensurePendingPostLoginAppletId,
   getStoredSolidSession,
-  resolvePostLoginMicroAppId,
+  resolvePostLoginAppletId,
 } from '../login-utils'
 import {
   getCurrentLocationCallbackRedirectUrl,
@@ -72,7 +72,7 @@ export function useSessionRestore() {
     const isCallbackUrl = shouldAttemptCurrentLocationRestore()
     if (session.info.isLoggedIn) {
       if (hasStoredSession && !isCallbackUrl) {
-        ensurePendingPostLoginMicroAppId(resolvePostLoginMicroAppId())
+        ensurePendingPostLoginAppletId(resolvePostLoginAppletId())
       }
       return
     }
@@ -102,7 +102,7 @@ export function useSessionRestore() {
     // can navigate through /auth/callback.
     if (isCallbackUrl || hasStoredSession) {
       if (hasStoredSession && !isCallbackUrl) {
-        ensurePendingPostLoginMicroAppId(resolvePostLoginMicroAppId())
+        ensurePendingPostLoginAppletId(resolvePostLoginAppletId())
       }
       setStatus('restoring')
     } else {

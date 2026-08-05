@@ -4,21 +4,21 @@ import {
   clearUnrestorableSolidAuthState,
   clearPendingCallbackError,
   clearPendingLoginAttempt,
-  clearPendingPostLoginMicroAppId,
+  clearPendingPostLoginAppletId,
   clearStoredSolidSession,
   getStoredSolidSession,
   getPendingCallbackError,
   consumePendingLoginAttempt,
-  consumePendingPostLoginMicroAppId,
-  ensurePendingPostLoginMicroAppId,
+  consumePendingPostLoginAppletId,
+  ensurePendingPostLoginAppletId,
   getPendingLoginAttempt,
   getPendingLoginTransaction,
   hasStoredSolidSession,
   isInvalidClientError,
   isInvalidClientErrorCode,
-  resolvePostLoginMicroAppId,
+  resolvePostLoginAppletId,
   setPendingLoginAttempt,
-  setPendingPostLoginMicroAppId,
+  setPendingPostLoginAppletId,
 } from './login-utils'
 import { getRememberedAccount } from '@linx/stores/login'
 
@@ -26,7 +26,7 @@ describe('login-utils post-login target helpers', () => {
   afterEach(() => {
     clearPendingCallbackError()
     clearPendingLoginAttempt()
-    clearPendingPostLoginMicroAppId()
+    clearPendingPostLoginAppletId()
     clearStoredSolidSession()
     window.localStorage.removeItem('linx-remembered-account')
     window.history.replaceState({}, '', '/')
@@ -34,42 +34,42 @@ describe('login-utils post-login target helpers', () => {
 
   it('resolves current micro app from pathname', () => {
     window.history.replaceState({}, '', '/files')
-    expect(resolvePostLoginMicroAppId()).toBe('files')
+    expect(resolvePostLoginAppletId()).toBe('files')
   })
 
-  it('falls back to chat for non-micro-app routes', () => {
+  it('falls back to chat for non-applet routes', () => {
     window.history.replaceState({}, '', '/auth/callback')
-    expect(resolvePostLoginMicroAppId()).toBe('chat')
+    expect(resolvePostLoginAppletId()).toBe('chat')
 
     window.history.replaceState({}, '', '/setup')
-    expect(resolvePostLoginMicroAppId()).toBe('chat')
+    expect(resolvePostLoginAppletId()).toBe('chat')
   })
 
   it('stores and consumes the pending post-login micro app', () => {
-    ensurePendingPostLoginMicroAppId('contacts')
-    expect(consumePendingPostLoginMicroAppId()).toBe('contacts')
-    expect(consumePendingPostLoginMicroAppId()).toBe('chat')
+    ensurePendingPostLoginAppletId('contacts')
+    expect(consumePendingPostLoginAppletId()).toBe('contacts')
+    expect(consumePendingPostLoginAppletId()).toBe('chat')
   })
 
   it('does not overwrite an existing pending target', () => {
-    ensurePendingPostLoginMicroAppId('favorites')
-    ensurePendingPostLoginMicroAppId('files')
+    ensurePendingPostLoginAppletId('favorites')
+    ensurePendingPostLoginAppletId('files')
 
-    expect(consumePendingPostLoginMicroAppId()).toBe('favorites')
+    expect(consumePendingPostLoginAppletId()).toBe('favorites')
   })
 
   it('can replace the pending target with the current route target', () => {
-    ensurePendingPostLoginMicroAppId('chat')
-    setPendingPostLoginMicroAppId('files')
+    ensurePendingPostLoginAppletId('chat')
+    setPendingPostLoginAppletId('files')
 
-    expect(consumePendingPostLoginMicroAppId()).toBe('files')
+    expect(consumePendingPostLoginAppletId()).toBe('files')
   })
 
   it('stores and consumes the pending login attempt', () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'contacts',
+      returnToAppletId: 'contacts',
       storageProviderUrl: 'https://node.example.com',
       storageProviderLabel: 'Local',
       authorizationQuery: {
@@ -82,7 +82,7 @@ describe('login-utils post-login target helpers', () => {
     expect(getPendingLoginAttempt()).toEqual({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'contacts',
+      returnToAppletId: 'contacts',
       storageProviderUrl: 'https://node.example.com',
       storageProviderLabel: 'Local',
       authorizationQuery: {
@@ -93,7 +93,7 @@ describe('login-utils post-login target helpers', () => {
     expect(consumePendingLoginAttempt()).toEqual({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
-      returnToMicroAppId: 'contacts',
+      returnToAppletId: 'contacts',
       storageProviderUrl: 'https://node.example.com',
       storageProviderLabel: 'Local',
       authorizationQuery: {
@@ -110,7 +110,7 @@ describe('login-utils post-login target helpers', () => {
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
       storageProviderUrl: 'https://node-0000.undefineds.co',
       storageProviderLabel: 'Local',
       authorizationQuery: {
@@ -136,7 +136,7 @@ describe('login-utils post-login target helpers', () => {
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
       providerUrl: 'https://node-0000.undefineds.co',
       providerLabel: 'Local',
       authorizationQuery: {
@@ -147,7 +147,7 @@ describe('login-utils post-login target helpers', () => {
     expect(getPendingLoginAttempt()).toEqual({
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
       storageProviderUrl: 'https://node-0000.undefineds.co',
       storageProviderLabel: 'Local',
       authorizationQuery: {
@@ -173,7 +173,7 @@ describe('login-utils post-login target helpers', () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
       storageProviderUrl: 'https://node-0000.undefineds.co',
       storageProviderLabel: 'Local',
       prompt: 'none',
@@ -182,7 +182,7 @@ describe('login-utils post-login target helpers', () => {
     expect(getPendingLoginAttempt()).toEqual({
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
-      returnToMicroAppId: 'chat',
+      returnToAppletId: 'chat',
       storageProviderUrl: 'https://node-0000.undefineds.co',
       storageProviderLabel: 'Local',
       prompt: 'none',

@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import type { MicroAppLayoutConfig } from '@/modules/layout/micro-app-registry'
+import type { AppletLayoutConfig } from '@/modules/layout/applet-registry'
 import { useModelServicesStore } from './store'
 import { MODEL_PROVIDERS } from '../domain/provider-catalog'
 
-export function useModelServicesLayoutConfig(): MicroAppLayoutConfig {
+export function useModelServicesLayoutConfig(): AppletLayoutConfig {
   const selectedId = useModelServicesStore((state) => state.selectedProviderId)
   const provider = useMemo(() =>
     MODEL_PROVIDERS.find(p => p.id === selectedId),
