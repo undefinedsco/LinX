@@ -68,10 +68,22 @@ LinX 侧删除：`modules/ai-connections/ui/`、`features/`、`data/collections.
 
 ## 3. 视觉对齐方案
 
-- token：两边已是同一套 shadcn 语义 token（`foreground/muted-foreground/border/primary`），xpod `shared-ui/theme.css` 与 LinX `apps/web` token 值对齐为同一组（以 LinX 为准，差异项逐个 diff）
-- 组件：applet 继续使用 `@undefineds.co/shared-ui`，缺的组件原语（Switch/Dialog/Tooltip/Badge 变体）从 LinX `components/ui` 移植进 shared-ui（同一套 radix + tailwind 写法，机械搬运）
-- 交互范式：以 LinX 双栏 applet 为准——列表栏（avatar+名称+状态点+搜索+键盘导航）、详情栏（header 开关、连接配置区、模型区）、中文文案风格、toast 语义
-- iframe 接缝：applet 根背景透明/同底色，隐藏 dashboard chrome（`embed=1`），禁用 applet 内自身的页面级滚动条（滚动归 LinX 外壳）
+**总原则：LinX 的皮 + xpod 的骨，逐点取舍、谁好用谁**（2026-08-05 与用户逐条确认）。token 已完全同源（linked-data taro，`shared-ui/theme.css` 已补齐 LinX 的 `--layout-*`/`--purple-*`，8 个组件原语已移植进 shared-ui）。
+
+| 交互点 | 采用方 | 说明 |
+| --- | --- | --- |
+| 列表行：真 Avatar、选中 3px 左竖线、键盘导航（listbox 语义） | LinX | 视觉成熟度 |
+| 列表状态：五态文字标签（未设置/已配置/已连接/需处理/读取中） | **xpod** | 信息量高于 LinX 单圆点；圆点与标签共存 |
+| 详情头部：Avatar+名称+描述 tooltip+主页链接 | LinX | 呈现层 |
+| 启用/连接操作：按钮流（连接/重连/断开） | **xpod** | 连接状态机是核心语义，不简化成 Switch |
+| Base URL | **xpod**：选填，默认折叠不展示（目录提供默认值） | LinX 的显眼必填表单不采用 |
+| API Key 输入：attempt 门控（点"配置"才出现） | **xpod** | 安全门控保留；输入框本身按 LinX 密码框+显隐眼睛样式 |
+| "验证"按钮 | LinX | 但改走 xpod 服务端通道，不浏览器直连 |
+| 模型区：搜索+能力图标+复制 ID（+CRUD 待服务端写路由） | LinX | 只读列表先行 |
+| 配额卡 / 网关 Key / 编码客户端配置 | **xpod** 独有 | LinX 无对应物 |
+| 中文文案与 toast 语义 | LinX | 文案风格基准 |
+
+**落地形态**：applet 组件（`AiConnectionsList`/`AiProviderCard`/`AiConnectionsPanel`）按上表重排呈现层，状态机与服务端交互不变；iframe 接缝处理（降级路径）：applet 根背景同底色、隐藏 dashboard chrome（`embed=1`）、页面级滚动归 LinX 外壳。
 
 ## 4. 落地步骤
 
