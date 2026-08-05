@@ -43,7 +43,7 @@
 | dev-only 逻辑订阅预算 warn（12） | `use-pod-collection-subscription.ts` | `d248acf7` |
 | Files runtime 归入 data 层 | `files/data/runtime.ts` | `13a2522d` |
 | e2e seeded xpod models 版本分裂 | package.json | `6e887313` |
-| ~~xpod gateway descriptor 广播~~ **已 revert**：私有协议否决后 descriptor 不得广播 | xpod | `17653f96` → revert |
+| ~~xpod gateway descriptor 广播~~ **已 revert**：私有协议否决后 descriptor 不得广播（测试钉死）；`/v1/notifications/ws` 升级路由保留 | xpod | `17653f96` → `04a1ea8e` |
 
 ## 3. 待办
 
@@ -55,5 +55,5 @@
 ## 4. 回退
 
 - app 侧：各 commit 独立可 revert；WS-first 偏好回退即恢复 SSE-first
-- xpod 侧：`17653f96` 的 Link 注入已 revert；`/v1/notifications/ws` 升级路由保留（DeviceNotificationRuntime 供设备通知网关使用，与浏览器 live query 无关）
+- xpod 侧：`04a1ea8e` 已撤销 Link 注入；`/v1/notifications/ws` 升级路由保留（DeviceNotificationRuntime 供设备通知网关使用，与浏览器 live query 无关）
 
