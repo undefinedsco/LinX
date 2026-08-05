@@ -8720,7 +8720,7 @@
   dependencies:
     "@babel/runtime" "^7.12.5"
 
-"@tiptap/core@3.27.1", "@tiptap/core@^3.12.1", "@tiptap/core@^3.13.0", "@tiptap/core@^3.27.1":
+"@tiptap/core@^3.12.1", "@tiptap/core@^3.13.0", "@tiptap/core@^3.27.1":
   version "3.27.1"
   resolved "https://registry.npmjs.org/@tiptap/core/-/core-3.27.1.tgz"
   integrity sha512-rV6Qn4wmC6BxfF+4mu6bqGWj9vA4oXXhsrpXaJL2uhjxeHAGofjwcHof2X84VYzeyXgdlsGmqKie4TAppVXZUQ==
@@ -8889,12 +8889,12 @@
   resolved "https://registry.npmjs.org/@tiptap/extension-underline/-/extension-underline-3.27.1.tgz"
   integrity sha512-N889J4nXN/TPfVt8uF9N1A0SY82E90zwc1y26lqOcw6KWNLmQrlhMh/9OD4ikLDbekmFpOBq/UicpHf/6S8hbQ==
 
-"@tiptap/extensions@3.27.1", "@tiptap/extensions@^3.13.0", "@tiptap/extensions@^3.27.1":
+"@tiptap/extensions@^3.13.0", "@tiptap/extensions@^3.27.1":
   version "3.27.1"
   resolved "https://registry.npmjs.org/@tiptap/extensions/-/extensions-3.27.1.tgz#cc0859ef6f6ad9333f0ab769e670a252904cd32b"
   integrity sha512-1Tdx9faw8k0/83V6X+xCDVhV8yElGt95JxeW3YMkKQJI56QdlPz0xOdJPlMiSGJKinPyVier+x9LJD/YZUZIaw==
 
-"@tiptap/pm@3.27.1", "@tiptap/pm@^3.12.1", "@tiptap/pm@^3.13.0", "@tiptap/pm@^3.27.1":
+"@tiptap/pm@^3.12.1", "@tiptap/pm@^3.13.0", "@tiptap/pm@^3.27.1":
   version "3.27.1"
   resolved "https://registry.npmjs.org/@tiptap/pm/-/pm-3.27.1.tgz"
   integrity sha512-Ffjx+vimmBU7zH/KrpXzJid3+pziCe/VL2aexSTP63cyQwKQ65LkFkCKaIsSpFdQQuakVZBGWjCA5RoBV852pw==
@@ -10244,10 +10244,21 @@
     sparqljs "^3.7.3"
     zod "^4.1.8"
 
-"@undefineds.co/models@0.2.45", "@undefineds.co/models@0.2.48":
+"@undefineds.co/models@0.2.45":
   version "0.2.45"
-  resolved "https://registry.npmjs.org/@undefineds.co/models/-/models-0.2.45.tgz"
+  resolved "https://registry.npmjs.org/@undefineds.co/models/-/models-0.2.45.tgz#ba9c75113948941f16860f735849c95131a10a24"
   integrity sha512-2f2qgXZSqWIMH7X0566gIGCZ7CRM4Lf9Hp62GhhYm+Obd/UkuuZHuMga9dSmaUfIP2uIkAE6BYpfPACVVKLnmA==
+  dependencies:
+    "@comunica/query-sparql-solid" "^4.0.2"
+    "@inrupt/vocab-common-rdf" "^1.0.5"
+    "@undefineds.co/drizzle-solid" "^0.3.14"
+    n3 "^1.26.0"
+    zod "^3.22.4"
+
+"@undefineds.co/models@0.2.48":
+  version "0.2.48"
+  resolved "https://registry.npmjs.org/@undefineds.co/models/-/models-0.2.48.tgz#a8dbcef059abe372e1d2249c2435a03aef604d51"
+  integrity sha512-jtAsreslnxvPllGEKp/oEIGfyPwA36EOmXcx+Dp8Qg4m+4uIvkg605ThVPelFltGXXQ5p/AjSVeg/sE4M0Eaww==
   dependencies:
     "@comunica/query-sparql-solid" "^4.0.2"
     "@inrupt/vocab-common-rdf" "^1.0.5"

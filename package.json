@@ -91,7 +91,6 @@
   "resolutions": {
     "**/drizzle-orm": "^0.45.2",
     "**/@undefineds.co/drizzle-solid": "0.3.20",
-    "**/@undefineds.co/models": "0.2.45",
     "**/react": "19.2.6",
     "**/react-dom": "19.2.6",
     "**/@inrupt/solid-client": "^3.0.0",
