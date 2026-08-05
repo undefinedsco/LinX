@@ -213,7 +213,9 @@ describe('PodCollectionsBootstrap', () => {
     expect(subscribeToPodMock).not.toHaveBeenCalled()
     expect(subscribeFavoritesToPodMock).not.toHaveBeenCalled()
     expect(subscribeFilesToPodMock).not.toHaveBeenCalled()
-    expect(subscribeInboxToPodMock).not.toHaveBeenCalled()
+    // The inbox subscription is pinned globally so the navigation bell
+    // keeps receiving summary updates while other micro-apps are active.
+    expect(subscribeInboxToPodMock).toHaveBeenCalledTimes(1)
     expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })

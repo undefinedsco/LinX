@@ -9,10 +9,44 @@ type SubscribeToPod = () => Promise<CollectionSubscriptionRelease>
 
 const leases = new WeakMap<SubscribeToPod, CollectionSubscriptionLease<object>>()
 
+// Dev-only budget guard: with xpod multiplex notifications many logical
+// subscriptions share one WebSocket, but against servers without the
+// descriptor each connect pins a physical channel (SSE/WebSocket), so a
+// high watermark here is a signal to inspect actual connections.
+const LOGICAL_SUBSCRIPTION_BUDGET = 12
+let activeLogicalSubscriptions = 0
+
+function trackLogicalSubscription<T extends CollectionSubscriptionRelease>(connect: () => Promise<T>): () => Promise<T> {
+  return async () => {
+    activeLogicalSubscriptions += 1
+    if (import.meta.env.DEV && activeLogicalSubscriptions > LOGICAL_SUBSCRIPTION_BUDGET) {
+      console.warn(
+        `[PodCollection] ${activeLogicalSubscriptions} logical Pod subscriptions exceed budget ${LOGICAL_SUBSCRIPTION_BUDGET}; ` +
+        'verify physical notification channels stay multiplexed',
+      )
+    }
+    let released = false
+    try {
+      const release = await connect()
+      return (async () => {
+        if (!released) {
+          released = true
+          activeLogicalSubscriptions -= 1
+        }
+        await release()
+      }) as T
+    } catch (error) {
+      released = true
+      activeLogicalSubscriptions -= 1
+      throw error
+    }
+  }
+}
+
 function leaseFor(subscribeToPod: SubscribeToPod): CollectionSubscriptionLease<object> {
   let lease = leases.get(subscribeToPod)
   if (!lease) {
-    lease = createCollectionSubscriptionLease(() => subscribeToPod())
+    lease = createCollectionSubscriptionLease(trackLogicalSubscription(() => subscribeToPod()))
     leases.set(subscribeToPod, lease)
   }
   return lease

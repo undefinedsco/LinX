@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from './query-provider'
 import { useSolidDatabase } from './solid-database-provider'
+import { acquirePodCollectionSubscription } from '@/lib/data/use-pod-collection-subscription'
 import {
   chatCollection,
   chatOps,
@@ -22,6 +23,7 @@ import {
 import { initializeFavoriteCollections } from '@/modules/favorites/collections'
 import { initializeFilesCollections } from '@/modules/files/collections'
 import { initializeInboxCollections } from '@/modules/inbox/collections'
+import { subscribeInboxToPod } from '@/modules/inbox/runtime'
 import { initializeModelCollections } from '@/modules/model-services/data/collections'
 import { initializeSymphonyControlCollections } from '@/modules/symphony/collections'
 
@@ -69,6 +71,23 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     lastStartedRef.current = db
     chatOps.stageLinxDefaultSecretary(db)
 
+    // Pinned: the navigation bell renders inbox summaries globally, so its
+    // subscription must stay live even while another micro-app is active.
+    // Ref-counted with the inbox runtime activation via a shared lease.
+    let releasePinnedInbox: (() => void | Promise<void>) | undefined
+    let pinnedInboxActive = true
+    void acquirePodCollectionSubscription(db, subscribeInboxToPod)
+      .then((release) => {
+        if (!pinnedInboxActive) {
+          void release()
+          return
+        }
+        releasePinnedInbox = release
+      })
+      .catch((error) => {
+        console.warn('[PodCollectionsBootstrap] Failed to pin inbox subscription:', error)
+      })
+
     const welcomePromise = chatOps.ensureLinxWelcome({ force })
     const isCurrentBootstrap = () => !cancelled && lastStartedRef.current === db
     const applyWelcomeResult = (result: LinxWelcomeResult | null) => {
@@ -105,6 +124,8 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
 
     return () => {
       cancelled = true
+      pinnedInboxActive = false
+      void releasePinnedInbox?.()
     }
   }, [db])
 
