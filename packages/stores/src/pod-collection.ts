@@ -104,7 +104,7 @@ export function createPodCollection<
 
   let didSeed = false
 
-  const buildQuery = (db: SolidDatabase<any>, cursor?: OrderedWindowCursor) => {
+  const buildQuery = (db: SolidDatabase<any>, cursor?: OrderedWindowCursor, limitOverride?: number) => {
     let query: any
     if (columns && columns.length > 0) {
       const selectObj: Record<string, any> = {}
@@ -152,14 +152,14 @@ export function createPodCollection<
       branches.push(idTieBreak)
       query = query.whereCursor(branches.length === 1 ? branches[0] : or(...branches))
     }
-    if (window) query = query.limit(window.limit + 1)
+    if (window) query = query.limit(limitOverride ?? window.limit + 1)
     return query
   }
 
-  const executeRows = async (db: SolidDatabase<any>, cursor?: OrderedWindowCursor): Promise<TData[]> => {
+  const executeRows = async (db: SolidDatabase<any>, cursor?: OrderedWindowCursor, limitOverride?: number): Promise<TData[]> => {
     let rows: TData[]
     try {
-      rows = (await buildQuery(db, cursor).execute()) as TData[]
+      rows = (await buildQuery(db, cursor, limitOverride).execute()) as TData[]
     } catch (error) {
       if (isUnsupportedDocumentCollectionRead(error)) {
         console.warn(`[PodCollection] ${queryKey.join('/')} fetch skipped: ${errorMessage(error)}`)
@@ -177,15 +177,16 @@ export function createPodCollection<
   const executeLogicalWindow = async (
     db: SolidDatabase<any>,
     cursor?: OrderedWindowCursor,
+    targetOverride?: number,
   ): Promise<TData[]> => {
     if (!windowPolicy || !window) return executeRows(db, cursor)
 
-    const target = window.limit + 1
+    const target = targetOverride ?? window.limit + 1
     const rows: TData[] = []
     const seen = new Set<string>()
     let pageCursor = cursor
     for (let request = 0; rows.length < target && request < 10; request += 1) {
-      const batch = await executeRows(db, pageCursor)
+      const batch = await executeRows(db, pageCursor, target)
       if (batch.length === 0) break
       let added = 0
       for (const row of batch) {
@@ -263,8 +264,19 @@ export function createPodCollection<
         try {
           await db.insert(resource).values(payload as any).execute()
           if (windowPolicy) {
-            await reconcileActiveWindowUpsert(db, ensured, undefined, immediateWriteSink, false)
-            return { refetch: false }
+            // The write is already durable; a failed reconcile must not roll
+            // back the transaction (that would vanish a persisted row).
+            try {
+              await reconcileActiveWindowUpsert(db, ensured, undefined, immediateWriteSink, false)
+              // A locally inserted row must stay visible even when it ranks
+              // outside the resident window; the reconcile only writes rows
+              // retained in the window.
+              immediateWriteSink.upsert(ensured)
+              return { refetch: false }
+            } catch (error) {
+              console.warn(`[PodCollection] Window reconcile after insert failed for ${queryKey.join('/')}; falling back to refetch:`, error)
+              return { refetch: true }
+            }
           }
           try {
             ;(collection.utils as { writeUpsert?: (row: TData) => void }).writeUpsert?.(ensured)
@@ -292,14 +304,21 @@ export function createPodCollection<
             changedPersistableFields(original as TData | undefined, modified as TData),
           )
           if (windowPolicy) {
-            await reconcileActiveWindowUpsert(
-              db,
-              modified as TData,
-              getKey(original as TData),
-              immediateWriteSink,
-              false,
-            )
-            return { refetch: false }
+            // The write is already durable; a failed reconcile must not roll
+            // back the transaction (that would resurrect stale row state).
+            try {
+              await reconcileActiveWindowUpsert(
+                db,
+                modified as TData,
+                getKey(original as TData),
+                immediateWriteSink,
+                false,
+              )
+              return { refetch: false }
+            } catch (reconcileError) {
+              console.warn(`[PodCollection] Window reconcile after update failed for ${queryKey.join('/')}; falling back to refetch:`, reconcileError)
+              return { refetch: true }
+            }
           }
           try {
             ;(collection.utils as { writeUpsert?: (row: TData) => void }).writeUpsert?.(modified as TData)
@@ -329,8 +348,15 @@ export function createPodCollection<
             toPersistableIdentity(original as TData, resource) as any,
           )
           if (windowPolicy) {
-            await reconcileActiveWindowDelete(db, key, immediateWriteSink, false)
-            return { refetch: false }
+            // The delete is already durable; a failed reconcile must not roll
+            // back the transaction (that would resurrect a deleted row).
+            try {
+              await reconcileActiveWindowDelete(db, key, immediateWriteSink, false)
+              return { refetch: false }
+            } catch (reconcileError) {
+              console.warn(`[PodCollection] Window reconcile after delete failed for ${queryKey.join('/')}; falling back to refetch:`, reconcileError)
+              return { refetch: true }
+            }
           }
           try {
             ;(collection.utils as { writeDelete?: (key: string) => void }).writeDelete?.(key)
@@ -373,15 +399,33 @@ export function createPodCollection<
     const lastRow = lastPage?.rows[lastPage.rows.length - 1]
     nextCursor = lastRow ? windowPolicy.cursorFor(lastRow) : null
   }
+  // Backfills only matter for candidates that would rank below the bottom of
+  // the retained rows: rows fetched after the bottom cursor can only displace
+  // those. Returns true when `row` ranks strictly below `bottom`.
+  const ranksBelow = (row: TData, bottom: TData): boolean => {
+    if (!windowPolicy) return false
+    if (getKey(row) === getKey(bottom)) return false
+    const [first] = windowPolicy.sort([row, bottom])
+    return getKey(first) === getKey(bottom)
+  }
   const firstBackfillAfter = async (
     db: SolidDatabase<any>,
     rows: TData[],
     excludedKeys: Set<string>,
-  ): Promise<TData | undefined> => {
-    if (!windowPolicy || rows.length === 0) return undefined
+    needed: number,
+    fetchTarget: number,
+  ): Promise<TData[]> => {
+    if (!windowPolicy || rows.length === 0 || needed <= 0) return []
     const cursor = windowPolicy.cursorFor(rows[rows.length - 1])
-    const candidates = await executeLogicalWindow(db, cursor)
-    return candidates.find((candidate) => !excludedKeys.has(getKey(candidate)))
+    const candidates = await executeLogicalWindow(db, cursor, fetchTarget)
+    const backfills: TData[] = []
+    for (const candidate of candidates) {
+      const key = getKey(candidate)
+      if (excludedKeys.has(key)) continue
+      backfills.push(candidate)
+      if (backfills.length === needed) break
+    }
+    return backfills
   }
   const reconcileActiveWindowUpsert = async (
     db: SolidDatabase<any>,
@@ -404,9 +448,12 @@ export function createPodCollection<
     const baseRows = windowPolicy.sort(originalRows.filter((candidate) => getKey(candidate) !== replacedKey))
     const candidates = [...baseRows, row]
 
-    if (replacedResident) {
+    // Only fetch a backfill when the incoming row ranks below the retained
+    // bottom: anything fetched after that cursor could displace it. Rows that
+    // stay inside the window make the backfill a wasted full-window scan.
+    if (replacedResident && baseRows.length > 0 && ranksBelow(row, baseRows[baseRows.length - 1])) {
       const excludedKeys = new Set(candidates.map(getKey))
-      const backfill = await firstBackfillAfter(db, baseRows, excludedKeys)
+      const [backfill] = await firstBackfillAfter(db, baseRows, excludedKeys, 1, 2)
       if (backfill) candidates.push(backfill)
     }
 
@@ -444,7 +491,7 @@ export function createPodCollection<
     const originalRows = residentWindowPages.flatMap((page) => page.rows)
     if (!originalRows.some((row) => getKey(row) === key)) return
     const remaining = windowPolicy.sort(originalRows.filter((row) => getKey(row) !== key))
-    const backfill = await firstBackfillAfter(db, remaining, new Set(remaining.map(getKey)))
+    const [backfill] = await firstBackfillAfter(db, remaining, new Set(remaining.map(getKey)), 1, 1)
     const nextRows = windowPolicy.sort(backfill ? [...remaining, backfill] : remaining).slice(0, originalRows.length)
     let offset = 0
     residentWindowPages = residentWindowPages.map((page, index) => {
@@ -472,14 +519,16 @@ export function createPodCollection<
     const baseRows = windowPolicy.sort(originalRows.filter((row) => !incomingByKey.has(getKey(row))))
     const candidates = [...baseRows, ...incomingByKey.values()]
 
-    if ([...incomingByKey.keys()].some((key) => originalKeys.has(key)) && baseRows.length > 0) {
-      const excludedKeys = new Set(candidates.map(getKey))
-      const cursor = windowPolicy.cursorFor(baseRows[baseRows.length - 1])
-      const backfills = await executeLogicalWindow(db, cursor)
-      for (const backfill of backfills) {
-        const key = getKey(backfill)
-        if (!excludedKeys.has(key)) {
-          excludedKeys.add(key)
+    // Rows fetched after the retained bottom can only displace candidates
+    // that rank below it; fetch exactly that many backfills (usually zero).
+    if (baseRows.length > 0 && [...incomingByKey.keys()].some((key) => originalKeys.has(key))) {
+      const bottom = baseRows[baseRows.length - 1]
+      const belowBottom = candidates.filter((candidate) => ranksBelow(candidate, bottom))
+      if (belowBottom.length > 0) {
+        const excludedKeys = new Set(candidates.map(getKey))
+        const backfills = await firstBackfillAfter(db, baseRows, excludedKeys, belowBottom.length, belowBottom.length * 2)
+        for (const backfill of backfills) {
+          excludedKeys.add(getKey(backfill))
           candidates.push(backfill)
         }
       }
@@ -674,6 +723,18 @@ export function createPodCollection<
               return key
             }
           }
+          // Non-windowed collections hold every row in memory, so an IRI
+          // delete can be resolved from collection state instead of falling
+          // back to a full refetch. Windowed collections scan resident rows
+          // only (above); anything beyond the window needs no UI update.
+          if (!windowPolicy) {
+            for (const row of collection.toArray as TData[]) {
+              const key = getKey(row)
+              if (candidate.endsWith(`/${key}`) || candidate.endsWith(key)) {
+                return key
+              }
+            }
+          }
           return null
         }
         try {
@@ -738,10 +799,15 @@ export function createPodCollection<
               await reconcileActiveWindowDelete(db, key)
               return
             } catch {
-              // Fall through to a full refresh when local sync state cannot accept the delete.
+              // Fall through to a deduped refresh when local sync state cannot accept the delete.
             }
+          } else if (windowPolicy) {
+            // An unresolved IRI delete on a windowed collection targets a row
+            // beyond the resident window: no UI state to update, and a full
+            // refetch would collapse the loaded pages for nothing.
+            return
           }
-          queryClient.invalidateQueries({ queryKey })
+          await invalidateOnce()
         }
       })
       

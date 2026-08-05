@@ -783,4 +783,174 @@ describe('createPodCollection request contract', () => {
     await secondRelease()
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
+
+  it('skips the backfill scan when an updated row still ranks above the window bottom', async () => {
+    const firstPage = [
+      { id: 'a.ttl', updatedAt: new Date(2026, 0, 3) },
+      { id: 'b.ttl', updatedAt: new Date(2026, 0, 2) },
+      { id: 'c.ttl', updatedAt: new Date(2026, 0, 1) },
+    ]
+    const { options, executeSelect } = createHarness(firstPage, {
+      window: {
+        limit: 2,
+        orderBy: [{ column: 'updatedAt', direction: 'desc' }],
+      },
+    })
+    await options.queryFn()
+    vi.clearAllMocks()
+
+    const result = await options.onUpdate({ transaction: transaction(firstPage[0], {
+      ...firstPage[0],
+      updatedAt: new Date(2026, 0, 4),
+    }) })
+
+    expect(result).toEqual({ refetch: false })
+    expect(executeSelect).not.toHaveBeenCalled()
+    expect(mocks.collection.utils.writeUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'a.ttl' }),
+    )
+  })
+
+  it('fetches only the rows it needs when an update evicts a window row', async () => {
+    const firstPage = [
+      { id: 'a.ttl', updatedAt: new Date(2026, 0, 3) },
+      { id: 'b.ttl', updatedAt: new Date(2026, 0, 2) },
+      { id: 'c.ttl', updatedAt: new Date(2026, 0, 1) },
+    ]
+    const backfill = [{ id: 'c.ttl', updatedAt: new Date(2026, 0, 1) }]
+    const { options, selectQuery } = createHarness([], {
+      selectResults: [firstPage, backfill],
+      window: {
+        limit: 2,
+        orderBy: [{ column: 'updatedAt', direction: 'desc' }],
+      },
+    })
+    await options.queryFn()
+    vi.clearAllMocks()
+
+    await options.onUpdate({ transaction: transaction(firstPage[0], {
+      ...firstPage[0],
+      updatedAt: new Date(2025, 0, 1),
+    }) })
+
+    // fetchTarget is 2 (one needed backfill + the evicted row itself ranks
+    // below the bottom), never the full window limit + 1.
+    expect(selectQuery.limit).toHaveBeenCalledWith(2)
+    expect(mocks.collection.utils.writeUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'c.ttl' }),
+    )
+  })
+
+  it('falls back to refetch instead of rolling back a persisted write when the reconcile query fails', async () => {
+    const firstPage = [
+      { id: 'a.ttl', updatedAt: new Date(2026, 0, 3) },
+      { id: 'b.ttl', updatedAt: new Date(2026, 0, 2) },
+    ]
+    const { options, executeSelect } = createHarness([], {
+      selectResults: [firstPage],
+      window: {
+        limit: 2,
+        orderBy: [{ column: 'updatedAt', direction: 'desc' }],
+      },
+    })
+    await options.queryFn()
+    vi.clearAllMocks()
+    // The backfill SELECT fails after the PATCH already landed.
+    executeSelect.mockRejectedValueOnce(new Error('select failed'))
+    const result = await options.onUpdate({ transaction: transaction(firstPage[0], {
+      ...firstPage[0],
+      updatedAt: new Date(2025, 0, 1),
+    }) })
+
+    expect(result).toEqual({ refetch: true })
+  })
+
+  it('keeps a locally inserted row visible even when it ranks outside the window', async () => {
+    const firstPage = [
+      { id: 'a.ttl', updatedAt: new Date(2026, 0, 3) },
+      { id: 'b.ttl', updatedAt: new Date(2026, 0, 2) },
+    ]
+    const { options } = createHarness(firstPage, {
+      window: {
+        limit: 2,
+        orderBy: [{ column: 'updatedAt', direction: 'desc' }],
+      },
+    })
+    await options.queryFn()
+    vi.clearAllMocks()
+
+    await options.onInsert({ transaction: transaction({}, {
+      id: 'old.ttl',
+      updatedAt: new Date(2020, 0, 1),
+    }) })
+
+    expect(mocks.collection.utils.writeUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'old.ttl' }),
+    )
+  })
+
+  it('resolves a full-IRI delete from collection state without refetching a non-windowed collection', async () => {
+    const rows = [{ id: 'a.ttl' }, { id: 'b.ttl' }]
+    mocks.collection.toArray = rows
+    const { collection, db, options, queryClient } = createHarness(rows)
+    const callbacks: Record<string, (activity: any) => Promise<void> | void> = {}
+    db.subscribe.mockImplementation(async (_resource: unknown, handlers: typeof callbacks) => {
+      Object.assign(callbacks, handlers)
+      return { unsubscribe: vi.fn() }
+    })
+    await options.queryFn()
+    await collection.subscribeToPod(db as any)
+    vi.clearAllMocks()
+
+    await callbacks.onDelete({ object: 'https://pod.example/b.ttl' })
+
+    expect(mocks.collection.utils.writeDelete).toHaveBeenCalledWith('b.ttl')
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('ignores an unresolved IRI delete beyond the resident window instead of collapsing pages', async () => {
+    const firstPage = [
+      { id: 'a.ttl', updatedAt: new Date(2026, 0, 3) },
+      { id: 'b.ttl', updatedAt: new Date(2026, 0, 2) },
+    ]
+    const { collection, db, options, queryClient } = createHarness(firstPage, {
+      window: {
+        limit: 1,
+        orderBy: [{ column: 'updatedAt', direction: 'desc' }],
+      },
+    })
+    const callbacks: Record<string, (activity: any) => Promise<void> | void> = {}
+    db.subscribe.mockImplementation(async (_resource: unknown, handlers: typeof callbacks) => {
+      Object.assign(callbacks, handlers)
+      return { unsubscribe: vi.fn() }
+    })
+    await options.queryFn()
+    await collection.subscribeToPod(db as any)
+    vi.clearAllMocks()
+
+    await callbacks.onDelete({ object: 'https://pod.example/far-beyond.ttl' })
+
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('dedupes delete fallbacks through the pending invalidation', async () => {
+    const rows = [{ id: 'a.ttl' }]
+    mocks.collection.toArray = rows
+    const { collection, db, options, queryClient } = createHarness(rows)
+    const callbacks: Record<string, (activity: any) => Promise<void> | void> = {}
+    db.subscribe.mockImplementation(async (_resource: unknown, handlers: typeof callbacks) => {
+      Object.assign(callbacks, handlers)
+      return { unsubscribe: vi.fn() }
+    })
+    await options.queryFn()
+    await collection.subscribeToPod(db as any)
+    vi.clearAllMocks()
+
+    await Promise.all([
+      callbacks.onDelete({ object: 'https://pod.example/missing-1.ttl' }),
+      callbacks.onDelete({ object: 'https://pod.example/missing-2.ttl' }),
+    ])
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(1)
+  })
 })
