@@ -86,10 +86,47 @@ describe('FavoriteListPane', () => {
       data: [],
       isLoading: false,
       error: null,
+      refetch: vi.fn(),
     })
   })
 
   describe('Empty State', () => {
+    it('shows a retryable error instead of an empty state when the initial query fails', () => {
+      const refetch = vi.fn()
+      mockUseFavoriteList.mockReturnValue({
+        data: [],
+        isLoading: false,
+        error: new Error('offline'),
+        refetch,
+      })
+
+      render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByRole('alert')).toHaveTextContent('收藏加载失败')
+      expect(screen.queryByText('暂无收藏')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '重试' }))
+      expect(refetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps cached favorites visible and shows a nonblocking sync warning', () => {
+      mockUseFavoriteList.mockReturnValue({
+        data: [{
+          id: 'fav-cached',
+          title: 'Cached Favorite',
+          sourceModule: 'chat',
+          favoredAt: new Date(),
+        }],
+        isLoading: false,
+        error: new Error('offline'),
+        refetch: vi.fn(),
+      })
+
+      render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('Cached Favorite')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('同步失败，当前显示上次内容')
+    })
+
     it('shows empty state when no favorites', () => {
       mockUseFavoriteList.mockReturnValue({
         data: [],

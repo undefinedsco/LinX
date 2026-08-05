@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from 'react'
-import { Bell, CheckCircle2, Clock3, KeyRound, ShieldAlert } from 'lucide-react'
+import { AlertCircle, Bell, CheckCircle2, Clock3, KeyRound, ShieldAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -21,6 +21,9 @@ export interface InboxListProps {
   selectItem: (id: string | null) => void
   items: InboxListItemView[]
   isLoading: boolean
+  isError: boolean
+  error: unknown
+  refetch: () => Promise<unknown>
   summary: { total: number; pending: number; audit: number }
   selectedIndex: number
   onItemKeyDown: (index: number, event: KeyboardEvent<HTMLButtonElement>) => void
@@ -34,6 +37,8 @@ export function InboxList({
   selectItem,
   items,
   isLoading,
+  isError,
+  refetch,
   summary,
   selectedIndex,
   onItemKeyDown,
@@ -71,13 +76,28 @@ export function InboxList({
 
       <ScrollArea className="flex-1">
         <div role="listbox" aria-label="收件箱" aria-orientation="vertical" className="space-y-2 p-3">
+          {isError && items.length > 0 && (
+            <div className="flex items-center justify-between gap-2 border-b border-destructive/20 px-1 pb-2 text-xs text-destructive">
+              <span>同步失败，当前显示上次内容</span>
+              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void refetch()}>重试</Button>
+            </div>
+          )}
+
           {isLoading && (
             <div className="rounded-xl border border-border/50 bg-card/60 px-3 py-4 text-sm text-muted-foreground">
               正在从当前空间读取收件箱…
             </div>
           )}
 
-          {!isLoading && items.length === 0 && (
+          {!isLoading && isError && items.length === 0 && (
+            <div className="flex flex-col items-center gap-3 px-3 py-8 text-center">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              <p className="text-sm font-medium text-foreground">收件箱加载失败</p>
+              <Button variant="outline" size="sm" onClick={() => void refetch()}>重试</Button>
+            </div>
+          )}
+
+          {!isLoading && !isError && items.length === 0 && (
             <div className="rounded-xl border border-dashed border-border/60 bg-card/30 px-3 py-6 text-center text-sm text-muted-foreground">
               当前还没有 inbox 事件。
             </div>

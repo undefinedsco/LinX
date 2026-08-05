@@ -139,6 +139,42 @@ describe('chat collections integration', () => {
     expect(body).toContain('Thread One')
   })
 
+  it('deletes messages and threads through their parameterized collections', { timeout: 90000 }, async () => {
+    const { db: database, webId } = await getContext()
+    const chatId = `chat-delete-${Date.now()}`
+    await database.insert(chatResource).values({
+      id: chatResourceId(chatId),
+      title: 'Parameterized delete test',
+      participants: [webId],
+    }).execute()
+
+    const thread = await chatOps.createThread(chatId, 'Delete thread')
+    const firstMessage = await chatOps.createUserMessage(chatId, thread.id, 'delete me', webId)
+    await chatOps.deleteMessage(firstMessage.id, thread.id)
+    await expect(
+      (database as any).findById(messageResource as any, firstMessage.id),
+    ).resolves.toBeNull()
+
+    const cascadeMessages = []
+    for (let index = 0; index < 52; index += 1) {
+      cascadeMessages.push(await chatOps.createUserMessage(
+        chatId,
+        thread.id,
+        `delete with thread ${index}`,
+        webId,
+      ))
+    }
+    await chatOps.deleteThread(thread.id, chatId)
+    for (const message of [cascadeMessages[0]!, cascadeMessages[51]!]) {
+      await expect(
+        (database as any).findById(messageResource as any, message.id),
+      ).resolves.toBeNull()
+    }
+    await expect(
+      (database as any).findById(threadResource as any, thread.id),
+    ).resolves.toBeNull()
+  })
+
   it('keeps the Secretary chat subject when the default thread is created', { timeout: 90000 }, async () => {
     const { db: database, podUrl } = await getContext()
 

@@ -26,6 +26,8 @@ import { updateExactRecord } from '@/lib/data/exact-records'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { assertInsertValuesBelongToCurrentPod, assertUpdateValuesBelongToCurrentPod } from '@/lib/data/pod-write-guard'
 import { createPodCollection } from '@/lib/data/pod-collection'
+import { useCollectionQueryError } from '@/lib/data/use-collection-query-error'
+import { createPodCollectionSnapshot } from '@/lib/data/collection-snapshots'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { continueRuntimeToolCallFromInbox } from '@/modules/chat/services/chatkit-local/runtime-tool-response'
@@ -58,6 +60,10 @@ export const approvalCollection = createPodCollection<typeof approvalResource, A
     orderBy: [{ column: 'createdAt', direction: 'desc' }],
     maxResidentPages: 3,
   },
+  snapshot: createPodCollectionSnapshot<ApprovalRow>(() => {
+    const db = getDb()
+    return db ? resolveCurrentPodBaseUrl(db) : null
+  }, ['createdAt', 'resolvedAt', 'expiresAt']),
   getKey: (item) => {
     if (!item.id) throw new Error('Approval record is missing id')
     return item.id
@@ -75,6 +81,10 @@ export const auditCollection = createPodCollection<typeof auditResource, AuditRo
     orderBy: [{ column: 'createdAt', direction: 'desc' }],
     maxResidentPages: 3,
   },
+  snapshot: createPodCollectionSnapshot<AuditRow>(() => {
+    const db = getDb()
+    return db ? resolveCurrentPodBaseUrl(db) : null
+  }, ['createdAt']),
   getKey: (item) => {
     if (!item.id) throw new Error('Audit record is missing id')
     return item.id
@@ -92,6 +102,10 @@ export const inboxNotificationCollection = createPodCollection<typeof inboxNotif
     orderBy: [{ column: 'createdAt', direction: 'desc' }],
     maxResidentPages: 3,
   },
+  snapshot: createPodCollectionSnapshot<InboxNotificationRow>(() => {
+    const db = getDb()
+    return db ? resolveCurrentPodBaseUrl(db) : null
+  }, ['createdAt']),
   getKey: (item) => {
     if (!item.id) throw new Error('Inbox notification record is missing id')
     return item.id
@@ -109,6 +123,10 @@ export const inputRequestCollection = createPodCollection<typeof inputRequestRes
     orderBy: [{ column: 'createdAt', direction: 'desc' }],
     maxResidentPages: 3,
   },
+  snapshot: createPodCollectionSnapshot<InputRequestRow>(() => {
+    const db = getDb()
+    return db ? resolveCurrentPodBaseUrl(db) : null
+  }, ['createdAt', 'resolvedAt', 'expiresAt']),
   getKey: (item) => {
     if (!item.id) throw new Error('InputRequest record is missing id')
     return item.id
@@ -487,6 +505,10 @@ export function useInboxItems(filter: InboxFilter = 'all', options?: { enabled?:
   const audits = useLiveQuery(auditCollection)
   const notifications = useLiveQuery(inboxNotificationCollection)
   const inputRequests = useLiveQuery(inputRequestCollection)
+  const approvalError = useCollectionQueryError(approvalCollection)
+  const auditError = useCollectionQueryError(auditCollection)
+  const notificationError = useCollectionQueryError(inboxNotificationCollection)
+  const inputRequestError = useCollectionQueryError(inputRequestCollection)
   const enabled = options?.enabled ?? true
   const data = useMemo(() => {
     if (!enabled) return []
@@ -498,11 +520,24 @@ export function useInboxItems(filter: InboxFilter = 'all', options?: { enabled?:
     ), filter)
   }, [approvals.data, audits.data, enabled, filter, inputRequests.data, notifications.data])
 
+  const firstError = [
+    approvalError.error,
+    auditError.error,
+    notificationError.error,
+    inputRequestError.error,
+  ].find((error) => error !== null) ?? null
+
   return {
     data,
     isLoading: enabled && [approvals, audits, notifications, inputRequests].some((query) => query.isLoading),
-    isError: [approvals, audits, notifications, inputRequests].some((query) => query.isError),
-    error: null,
+    isError: enabled && firstError !== null,
+    error: enabled ? firstError : null,
+    refetch: () => Promise.all([
+      approvalCollection.fetch({ refetch: true }),
+      auditCollection.fetch({ refetch: true }),
+      inboxNotificationCollection.fetch({ refetch: true }),
+      inputRequestCollection.fetch({ refetch: true }),
+    ]),
   }
 }
 

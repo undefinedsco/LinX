@@ -17,16 +17,13 @@ describe('chatOps storage routing', () => {
     const { db, inserts, updates } = createSelectedSpDb(chatId)
     initializeChatCollections(db as any)
 
-    vi.spyOn(crypto, 'randomUUID')
-      .mockReturnValueOnce('thread-sp-routing')
-      .mockReturnValueOnce('message-sp-routing')
-
-    const thread = await chatOps.createThread(chatId, 'SP routing')
+    const thread = await chatOps.createThread(chatId, 'SP routing', { threadId: 'thread-sp-routing' })
     const message = await chatOps.createUserMessage(
       chatId,
       thread.id,
       'hello selected sp',
       CLOUD_WEB_ID,
+      { messageId: 'message-sp-routing' },
     )
 
     const threadInsert = inserts.find((entry) => entry.resource === threadResource)?.values

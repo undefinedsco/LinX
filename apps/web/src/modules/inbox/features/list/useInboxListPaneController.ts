@@ -20,7 +20,7 @@ export function useInboxListPaneController() {
   const setFilter = useInboxStore((state) => state.setFilter)
   const selectedItemId = useInboxStore((state) => state.selectedItemId)
   const selectItem = useInboxStore((state) => state.selectItem)
-  const { data: items = [], isLoading } = useInboxItems(filter)
+  const { data: items = [], isLoading, isError, error, refetch } = useInboxItems(filter)
   const summary = useInboxSummary()
 
   useEffect(() => {
@@ -74,6 +74,9 @@ export function useInboxListPaneController() {
     selectItem,
     items: listItems,
     isLoading,
+    isError,
+    error,
+    refetch,
     summary,
     selectedIndex,
     onItemKeyDown,

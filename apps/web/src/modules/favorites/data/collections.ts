@@ -9,6 +9,8 @@ import { useLiveQuery } from '@tanstack/react-db'
 import { useMutation } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { createPodCollection } from '@/lib/data/pod-collection'
+import { createPodCollectionSnapshot } from '@/lib/data/collection-snapshots'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import {
   favoriteResource,
   SCHEMA,
@@ -19,6 +21,7 @@ import {
 import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
+import { useCollectionQueryError } from '@/lib/data/use-collection-query-error'
 
 // ============================================================================
 // Database Getter
@@ -53,6 +56,10 @@ export const favoriteCollection = createPodCollection<
     orderBy: [{ column: 'favoredAt', direction: 'desc' }],
     maxResidentPages: 3,
   },
+  snapshot: createPodCollectionSnapshot<FavoriteRow>(() => {
+    const db = getDb()
+    return db ? resolveCurrentPodBaseUrl(db) : null
+  }, ['favoredAt', 'createdAt', 'updatedAt']),
   transformRows: (rows) => rows.map(normalizeFavoriteRow),
   getKey: (item) => {
     if (!item.id) throw new Error('Favorite item is missing id.')
@@ -206,6 +213,7 @@ export function useFavoriteList(filters?: {
   sourceModule?: SourceModule
 }) {
   const query = useLiveQuery(favoriteCollection)
+  const queryError = useCollectionQueryError(favoriteCollection)
   const data = useMemo(() => {
     let rows = ((query.data ?? []) as FavoriteRow[]).map(normalizeFavoriteRow)
     if (filters?.sourceModule) {
@@ -223,7 +231,12 @@ export function useFavoriteList(filters?: {
     return rows
   }, [filters?.search, filters?.sourceModule, query.data])
 
-  return { ...query, data }
+  return {
+    ...query,
+    ...queryError,
+    data,
+    refetch: () => favoriteCollection.fetch({ refetch: true }),
+  }
 }
 
 export function useFavoriteMutations() {

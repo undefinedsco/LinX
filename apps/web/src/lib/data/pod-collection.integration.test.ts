@@ -55,6 +55,52 @@ afterAll(async () => {
 }, 20000)
 
 describe('pod-collection integration', () => {
+  it('pushes an RDF relation equality filter into a real xpod query', { timeout: 30000 }, async () => {
+    const { db: database, requestMetrics } = await getContext()
+    const queryClient = new QueryClient()
+    const benchmarkId = `relation-filter-${crypto.randomUUID()}`
+    const matchingAbout = `https://example.test/groups/${benchmarkId}/matching`
+    const rows = [
+      {
+        id: `${benchmarkId}-matching`,
+        name: 'Matching relation',
+        about: matchingAbout,
+        contactType: 'external',
+      },
+      {
+        id: `${benchmarkId}-other`,
+        name: 'Other relation',
+        about: `https://example.test/groups/${benchmarkId}/other`,
+        contactType: 'external',
+      },
+    ]
+    const created = await (database as any).insert(contactResource).values(rows).execute() as any[]
+    for (const row of created) {
+      if (typeof row?.['@id'] === 'string') createdContactSubjects.push(row['@id'])
+    }
+
+    const collection = createPodCollection({
+      resource: contactResource,
+      queryKey: ['contacts-test-relation-filter', benchmarkId],
+      queryClient,
+      getDb: () => database as any,
+      filter: { column: 'about', value: matchingAbout },
+    })
+
+    try {
+      const requestStart = requestMetrics.length
+      const result = await collection.fetch({ refetch: true })
+      const requests = requestMetrics.slice(requestStart)
+
+      expect(result.map((row: any) => row.name)).toContain('Matching relation')
+      expect(result.map((row: any) => row.name)).not.toContain('Other relation')
+      expect(requests.length).toBeGreaterThan(0)
+    } finally {
+      await collection.cleanup()
+      queryClient.clear()
+    }
+  })
+
   it('hydrates and paginates a bounded window against real xpod', { timeout: 60000 }, async () => {
     const { db: database, requestMetrics } = await getContext()
     const queryClient = new QueryClient()

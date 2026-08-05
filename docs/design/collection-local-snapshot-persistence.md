@@ -1,6 +1,12 @@
 # 集合本地快照持久化 Spec（IndexedDB Persister）
 
-- Status: Proposal（2026-08-05）
+- Status: Implemented（2026-08-05；Chat、参数化 Thread/Message、Inbox、Favorites、Contacts 已接入；私有 Pod p50/p95 与断网重启仍属发布验证项）
+
+## 实现证据
+
+- stores 契约测试覆盖版本/TTL/LRU/容量、scope 隔离、日期 codec、首窗口原子恢复、后台 revalidate 与失败保留。
+- Web adapter 使用 IndexedDB；退出登录前 await 清空全部 collection snapshot。
+- credentials、secret 与文件正文没有接入快照。
 - 来源：乐观更新+水化审计 F12（`docs/pod-subscription-budget-design.md` §3）
 - 约束：遵循主设计文档硬约束——不发明私有协议；本 spec 只做本地缓存，不触碰任何线上协议
 
@@ -15,7 +21,8 @@
 **目标**
 - 冷启动首屏从 IndexedDB 快照秒渲染（stale-while-revalidate：先渲快照，后台 refetch 覆盖）
 - 快照内容 = 各集合首窗口（与常驻窗口策略一致的 top-N 行）+ 游标状态
-- Pod 切换/账号切换时快照隔离，不串数据
+- Pod 切换/账号切换时快照隔离，不串数据；退出登录后可证明已清除
+- 只持久化已确认的集合基线，不把 pending optimistic mutation 当成服务端事实落盘
 
 **非目标**
 - 不做全文离线缓存（分页之外的行不落盘）
@@ -30,10 +37,12 @@
 
 ```ts
 interface CollectionSnapshot<TData> {
-  queryKey: string[]         // 集合 queryKey
-  scopeKey: string           // podUrl + webId 派生，隔离账号/Pod
+  version: number            // schema / serialization version
+  queryKey: readonly unknown[]
+  scopeKey: string           // opaque database identity，隔离账号/Pod
   rows: TData[]              // 首窗口行（含游标列值）
   nextCursor: unknown | null
+  residentPageCount: number
   savedAt: number
 }
 
@@ -44,39 +53,47 @@ interface CollectionSnapshotPersister {
 }
 ```
 
-- 存储：IndexedDB（`idb` 或直接裸 API，一个 objectStore，key = `scopeKey:queryKey.join('/')`）
-- 写入时机：debounce 的集合状态订阅（`collection.subscribeChanges` 或 query cache 订阅），窗口首屏数据变化后 500ms 落盘；避免每行写都触发
-- TTL：7 天；过期快照 load 时丢弃
+- 存储：优先使用项目已有依赖；若无封装，先以裸 IndexedDB 实现最小 adapter，不为一个 objectStore 新增依赖。
+- key 使用版本化稳定序列化（例如 `[version, scopeKey, queryKey]` 的 canonical JSON），禁止 `queryKey.join('/')`，避免含 `/` 的参数发生碰撞。
+- 只接受可稳定序列化的 queryKey 参数；function、db object、AbortSignal 等运行时对象不得进入持久化 key。
+- 每个 opt-in collection 必须提供 `serializeRow` / `deserializeRow` codec，显式恢复 `Date` 等非 JSON 原生值并校验必要字段；不能直接 `JSON.stringify` 任意 ORM row。
+- 写入来源是 collection 的**已确认基线状态**，而不是任意 `subscribeChanges` 事件；pending optimistic insert/update/delete 在持久化完成或回滚前不得覆盖快照。
+- debounce 500ms 只是写放大控制，不是正确性边界；scope dispose/页面关闭时做 best-effort flush。
+- TTL 默认 7 天，同时设置每 scope 的集合数、总行数和字节上限；超限按 LRU 清理。
 
 ### 3.2 水化接入点
 
-`pod-collection.ts` 的 `queryFn`/`fetchRows` 前加 `initialData` 语义：
+持久化接在 `createPodCollection` 的同步边界，而不是假设 React Query cache 等同于 TanStack Collection 内部状态：
 
 1. `createPodCollection` 接受 `persister?: CollectionSnapshotPersister`
-2. 集合创建时异步 `load()`，命中则用 tanstack queryClient 的 `setQueryData(queryKey, snapshot.rows)` 预填 + `initialDataUpdatedAt = savedAt`；`windowState`/`residentWindowPages`/`nextCursor` 从快照恢复
-3. 标准 stale-while-revalidate：快照按 staleTime 判定为 stale → 后台自动 refetch（现有行为），返回后覆盖并重新落盘
-4. `scopeKey` 不匹配（换了 Pod/账号）→ 不加载，异步 `clear()` 旧 scope
+2. collection 暴露单一 `restoreSnapshot(snapshot)` 内部入口，在一个批次中恢复 collection rows、`residentWindowPages`、`windowState` 和 `nextCursor`；不得由调用方分别写三份状态。
+3. collection 暴露只读 `snapshotState = { source: 'none' | 'local', savedAt, isRevalidating }`；恢复完成后 rows 与 `source: 'local'` 在同一批次可见，随后显式启动后台 revalidate。不要依赖未经验证的 `initialDataUpdatedAt` 自动驱动 collection。
+4. 远端成功结果以批次替换基线并重新落盘；远端失败保留快照，同时由 F17 的 stale/error 状态提示用户。
+5. scopeKey 由 database/session 层提供稳定 opaque identity；persister 不自行拼接 podUrl/webId。scope 不匹配时不读取，账号退出时 await 当前 scope `clear()`，不能只做未等待的异步清理。
 
 ### 3.3 与窗口机制的协作
 
-- 快照只存首窗口（`window.limit` 行 + cursor），与 `fetchRows` 重建逻辑同构；恢复后 `loadNextPage` 从快照 cursor 继续，无需回查
+- 第一阶段快照只存首窗口（`window.limit` 行 + cursor，`residentPageCount=1`）。不要声称恢复全部常驻页；若未来持久化多页，必须遵循 F9 的预算与游标重建契约。
+- 恢复后的 `loadNextPage` 可以从快照 cursor 继续，但首次远端 revalidate 完成后必须用权威 cursor 替换，避免数据排序变化造成缺行/重行。
 - 非窗口集合（chat/thread/message）整表快照行数可控（chat 数百行级）；message 全量快照过大则跳过（等 F10 参数化后按 thread 快照）
 
 ## 4. 落地顺序
 
-1. persister + 单测（save/load/TTL/scope 隔离/debounce）
-2. `createPodCollection` 接入（opt-in 参数）+ 单测（快照恢复窗口状态、stale 后 refetch 覆盖）
-3. 逐集合启用：favorites → contacts → inbox（窗口集合收益最直接）→ chat；thread/message 等 F10
-4. 验证：冷启动 e2e（断网重启首屏有数据）+ performance 断言（首屏有内容时间 < 100ms 本地）
+1. 在 F9/F10 数据与窗口语义稳定后，定义 snapshot version、opaque scope identity 和容量/隐私策略。
+2. persister adapter 单测：save/load、TTL、版本淘汰、稳定 key、row codec、scope 隔离、容量 LRU、await clear。
+3. `createPodCollection.restoreSnapshot` 契约测试：rows/window/cursor 原子恢复，pending optimistic 状态不落盘，远端成功覆盖，失败保留 stale snapshot。
+4. 逐集合 opt-in：favorites → contacts → inbox → chat → 参数化 thread/message。每启用一个集合都记录行数和字节预算。
+5. 自举 xpod + 真实 Pod e2e：在线冷启动、断网重启、账号切换、退出后 IndexedDB 清理；performance 记录 snapshot 可见 p50/p95，目标本地读取 p95 <100ms，不用单次断言伪装稳定性能。
 
 ## 5. 风险与回退
 
-- **快照陈旧误导**：stale-while-revalidate 语义下快照只是初始帧，refetch 覆盖；渲染层已有 isLoading 区分，风险低
-- **schema 漂移**：行结构变更后旧快照字段缺失——`savedAt` + 版本字段，不匹配即丢弃
-- **隐私**：Pod 数据落盘 IndexedDB 与浏览器 profile 同级，不新增暴露面；退出登录时 `clear()`
+- **快照陈旧误导**：快照帧必须显式标为 stale/revalidating；不能依赖 `isLoading` 区分，因为恢复后已经有数据。
+- **schema 漂移**：snapshot `version` 不匹配即丢弃；`savedAt` 不是 schema version。
+- **隐私**：IndexedDB 会把 Pod 数据从进程内生命周期扩大到跨会话留存，属于新增暴露面。第一阶段默认排除 credentials、secret、token、私密正文等敏感集合；登出和 scope 删除必须有 e2e。浏览器同源 XSS 风险无法由 IndexedDB 自身解决，需在安全模型中明确记录。
+- **磁盘膨胀**：按 scope 设置字节上限并观测写入失败；不能只限制行数。
 - **回退**：persister 是 opt-in 参数，不传即现状
 
 ## 6. 关联
 
-- 依赖：无（可独立先做）
-- 协同：F10（参数化后 thread/message 才可快照）、F9（refetch 塌缩修复后快照语义更稳定）
+- 依赖：F9 先稳定窗口 refetch；F10 先稳定 thread/message 参数化 key。F17 应先落地，以便快照 revalidate 失败可被正确表达。
+- 非依赖：F11 chat hydration cache 第一阶段保持内存级，不自动纳入通用行快照

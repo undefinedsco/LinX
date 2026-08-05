@@ -42,10 +42,7 @@ LinX app                                xpod
 - Pod origin 解析：复用现有 `podUrl`（Solid 会话已有）；本地 xpod 与云端 xpod 同一机制
 - iframe 与外壳的视觉接缝：applet 背景/字体/token 与 LinX 外壳一致（两边已是同一套 shadcn 语义 token，见 §3）
 
-**关键风险——登录态**：xpod dashboard 用 xpod origin 的 cookie 会话；LinX app 的 Solid 会话在浏览器存储，iframe 首次打开可能落在 xpod 登录页。缓解方案（按序尝试）：
-1. 本地 xpod（localhost）：cookie 按 host 共享，已有会话桥（e2e `seeded-auth-flow` 有先例）大概率直接可用——先实测
-2. 云端/跨域：需要一次性令牌桥（LinX app 用 Solid 会话调 xpod 换 embed token，dashboard 消费后建会话）——若 1 不成立再立项
-3. 兜底：嵌入失败时降级为"在外部浏览器打开"按钮
+**登录态：Solid SSO 天然覆盖，非风险项**。xpod 既是 Pod server 又是 IdP；用户在 LinX app 登录时已在 xpod origin 建立 OP 会话 cookie。iframe 与 IdP **同源**，OP cookie 在 iframe 内是一方 cookie（不受三方 cookie 拦截）；dashboard 启动若无自身会话，自动走 OIDC `/authorize` 重定向，IdP 会话已存在则静默签发，用户无感知。所有 Solid app 共享 IdP 级登录态是协议设计意图。落地时只需实测验证：iframe 内 dashboard 首次加载的 OIDC 重定向链无交互完成（含 xpod 对自家 dashboard client 的 consent 自动放行）；失败兜底为"外部浏览器打开"按钮。
 
 ### 2.2 功能并集（xpod applet 侧补齐清单）
 
@@ -86,7 +83,7 @@ LinX 侧删除：`modules/model-services/ui/`、`features/`、`data/collections.
 
 ## 5. 风险与回退
 
-- **iframe 登录态**（最大风险）：见 §2.1 缓解阶梯
+- **iframe 登录态**：已由 Solid SSO 覆盖（§2.1），仅需实测验证静默重定向链
 - **模型 CRUD 写路径**：applet 走服务端写意味着 xpod 需新增 model 写路由（此前模型资源只由客户端直写 Pod）；schema 双方共用 models 包，无协议风险
 - **凭据双轨冲突期**：applet 加密凭据与 LinX 明文凭据同资源并存，直到 chatkit 迁移完成；`selectAIConfigCredential` 读侧需确认不会被加密行干扰（读明文列，加密行 `apiKey` 为空即被过滤）
 - **回退**：LinX 侧删除发生在 step 4，此前旧模块完好，可随时停止；xpod applet 改动全部增量

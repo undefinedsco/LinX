@@ -1,8 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { createCollection, like, useLiveQuery } from '@tanstack/react-db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { useCollectionQueryError } from './use-collection-query-error'
 
 type Row = {
   id: string
@@ -63,6 +65,32 @@ function createBenchmarkCollection(
 }
 
 describe('Live Query collection contract and benchmark', () => {
+  it('surfaces the original query error instead of presenting an empty ready collection', async () => {
+    const failure = new Error('pod unavailable')
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const collection = createCollection<Row, string>(queryCollectionOptions({
+      queryKey: ['live-query-error-contract', crypto.randomUUID()],
+      queryClient,
+      queryFn: async () => { throw failure },
+      getKey: (row) => row.id,
+    }))
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(() => {
+      const query = useLiveQuery(collection)
+      const queryError = useCollectionQueryError(collection)
+      return { ...query, ...queryError }
+    }, { wrapper })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(result.current.error).toBe(failure)
+    expect(result.current.data).toEqual([])
+  })
+
   it.each([
     ['direct collection', (collection: ReturnType<typeof createBenchmarkCollection>['collection']) => (
       useLiveQuery(collection)

@@ -142,4 +142,22 @@ describe('InboxListPane', () => {
 
     expect(screen.getByText(target)).toBeInTheDocument()
   })
+
+  it('shows a retryable error instead of the empty state when the Pod read fails', () => {
+    const refetch = vi.fn()
+    mockUseInboxItems.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: true,
+      error: new Error('pod unavailable'),
+      refetch,
+    })
+
+    render(<InboxListPane />)
+
+    expect(screen.getByText('收件箱加载失败')).toBeInTheDocument()
+    expect(screen.queryByText('当前还没有 inbox 事件。')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(refetch).toHaveBeenCalledOnce()
+  })
 })

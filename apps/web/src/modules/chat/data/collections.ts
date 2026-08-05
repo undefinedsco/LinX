@@ -9,7 +9,11 @@
 
 import { useLiveQuery } from '@tanstack/react-db'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useCollectionQueryError } from '@/lib/data/use-collection-query-error'
+import { createPodCollectionSnapshot } from '@/lib/data/collection-snapshots'
+import { createParameterizedCollectionPool } from '@/lib/data/parameterized-collection-pool'
+import { createChatHydrationCache } from './chat-hydration-cache'
 import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
 import {
   chatResource,
@@ -259,6 +263,18 @@ function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
 }
 
+function writeCollectionDelete(
+  collection: { isReady?: () => boolean; utils?: { writeDelete?: (key: string) => void } },
+  key: string,
+): void {
+  if (typeof collection.isReady === 'function' && !collection.isReady()) return
+  try {
+    collection.utils?.writeDelete?.(key)
+  } catch {
+    // Remote deletion is already durable; an unavailable local projection is non-fatal.
+  }
+}
+
 function notifyLinxWelcomeListeners(): void {
   linxWelcomeListeners.forEach((listener) => {
     try {
@@ -453,6 +469,15 @@ async function buildThreadIri(
   return resolveResourceIri(db, threadResource, buildThreadResourceId(threadId, chatIri))
 }
 
+const chatHydrationCache = createChatHydrationCache<Partial<ChatRow>>({ capacity: 256 })
+
+function invalidateChatHydration(db: SolidDatabase | null, chatIdOrIri: string) {
+  const chatIri = ABSOLUTE_IRI.test(chatIdOrIri)
+    ? chatIdOrIri
+    : (db ? buildChatIri(db, chatIdOrIri) : null)
+  if (chatIri) chatHydrationCache.invalidate(chatIri)
+}
+
 async function hydrateChatRows(
   db: SolidDatabase,
   rows: ChatRow[],
@@ -485,11 +510,12 @@ async function hydrateChatRows(
     if (!chatIri) return
 
     try {
+      const nextRow = await chatHydrationCache.getOrLoad(chatIri, async () => {
       const sessionFetch = (
         (db as any).getDialect?.()?.getAuthenticatedFetch?.()
         ?? (db as any).getSession?.()?.fetch
       ) as typeof fetch | undefined
-      if (!sessionFetch) return
+      if (!sessionFetch) return {}
 
       const resourceUrl = chatIri.split('#')[0]
       const abortableFetch: typeof fetch = signal
@@ -500,7 +526,7 @@ async function hydrateChatRows(
       })
       throwIfChatQueryAborted(signal)
       const thing = getThing(dataset, chatIri)
-      if (!thing) return
+      if (!thing) return {}
       const nextRow: Partial<ChatRow> = {}
       const participants = normalizeParticipants(getUrlAll(thing, WF.participant), selfWebId)
       if (participants.length > 0) {
@@ -524,6 +550,9 @@ async function hydrateChatRows(
           }
         }
       }
+
+        return nextRow
+      })
 
       if (row.id && Object.keys(nextRow).length > 0) {
         hydratedRowsById.set(row.id, nextRow)
@@ -1113,9 +1142,19 @@ export const chatCollection = createPodCollection<typeof chatResource, ChatRow, 
   queryClient,
   getDb,
   orderBy: { column: 'lastActiveAt', direction: 'desc' },
+  snapshot: createPodCollectionSnapshot<ChatRow>(
+    () => {
+      const db = getDb()
+      return db ? resolveCurrentPodBaseUrl(db) : null
+    },
+    ['createdAt', 'updatedAt', 'lastActiveAt'],
+  ),
   transformRows: async (rows, db) => {
     const hydratedRows = await hydrateChatRows(db, rows)
     return mergeChatRows(getStagedSecretaryChatRows(), hydratedRows)
+  },
+  onRemoteChange: (identity) => {
+    if (identity) invalidateChatHydration(getDb(), identity)
   },
   getKey: (item) => {
     if (!item.id) throw new Error('Chat item is missing id.')
@@ -1144,6 +1183,14 @@ export const threadCollection = createPodCollection<typeof threadResource, Threa
   getDb,
   columns: threadListColumns,
   orderBy: { column: 'updatedAt', direction: 'desc' },
+  window: {
+    limit: 500,
+    orderBy: [{ column: 'updatedAt', direction: 'desc' }],
+    maxResidentPages: 1,
+  },
+  onRemoteChange: () => {
+    void queryClient.invalidateQueries({ queryKey: ['threads', 'scope'] })
+  },
   getKey: (item) => {
     if (!item.id) throw new Error('Thread item is missing id.')
     return item.id
@@ -1173,11 +1220,80 @@ export const messageCollection = createPodCollection<typeof messageResource, Mes
   getDb,
   columns: messageListColumns,
   orderBy: { column: 'createdAt', direction: 'asc' },
+  onRemoteChange: () => {
+    void queryClient.invalidateQueries({ queryKey: ['messages', 'scope'] })
+  },
   getKey: (item) => {
     if (!item.id) throw new Error('Message item is missing id.')
     return item.id
   },
 })
+
+const threadCollectionPool = createParameterizedCollectionPool<any>({
+  capacity: 12,
+  create: (scopeKey, chatId) => createPodCollection<typeof threadResource, ThreadRow, ThreadInsert>({
+    resource: threadResource,
+    queryKey: ['threads', 'scope', scopeKey, chatId],
+    queryClient,
+    getDb,
+    columns: threadListColumns,
+    filter: {
+      column: 'chat',
+      value: (db: SolidDatabase) => buildChatIri(db, chatId),
+    },
+    orderBy: { column: 'updatedAt', direction: 'desc' },
+    snapshot: createPodCollectionSnapshot<ThreadRow>(() => scopeKey, ['updatedAt']),
+    getKey: (item) => {
+      if (!item.id) throw new Error('Thread item is missing id.')
+      return item.id
+    },
+  }),
+  dispose: (collection) => collection.cleanup?.(),
+})
+
+const messageCollectionPool = createParameterizedCollectionPool<any>({
+  capacity: 24,
+  create: (scopeKey, parameter) => {
+    const [chatId, threadId] = parameter.split('\u0001')
+    return createPodCollection<typeof messageResource, MessageRow, MessageInsert>({
+      resource: messageResource,
+      queryKey: ['messages', 'scope', scopeKey, chatId, threadId],
+      queryClient,
+      getDb,
+      columns: messageListColumns,
+      filter: {
+        column: 'thread',
+        value: (db: SolidDatabase) => {
+          const chatIri = buildChatIri(db, chatId)
+          return chatIri
+            ? resolveResourceIri(db, threadResource, buildThreadResourceId(threadId, chatIri))
+            : null
+        },
+      },
+      window: {
+        limit: 50,
+        orderBy: [{ column: 'createdAt', direction: 'desc' }],
+        maxResidentPages: 3,
+      },
+      snapshot: createPodCollectionSnapshot<MessageRow>(() => scopeKey, ['createdAt']),
+      getKey: (item) => {
+        if (!item.id) throw new Error('Message item is missing id.')
+        return item.id
+      },
+    })
+  },
+  dispose: (collection) => collection.cleanup?.(),
+})
+
+function scopedThreadCollection(db: SolidDatabase, chatId: string) {
+  const scopeKey = resolveCurrentPodBaseUrl(db) ?? getCurrentWebId(db) ?? 'unknown-pod'
+  return threadCollectionPool.getOrCreate(scopeKey, chatId)
+}
+
+function scopedMessageCollection(db: SolidDatabase, chatId: string, threadId: string) {
+  const scopeKey = resolveCurrentPodBaseUrl(db) ?? getCurrentWebId(db) ?? 'unknown-pod'
+  return messageCollectionPool.getOrCreate(scopeKey, `${chatId}\u0001${threadId}`)
+}
 
 // ============================================================================
 // Agent Collection (for creating AI chats)
@@ -1382,6 +1498,7 @@ export const chatOps = {
    */
   async updateChat(id: string, data: Partial<ChatRow>): Promise<void> {
     const db = getDb()
+    invalidateChatHydration(db, id)
     const updatedAt = new Date()
     let existing = chatCollection.get(id)
     if (!chatCollection.get(id)) {
@@ -1449,9 +1566,11 @@ export const chatOps = {
     if (await isProtectedLinxSecretaryChat(db, id)) {
       throw new Error('默认助手不能删除。')
     }
+    invalidateChatHydration(db, id)
 
     // Delete all threads first
-    const threads = this.getThreads(id)
+    const scopedThreads = scopedThreadCollection(db, id)
+    const threads = await scopedThreads.fetch({ refetch: true })
     for (const thread of threads) {
       await this.deleteThread(thread.id, id)
     }
@@ -1505,7 +1624,9 @@ export const chatOps = {
     }
     threadChatIdCache.set(threadResourceId, chatId)
     threadChatIdCache.set(threadKey, chatId)
-    writeCollectionRow(threadCollection, { ...threadData, id: threadResourceId } as ThreadRow, threadResourceId)
+    const persistedThread = { ...threadData, id: threadResourceId } as ThreadRow
+    writeCollectionRow(threadCollection, persistedThread, threadResourceId)
+    if (db) writeCollectionRow(scopedThreadCollection(db, chatId), persistedThread, threadResourceId)
     
     // Invalidate threads query
     queryClient.invalidateQueries({ queryKey: ['threads'] })
@@ -1566,6 +1687,8 @@ export const chatOps = {
         ...payload,
       } as ThreadRow
       writeCollectionRow(threadCollection, nextRow, nextRow.id)
+      const chatId = resolveThreadChatRowId(nextRow)
+      if (chatId) writeCollectionRow(scopedThreadCollection(db, chatId), nextRow, nextRow.id)
       return
     }
 
@@ -1578,7 +1701,7 @@ export const chatOps = {
   /**
    * Toggle thread starred status
    */
-  async toggleThreadStar(id: string, chatId: string, currentStarred: boolean): Promise<void> {
+  async toggleThreadStar(id: string, _chatId: string, currentStarred: boolean): Promise<void> {
     await this.updateThread(id, { starred: !currentStarred })
     queryClient.invalidateQueries({ queryKey: ['threads'] })
   },
@@ -1587,18 +1710,28 @@ export const chatOps = {
    * Delete a thread (and its messages)
    */
   async deleteThread(id: string, chatId: string): Promise<void> {
-    // Delete all messages first
-    const messages = this.getMessages(id)
-    for (const msg of messages) {
-      const tx = messageCollection.delete(msg.id)
-      await tx.isPersisted.promise
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+
+    const scopedMessages = scopedMessageCollection(db, chatId, id)
+    let messages = await scopedMessages.fetch({ refetch: true })
+    while (messages.length > 0) {
+      for (const msg of messages) {
+        const tx = scopedMessages.delete(msg.id)
+        await tx.isPersisted.promise
+        writeCollectionDelete(messageCollection, msg.id)
+      }
+      messages = await scopedMessages.fetch({ refetch: true })
     }
-    
-    // Delete thread
-    const tx = threadCollection.delete(id)
+
+    const scopedThreads = scopedThreadCollection(db, chatId)
+    if (!scopedThreads.get(id)) {
+      await scopedThreads.fetch({ refetch: true })
+    }
+    const tx = scopedThreads.delete(id)
     await tx.isPersisted.promise
-    
-    // Invalidate threads query
+    writeCollectionDelete(threadCollection, id)
+
     queryClient.invalidateQueries({ queryKey: ['threads'] })
   },
 
@@ -1613,12 +1746,13 @@ export const chatOps = {
     chatId: string, 
     threadId: string, 
     content: string, 
-    maker: string
+    maker: string,
+    options?: { messageId?: string },
   ): Promise<MessageRow> {
     const db = getDb()
     if (!db) throw new Error('Database not connected')
 
-    const msgKey = crypto.randomUUID()
+    const msgKey = options?.messageId?.trim() || crypto.randomUUID()
     const now = new Date()
     const chatRef = buildChatIri(db, chatId)
     if (!chatRef) {
@@ -1662,7 +1796,9 @@ export const chatOps = {
     } as MessageInsert & { '@id': string }
     
     await db.insert(messageResource).values(msgData as any).execute()
-    writeCollectionRow(messageCollection, { ...msgData, id: messageResourceId } as MessageRow, messageResourceId)
+    const persistedMessage = { ...msgData, id: messageResourceId } as MessageRow
+    writeCollectionRow(messageCollection, persistedMessage, messageResourceId)
+    writeCollectionRow(scopedMessageCollection(db, chatId, threadId), persistedMessage, messageResourceId)
     
     // Update chat last activity
     await this.updateChat(chatId, {
@@ -1743,6 +1879,7 @@ export const chatOps = {
     await insertPodRow(db, messageResource, msgData as Record<string, unknown>)
     const persistedMessage = normalizeCollectionRow(msgData as MessageRow, messageResourceId, messageIri)
     writeCollectionRow(messageCollection, persistedMessage, messageResourceId)
+    writeCollectionRow(scopedMessageCollection(db, chatId, threadId), persistedMessage, messageResourceId)
     
     await this.updateChat(chatId, {
       lastActiveAt: now,
@@ -1760,10 +1897,19 @@ export const chatOps = {
    * Delete a message
    */
   async deleteMessage(id: string, threadId: string): Promise<void> {
-    const tx = messageCollection.delete(id)
-    await tx.isPersisted.promise
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+    const chatId = await resolveThreadChatId(db, threadId)
+    if (!chatId) throw new Error(`Failed to resolve chat for thread ${threadId}`)
 
-    const chatId = getCachedThreadChatId(threadId) || ''
+    const scopedMessages = scopedMessageCollection(db, chatId, threadId)
+    if (!scopedMessages.get(id)) {
+      await scopedMessages.fetch({ refetch: true })
+    }
+    const tx = scopedMessages.delete(id)
+    await tx.isPersisted.promise
+    writeCollectionDelete(messageCollection, id)
+
     queryClient.invalidateQueries({ queryKey: ['messages'] })
   },
 
@@ -2062,6 +2208,7 @@ export function buildMessageListQueryKey(scopeKey: string, chatId: string, threa
  */
 export function useChatList(filters?: { search?: string }) {
   const query = useLiveQuery(chatCollection)
+  const queryError = useCollectionQueryError(chatCollection)
   const data = useMemo(() => {
     const rows = (query.data ?? []) as ChatRow[]
     const term = filters?.search?.trim().toLocaleLowerCase()
@@ -2069,24 +2216,32 @@ export function useChatList(filters?: { search?: string }) {
     return rows.filter((row) => [row.title, row.lastMessagePreview]
       .some((value) => value?.toLocaleLowerCase().includes(term)))
   }, [filters?.search, query.data])
-  return { ...query, data, error: null, refetch: () => chatCollection.fetch({ refetch: true }) }
+  return { ...query, ...queryError, data, refetch: () => chatCollection.fetch({ refetch: true }) }
 }
 
 /**
  * Hook to fetch thread list for a chat
  */
 export function useThreadList(chatId: string, options?: { enabled?: boolean }) {
-  const query = useLiveQuery(threadCollection)
   const enabled = options?.enabled ?? !!chatId
-  const data = useMemo(() => {
-    if (!enabled || !chatId) return []
-    if (normalizeChatRowId(chatId) === LINX_DEFAULT_SECRETARY.chatId && isLinxDefaultSecretaryBootstrapPending()) {
-      return []
-    }
-    return ((query.data ?? []) as ThreadRow[])
-      .filter((row) => resolveThreadChatRowId(row) === normalizeChatRowId(chatId))
-  }, [chatId, enabled, query.data])
-  return { ...query, data, error: null, refetch: () => threadCollection.fetch({ refetch: true }) }
+  const { scopeKey } = useSolidDatabase()
+  const parameter = chatId || '__disabled__'
+  const collection = useMemo(
+    () => threadCollectionPool.getOrCreate(scopeKey, parameter),
+    [chatId, scopeKey],
+  )
+  useEffect(
+    () => threadCollectionPool.retain(scopeKey, parameter),
+    [parameter, scopeKey],
+  )
+  const query = useLiveQuery(collection)
+  const queryError = useCollectionQueryError(collection)
+  const data = enabled
+    && normalizeChatRowId(chatId) === LINX_DEFAULT_SECRETARY.chatId
+    && isLinxDefaultSecretaryBootstrapPending()
+    ? []
+    : (enabled ? (query.data ?? []) as ThreadRow[] : [])
+  return { ...query, ...queryError, data, refetch: () => collection.fetch({ refetch: true }) }
 }
 
 /**
@@ -2094,10 +2249,11 @@ export function useThreadList(chatId: string, options?: { enabled?: boolean }) {
  */
 export function useThreadIndex(options?: { enabled?: boolean }) {
   const query = useLiveQuery(threadCollection)
+  const queryError = useCollectionQueryError(threadCollection)
   return {
     ...query,
+    ...queryError,
     data: options?.enabled === false ? [] : (query.data ?? []) as ThreadRow[],
-    error: null,
     refetch: () => threadCollection.fetch({ refetch: true }),
   }
 }
@@ -2117,13 +2273,30 @@ export function useWorkspaceList(options?: { enabled?: boolean }) {
  * Hook to fetch message list for a thread
  */
 export function useMessageList(chatId: string | null, threadId: string | null) {
-  const query = useLiveQuery(messageCollection)
+  const { scopeKey } = useSolidDatabase()
+  const parameter = `${chatId ?? '__disabled__'}\u0001${threadId ?? '__disabled__'}`
+  const collection = useMemo(
+    () => messageCollectionPool.getOrCreate(scopeKey, parameter),
+    [parameter, scopeKey],
+  )
+  useEffect(
+    () => messageCollectionPool.retain(scopeKey, parameter),
+    [parameter, scopeKey],
+  )
+  const query = useLiveQuery(collection)
+  const queryError = useCollectionQueryError(collection)
   const data = useMemo(() => threadId && chatId
     ? ((query.data ?? []) as MessageRow[])
-      .filter((row) => extractThreadIdFromThreadRef(row.thread) === threadId)
       .sort((left, right) => new Date(left.createdAt ?? 0).getTime() - new Date(right.createdAt ?? 0).getTime())
     : [], [chatId, query.data, threadId])
-  return { ...query, data, error: null, refetch: () => messageCollection.fetch({ refetch: true }) }
+  return {
+    ...query,
+    ...queryError,
+    data,
+    hasNextPage: collection.window?.hasNextPage ?? false,
+    loadOlder: () => collection.window?.loadNextPage() ?? Promise.resolve([]),
+    refetch: () => collection.fetch({ refetch: true }),
+  }
 }
 
 // ============================================================================

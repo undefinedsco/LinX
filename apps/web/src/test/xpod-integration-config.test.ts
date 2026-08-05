@@ -34,7 +34,9 @@ describe('xpod integration smoke auth config', () => {
   })
 
   it('does not treat XPOD_TEST_URL style auth variables as smoke credentials', () => {
+    const emptyHome = mkdtempSync(join(tmpdir(), 'linx-xpod-empty-home-'))
     expect(resolveExternalAuthConfigFromEnv({
+      SOLID_HOME: join(emptyHome, 'missing-solid-home'),
       XPOD_TEST_URL: 'https://id.undefineds.co/',
       XPOD_TEST_WEBID: 'https://id.undefineds.co/smoke/profile/card#me',
       XPOD_TEST_CLIENT_ID: 'old-client-id',

@@ -19,7 +19,7 @@ export function useFavoriteListPaneController() {
   const select = useFavoriteStore((s) => s.select)
   const optionRefs = useRef<Array<HTMLDivElement | null>>([])
 
-  const { data: favorites, isLoading } = useFavoriteList({
+  const { data: favorites, isLoading, error, refetch } = useFavoriteList({
     search: searchText || undefined,
   })
 
@@ -63,6 +63,8 @@ export function useFavoriteListPaneController() {
     onSearchChange: setSearchText,
     items,
     isLoading,
+    error,
+    refetch,
     selectedFavoriteId,
     selectedIndex,
     onSelect: select,

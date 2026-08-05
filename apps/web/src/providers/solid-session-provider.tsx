@@ -5,6 +5,7 @@ import {
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { capturePendingCallbackError } from '@/modules/login/login-utils'
+import { clearAllPodCollectionSnapshots } from '@/lib/data/collection-snapshots'
 import { getPersistentBrowserStorage, PersistentSessionStorage } from './persistent-session-storage'
 import { SessionContext, useSession } from './solid-session-context'
 
@@ -69,6 +70,7 @@ export function SolidSessionProvider({
 
   const logout = useCallback(async (options?: Parameters<Session['logout']>[0]) => {
     try {
+      await clearAllPodCollectionSnapshots()
       await session.logout(options)
       setProfile(undefined)
     } catch (error) {

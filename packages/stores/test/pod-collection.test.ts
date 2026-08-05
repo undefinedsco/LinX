@@ -48,6 +48,8 @@ function createHarness(rows: Array<{ id: string; projected?: boolean; updatedAt?
   hasDatabase?: boolean
   seed?: Array<{ id: string }>
   transformRows?: (rows: Array<{ id: string; projected?: boolean }>) => Promise<Array<{ id: string; projected?: boolean }>>
+  filter?: { column: 'name'; value: string }
+  snapshot?: any
   window?: {
     limit: number
     orderBy: Array<{ column: 'updatedAt' | 'name'; direction: 'asc' | 'desc' }>
@@ -95,6 +97,8 @@ function createHarness(rows: Array<{ id: string; projected?: boolean; updatedAt?
     getDb: () => harnessOptions.hasDatabase === false ? null : db as any,
     seed: harnessOptions.seed,
     transformRows: harnessOptions.transformRows,
+    filter: harnessOptions.filter,
+    snapshot: harnessOptions.snapshot,
     window: harnessOptions.window,
   })
   const options = mocks.getOptions()
@@ -118,6 +122,55 @@ describe('createPodCollection request contract', () => {
     await options.queryFn()
 
     expect(executeSelect).toHaveBeenCalledOnce()
+  })
+
+  it('applies a typed equality filter before executing the collection query', async () => {
+    const { options, selectQuery } = createHarness([{ id: 'one.ttl' }], {
+      filter: {
+        column: 'name',
+        value: 'https://pod.example/chats/one#it',
+      },
+    } as any)
+
+    await options.queryFn()
+
+    expect(selectQuery.where).toHaveBeenCalledOnce()
+    expect(selectQuery.where.mock.calls[0][0]).toEqual(expect.objectContaining({
+      right: 'https://pod.example/chats/one#it',
+    }))
+  })
+
+  it('restores a confirmed local snapshot before revalidating and replaces it from Pod data', async () => {
+    vi.useFakeTimers()
+    const local = [{ id: 'local.ttl', updatedAt: new Date(2026, 0, 1) }]
+    const remote = [{ id: 'remote.ttl', updatedAt: new Date(2026, 0, 2) }]
+    const persister = {
+      load: vi.fn(async () => ({
+        version: 1,
+        queryKey: ['central-collection-test'],
+        scopeKey: 'pod-a',
+        rows: local,
+        nextCursor: null,
+        residentPageCount: 1,
+        savedAt: Date.now(),
+      })),
+      save: vi.fn(async () => undefined),
+      clear: vi.fn(async () => undefined),
+      clearAll: vi.fn(async () => undefined),
+    }
+    const { executeSelect, options, queryClient } = createHarness(remote, {
+      snapshot: { scopeKey: () => 'pod-a', persister },
+    })
+
+    await expect(options.queryFn()).resolves.toEqual(local)
+    expect(executeSelect).not.toHaveBeenCalled()
+    await vi.runAllTimersAsync()
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['central-collection-test'] })
+
+    await expect(options.queryFn()).resolves.toEqual(remote)
+    await Promise.resolve()
+    expect(persister.save).toHaveBeenCalledWith(expect.objectContaining({ rows: remote, scopeKey: 'pod-a' }))
+    vi.useRealTimers()
   })
 
   it('hydrates only the first bounded page and exposes the next-page state', async () => {
@@ -170,6 +223,71 @@ describe('createPodCollection request contract', () => {
     expect(collection.window.hasNextPage).toBe(false)
     expect(mocks.collection.utils.writeUpsert).toHaveBeenCalledTimes(2)
     expect(mocks.collection.utils.refetch).not.toHaveBeenCalled()
+  })
+
+  it('preserves the resident page count when a loaded window refetches', async () => {
+    const firstPage = [
+      { id: 'a.ttl', updatedAt: new Date(2026, 0, 5) },
+      { id: 'b.ttl', updatedAt: new Date(2026, 0, 4) },
+      { id: 'c.ttl', updatedAt: new Date(2026, 0, 3) },
+    ]
+    const secondPage = [
+      { id: 'c.ttl', updatedAt: new Date(2026, 0, 3) },
+      { id: 'd.ttl', updatedAt: new Date(2026, 0, 2) },
+      { id: 'e.ttl', updatedAt: new Date(2026, 0, 1) },
+    ]
+    const refreshedWindow = [
+      { id: 'fresh.ttl', updatedAt: new Date(2026, 0, 6) },
+      ...firstPage,
+      secondPage[1],
+    ]
+    const { collection, options, selectQuery } = createHarness([], {
+      selectResults: [firstPage, secondPage, refreshedWindow],
+      window: {
+        limit: 2,
+        orderBy: [{ column: 'updatedAt', direction: 'desc' }],
+        maxResidentPages: 3,
+      },
+    })
+
+    await options.queryFn()
+    await collection.window.loadNextPage()
+    expect(collection.window.residentPages).toBe(2)
+
+    await expect(options.queryFn()).resolves.toHaveLength(4)
+
+    expect(collection.window.residentPages).toBe(2)
+    expect(collection.window.hasNextPage).toBe(true)
+    expect(selectQuery.limit).toHaveBeenLastCalledWith(5)
+  })
+
+  it('keeps the previous resident window when refetch fails', async () => {
+    const firstPage = [
+      { id: 'a.ttl', updatedAt: new Date(2026, 0, 5) },
+      { id: 'b.ttl', updatedAt: new Date(2026, 0, 4) },
+      { id: 'c.ttl', updatedAt: new Date(2026, 0, 3) },
+    ]
+    const secondPage = [
+      { id: 'c.ttl', updatedAt: new Date(2026, 0, 3) },
+      { id: 'd.ttl', updatedAt: new Date(2026, 0, 2) },
+      { id: 'e.ttl', updatedAt: new Date(2026, 0, 1) },
+    ]
+    const { collection, executeSelect, options } = createHarness([], {
+      selectResults: [firstPage, secondPage],
+      window: {
+        limit: 2,
+        orderBy: [{ column: 'updatedAt', direction: 'desc' }],
+        maxResidentPages: 3,
+      },
+    })
+
+    await options.queryFn()
+    await collection.window.loadNextPage()
+    executeSelect.mockRejectedValueOnce(new Error('refetch failed'))
+
+    await expect(options.queryFn()).rejects.toThrow('refetch failed')
+    expect(collection.window.residentPages).toBe(2)
+    expect(collection.window.hasNextPage).toBe(true)
   })
 
   it('builds a lexicographic cursor across every sort column and id', async () => {

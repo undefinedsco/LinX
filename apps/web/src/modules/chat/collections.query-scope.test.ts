@@ -6,8 +6,19 @@ import {
   buildThreadIndexQueryKey,
   buildThreadListQueryKey,
 } from './collections'
+import { readFileSync } from 'node:fs'
 
 describe('chat query account scope', () => {
+  it('does not erase live-query errors in chat list hooks', () => {
+    const source = readFileSync('src/modules/chat/data/collections.ts', 'utf8')
+    for (const hookName of ['useChatList', 'useThreadList', 'useThreadIndex', 'useMessageList']) {
+      const start = source.indexOf(`export function ${hookName}`)
+      const end = source.indexOf('\nexport function ', start + 1)
+      const hookSource = source.slice(start, end < 0 ? source.length : end)
+      expect(hookSource, hookName).not.toContain('error: null')
+    }
+  })
+
   it('does not expose cached chat rows from a previous account scope', () => {
     const queryClient = new QueryClient()
     const aliceKey = buildChatListQueryKey('account:alice', '')
@@ -41,5 +52,19 @@ describe('chat query account scope', () => {
   it('isolates message caches even when chat and thread ids are reused', () => {
     expect(buildMessageListQueryKey('account:alice', 'chat-1', 'thread-1'))
       .not.toEqual(buildMessageListQueryKey('account:bob', 'chat-1', 'thread-1'))
+  })
+
+  it('routes destructive mutations through the same parameterized collections as reads', () => {
+    const source = readFileSync('src/modules/chat/data/collections.ts', 'utf8')
+    const deleteThreadStart = source.indexOf('async deleteThread(')
+    const deleteMessageStart = source.indexOf('async deleteMessage(', deleteThreadStart)
+    const deleteThreadSource = source.slice(deleteThreadStart, deleteMessageStart)
+    const deleteMessageEnd = source.indexOf('\n  // ==========================================================================', deleteMessageStart)
+    const deleteMessageSource = source.slice(deleteMessageStart, deleteMessageEnd)
+
+    expect(deleteThreadSource).toContain('scopedMessageCollection')
+    expect(deleteThreadSource).toContain('scopedThreadCollection')
+    expect(deleteThreadSource).toContain('while (messages.length > 0)')
+    expect(deleteMessageSource).toContain('scopedMessageCollection')
   })
 })

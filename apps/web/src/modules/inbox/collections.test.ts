@@ -83,6 +83,14 @@ describe('findLatestApprovalByTarget', () => {
 })
 
 describe('inbox aggregate query model', () => {
+  it('does not erase aggregate query errors at the hook boundary', () => {
+    const source = readFileSync('src/modules/inbox/data/collections.ts', 'utf8')
+    const hookSource = source.slice(source.indexOf('export function useInboxItems'), source.indexOf('export function useApprovalByTarget'))
+
+    expect(hookSource).not.toContain('error: null')
+    expect(hookSource).toContain('refetch:')
+  })
+
   it('bounds every Inbox collection resident window by creation time', () => {
     const source = readFileSync('src/modules/inbox/data/collections.ts', 'utf8')
     const collectionNames = [

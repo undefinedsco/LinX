@@ -41,6 +41,7 @@ import { resolveThreadChatId } from '@/lib/data/resource-identity'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useToast } from '@/components/ui/use-toast'
+import { CollectionErrorPane } from '@/components/feedback/CollectionErrorPane'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -640,7 +641,13 @@ export function ChatListPane(_props: ChatListPaneProps) {
   const optionRefs = useRef<Array<HTMLDivElement | null>>([])
 
   // Use new collection-based hooks
-  const { data: rawChats, isLoading: isChatsLoading } = useChatList(search ? { search } : undefined)
+  const {
+    data: rawChats,
+    isLoading: isChatsLoading,
+    error: chatsError,
+    refetch: refetchChats,
+  } = useChatList(search ? { search } : undefined)
+  const hasCachedChats = (rawChats?.length ?? 0) > 0
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const runtimeMode = isRuntimeSessionMode()
   const { data: threads = [] } = useThreadIndex({ enabled: runtimeMode })
@@ -934,8 +941,18 @@ export function ChatListPane(_props: ChatListPaneProps) {
         )}
       />
       
+      {chatsError && hasCachedChats ? (
+        <CollectionErrorPane
+          stale
+          title="同步失败，当前显示上次内容"
+          onRetry={refetchChats}
+        />
+      ) : null}
+
       <ScrollArea className="flex-1">
-        {isChatsLoading && chats.length === 0 ? (
+        {!isChatsLoading && chatsError && !hasCachedChats ? (
+          <CollectionErrorPane title="聊天加载失败" onRetry={refetchChats} />
+        ) : isChatsLoading && chats.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...

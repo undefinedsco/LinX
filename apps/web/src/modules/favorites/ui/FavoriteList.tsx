@@ -8,6 +8,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { CollectionErrorPane } from '@/components/feedback/CollectionErrorPane'
 
 // ============================================================================
 // List Header
@@ -133,6 +134,8 @@ export interface FavoriteListProps {
   onSearchChange: (value: string) => void
   items: FavoriteListItem[]
   isLoading: boolean
+  error: unknown
+  refetch: () => Promise<unknown>
   selectedFavoriteId: string | null
   selectedIndex: number
   onSelect: (id: string) => void
@@ -145,6 +148,8 @@ export function FavoriteList({
   onSearchChange,
   items,
   isLoading,
+  error,
+  refetch,
   selectedFavoriteId,
   selectedIndex,
   onSelect,
@@ -156,11 +161,20 @@ export function FavoriteList({
       <FavoriteListHeader searchValue={searchText} onSearchChange={onSearchChange} />
 
       <ScrollArea className="flex-1">
+        {error && items.length > 0 ? (
+          <CollectionErrorPane
+            stale
+            title="同步失败，当前显示上次内容"
+            onRetry={refetch}
+          />
+        ) : null}
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...
           </div>
+        ) : error && !items.length ? (
+          <CollectionErrorPane title="收藏加载失败" onRetry={refetch} />
         ) : !items.length ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
             <Star className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />

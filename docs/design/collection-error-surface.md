@@ -1,11 +1,18 @@
 # 集合错误透出 Spec（Pod 不可达不渲染空列表）
 
-- Status: Proposal（2026-08-05）
+- Status: Implemented（2026-08-05）；真实私有 Pod 断网恢复 e2e 仍是发布验证项
+
+## 实现证据
+
+- `live-query-contract.test.tsx` 证明 adapter 从公开 `collection.utils.lastError` 读取并响应 QueryCache 变化。
+- Chat、Inbox、Favorites 在无缓存时显示可重试错误；有缓存时保留内容并显示非阻断 stale 提示。
+- ChatContent 已聚合 chat/thread/database 错误；文件来源查询继续向调用方透出 message/thread 错误，不再伪装为空。
 - 来源：乐观更新+水化审计 F17（`docs/pod-subscription-budget-design.md` §3）
 
 ## 1. 问题实证
 
-- 集合查询抛错时 `useLiveQuery` 降级为空数组且 `status` 停留 ready（`packages/stores/src/pod-collection.ts:163-171`）
+- `createPodCollection` 对普通查询异常会重新抛出，但验证发现 `useLiveQuery` 只观察 collection 行状态，不会把 Query Collection observer 的查询异常映射到自身 `isError/error`。
+- `@tanstack/query-db-collection` 已在公共 `collection.utils.lastError/isError` 中维护 observer 错误；缺口是 React 层没有订阅 QueryCache 后读取这组状态。
 - hook 层随后把 `error` 硬编码为 `null`：`useInboxList`（inbox collections.ts:505）、`useChatList`/`useThreadList`/`useMessageList`（chat collections.ts:2072/2089/2126）
 - 后果：Pod 挂了 / 401 / 网络断 → 所有列表渲染"空状态"（"暂无数据"），用户无法区分"真空"和"加载失败"
 - 正面参照：`ContactListPane.tsx:43-53` 已实现错误面板（`useContactsData` 唯一没吞 error 的 hook）——本 spec 是把这个模式推广到全部集合 hook
@@ -22,27 +29,35 @@
 
 ## 3. 方案
 
-### 3.1 错误上抛（stores 层）
+### 3.1 复用 Query Collection 公共错误语义
 
-- `useLiveQuery` 的降级分支不再无条件吞错：queryFn 抛错 → 保持空数据但把 error 记录到 collection 的 `lastError`，status 置 `error`（tanstack db 支持）
-- 自动重试语义：tanstack query 的 `retry`（默认 3 次指数退避）已存在于 queryCollection 层，保持；重试耗尽后错误才透出
+- 不新增平行错误状态；使用依赖公开的 `collection.utils.lastError/isError/clearError/refetch`。
+- `useCollectionQueryError` 订阅 QueryCache 事件并读取 collection utils；业务 hook 合并该状态与 `useLiveQuery` 行数据。
+- `isUnsupportedDocumentCollectionRead` 的显式空数组兼容分支保持不变；它表示已知的不支持读取，不应伪装成网络错误。
+- 自动重试遵循项目 `QueryClient` 当前配置 `retry: 1`，不在本 spec 内改为其他次数。
 
 ### 3.2 hook 层透出
 
-逐一移除 `error: null` 硬编码，改为透传 `collection.lastError`（4 个 hook：inbox 1 + chat 3；favorites/contacts 已透或需核对）。
+逐一移除 `error: null` 硬编码，直接透传对应 `useLiveQuery` 的错误：
+
+- Chat 单集合 hook：透传 `query.error`。
+- Inbox 聚合 hook：从四个查询中选取首个非空错误，同时保留聚合 `isError`。
+- `useThreadIndex` 同样纳入，避免后台索引路径继续吞错。
+- Favorites/Contacts 先以契约测试核对，不在没有证据时修改。
 
 ### 3.3 渲染层错误面板
 
-- 抽取 `ContactListPane` 的错误面板为共享组件 `CollectionErrorPane`（错误摘要 + 重试按钮 → `collection.refetch()`）
+- 抽取纯 UI `CollectionErrorPane`（错误摘要 + 重试命令）；组件不得直接依赖 collection，业务面板传入 `onRetry`。
 - 接入：InboxListPane、ChatSidebar、ThreadList、MessageList、FavoritesPane
-- 空态组件仅在 `status === ready && error == null && rows.length === 0` 时渲染
+- 无缓存数据且 `isError` 时显示错误面；有缓存数据且后台刷新失败时保留内容，并显示非阻塞的 stale/error 提示。
+- 空态仅在非 loading、非 error 且 rows 为空时渲染，不绑定未经验证的 `status === ready` 字符串。
 
 ## 4. 落地顺序
 
-1. `useLiveQuery` 错误透出 + 单测（抛错 → status=error + lastError；重试成功 → 恢复 ready）
-2. 4 个 hook 移除 `error: null` + 单测
-3. `CollectionErrorPane` 抽取 + 各面板接入（每个面板一个小 PR 粒度）
-4. 验证：e2e mock Pod 500 → 各列表显示错误面板而非空态；重试恢复
+1. 契约测试已证明 raw `useLiveQuery` 不透出 Query Collection 查询错误，并锁定 adapter 合并后的行为。
+2. Chat/Inbox hook 移除 `error: null`，补充聚合错误和旧数据保留单测。
+3. `CollectionErrorPane` 抽取 + 各面板接入（每个面板一个小 PR 粒度）。
+4. 使用自举 xpod 的真实 Pod 集成测试制造 500/不可达，再做 UI e2e：错误面板不是空态，重试后恢复；不能只用 mock 证明 Pod 错误链路。
 
 ## 5. 风险与回退
 

@@ -16,6 +16,7 @@ import {
 } from '@undefineds.co/drizzle-solid'
 import { deleteExactRecord, updateExactRecord } from './exact-records'
 import { createCollectionSubscriptionLease } from './collection-subscription-lease'
+import type { CollectionSnapshotPersister } from './collection-snapshot-persister'
 import {
   createOrderedWindowPolicy,
   evictOrderedWindowPages,
@@ -46,6 +47,10 @@ interface PodCollectionOptions<TResource, TData> {
     column: string
     direction?: 'asc' | 'desc'
   }
+  filter?: {
+    column: keyof TData & string
+    value: unknown | ((db: SolidDatabase<any>) => unknown)
+  }
   // Optional bounded resident working set. The first read retains `limit` rows
   // and uses one look-ahead row to determine whether another page exists.
   window?: OrderedWindowOptions<TData>
@@ -55,6 +60,12 @@ interface PodCollectionOptions<TResource, TData> {
   seed?: TData[] | (() => TData[])
   // Optional: hydrate or project rows before they enter the reactive collection.
   transformRows?: (rows: TData[], db: SolidDatabase<any>) => Promise<TData[]> | TData[]
+  // Runs before a remote notification is projected into collection state.
+  onRemoteChange?: (resourceIdentity: string | null) => void
+  snapshot?: {
+    scopeKey: () => string | null
+    persister: CollectionSnapshotPersister<TData>
+  }
 }
 
 /**
@@ -68,7 +79,7 @@ export function createPodCollection<
 >(
   options: PodCollectionOptions<TResource, TData>
 ) {
-  const { resource, queryKey, queryClient, getDb, columns, orderBy, window, getKey: customGetKey, seed, transformRows } = options
+  const { resource, queryKey, queryClient, getDb, columns, orderBy, filter, window, getKey: customGetKey, seed, transformRows, onRemoteChange, snapshot } = options
   const windowPolicy = window ? createOrderedWindowPolicy(window) : null
   let nextCursor: OrderedWindowCursor | null = null
   let pageSequence = 0
@@ -103,6 +114,7 @@ export function createPodCollection<
   })
 
   let didSeed = false
+  let didAttemptSnapshotRestore = false
 
   const buildQuery = (db: SolidDatabase<any>, cursor?: OrderedWindowCursor, limitOverride?: number) => {
     let query: any
@@ -114,6 +126,12 @@ export function createPodCollection<
       query = db.select(selectObj).from(resource)
     } else {
       query = db.select().from(resource)
+    }
+
+    if (filter) {
+      const column = (resource as any)[filter.column]
+      const value = typeof filter.value === 'function' ? filter.value(db) : filter.value
+      query = query.where(eq(column, value))
     }
 
     const primaryOrder = window?.orderBy[0] ?? orderBy
@@ -209,7 +227,38 @@ export function createPodCollection<
   const fetchRows = async () => {
     const db = getDb()
     if (!db) return []
-    let rows = await executeLogicalWindow(db)
+    const snapshotScope = snapshot?.scopeKey() ?? null
+    if (snapshot && snapshotScope && !didAttemptSnapshotRestore) {
+      didAttemptSnapshotRestore = true
+      const restored = await snapshot.persister.load(queryKey, snapshotScope)
+      if (restored) {
+        const restoredRows = windowPolicy ? windowPolicy.sort(restored.rows) : restored.rows
+        if (windowPolicy && windowState && window) {
+          residentWindowPages = restoredRows.length > 0 ? [{
+            id: `snapshot-${++pageSequence}`,
+            rows: restoredRows,
+            lastAccessed: ++pageAccessSequence,
+            pinned: true,
+          }] : []
+          nextCursor = restored.nextCursor as OrderedWindowCursor | null
+          windowState.residentPages = residentWindowPages.length
+          windowState.hasNextPage = nextCursor !== null
+        }
+        setTimeout(() => {
+          void queryClient.invalidateQueries({ queryKey })
+        }, 0)
+        return restoredRows
+      }
+    }
+    const residentPageTarget = windowPolicy && window
+      ? Math.max(1, Math.min(
+        residentWindowPages.length || 1,
+        window.maxResidentPages ?? 3,
+      ))
+      : 1
+    const residentRowTarget = window ? residentPageTarget * window.limit : undefined
+    const fetchTarget = residentRowTarget === undefined ? undefined : residentRowTarget + 1
+    let rows = await executeLogicalWindow(db, undefined, fetchTarget)
 
     if (!didSeed && rows.length === 0 && seed) {
       const seedRows = typeof seed === 'function' ? seed() : seed
@@ -217,7 +266,7 @@ export function createPodCollection<
         const ensured = seedRows.map((row) => ensureId(row, 'seed'))
         await db.insert(resource).values(ensured as any).execute()
         didSeed = true
-        rows = await executeLogicalWindow(db)
+        rows = await executeLogicalWindow(db, undefined, fetchTarget)
       } else {
         didSeed = true
       }
@@ -226,16 +275,36 @@ export function createPodCollection<
     if (windowPolicy && windowState) {
       const orderedRows = windowPolicy.sort(rows)
       const limit = windowPolicy.options.limit
-      windowState.hasNextPage = orderedRows.length > limit
-      rows = orderedRows.slice(0, limit)
-      windowState.residentPages = rows.length > 0 ? 1 : 0
-      nextCursor = rows.length > 0 ? windowPolicy.cursorFor(rows[rows.length - 1]) : null
-      residentWindowPages = rows.length > 0 ? [{
-        id: `page-${++pageSequence}`,
+      const retainedRows = orderedRows.slice(0, residentRowTarget)
+      const rebuiltPages: OrderedWindowPage<TData>[] = []
+      for (let offset = 0; offset < retainedRows.length; offset += limit) {
+        rebuiltPages.push({
+          id: `page-${++pageSequence}`,
+          rows: retainedRows.slice(offset, offset + limit),
+          lastAccessed: ++pageAccessSequence,
+          pinned: offset === 0,
+        })
+      }
+
+      windowState.hasNextPage = orderedRows.length > retainedRows.length
+      windowState.residentPages = rebuiltPages.length
+      nextCursor = retainedRows.length > 0
+        ? windowPolicy.cursorFor(retainedRows[retainedRows.length - 1])
+        : null
+      residentWindowPages = rebuiltPages
+      rows = retainedRows
+    }
+
+    if (snapshot && snapshotScope) {
+      void snapshot.persister.save({
+        queryKey,
+        scopeKey: snapshotScope,
         rows,
-        lastAccessed: ++pageAccessSequence,
-        pinned: true,
-      }] : []
+        nextCursor,
+        residentPageCount: residentWindowPages.length,
+      }).catch((error) => {
+        console.warn(`[PodCollection] ${queryKey.join('/')} snapshot save failed:`, error)
+      })
     }
 
     return rows
@@ -745,6 +814,7 @@ export function createPodCollection<
       }
       const applyRemoteUpsert = async (activity: any) => {
         const identity = activityObjectIdentity(activity)
+        onRemoteChange?.(identity)
         if (identity) {
           const inFlight = inFlightRemoteUpserts.get(identity)
           if (inFlight) {
@@ -793,6 +863,7 @@ export function createPodCollection<
         },
         onDelete: async (activity: any) => {
           debugPodCollection(`[PodCollection] onDelete: ${activity.object}`)
+          onRemoteChange?.(activityObjectIdentity(activity))
           const key = resolveActivityKey(activity)
           if (key) {
             try {

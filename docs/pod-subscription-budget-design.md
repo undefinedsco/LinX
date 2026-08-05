@@ -67,16 +67,16 @@
 
 | 问题 | Spec | 建议顺序 |
 | --- | --- | --- |
-| F12：无本地快照持久化，每次冷启动全量网络拉取 | `docs/design/collection-local-snapshot-persistence.md` | 1（水化杠杆主体） |
-| F17：Pod 不可达时集合渲染为空列表而非错误面（错误被 hook 层吃掉） | `docs/design/collection-error-surface.md` | 2（小、独立、即时收益） |
-| F9：任何整表 refetch 会把多页驻留窗口塌缩回第 1 页 | `docs/design/collection-refetch-window-preservation.md` | 3（F16 修复使整表失效真实发生，塌缩从理论变现实） |
-| F10：thread/message 集合无窗口无过滤，首次使用全表扫描 Pod（聊天冷启动主成本） | `docs/design/chat-thread-message-parameterized-collections.md` | 4（聊天侧最大收益，改动面最大） |
-| F11：`hydrateChatRows` 每个 chat 行一次 GET（N+1），且 `createAIChat` 后全量重复 | `docs/design/chat-hydration-dedup.md` | 5（F10 之后水化触发面已收窄） |
+| F17：Pod 不可达时部分集合 hook 把真实错误覆盖成 `null`，UI 误显示空态 | `docs/design/collection-error-surface.md` | 1（先让后续 revalidate 失败可观察） |
+| F9：任何整表 refetch 会把多页驻留窗口塌缩回第 1 页 | `docs/design/collection-refetch-window-preservation.md` | 2（先稳定窗口与快照语义） |
+| F11：`hydrateChatRows` 每个 chat 行一次 GET（N+1），且 `createAIChat` 后全量重复 | `docs/design/chat-hydration-dedup.md` | 3（独立于 thread/message，可先降低请求数） |
+| F10：thread/message 集合无窗口无过滤，首次使用全表扫描 Pod（聊天冷启动主成本） | `docs/design/chat-thread-message-parameterized-collections.md` | 4（参数化 SELECT；订阅继续按 resource 共享） |
+| F12：无本地快照持久化，每次冷启动全量网络拉取 | `docs/design/collection-local-snapshot-persistence.md` | 5（最后持久化已稳定的 query key、窗口和错误语义） |
 
 ## 4. 待办
 
 - **CDP 实测（原生路径）**：本地 HTTP/1.1 下挂起连接盘点——预期 `/.notifications/StreamingHTTPChannel2023/` = 0、`/.notifications/WebSocketChannel2023/` ≤ 活跃 topic 数且不阻塞数据请求；重跑 files visual audit 时用 CDP `Network.requestWillBeSent` 验证
-- **水化增强**：即 §3 推迟项 F12/F9/F17
+- **水化增强**：按 §3 的依赖顺序推进 F17 → F9 → F11 → F10 → F12
 - ~~topic 合并~~ **已证伪**：标准协议单 topic/channel，父容器不冒泡 Update，无合规合流手段；降 channel 只能砍订阅面（已完成）
 - **非目标维持**：不改 drizzle-solid 的通道模型；不改集合读路径；不引入私有通知协议
 
@@ -84,4 +84,3 @@
 
 - app 侧：各 commit 独立可 revert；WS-first 偏好回退即恢复 SSE-first
 - xpod 侧：`04a1ea8e` 已撤销 Link 注入；`/v1/notifications/ws` 升级路由保留（DeviceNotificationRuntime 供设备通知网关使用，与浏览器 live query 无关）
-

@@ -132,6 +132,7 @@ describe('ChatListPane', () => {
       data: [],
       isLoading: false,
       error: null,
+      refetch: vi.fn(),
       fetchStatus: 'idle',
     })
     mockUseInboxItems.mockReturnValue({
@@ -165,6 +166,48 @@ describe('ChatListPane', () => {
   })
 
   describe('Chat List Mode', () => {
+    it('shows a retryable error instead of an empty state when the initial query fails', () => {
+      const refetch = vi.fn()
+      mockUseChatList.mockReturnValue({
+        data: [],
+        isLoading: false,
+        error: new Error('offline'),
+        refetch,
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByRole('alert')).toHaveTextContent('聊天加载失败')
+      expect(screen.queryByText('暂无聊天')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '重试' }))
+      expect(refetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps cached chats visible and shows a nonblocking sync warning', () => {
+      const refetch = vi.fn()
+      mockUseChatList.mockReturnValue({
+        data: [{
+          id: 'chat-cached',
+          title: 'Cached Chat',
+          lastMessagePreview: 'cached',
+          updatedAt: new Date().toISOString(),
+          muted: false,
+          starred: false,
+          unreadCount: 0,
+        }],
+        isLoading: false,
+        error: new Error('offline'),
+        refetch,
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('Cached Chat')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('同步失败，当前显示上次内容')
+    })
+
     it('renders chat list with WeChat style items', () => {
       mockUseChatList.mockReturnValue({
         data: [

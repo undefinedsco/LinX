@@ -8,6 +8,8 @@ import {
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { createPodCollection } from '@/lib/data/pod-collection'
+import { createPodCollectionSnapshot } from '@/lib/data/collection-snapshots'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { rebindPodCollections } from '@/lib/data/pod-collection-rebind'
 import { queryClient } from '@/providers/query-provider'
 
@@ -35,6 +37,10 @@ export const contactCollection = createPodCollection<typeof contactResource, Con
     orderBy: [{ column: 'name', direction: 'asc' }],
     maxResidentPages: 3,
   },
+  snapshot: createPodCollectionSnapshot<ContactRow>(() => {
+    const db = getContactsDatabase()
+    return db ? resolveCurrentPodBaseUrl(db) : null
+  }, ['createdAt', 'updatedAt']),
   getKey: (item) => {
     if (!item.id) throw new Error('Contact record is missing id')
     return item.id
