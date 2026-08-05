@@ -48,10 +48,33 @@
 | e2e seeded xpod models 版本分裂 | package.json | `6e887313` |
 | ~~xpod gateway descriptor 广播~~ **已 revert**：关键特性走原生协议的原则确立后，multiplex 路径不再向浏览器开放 | xpod | `17653f96` → `04a1ea8e` |
 
-## 3. 待办
+## 3. 乐观更新 + 水化审计（2026-08-05 专项）
+
+对 `packages/stores/src/pod-collection.ts` 的专项审计发现 18 项，已修 7 项，其余按架构量级推迟。
+
+### 已修（`cf06ed6d`、`01b385f8`）
+
+| 问题 | 修法 |
+| --- | --- |
+| 写入已持久化但 backfill 查询失败 → 乐观事务回滚 → 已写入行消失/已删行复活 | reconcile 隔离 try/catch，失败回退 `{ refetch: true }` |
+| 每次写/远程事件 backfill 拉 101 行（3 次往返）只用 1 行 | 按需 fetch（通常 1~2 行一次往返）；更新行仍在窗口底之上时整个跳过 |
+| 窗口外插入的行提交后从 UI 消失 | 本地插入无条件 upsert 进集合状态 |
+| 非窗口集合的 IRI 删除 → 整表 refetch；删除风暴无去重 | 从内存集合状态解析 key 点删；窗口外 IRI 删除忽略；兜底走去重失效 |
+| thread/message 失效键 `['chats',id,'threads']` 永远匹配不到集合键 → 写后兜底失效是死的 | 指向真实集合键 `['threads']`/`['messages']` |
+| db 未就绪时集合缓存空列表 5 分钟，登录后仅 `['chats']` 被失效 | db 就绪时全量失效（`01b385f8`） |
+
+### 推迟（架构级，需单独立项）
+
+- **F10**：thread/message 集合无窗口无过滤，首次使用全表扫描 Pod（聊天冷启动主成本）——需参数化集合（per-thread query key）或服务端 where
+- **F11**：`hydrateChatRows` 每个 chat 行一次 GET（N+1），且 `createAIChat` 后全量重复——需写入期持久化参与者/元数据或按 chat id 缓存水化
+- **F12**：无本地快照持久化，每次冷启动全量网络拉取——需 IndexedDB query persister（首屏快照秒渲染）
+- **F9**：任何整表 refetch 会把多页驻留窗口塌缩回第 1 页——refetch 时按驻留页数重建
+- **F17**：Pod 不可达时集合渲染为空列表而非错误面（错误被 hook 层吃掉）——需把 query 错误透出到 UI
+
+## 4. 待办
 
 - **CDP 实测（原生路径）**：本地 HTTP/1.1 下挂起连接盘点——预期 `/.notifications/StreamingHTTPChannel2023/` = 0、`/.notifications/WebSocketChannel2023/` ≤ 活跃 topic 数且不阻塞数据请求；重跑 files visual audit 时用 CDP `Network.requestWillBeSent` 验证
-- **水化增强**（杠杆 3 待做项）：集合快照 IndexedDB 持久化、聚焦 revalidate、后台徽标低频条件 GET 的取舍
+- **水化增强**：即 §3 推迟项 F12/F9/F17
 - ~~topic 合并~~ **已证伪**：标准协议单 topic/channel，父容器不冒泡 Update，无合规合流手段；降 channel 只能砍订阅面（已完成）
 - **非目标维持**：不改 drizzle-solid 的通道模型；不改集合读路径；不引入私有通知协议
 
