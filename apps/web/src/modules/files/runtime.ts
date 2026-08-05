@@ -1,9 +1,3 @@
-import { acquirePodCollectionSubscription } from '@/lib/data/use-pod-collection-subscription'
-import type { MicroAppRuntime } from '@/modules/layout/micro-app-runtime'
-import { filesOps } from './collections'
-
-const subscribe = () => filesOps.subscribeToPod()
-
-export const filesRuntime: MicroAppRuntime = {
-  activate: ({ db, signal }) => acquirePodCollectionSubscription(db, subscribe, signal),
-}
+// Compatibility entrypoint: the implementation lives in ./data/runtime;
+// keep this re-export so existing imports of modules/files/runtime stay valid.
+export { filesRuntime } from './data/runtime'
