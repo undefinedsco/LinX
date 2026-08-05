@@ -1138,8 +1138,19 @@ export const contactOps = {
       return () => {}
     }
 
-    const unsubscribe = await contactCollection.subscribeToPod(db)
-    return unsubscribe
+    const unsubscribers = await Promise.all([
+      contactCollection.subscribeToPod(db),
+      agentCollection.subscribeToPod(db),
+    ])
+    return () => {
+      for (const unsubscribe of unsubscribers) {
+        try {
+          unsubscribe()
+        } catch (error) {
+          console.warn('[contactOps] Unsubscribe error:', error)
+        }
+      }
+    }
   },
 
   /**

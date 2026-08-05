@@ -7,10 +7,19 @@ import {
   favoriteHooks,
   normalizeFavoriteRow,
 } from '@/modules/favorites/collections'
+import { subscribeFavoritesToPod } from '@/modules/favorites/runtime'
+import { usePodCollectionSubscription } from '@/lib/data/use-pod-collection-subscription'
+import { useSolidDatabase } from '@/providers/solid-database-provider'
 
 export function useFilesFavoriteList(filters?: {
   sourceModule?: SourceModule
 }) {
+  const { db } = useSolidDatabase()
+  // Star state is shared data owned by the favorites module: acquire its
+  // subscription while this pane is visible so cross-module updates stay
+  // live even when the favorites micro-app is not active.
+  usePodCollectionSubscription(!!db, db, subscribeFavoritesToPod)
+
   const liveQuery = useLiveQuery((query) => (
     query.from({ favorite: favoriteCollection }).select(({ favorite }) => favorite)
   ))

@@ -14,6 +14,18 @@ vi.mock('@/modules/contacts/collections', () => ({
   agentCollection: { name: 'agent-collection' },
 }))
 
+vi.mock('@/modules/contacts/runtime', () => ({
+  subscribeContactsToPod: vi.fn(),
+}))
+
+vi.mock('@/lib/data/use-pod-collection-subscription', () => ({
+  usePodCollectionSubscription: vi.fn(),
+}))
+
+vi.mock('@/providers/solid-database-provider', () => ({
+  useSolidDatabase: () => ({ db: null }),
+}))
+
 import { useAgent, useAgents } from './useAgents'
 
 describe('agent collection hooks', () => {
