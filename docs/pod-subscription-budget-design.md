@@ -16,16 +16,18 @@
 
 ### 杠杆 1：topic 拓扑收敛（订阅面最小化）
 
+- **订阅原则**：谁活跃（可见/可交互）且需要实时合并，谁订阅；历史/只读数据走 revalidation。唯一后台例外是 pinned inbox（导航徽标）
 - 单活跃 micro-app 协调器：activate 订阅 / deactivate 释放（`micro-app-runtime.ts`）
 - 引用计数 lease 去重（`@linx/stores/collection-subscription-lease`，250ms grace）
-- 全局 pinned 仅 inbox（导航铃铛），典型稳态 topic 数 1~4
-- 后续可再收：CSS 事件向父容器冒泡，数据布局合并后 pinned 可降为 1 条
+- **订阅跟着数据走**：跨模块渲染共享数据时，消费方通过共享 lease 引用（同一函数引用）acquire 属主模块的订阅——已落地两处：files 详情页 → favorites 星标、chat 选择器 → contacts agents（`agentCollection` 此前无人订阅，已并入 `contactOps.subscribeToPod`）
+- 典型稳态 topic 数 1~4（+pinned inbox 4）；symphony 面板打开时 +6 属正常——面板打开即活跃场景（观看运行中的 workflow 正是需要实时的面）
 
 ### 杠杆 2：传输按 URL scheme 分档（全标准）
 
 - `https:`（h2）：原生 SSE——h2 传输层多路复用，N 条 SSE 共享 1 条 TCP
-- `http:`（HTTP/1.1 本地）：原生 **WebSocketChannel2023**——升级后的 socket 不占 Chromium 每主机 6 连接池
+- `http:`（HTTP/1.1 本地）：原生 **WebSocketChannel2023**——升级后的 socket 不占 Chromium 每主机 6 连接池（浏览器硬上限，HTTP/1.1 持久连接每 host:port 仅 6 条，SSE 长连接会占死）
 - 实现：`linx-solid-database.ts` 创建时按 podUrl scheme 选 `preferredChannels`，podUrl 创建时未知则 init 后按 dialect 实际值改写（NotificationsClient 懒创建，届时读配置）
+- **标准协议内 channel 无法合并**：channel = 单 topic；粗粒度（父容器）订阅只冒泡 Create/Delete，成员 Update 不冒泡（CSS `DataAccessorBasedStore` 实证），父容器订阅会丢更新。降 channel 只能靠砍订阅面，不能靠合流
 
 ### 杠杆 3：本地优先水化（降低实时依赖）
 
@@ -41,6 +43,7 @@
 | plain-HTTP WS-first 偏好（创建时 + init 后补写） | `linx-solid-database.ts` | `b18f3f08` |
 | inbox 铃铛 pinned 常驻订阅（共享 lease） | `pod-collections-bootstrap.tsx`、`inbox/runtime.ts` | `d248acf7` |
 | dev-only 逻辑订阅预算 warn（12） | `use-pod-collection-subscription.ts` | `d248acf7` |
+| 跨模块订阅跟数据走（files→favorites、chat→agents，agents 纳入 contacts 订阅） | 各 runtime + 消费 hook | `2105543e` |
 | Files runtime 归入 data 层 | `files/data/runtime.ts` | `13a2522d` |
 | e2e seeded xpod models 版本分裂 | package.json | `6e887313` |
 | ~~xpod gateway descriptor 广播~~ **已 revert**：关键特性走原生协议的原则确立后，multiplex 路径不再向浏览器开放 | xpod | `17653f96` → `04a1ea8e` |
@@ -49,7 +52,7 @@
 
 - **CDP 实测（原生路径）**：本地 HTTP/1.1 下挂起连接盘点——预期 `/.notifications/StreamingHTTPChannel2023/` = 0、`/.notifications/WebSocketChannel2023/` ≤ 活跃 topic 数且不阻塞数据请求；重跑 files visual audit 时用 CDP `Network.requestWillBeSent` 验证
 - **水化增强**（杠杆 3 待做项）：集合快照 IndexedDB 持久化、聚焦 revalidate、后台徽标低频条件 GET 的取舍
-- **topic 合并**（杠杆 1 待做项）：inbox 数据布局合并到单容器，pinned 4 → 1
+- ~~topic 合并~~ **已证伪**：标准协议单 topic/channel，父容器不冒泡 Update，无合规合流手段；降 channel 只能砍订阅面（已完成）
 - **非目标维持**：不改 drizzle-solid 的通道模型；不改集合读路径；不引入私有通知协议
 
 ## 4. 回退
