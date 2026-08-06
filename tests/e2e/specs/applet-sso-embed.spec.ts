@@ -3,7 +3,7 @@ import { loginToSeededXpod } from '../helpers/seeded-auth-flow'
 import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seeded-xpod-runtime'
 
 const DASHBOARD_PROVIDER_MARKER = /OpenAI|Anthropic/
-const LOGIN_BUTTON_NAME = '登录'
+const LOGIN_BUTTON_NAME = /^登录$|^连接$/
 const CONSENT_BUTTON_NAME = /Authorize|允许访问/i
 const PASSWORD_SELECTOR = 'input[type="password"]'
 
