@@ -55,7 +55,6 @@ LinX app                                xpod
 | 模型列表：搜索、能力图标、复制 ID | LinX detail view | applet 新增模型区（只读版先上） |
 | 模型 CRUD（添加/编辑/删除，ModelEditorDialog） | LinX `ModelEditorDialog` | applet 写路径走 xpod API（**新增** model 写路由）或 Pod-direct 读侧投影+服务端写——spec 落地时定 |
 | "验证"按钮（连通性 + 模型发现） | LinX `model-fetcher` | 改走 xpod 服务端（避免浏览器直连 CORS 暴露），复用 quota refresh 通道 |
-
 applet 独有保留：connect 流程、配额卡、网关 Key 管理、编码客户端配置。
 
 LinX 侧删除：`modules/ai-connections/ui/`、`features/`、`data/collections.ts` 的写路径、`ModelEditorDialog`、provider 目录副本。
@@ -89,7 +88,7 @@ LinX 侧删除：`modules/ai-connections/ui/`、`features/`、`data/collections.
 
 0. **provider 目录收敛**（models 仓）：13+5 并集为单一目录，UI extras（docs/apiKey URL/placeholder）作为目录字段下沉；发新版 models；xpod applet 与 LinX 只读投影都改消费它
 1. **xpod applet 视觉对齐**（xpod 仓）：theme.css token 对齐 LinX；shared-ui 补组件原语；列表/详情交互按 LinX 改版
-2. **xpod applet 功能补齐**：模型区（只读）→ 验证按钮服务端化 → 模型 CRUD（含 xpod 写路由）
+2. **xpod applet 功能补齐**：~~模型区（只读）~~（已落地）→ ~~验证按钮服务端化~~（已落地 2026-08-06，`POST /api/ai/gateway/providers/:provider/models/refresh` + applet 验证按钮，凭据走 vault、错误映射 LinX 文案）→ 模型 CRUD（含 xpod 写路由）
 3. **applet 发包 + LinX host**（两侧）：`@undefineds.co/ai-connections` 发 npm；LinX 实现 `WebExtensionHost` 并原生 mount（含 `/api/ai/gateway/keys` 404 缺口确认）
 4. **LinX 整合**（linx 仓）：ai-connections 壳切换为原生 host 渲染 applet；导航/布局配置保留；删旧 UI 与写路径；contacts 只读投影切换
 5. **清理**：models 目录旧副本删除、文档更新、e2e（native host smoke：ai-connections 路由渲出 applet 且 connect 流程跑通）
