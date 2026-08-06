@@ -86,9 +86,14 @@ LinX 侧删除：`modules/ai-connections/ui/`、`features/`、`data/collections.
 
 ## 4. 落地步骤
 
-0. **provider 目录收敛**（models 仓）：13+5 并集为单一目录，UI extras（docs/apiKey URL/placeholder）作为目录字段下沉；发新版 models；xpod applet 与 LinX 只读投影都改消费它
+0. **provider 目录收敛**（models 仓，2026-08-06 瘦身定稿）：
+   - **Schema 先行**：以 models 包 `aiProvider`/`aiModel` RDF schema 为单一 schema，TS 类型对齐，能力词表采用 models.dev 命名（`image`/`tool_call`/`reasoning`，`web` 为自有扩展）
+   - **三层目录**：全局层 = models.dev vendor（api.json → provider id 映射 → 覆盖层合并 apiKeyUrl/connect 模式/baseUrl 校正 → 纯 JSON 数据文件，直接 import，**不做 DiscoveryService 封装**；discovery 模块等服务化需求再启用）；Pod 层 = 用户自定义供应商/模型（企业网关、自部署、长尾），UI 手填或用户 AI 代查代写（标准 Solid 写 Pod，凭据流向是用户显式授权，无需组织级 safeBaseUrls 审查，但服务端须限定 Pod 定义供应商仅该用户凭据可发往）；消费侧直接读两层，合并逻辑为普通函数
+   - **维护循环**：CI 周跑 vendor 脚本有 diff 自动开 PR → AI 预审查（新模型标注合理性、删除/改名 breaking、覆盖层过期巡检）写结论 → 人合并发版；**提交前门禁** = catalog schema 校验 + provider id 映射完整性 + vendor 产物新鲜度
+   - **新供应商接入**：通用 OpenAI 兼容路径（connect/发现/runtime）配置化零代码；quota adapter 是唯一定制点且可降级 unsupported；safeBaseUrls 与 client 联合类型/UI avatar 仍需代码 + 人审
+   - **延后**：第一方更新通道（自建域名托管目录快照、xpod server 后台拉取 + vendor 兜底 + opt-out）——等不更新用户的新鲜度问题被证实再建；新模型已由实时发现兜底
 1. **xpod applet 视觉对齐**（xpod 仓）：theme.css token 对齐 LinX；shared-ui 补组件原语；列表/详情交互按 LinX 改版
-2. **xpod applet 功能补齐**：~~模型区（只读）~~（已落地）→ ~~验证按钮服务端化~~（已落地 2026-08-06，`POST /api/ai/gateway/providers/:provider/models/refresh` + applet 验证按钮，凭据走 vault、错误映射 LinX 文案）→ 模型 CRUD（含 xpod 写路由）
+2. **xpod applet 功能补齐**（已全部落地 2026-08-06）：~~模型区（只读）~~ → ~~验证按钮服务端化~~（`POST .../models/refresh` + 验证按钮，凭据走 vault、错误映射 LinX 文案）→ ~~模型 CRUD~~（`POST/DELETE .../providers/:provider/models`，存 `metadata.customModels` 独立于路由白名单，路由与 /v1/models 无条件并集；编辑器走 shared-ui Dialog，能力图标读数据不再正则猜测）
 3. **applet 发包 + LinX host**（两侧）：`@undefineds.co/ai-connections` 发 npm；LinX 实现 `WebExtensionHost` 并原生 mount（含 `/api/ai/gateway/keys` 404 缺口确认）
 4. **LinX 整合**（linx 仓）：ai-connections 壳切换为原生 host 渲染 applet；导航/布局配置保留；删旧 UI 与写路径；contacts 只读投影切换
 5. **清理**：models 目录旧副本删除、文档更新、e2e（native host smoke：ai-connections 路由渲出 applet 且 connect 流程跑通）
