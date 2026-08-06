@@ -35,15 +35,15 @@ LinX app                                xpod
                                         └──────────────────────────────┘
 ```
 
-### 2.1 集成方式：native host（主），iframe（降级）
+### 2.1 集成方式：native host（唯一路径）
 
-**主方案——LinX 作为 extension-sdk host 原生运行 applet**：`@undefineds.co/ai-connection` 本就是可发布 npm 包（applet 组件 + 类型化 client + host 契约），LinX 实现 `WebExtensionHost`（参照 `xpod/ui/src/extensions/ai-connection-host.ts`），把 applet 的 list/main slot 直接 mount 进 LinX 自己的 applet 双栏壳。
+**LinX 作为 extension-sdk host 原生运行 applet**：`@undefineds.co/ai-connections` 本就是可发布 npm 包（applet 组件 + 类型化 client + host 契约），LinX 实现 `WebExtensionHost`（参照 `xpod/ui/src/extensions/ai-connections-host.ts`），把 applet 的 list/main slot 直接 mount 进 LinX 自己的 applet 双栏壳。
 
-- **零 iframe、零第二次 OIDC**：applet client 用 LinX 已有 Solid 会话的 authFetch 调 xpod 管理 API；视觉天然统一（跑在 LinX 壳内）
-- **可行性已实测**（2026-08-05，`tests/e2e/specs/applet-native-host-auth.spec.ts`）：LinX origin 跨域 DPoP authFetch 调 `/api/ai/connections/providers`、`/api/applets/service-access/ai-connection`、`/api/ai/client-configuration/capability`、`/v1/models` 全部 200，CORS 无拦截。已知缺口：`/api/ai/gateway/keys` 在 0.3.71 seeded 包 404（xpod 源码侧确认注册）
-- 前置：`@undefineds.co/ai-connection` 发布 npm（`private:false` 已备，尚无 README）
+- **零 iframe、零第二次 OIDC**：applet client 用 LinX 已有 Solid 会话的 authFetch 调 xpod 管理 API；视觉天然统一（跑在 LinX 壳内）；登录由 LinX 自己的登录弹窗承载，xpod 的 issuer 输入视图不出现
+- **可行性已实测**（2026-08-05，`tests/e2e/specs/applet-native-host-auth.spec.ts`）：LinX origin 跨域 DPoP authFetch 调 `/api/ai/connections/providers`、`/api/applets/service-access/ai-connections`、`/api/ai/client-configuration/capability`、`/v1/models` 全部 200，CORS 无拦截。已知缺口：`/api/ai/gateway/keys` 在 0.3.71 seeded 包 404（xpod 源码侧确认注册）
+- 前置任务（全是任务，非风险）：`@undefineds.co/ai-connections` 发 npm、LinX host 契约实现、xpod 版本对齐
 
-**降级方案——iframe 嵌 `{podOrigin}/settings/models?embed=1`**：`embed=1` 隐藏 dashboard chrome + 无会话时自动发起 login（SSO 链静默，消掉那次点击）。登录态已实测（`applet-sso-embed.spec.ts`：标签页/iframe 均免密，无 X-Frame-Options 拦截）。native host 受阻（如发包/契约缺口）时先用 iframe 交付。
+**iframe 嵌入路径已废弃**（2026-08-06 拍板）：native host 不存在实质失败模式，iframe 反而要额外付 embed 模式、自动登录与视觉接缝成本。xpod dashboard 宿主保留（同一 applet 的另一宿主，是服务器管理面，不是降级方案）。SSO 实测结论仍有效并保留 e2e（`applet-sso-embed.spec.ts`）作为协议行为回归。
 
 ### 2.2 功能并集（xpod applet 侧补齐清单）
 
@@ -83,20 +83,20 @@ LinX 侧删除：`modules/ai-connections/ui/`、`features/`、`data/collections.
 | 配额卡 / 网关 Key / 编码客户端配置 | **xpod** 独有 | LinX 无对应物 |
 | 中文文案与 toast 语义 | LinX | 文案风格基准 |
 
-**落地形态**：applet 组件（`AiConnectionsList`/`AiProviderCard`/`AiConnectionsPanel`）按上表重排呈现层，状态机与服务端交互不变；iframe 接缝处理（降级路径）：applet 根背景同底色、隐藏 dashboard chrome（`embed=1`）、页面级滚动归 LinX 外壳。
+**落地形态**：applet 组件（`AiConnectionsList`/`AiProviderCard`/`AiConnectionsPanel`）按上表重排呈现层，状态机与服务端交互不变。。
 
 ## 4. 落地步骤
 
 0. **provider 目录收敛**（models 仓）：13+5 并集为单一目录，UI extras（docs/apiKey URL/placeholder）作为目录字段下沉；发新版 models；xpod applet 与 LinX 只读投影都改消费它
 1. **xpod applet 视觉对齐**（xpod 仓）：theme.css token 对齐 LinX；shared-ui 补组件原语；列表/详情交互按 LinX 改版
 2. **xpod applet 功能补齐**：模型区（只读）→ 验证按钮服务端化 → 模型 CRUD（含 xpod 写路由）
-3. **applet 发包 + LinX host**（两侧）：`@undefineds.co/ai-connection` 发 npm；LinX 实现 `WebExtensionHost` 并原生 mount（含 `/api/ai/gateway/keys` 404 缺口确认）；iframe `?embed=1` + 自动 login 作为降级路径备着
+3. **applet 发包 + LinX host**（两侧）：`@undefineds.co/ai-connections` 发 npm；LinX 实现 `WebExtensionHost` 并原生 mount（含 `/api/ai/gateway/keys` 404 缺口确认）
 4. **LinX 整合**（linx 仓）：ai-connections 壳切换为原生 host 渲染 applet；导航/布局配置保留；删旧 UI 与写路径；contacts 只读投影切换
-5. **清理**：models 目录旧副本删除、文档更新、e2e（嵌入 smoke：ai-connections 路由渲出 iframe 且 applet 加载）
+5. **清理**：models 目录旧副本删除、文档更新、e2e（native host smoke：ai-connections 路由渲出 applet 且 connect 流程跑通）
 
 ## 5. 风险与回退
 
-- **iframe 登录态**：已由 Solid SSO 覆盖（§2.1），仅需实测验证静默重定向链
+- ~~iframe 登录态~~：路径已废弃；Solid SSO 结论保留为协议认知
 - **模型 CRUD 写路径**：applet 走服务端写意味着 xpod 需新增 model 写路由（此前模型资源只由客户端直写 Pod）；schema 双方共用 models 包，无协议风险
 - **凭据双轨冲突期**：applet 加密凭据与 LinX 明文凭据同资源并存，直到 chatkit 迁移完成；`selectAIConfigCredential` 读侧需确认不会被加密行干扰（读明文列，加密行 `apiKey` 为空即被过滤）
 - **回退**：LinX 侧删除发生在 step 4，此前旧模块完好，可随时停止；xpod applet 改动全部增量
