@@ -64,7 +64,7 @@
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
-    "@undefineds.co/drizzle-solid": "0.3.20",
+    "@undefineds.co/drizzle-solid": "0.3.21",
     "@undefineds.co/xpod": "0.3.71",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -90,7 +90,7 @@
   },
   "resolutions": {
     "**/drizzle-orm": "^0.45.2",
-    "**/@undefineds.co/drizzle-solid": "0.3.20",
+    "**/@undefineds.co/drizzle-solid": "0.3.21",
     "**/react": "19.2.6",
     "**/react-dom": "19.2.6",
     "**/@inrupt/solid-client": "^3.0.0",

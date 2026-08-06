@@ -19,7 +19,7 @@
     "@earendil-works/pi-ai": "0.78.0",
     "@earendil-works/pi-coding-agent": "0.78.0",
     "@earendil-works/pi-tui": "0.78.0",
-    "@undefineds.co/drizzle-solid": "0.3.20",
+    "@undefineds.co/drizzle-solid": "0.3.21",
     "@undefineds.co/models": "0.2.45",
     "@zed-industries/codex-acp": "0.14.0",
     "n3": "^1.26.0",

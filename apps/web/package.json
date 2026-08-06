@@ -51,7 +51,7 @@
     "@tanstack/react-query": "^5.100.11",
     "@tanstack/react-router": "^1.170.6",
     "@tanstack/react-table": "^8.21.3",
-    "@undefineds.co/drizzle-solid": "0.3.20",
+    "@undefineds.co/drizzle-solid": "0.3.21",
     "@undefineds.co/models": "0.2.45",
     "ai": "^6.0.188",
     "class-variance-authority": "^0.7.1",
