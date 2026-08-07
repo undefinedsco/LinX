@@ -583,6 +583,7 @@ function ChatKitPanel({
   const { db } = useSolidDatabase()
   const [threadAttachments, setThreadAttachments] = useState<Attachment[]>([])
   const [attachmentsOpen, setAttachmentsOpen] = useState(false)
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [reconnectStatus, setReconnectStatus] = useState<'idle' | 'syncing' | 'error'>('idle')
   const sendAvailableRef = useRef(!sendDisabled && isOnline)
@@ -891,7 +892,7 @@ function ChatKitPanel({
                     <button
                       type="button"
                       className="block aspect-video w-full overflow-hidden bg-muted text-left"
-                      onClick={() => objectUrl && window.open(objectUrl, '_blank', 'noopener,noreferrer')}
+                      onClick={() => setPreviewAttachment(attachment)}
                       aria-label={`打开图片 ${attachment.name}`}
                     >
                       <img src={attachment.preview_url} alt={attachment.name} className="size-full object-cover" />
@@ -908,9 +909,17 @@ function ChatKitPanel({
                     </div>
                     {objectUrl ? (
                       <>
-                        <Button type="button" variant="ghost" size="icon" onClick={() => window.open(objectUrl, '_blank', 'noopener,noreferrer')} aria-label={`打开 ${attachment.name}`}>
-                          <ExternalLink className="size-4" />
-                        </Button>
+                        {attachment.type === 'image' ? (
+                          <Button type="button" variant="ghost" size="icon" onClick={() => setPreviewAttachment(attachment)} aria-label={`打开 ${attachment.name}`}>
+                            <ExternalLink className="size-4" />
+                          </Button>
+                        ) : (
+                          <Button type="button" variant="ghost" size="icon" asChild>
+                            <a href={objectUrl} target="_blank" rel="noopener noreferrer" aria-label={`打开 ${attachment.name}`}>
+                              <ExternalLink className="size-4" />
+                            </a>
+                          </Button>
+                        )}
                         <Button type="button" variant="ghost" size="icon" asChild>
                           <a href={objectUrl} download={attachment.name} aria-label={`下载 ${attachment.name}`}>
                             <Download className="size-4" />
@@ -923,6 +932,19 @@ function ChatKitPanel({
               )
             })}
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(previewAttachment)} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{previewAttachment?.name}</DialogTitle>
+            <DialogDescription>图片保存在当前空间。</DialogDescription>
+          </DialogHeader>
+          {previewAttachment?.preview_url ? (
+            <div className="flex max-h-[75vh] items-center justify-center overflow-auto rounded-xl bg-muted/40 p-2">
+              <img src={previewAttachment.preview_url} alt={previewAttachment.name} className="max-h-[72vh] max-w-full object-contain" />
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
       {sendDisabled || !isOnline ? (
