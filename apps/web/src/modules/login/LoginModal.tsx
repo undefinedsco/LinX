@@ -251,13 +251,14 @@ function ProviderSelectionView({
   const cloudProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'cloud')
   const localProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'local')
   const standaloneProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'standalone')
-  const preferredProvider = preferredSpace === 'local' ? (localProvider ?? standaloneProvider) : cloudProvider
+  const localAccessProvider = isUsableLocalProvider(localProvider) ? localProvider : standaloneProvider
+  const preferredProvider = preferredSpace === 'local' ? localAccessProvider : cloudProvider
 
   if (view === 'methods') {
     return (
       <LoginMethodListView
         cloudProvider={cloudProvider}
-        localProvider={localProvider}
+        localProvider={localAccessProvider}
         providers={providers}
         onSelectSpace={onSelectSpace}
         onConnect={onConnect}
@@ -297,7 +298,7 @@ function ProviderSelectionView({
         >
           登录
         </button>
-        {localProvider ? (
+        {localAccessProvider ? (
           <p className="text-[11px] text-muted-foreground/80">
             数据保存位置：{preferredSpace === 'local' ? '本机空间' : '云端空间'}
           </p>
@@ -312,6 +313,13 @@ function ProviderSelectionView({
       </div>
     </div>
   )
+}
+
+function isUsableLocalProvider(provider: LoginProviderOption | undefined): boolean {
+  if (!provider?.storageProvider.url) return false
+
+  const onboardingState = provider.runtime?.onboarding?.state
+  return onboardingState !== 'repair_required' && onboardingState !== 'error'
 }
 
 function LoginMethodListView({
