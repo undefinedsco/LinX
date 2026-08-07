@@ -50,6 +50,7 @@ import {
   useRuntimeSession,
   useRuntimeSessionEvents,
   type RuntimeSessionEvent,
+  type RuntimeEventConnectionState,
   type RuntimeToolType,
 } from '../runtime-client'
 import { buildWorkspaceSummary } from '../workspace-summary'
@@ -256,6 +257,7 @@ function RuntimeSessionToolbar({
   const [branch, setBranch] = useState('')
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [runtimeActivity, setRuntimeActivity] = useState<RuntimeActivity | null>(null)
+  const [runtimeConnectionState, setRuntimeConnectionState] = useState<RuntimeEventConnectionState>('connected')
 
   const handleRuntimeSessionEvent = useCallback((event: RuntimeSessionEvent) => {
     if (event.type === 'status' || event.type === 'exit') {
@@ -296,6 +298,7 @@ function RuntimeSessionToolbar({
     runtimeSession.runtimeSession?.id,
     handleRuntimeSessionEvent,
     !!runtimeSession.runtimeSession,
+    setRuntimeConnectionState,
   )
 
   const handleCreateRuntimeSession = useCallback(async () => {
@@ -453,6 +456,11 @@ function RuntimeSessionToolbar({
                 </p>
               ) : null}
             </details>
+          ) : null}
+          {runtimeConnectionState === 'reconnecting' ? (
+            <div role="status" className="border-b border-warning/20 bg-warning/5 px-4 py-2 text-xs text-muted-foreground">
+              运行时连接已中断，正在自动恢复…
+            </div>
           ) : null}
           {runtimeError && (
             <div className="border-b border-border/50 px-4 py-2 text-xs text-destructive">

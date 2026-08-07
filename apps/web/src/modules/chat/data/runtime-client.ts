@@ -230,18 +230,49 @@ export function useRuntimeSession(threadId: string | null | undefined) {
 
 export const useRuntimeThread = useRuntimeSession
 
-export function useRuntimeSessionEvents(
-  runtimeSessionId: string | null | undefined,
-  onEvent: (event: RuntimeSessionEvent) => void,
-  enabled = true,
-) {
-  useEffect(() => {
-    if (!enabled || !runtimeSessionId || !isServiceMode()) {
-      return
-    }
+export type RuntimeEventConnectionState = 'connected' | 'reconnecting'
 
-    const eventSource = new EventSource(`/api/runtime/threads/${runtimeSessionId}/events`)
-    eventSource.onmessage = (message) => {
+interface RuntimeEventSubscriptionOptions {
+  eventSourceFactory?: (url: string) => EventSource
+  onConnectionStateChange?: (state: RuntimeEventConnectionState) => void
+  retryBaseMs?: number
+  retryMaxMs?: number
+}
+
+export function subscribeRuntimeSessionEvents(
+  runtimeSessionId: string,
+  onEvent: (event: RuntimeSessionEvent) => void,
+  options: RuntimeEventSubscriptionOptions = {},
+): () => void {
+  const eventSourceFactory = options.eventSourceFactory ?? ((url: string) => new EventSource(url))
+  const retryBaseMs = options.retryBaseMs ?? 1_000
+  const retryMaxMs = options.retryMaxMs ?? 10_000
+  let source: EventSource | null = null
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let retryAttempt = 0
+  let disposed = false
+
+  const clearRetry = () => {
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
+  }
+
+  const closeSource = () => {
+    source?.close()
+    source = null
+  }
+
+  const connect = () => {
+    if (disposed || source || (typeof navigator !== 'undefined' && !navigator.onLine)) return
+    const nextSource = eventSourceFactory(`/api/runtime/threads/${runtimeSessionId}/events`)
+    source = nextSource
+    nextSource.onopen = () => {
+      retryAttempt = 0
+      options.onConnectionStateChange?.('connected')
+    }
+    nextSource.onmessage = (message) => {
       try {
         const event = JSON.parse(message.data) as RuntimeSessionEvent
         onEvent(event)
@@ -249,14 +280,58 @@ export function useRuntimeSessionEvents(
         console.error('Parse runtime session event failed:', error)
       }
     }
-    eventSource.onerror = () => {
-      eventSource.close()
+    nextSource.onerror = () => {
+      if (source !== nextSource || disposed) return
+      closeSource()
+      options.onConnectionStateChange?.('reconnecting')
+      clearRetry()
+      const delay = Math.min(retryBaseMs * (2 ** retryAttempt), retryMaxMs)
+      retryAttempt += 1
+      retryTimer = setTimeout(() => {
+        retryTimer = null
+        connect()
+      }, delay)
+    }
+  }
+
+  const handleOnline = () => {
+    if (disposed || source) return
+    clearRetry()
+    connect()
+  }
+  const handleOffline = () => {
+    if (disposed) return
+    clearRetry()
+    closeSource()
+    options.onConnectionStateChange?.('reconnecting')
+  }
+
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
+  connect()
+
+  return () => {
+    disposed = true
+    clearRetry()
+    closeSource()
+    window.removeEventListener('online', handleOnline)
+    window.removeEventListener('offline', handleOffline)
+  }
+}
+
+export function useRuntimeSessionEvents(
+  runtimeSessionId: string | null | undefined,
+  onEvent: (event: RuntimeSessionEvent) => void,
+  enabled = true,
+  onConnectionStateChange?: (state: RuntimeEventConnectionState) => void,
+) {
+  useEffect(() => {
+    if (!enabled || !runtimeSessionId || !isServiceMode()) {
+      return
     }
 
-    return () => {
-      eventSource.close()
-    }
-  }, [enabled, onEvent, runtimeSessionId])
+    return subscribeRuntimeSessionEvents(runtimeSessionId, onEvent, { onConnectionStateChange })
+  }, [enabled, onConnectionStateChange, onEvent, runtimeSessionId])
 }
 
 export const useRuntimeThreadEvents = useRuntimeSessionEvents

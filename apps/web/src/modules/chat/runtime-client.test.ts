@@ -1,9 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createRuntimeSession, resolveLocalContainer } from './runtime-client'
+import {
+  createRuntimeSession,
+  resolveLocalContainer,
+  subscribeRuntimeSessionEvents,
+} from './runtime-client'
+
+class FakeEventSource {
+  static instances: FakeEventSource[] = []
+  onopen: (() => void) | null = null
+  onmessage: ((event: MessageEvent<string>) => void) | null = null
+  onerror: (() => void) | null = null
+  close = vi.fn()
+
+  constructor(readonly url: string) {
+    FakeEventSource.instances.push(this)
+  }
+}
 
 describe('runtime client', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
+    FakeEventSource.instances = []
     delete (window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
   })
 
@@ -57,5 +75,39 @@ describe('runtime client', () => {
     await expect(resolveLocalContainer('/repo/linx')).resolves.toBe('linx://device-abc/repo/linx')
 
     expect(fetchMock).toHaveBeenCalledWith('/api/setup/config', expect.any(Object))
+  })
+
+  it('reconnects runtime event streams after transport failures and stops after cleanup', () => {
+    vi.useFakeTimers()
+    const onEvent = vi.fn()
+    const onConnectionStateChange = vi.fn()
+    const unsubscribe = subscribeRuntimeSessionEvents('runtime-1', onEvent, {
+      eventSourceFactory: (url) => new FakeEventSource(url) as unknown as EventSource,
+      onConnectionStateChange,
+      retryBaseMs: 10,
+      retryMaxMs: 20,
+    })
+
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(FakeEventSource.instances[0]?.url).toBe('/api/runtime/threads/runtime-1/events')
+    FakeEventSource.instances[0]?.onopen?.()
+    expect(onConnectionStateChange).toHaveBeenLastCalledWith('connected')
+
+    FakeEventSource.instances[0]?.onmessage?.(new MessageEvent('message', {
+      data: JSON.stringify({ type: 'assistant_delta', ts: 1, threadId: 'runtime-1', text: 'hello' }),
+    }))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'assistant_delta', text: 'hello' }))
+
+    FakeEventSource.instances[0]?.onerror?.()
+    expect(FakeEventSource.instances[0]?.close).toHaveBeenCalledTimes(1)
+    expect(onConnectionStateChange).toHaveBeenLastCalledWith('reconnecting')
+    vi.advanceTimersByTime(10)
+    expect(FakeEventSource.instances).toHaveLength(2)
+
+    unsubscribe()
+    expect(FakeEventSource.instances[1]?.close).toHaveBeenCalledTimes(1)
+    FakeEventSource.instances[1]?.onerror?.()
+    vi.runAllTimers()
+    expect(FakeEventSource.instances).toHaveLength(2)
   })
 })
