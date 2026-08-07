@@ -462,8 +462,8 @@ export class LocalChatKitService {
     let lastUserMessage: ThreadItem | undefined
 
     for (const item of items.data) {
-      if (item.id === params.item_id) break
       if (item.type === 'user_message') lastUserMessage = item
+      if (item.id === params.item_id) break
     }
 
     if (lastUserMessage) {
@@ -663,6 +663,10 @@ export class LocalChatKitService {
               },
             } as ThreadStreamEvent
           }
+        }
+
+        if (!fullText.trim() && annotations.length === 0) {
+          throw new Error('AI provider returned an empty response')
         }
 
         assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
@@ -1057,11 +1061,23 @@ export class LocalChatKitService {
       findProvider,
     ])
 
-    const selected = selectAIConfigCredential(
+    let selected = selectAIConfigCredential(
       providerId,
       credentialRows as Array<Record<string, unknown>>,
       providerRow ? [providerRow as Record<string, unknown>] : [],
     )
+
+    // An exact resource read can legitimately return a partial cached row after
+    // the credential document changes. Fall back to the scoped collection query
+    // before reporting that the provider has no usable credential.
+    if (!selected && credentialRows.length > 0) {
+      const listedRows = await this.listAiCredentialRows()
+      selected = selectAIConfigCredential(
+        providerId,
+        listedRows,
+        providerRow ? [providerRow as Record<string, unknown>] : [],
+      )
+    }
 
     if (!selected) return null
 
@@ -1092,12 +1108,14 @@ export class LocalChatKitService {
       return exactRows
     }
 
+    return this.listAiCredentialRows()
+  }
+
+  private async listAiCredentialRows(): Promise<Array<Record<string, unknown>>> {
     try {
       return await this.db.select().from(credentialResource).execute() as Array<Record<string, unknown>>
     } catch (error) {
-      if (isUnsupportedCollectionReadError(error)) {
-        return exactRows
-      }
+      if (isUnsupportedCollectionReadError(error)) return []
       throw error
     }
   }

@@ -179,6 +179,7 @@ function createMockDb(
   agent: { provider: string; model: string; metadata?: Record<string, unknown> },
   credentialRows: Array<Record<string, unknown>> = [],
   options: {
+    exactCredentialRow?: Record<string, unknown>
     findByIdError?: Error
     contactAbout?: string
     selectError?: Error
@@ -222,6 +223,7 @@ function createMockDb(
           baseUrl: id === 'openai.ttl' ? 'https://openrouter.ai/api/v1' : undefined,
         }
       }
+      if (resource === mocked.credentialResource) return options.exactCredentialRow ?? null
       return null
     }),
     findByIri: vi.fn(async (resource: unknown, iri?: string) => {
@@ -910,6 +912,47 @@ describe('LocalChatKitService platform runtime routing', () => {
     const requestBody = JSON.parse((providerFetch.mock.calls[0]?.[1] as RequestInit).body as string)
     expect(requestBody.model).toBe('gpt-4o-mini')
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '用户模型')).toBe(true)
+  })
+
+  it('falls back to the scoped credential collection when the exact cached row is partial', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+    }, [{
+      id: 'credentials.ttl#openai-default',
+      provider: '/settings/providers/openai.ttl',
+      service: 'ai',
+      status: 'active',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.openai.example/v1',
+    }], {
+      exactCredentialRow: {
+        id: 'credentials.ttl#openai-default',
+        provider: '/settings/providers/openai.ttl',
+        service: 'ai',
+        status: 'active',
+      },
+    })
+    const providerFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"缓存恢复"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    vi.stubGlobal('fetch', providerFetch)
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: vi.fn() as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(providerFetch).toHaveBeenCalledWith(
+      'https://api.openai.example/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '缓存恢复')).toBe(true)
   })
 
   it('does not raw-fetch credentials.ttl when shared credential lookup has no match', async () => {

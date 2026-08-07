@@ -134,6 +134,38 @@ describe('LocalChatKitService P0 data and cancellation', () => {
     expect(respond).toHaveBeenCalledWith(thread, userItem, {})
   })
 
+  it('retries when ChatKit identifies the user item to continue after', async () => {
+    const userItem = {
+      id: 'user-1',
+      thread_id: 'thread-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: 'try again' }],
+    }
+    const thread = { id: 'thread-1', status: { type: 'active' } }
+    const store = createStore({
+      loadThread: vi.fn(async () => thread),
+      loadThreadItems: vi.fn(async () => ({ data: [userItem], has_more: false })),
+    })
+    const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any }) as any
+    const respond = vi.fn(async function* () {
+      yield { type: 'thread.item.done', item: { id: 'assistant-2', type: 'assistant_message' } }
+    })
+    service.respond = respond
+
+    const result = await service.process(JSON.stringify({
+      type: 'threads.retry_after_item',
+      params: { thread_id: 'thread-1', item_id: 'user-1' },
+    }), {})
+    expect(result.type).toBe('streaming')
+    if (result.type === 'streaming') {
+      for await (const _chunk of result.stream()) {
+        // Drain the real ChatKit streaming adapter.
+      }
+    }
+
+    expect(respond).toHaveBeenCalledWith(thread, userItem, {})
+  })
+
   it('includes image and document attachments in model conversation content', async () => {
     const store = createStore({
       loadThreadItems: vi.fn(async () => ({
