@@ -260,6 +260,32 @@ describe('login-utils post-login target helpers', () => {
     })
   })
 
+  it('merges secure Inrupt session identity into the stored session metadata', () => {
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'linx-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:linx-session',
+      JSON.stringify({
+        issuer: 'http://localhost:5737/',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+        clientId: 'dynamic-client',
+        keepAlive: 'true',
+      }),
+    )
+    window.localStorage.setItem(
+      'solidClientAuthn:secure:solidClientAuthenticationUser:linx-session',
+      JSON.stringify({
+        isLoggedIn: 'true',
+        webId: 'http://localhost:5737/alice/profile/card#me',
+      }),
+    )
+
+    expect(getStoredSolidSession()).toMatchObject({
+      sessionId: 'linx-session',
+      issuerUrl: 'http://localhost:5737/',
+      webId: 'http://localhost:5737/alice/profile/card#me',
+    })
+  })
+
   it('clears unrestorable auth state before a fresh login attempt', () => {
     window.localStorage.setItem('solidClientAuthn:currentSession', 'pending-session')
     window.localStorage.setItem(

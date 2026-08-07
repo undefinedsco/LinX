@@ -43,10 +43,21 @@ describe('AppRuntime', () => {
   afterEach(() => {
     vi.clearAllMocks()
     delete window.xpodDesktop
+    delete window.__LINX_SERVICE__
     window.history.replaceState({}, '', '/')
   })
 
   it('lets the Inrupt provider restore sessions in normal web runtime', () => {
+    render(<AppRuntime />)
+
+    expect(solidSessionProviderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ restorePreviousSession: true }),
+    )
+  })
+
+  it('restores persisted sessions when Web is served by the local LinX service', () => {
+    window.__LINX_SERVICE__ = true
+
     render(<AppRuntime />)
 
     expect(solidSessionProviderMock).toHaveBeenCalledWith(

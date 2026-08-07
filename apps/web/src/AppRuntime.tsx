@@ -6,7 +6,6 @@ import { TelemetryProvider } from './lib/telemetry/telemetry-context'
 import { useSessionTokenMaintenance } from './modules/login/hooks/use-session-token-maintenance'
 import {
   cleanupExpiredLoginTransaction,
-  clearServiceLoopbackAuthState,
 } from './modules/login/login-utils'
 import { router } from './router'
 
@@ -19,10 +18,6 @@ export function AppRuntime() {
   const isDesktopRuntime = typeof window !== 'undefined' && Boolean(window.xpodDesktop)
   const isAuthCallback = typeof window !== 'undefined'
     && window.location.pathname.startsWith('/auth/callback')
-  const isService = typeof window !== 'undefined' && window.__LINX_SERVICE__ === true
-  const clearedStaleServiceSession = isService && !isAuthCallback
-    ? clearServiceLoopbackAuthState()
-    : false
 
   // Callback processing still needs the oidc.* state/PKCE/sessionId mapping.
   // Never run auth maintenance before AuthCallback has consumed it.
@@ -40,7 +35,6 @@ export function AppRuntime() {
     // AuthCallback owns the code exchange on callback routes; restoring a
     // previous session here would race it for the same OAuth payload.
     && !isAuthCallback
-    && !clearedStaleServiceSession
 
   return (
     <SolidSessionProvider

@@ -13,6 +13,7 @@ const PENDING_LOGIN_MAX_AGE_MS = 15 * 60 * 1000
 const CALLBACK_ERROR_KEY = 'linx-pending-callback-error'
 const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
 const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
+const SECURE_SOLID_SESSION_PREFIX = 'solidClientAuthn:secure:'
 
 export interface PendingLoginAttempt {
   /** OIDC entry URL passed to Inrupt. For Local+Cloud this is the Cloud issuer. */
@@ -73,7 +74,10 @@ export function getStoredSolidSession(): StoredSolidSessionInfo | null {
   if (!raw) return null
 
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const insecure = JSON.parse(raw) as Record<string, unknown>
+    const secureRaw = window.localStorage.getItem(`${SECURE_SOLID_SESSION_PREFIX}${SOLID_SESSION_PREFIX}${sessionId}`)
+    const secure = secureRaw ? JSON.parse(secureRaw) as Record<string, unknown> : {}
+    const parsed = { ...insecure, ...secure }
     if (!hasRestorableSessionMetadata(parsed)) return null
 
     return {
@@ -350,26 +354,6 @@ export function cleanupExpiredLoginTransaction(
 
   clearPendingLoginAttempt()
   return true
-}
-
-export function clearServiceLoopbackAuthState(): boolean {
-  const storedSession = getStoredSolidSession()
-  if (!storedSession?.issuerUrl || !isLoopbackUrl(storedSession.issuerUrl)) return false
-
-  clearSolidAuthClientState()
-  clearPendingPostLoginMicroAppId()
-  clearPendingLoginAttempt()
-  clearPendingCallbackError()
-  return true
-}
-
-function isLoopbackUrl(url: string): boolean {
-  try {
-    const { hostname } = new URL(url)
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
-  } catch {
-    return false
-  }
 }
 
 function normalizeStoredUrl(url?: string | null): string | null {
