@@ -675,9 +675,6 @@ export class LocalChatKitService {
         yield { type: 'thread.item.done', item: assistantItem }
       }
     } catch (error: any) {
-      if (!isAbortError(error)) {
-        console.error('[LocalChatKitService] AI/runtime response failed:', error)
-      }
       const webSearchFailed = isWebSearchRequested(inferenceOptions) && !isAbortError(error)
       const searchErrorMessage = error instanceof Error ? error.message : ''
       const userMessage = webSearchFailed
@@ -685,6 +682,15 @@ export class LocalChatKitService {
           ? searchErrorMessage
           : '联网搜索暂不可用。请检查本地 xpod 的 AI 上游配置后重试。'
         : formatErrorForUser(error, '消息生成失败。请稍后重试。')
+      if (webSearchFailed) {
+        // Search capability failures are already represented as an inline,
+        // retryable assistant item. Emitting a ChatKit stream error as well
+        // adds an unrelated generic error card and makes a known upstream
+        // capability gap look like a broken conversation.
+        console.warn('[LocalChatKitService] Web search unavailable:', userMessage)
+      } else if (!isAbortError(error)) {
+        console.error('[LocalChatKitService] AI/runtime response failed:', error)
+      }
       if (webSearchFailed) {
         yield {
           type: 'progress_update',
@@ -701,6 +707,7 @@ export class LocalChatKitService {
       await this.store.saveItem(thread.id, assistantItem, context)
       yield { type: 'thread.item.done', item: assistantItem }
       if (isAbortError(error)) return
+      if (webSearchFailed) return
       yield {
         type: 'error',
         error: {

@@ -560,6 +560,7 @@ describe('LocalChatKitService platform runtime routing', () => {
         text: '联网搜索暂不可用。请检查本地 xpod 的 AI 上游配置后重试。',
       })],
     }))
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'error' }))
     expect(JSON.stringify(events)).not.toContain('TLS details')
   })
 
@@ -585,12 +586,10 @@ describe('LocalChatKitService platform runtime routing', () => {
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
 
     expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'error',
-      error: expect.objectContaining({
-        message: '当前自定义 AI 供应商不支持 LinX 联网搜索。请切换到 LinX 平台模型后重试。',
-      }),
-    }))
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe(
+      '当前自定义 AI 供应商不支持 LinX 联网搜索。请切换到 LinX 平台模型后重试。',
+    )
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'error' }))
   })
 
   it('routes Matrix group user messages through Matrix send without local duplicate persistence', async () => {
