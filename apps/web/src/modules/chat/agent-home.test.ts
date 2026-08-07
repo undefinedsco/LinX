@@ -4,7 +4,7 @@ import { buildAgentHomePath, ensureAgentHome, updateAgentHomeMetadata } from './
 
 describe('agent-home', () => {
   it('creates default Agent Home files at canonical Agent Home paths', async () => {
-    const fetchMock = vi.fn(async () => new Response('', { status: 201 }))
+    const fetchMock = vi.fn(async (_input, init) => new Response('', { status: init?.method === 'HEAD' ? 404 : 201 }))
     const db = {
       getDialect: () => ({
         getPodUrl: () => 'https://alice.example/',
@@ -137,6 +137,7 @@ describe('agent-home', () => {
     })).resolves.toBeUndefined()
 
     const writeCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT' || init?.method === 'PATCH')
-    expect(writeCalls).toHaveLength(3)
+    expect(writeCalls).toHaveLength(1)
+    expect(writeCalls[0]?.[1]?.method).toBe('PATCH')
   })
 })

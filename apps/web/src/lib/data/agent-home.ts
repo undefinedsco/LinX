@@ -87,10 +87,14 @@ async function patchPodMetadata(
 }
 
 async function agentHomeExists(fetchFn: typeof fetch, homeUrl: string): Promise<boolean> {
-  const response = await fetchFn(homeUrl, { method: 'HEAD' })
+  return podResourceExists(fetchFn, homeUrl)
+}
+
+async function podResourceExists(fetchFn: typeof fetch, resourceUrl: string): Promise<boolean> {
+  const response = await fetchFn(resourceUrl, { method: 'HEAD' })
   if (response.ok) return true
   if (response.status === 404) return false
-  throw new Error(`Failed to inspect Agent Home ${homeUrl}: HTTP ${response.status}`)
+  throw new Error(`Failed to inspect Pod resource ${resourceUrl}: HTTP ${response.status}`)
 }
 
 async function deletePodResource(fetchFn: typeof fetch, resourceUrl: string): Promise<void> {
@@ -298,6 +302,10 @@ export async function createAgentHome(
       const fileUrl = resolvePodPath(db, `${homePath}${file.path}`)
       if (file.writeMode === 'patch-metadata') {
         await patchPodMetadata(fetchFn, fileUrl, buildAgentMetaSparqlInsert(input, fileUrl))
+        continue
+      }
+
+      if (!created && await podResourceExists(fetchFn, fileUrl)) {
         continue
       }
 

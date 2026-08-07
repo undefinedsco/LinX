@@ -59,6 +59,10 @@ describe('Agent Home creation receipt', () => {
     await receipt.rollback()
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.anything(),
+      expect.objectContaining({ method: 'PUT' }),
+    )
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({ method: 'DELETE' }),
     )
   })
