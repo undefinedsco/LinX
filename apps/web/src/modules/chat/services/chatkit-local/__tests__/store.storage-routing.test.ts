@@ -33,6 +33,7 @@ describe('LocalChatKitStore storage routing', () => {
       type: 'user_message',
       content: [{ type: 'input_text', text: 'hello' }],
       attachments: [],
+      inference_options: { tool_choice: { id: 'web_search' }, model: 'linx-lite' },
       created_at: 0,
     } as any, {})
 
@@ -47,6 +48,9 @@ describe('LocalChatKitStore storage routing', () => {
     expect((messageInsert?.metadata as any)?.chatkitItemId).toBe('msg-1')
     expect((messageInsert?.metadata as any)?.reconciler?.latest?.eventType).toBe('message.appended')
     expect((messageInsert?.metadata as any)?.reconciler?.latest?.wakeJobs?.[0]?.targetRole).toBe('primary-agent')
+    expect(JSON.parse(String(messageInsert?.richContent))).toMatchObject({
+      inference_options: { tool_choice: { id: 'web_search' }, model: 'linx-lite' },
+    })
   })
 
   it('fails closed instead of deriving storage from a Cloud WebID when the selected SP Pod URL is missing', async () => {

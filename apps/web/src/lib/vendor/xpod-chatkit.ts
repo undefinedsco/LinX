@@ -90,6 +90,8 @@ export interface UserMessageItem {
   type: 'user_message'
   content: InputTextContentPart[]
   attachments?: Attachment[]
+  /** Per-message routing used to reproduce the same request on retry. */
+  inference_options?: Record<string, unknown>
   created_at: number
 }
 

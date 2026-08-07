@@ -140,6 +140,7 @@ describe('LocalChatKitService P0 data and cancellation', () => {
       thread_id: 'thread-1',
       type: 'user_message',
       content: [{ type: 'input_text', text: 'try again' }],
+      inference_options: { tool_choice: { id: 'web_search' }, model: 'linx-lite' },
     }
     const thread = { id: 'thread-1', status: { type: 'active' } }
     const store = createStore({
@@ -163,7 +164,10 @@ describe('LocalChatKitService P0 data and cancellation', () => {
       }
     }
 
-    expect(respond).toHaveBeenCalledWith(thread, userItem, {})
+    expect(respond).toHaveBeenCalledWith(thread, userItem, {}, {
+      tool_choice: { id: 'web_search' },
+      model: 'linx-lite',
+    })
   })
 
   it('includes image and document attachments in model conversation content', async () => {

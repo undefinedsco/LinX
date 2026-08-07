@@ -295,7 +295,8 @@ function threadItemToMessageRecord(item: ThreadItem): {
       }
     : item
   if (item.type === 'user_message') {
-    const hasAttachments = Array.isArray(item.attachments) && item.attachments.length > 0
+    const hasExtendedState = Array.isArray(item.attachments) && item.attachments.length > 0
+      || Boolean(item.inference_options && Object.keys(item.inference_options).length > 0)
     return {
       content: (item as any).content
         .filter((contentPart: any) => contentPart.type === 'input_text')
@@ -303,7 +304,7 @@ function threadItemToMessageRecord(item: ThreadItem): {
         .join('\n'),
       role: MessageRole.USER,
       status: null,
-      richContent: hasAttachments ? JSON.stringify(storageItem) : null,
+      richContent: hasExtendedState ? JSON.stringify(storageItem) : null,
     }
   }
 

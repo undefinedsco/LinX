@@ -398,7 +398,14 @@ export class LocalChatKitService {
     yield { type: 'thread.created', thread }
 
     if (params.input) {
-      const userMessage = await this.createUserMessage(threadId, params.input.content, params.input.attachments, thread, context)
+      const userMessage = await this.createUserMessage(
+        threadId,
+        params.input.content,
+        params.input.attachments,
+        params.input.inference_options,
+        thread,
+        context,
+      )
       const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
       if (matrixSent) {
         yield { type: 'thread.item.added', item: userMessage }
@@ -417,7 +424,14 @@ export class LocalChatKitService {
     context: StoreContext,
   ): AsyncIterable<ThreadStreamEvent> {
     const thread = await this.store.loadThread(params.thread_id, context)
-    const userMessage = await this.createUserMessage(params.thread_id, params.input.content, params.input.attachments, thread, context)
+    const userMessage = await this.createUserMessage(
+      params.thread_id,
+      params.input.content,
+      params.input.attachments,
+      params.input.inference_options,
+      thread,
+      context,
+    )
     const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
     if (matrixSent) {
       yield { type: 'thread.item.added', item: userMessage }
@@ -484,7 +498,14 @@ export class LocalChatKitService {
     }
 
     if (lastUserMessage) {
-      yield* this.respond(thread, lastUserMessage, context)
+      const inferenceOptions = lastUserMessage.type === 'user_message'
+        ? lastUserMessage.inference_options
+        : undefined
+      if (inferenceOptions) {
+        yield* this.respond(thread, lastUserMessage, context, inferenceOptions)
+      } else {
+        yield* this.respond(thread, lastUserMessage, context)
+      }
     }
   }
 
@@ -1540,6 +1561,7 @@ export class LocalChatKitService {
     threadId: string,
     content: any[],
     attachmentIds: string[] = [],
+    inferenceOptions?: Record<string, unknown>,
     thread?: ThreadMetadata,
     context: StoreContext = {},
   ): Promise<ThreadItem> {
@@ -1562,6 +1584,9 @@ export class LocalChatKitService {
       type: 'user_message',
       content,
       attachments,
+      ...(inferenceOptions && Object.keys(inferenceOptions).length > 0
+        ? { inference_options: inferenceOptions }
+        : {}),
       created_at: nowTimestamp(),
     } as ThreadItem
   }
