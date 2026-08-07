@@ -809,13 +809,15 @@ export class LocalChatKitService {
       return
     }
 
-    if (runtimeThread.status === 'idle' || runtimeThread.status === 'completed') {
+    if (
+      runtimeThread.status === 'idle'
+      || runtimeThread.status === 'completed'
+      || runtimeThread.status === 'error'
+    ) {
       const response = await fetch(`/api/runtime/threads/${runtimeThread.id}/start`, { method: 'POST' })
       if (!response.ok) throw new Error('Failed to start runtime thread')
       return
     }
-
-    throw new Error('Runtime thread is in error state')
   }
 
   private createAssistantItem(thread: ThreadMetadata, context: StoreContext): ThreadItem {

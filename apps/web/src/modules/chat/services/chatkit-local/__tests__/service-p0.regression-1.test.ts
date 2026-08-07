@@ -57,6 +57,20 @@ describe('LocalChatKitService P0 data and cancellation', () => {
     expect(providerFetch).toHaveBeenCalledWith('https://provider.example/v1/chat/completions', expect.objectContaining({ signal: controller.signal }))
   })
 
+  it('restarts an errored runtime session before retrying the message', async () => {
+    const store = createStore()
+    const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any }) as any
+    const runtimeFetch = vi.fn(async () => new Response(JSON.stringify({ status: 'active' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', runtimeFetch)
+
+    await service.ensureRuntimeThreadActive({ id: 'runtime-1', status: 'error' })
+
+    expect(runtimeFetch).toHaveBeenCalledWith('/api/runtime/threads/runtime-1/start', { method: 'POST' })
+  })
+
   it('persists partial output as incomplete when generation is stopped', async () => {
     const store = createStore({
       generateItemId: vi.fn(() => 'assistant-1'),
