@@ -6,16 +6,19 @@ const mockNavigate = vi.fn()
 const mockUseInboxItems = vi.fn()
 const mockSelectInboxItem = vi.fn()
 const mockSetInboxFilter = vi.fn()
-const { mockSetThreadId, mockSetComposerValue, mockUseChatKit } = vi.hoisted(() => {
+const { mockSetThreadId, mockSetComposerValue, mockFetchUpdates, mockUseChatKit } = vi.hoisted(() => {
   const setThreadId = vi.fn()
   const setComposerValue = vi.fn(async () => undefined)
+  const fetchUpdates = vi.fn(async () => undefined)
   return {
     mockSetThreadId: setThreadId,
     mockSetComposerValue: setComposerValue,
+    mockFetchUpdates: fetchUpdates,
     mockUseChatKit: vi.fn(() => ({
       control: {},
       setThreadId,
       setComposerValue,
+      fetchUpdates,
     })),
   }
 })
@@ -141,7 +144,9 @@ import { ChatContentPane } from './ChatContentPane'
 describe('ChatContentPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     mockSetComposerValue.mockResolvedValue(undefined)
+    mockFetchUpdates.mockResolvedValue(undefined)
     mockUseSolidDatabase.mockReturnValue({
       db: {},
       status: 'ready',
@@ -228,19 +233,57 @@ describe('ChatContentPane', () => {
     expect(workspace.className).not.toMatch(/rounded-|backdrop-blur|\bm-4\b/)
   })
 
-  it('exposes LinX platform models to ChatKit with linx-lite as the default', () => {
+  it('keeps model selection in the chat header instead of duplicating it in ChatKit', () => {
+    render(<ChatContentPane theme="light" />)
+
+    expect(mockUseChatKit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        composer: expect.not.objectContaining({ models: expect.anything() }),
+      }),
+    )
+  })
+
+  it('offers real web search as a non-persistent ChatKit composer tool', () => {
     render(<ChatContentPane theme="light" />)
 
     expect(mockUseChatKit).toHaveBeenCalledWith(
       expect.objectContaining({
         composer: expect.objectContaining({
-          models: [
-            expect.objectContaining({ id: 'linx-lite', label: 'LinX Lite', default: true }),
-            expect.objectContaining({ id: 'linx', label: 'LinX', default: false }),
-          ],
+          tools: [expect.objectContaining({
+            id: 'web_search',
+            label: '联网搜索',
+            icon: 'search',
+            pinned: true,
+            persistent: false,
+          })],
         }),
       }),
     )
+  })
+
+  it('blocks sending while offline and refreshes the active thread after reconnecting', async () => {
+    render(<ChatContentPane theme="light" />)
+
+    act(() => window.dispatchEvent(new Event('offline')))
+    expect(screen.getByRole('alert')).toHaveTextContent('网络已断开')
+    expect(screen.getByText('网络恢复后可继续发送')).toBeInTheDocument()
+
+    act(() => window.dispatchEvent(new Event('online')))
+    await waitFor(() => expect(mockFetchUpdates).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByText('连接已恢复，正在同步最新消息…')).not.toBeInTheDocument())
+  })
+
+  it('offers an explicit retry when reconnect synchronization fails', async () => {
+    mockFetchUpdates.mockRejectedValueOnce(new Error('network reset')).mockResolvedValueOnce(undefined)
+    render(<ChatContentPane theme="light" />)
+
+    act(() => window.dispatchEvent(new Event('offline')))
+    act(() => window.dispatchEvent(new Event('online')))
+
+    expect(await screen.findByText('连接已恢复，但消息同步失败。')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重试同步' }))
+    await waitFor(() => expect(mockFetchUpdates).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByText('连接已恢复，但消息同步失败。')).not.toBeInTheDocument())
   })
 
   it('renders an interactive Secretary welcome while bootstrap is still pending', async () => {
@@ -268,6 +311,35 @@ describe('ChatContentPane', () => {
     expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toHaveValue('帮我整理今天需要推进的工作')
     expect(screen.queryByText('正在准备话题...')).not.toBeInTheDocument()
     expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+  })
+
+  it('creates the Secretary default thread after bootstrap settles even before the chat query returns', async () => {
+    storeState.selectedChatId = '__secretary__/index.ttl#this'
+    storeState.selectedThreadId = null
+    mockUseChatList.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+      refetch: mockChatRefetch,
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+      refetch: mockThreadRefetch,
+    })
+    mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(false)
+
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(1))
+    expect(mockMutations.createThread.mutate).toHaveBeenCalledWith(
+      {
+        chatId: '__secretary__/index.ttl#this',
+        title: '默认话题',
+      },
+      expect.any(Object),
+    )
   })
 
   it('shows forbidden query state and retries chat and thread reads', async () => {
@@ -529,6 +601,34 @@ describe('ChatContentPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '重试填入草稿' }))
     await waitFor(() => expect(mockSetComposerValue).toHaveBeenCalledTimes(2))
+  })
+
+  it('restores the Secretary draft after a page remount for the same account and chat', async () => {
+    storeState.selectedChatId = '__secretary__/index.ttl#this'
+    storeState.selectedThreadId = null
+    mockUseChatList.mockReturnValue({
+      data: [{ id: '__secretary__/index.ttl#this', title: 'AI Secretary' }],
+      isLoading: false,
+      error: null,
+      refetch: mockChatRefetch,
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+      refetch: mockThreadRefetch,
+    })
+
+    const first = render(<ChatContentPane theme="light" />)
+    fireEvent.change(screen.getByRole('textbox', { name: '给主理人发消息' }), {
+      target: { value: '刷新后仍需保留的草稿' },
+    })
+    first.unmount()
+
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '给主理人发消息' }))
+      .toHaveValue('刷新后仍需保留的草稿'))
   })
 
   it('clears Secretary draft, pending handoff, and thread error when the account scope changes', async () => {
@@ -873,6 +973,33 @@ describe('ChatContentPane', () => {
 
     expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|node\.example|__secretary__|Pod container/i)).not.toBeInTheDocument()
+  })
+
+  it('shows runtime tools as a restrained activity summary with optional technical detail', () => {
+    mockIsRuntimeSessionMode.mockReturnValue(true)
+    mockUseRuntimeSession.mockReturnValue({
+      runtimeSession: { id: 'runtime-1', status: 'active', title: '默认话题', tool: 'codex' },
+      refetch: vi.fn(),
+      createSession: { isPending: false, mutateAsync: vi.fn() },
+      startSession: { isPending: false, mutateAsync: vi.fn() },
+      pauseSession: { isPending: false, mutateAsync: vi.fn() },
+      resumeSession: { isPending: false, mutateAsync: vi.fn() },
+      stopSession: { isPending: false, mutateAsync: vi.fn() },
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    act(() => {
+      mockRuntimeEventHandler.current?.({
+        type: 'tool_call',
+        name: 'write_file',
+        arguments: '{"path":"secret.txt"}',
+      })
+    })
+
+    expect(screen.getByText('等待确认工作区变更')).toBeInTheDocument()
+    expect(screen.getByText('write_file')).toBeInTheDocument()
+    expect(screen.queryByText(/secret\.txt/)).not.toBeInTheDocument()
   })
 
   it('restores anchored message after chat scene re-entry', () => {

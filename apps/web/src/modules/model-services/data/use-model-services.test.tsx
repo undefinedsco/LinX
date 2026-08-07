@@ -122,6 +122,62 @@ describe('useModelServices data persistence', () => {
     expect(mocks.modelStartSync).not.toHaveBeenCalled()
   })
 
+  it('keeps Pod-defined custom providers visible to consumers', () => {
+    mocks.useLiveQuery.mockReset()
+    mocks.useLiveQuery
+      .mockReturnValueOnce({
+        data: [{ c: { id: 'timecc-default.ttl', provider: '/settings/providers/timecc.ttl', apiKey: 'secret' } }],
+        isError: false,
+      })
+      .mockReturnValueOnce({
+        data: [{ p: { id: 'timecc.ttl', displayName: 'TimeCC', baseUrl: 'https://example.test/v1' } }],
+        isError: false,
+      })
+      .mockReturnValueOnce({
+        data: [{ m: { id: 'timecc.ttl#gpt-test', displayName: 'GPT Test', isProvidedBy: '/settings/providers/timecc.ttl' } }],
+        isError: false,
+      })
+
+    const { result } = renderHook(() => useModelServices())
+
+    expect(result.current.providers.timecc).toMatchObject({
+      id: 'timecc',
+      name: 'TimeCC',
+      baseUrl: 'https://example.test/v1',
+    })
+    expect(result.current.providers.timecc.models).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'gpt-test', name: 'GPT Test' }),
+    ]))
+  })
+
+  it('accepts flat rows returned by the live collection runtime', () => {
+    mocks.useLiveQuery.mockReset()
+    mocks.useLiveQuery
+      .mockReturnValueOnce({
+        data: [{ id: 'timecc-default', provider: '/settings/providers/timecc.ttl', apiKey: 'secret' }],
+        isError: false,
+      })
+      .mockReturnValueOnce({
+        data: [{ id: 'timecc.ttl', displayName: 'TimeCC', baseUrl: 'https://example.test/v1' }],
+        isError: false,
+      })
+      .mockReturnValueOnce({
+        data: [{ id: 'timecc.ttl#gpt-test', displayName: 'GPT Test', isProvidedBy: '/settings/providers/timecc.ttl' }],
+        isError: false,
+      })
+
+    const { result } = renderHook(() => useModelServices())
+
+    expect(result.current.providers.timecc).toMatchObject({
+      id: 'timecc',
+      name: 'TimeCC',
+      enabled: true,
+    })
+    expect(result.current.providers.timecc.models).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'gpt-test', name: 'GPT Test' }),
+    ]))
+  })
+
   it('restores earlier provider and credential writes when later model persistence fails', async () => {
     const persistenceError = new Error('model persistence failed')
     mocks.modelInsert.mockImplementation((row: Row) => {

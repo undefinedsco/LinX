@@ -35,6 +35,7 @@ const {
         size: 0,
       },
       get: vi.fn((id: string) => state.get(id)),
+      keys: vi.fn(() => state.keys()),
       isReady: vi.fn(() => true),
       preload: vi.fn(async () => undefined),
       insert: vi.fn((row: Record<string, unknown>) => {
@@ -69,6 +70,7 @@ const {
       fetch: vi.fn(async () => Array.from(state.values())),
       subscribeToPod: vi.fn(async () => () => undefined),
       utils: {
+        refetch: vi.fn(async () => Array.from(state.values())),
         writeDelete: vi.fn((ids: string | string[]) => {
           const keys = Array.isArray(ids) ? ids : [ids]
           keys.forEach((id) => state.delete(id))
@@ -91,6 +93,7 @@ vi.mock('@/lib/data/pod-collection', () => ({
 
 vi.mock('@/providers/query-provider', () => ({
   queryClient: {
+    cancelQueries: vi.fn(async () => undefined),
     invalidateQueries: invalidateQueriesMock,
   },
 }))
@@ -145,7 +148,7 @@ describe('chatOps collection subscriptions', () => {
     vi.mocked(chatCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeChat)
     vi.mocked(threadCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeThread)
     vi.mocked(messageCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeMessage)
-    initializeChatCollections(db as any)
+    await initializeChatCollections(db as any)
 
     const unsubscribe = await chatOps.subscribeToPod()
     unsubscribe()
@@ -220,6 +223,7 @@ describe('AI Secretary bootstrap', () => {
     chatSelectError?: Error
     existingResources?: boolean
     hangExactReads?: boolean
+    existingPodDocuments?: boolean
   } = {}) {
     const rows = options.rows ?? createSecretaryRows()
     const insertedRows: Array<{ resource: unknown; row: Record<string, unknown> }> = []
@@ -252,11 +256,17 @@ describe('AI Secretary bootstrap', () => {
         }
       },
     }))
+    const authenticatedFetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'GET') {
+        return new Response('', { status: options.existingPodDocuments ? 200 : 404 })
+      }
+      return new Response('', { status: 201 })
+    })
     const db = {
       getDialect: () => ({
         getPodUrl: () => rows.podBase,
         getWebId: () => rows.webId,
-        getAuthenticatedFetch: () => vi.fn(async () => new Response('', { status: 201 })),
+        getAuthenticatedFetch: () => authenticatedFetchMock,
       }),
       findById: findByIdMock,
       resolveRowIri: vi.fn((resource: unknown, row: Record<string, unknown>) => {
@@ -293,13 +303,13 @@ describe('AI Secretary bootstrap', () => {
       })),
     }
 
-    return { db, findByIdMock, insertMock, insertedRows, rows }
+    return { db, findByIdMock, insertMock, insertedRows, rows, authenticatedFetchMock }
   }
 
   it('writes Secretary contact and chat resources after bounded exact misses', async () => {
     const { db, findByIdMock, insertedRows, rows } = createSecretaryDb()
 
-    initializeChatCollections(db as any)
+    await initializeChatCollections(db as any)
 
     await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toEqual({
       chatId: LINX_DEFAULT_SECRETARY.chatId,
@@ -424,6 +434,32 @@ describe('AI Secretary bootstrap', () => {
     vi.useRealTimers()
   })
 
+  it('does not repeat inserts when exact reads hang but Pod documents already exist', async () => {
+    vi.useFakeTimers()
+    const { db, insertedRows, authenticatedFetchMock } = createSecretaryDb({
+      hangExactReads: true,
+      existingPodDocuments: true,
+    })
+    initializeChatCollections(db as any)
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    await expect(resultPromise).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: false,
+    })
+    expect(authenticatedFetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/.data/contacts/__secretary__.ttl'),
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(authenticatedFetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/.data/chat/__secretary__/index.ttl'),
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(insertedRows).toEqual([])
+  })
+
   it('times out never-settling persistence without dropping the local Secretary projection', async () => {
     vi.useFakeTimers()
     const { db, rows } = createSecretaryDb({
@@ -436,7 +472,7 @@ describe('AI Secretary bootstrap', () => {
         }
       },
     }))
-    initializeChatCollections(db as any)
+    await initializeChatCollections(db as any)
 
     const resultPromise = chatOps.ensureLinxWelcome({ force: true })
     const timeoutResult = expect(resultPromise).rejects.toMatchObject({
@@ -486,7 +522,7 @@ describe('AI Secretary bootstrap', () => {
         return query
       },
     }))
-    initializeChatCollections(db as any)
+    await initializeChatCollections(db as any)
 
     const resultPromise = chatOps.ensureLinxWelcome({ force: true })
     const timeoutResult = expect(resultPromise).rejects.toMatchObject({

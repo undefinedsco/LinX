@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { agentResourceId } from '@/lib/data/resource-identity'
-import { buildAgentHomePath, ensureAgentHome } from './agent-home'
+import { buildAgentHomePath, ensureAgentHome, updateAgentHomeMetadata } from './agent-home'
 
 describe('agent-home', () => {
   it('creates default Agent Home files at canonical Agent Home paths', async () => {
@@ -84,6 +84,37 @@ describe('agent-home', () => {
     })).rejects.toThrow('Agent resource id must be a base-relative resource id')
 
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('updates directory-backed agents through the .meta sidecar', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 200 }))
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    await updateAgentHomeMetadata(db, agentResourceId('agent-1'), {
+      name: 'Updated Agent',
+      metadata: { linx: { aiRuntimeLocation: 'server' } },
+      updatedAt: new Date('2026-08-07T00:00:00.000Z'),
+    }, {
+      name: 'Previous Agent',
+      metadata: { linx: { aiRuntimeLocation: 'client' } },
+      updatedAt: new Date('2026-08-06T00:00:00.000Z'),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock.mock.calls.every(([target, init]) =>
+      String(target) === 'https://alice.example/agents/agent-1/.meta' && init?.method === 'PATCH'
+    )).toBe(true)
+    const bodies = fetchMock.mock.calls.map(([, init]) => String(init?.body))
+    expect(bodies[0]).toContain('DELETE DATA')
+    expect(bodies[0]).toContain('Previous Agent')
+    expect(bodies.slice(1).every(body => body.includes('<https://alice.example/agents/agent-1/>'))).toBe(true)
+    expect(bodies.some(body => body.includes('aiRuntimeLocation'))).toBe(true)
+    expect(bodies.some(body => body.includes('XMLSchema#json'))).toBe(true)
   })
 
   it('treats existing Agent Home files as initialized', async () => {

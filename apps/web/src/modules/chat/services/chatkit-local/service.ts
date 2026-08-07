@@ -12,10 +12,10 @@ import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
   extractUserMessageText,
-  generateId,
   isStreamingReq,
   nowTimestamp,
   type ChatKitReq,
+  type Attachment,
   type NonStreamingReq,
   type StreamingReq,
   type ThreadItem,
@@ -45,7 +45,13 @@ import {
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
+import {
+  mergeChatKitAnnotations,
+  normalizeModelAnnotations,
+  type ChatKitAnnotation,
+} from './model-annotations'
 import { sendMatrixThreadMessage } from '../../matrix-service'
+import { attachmentToModelParts, type ModelContentPart } from './attachment-content'
 import {
   DEFAULT_AGENT_AI_RUNTIME_LOCATION,
   readAgentAiRuntimeLocation,
@@ -57,6 +63,12 @@ function readChatIdFromThread(thread: ThreadMetadata): string | null {
     return null
   }
   return extractChatIdFromChatRef(thread.metadata.chat_id) ?? thread.metadata.chat_id
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError'
 }
 
 function requireRowId(row: Record<string, unknown> | null | undefined, label: string): string {
@@ -85,8 +97,16 @@ function isUnsupportedCollectionReadError(error: unknown): boolean {
   return /collection queries over plain LDP are not supported|Configure a global query capability/i.test(message)
 }
 
+type LocalChatKitStorePort = ChatKitStore<StoreContext> & {
+  createAttachment?: (input: { name: string; mime_type: string }) => Attachment
+  uploadAttachment?: (attachmentId: string, body: BodyInit, mimeType?: string, signal?: AbortSignal) => Promise<Attachment>
+  readAttachmentBytes?: (attachmentId: string) => Promise<Uint8Array>
+}
+
+type ModelMessage = { role: string; content: string | ModelContentPart[] }
+
 export interface LocalServiceOptions {
-  store: ChatKitStore<StoreContext>
+  store: LocalChatKitStorePort
   db: SolidDatabase
   webId: string
   authFetch: typeof fetch
@@ -104,6 +124,74 @@ export interface NonStreamingResult {
 }
 
 export type ChatKitResult = StreamingResult | NonStreamingResult
+
+interface ModelStreamChunk {
+  text: string
+  annotations: ChatKitAnnotation[]
+}
+
+interface ModelResponse {
+  text: string
+  annotations: ChatKitAnnotation[]
+}
+
+function isWebSearchRequested(inferenceOptions: unknown): boolean {
+  if (!inferenceOptions || typeof inferenceOptions !== 'object') return false
+  const toolChoice = (inferenceOptions as { tool_choice?: unknown }).tool_choice
+  return Boolean(
+    toolChoice
+    && typeof toolChoice === 'object'
+    && (toolChoice as { id?: unknown }).id === 'web_search',
+  )
+}
+
+function parseResponsesApiResult(value: unknown): ModelResponse {
+  if (!value || typeof value !== 'object') {
+    throw new Error('联网搜索没有返回可用的回答。请稍后重试。')
+  }
+
+  const response = value as { output_text?: unknown; output?: unknown }
+  let text = ''
+  let annotations: ChatKitAnnotation[] = []
+
+  if (Array.isArray(response.output)) {
+    for (const output of response.output) {
+      if (!output || typeof output !== 'object') continue
+      const content = (output as { content?: unknown }).content
+      if (!Array.isArray(content)) continue
+
+      for (const part of content) {
+        if (!part || typeof part !== 'object') continue
+        const outputPart = part as { type?: unknown; text?: unknown; annotations?: unknown }
+        if (outputPart.type !== 'output_text' || typeof outputPart.text !== 'string') continue
+        const offset = text.length
+        text += outputPart.text
+        const normalized = normalizeModelAnnotations(outputPart.annotations, outputPart.text.length)
+          .map((annotation) => ({ ...annotation, index: offset + annotation.index }))
+        annotations = mergeChatKitAnnotations(annotations, normalized)
+      }
+    }
+  }
+
+  if (!text && typeof response.output_text === 'string') {
+    text = response.output_text
+  }
+
+  if (!text) {
+    throw new Error('联网搜索没有返回可用的回答。请稍后重试。')
+  }
+
+  return { text, annotations }
+}
+
+function coerceModelStreamChunk(chunk: ModelStreamChunk | string): ModelStreamChunk {
+  return typeof chunk === 'string'
+    ? { text: chunk, annotations: [] }
+    : {
+        text: typeof chunk?.text === 'string' ? chunk.text : '',
+        annotations: Array.isArray(chunk?.annotations) ? chunk.annotations : [],
+      }
+}
 
 type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 
@@ -154,14 +242,14 @@ type RuntimeThreadEvent =
   | { type: 'stdout'; ts: number; threadId: string; text: string }
   | { type: 'stderr'; ts: number; threadId: string; text: string }
   | { type: 'assistant_delta'; ts: number; threadId: string; text: string }
-  | { type: 'assistant_done'; ts: number; threadId: string; text: string }
+  | { type: 'assistant_done'; ts: number; threadId: string; text: string; annotations?: unknown[] }
   | { type: 'auth_required'; ts: number; threadId: string; method: string; url?: string; message?: string; options?: Array<{ label?: string; url?: string; method?: string }> }
   | { type: 'tool_call'; ts: number; threadId: string; requestId: string; name: string; arguments: string }
   | { type: 'exit'; ts: number; threadId: string; code: number | null; signal?: string }
   | { type: 'error'; ts: number; threadId: string; message: string }
 
 export class LocalChatKitService {
-  private store: ChatKitStore<StoreContext>
+  private store: LocalServiceOptions['store']
   private db: SolidDatabase
   private webId: string
   private authFetch: typeof fetch
@@ -210,6 +298,7 @@ export class LocalChatKitService {
         yield encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
       }
     } catch (error: any) {
+      if (isAbortError(error)) return
       console.error('[LocalChatKitService] Streaming request failed:', error)
       const userMessage = formatErrorForUser(error, '消息生成失败。请稍后重试。')
       const errorEvent = {
@@ -257,11 +346,13 @@ export class LocalChatKitService {
       case 'items.list':
         return this.handleItemsList(request.params, context)
       case 'items.feedback':
-        return { success: true }
+        return this.handleItemsFeedback(request.params, context)
       case 'attachments.create':
-        return { attachment_id: generateId('attach') }
+        if (!this.store.createAttachment) throw new Error('Attachment storage is unavailable')
+        return this.store.createAttachment(request.params)
       case 'attachments.delete':
-        return { success: true }
+        await this.store.deleteAttachment(request.params.attachment_id, context)
+        return {}
       case 'threads.update':
         return this.handleThreadsUpdate(request.params, context)
       case 'threads.delete':
@@ -290,7 +381,7 @@ export class LocalChatKitService {
     yield { type: 'thread.created', thread }
 
     if (params.input) {
-      const userMessage = this.createUserMessage(threadId, params.input.content, thread)
+      const userMessage = await this.createUserMessage(threadId, params.input.content, params.input.attachments, thread, context)
       const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
       if (matrixSent) {
         yield { type: 'thread.item.added', item: userMessage }
@@ -309,7 +400,7 @@ export class LocalChatKitService {
     context: StoreContext,
   ): AsyncIterable<ThreadStreamEvent> {
     const thread = await this.store.loadThread(params.thread_id, context)
-    const userMessage = this.createUserMessage(params.thread_id, params.input.content)
+    const userMessage = await this.createUserMessage(params.thread_id, params.input.content, params.input.attachments, thread, context)
     const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
     if (matrixSent) {
       yield { type: 'thread.item.added', item: userMessage }
@@ -394,6 +485,21 @@ export class LocalChatKitService {
     return this.store.loadThreadItems(params.thread_id, params.after, params.limit ?? 50, params.order ?? 'asc', context)
   }
 
+  private async handleItemsFeedback(params: any, context: StoreContext) {
+    const itemIds = Array.isArray(params.item_ids) ? params.item_ids : []
+    await Promise.all(itemIds.map(async (itemId: string) => {
+      const item = await this.store.loadItem(params.thread_id, itemId, context) as ThreadItem & Record<string, unknown>
+      item.feedback = params.kind
+      await this.store.saveItem(params.thread_id, item, context)
+    }))
+    return {}
+  }
+
+  async uploadAttachment(attachmentId: string, body: BodyInit, mimeType?: string, signal?: AbortSignal) {
+    if (!this.store.uploadAttachment) throw new Error('Attachment storage is unavailable')
+    return this.store.uploadAttachment(attachmentId, body, mimeType, signal)
+  }
+
   private async handleThreadsUpdate(params: any, context: StoreContext) {
     const thread = await this.store.loadThread(params.thread_id, context)
     if (params.title !== undefined) {
@@ -423,10 +529,17 @@ export class LocalChatKitService {
     yield { type: 'thread.item.added', item: assistantItem }
 
     let fullText = ''
+    let annotations: ChatKitAnnotation[] = []
 
     try {
-      const userText = extractUserMessageText((userMessage as any).content)
-      const runtimeThread = await this.getRuntimeThread(thread.id)
+      const userText = await this.buildRuntimeUserText(userMessage)
+      const agentConfig = await this.resolveThreadAgentConfig(thread)
+      const webSearchRequested = isWebSearchRequested(inferenceOptions)
+      const platformModel = this.resolvePlatformModel(agentConfig, inferenceOptions?.model)
+        ?? (webSearchRequested && !agentConfig ? 'linx-lite' : null)
+      // An explicitly selected composer tool is a per-message routing decision.
+      // It must not be swallowed by a long-lived coding/runtime session.
+      const runtimeThread = webSearchRequested ? null : await this.getRuntimeThread(thread.id)
 
       if (runtimeThread) {
         const chatId = readChatIdFromThread(thread) ?? 'default'
@@ -456,31 +569,64 @@ export class LocalChatKitService {
           yield event
         }
       } else {
-        const agentConfig = await this.resolveThreadAgentConfig(thread)
-        const platformModel = this.resolvePlatformModel(agentConfig, inferenceOptions?.model)
-
         if (platformModel) {
-          const stream = this.streamFromLinxRuntime(
-            platformModel,
-            messages,
-            inferenceOptions,
-            agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
-          )
-
-          for await (const chunk of stream) {
-            fullText += chunk
+          if (webSearchRequested) {
+            yield {
+              type: 'progress_update',
+              icon: 'search',
+              text: '正在搜索网络并整理来源…',
+            } as ThreadStreamEvent
+            const result = await this.respondWithLinxWebSearch(
+              platformModel,
+              messages,
+              inferenceOptions,
+              agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
+              context.signal as AbortSignal | undefined,
+            )
+            fullText = result.text
+            annotations = result.annotations
             yield {
               type: 'thread.item.updated',
               item_id: assistantItemId,
               update: {
                 type: 'assistant_message.content_part.text_delta',
                 part_index: 0,
-                delta: chunk,
+                delta: fullText,
               },
             } as ThreadStreamEvent
+            assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
+            assistantItem.status = 'completed'
+            await this.store.saveItem(thread.id, assistantItem, context)
+            yield { type: 'thread.item.done', item: assistantItem }
+            return
           }
 
-          assistantItem.content = [{ type: 'output_text', text: fullText, annotations: [] }]
+          const stream = this.streamFromLinxRuntime(
+            platformModel,
+            messages,
+            inferenceOptions,
+            agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
+            context.signal as AbortSignal | undefined,
+          )
+
+          for await (const chunk of stream) {
+            const normalizedChunk = coerceModelStreamChunk(chunk)
+            fullText += normalizedChunk.text
+            annotations = mergeChatKitAnnotations(annotations, normalizedChunk.annotations)
+            if (normalizedChunk.text) {
+              yield {
+                type: 'thread.item.updated',
+                item_id: assistantItemId,
+                update: {
+                  type: 'assistant_message.content_part.text_delta',
+                  part_index: 0,
+                  delta: normalizedChunk.text,
+                },
+              } as ThreadStreamEvent
+            }
+          }
+
+          assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
           assistantItem.status = 'completed'
           await this.store.saveItem(thread.id, assistantItem, context)
           yield { type: 'thread.item.done', item: assistantItem }
@@ -497,33 +643,60 @@ export class LocalChatKitService {
         }
 
         const model = inferenceOptions?.model ?? agentConfig?.model ?? aiConfig.defaultModel ?? 'openai/gpt-4o-mini'
-        const stream = this.streamFromProvider(aiConfig, messages, model, inferenceOptions)
+        if (webSearchRequested) {
+          throw new Error('当前自定义 AI 供应商不支持 LinX 联网搜索。请切换到 LinX 平台模型后重试。')
+        }
+        const stream = this.streamFromProvider(aiConfig, messages, model, inferenceOptions, context.signal as AbortSignal | undefined)
 
         for await (const chunk of stream) {
-          fullText += chunk
-          yield {
-            type: 'thread.item.updated',
-            item_id: assistantItemId,
-            update: {
-              type: 'assistant_message.content_part.text_delta',
-              part_index: 0,
-              delta: chunk,
-            },
-          } as ThreadStreamEvent
+          const normalizedChunk = coerceModelStreamChunk(chunk)
+          fullText += normalizedChunk.text
+          annotations = mergeChatKitAnnotations(annotations, normalizedChunk.annotations)
+          if (normalizedChunk.text) {
+            yield {
+              type: 'thread.item.updated',
+              item_id: assistantItemId,
+              update: {
+                type: 'assistant_message.content_part.text_delta',
+                part_index: 0,
+                delta: normalizedChunk.text,
+              },
+            } as ThreadStreamEvent
+          }
         }
 
-        assistantItem.content = [{ type: 'output_text', text: fullText, annotations: [] }]
+        assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
         assistantItem.status = 'completed'
         await this.store.saveItem(thread.id, assistantItem, context)
         yield { type: 'thread.item.done', item: assistantItem }
       }
     } catch (error: any) {
-      console.error('[LocalChatKitService] AI/runtime response failed:', error)
-      const userMessage = formatErrorForUser(error, '消息生成失败。请稍后重试。')
-      assistantItem.content = [{ type: 'output_text', text: fullText || userMessage, annotations: [] }]
+      if (!isAbortError(error)) {
+        console.error('[LocalChatKitService] AI/runtime response failed:', error)
+      }
+      const webSearchFailed = isWebSearchRequested(inferenceOptions) && !isAbortError(error)
+      const searchErrorMessage = error instanceof Error ? error.message : ''
+      const userMessage = webSearchFailed
+        ? searchErrorMessage.startsWith('当前自定义 AI 供应商不支持')
+          ? searchErrorMessage
+          : '联网搜索暂不可用。请检查本地 xpod 的 AI 上游配置后重试。'
+        : formatErrorForUser(error, '消息生成失败。请稍后重试。')
+      if (webSearchFailed) {
+        yield {
+          type: 'progress_update',
+          icon: 'search',
+          text: '联网搜索失败',
+        } as ThreadStreamEvent
+      }
+      assistantItem.content = [{
+        type: 'output_text',
+        text: fullText || (isAbortError(error) ? '已停止生成。' : userMessage),
+        annotations: [],
+      }]
       assistantItem.status = 'incomplete'
       await this.store.saveItem(thread.id, assistantItem, context)
       yield { type: 'thread.item.done', item: assistantItem }
+      if (isAbortError(error)) return
       yield {
         type: 'error',
         error: {
@@ -690,7 +863,7 @@ export class LocalChatKitService {
     assistantItem: any,
     assistantItemId: string,
     context: StoreContext,
-    sendRequest: () => Promise<Response>,
+    sendRequest: (signal: AbortSignal) => Promise<Response>,
     notices: {
       toolCall: string
       authRequired: string
@@ -700,6 +873,10 @@ export class LocalChatKitService {
     await this.ensureRuntimeThreadActive(runtimeThread)
 
     const controller = new AbortController()
+    const requestSignal = context.signal as AbortSignal | undefined
+    const abortFromRequest = () => controller.abort(requestSignal?.reason)
+    requestSignal?.addEventListener('abort', abortFromRequest, { once: true })
+    if (requestSignal?.aborted) controller.abort(requestSignal.reason)
     const response = await fetch(`/api/runtime/threads/${runtimeThread.id}/events`, {
       method: 'GET',
       headers: { Accept: 'text/event-stream' },
@@ -710,7 +887,7 @@ export class LocalChatKitService {
       throw new Error('Failed to subscribe runtime events')
     }
 
-    const actionResponse = await sendRequest()
+    const actionResponse = await sendRequest(controller.signal)
     if (!actionResponse.ok) {
       controller.abort()
       const data = await actionResponse.json().catch(() => null)
@@ -739,7 +916,11 @@ export class LocalChatKitService {
 
         if (event.type === 'assistant_done') {
           fullText = event.text || fullText
-          assistantItem.content = [{ type: 'output_text', text: fullText, annotations: [] }]
+          assistantItem.content = [{
+            type: 'output_text',
+            text: fullText,
+            annotations: normalizeModelAnnotations(event.annotations, fullText.length),
+          }]
           assistantItem.status = 'completed'
           await this.store.saveItem(thread.id, assistantItem, context)
           yield { type: 'thread.item.done', item: assistantItem }
@@ -792,6 +973,7 @@ export class LocalChatKitService {
 
       throw new Error('Runtime stream ended without assistant output')
     } finally {
+      requestSignal?.removeEventListener('abort', abortFromRequest)
       controller.abort()
     }
   }
@@ -812,10 +994,11 @@ export class LocalChatKitService {
       assistantItem,
       assistantItemId,
       context,
-      () => fetch(`/api/runtime/threads/${runtimeThread.id}/message`, {
+      (signal) => fetch(`/api/runtime/threads/${runtimeThread.id}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: userText }),
+        signal,
       }),
       {
         toolCall: '运行时请求了一个工具调用，已转入收件箱等待处理。',
@@ -842,10 +1025,11 @@ export class LocalChatKitService {
       assistantItem,
       assistantItemId,
       context,
-      () => fetch(`/api/runtime/threads/${runtimeThread.id}/tool-calls/${encodeURIComponent(requestId)}/respond`, {
+      (signal) => fetch(`/api/runtime/threads/${runtimeThread.id}/tool-calls/${encodeURIComponent(requestId)}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ output }),
+        signal,
       }),
       {
         toolCall: '运行时请求了新的工具调用，已转入收件箱等待处理。',
@@ -1005,10 +1189,11 @@ export class LocalChatKitService {
 
   private async *streamFromLinxRuntime(
     model: string,
-    messages: Array<{ role: string; content: string }>,
+    messages: ModelMessage[],
     inferenceOptions?: any,
     runtimeLocation: AgentAiRuntimeLocation = DEFAULT_AGENT_AI_RUNTIME_LOCATION,
-  ): AsyncIterable<string> {
+    signal?: AbortSignal,
+  ): AsyncIterable<ModelStreamChunk> {
     const requestInit: RequestInit = {
       method: 'POST',
       headers: {
@@ -1022,6 +1207,7 @@ export class LocalChatKitService {
         temperature: inferenceOptions?.temperature ?? 0.7,
         max_tokens: inferenceOptions?.max_tokens ?? 2048,
       }),
+      signal,
     }
 
     const response = runtimeLocation === 'server'
@@ -1036,6 +1222,42 @@ export class LocalChatKitService {
     yield* this.readTextOrSseStream(response)
   }
 
+  private async respondWithLinxWebSearch(
+    model: string,
+    messages: ModelMessage[],
+    inferenceOptions?: any,
+    runtimeLocation: AgentAiRuntimeLocation = DEFAULT_AGENT_AI_RUNTIME_LOCATION,
+    signal?: AbortSignal,
+  ): Promise<ModelResponse> {
+    const requestInit: RequestInit = {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        input: messages,
+        tools: [{ type: 'web_search' }],
+        tool_choice: 'auto',
+        temperature: inferenceOptions?.temperature ?? 0.7,
+        max_output_tokens: inferenceOptions?.max_tokens ?? 2048,
+      }),
+      signal,
+    }
+
+    const response = runtimeLocation === 'server'
+      ? await this.fetchServerOriginatedLinxResponses(requestInit)
+      : await this.authFetch(`${this.resolveRuntimeBaseUrl()}/responses`, requestInit)
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`LinX web search error ${response.status}: ${text.slice(0, 200)}`)
+    }
+
+    return parseResponsesApiResult(await response.json())
+  }
+
   private async fetchServerOriginatedLinxRuntime(requestInit: RequestInit): Promise<Response> {
     if (!this.isServiceMode()) {
       throw new Error('服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本机空间。')
@@ -1044,13 +1266,24 @@ export class LocalChatKitService {
     return fetch('/api/ai/chat/completions', requestInit)
   }
 
-  private async *readTextOrSseStream(response: Response): AsyncIterable<string> {
+  private async fetchServerOriginatedLinxResponses(requestInit: RequestInit): Promise<Response> {
+    if (!this.isServiceMode()) {
+      throw new Error('服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本机空间。')
+    }
+
+    return fetch('/api/ai/responses', requestInit)
+  }
+
+  private async *readTextOrSseStream(response: Response): AsyncIterable<ModelStreamChunk> {
     const reader = response.body?.getReader()
     if (!reader) {
       const data = await response.json().catch(() => null)
       const text = data?.choices?.[0]?.message?.content
       if (typeof text === 'string' && text) {
-        yield text
+        yield {
+          text,
+          annotations: normalizeModelAnnotations(data?.choices?.[0]?.message?.annotations, text.length),
+        }
       }
       return
     }
@@ -1068,55 +1301,70 @@ export class LocalChatKitService {
 
       for (const line of lines) {
         const chunk = this.parseRuntimeStreamLine(line)
-        if (chunk) yield chunk
+        if (chunk.text || chunk.annotations.length) yield chunk
       }
     }
 
     const tail = decoder.decode()
     if (tail) buffer += tail
     const finalChunk = this.parseRuntimeStreamLine(buffer)
-    if (finalChunk) yield finalChunk
+    if (finalChunk.text || finalChunk.annotations.length) yield finalChunk
   }
 
-  private parseRuntimeStreamLine(line: string): string {
+  private parseRuntimeStreamLine(line: string): ModelStreamChunk {
     const trimmed = line.trim()
     if (!trimmed || trimmed === 'data: [DONE]' || trimmed === '[DONE]') {
-      return ''
+      return { text: '', annotations: [] }
     }
 
     const payload = trimmed.startsWith('data: ') ? trimmed.slice(6).trim() : trimmed
     if (!payload || payload === '[DONE]') {
-      return ''
+      return { text: '', annotations: [] }
     }
 
     try {
       const parsed = JSON.parse(payload)
-      const delta = parsed.choices?.[0]?.delta?.content
+      const deltaObject = parsed.choices?.[0]?.delta
+      const messageObject = parsed.choices?.[0]?.message
+      const delta = deltaObject?.content
       if (typeof delta === 'string') {
-        return delta
+        return {
+          text: delta,
+          annotations: normalizeModelAnnotations(deltaObject?.annotations, delta.length),
+        }
       }
 
-      const text = parsed.choices?.[0]?.message?.content
+      const text = messageObject?.content
       if (typeof text === 'string') {
-        return text
+        return {
+          text,
+          annotations: normalizeModelAnnotations(messageObject?.annotations, text.length),
+        }
       }
 
       if (typeof parsed.text === 'string') {
-        return parsed.text
+        return {
+          text: parsed.text,
+          annotations: normalizeModelAnnotations(parsed.annotations, parsed.text.length),
+        }
+      }
+
+      return {
+        text: '',
+        annotations: normalizeModelAnnotations(deltaObject?.annotations ?? messageObject?.annotations ?? parsed.annotations, 0),
       }
     } catch {
-      return payload
+      return { text: payload, annotations: [] }
     }
-
-    return ''
   }
 
   private async *streamFromProvider(
     config: { baseUrl: string; apiKey: string },
-    messages: Array<{ role: string; content: string }>,
+    messages: ModelMessage[],
     model: string,
     inferenceOptions?: any,
-  ): AsyncIterable<string> {
+    signal?: AbortSignal,
+  ): AsyncIterable<ModelStreamChunk> {
     const cleanBase = config.baseUrl.replace(/\/$/, '')
     const endpoint = `${cleanBase}/chat/completions`
 
@@ -1133,6 +1381,7 @@ export class LocalChatKitService {
         temperature: inferenceOptions?.temperature ?? 0.7,
         max_tokens: inferenceOptions?.max_tokens ?? 2048,
       }),
+      signal,
     })
 
     if (!response.ok) {
@@ -1165,9 +1414,11 @@ export class LocalChatKitService {
 
         try {
           const parsed = JSON.parse(data)
-          const delta = parsed.choices?.[0]?.delta?.content
-          if (delta) {
-            yield delta
+          const deltaObject = parsed.choices?.[0]?.delta
+          const delta = typeof deltaObject?.content === 'string' ? deltaObject.content : ''
+          const annotations = normalizeModelAnnotations(deltaObject?.annotations, delta.length)
+          if (delta || annotations.length) {
+            yield { text: delta, annotations }
           }
         } catch {
           // skip malformed SSE lines
@@ -1179,8 +1430,8 @@ export class LocalChatKitService {
   private async buildConversationHistory(
     threadId: string,
     context: StoreContext,
-  ): Promise<Array<{ role: string; content: string }>> {
-    const messages: Array<{ role: string; content: string }> = [
+  ): Promise<ModelMessage[]> {
+    const messages: ModelMessage[] = [
       { role: 'system', content: this.systemPrompt },
     ]
 
@@ -1188,8 +1439,14 @@ export class LocalChatKitService {
     for (const item of items.data) {
       if (item.type === 'user_message') {
         const text = extractUserMessageText((item as any).content)
-        if (text) {
-          messages.push({ role: 'user', content: text })
+        const attachmentParts = await this.buildAttachmentModelParts((item as any).attachments)
+        if (text || attachmentParts.length > 0) {
+          messages.push({
+            role: 'user',
+            content: attachmentParts.length > 0
+              ? [{ type: 'text', text: text || '请分析附件。' }, ...attachmentParts]
+              : text,
+          })
         }
       } else if (item.type === 'assistant_message') {
         const text = (item as any).content
@@ -1205,11 +1462,39 @@ export class LocalChatKitService {
     return messages
   }
 
-  private createUserMessage(
+  private async buildAttachmentModelParts(attachments: Attachment[] | undefined): Promise<ModelContentPart[]> {
+    if (!attachments?.length || !this.store.readAttachmentBytes) return []
+
+    const groups = await Promise.all(attachments.map(async (attachment) => {
+      try {
+        const bytes = await this.store.readAttachmentBytes!(attachment.id)
+        return attachmentToModelParts(attachment, bytes)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        return [{ type: 'text', text: `[附件 ${attachment.name} 读取失败：${reason}]` } satisfies ModelContentPart]
+      }
+    }))
+    return groups.flat()
+  }
+
+  private async buildRuntimeUserText(item: ThreadItem): Promise<string> {
+    const text = extractUserMessageText((item as any).content)
+    const parts = await this.buildAttachmentModelParts((item as any).attachments)
+    const attachmentText = parts.map((part, index) => (
+      part.type === 'text'
+        ? part.text
+        : `[图片附件 ${index + 1} 已保存到 Pod；当前终端 runtime 仅接收文本，请在支持视觉的模型会话中分析图片内容。]`
+    )).join('\n\n')
+    return [text, attachmentText].filter(Boolean).join('\n\n') || '请分析附件。'
+  }
+
+  private async createUserMessage(
     threadId: string,
     content: any[],
+    attachmentIds: string[] = [],
     thread?: ThreadMetadata,
-  ): ThreadItem {
+    context: StoreContext = {},
+  ): Promise<ThreadItem> {
     const fallbackThread = thread || {
       id: threadId,
       status: { type: 'active' as const },
@@ -1218,12 +1503,17 @@ export class LocalChatKitService {
     }
 
     const itemId = this.store.generateItemId('user_message', fallbackThread, {})
+    const attachments = await Promise.all(attachmentIds.map(async (attachmentId) => {
+      const attachment = await this.store.loadAttachment(attachmentId, context)
+      const { upload_descriptor: _uploadDescriptor, ...publicAttachment } = attachment
+      return publicAttachment
+    }))
     return {
       id: itemId,
       thread_id: threadId,
       type: 'user_message',
       content,
-      attachments: [],
+      attachments,
       created_at: nowTimestamp(),
     } as ThreadItem
   }

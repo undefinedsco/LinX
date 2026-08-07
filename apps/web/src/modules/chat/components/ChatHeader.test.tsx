@@ -53,6 +53,31 @@ vi.mock('@/components/ui/model-selector', () => ({
   ),
 }))
 
+vi.mock('@/modules/model-services/data/use-model-services', () => ({
+  useModelServices: () => ({
+    providers: {
+      undefineds: {
+        id: 'undefineds',
+        name: 'LinX Platform',
+        enabled: true,
+        models: [{ id: 'linx-lite', name: 'LinX Lite', enabled: true, capabilities: [] }],
+      },
+      openai: {
+        id: 'openai',
+        name: 'OpenAI',
+        enabled: true,
+        models: [{ id: 'gpt-4o-mini', name: 'GPT-4o mini', enabled: true, capabilities: [] }],
+      },
+      anthropic: {
+        id: 'anthropic',
+        name: 'Anthropic',
+        enabled: true,
+        models: [{ id: 'claude-3-5-sonnet-latest', name: 'Claude', enabled: true, capabilities: [] }],
+      },
+    },
+  }),
+}))
+
 vi.mock('@/lib/agent-providers', () => ({
   DEFAULT_LINX_PLATFORM_MODEL_ID: 'linx-lite',
   LINX_PLATFORM_PROVIDER_ID: 'undefineds',

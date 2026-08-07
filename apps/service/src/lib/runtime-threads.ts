@@ -157,12 +157,30 @@ export class RuntimeThreadsModule {
   }
 
   createThread(input: CreateRuntimeThreadInput): RuntimeThreadRecord {
+    const normalized = normalizeCreateRuntimeThreadInput(input)
     const existing = this.getThreadByChatThread(input.threadId)
     if (existing) {
-      return existing
+      if (existing.status === 'active' || existing.status === 'paused') {
+        return existing
+      }
+
+      this.runners.delete(existing.id)
+      return this.updateThread(existing.id, {
+        container: normalized.container,
+        workspaceKind: normalized.workspaceKind,
+        title: normalized.title,
+        repoPath: normalized.repoPath,
+        folderPath: normalized.folderPath,
+        runnerType: normalized.runnerType || 'xpod-pty',
+        tool: normalized.tool || 'codex',
+        status: 'idle',
+        tokenUsage: 0,
+        baseRef: normalized.baseRef,
+        branch: normalized.branch,
+        lastError: undefined,
+      })
     }
 
-    const normalized = normalizeCreateRuntimeThreadInput(input)
     const now = new Date().toISOString()
     const record: RuntimeThreadRecord = {
       id: crypto.randomUUID(),

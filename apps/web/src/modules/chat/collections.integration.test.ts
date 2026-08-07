@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import {
   chatResource,
   aiProviderResource,
@@ -19,6 +19,7 @@ import {
   initializeChatCollections,
   LINX_DEFAULT_SECRETARY,
   messageCollection,
+  threadCollection,
 } from './collections'
 import {
   agentCollection,
@@ -112,6 +113,16 @@ describe('chat collections integration', () => {
 
     const thread = await chatOps.createThread(chatId, 'Thread One')
     expect(thread).toBeDefined()
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const threadRows = await threadCollection.fetch({ refetch: true })
+    expect(consoleError.mock.calls.flat().join(' ')).not.toContain('Unable to resolve column reference')
+    consoleError.mockRestore()
+    const roundTrippedThread = threadRows.find((row) => row.id === thread.id)
+    expect(roundTrippedThread).toMatchObject({
+      id: thread.id,
+      parent: expect.stringContaining(`/.data/chat/${chatId}/index.ttl#this`),
+    })
 
     const message = await chatOps.createUserMessage(
       chatId,

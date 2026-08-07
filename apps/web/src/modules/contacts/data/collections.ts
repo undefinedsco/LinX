@@ -34,7 +34,7 @@ import {
   type BaseRelativeResourceId,
   type ResourceIri,
 } from '@/lib/data/resource-identity'
-import { createAgentHome } from '@/lib/data/agent-home'
+import { createAgentHome, updateAgentHomeMetadata } from '@/lib/data/agent-home'
 import { queryClient } from '@/providers/query-provider'
 import { buildGroupContactInfo } from '../domain/contact-projection'
 import type { GroupContactInfo } from '../domain/types'
@@ -404,11 +404,22 @@ export const contactOps = {
    */
   async updateAgent(idOrRef: string, data: Partial<AgentRow>): Promise<void> {
     const targetId = asAgentId(idOrRef)
-
-    const tx = agentCollection.update(targetId, (draft: any) => {
-      Object.assign(draft, data)
-    })
-    await tx.isPersisted.promise
+    const current = agentCollection.get(targetId) as AgentRow | undefined
+    if (!current) throw new Error(`Agent ${targetId} was not found`)
+    const changes = { ...data }
+    const supportedChanges = {
+      name: changes.name,
+      instructions: changes.instructions,
+      provider: changes.provider,
+      model: changes.model,
+      metadata: changes.metadata,
+      avatarUrl: changes.avatarUrl,
+      updatedAt: changes.updatedAt,
+    }
+    const db = getDb()
+    if (!db) throw new Error('Pod database is not initialized')
+    await updateAgentHomeMetadata(db, targetId, supportedChanges, current)
+    writeCollectionRow(agentCollection, { ...current, ...changes } as AgentRow, targetId)
   },
 
   /**

@@ -18,6 +18,7 @@ const initializeSymphonyControlCollectionsMock = vi.fn()
 const subscribeSymphonyControlToPodMock = vi.fn()
 const ensureLinxWelcomeMock = vi.fn()
 const stageLinxDefaultSecretaryMock = vi.fn()
+const stageLinxDefaultSecretaryThreadMock = vi.fn()
 const subscribeToPodMock = vi.fn()
 const invalidateQueriesMock = vi.fn()
 const toastMock = vi.fn()
@@ -43,6 +44,7 @@ vi.mock('@/modules/chat/collections', () => ({
   chatOps: {
     ensureLinxWelcome: (...args: unknown[]) => ensureLinxWelcomeMock(...args),
     stageLinxDefaultSecretary: (...args: unknown[]) => stageLinxDefaultSecretaryMock(...args),
+    stageLinxDefaultSecretaryThread: (...args: unknown[]) => stageLinxDefaultSecretaryThreadMock(...args),
     subscribeToPod: (...args: unknown[]) => subscribeToPodMock(...args),
   },
 }))
@@ -116,6 +118,7 @@ describe('PodCollectionsBootstrap', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useSolidDatabaseMock.mockReturnValue({ db: null })
+    initializeChatCollectionsMock.mockResolvedValue(undefined)
     ensureLinxWelcomeMock.mockResolvedValue(null)
     subscribeToPodMock.mockResolvedValue(() => undefined)
     subscribeFavoritesToPodMock.mockResolvedValue(() => undefined)
@@ -233,6 +236,31 @@ describe('PodCollectionsBootstrap', () => {
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats'] })
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats', 'secretary-chat', 'threads'] })
     expect(screen.getByText('ready app')).toBeTruthy()
+  })
+
+  it('waits for chat collection rebind before staging and persisting the default Secretary', async () => {
+    const db = { id: 'db' }
+    let finishRebind: (() => void) | undefined
+    initializeChatCollectionsMock.mockReturnValue(new Promise<void>((resolve) => {
+      finishRebind = resolve
+    }))
+    useSolidDatabaseMock.mockReturnValue({ db })
+
+    render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
+
+    expect(screen.getByText('ready app')).toBeTruthy()
+    expect(stageLinxDefaultSecretaryMock).not.toHaveBeenCalled()
+    expect(subscribeToPodMock).not.toHaveBeenCalled()
+    expect(ensureLinxWelcomeMock).not.toHaveBeenCalled()
+
+    await act(async () => {
+      finishRebind?.()
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(stageLinxDefaultSecretaryMock).toHaveBeenCalledWith(db))
+    expect(subscribeToPodMock).toHaveBeenCalledTimes(1)
+    expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })
   })
 
   it('does not steal selection when another chat is already selected', async () => {
@@ -358,7 +386,13 @@ describe('PodCollectionsBootstrap', () => {
 
     render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
 
-    await waitFor(() => expect(warnSpy).toHaveBeenCalled())
+    await waitFor(() => {
+      expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats'] })
+    })
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      '[PodCollectionsBootstrap] Failed to prepare LinX welcome:',
+      timeoutError,
+    )
     expect(toastMock).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(localAuthKey)).toBe('local-token')
     expect(window.sessionStorage.getItem(sessionAuthKey)).toBe('session-token')

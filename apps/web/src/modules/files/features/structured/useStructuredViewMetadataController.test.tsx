@@ -110,7 +110,7 @@ describe('useStructuredViewMetadataController', () => {
   })
 
   it('keeps a durable error state and retries the current metadata', async () => {
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+    const setItemSpy = vi.spyOn(window.localStorage, 'setItem')
     setItemSpy.mockImplementationOnce(() => {
       throw new Error('quota exceeded')
     })

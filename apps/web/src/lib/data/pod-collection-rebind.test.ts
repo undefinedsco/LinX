@@ -8,6 +8,7 @@ describe('rebindPodCollection', () => {
     const collection = {
       isReady: vi.fn(() => true),
       keys: () => ['old-contact', 'old-agent'].values(),
+      preload: vi.fn(async () => undefined),
       utils: { writeDelete, refetch },
     }
 
@@ -23,6 +24,7 @@ describe('rebindPodCollection', () => {
     const collection = {
       isReady: vi.fn(() => false),
       keys: () => [][Symbol.iterator](),
+      preload: vi.fn(async () => undefined),
       utils: { writeDelete, refetch },
     }
 
@@ -37,6 +39,7 @@ describe('rebindPodCollection', () => {
     const collection = {
       isReady: vi.fn(() => true),
       keys: () => ['private-credential'].values(),
+      preload: vi.fn(async () => undefined),
       utils: { writeDelete, refetch },
     }
 
@@ -50,6 +53,7 @@ describe('rebindPodCollection', () => {
     const collection = {
       isReady: vi.fn(() => true),
       keys: () => [][Symbol.iterator](),
+      preload: vi.fn(async () => undefined),
       utils: {},
     }
 
@@ -67,6 +71,7 @@ describe('rebindPodCollection', () => {
     const collection = {
       isReady: vi.fn(() => true),
       keys: () => ['previous-account-row'].values(),
+      preload: vi.fn(async () => undefined),
       utils: { writeDelete, refetch },
     }
 
@@ -74,12 +79,33 @@ describe('rebindPodCollection', () => {
       cancelInFlight: vi.fn(() => cancellation),
     })
 
-    expect(writeDelete).toHaveBeenCalledWith(['previous-account-row'])
+    expect(writeDelete).not.toHaveBeenCalled()
     expect(refetch).not.toHaveBeenCalled()
 
     finishCancellation?.()
     await rebind
 
+    expect(refetch).toHaveBeenCalledWith({ throwOnError: true })
+  })
+
+  it('initializes manual sync before clearing rows left by a previous account', async () => {
+    let ready = false
+    const writeDelete = vi.fn()
+    const refetch = vi.fn(async () => [])
+    const preload = vi.fn(async () => {
+      ready = true
+    })
+    const collection = {
+      isReady: vi.fn(() => ready),
+      keys: () => ['previous-account-row'].values(),
+      preload,
+      utils: { writeDelete, refetch },
+    }
+
+    await rebindPodCollection(collection, true)
+
+    expect(preload).toHaveBeenCalledOnce()
+    expect(writeDelete).toHaveBeenCalledWith(['previous-account-row'])
     expect(refetch).toHaveBeenCalledWith({ throwOnError: true })
   })
 
@@ -92,6 +118,7 @@ describe('rebindPodCollection', () => {
         collection: {
           isReady: () => false,
           keys: () => [][Symbol.iterator](),
+          preload: vi.fn(async () => undefined),
           utils: { writeDelete: vi.fn(), refetch },
         },
         cancelInFlight: cancellations[index],
@@ -116,6 +143,7 @@ describe('rebindPodCollection', () => {
         collection: {
           isReady: () => true,
           keys: () => [`old-${index}`].values(),
+          preload: vi.fn(async () => undefined),
           utils: { writeDelete: vi.fn(), refetch },
         },
       }))

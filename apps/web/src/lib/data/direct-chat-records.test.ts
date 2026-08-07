@@ -1,8 +1,25 @@
 import { describe, expect, it, vi } from 'vitest'
 import { agentResource, contactResource } from '@undefineds.co/models'
-import { createAgentContactRecords, ensureAgentContactRecords } from './direct-chat-records'
+import { createAgentContactRecords, ensureAgentContactRecords, writeCollectionRow } from './direct-chat-records'
 
 describe('direct-chat-records', () => {
+  it('publishes a persisted row to both public and internal collection state', () => {
+    const row = { id: 'chat-1', title: 'Visible immediately' }
+    const state = { data: [] as typeof row[] }
+    const syncedData = new Map<string, typeof row>()
+    const collection = {
+      state,
+      _state: { syncedData, syncedKeys: new Set<string>(), size: 0 },
+    }
+
+    writeCollectionRow(collection, row)
+
+    expect(state.data).toEqual([row])
+    expect(syncedData.get('chat-1')).toEqual(row)
+    expect(collection._state.syncedKeys.has('chat-1')).toBe(true)
+    expect(collection._state.size).toBe(1)
+  })
+
   it('preserves canonical Agent Home ids while creating the Contact record', async () => {
     const agentIri = 'https://pod.example/agents/__secretary__/'
     const contactIri = 'https://pod.example/.data/contacts/__secretary__'

@@ -113,14 +113,19 @@ function isSolidAuthStorageKey(key: string): boolean {
     || key.startsWith('oidc.')
 }
 
+function storageKeys(storage: Storage): string[] {
+  return Array.from({ length: storage.length }, (_, index) => storage.key(index))
+    .filter((key): key is string => key !== null)
+}
+
 export function clearSolidAuthClientState(): boolean {
   if (typeof window === 'undefined') return false
 
   let removed = false
-  const keys = Object.keys(localStorage)
+  const keys = storageKeys(window.localStorage)
   for (const key of keys) {
     if (isSolidAuthStorageKey(key)) {
-      localStorage.removeItem(key)
+      window.localStorage.removeItem(key)
       removed = true
     }
   }
@@ -151,10 +156,10 @@ export function isInvalidClientErrorCode(errorCode: string | null | undefined): 
 
 export const clearStoredSolidSession = (_storageKey?: string) => {
   if (typeof window === 'undefined') return
-  const keys = Object.keys(localStorage)
+  const keys = storageKeys(window.localStorage)
   for (const key of keys) {
     if (isSolidAuthStorageKey(key)) {
-      localStorage.removeItem(key)
+      window.localStorage.removeItem(key)
     }
   }
   clearPendingPostLoginMicroAppId()

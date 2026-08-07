@@ -134,6 +134,36 @@ test('runtime sessions support local folder, local worktree, and Pod container w
   assert.equal((await runtime.startSession(podSession.id)).status, 'active')
 })
 
+test('an idle runtime session can be reconfigured after workspace startup fails', (t) => {
+  const { RuntimeThreadsModule } = loadRuntimeModules(t)
+  const runtime = new RuntimeThreadsModule()
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-runtime-retry-'))
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }))
+
+  const first = runtime.createSession({
+    threadId: 'thread-runtime-retry',
+    container: 'https://pod.example/.data/workspaces/retry/',
+    workspaceKind: 'pod-container',
+    title: 'Retry runtime',
+    runnerType: 'xpod-pty',
+    tool: 'codex',
+  })
+  const retried = runtime.createSession({
+    threadId: first.threadId,
+    title: first.title,
+    repoPath: folder,
+    folderPath: folder,
+    runnerType: 'mock',
+    tool: 'mock',
+  })
+
+  assert.equal(retried.id, first.id)
+  assert.equal(retried.workspaceKind, 'local-folder')
+  assert.equal(retried.container, undefined)
+  assert.equal(retried.folderPath, path.resolve(folder))
+  assert.equal(retried.runnerType, 'mock')
+})
+
 
 
 test('xpod-pty runtime session startup prepares local folder, worktree, and Pod workspace directories', async (t) => {

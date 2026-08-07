@@ -205,6 +205,9 @@ describe('AddChatDialog', () => {
 
     expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
     expect(mockSelectThread).toHaveBeenCalledWith('thread-1')
+    expect(mockSelectChat.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSelectThread.mock.invocationCallOrder[0],
+    )
     expect(mockCloseAddDialog).toHaveBeenCalled()
     expect(onCreated).toHaveBeenCalledWith('chat-1')
     expect(mockToast).not.toHaveBeenCalled()

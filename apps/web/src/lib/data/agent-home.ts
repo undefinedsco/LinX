@@ -3,6 +3,7 @@ import {
   aiConfigProviderRef,
   getDefaultAIConfigCredentialId,
   type SolidDatabase,
+  type AgentRow,
 } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from './current-pod-base'
 import {
@@ -80,7 +81,8 @@ async function patchPodMetadata(
   })
 
   if (!response.ok) {
-    throw new Error(`Failed to update Pod metadata ${metadataUrl}: HTTP ${response.status}`)
+    const details = (await response.text().catch(() => '')).trim()
+    throw new Error(`Failed to update Pod metadata ${metadataUrl}: HTTP ${response.status}${details ? ` — ${details}` : ''}`)
   }
 }
 
@@ -181,7 +183,7 @@ function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: st
     '  udfs:permissionMode "acceptEdits" ;',
     '  udfs:maxTurns 20' + (instructions ? ' ;' : ' .'),
     ...(instructions ? [
-      `  udfs:systemPrompt ${toTurtleString(instructions)} .`,
+      `  udfs:systemMessage ${toTurtleString(instructions)} .`,
     ] : []),
     '}',
     '',
@@ -190,6 +192,91 @@ function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: st
 
 function toTurtleString(value: string): string {
   return JSON.stringify(value)
+}
+
+function toTurtleJson(value: unknown): string {
+  return `${JSON.stringify(JSON.stringify(value))}^^<http://www.w3.org/2001/XMLSchema#json>`
+}
+
+function toTurtleDate(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value)
+  return `${JSON.stringify(date.toISOString())}^^<http://www.w3.org/2001/XMLSchema#dateTime>`
+}
+
+const AGENT_UPDATE_PREDICATES: Partial<Record<keyof AgentRow, string>> = {
+  name: 'http://xmlns.com/foaf/0.1/name',
+  instructions: 'https://undefineds.co/ns#systemMessage',
+  provider: 'https://undefineds.co/ns#provider',
+  model: 'https://undefineds.co/ns#model',
+  metadata: 'https://undefineds.co/ns#metadata',
+  avatarUrl: 'http://www.w3.org/2006/vcard/ns#hasPhoto',
+  updatedAt: 'http://purl.org/dc/terms/modified',
+}
+
+function formatAgentUpdateValue(field: keyof AgentRow, value: unknown): string {
+  if (field === 'metadata') return toTurtleJson(value)
+  if (field === 'updatedAt') return toTurtleDate(value as Date | string)
+  if (field === 'avatarUrl') return `<${String(value)}>`
+  return toTurtleString(String(value))
+}
+
+function agentFieldValuesEqual(left: unknown, right: unknown): boolean {
+  if (left instanceof Date || right instanceof Date) {
+    return new Date(left as Date | string).getTime() === new Date(right as Date | string).getTime()
+  }
+  if (typeof left === 'object' || typeof right === 'object') {
+    return JSON.stringify(left) === JSON.stringify(right)
+  }
+  return left === right
+}
+
+/**
+ * Persist mutable Agent fields in the Agent Home metadata sidecar.
+ *
+ * Agent rows use a directory resource id (`agents/{key}/`), while their RDF graph
+ * lives in `agents/{key}/.meta`. Sending PATCH to the directory itself makes xpod
+ * attempt to open a directory as a file, so Agent Home mutations must use this
+ * sidecar-aware path instead of the generic collection update writer.
+ */
+export async function updateAgentHomeMetadata(
+  db: SolidDatabase,
+  agentId: BaseRelativeResourceId,
+  changes: Partial<Pick<AgentRow,
+    'name' | 'instructions' | 'provider' | 'model' | 'metadata' | 'avatarUrl' | 'updatedAt'
+  >>,
+  previous: Partial<AgentRow> = {},
+): Promise<void> {
+  const fetchFn = getAuthenticatedFetch(db)
+  if (!fetchFn) throw new Error('Solid database is missing authenticated fetch.')
+
+  const homeUrl = resolvePodPath(db, buildAgentHomePath(agentId))
+  const metadataUrl = `${homeUrl}.meta`
+  const entries = Object.entries(changes).filter(([field, value]) =>
+    value !== undefined && !agentFieldValuesEqual(value, previous[field as keyof AgentRow])
+  )
+  if (entries.length === 0) return
+
+  const inserts = entries
+    .filter(([, value]) => value !== null && value !== '')
+    .map(([field, value]) =>
+      `<${homeUrl}> <${AGENT_UPDATE_PREDICATES[field as keyof AgentRow]}> ${formatAgentUpdateValue(field as keyof AgentRow, value)} .`
+    )
+
+  // Community Solid Server's patcher only accepts basic graph patterns in
+  // WHERE (no OPTIONAL), and rejects DELETE-WHERE-only updates. The caller has
+  // the collection row already, so delete its exact previous values first.
+  const deletes = entries
+    .filter(([field]) => previous[field as keyof AgentRow] !== undefined && previous[field as keyof AgentRow] !== '')
+    .map(([field]) => {
+      const key = field as keyof AgentRow
+      return `<${homeUrl}> <${AGENT_UPDATE_PREDICATES[key]}> ${formatAgentUpdateValue(key, previous[key])} .`
+    })
+  if (deletes.length > 0) {
+    await patchPodMetadata(fetchFn, metadataUrl, `DELETE DATA { ${deletes.join(' ')} }`)
+  }
+  for (const insert of inserts) {
+    await patchPodMetadata(fetchFn, metadataUrl, `INSERT DATA { ${insert} }`)
+  }
 }
 
 export async function createAgentHome(

@@ -1249,15 +1249,15 @@ async function transferFileResourceViaReadWriteFallback(
     throw new Error(`${method === 'COPY' ? '复制' : '移动'}文件失败: HTTP ${sourceResponse.status}`)
   }
 
-  const sourceBlob = await sourceResponse.blob()
-  const contentType = sourceResponse.headers.get('content-type') ?? sourceBlob.type
+  const sourceBody = await sourceResponse.arrayBuffer()
+  const contentType = sourceResponse.headers.get('content-type')
   const writeResponse = await authFetch(destinationUri, {
     method: 'PUT',
     headers: {
       ...(contentType ? { 'Content-Type': contentType } : {}),
       'If-None-Match': '*',
     },
-    body: sourceBlob,
+    body: sourceBody,
   })
 
   if (writeResponse.status === 409 || writeResponse.status === 412) {

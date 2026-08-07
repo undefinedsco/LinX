@@ -34,7 +34,7 @@ function TestComponent() {
   const { connect } = useOidcConnect()
 
   return (
-    <button onClick={() => void connect('http://localhost:5737/')}>
+    <button onClick={() => { void connect('http://localhost:5737/').catch(() => undefined) }}>
       connect
     </button>
   )

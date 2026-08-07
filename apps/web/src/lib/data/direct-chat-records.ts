@@ -326,6 +326,7 @@ export function writeCollectionRow<T extends PersistedRow>(
   const id = rowId
     ? asBaseRelativeResourceId(rowId, 'collection row id')
     : requireRowResourceId(row, 'collection row')
+  upsertStateRow(collection?.state, row, id)
   upsertInternalStateRow(collection?._state, row, id)
 
   const canManualSync =

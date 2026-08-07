@@ -265,6 +265,25 @@ function createMockDbWithPodUrl(
   }
 }
 
+function createMockDbWithoutAgent(podUrl: string) {
+  const db = createMockDbWithPodUrl({ provider: 'undefineds', model: 'linx-lite' }, podUrl)
+  db.findById.mockImplementation(async (resource: unknown) => {
+    if (resource === mocked.chatResource) {
+      return { id: 'chat-1', participants: [] }
+    }
+    return null
+  })
+  db.select.mockImplementation(() => ({
+    from: (resource: unknown) => ({
+      execute: async () => resource === mocked.chatResource
+        ? [{ id: 'chat-1', participants: [] }]
+        : [],
+      where: () => ({ execute: async () => [] }),
+    }),
+  }) as any)
+  return db
+}
+
 function findAssistantDone(events: Array<Record<string, any>>) {
   return events.find((event) => event.type === 'thread.item.done' && event.item?.type === 'assistant_message')
 }
@@ -346,6 +365,230 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(body.model).toBe('linx-lite')
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '可以')).toBe(true)
     expect(findAssistantDone(events)?.item?.status).toBe('completed')
+  })
+
+  it('preserves streamed URL citations as ChatKit annotations and Pod history', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"有来源的回答","annotations":[{"type":"url_citation","url_citation":{"url":"https://example.com/report","title":"Example report","end_index":6}}]}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+    const completed = findAssistantDone(events)?.item
+
+    expect(completed?.content?.[0]).toEqual({
+      type: 'output_text',
+      text: '有来源的回答',
+      annotations: [{
+        index: 6,
+        source: {
+          type: 'url',
+          url: 'https://example.com/report',
+          title: 'Example report',
+        },
+      }],
+    })
+    expect(store.saveItem).toHaveBeenCalledWith(
+      'thread-1',
+      expect.objectContaining({ content: completed.content }),
+      expect.anything(),
+    )
+  })
+
+  it('runs the selected web search tool through Responses and persists clickable sources', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'linx-lite',
+    }, 'http://localhost:5737/')
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      id: 'resp-1',
+      status: 'completed',
+      output: [{
+        type: 'message',
+        role: 'assistant',
+        content: [{
+          type: 'output_text',
+          text: '今日结果',
+          annotations: [{
+            type: 'url_citation',
+            url: 'https://example.com/today',
+            title: 'Today report',
+            end_index: 4,
+          }],
+        }],
+      }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'http://localhost:5737/v1/responses',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body).toEqual(expect.objectContaining({
+      model: 'linx-lite',
+      tools: [{ type: 'web_search' }],
+      tool_choice: 'auto',
+    }))
+    expect(events).toContainEqual({
+      type: 'progress_update',
+      icon: 'search',
+      text: '正在搜索网络并整理来源…',
+    })
+    expect(findAssistantDone(events)?.item?.content?.[0]).toEqual({
+      type: 'output_text',
+      text: '今日结果',
+      annotations: [{
+        index: 4,
+        source: {
+          type: 'url',
+          url: 'https://example.com/today',
+          title: 'Today report',
+        },
+      }],
+    })
+  })
+
+  it('routes explicit web search ahead of an existing coding runtime session', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'linx-lite',
+    }, 'http://localhost:5737/')
+    const browserFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/api/runtime/threads')) {
+        return new Response(JSON.stringify({
+          items: [{ id: 'runtime-1', threadId: 'thread-1', status: 'active' }],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', browserFetch)
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      output: [{
+        type: 'message',
+        content: [{ type: 'output_text', text: '搜索结果', annotations: [] }],
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'http://localhost:5737/v1/responses',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(browserFetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/messages'),
+      expect.anything(),
+    )
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('搜索结果')
+  })
+
+  it('uses LinX Lite search when a legacy chat has no resolvable Agent config', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithoutAgent('http://localhost:5737/')
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '平台搜索', annotations: [] }] }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body.model).toBe('linx-lite')
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('平台搜索')
+  })
+
+  it('finishes the search activity with actionable copy when xpod search fails', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({ provider: 'undefineds', model: 'linx-lite' }, 'http://localhost:5737/')
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      error: 'upstream TLS details that should not be shown',
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    expect(events).toContainEqual({
+      type: 'progress_update',
+      icon: 'search',
+      text: '联网搜索失败',
+    })
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'incomplete',
+      content: [expect.objectContaining({
+        text: '联网搜索暂不可用。请检查本地 xpod 的 AI 上游配置后重试。',
+      })],
+    }))
+    expect(JSON.stringify(events)).not.toContain('TLS details')
+  })
+
+  it('rejects web search for custom chat-completions providers instead of faking it', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+    }, [{
+      id: 'openai-default',
+      provider: 'openai',
+      apiKey: 'test-key',
+      baseUrl: 'https://openrouter.ai/api/v1',
+    }])
+    const authFetch = vi.fn()
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({
+        message: '当前自定义 AI 供应商不支持 LinX 联网搜索。请切换到 LinX 平台模型后重试。',
+      }),
+    }))
   })
 
   it('routes Matrix group user messages through Matrix send without local duplicate persistence', async () => {
@@ -664,6 +907,8 @@ describe('LocalChatKitService platform runtime routing', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer sk-test' }),
       }),
     )
+    const requestBody = JSON.parse((providerFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(requestBody.model).toBe('gpt-4o-mini')
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '用户模型')).toBe(true)
   })
 

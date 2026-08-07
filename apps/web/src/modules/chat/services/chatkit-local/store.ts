@@ -110,7 +110,7 @@ function readChatKitItemId(record: Record<string, unknown> | null | undefined): 
 }
 
 function messageRecordMatchesItem(record: Record<string, unknown>, itemId: string): boolean {
-  return readChatKitItemId(record) === itemId
+  return readChatKitItemId(record) === itemId || record.id === itemId
 }
 
 function isHiddenMatrixProtocolEvent(record: Record<string, unknown> | null | undefined): boolean {
@@ -173,13 +173,25 @@ function buildChatIri(db: SolidDatabase<any>, chatId: string): string {
 }
 
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
-  if (chatId) {
-    const exactId = threadRepository.idForChat(chatId, threadId)
-    const exact = await (db as any).findById(Thread as any, exactId)
+  const exactId = chatId
+    ? threadRepository.idForChat(chatId, threadId)
+    : threadId.includes('/') || threadId.includes('#')
+      ? threadId
+      : null
+  if (exactId) {
+    const exact = await withTimeout(
+      (db as any).findById(Thread as any, exactId),
+      POD_QUERY_TIMEOUT_MS,
+      `Timed out loading thread ${threadId}`,
+    )
     if (exact) return exact
   }
 
-  const rows = await db.select().from(Thread).execute()
+  const rows = await withTimeout(
+    db.select().from(Thread).execute(),
+    POD_QUERY_TIMEOUT_MS,
+    `Timed out searching for thread ${threadId}`,
+  )
   return rows.find((entry: any) => (
     entry.id === threadId
     || extractThreadId(entry.id) === threadId
@@ -193,9 +205,8 @@ async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId
 function threadRecordToMetadata(record: any): ThreadMetadata {
   const chatId = threadRepository.chatId(record) ?? DEFAULT_CHAT_ID
   const extra = parseThreadMetadata(record.metadata)
-  const threadId = extractThreadId(record.id) ?? record.id
   return {
-    id: threadId,
+    id: record.id,
     title: record.title || undefined,
     status: stringToStatus(record.status || 'active'),
     created_at: record.createdAt
@@ -222,7 +233,9 @@ function parseStoredThreadItem(value: unknown, fallbackThreadId: string, fallbac
       ? (parsedValue as { chatkitItem?: unknown }).chatkitItem
       : parsedValue
     ) as Partial<ThreadItem> | null
-    if (!parsed || parsed.type !== 'client_tool_call' || typeof (parsed as any).call_id !== 'string') {
+    const isStoredMessage = parsed?.type === 'user_message' || parsed?.type === 'assistant_message'
+    const isStoredToolCall = parsed?.type === 'client_tool_call' && typeof (parsed as any).call_id === 'string'
+    if (!parsed || (!isStoredMessage && !isStoredToolCall)) {
       return null
     }
 
@@ -271,7 +284,18 @@ function threadItemToMessageRecord(item: ThreadItem): {
   status: string | null
   richContent: string | null
 } {
+  const storageItem = Array.isArray((item as any).attachments)
+    ? {
+        ...item,
+        attachments: (item as any).attachments.map((attachment: Attachment) => {
+          const { download_url: _downloadUrl, ...stored } = attachment
+          if (stored.type === 'image' && stored.pod_url) stored.preview_url = stored.pod_url
+          return stored
+        }),
+      }
+    : item
   if (item.type === 'user_message') {
+    const hasAttachments = Array.isArray(item.attachments) && item.attachments.length > 0
     return {
       content: (item as any).content
         .filter((contentPart: any) => contentPart.type === 'input_text')
@@ -279,11 +303,13 @@ function threadItemToMessageRecord(item: ThreadItem): {
         .join('\n'),
       role: MessageRole.USER,
       status: null,
-      richContent: null,
+      richContent: hasAttachments ? JSON.stringify(storageItem) : null,
     }
   }
 
   if (item.type === 'assistant_message') {
+    const hasExtendedState = Array.isArray(item.attachments) && item.attachments.length > 0
+      || typeof (item as ThreadItem & { feedback?: unknown }).feedback === 'string'
     return {
       content: (item as any).content
         .filter((contentPart: any) => contentPart.type === 'output_text')
@@ -291,7 +317,7 @@ function threadItemToMessageRecord(item: ThreadItem): {
         .join('\n'),
       role: MessageRole.ASSISTANT,
       status: (item as any).status || MessageStatus.COMPLETED,
-      richContent: null,
+      richContent: hasExtendedState ? JSON.stringify(storageItem) : null,
     }
   }
 
@@ -346,17 +372,45 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private db: SolidDatabase
   private webId: string
   private authFetch: typeof fetch
+  private attachments = new Map<string, Attachment>()
+  private attachmentObjectUrls = new Map<string, string>()
   private recentlyCreatedIds = new Set<string>()
   // In-memory caches (per-instance, not per-context)
   private threadChatIdCache = new Map<string, string>()
   private threadMetadataCache = new Map<string, ThreadMetadata>()
   private threadItemsCache = new Map<string, ThreadItem[]>()
   private messageRowIdByItemId = new Map<string, string>()
+  private onAttachmentsChange?: (attachments: Attachment[]) => void
+  private onChatSummaryChange?: (summary: {
+    chatId: string
+    messageId: string
+    content: string
+    createdAt: Date
+  }) => Promise<void> | void
 
-  constructor(db: SolidDatabase, webId: string, authFetch: typeof fetch) {
+  constructor(
+    db: SolidDatabase,
+    webId: string,
+    authFetch: typeof fetch,
+    initialThread?: ThreadMetadata,
+    onAttachmentsChange?: (attachments: Attachment[]) => void,
+    onChatSummaryChange?: (summary: {
+      chatId: string
+      messageId: string
+      content: string
+      createdAt: Date
+    }) => Promise<void> | void,
+  ) {
     this.db = db
     this.webId = webId
     this.authFetch = authFetch
+    this.onAttachmentsChange = onAttachmentsChange
+    this.onChatSummaryChange = onChatSummaryChange
+    if (initialThread) {
+      this.threadMetadataCache.set(initialThread.id, initialThread)
+      const chatId = getChatIdFromMetadata(initialThread.metadata)
+      this.threadChatIdCache.set(initialThread.id, chatId)
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -455,6 +509,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   private async selectMessagesForThread(threadId: string): Promise<any[]> {
     const chatId = await this.getThreadChatId(threadId)
+    const normalizedThreadId = extractThreadId(threadId) ?? threadId
     const messages = await withTimeout(
       this.db.select().from(Message).execute(),
       POD_QUERY_TIMEOUT_MS,
@@ -463,7 +518,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     return messages.filter((message: any) => (
       extractChatId(message.chat) === chatId
-      && extractThreadId(message.thread) === threadId
+      && extractThreadId(message.thread) === normalizedThreadId
       && !isHiddenMatrixProtocolEvent(message)
     ))
   }
@@ -730,8 +785,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         if (idx !== -1) startIndex = idx + 1
       }
       const slice = messages.slice(startIndex, startIndex + limit)
+      const data = await Promise.all(slice.map(async (message: any) => (
+        this.hydrateItemAttachments(messageRecordToItem(message, threadId))
+      )))
+      this.emitThreadAttachments(data)
       return {
-        data: slice.map((m: any) => messageRecordToItem(m, threadId)),
+        data,
         has_more: startIndex + limit < messages.length,
         first_id: slice.length > 0 ? (slice[0] as any).id : undefined,
         last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
@@ -772,29 +831,33 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       },
     })
 
-    await (this.db as any).insert(Message as any).values({
-      id: messageId,
-      scope: chat,
-      parent: chat,
-      chat,
-      thread,
-      maker,
-      role,
-      content,
-      richContent: richContent ?? undefined,
-      metadata,
-      status: status ?? undefined,
-      createdAt,
-    }).execute()
-
-    const inserted = await (this.db as any).findById(Message as any, messageId)
-    if (inserted) {
-      this.cacheMessageRow(item.id, inserted)
-    } else {
-      this.messageRowIdByItemId.set(item.id, messageId)
+    await withTimeout(
+      (this.db as any).insert(Message as any).values({
+        id: messageId,
+        scope: chat,
+        parent: chat,
+        chat,
+        thread,
+        maker,
+        role,
+        content,
+        richContent: richContent ?? undefined,
+        metadata,
+        status: status ?? undefined,
+        createdAt,
+      }).execute(),
+      POD_QUERY_TIMEOUT_MS,
+      `Timed out saving message ${item.id}`,
+    )
+    if (typeof this.db.resolveRowIri !== 'function' && typeof this.db.findById === 'function') {
+      await this.db.findById(Message as any, messageId)
     }
+    this.messageRowIdByItemId.set(item.id, messageId)
     this.recentlyCreatedIds.add(item.id)
     this.upsertCachedThreadItem(threadId, item)
+    if (item.type === 'user_message' || (item.type === 'assistant_message' && status !== 'in_progress')) {
+      await this.updateChatSummary(chatId, messageId, content, createdAt)
+    }
   }
 
   async saveItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
@@ -804,14 +867,32 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     // For recently created or in-memory messages, patch the known resource directly
     // instead of issuing a broad message SELECT during the active stream.
-    if (this.recentlyCreatedIds.has(item.id) || cachedItem) {
+    if (this.recentlyCreatedIds.has(item.id)) {
       this.recentlyCreatedIds.delete(item.id)
-      const row = await this.findMessageByItemId(threadId, item.id)
-      if (!row) throw new Error(`Cannot find Pod message row for ChatKit item ${item.id}`)
-      const messageIri = this.resolveMessageIri(row)
+      const rowId = this.messageRowIdByItemId.get(item.id)
+      if (!rowId) throw new Error(`Cannot resolve Pod message row for ChatKit item ${item.id}`)
+      const messageIri = this.resolveMessageIri({ id: rowId })
       await this.directPatchMessage(messageIri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
+      if (item.type === 'assistant_message' && status !== 'in_progress') {
+        const chatId = await this.getThreadChatId(threadId)
+        await this.updateChatSummary(chatId, rowId, content, new Date(item.created_at * 1000))
+      }
       return
+    }
+
+    if (cachedItem) {
+      const rowId = this.messageRowIdByItemId.get(item.id)
+      if (rowId) {
+        const messageIri = this.resolveMessageIri({ id: rowId })
+        await this.directPatchMessage(messageIri, content, richContent, status)
+        this.upsertCachedThreadItem(threadId, item)
+        if (item.type === 'assistant_message' && status !== 'in_progress') {
+          const chatId = await this.getThreadChatId(threadId)
+          await this.updateChatSummary(chatId, rowId, content, new Date(item.created_at * 1000))
+        }
+        return
+      }
     }
 
     const existing = await this.findMessageByItemId(threadId, item.id)
@@ -820,6 +901,10 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       const messageIri = this.resolveMessageIri(existing)
       await this.directPatchMessage(messageIri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
+      if (item.type === 'assistant_message' && status !== 'in_progress') {
+        const chatId = await this.getThreadChatId(threadId)
+        await this.updateChatSummary(chatId, requireRecordId(existing, 'Message row'), content, new Date(item.created_at * 1000))
+      }
     } else {
       await this.addThreadItem(threadId, item, _context)
     }
@@ -906,7 +991,7 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
 
     const message = await this.findMessageByItemId(threadId, itemId)
     if (!message) throw new Error(`Item not found: ${itemId}`)
-    return messageRecordToItem(message, threadId)
+    return this.hydrateItemAttachments(messageRecordToItem(message, threadId))
   }
 
   async deleteThreadItem(threadId: string, itemId: string, _context: StoreContext): Promise<void> {
@@ -921,19 +1006,231 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
   }
 
   // -----------------------------------------------------------------------
-  // Attachment stubs
+  // Attachments are binary Pod resources. Their ChatKit metadata travels with
+  // the user message, so no parallel RDF attachment model is required here.
   // -----------------------------------------------------------------------
 
-  async saveAttachment(_attachment: Attachment, _context: StoreContext): Promise<void> {
-    // no-op for now
+  private attachmentUrl(attachmentId: string): string {
+    return new URL(encodeURIComponent(attachmentId), this.attachmentContainerUrl()).toString()
+  }
+
+  private rememberAttachment(attachment: Attachment): Attachment {
+    const remembered = {
+      ...attachment,
+      pod_url: attachment.pod_url || this.attachmentUrl(attachment.id),
+    }
+    this.attachments.set(remembered.id, remembered)
+    return remembered
+  }
+
+  private async hydrateItemAttachments(item: ThreadItem): Promise<ThreadItem> {
+    if (!Array.isArray((item as any).attachments) || (item as any).attachments.length === 0) return item
+
+    const attachments = await Promise.all((item as any).attachments.map(async (raw: Attachment) => {
+      const attachment = this.rememberAttachment(raw)
+
+      try {
+        const objectUrl = await this.getAttachmentObjectUrl(attachment)
+        return {
+          ...attachment,
+          ...(attachment.type === 'image' ? { preview_url: objectUrl } : {}),
+          download_url: objectUrl,
+        }
+      } catch (error) {
+        console.warn(`[LocalStore] Failed to hydrate attachment ${attachment.id}:`, error)
+        return attachment
+      }
+    }))
+    return { ...item, attachments } as ThreadItem
+  }
+
+  private emitThreadAttachments(items: ThreadItem[]): void {
+    if (!this.onAttachmentsChange) return
+    const attachments = new Map<string, Attachment>()
+    for (const item of items) {
+      const itemAttachments = 'attachments' in item ? item.attachments ?? [] : []
+      for (const attachment of itemAttachments) {
+        attachments.set(attachment.id, attachment)
+      }
+    }
+    this.onAttachmentsChange([...attachments.values()])
+  }
+
+  private async updateChatSummary(
+    chatId: string,
+    messageId: string,
+    content: string,
+    createdAt: Date,
+  ): Promise<void> {
+    if (!content.trim()) return
+    if (this.onChatSummaryChange) {
+      await this.onChatSummaryChange({ chatId, messageId, content, createdAt })
+      return
+    }
+    if (typeof this.db.resolveRowIri !== 'function') return
+    const chatIri = this.buildChatUri(chatId)
+    const messageIri = this.resolveMessageIri({ id: messageId })
+    const resourceUrl = resourceUrlFromIri(chatIri)
+    const escapeLiteral = (value: string): string => `"${value
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\r/g, '\\r')
+      .replace(/\n/g, '\\n')}"`
+    const timestamp = createdAt.toISOString()
+    const update = `
+DELETE {
+  GRAPH <${resourceUrl}> {
+    <${chatIri}> <${UDFS.lastMessage}> ?oldMessage .
+    <${chatIri}> <http://schema.org/text> ?oldPreview .
+    <${chatIri}> <${UDFS.lastActiveAt}> ?oldActiveAt .
+    <${chatIri}> <http://purl.org/dc/terms/modified> ?oldUpdatedAt .
+  }
+}
+INSERT {
+  GRAPH <${resourceUrl}> {
+    <${chatIri}> <${UDFS.lastMessage}> <${messageIri}> .
+    <${chatIri}> <http://schema.org/text> ${escapeLiteral(content.slice(0, 100))} .
+    <${chatIri}> <${UDFS.lastActiveAt}> "${timestamp}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+    <${chatIri}> <http://purl.org/dc/terms/modified> "${timestamp}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+  }
+}
+WHERE {
+  GRAPH <${resourceUrl}> {
+    <${chatIri}> ?existingPredicate ?existingObject .
+    OPTIONAL { <${chatIri}> <${UDFS.lastMessage}> ?oldMessage . }
+    OPTIONAL { <${chatIri}> <http://schema.org/text> ?oldPreview . }
+    OPTIONAL { <${chatIri}> <${UDFS.lastActiveAt}> ?oldActiveAt . }
+    OPTIONAL { <${chatIri}> <http://purl.org/dc/terms/modified> ?oldUpdatedAt . }
+  }
+}`
+    const response = await this.authFetch(resourceUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/sparql-update' },
+      body: update,
+    })
+    if (!response.ok) {
+      throw new Error(`Chat summary update failed: ${response.status} ${response.statusText}`)
+    }
+  }
+
+  private async getAttachmentObjectUrl(attachment: Attachment): Promise<string> {
+    const cached = this.attachmentObjectUrls.get(attachment.id)
+    if (cached) return cached
+    const bytes = await this.readAttachmentBytes(attachment.id)
+    const objectUrl = URL.createObjectURL(new Blob([
+      new Uint8Array(bytes).buffer as ArrayBuffer,
+    ], { type: attachment.mime_type }))
+    this.attachmentObjectUrls.set(attachment.id, objectUrl)
+    return objectUrl
+  }
+
+  private attachmentContainerUrl(): string {
+    const podBaseUrl = requirePodBaseUrl(this.db).replace(/\/?$/, '/')
+    return new URL('.data/chat-attachments/', podBaseUrl).toString()
+  }
+
+  private async ensureAttachmentContainer(): Promise<void> {
+    const containerUrl = this.attachmentContainerUrl()
+    const existing = await this.authFetch(containerUrl, { method: 'HEAD' })
+    if (existing.ok) return
+    if (existing.status !== 404) {
+      throw new Error(`Attachment container check failed: ${existing.status} ${existing.statusText}`)
+    }
+
+    const response = await this.authFetch(containerUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'text/turtle',
+        Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"',
+      },
+      body: '',
+    })
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Attachment container creation failed: ${response.status} ${response.statusText}`)
+    }
+  }
+
+  createAttachment(input: { name: string; mime_type: string }): Attachment {
+    const id = generateId('attach')
+    const url = this.attachmentUrl(id)
+    const attachment: Attachment = {
+      id,
+      type: input.mime_type.startsWith('image/') ? 'image' : 'file',
+      name: input.name,
+      mime_type: input.mime_type || 'application/octet-stream',
+      pod_url: url,
+      ...(input.mime_type.startsWith('image/') ? { preview_url: url } : {}),
+      upload_descriptor: {
+        url: `local://chatkit/attachments/${encodeURIComponent(id)}`,
+        method: 'PUT',
+        headers: { 'Content-Type': input.mime_type || 'application/octet-stream' },
+      },
+    }
+    this.attachments.set(id, attachment)
+    return attachment
+  }
+
+  async uploadAttachment(
+    attachmentId: string,
+    body: BodyInit,
+    mimeType?: string,
+    signal?: AbortSignal,
+  ): Promise<Attachment> {
+    const attachment = await this.loadAttachment(attachmentId, {})
+    await this.ensureAttachmentContainer()
+    const blob = await new Response(body).blob()
+    const response = await this.authFetch(this.attachmentUrl(attachmentId), {
+      method: 'PUT',
+      headers: { 'Content-Type': mimeType || attachment.mime_type },
+      body: blob,
+      signal,
+    })
+    if (!response.ok) {
+      throw new Error(`Attachment upload failed: ${response.status} ${response.statusText}`)
+    }
+
+    const objectUrl = URL.createObjectURL(blob)
+    const previousObjectUrl = this.attachmentObjectUrls.get(attachmentId)
+    if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl)
+    this.attachmentObjectUrls.set(attachmentId, objectUrl)
+    const uploaded = {
+      ...attachment,
+      ...(attachment.type === 'image' ? { preview_url: objectUrl } : {}),
+      download_url: objectUrl,
+      upload_descriptor: null,
+    }
+    this.attachments.set(attachmentId, uploaded)
+    return uploaded
+  }
+
+  async saveAttachment(attachment: Attachment, _context: StoreContext): Promise<void> {
+    this.rememberAttachment(attachment)
   }
 
   async loadAttachment(attachmentId: string, _context: StoreContext): Promise<Attachment> {
-    throw new Error(`Attachment not found: ${attachmentId}`)
+    const attachment = this.attachments.get(attachmentId)
+    if (!attachment) throw new Error(`Attachment not found: ${attachmentId}`)
+    return attachment
   }
 
-  async deleteAttachment(_attachmentId: string, _context: StoreContext): Promise<void> {
-    // no-op
+  async readAttachmentBytes(attachmentId: string): Promise<Uint8Array> {
+    const attachment = this.attachments.get(attachmentId)
+    const response = await this.authFetch(attachment?.pod_url || this.attachmentUrl(attachmentId))
+    if (!response.ok) {
+      throw new Error(`Attachment download failed: ${response.status} ${response.statusText}`)
+    }
+    return new Uint8Array(await response.arrayBuffer())
+  }
+
+  async deleteAttachment(attachmentId: string, _context: StoreContext): Promise<void> {
+    const response = await this.authFetch(this.attachmentUrl(attachmentId), { method: 'DELETE' })
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Attachment delete failed: ${response.status} ${response.statusText}`)
+    }
+    const objectUrl = this.attachmentObjectUrls.get(attachmentId)
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+    this.attachmentObjectUrls.delete(attachmentId)
+    this.attachments.delete(attachmentId)
   }
 }
 

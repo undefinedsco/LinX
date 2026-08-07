@@ -983,6 +983,39 @@ export class WebServerModule {
       }
     })
 
+    this.app.post('/api/ai/responses', async (req: Request, res: Response) => {
+      try {
+        const xpodStatus = getXpodModule().getStatus()
+        if (!xpodStatus.running) {
+          sendUserError(res, 503, '本地空间还没有启动。请先启动本地空间后再使用联网搜索。')
+          return
+        }
+
+        const baseUrl = ensureTrailingSlash(xpodStatus.baseUrl || `http://localhost:${xpodStatus.port || 5737}`)
+        const endpoint = new URL('/v1/responses', baseUrl).toString()
+        const authorization = typeof req.headers.authorization === 'string' ? req.headers.authorization : undefined
+        const upstream = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            ...(authorization ? { Authorization: authorization } : {}),
+          },
+          body: JSON.stringify(req.body ?? {}),
+        })
+
+        res.status(upstream.status)
+        upstream.headers.forEach((value, key) => {
+          if (key.toLowerCase() === 'content-length') return
+          res.setHeader(key, value)
+        })
+        res.end(await upstream.text())
+      } catch (error) {
+        console.error('[WebServer] Failed to proxy server-originated Responses request:', error)
+        sendUserError(res, 500, '联网搜索请求失败。请稍后重试，或切回客户端运行。', error)
+      }
+    })
+
 
     // Runtime session APIs (Phase 3 internal-first)
     this.app.get('/api/runtime/threads', (req: Request, res: Response) => {

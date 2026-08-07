@@ -54,6 +54,10 @@ export interface XpodStatus {
   pid?: number
 }
 
+export function usesExternalXpod(env: Record<string, string>): boolean {
+  return env.LINX_EXTERNAL_XPOD?.trim().toLowerCase() === 'true'
+}
+
 interface XpodRuntime {
   source: string
   cwd: string
@@ -322,6 +326,7 @@ export function getBindHost(baseUrl: string): string {
 export class XpodModule {
   private process: ChildProcess | null = null
   private embedded: EmbeddedRuntimeHandle | null = null
+  private external = false
   private ready = false
 
   private checkNodeVersion(): void {
@@ -591,7 +596,7 @@ export class XpodModule {
   }
 
   async start(): Promise<void> {
-    if (this.process || this.embedded) {
+    if (this.process || this.embedded || this.external) {
       console.log('[Xpod] Already running')
       return
     }
@@ -604,6 +609,15 @@ export class XpodModule {
     }
 
     const env = parseEnvFile(envPath)
+    if (usesExternalXpod(env)) {
+      const port = parseInt(env.CSS_PORT || '5737', 10)
+      await this.waitForReady(port)
+      this.external = true
+      this.ready = true
+      console.log(`[Xpod] Reusing external runtime on port ${port}`)
+      return
+    }
+
     const dataDir = env.CSS_ROOT_FILE_PATH || path.join(resolveLinxUserDataDir(), 'pod')
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true })
@@ -630,6 +644,12 @@ export class XpodModule {
   }
 
   async stop(): Promise<void> {
+    if (this.external) {
+      this.external = false
+      this.ready = false
+      return
+    }
+
     if (this.embedded) {
       const runtime = this.embedded
       this.embedded = null
@@ -686,6 +706,15 @@ export class XpodModule {
         baseUrl: this.embedded.baseUrl,
         publicUrl: this.embedded.publicUrl,
         pid: process.pid,
+      }
+    }
+
+    if (this.external && this.ready) {
+      return {
+        running: true,
+        port,
+        baseUrl,
+        publicUrl,
       }
     }
 

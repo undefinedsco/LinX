@@ -22,7 +22,20 @@ export const MessageStatus = {
 } as const
 
 export interface Attachment {
-  attachment_id: string
+  id: string
+  type: 'file' | 'image'
+  name: string
+  mime_type: string
+  preview_url?: string
+  /** Authenticated Pod resource used internally to reload the binary. */
+  pod_url?: string
+  /** Browser-safe object URL used by LinX for opening or downloading. */
+  download_url?: string
+  upload_descriptor?: {
+    url: string
+    method: 'POST' | 'PUT'
+    headers?: Record<string, string>
+  } | null
   [key: string]: unknown
 }
 
@@ -47,7 +60,16 @@ export interface InputTextContentPart {
 export interface OutputTextContentPart {
   type: 'output_text'
   text: string
-  annotations?: unknown[]
+  annotations?: Array<{
+    index: number
+    source: {
+      type: 'url' | 'file'
+      url?: string
+      filename?: string
+      title?: string
+      description?: string
+    }
+  }>
 }
 
 export interface ClientToolCallItem {

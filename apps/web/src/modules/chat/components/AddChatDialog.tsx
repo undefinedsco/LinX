@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Plus, Search, User, UserPlus } from 'lucide-react'
 import { ModelSelector } from '@/components/ui/model-selector'
+import type { ModelOption } from '@/components/ui/model-selector'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,6 +29,7 @@ import {
   type RuntimeToolType,
 } from '../runtime-client'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
+import { useModelServices } from '@/modules/model-services/data/use-model-services'
 
 interface AddChatDialogProps {
   onCreated?: (id: string) => void
@@ -53,8 +55,23 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const { toast } = useToast()
 
   const agentProviders = CHAT_AGENT_PROVIDERS
+  const { providers: configuredProviders } = useModelServices()
   const mutations = useChatMutations()
   const runtimeAvailable = isRuntimeSessionMode()
+  const configuredModelOptions = useMemo<ModelOption[]>(() =>
+    Object.values(configuredProviders).flatMap((configuredProvider) =>
+      configuredProvider.enabled
+        ? configuredProvider.models
+          .filter((configuredModel) => configuredModel.enabled)
+          .map((configuredModel) => ({
+            id: `${configuredProvider.id}/${configuredModel.id}`,
+            name: configuredModel.name,
+            providerId: configuredProvider.id,
+            providerName: configuredProvider.name,
+            capabilities: configuredModel.capabilities as ModelOption['capabilities'],
+          }))
+        : []
+    ), [configuredProviders])
 
   // AI Agent form state
   const [agentName, setAgentName] = useState('')
@@ -96,19 +113,25 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
       error: '',
     })
 
-    const defaultProvider = agentProviders[0]?.slug ?? 'openai'
-    setProvider(defaultProvider)
-
-    const models = agentProviders.find((item) => item.slug === defaultProvider)?.models
-    if (models && models.length > 0) {
-      setModel(models[0].id)
+    const configuredDefault = configuredModelOptions[0]
+    if (configuredDefault) {
+      setProvider(configuredDefault.providerId)
+      setModel(configuredDefault.id)
     } else {
-      setModel('gpt-4o-mini')
+      const defaultProvider = agentProviders[0]?.slug ?? 'openai'
+      setProvider(defaultProvider)
+      const models = agentProviders.find((item) => item.slug === defaultProvider)?.models
+      setModel(models?.[0]?.id ?? 'gpt-4o-mini')
     }
-  }, [isOpen, agentProviders])
+  }, [isOpen, agentProviders, configuredModelOptions])
 
   const handleModelChange = (newModelId: string) => {
     setModel(newModelId)
+    const configuredProvider = configuredModelOptions.find((item) => item.id === newModelId)?.providerId
+    if (configuredProvider) {
+      setProvider(configuredProvider)
+      return
+    }
     const foundProvider = agentProviders.find(p => p.models.some(m => m.id === newModelId))
     if (foundProvider) {
       setProvider(foundProvider.slug)
@@ -145,7 +168,6 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
 
       const id = chat.id
       if (id) {
-        selectChat(id)
         let threadId: string | null = null
 
         try {
@@ -155,10 +177,10 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
           })
           if (thread.id) {
             threadId = thread.id
-            selectThread(thread.id)
           }
         } catch (threadError: any) {
           console.error('Create default thread failed:', threadError)
+          selectChat(id)
           closeAddDialog()
           onCreated?.(id)
           toast({
@@ -216,6 +238,10 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
               ),
             })
           }
+        }
+        selectChat(id)
+        if (threadId) {
+          selectThread(threadId)
         }
         onCreated?.(id)
       }
@@ -335,6 +361,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
           type="chat"
           value={model}
           onChange={handleModelChange}
+          models={configuredModelOptions.length > 0 ? configuredModelOptions : undefined}
           className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground"
         />
       </div>

@@ -1,0 +1,42 @@
+{
+  "runId": 1784606328407,
+  "assistantName": "QA Assistant 1784606328407",
+  "prompt": "CHAT E2E USER 1784606328407",
+  "reply": "CHAT E2E ASSISTANT 1784606328407",
+  "providerRequestBody": {
+    "model": "gpt-5.5-qa",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful assistant."
+      },
+      {
+        "role": "user",
+        "content": "CHAT E2E USER 1784606328407"
+      }
+    ],
+    "stream": true,
+    "temperature": 0.7,
+    "max_tokens": 2048
+  },
+  "podEvidence": {
+    "endpoint": "http://localhost:44120/test/.data/chat/-/sparql",
+    "podUrl": "http://localhost:44120/test/",
+    "matches": {
+      "CHAT E2E USER 1784606328407": [
+        {
+          "subject": "http://localhost:44120/test/.data/chat/__secretary__/2026/07/21/messages.ttl#user-message-5d0349c0-95ee-42ab-83d5-27bceffd08ba",
+          "predicate": "http://rdfs.org/sioc/ns#content",
+          "value": "CHAT E2E USER 1784606328407"
+        }
+      ],
+      "CHAT E2E ASSISTANT 1784606328407": [
+        {
+          "subject": "http://localhost:44120/test/.data/chat/__secretary__/2026/07/21/messages.ttl#assistant-message-90963212-817f-420a-8672-842f98b8991f",
+          "predicate": "http://rdfs.org/sioc/ns#content",
+          "value": "CHAT E2E ASSISTANT 1784606328407"
+        }
+      ]
+    }
+  }
+}

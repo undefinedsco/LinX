@@ -51,7 +51,6 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
   startCollectionBinding('model services', () => initializeModelCollections(db))
 
   useEffect(() => {
-    initializeChatCollections(db)
     initializeFavoriteCollections(db)
     initializeFilesCollections(db)
     initializeInboxCollections(db)
@@ -59,6 +58,9 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
 
     if (!db) {
       lastStartedRef.current = null
+      void initializeChatCollections(null).catch((error) => {
+        console.warn('[PodCollectionsBootstrap] Failed to unbind chat collections:', error)
+      })
       return
     }
 
@@ -72,19 +74,6 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     const force = !!started && started !== db
 
     lastStartedRef.current = db
-    chatOps.stageLinxDefaultSecretary(db)
-
-    void chatOps.subscribeToPod()
-      .then((nextUnsubscribe) => {
-        if (cancelled) {
-          nextUnsubscribe()
-          return
-        }
-        unsubscribe = nextUnsubscribe
-      })
-      .catch((error) => {
-        console.warn('[PodCollectionsBootstrap] Failed to subscribe chat collections:', error)
-      })
 
     void filesOps.subscribeToPod()
       .then((nextUnsubscribe) => {
@@ -134,7 +123,6 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
         console.warn('[PodCollectionsBootstrap] Failed to subscribe Symphony control collections:', error)
       })
 
-    const welcomePromise = chatOps.ensureLinxWelcome({ force })
     const isCurrentBootstrap = () => !cancelled && lastStartedRef.current === db
     const applyWelcomeResult = (result: LinxWelcomeResult | null) => {
       if (!result) return
@@ -147,22 +135,36 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
       })
     }
 
-    selectInitialSecretary(LINX_DEFAULT_SECRETARY.chatId)
-    void queryClient.invalidateQueries({ queryKey: ['chats'] }).catch((error) => {
-      console.warn('[PodCollectionsBootstrap] Failed to refresh staged LinX welcome chat:', error)
-    })
-
-    void welcomePromise
-      .then(async (result) => {
+    void initializeChatCollections(db)
+      .then(async () => {
         if (!isCurrentBootstrap()) return
 
-        applyWelcomeResult(result)
+        chatOps.stageLinxDefaultSecretary(db)
+        const stagedThread = chatOps.stageLinxDefaultSecretaryThread(db)
+        selectInitialSecretary(LINX_DEFAULT_SECRETARY.chatId, stagedThread?.id)
+        void queryClient.invalidateQueries({ queryKey: ['chats'] }).catch((error) => {
+          console.warn('[PodCollectionsBootstrap] Failed to refresh staged LinX welcome chat:', error)
+        })
+
+        const nextUnsubscribe = await chatOps.subscribeToPod()
+        if (!isCurrentBootstrap()) {
+          nextUnsubscribe()
+          return
+        }
+        unsubscribe = nextUnsubscribe
+
+        const result = await chatOps.ensureLinxWelcome({ force })
+        if (isCurrentBootstrap()) {
+          applyWelcomeResult(result)
+        }
       })
       .catch((cause) => {
         if (!isCurrentBootstrap()) return
 
         const nextError = cause instanceof Error ? cause : new Error(String(cause))
-        console.warn('[PodCollectionsBootstrap] Failed to prepare LinX welcome:', nextError)
+        if (!isRecoverableSecretaryBootstrapTimeout(cause)) {
+          console.warn('[PodCollectionsBootstrap] Failed to prepare LinX welcome:', nextError)
+        }
         void queryClient.invalidateQueries({ queryKey: ['chats'] }).catch((error) => {
           console.warn('[PodCollectionsBootstrap] Failed to refresh chats after LinX welcome failure:', error)
         })
@@ -179,6 +181,14 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
   }, [db])
 
   return <>{children}</>
+}
+
+function isRecoverableSecretaryBootstrapTimeout(cause: unknown): boolean {
+  if (!cause || typeof cause !== 'object') return false
+  const error = cause as { kind?: unknown; name?: unknown; recoverable?: unknown }
+  return error.kind === 'timeout'
+    && error.name === 'SecretaryBootstrapTimeoutError'
+    && error.recoverable === true
 }
 
 function startCollectionBinding(label: string, initialize: () => void | Promise<void>): void {

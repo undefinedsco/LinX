@@ -10,7 +10,7 @@
 import { useLiveQuery } from '@tanstack/react-db'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useMemo, useSyncExternalStore } from 'react'
-import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
+import { getLiteral, getLiteralAll, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
 import {
   chatResource,
   threadResource,
@@ -23,6 +23,7 @@ import {
   getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
+  extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
   selectAIConfigCredential,
   UDFS,
@@ -52,13 +53,14 @@ import {
 import { resolveWorkspaceContainerUri } from '@/lib/data/workspace-uri'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
+import { rebindPodCollections } from '@/lib/data/pod-collection-rebind'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { findExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 import { DEFAULT_LINX_PLATFORM_MODEL_ID, getAgentProviderInfo } from '@/lib/agent-providers'
 import { toStringArray } from '@/lib/utils'
-import { ensureAgentHome } from '@/lib/data/agent-home'
+import { ensureAgentHome, updateAgentHomeMetadata } from '@/lib/data/agent-home'
 import {
   type AgentAiRuntimeLocation,
   writeAgentAiRuntimeLocationMetadata,
@@ -115,6 +117,7 @@ export const LINX_DEFAULT_SECRETARY = {
   title: 'LinX 主理人',
   provider: 'undefineds',
   model: DEFAULT_LINX_PLATFORM_MODEL_ID,
+  threadKey: '__default__',
   threadTitle: '默认话题',
 } as const
 
@@ -472,7 +475,9 @@ async function hydrateChatRows(
   })
 
   const needsHydration = normalizedRows.filter(
-    (row) => !Array.isArray(row.participants) || !hasHydratedChatMetadata(row.metadata),
+    (row) => !Array.isArray(row.participants)
+      || !hasHydratedChatMetadata(row.metadata)
+      || !row.lastMessagePreview,
   )
   if (needsHydration.length === 0) {
     return normalizedRows
@@ -481,7 +486,7 @@ async function hydrateChatRows(
   const hydratedRowsById = new Map<string, Partial<ChatRow>>()
 
   await Promise.all(needsHydration.map(async (row) => {
-    const chatIri = buildChatIri(db, row.id)
+    const chatIri = row['@id'] ?? resolveResourceIri(db, chatResource, row.id)
     if (!chatIri) return
 
     try {
@@ -499,9 +504,13 @@ async function hydrateChatRows(
         fetch: abortableFetch,
       })
       throwIfChatQueryAborted(signal)
-      const thing = getThing(dataset, chatIri)
+      const thing = getThing(dataset, `${resourceUrl}#this`)
       if (!thing) return
       const nextRow: Partial<ChatRow> = {}
+      const lastMessagePreview = getLiteral(thing, 'http://schema.org/text')?.value
+      if (lastMessagePreview) {
+        nextRow.lastMessagePreview = lastMessagePreview
+      }
       const participants = normalizeParticipants(getUrlAll(thing, WF.participant), selfWebId)
       if (participants.length > 0) {
         nextRow.participants = participants
@@ -666,6 +675,7 @@ async function ensureLinxWelcomeInternal(isCurrentAttempt: () => boolean): Promi
   }
 
   const resources = await ensureDefaultSecretaryResources(db, isCurrentAttempt)
+  const threadId = await loadDefaultSecretaryThread(db, resources.chatIri, isCurrentAttempt)
 
   if (isCurrentAttempt()) {
     void ensureDefaultSecretaryAgentHome(db)
@@ -673,8 +683,30 @@ async function ensureLinxWelcomeInternal(isCurrentAttempt: () => boolean): Promi
 
   return {
     chatId: LINX_DEFAULT_SECRETARY.chatId,
+    ...(threadId ? { threadId } : {}),
     created: resources.created,
   }
+}
+
+async function loadDefaultSecretaryThread(
+  db: SolidDatabase,
+  chatIri: string,
+  isCurrentAttempt: () => boolean,
+): Promise<string | null> {
+  const threadId = buildThreadResourceId(LINX_DEFAULT_SECRETARY.threadKey, chatIri)
+  const threadIri = resolveResourceIri(db, threadResource, threadId)
+  if (!threadIri) return null
+
+  const existing = await findOptionalExactRecord<ThreadRow>(db, threadResource, threadId)
+  if (!existing) return null
+
+  const normalized = normalizeCollectionRow(existing, threadId, threadIri)
+  if (isCurrentAttempt()) {
+    threadChatIdCache.set(threadId, LINX_DEFAULT_SECRETARY.chatId)
+    threadChatIdCache.set(LINX_DEFAULT_SECRETARY.threadKey, LINX_DEFAULT_SECRETARY.chatId)
+    writeCollectionRow(threadCollection, normalized, threadId)
+  }
+  return threadId
 }
 
 async function ensureDefaultSecretaryResources(
@@ -734,6 +766,17 @@ async function ensureDefaultSecretaryResources(
   const contactParticipantIri = typeof contactResult.row['@id'] === 'string'
     ? contactResult.row['@id']
     : contactIri
+  if (isCurrentAttempt()) {
+    await normalizeDefaultSecretaryChatSingletons(db, chatIri)
+    const [hydratedChat] = await hydrateChatRows(db, [{
+      ...chatResult.row,
+      id: LINX_DEFAULT_SECRETARY.chatId,
+      '@id': chatIri,
+    } as ChatRow])
+    if (hydratedChat) {
+      writeCollectionRow(chatCollection, hydratedChat, LINX_DEFAULT_SECRETARY.chatId)
+    }
+  }
 
   return {
     agentIri,
@@ -741,6 +784,68 @@ async function ensureDefaultSecretaryResources(
     chatIri,
     created: contactResult.created || chatResult.created,
     chatCreated: chatResult.created,
+  }
+}
+
+async function normalizeDefaultSecretaryChatSingletons(
+  db: SolidDatabase,
+  chatIri: string,
+): Promise<void> {
+  const authFetch = (
+    (db as any).getDialect?.()?.getAuthenticatedFetch?.()
+    ?? (db as any).getSession?.()?.fetch
+  ) as typeof fetch | undefined
+  if (!authFetch) return
+
+  const resourceUrl = chatIri.split('#')[0]
+  try {
+    const dataset = await getSolidDataset(resourceUrl, { fetch: authFetch })
+    const thing = getThing(dataset, `${resourceUrl}#this`)
+    if (!thing) return
+
+    const titlePredicate = 'http://purl.org/dc/terms/title'
+    const createdPredicate = 'http://purl.org/dc/terms/created'
+    const titles = getLiteralAll(thing, titlePredicate).map((literal) => literal.value)
+    const createdValues = getLiteralAll(thing, createdPredicate)
+      .map((literal) => literal.value)
+      .filter((value) => !Number.isNaN(Date.parse(value)))
+      .sort((left, right) => Date.parse(left) - Date.parse(right))
+    const createdAt = createdValues[0]
+    const isCanonical = titles.length === 1
+      && titles[0] === LINX_DEFAULT_SECRETARY.title
+      && createdValues.length === 1
+    if (isCanonical || !createdAt) return
+
+    const update = `
+DELETE {
+  GRAPH <${resourceUrl}> {
+    <${chatIri}> <${titlePredicate}> ?oldTitle .
+    <${chatIri}> <${createdPredicate}> ?oldCreatedAt .
+  }
+}
+INSERT {
+  GRAPH <${resourceUrl}> {
+    <${chatIri}> <${titlePredicate}> "${LINX_DEFAULT_SECRETARY.title}" .
+    <${chatIri}> <${createdPredicate}> "${createdAt}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+  }
+}
+WHERE {
+  GRAPH <${resourceUrl}> {
+    <${chatIri}> ?existingPredicate ?existingObject .
+    OPTIONAL { <${chatIri}> <${titlePredicate}> ?oldTitle . }
+    OPTIONAL { <${chatIri}> <${createdPredicate}> ?oldCreatedAt . }
+  }
+}`
+    const response = await authFetch(resourceUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/sparql-update' },
+      body: update,
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} ${response.statusText}`)
+    }
+  } catch (error) {
+    console.warn('[chatOps] Failed to normalize default Secretary chat metadata:', error)
   }
 }
 
@@ -801,6 +906,29 @@ function stageDefaultSecretaryRows(rows: {
   writeCollectionRow(chatCollection, rows.chat, LINX_DEFAULT_SECRETARY.chatId)
 }
 
+function stageDefaultSecretaryThread(db: SolidDatabase, chatIri: string): ThreadRow | null {
+  const threadId = buildThreadResourceId(LINX_DEFAULT_SECRETARY.threadKey, chatIri)
+  const existing = threadCollection.get(threadId)
+  if (existing) return existing
+
+  const threadIri = resolveResourceIri(db, threadResource, threadId)
+  if (!threadIri) return null
+
+  const now = new Date()
+  const thread = {
+    id: threadId,
+    '@id': threadIri,
+    parent: chatIri,
+    title: LINX_DEFAULT_SECRETARY.threadTitle,
+    createdAt: now,
+    updatedAt: now,
+  } as ThreadRow
+  threadChatIdCache.set(threadId, LINX_DEFAULT_SECRETARY.chatId)
+  threadChatIdCache.set(LINX_DEFAULT_SECRETARY.threadKey, LINX_DEFAULT_SECRETARY.chatId)
+  writeCollectionRow(threadCollection, thread, threadId)
+  return thread
+}
+
 /**
  * Makes the product-owned Secretary available before any Pod read or write.
  * Persistence remains the responsibility of ensureLinxWelcome.
@@ -836,6 +964,9 @@ export function stageLinxDefaultSecretary(db: SolidDatabase): ChatRow | null {
         name: LINX_DEFAULT_SECRETARY.title,
       }, LINX_DEFAULT_SECRETARY.contactId)
     }
+    if (chatIri) {
+      stageDefaultSecretaryThread(db, chatIri)
+    }
     return normalizedChat
   }
 
@@ -850,6 +981,7 @@ export function stageLinxDefaultSecretary(db: SolidDatabase): ChatRow | null {
     chatIri,
   })
   stageDefaultSecretaryRows(rows)
+  stageDefaultSecretaryThread(db, chatIri)
   return rows.chat
 }
 
@@ -889,17 +1021,15 @@ function forgetLocalSecretaryChatRow(): void {
 }
 
 function mergeChatRows(priorityRows: ChatRow[], rows: ChatRow[]): ChatRow[] {
-  const seen = new Set<string>()
-  const merged: ChatRow[] = []
-  const add = (row: ChatRow) => {
-    if (!row.id || seen.has(row.id)) return
-    seen.add(row.id)
-    merged.push(row)
-  }
+  const persistedById = new Map(rows.flatMap((row) => row.id ? [[row.id, row] as const] : []))
+  const merged = priorityRows.flatMap((staged) => {
+    if (!staged.id) return []
+    const persisted = persistedById.get(staged.id)
+    persistedById.delete(staged.id)
+    return [{ ...staged, ...persisted } as ChatRow]
+  })
 
-  priorityRows.forEach(add)
-  rows.forEach(add)
-  return merged
+  return [...merged, ...persistedById.values()]
 }
 
 export function isLinxDefaultSecretaryBootstrapSettling(): boolean {
@@ -988,6 +1118,13 @@ async function ensureDefaultSecretaryRow<T extends Record<string, unknown> & { i
     }
   }
 
+  if (cached && options.trustCached === false) {
+    const documentExists = await podDocumentExists(db, iri)
+    if (documentExists) {
+      return { row: cached, created: false }
+    }
+  }
+
   const created = normalizeCollectionRow(row as T, collectionId, iri)
   if (cached && options.trustCached === false) {
     const persisted = await insertPodRowWithRetry<T>(db, resource, created, targetId)
@@ -1071,6 +1208,35 @@ async function findOptionalExactRecord<T>(
   }
 }
 
+async function podDocumentExists(db: SolidDatabase, iri: string): Promise<boolean | null> {
+  const fetchCandidate = (
+    (db as any).getDialect?.()?.getAuthenticatedFetch?.()
+    ?? (db as any).getSession?.()?.fetch
+    ?? (db as any).session?.fetch
+  )
+  if (typeof fetchCandidate !== 'function') {
+    return null
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_SECRETARY_EXACT_READ_TIMEOUT_MS)
+  try {
+    const documentUrl = iri.split('#', 1)[0]
+    const response = await fetchCandidate(documentUrl, {
+      method: 'GET',
+      headers: { Accept: 'text/turtle, */*;q=0.1' },
+      signal: controller.signal,
+    })
+    if (response.ok) return true
+    if (response.status === 404) return false
+    return null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 function withExactReadTimeout<T>(promise: Promise<T | null>, timeoutMs: number): Promise<T | null> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   const timeoutPromise = new Promise<T | null>((_, reject) => {
@@ -1123,6 +1289,20 @@ export const chatCollection = createPodCollection<typeof chatResource, ChatRow, 
   },
 })
 
+export async function projectChatSummary(
+  chatId: string,
+  summary: Pick<ChatRow, 'lastMessageId' | 'lastMessagePreview' | 'lastActiveAt' | 'updatedAt'>,
+): Promise<void> {
+  const rowId = normalizeChatRowId(chatId)
+  if (!rowId) return
+  const existing = chatCollection.get(rowId)
+  if (!existing) return
+  const transaction = chatCollection.update(rowId, (draft) => {
+    Object.assign(draft, summary)
+  })
+  await transaction.isPersisted.promise
+}
+
 // ============================================================================
 // Thread Collection
 // ============================================================================
@@ -1130,7 +1310,7 @@ export const chatCollection = createPodCollection<typeof chatResource, ChatRow, 
 // Columns needed for thread list view
 const threadListColumns: (keyof ThreadRow)[] = [
   'id',
-  'chat',
+  'parent',
   'title',
   'starred',
   'workspace',
@@ -1310,7 +1490,8 @@ export const chatOps = {
     })
 
     const chatId = input.chatId?.trim() || crypto.randomUUID()
-    const chatIri = buildChatIri(db, chatId)
+    const chatRowId = buildChatResourceId(chatId)
+    const chatIri = buildChatIri(db, chatRowId)
     if (!chatIri) {
       throw new Error(`Failed to resolve chat IRI for chat ${chatId}`)
     }
@@ -1320,7 +1501,7 @@ export const chatOps = {
     writeCollectionRow(_contactCollection, contact as ContactRow, contactId)
 
     const chatData = {
-      id: chatId,
+      id: chatRowId,
       '@id': chatIri,
       title,
       avatarUrl: providerInfo?.logoUrl,
@@ -1334,10 +1515,9 @@ export const chatOps = {
     } as ChatInsert & { '@id': string }
     const chatTx = chatCollection.insert(chatData as ChatRow)
     await chatTx.isPersisted.promise
-    writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
-    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+    writeCollectionRow(chatCollection, { ...chatData, id: chatRowId } as ChatRow, chatRowId)
 
-    return { ...chatData, id: chatId, agentId, contactId } as ChatRow & { agentId: string; contactId: string }
+    return { ...chatData, id: chatRowId, agentId, contactId } as ChatRow & { agentId: string; contactId: string }
   },
 
   /**
@@ -1375,6 +1555,11 @@ export const chatOps = {
 
   stageLinxDefaultSecretary(db: SolidDatabase): ChatRow | null {
     return stageLinxDefaultSecretary(db)
+  },
+
+  stageLinxDefaultSecretaryThread(db: SolidDatabase): ThreadRow | null {
+    const chatIri = resolveResourceIri(db, chatResource, LINX_DEFAULT_SECRETARY.chatResourceId)
+    return chatIri ? stageDefaultSecretaryThread(db, chatIri) : null
   },
 
   /**
@@ -1489,9 +1674,7 @@ export const chatOps = {
     const threadData = {
       id: threadResourceId,
       ...(threadIri ? { '@id': threadIri } : {}),
-      scope: chatIri ?? chatId,
       parent: chatIri ?? chatId,
-      chat: chatIri ?? chatId,
       title: title || `话题 ${now.toLocaleTimeString()}`,
       createdAt: now,
       updatedAt: now,
@@ -1779,19 +1962,18 @@ export const chatOps = {
     const normalizedName = name?.trim()
     const nextInstructions = instructions?.trim() ?? ''
 
-    const tx = agentCollection.update(agentId, (draft: any) => {
-      if (normalizedName) {
-        draft.name = normalizedName
-      }
-      if (instructions !== undefined) {
-        draft.instructions = nextInstructions || undefined
-      }
-      if (aiRuntimeLocation) {
-        draft.metadata = writeAgentAiRuntimeLocationMetadata(draft.metadata, aiRuntimeLocation)
-      }
-      draft.updatedAt = new Date()
-    })
-    await tx.isPersisted.promise
+    const current = agentCollection.get(agentId) as AgentRow | undefined
+    if (!current) throw new Error(`Agent ${agentId} was not found`)
+    const changes: Parameters<typeof updateAgentHomeMetadata>[2] = {}
+    if (normalizedName) changes.name = normalizedName
+    if (instructions !== undefined) changes.instructions = nextInstructions
+    if (aiRuntimeLocation) {
+      changes.metadata = writeAgentAiRuntimeLocationMetadata(current.metadata, aiRuntimeLocation)
+    }
+    const db = getDb()
+    if (!db) throw new Error('Pod database is not initialized')
+    await updateAgentHomeMetadata(db, agentId as any, changes, current)
+    writeCollectionRow(agentCollection, { ...current, ...changes } as AgentRow, agentId)
 
     if (contactId && normalizedName) {
       const contactTx = _contactCollection.update(contactId, (draft: any) => {
@@ -1811,11 +1993,13 @@ export const chatOps = {
    * Update an agent's instructions (system prompt)
    */
   async updateAgentInstructions(agentId: string, instructions: string): Promise<void> {
-    const tx = agentCollection.update(agentId, (draft: any) => {
-      draft.instructions = instructions
-      draft.updatedAt = new Date()
-    })
-    await tx.isPersisted.promise
+    const current = agentCollection.get(agentId) as AgentRow | undefined
+    if (!current) throw new Error(`Agent ${agentId} was not found`)
+    const changes = { instructions }
+    const db = getDb()
+    if (!db) throw new Error('Pod database is not initialized')
+    await updateAgentHomeMetadata(db, agentId as any, changes, current)
+    writeCollectionRow(agentCollection, { ...current, ...changes } as AgentRow, agentId)
   },
 
   /**
@@ -1826,18 +2010,18 @@ export const chatOps = {
     const providerInfo = getAgentProviderInfo(provider)
     const providerRef = normalizeAIConfigProviderId(provider)
     const modelRef = normalizeAIConfigResourceId(model)
-    const tx = agentCollection.update(agentId, (draft: any) => {
-      const currentProviderId = normalizeAIConfigProviderId(typeof draft.provider === 'string' ? draft.provider : '')
-      const providerChanged = currentProviderId !== provider
-      draft.provider = providerRef
-      draft.model = modelRef
-      // Update avatarUrl when provider changes (unless user set a custom one)
-      if (providerChanged && providerInfo?.logoUrl) {
-        draft.avatarUrl = providerInfo.logoUrl
-      }
-      draft.updatedAt = new Date()
-    })
-    await tx.isPersisted.promise
+    const current = agentCollection.get(agentId) as AgentRow | undefined
+    if (!current) throw new Error(`Agent ${agentId} was not found`)
+    const providerChanged = normalizeAIConfigProviderId(current.provider || '') !== provider
+    const changes: Parameters<typeof updateAgentHomeMetadata>[2] = {
+      provider: providerRef,
+      model: modelRef,
+    }
+    if (providerChanged && providerInfo?.logoUrl) changes.avatarUrl = providerInfo.logoUrl
+    const db = getDb()
+    if (!db) throw new Error('Pod database is not initialized')
+    await updateAgentHomeMetadata(db, agentId as any, changes, current)
+    writeCollectionRow(agentCollection, { ...current, ...changes } as AgentRow, agentId)
 
     if (contactId && providerInfo?.logoUrl) {
       const contactTx = _contactCollection.update(contactId, (draft: any) => {
@@ -1996,15 +2180,37 @@ export const chatOps = {
  * Initialize chat collections with the database instance.
  * Call this from a component that has access to useSolidDatabase.
  */
-export function initializeChatCollections(db: SolidDatabase | null) {
-  if (currentChatDatabase !== db) {
-    currentChatDatabase = db
-    linxWelcomeAttempt += 1
-    forgetLocalSecretaryChatRow()
-    stagedDefaultSecretaryRows = null
-    setLinxWelcomeInFlight(null)
-  }
+export async function initializeChatCollections(db: SolidDatabase | null): Promise<void> {
+  if (currentChatDatabase === db) return
+
+  currentChatDatabase = db
+  linxWelcomeAttempt += 1
+  forgetLocalSecretaryChatRow()
+  stagedDefaultSecretaryRows = null
+  setLinxWelcomeInFlight(null)
   setDatabaseGetter(() => db)
+
+  try {
+    await rebindPodCollections([
+      {
+        collection: chatCollection,
+        cancelInFlight: () => queryClient.cancelQueries({ queryKey: ['chats'], exact: true }),
+      },
+      {
+        collection: threadCollection,
+        cancelInFlight: () => queryClient.cancelQueries({ queryKey: ['threads'], exact: true }),
+      },
+      {
+        collection: messageCollection,
+        cancelInFlight: () => queryClient.cancelQueries({ queryKey: ['messages'], exact: true }),
+      },
+    ], Boolean(db))
+  } catch (error) {
+    if (currentChatDatabase === db) {
+      currentChatDatabase = null
+    }
+    throw error
+  }
 }
 
 // ============================================================================
@@ -2062,13 +2268,30 @@ export function buildMessageListQueryKey(scopeKey: string, chatId: string, threa
  */
 export function useChatList(filters?: { search?: string }) {
   const query = useLiveQuery(chatCollection)
+  const messageQuery = useLiveQuery(messageCollection)
   const data = useMemo(() => {
-    const rows = (query.data ?? []) as ChatRow[]
+    const latestMessageByChat = new Map<string, MessageRow>()
+    for (const message of (messageQuery.data ?? []) as MessageRow[]) {
+      const chatKey = extractChatIdFromChatRef(message.chat ?? message.parent)
+      const chatId = normalizeChatRowId(chatKey)
+      if (!chatId || !message.content) continue
+      const current = latestMessageByChat.get(chatId)
+      if (!current || new Date(message.createdAt).getTime() > new Date(current.createdAt).getTime()) {
+        latestMessageByChat.set(chatId, message)
+      }
+    }
+    const rows = ((query.data ?? []) as ChatRow[]).map((row) => {
+      if (row.lastMessagePreview || !row.id) return row
+      const latestMessage = latestMessageByChat.get(row.id)
+      return latestMessage
+        ? { ...row, lastMessagePreview: latestMessage.content.slice(0, 100) }
+        : row
+    })
     const term = filters?.search?.trim().toLocaleLowerCase()
     if (!term) return rows
     return rows.filter((row) => [row.title, row.lastMessagePreview]
       .some((value) => value?.toLocaleLowerCase().includes(term)))
-  }, [filters?.search, query.data])
+  }, [filters?.search, messageQuery.data, query.data])
   return { ...query, data, error: null, refetch: () => chatCollection.fetch({ refetch: true }) }
 }
 
@@ -2078,14 +2301,15 @@ export function useChatList(filters?: { search?: string }) {
 export function useThreadList(chatId: string, options?: { enabled?: boolean }) {
   const query = useLiveQuery(threadCollection)
   const enabled = options?.enabled ?? !!chatId
+  const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const data = useMemo(() => {
     if (!enabled || !chatId) return []
-    if (normalizeChatRowId(chatId) === LINX_DEFAULT_SECRETARY.chatId && isLinxDefaultSecretaryBootstrapPending()) {
+    if (normalizeChatRowId(chatId) === LINX_DEFAULT_SECRETARY.chatId && isDefaultSecretarySettling) {
       return []
     }
     return ((query.data ?? []) as ThreadRow[])
       .filter((row) => resolveThreadChatRowId(row) === normalizeChatRowId(chatId))
-  }, [chatId, enabled, query.data])
+  }, [chatId, enabled, isDefaultSecretarySettling, query.data])
   return { ...query, data, error: null, refetch: () => threadCollection.fetch({ refetch: true }) }
 }
 

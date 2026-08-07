@@ -1,6 +1,7 @@
 export interface RebindablePodCollection<TKey extends string | number> {
   isReady(): boolean
   keys(): IterableIterator<TKey>
+  preload(): Promise<void>
   utils: unknown
 }
 
@@ -36,18 +37,31 @@ export async function rebindPodCollection<TKey extends string | number>(
   const cancellation = options.cancelInFlight?.()
   const utils = requireRebindUtils(collection)
 
-  const previousKeys = Array.from(collection.keys())
-  if (previousKeys.length > 0) {
-    utils.writeDelete(previousKeys)
+  try {
+    await cancellation
+  } catch (error) {
+    const name = error && typeof error === 'object'
+      ? String(('name' in error && error.name) || error.constructor?.name || '')
+      : ''
+    const message = error instanceof Error ? error.message : String(error)
+    if (name !== 'CancelledError' && message !== 'CancelledError') throw error
   }
 
-  await cancellation
+  const previousKeys = Array.from(collection.keys())
+  const wasHydrated = collection.isReady() || previousKeys.length > 0
+
+  if (previousKeys.length > 0) {
+    if (!collection.isReady()) {
+      await collection.preload()
+    }
+    utils.writeDelete(previousKeys)
+  }
 
   if (!hasDatabase) {
     return
   }
 
-  if (collection.isReady()) {
+  if (wasHydrated && collection.isReady()) {
     await utils.refetch({ throwOnError: true })
   }
 }

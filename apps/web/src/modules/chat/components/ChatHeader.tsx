@@ -15,6 +15,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ModelSelector } from '@/components/ui/model-selector'
+import type { ModelOption } from '@/components/ui/model-selector'
+import { useModelServices } from '@/modules/model-services/data/use-model-services'
 import { useToast } from '@/components/ui/use-toast'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
@@ -51,6 +53,7 @@ export function ChatHeader() {
 
   const { data: chats } = useChatList()
   const mutations = useChatMutations()
+  const { providers: configuredProviders } = useModelServices()
 
   const chat = useMemo(
     () => chats?.find((c) => c.id === selectedChatId) ?? null,
@@ -71,10 +74,29 @@ export function ChatHeader() {
     if (!provider) return null
     return getAgentProviderInfo(provider)
   }, [provider])
-  const draftProvider = useMemo(() => {
-    const providerSlug = findAgentProviderForModel(modelDraft)
-    return providerSlug ? getAgentProviderInfo(providerSlug) : null
-  }, [modelDraft])
+  const configuredModelOptions = useMemo<ModelOption[]>(() =>
+    Object.values(configuredProviders).flatMap((configuredProvider) =>
+      configuredProvider.enabled ? configuredProvider.models
+        .filter((configuredModel) => configuredModel.enabled)
+        .map((configuredModel) => ({
+          id: `${configuredProvider.id}/${configuredModel.id}`,
+          name: configuredModel.name,
+          providerId: configuredProvider.id,
+          providerName: configuredProvider.name,
+          capabilities: configuredModel.capabilities as ModelOption['capabilities'],
+        }))
+        : []
+    ), [configuredProviders])
+  const selectedDraftProviderId = useMemo(() => {
+    const separator = modelDraft.indexOf('/')
+    if (separator > 0 && configuredProviders[modelDraft.slice(0, separator)]) {
+      return modelDraft.slice(0, separator)
+    }
+    return findAgentProviderForModel(modelDraft)
+  }, [configuredProviders, modelDraft])
+  const draftProviderName = selectedDraftProviderId
+    ? configuredProviders[selectedDraftProviderId]?.name || getAgentProviderInfo(selectedDraftProviderId)?.displayName
+    : null
   const isSavingAgentProfile = mutations.updateAgentProfile.isPending
   const isSavingModel = mutations.updateAgentModel.isPending
 
@@ -87,8 +109,8 @@ export function ChatHeader() {
 
   useEffect(() => {
     if (!isModelDialogOpen) return
-    setModelDraft(model)
-  }, [isModelDialogOpen, model])
+    setModelDraft(`${provider}/${model}`)
+  }, [isModelDialogOpen, model, provider])
 
   const handleOpenAgentDialog = useCallback(() => {
     if (!agentId || !selectedChatId) {
@@ -159,15 +181,22 @@ export function ChatHeader() {
   const handleSaveModel = useCallback(async () => {
     if (!agentId || !selectedChatId) return
 
-    const normalizedModel = modelDraft.trim()
-    if (!normalizedModel) {
+    const selectedModel = modelDraft.trim()
+    if (!selectedModel) {
       toast({
         title: '请先选择模型',
       })
       return
     }
 
-    const nextProvider = findAgentProviderForModel(normalizedModel)
+    const separator = selectedModel.indexOf('/')
+    const explicitProvider = separator > 0 ? selectedModel.slice(0, separator) : ''
+    const normalizedModel = explicitProvider && configuredProviders[explicitProvider]
+      ? selectedModel.slice(separator + 1)
+      : selectedModel
+    const nextProvider = explicitProvider && configuredProviders[explicitProvider]
+      ? explicitProvider
+      : findAgentProviderForModel(normalizedModel)
     if (!nextProvider) {
       toast({
         title: '无法识别模型提供方',
@@ -198,6 +227,7 @@ export function ChatHeader() {
   }, [
     agentId,
     contactId,
+    configuredProviders,
     modelDraft,
     mutations.updateAgentModel,
     refreshAgent,
@@ -352,13 +382,14 @@ export function ChatHeader() {
                 type="chat"
                 value={modelDraft}
                 onChange={setModelDraft}
+                models={configuredModelOptions}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground"
               />
             </div>
             <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
               <div className="text-xs text-muted-foreground">Provider</div>
               <div className="mt-1 text-sm font-medium text-foreground">
-                {draftProvider?.displayName || '未识别'}
+                {draftProviderName || '未识别'}
               </div>
             </div>
           </div>

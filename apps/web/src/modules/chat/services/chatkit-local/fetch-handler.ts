@@ -10,6 +10,7 @@
  */
 
 import type { SolidDatabase } from '@undefineds.co/models'
+import type { Attachment, ThreadMetadata } from '@/lib/vendor/xpod-chatkit'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
@@ -18,12 +19,35 @@ export interface LocalChatKitFetchOptions {
   db: SolidDatabase
   webId: string
   authFetch: typeof fetch
+  initialThread?: ThreadMetadata
   isAvailable?: () => boolean
+  onAttachmentsChange?: (attachments: Attachment[]) => void
+  onChatSummaryChange?: (summary: {
+    chatId: string
+    messageId: string
+    content: string
+    createdAt: Date
+  }) => Promise<void> | void
 }
 
 export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): typeof fetch {
-  const { db, webId, authFetch, isAvailable = () => true } = options
-  const store = new LocalChatKitStore(db, webId, authFetch)
+  const {
+    db,
+    webId,
+    authFetch,
+    initialThread,
+    isAvailable = () => true,
+    onAttachmentsChange,
+    onChatSummaryChange,
+  } = options
+  const store = new LocalChatKitStore(
+    db,
+    webId,
+    authFetch,
+    initialThread,
+    onAttachmentsChange,
+    onChatSummaryChange,
+  )
   const service = new LocalChatKitService({ store, db, webId, authFetch })
 
   return async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -32,6 +56,19 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
     }
 
     try {
+      const inputUrl = typeof _input === 'string' ? _input : _input.toString()
+      const attachmentMatch = inputUrl.match(/^local:\/\/chatkit\/attachments\/([^/?#]+)$/)
+      if (attachmentMatch && init?.method?.toUpperCase() === 'PUT') {
+        if (!init.body) throw new Error('Attachment upload body is missing')
+        const attachment = await service.uploadAttachment(
+          decodeURIComponent(attachmentMatch[1]),
+          init.body,
+          new Headers(init.headers).get('Content-Type') ?? undefined,
+          init.signal ?? undefined,
+        )
+        return Response.json(attachment)
+      }
+
       // Read request body
       let body: string
       if (init?.body instanceof ReadableStream) {
@@ -58,7 +95,7 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
         body = '{}'
       }
 
-      const context = {}
+      const context = { signal: init?.signal }
       const result = await service.process(body, context)
 
       if (result.type === 'streaming') {

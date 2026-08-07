@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSession } from '@/providers/solid-session-context'
 import { useNavigate } from '@tanstack/react-router'
-import { Bot, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
+import { Bot, Download, ExternalLink, LockKeyhole, Paperclip, PlayCircle, ShieldAlert, WifiOff } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
@@ -28,8 +28,8 @@ import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useInboxStore } from '@/modules/inbox/store'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
-import { DEFAULT_LINX_PLATFORM_MODEL_ID, LINX_PLATFORM_MODEL_IDS } from '@/lib/agent-providers'
 import { createLocalChatKitFetch, unavailableResponse } from '../services/chatkit-local/fetch-handler'
+import type { Attachment } from '@/lib/vendor/xpod-chatkit'
 import { useChatStore } from '../store'
 import {
   useChatInit,
@@ -39,6 +39,7 @@ import {
   useWorkspaceList,
   useLinxDefaultSecretaryBootstrapSettling,
   LINX_DEFAULT_SECRETARY,
+  projectChatSummary,
 } from '../collections'
 import { SessionControlBar, type SessionStatus } from './SessionControlBar'
 import { ChatListPane } from './ChatListPane'
@@ -54,6 +55,7 @@ import {
 import { buildWorkspaceSummary } from '../workspace-summary'
 import { restoreChatMessageAnchor } from '../message-anchor'
 import { projectChatContentState, type ChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
+import { clearChatDraft, loadChatDraft, saveChatDraft, type ChatDraftScope } from '../draft-store'
 import {
   SecretaryWelcome,
   type SecretaryStarterAction,
@@ -138,6 +140,29 @@ function formatDuration(updatedAt?: string) {
   if (minutes < 60) return `${minutes} 分钟`
   const hours = Math.floor(minutes / 60)
   return `${hours} 小时`
+}
+
+interface RuntimeActivity {
+  label: string
+  technicalName?: string
+  tone: 'running' | 'waiting'
+}
+
+function describeRuntimeTool(name: string): RuntimeActivity {
+  const normalized = name.toLowerCase()
+  if (/(search|grep|find|lookup|query)/.test(normalized)) {
+    return { label: '正在搜索相关资料', technicalName: name, tone: 'running' }
+  }
+  if (/(read|open|list|inspect|view)/.test(normalized)) {
+    return { label: '正在读取工作区内容', technicalName: name, tone: 'running' }
+  }
+  if (/(write|edit|patch|delete|remove|move)/.test(normalized)) {
+    return { label: '等待确认工作区变更', technicalName: name, tone: 'waiting' }
+  }
+  if (/(exec|shell|bash|terminal|command)/.test(normalized)) {
+    return { label: '正在运行工作区命令', technicalName: name, tone: 'running' }
+  }
+  return { label: '正在使用工作区工具', technicalName: name, tone: 'running' }
 }
 
 function InboxActionBanner({
@@ -230,15 +255,38 @@ function RuntimeSessionToolbar({
   const [baseRef, setBaseRef] = useState('HEAD')
   const [branch, setBranch] = useState('')
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
+  const [runtimeActivity, setRuntimeActivity] = useState<RuntimeActivity | null>(null)
 
   const handleRuntimeSessionEvent = useCallback((event: RuntimeSessionEvent) => {
     if (event.type === 'status' || event.type === 'exit') {
       setRuntimeError(null)
+      if (event.type === 'exit' || event.status !== 'active') setRuntimeActivity(null)
       void runtimeSession.refetch()
       return
     }
 
+    if (event.type === 'assistant_delta') {
+      setRuntimeActivity({ label: '正在整理回复', tone: 'running' })
+      return
+    }
+
+    if (event.type === 'assistant_done') {
+      setRuntimeActivity(null)
+      return
+    }
+
+    if (event.type === 'tool_call') {
+      setRuntimeActivity(describeRuntimeTool(event.name))
+      return
+    }
+
+    if (event.type === 'auth_required') {
+      setRuntimeActivity({ label: '等待完成认证后继续', tone: 'waiting' })
+      return
+    }
+
     if (event.type === 'error') {
+      setRuntimeActivity(null)
       setRuntimeError(formatLoginErrorForUser(event.message, '运行时执行失败。请稍后重试。'))
       void runtimeSession.refetch()
     }
@@ -389,6 +437,23 @@ function RuntimeSessionToolbar({
             onStop={currentSession.status === 'active' || currentSession.status === 'paused' ? handleStop : undefined}
             onCopyLog={handleCopyLog}
           />
+          {runtimeActivity ? (
+            <details className="group border-b border-border/50 bg-muted/10 px-4 py-2 text-xs">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-muted-foreground marker:hidden">
+                <span
+                  className={`size-1.5 rounded-full ${runtimeActivity.tone === 'waiting' ? 'bg-warning' : 'animate-pulse bg-primary'}`}
+                  aria-hidden="true"
+                />
+                <span>{runtimeActivity.label}</span>
+                <span className="ml-auto text-[11px] opacity-70 group-open:hidden">查看详情</span>
+              </summary>
+              {runtimeActivity.technicalName ? (
+                <p className="mt-2 pl-3.5 text-[11px] text-muted-foreground">
+                  工具：<code>{runtimeActivity.technicalName}</code>
+                </p>
+              ) : null}
+            </details>
+          ) : null}
           {runtimeError && (
             <div className="border-b border-border/50 px-4 py-2 text-xs text-destructive">
               {runtimeError}
@@ -495,6 +560,8 @@ function RuntimeSessionToolbar({
 function ChatKitPanel({
   session,
   selectedThreadId,
+  selectedChatId,
+  selectedThreadTitle,
   pendingComposerDraft,
   onComposerDraftApplied,
   onComposerDraftError,
@@ -502,6 +569,8 @@ function ChatKitPanel({
 }: {
   session: any
   selectedThreadId: string
+  selectedChatId: string
+  selectedThreadTitle?: string
   pendingComposerDraft: PendingSecretaryDraft | null
   onComposerDraftApplied: (draft: PendingSecretaryDraft) => void
   onComposerDraftError: (draft: PendingSecretaryDraft, error: unknown) => void
@@ -512,8 +581,12 @@ function ChatKitPanel({
   const clearMessageAnchor = useChatStore((state) => state.clearMessageAnchor)
   const theme = useThemeMode()
   const { db } = useSolidDatabase()
-  const sendAvailableRef = useRef(!sendDisabled)
-  sendAvailableRef.current = !sendDisabled
+  const [threadAttachments, setThreadAttachments] = useState<Attachment[]>([])
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false)
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
+  const [reconnectStatus, setReconnectStatus] = useState<'idle' | 'syncing' | 'error'>('idle')
+  const sendAvailableRef = useRef(!sendDisabled && isOnline)
+  sendAvailableRef.current = !sendDisabled && isOnline
   const chatKitHostRef = useRef<(HTMLElement & { setThreadId?: (threadId: string | null) => Promise<void> | void }) | null>(null)
 
   const localFetch = useMemo(() => {
@@ -524,15 +597,38 @@ function ChatKitPanel({
       db,
       webId: session.info.webId,
       authFetch: session.fetch,
+      initialThread: {
+        id: selectedThreadId,
+        title: selectedThreadTitle,
+        status: { type: 'active' },
+        created_at: Math.floor(Date.now() / 1000),
+        updated_at: Math.floor(Date.now() / 1000),
+        metadata: { chat_id: selectedChatId },
+      },
       isAvailable: () => sendAvailableRef.current,
+      onAttachmentsChange: setThreadAttachments,
+      onChatSummaryChange: ({ messageId, content, createdAt }) => {
+        return projectChatSummary(selectedChatId, {
+          lastMessageId: messageId,
+          lastMessagePreview: content.slice(0, 100),
+          lastActiveAt: createdAt,
+          updatedAt: createdAt,
+        })
+      },
     })
-  }, [db, session.fetch, session.info.webId])
+  }, [db, selectedChatId, selectedThreadId, selectedThreadTitle, session.fetch, session.info.webId])
+
+  useEffect(() => {
+    setThreadAttachments([])
+    setAttachmentsOpen(false)
+  }, [selectedThreadId])
 
   const chatkit = useChatKit({
     api: {
       url: 'local://chatkit',
       domainKey: 'local',
       fetch: localFetch,
+      uploadStrategy: { type: 'two_phase' },
     },
     initialThread: selectedThreadId,
     theme: {
@@ -548,13 +644,23 @@ function ChatKitPanel({
     history: { enabled: false },
     composer: {
       placeholder: '输入消息...',
-      models: LINX_PLATFORM_MODEL_IDS.map((modelId) => ({
-        id: modelId,
-        label: modelId === 'linx-lite' ? 'LinX Lite' : 'LinX',
-        default: modelId === DEFAULT_LINX_PLATFORM_MODEL_ID,
-      })),
+      tools: [{
+        id: 'web_search',
+        label: '联网搜索',
+        shortLabel: '搜索',
+        icon: 'search',
+        pinned: true,
+        persistent: false,
+        placeholderOverride: '搜索网络并给出可点击的来源...',
+      }],
+      attachments: {
+        enabled: true,
+        maxCount: 10,
+        maxSize: 25 * 1024 * 1024,
+      },
     },
     threadItemActions: { feedback: true, retry: true },
+    thread: { autoScroll: true },
     onThreadChange: ({ threadId }: { threadId: string | null }) => {
       if (threadId) {
         selectThread(threadId)
@@ -565,6 +671,32 @@ function ChatKitPanel({
     },
   })
   const setComposerValue = chatkit.setComposerValue
+  const fetchUpdates = chatkit.fetchUpdates
+
+  useEffect(() => {
+    const handleOffline = () => {
+      setIsOnline(false)
+      setReconnectStatus('idle')
+    }
+    const handleOnline = () => {
+      setIsOnline(true)
+      setReconnectStatus('syncing')
+      void Promise.resolve(fetchUpdates()).then(
+        () => setReconnectStatus('idle'),
+        (error) => {
+          console.error('[ChatKit] Failed to refresh after reconnect:', error)
+          setReconnectStatus('error')
+        },
+      )
+    }
+
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('online', handleOnline)
+    return () => {
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [fetchUpdates])
 
   useEffect(() => {
     if (!selectedThreadId) return
@@ -701,9 +833,101 @@ function ChatKitPanel({
         control={chatkit.control}
         style={{ display: 'block', width: '100%', height: '100%' }}
       />
-      {sendDisabled ? (
+      {!isOnline ? (
+        <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-center gap-2 rounded-lg border border-warning/25 bg-background/95 px-3 py-2 text-sm shadow-sm backdrop-blur">
+          <WifiOff className="size-4 text-warning" />
+          <span>网络已断开。草稿会保留在输入框中，恢复连接后再发送。</span>
+        </div>
+      ) : reconnectStatus !== 'idle' ? (
+        <div
+          role={reconnectStatus === 'error' ? 'alert' : 'status'}
+          className="absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-sm backdrop-blur"
+        >
+          <span>{reconnectStatus === 'syncing' ? '连接已恢复，正在同步最新消息…' : '连接已恢复，但消息同步失败。'}</span>
+          {reconnectStatus === 'error' ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => {
+                setReconnectStatus('syncing')
+                void Promise.resolve(fetchUpdates()).then(
+                  () => setReconnectStatus('idle'),
+                  () => setReconnectStatus('error'),
+                )
+              }}
+            >
+              重试同步
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {threadAttachments.length > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="absolute left-1/2 top-3 z-10 h-8 -translate-x-1/2 gap-1.5 rounded-full bg-background/95 px-3 shadow-sm backdrop-blur"
+          onClick={() => setAttachmentsOpen(true)}
+          aria-label={`查看会话附件，共 ${threadAttachments.length} 个`}
+        >
+          <Paperclip className="size-3.5" />
+          附件 {threadAttachments.length}
+        </Button>
+      ) : null}
+      <Dialog open={attachmentsOpen} onOpenChange={setAttachmentsOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>会话附件</DialogTitle>
+            <DialogDescription>附件保存在当前空间，可以预览、打开或下载。</DialogDescription>
+          </DialogHeader>
+          <div className="grid max-h-[60vh] grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2">
+            {threadAttachments.map((attachment) => {
+              const objectUrl = attachment.download_url ?? attachment.preview_url
+              return (
+                <div key={attachment.id} className="overflow-hidden rounded-xl border bg-muted/20">
+                  {attachment.type === 'image' && attachment.preview_url ? (
+                    <button
+                      type="button"
+                      className="block aspect-video w-full overflow-hidden bg-muted text-left"
+                      onClick={() => objectUrl && window.open(objectUrl, '_blank', 'noopener,noreferrer')}
+                      aria-label={`打开图片 ${attachment.name}`}
+                    >
+                      <img src={attachment.preview_url} alt={attachment.name} className="size-full object-cover" />
+                    </button>
+                  ) : (
+                    <div className="flex aspect-video items-center justify-center bg-muted text-muted-foreground">
+                      <Paperclip className="size-8" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{attachment.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{attachment.mime_type}</p>
+                    </div>
+                    {objectUrl ? (
+                      <>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => window.open(objectUrl, '_blank', 'noopener,noreferrer')} aria-label={`打开 ${attachment.name}`}>
+                          <ExternalLink className="size-4" />
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon" asChild>
+                          <a href={objectUrl} download={attachment.name} aria-label={`下载 ${attachment.name}`}>
+                            <Download className="size-4" />
+                          </a>
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {sendDisabled || !isOnline ? (
         <div className="absolute inset-x-0 bottom-0 z-10 flex min-h-24 items-center justify-center border-t border-warning/20 bg-background/95 px-4 text-sm text-muted-foreground">
-          空间连接恢复后可继续发送
+          {isOnline ? '空间连接恢复后可继续发送' : '网络恢复后可继续发送'}
         </div>
       ) : null}
     </div>
@@ -753,6 +977,10 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const isSecretary = selectedChatId === LINX_DEFAULT_SECRETARY.chatId
   const secretaryScopeKey = `${databaseScopeKey}:${session.info.webId ?? 'logged-out'}`
+  const secretaryDraftScope: ChatDraftScope = {
+    accountScope: secretaryScopeKey,
+    chatId: LINX_DEFAULT_SECRETARY.chatId,
+  }
   const activeSecretaryScopeRef = useRef(secretaryScopeKey)
   activeSecretaryScopeRef.current = secretaryScopeKey
   const activeSelectedChatRef = useRef(selectedChatId)
@@ -776,7 +1004,10 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     setThreadCreationFailure(null)
     setPendingSecretaryDraft(null)
     setSecretaryDraftHandoffFailure(null)
-    setSecretaryDraftState({ text: '', scopeKey: secretaryScopeKey })
+    setSecretaryDraftState({
+      text: loadChatDraft(secretaryDraftScope),
+      scopeKey: secretaryScopeKey,
+    })
   }, [secretaryScopeKey])
 
   useEffect(() => {
@@ -827,7 +1058,16 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       ? { text: '', scopeKey: draft.scopeKey }
       : current)
     setSecretaryDraftHandoffFailure((current) => current?.scopeKey === draft.scopeKey ? null : current)
+    clearChatDraft({
+      accountScope: draft.scopeKey,
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+    })
   }, [])
+
+  const updateSecretaryDraft = useCallback((text: string) => {
+    setSecretaryDraftState({ text, scopeKey: secretaryScopeKey })
+    saveChatDraft(secretaryDraftScope, text)
+  }, [secretaryScopeKey])
 
   const failSecretaryDraftHandoff = useCallback((draft: PendingSecretaryDraft) => {
     if (activeSecretaryScopeRef.current !== draft.scopeKey) return
@@ -848,16 +1088,16 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     return threads.find((thread) => thread.id === selectedThreadId) ?? null
   }, [selectedThreadId, threads])
   const isStagedSecretaryWelcome = isSecretary && !activeThread
+  const isWaitingForChat = isChatsLoading && !activeChat
+  const isWaitingForThread = isThreadsLoading && !selectedThreadId
 
   useEffect(() => {
+    const canUseStagedSecretary = isSecretary
     if (
       !selectedChatId
       || !isReady
-      || isChatsLoading
-      || isThreadsLoading
-      || chatError
-      || threadError
-      || !activeChat
+      || (!activeChat && !canUseStagedSecretary)
+      || (!canUseStagedSecretary && (isChatsLoading || isThreadsLoading || chatError || threadError))
     ) return
 
     const normalizedThreads = threads
@@ -874,7 +1114,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       return
     }
 
-    if (selectedChatId === LINX_DEFAULT_SECRETARY.chatId && isDefaultSecretarySettling) {
+    if (isSecretary && isDefaultSecretarySettling) {
       return
     }
 
@@ -937,6 +1177,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   }, [
     isDefaultSecretarySettling,
     isReady,
+    isSecretary,
     isChatsLoading,
     isThreadsLoading,
     chatError,
@@ -957,16 +1198,16 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     isAuthenticated,
     isLoading: !isReady
       || !db
-      || isChatsLoading
-      || isThreadsLoading
+      || isWaitingForChat
+      || isWaitingForThread
       || (!isSecretary && !selectedThreadId && !threadCreationError),
-    isChatLoading: !db || databaseStatus === 'initializing' || isChatsLoading,
+    isChatLoading: !db || databaseStatus === 'initializing' || isWaitingForChat,
     error: databaseStatus === 'error'
       ? databaseError ?? new Error('Solid database initialization failed.')
       : isStagedSecretaryWelcome ? null : chatError ?? threadError,
     activeChat,
     isSecretary,
-    hasThread: Boolean(selectedThreadId && activeThread),
+    hasThread: Boolean(selectedThreadId && (activeThread || (!chatError && !threadError))),
   })
   const isErrorDerivedLoginRequired = rawContentState.kind === 'login-required' && isAuthenticated
   const [loginRequiredGraceExpired, setLoginRequiredGraceExpired] = useState(false)
@@ -1040,11 +1281,8 @@ export function ChatContentPane(props: ChatContentPaneProps) {
         starterActions={SECRETARY_STARTER_ACTIONS}
         composerValue={secretaryDraft}
         composerStatus={composerStatus}
-        onStarterAction={(action) => setSecretaryDraftState({
-          text: action.prompt,
-          scopeKey: secretaryScopeKey,
-        })}
-        onComposerValueChange={(text) => setSecretaryDraftState({ text, scopeKey: secretaryScopeKey })}
+        onStarterAction={(action) => updateSecretaryDraft(action.prompt)}
+        onComposerValueChange={updateSecretaryDraft}
         onSubmit={submitSecretaryDraft}
         isSubmitting={mutations.createThread.isPending || Boolean(activePendingSecretaryDraft)}
         retryLabel={threadCreationError ? '重试创建话题' : undefined}
@@ -1125,6 +1363,8 @@ export function ChatContentPane(props: ChatContentPaneProps) {
           <ChatKitPanel
             session={session}
             selectedThreadId={selectedThreadId}
+            selectedChatId={selectedChatId}
+            selectedThreadTitle={activeThread?.title}
             pendingComposerDraft={isSecretary
               && activePendingSecretaryDraft?.chatId === selectedChatId
               ? activePendingSecretaryDraft

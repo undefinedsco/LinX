@@ -4,6 +4,7 @@ import {
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
   normalizeAIConfigModelId,
+  normalizeAIConfigProviderId,
   sameAIConfigProviderFamily,
   selectAIConfigCredential,
 } from '@undefineds.co/models'
@@ -16,6 +17,16 @@ import { MODEL_PROVIDERS } from '../domain/provider-catalog'
 import type { AIProvider, AIModel } from '../domain/types'
 
 type AnyRow = Record<string, any>
+
+function isRow(row: AnyRow | null): row is AnyRow {
+  return row !== null
+}
+
+function unwrapLiveQueryRow(row: AnyRow, alias: string): AnyRow | null {
+  const nested = row?.[alias]
+  if (nested && typeof nested === 'object') return nested
+  return row && typeof row === 'object' ? row : null
+}
 
 function rowKey(row: AnyRow): string {
   if (typeof row?.id === 'string' && row.id.length > 0) {
@@ -67,15 +78,15 @@ export function useModelServices() {
     : null
 
   const credentialRows = useMemo(
-    () => credentialQuery.data?.map((r) => (r as any).c).filter(Boolean) ?? [],
+    () => credentialQuery.data?.map((row) => unwrapLiveQueryRow(row as AnyRow, 'c')).filter(isRow) ?? [],
     [credentialQuery.data],
   )
   const providerRows = useMemo(
-    () => providerQuery.data?.map((r) => (r as any).p).filter(Boolean) ?? [],
+    () => providerQuery.data?.map((row) => unwrapLiveQueryRow(row as AnyRow, 'p')).filter(isRow) ?? [],
     [providerQuery.data],
   )
   const modelRows = useMemo(
-    () => modelQuery.data?.map((r) => (r as any).m).filter(Boolean) ?? [],
+    () => modelQuery.data?.map((row) => unwrapLiveQueryRow(row as AnyRow, 'm')).filter(isRow) ?? [],
     [modelQuery.data],
   )
 
@@ -132,8 +143,31 @@ export function useModelServices() {
       }
     })
 
+    for (const [providerId, providerState] of Object.entries(providerStates)) {
+      if (merged[providerId]) continue
+      const providerRow = providerRows.find((row) =>
+        normalizeAIConfigProviderId(String(row.id ?? '')) === providerId
+      )
+      const displayName = typeof providerRow?.displayName === 'string' && providerRow.displayName.trim()
+        ? providerRow.displayName.trim()
+        : providerId
+      const defaultBaseUrl = typeof providerRow?.baseUrl === 'string'
+        ? providerRow.baseUrl
+        : undefined
+
+      merged[providerId] = {
+        ...providerState,
+        id: providerId,
+        name: displayName,
+        description: '来自 Solid Pod 的自定义模型服务',
+        defaultBaseUrl,
+        defaultModels: providerState.models.map((model) => model.id),
+        baseUrl: providerState.baseUrl || defaultBaseUrl,
+      }
+    }
+
     return merged
-  }, [providerStates, queryError])
+  }, [providerRows, providerStates, queryError])
 
   const updateProvider = useCallback(async (id: string, updates: Partial<AIProvider>) => {
     const plan = buildAIConfigMutationPlan({

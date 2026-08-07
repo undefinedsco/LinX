@@ -23,7 +23,7 @@ function loadWebServerWithStubs(t, options = {}) {
 
   global.fetch = async (url, init = {}) => {
     fetchCalls.push({ url: String(url), init })
-    if (options.aiResponse && String(url).endsWith('/v1/chat/completions')) {
+    if (options.aiResponse && (String(url).endsWith('/v1/chat/completions') || String(url).endsWith('/v1/responses'))) {
       return options.aiResponse(url, init)
     }
     const statusCode = options.provisionStatus ?? 200
@@ -518,6 +518,42 @@ test('server AI proxy targets the running xpod runtime and ignores caller suppli
   assert.ok(aiCall)
   assert.equal(fetchCalls.some((call) => call.url.includes('evil.example')), false)
   assert.equal(JSON.parse(aiCall.init.body).model, 'linx-lite')
+})
+
+test('server Responses proxy targets the running local xpod and preserves web search tools', async (t) => {
+  const { server, fetchCalls } = loadWebServerWithStubs(t, {
+    status: {
+      running: true,
+      port: 5737,
+      baseUrl: 'http://127.0.0.1:5737',
+      publicUrl: undefined,
+    },
+    aiResponse: async () => new Response(JSON.stringify({
+      id: 'resp-1',
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'ok' }] }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/ai/responses', {
+    method: 'POST',
+    body: {
+      model: 'linx-lite',
+      input: 'latest news',
+      tools: [{ type: 'web_search' }],
+      upstreamUrl: 'https://evil.example/v1/responses',
+    },
+  })
+
+  assert.equal(response.status, 200)
+  const aiCall = fetchCalls.find((call) => call.url === 'http://127.0.0.1:5737/v1/responses')
+  assert.ok(aiCall)
+  assert.deepEqual(JSON.parse(aiCall.init.body).tools, [{ type: 'web_search' }])
+  assert.equal(fetchCalls.some((call) => call.url.includes('evil.example')), false)
 })
 
 test('stored Cloud registration is ignored when no public URL can be recovered', (t) => {
