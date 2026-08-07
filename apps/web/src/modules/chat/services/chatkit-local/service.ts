@@ -145,6 +145,23 @@ function isWebSearchRequested(inferenceOptions: unknown): boolean {
   )
 }
 
+function describeRuntimeToolProgress(name: string): { icon: string; text: string } {
+  const normalized = name.toLowerCase()
+  if (/(search|grep|find|lookup|query)/.test(normalized)) {
+    return { icon: 'search', text: '正在搜索相关资料…' }
+  }
+  if (/(read|open|list|inspect|view)/.test(normalized)) {
+    return { icon: 'document', text: '正在读取工作区内容…' }
+  }
+  if (/(write|edit|patch|delete|remove|move)/.test(normalized)) {
+    return { icon: 'write', text: '工作区变更等待确认…' }
+  }
+  if (/(exec|shell|bash|terminal|command)/.test(normalized)) {
+    return { icon: 'square-code', text: '正在运行工作区命令…' }
+  }
+  return { icon: 'settings-slider', text: '正在使用工作区工具…' }
+}
+
 function parseResponsesApiResult(value: unknown): ModelResponse {
   if (!value || typeof value !== 'object') {
     throw new Error('联网搜索没有返回可用的回答。请稍后重试。')
@@ -940,6 +957,12 @@ export class LocalChatKitService {
         }
 
         if (event.type === 'tool_call') {
+          const progress = describeRuntimeToolProgress(event.name)
+          yield {
+            type: 'progress_update',
+            icon: progress.icon,
+            text: progress.text,
+          } as ThreadStreamEvent
           const toolItem = this.createRuntimeToolCallItem(thread, event, context)
           await this.store.addThreadItem(thread.id, toolItem, context)
           yield { type: 'thread.item.added', item: toolItem }

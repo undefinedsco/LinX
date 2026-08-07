@@ -320,6 +320,11 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
       content: [expect.objectContaining({ text: expect.stringContaining('已转入收件箱等待处理') })],
     }), {})
     expect(events.map((event) => event.type)).toContain('thread.item.added')
+    expect(events).toContainEqual({
+      type: 'progress_update',
+      icon: 'document',
+      text: '正在读取工作区内容…',
+    })
     expect(mocked.persistRuntimeEvent).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'runtime-1' }),
       expect.objectContaining({ type: 'tool_call', requestId: 'call-2' }),
