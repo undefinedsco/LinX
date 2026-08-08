@@ -566,7 +566,7 @@ describe('useLoginController', () => {
 
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://cloud.example.com',
-      authorizationSurface: 'embedded',
+      authorizationSurface: 'window',
       returnToMicroAppId: 'chat',
     }))
     window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
@@ -1714,7 +1714,7 @@ describe('useLoginController', () => {
 
     expect(startLocalMock).not.toHaveBeenCalled()
     expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
-      authorizationSurface: 'embedded',
+      authorizationSurface: 'window',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
       storageProviderUrl: 'https://pod.example.com/',

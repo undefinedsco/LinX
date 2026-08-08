@@ -19,8 +19,11 @@ import {
   ChevronRight,
   Plus,
   Search,
+  Check,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -147,6 +150,7 @@ interface ThreadListCardProps {
   selectedThreadId: string | null
   onSelectThread: (id: string) => void
   onStarThread: (id: string) => void
+  onRenameThread: (id: string, title: string) => Promise<void>
   onCreateThread: () => void
 }
 
@@ -155,6 +159,7 @@ const ThreadListCard: FC<ThreadListCardProps> = ({
   selectedThreadId,
   onSelectThread,
   onStarThread,
+  onRenameThread,
   onCreateThread,
 }) => {
   const [isOpen, setIsOpen] = useState(false)
@@ -237,6 +242,7 @@ const ThreadListCard: FC<ThreadListCardProps> = ({
                       isSelected={thread.id === selectedThreadId}
                       onSelect={() => onSelectThread(thread.id)}
                       onStar={() => onStarThread(thread.id)}
+                      onRename={(title) => onRenameThread(thread.id, title)}
                     />
                   ))}
                 </div>
@@ -254,6 +260,7 @@ interface ThreadItemProps {
   isSelected: boolean
   onSelect: () => void
   onStar: () => void
+  onRename: (title: string) => Promise<void>
 }
 
 const ThreadItem: FC<ThreadItemProps> = ({
@@ -261,7 +268,28 @@ const ThreadItem: FC<ThreadItemProps> = ({
   isSelected,
   onSelect,
   onStar,
+  onRename,
 }) => {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(thread.title)
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    const title = draft.trim()
+    if (!title || title === thread.title) {
+      setDraft(thread.title)
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    try {
+      await onRename(title)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div
       onClick={onSelect}
@@ -289,7 +317,19 @@ const ThreadItem: FC<ThreadItemProps> = ({
       </button>
 
       {/* 标题 */}
-      <span className="flex-1 text-sm truncate">{thread.title}</span>
+      {editing ? (
+        <div className="flex min-w-0 flex-1 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <Input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') { setDraft(thread.title); setEditing(false) } }}
+            className="h-7 min-w-0 text-sm" disabled={saving} />
+          <button type="button" aria-label="保存话题名称" onClick={() => void save()} disabled={saving}><Check className="h-4 w-4" /></button>
+          <button type="button" aria-label="取消重命名" onClick={() => { setDraft(thread.title); setEditing(false) }} disabled={saving}><X className="h-4 w-4" /></button>
+        </div>
+      ) : (
+        <button type="button" className="min-w-0 flex-1 truncate text-left text-sm" onDoubleClick={(e) => { e.stopPropagation(); setDraft(thread.title); setEditing(true) }} title="双击重命名">
+          {thread.title}
+        </button>
+      )}
     </div>
   )
 }
@@ -378,6 +418,11 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
     }
   }
 
+  const handleRenameThread = async (threadId: string, title: string) => {
+    if (!selectedChatId) return
+    await mutations.updateThread.mutateAsync({ id: threadId, chatId: selectedChatId, title })
+  }
+
   // 处理新建话题 - 使用 chatOps
   const handleCreateThread = async () => {
     if (!selectedChatId) return
@@ -449,6 +494,7 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
             selectedThreadId={selectedThreadId}
             onSelectThread={selectThread}
             onStarThread={handleStarThread}
+            onRenameThread={handleRenameThread}
             onCreateThread={handleCreateThread}
           />
 

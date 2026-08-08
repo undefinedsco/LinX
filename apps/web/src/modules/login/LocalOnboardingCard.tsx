@@ -54,6 +54,9 @@ export function LocalOnboardingCard({
     ? localIssuerUrl
     : snapshot.publicUrl
   const previousConfigOpen = useRef(configWindow.open)
+  const authorizationSurface = typeof window !== 'undefined' && window.xpodDesktop?.auth
+    ? 'embedded' as const
+    : 'window' as const
 
   const handleBack = useCallback(() => {
     setAuthError(null)
@@ -79,7 +82,7 @@ export function LocalOnboardingCard({
     try {
       if (snapshot.spaceKind === 'standalone') {
         await oidc.connect(localProviderUrl, {
-          authorizationSurface: 'embedded',
+          authorizationSurface,
           route: 'standalone',
           storageProviderUrl: localProviderUrl,
           storageProviderLabel: 'Standalone',
@@ -89,7 +92,7 @@ export function LocalOnboardingCard({
         })
       } else {
         await oidc.connect(snapshot.cloudIdentityUrl ?? LINX_CLOUD_IDENTITY_ORIGIN, {
-          authorizationSurface: 'embedded',
+          authorizationSurface,
           route: 'local',
           accountIssuerUrl: snapshot.cloudIdentityUrl ?? LINX_CLOUD_IDENTITY_ORIGIN,
           accountIssuerLabel: 'Cloud',

@@ -478,8 +478,14 @@ export async function performSignOut(
 }
 
 export const SIGN_OUT_EVENT = 'linx:sign-out'
+export const SESSION_RECOVERY_EVENT = 'linx:session-recovery-required'
 
 export function requestSignOut() {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(SIGN_OUT_EVENT))
+}
+
+export function requestSessionRecovery() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(SESSION_RECOVERY_EVENT))
 }

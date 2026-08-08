@@ -869,7 +869,7 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === 'IRI OK')).toBe(true)
   })
 
-  it('keeps non-platform providers on the user API key path', async () => {
+  it('routes non-platform providers through the authenticated Pod runtime', async () => {
     const store = createMockStore()
     const db = createMockDb({
       provider: 'openai',
@@ -882,12 +882,12 @@ describe('LocalChatKitService platform runtime routing', () => {
       apiKey: 'sk-test',
       baseUrl: 'https://api.openai.example/v1',
     }])
-    const providerFetch = vi.fn(async () => createSseResponse([
+    const providerFetch = vi.fn()
+    vi.stubGlobal('fetch', providerFetch)
+    const authFetch = vi.fn(async () => createSseResponse([
       'data: {"choices":[{"delta":{"content":"用户模型"}}]}\n\n',
       'data: [DONE]\n\n',
     ]))
-    vi.stubGlobal('fetch', providerFetch)
-    const authFetch = vi.fn(async () => new Response('', { status: 404 }))
     const service = new LocalChatKitService({
       store: store as any,
       db: db as any,
@@ -897,18 +897,15 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     const events = await sendMessage(service)
 
-    expect(authFetch).not.toHaveBeenCalledWith(
+    expect(authFetch).toHaveBeenCalledWith(
       'https://api.undefineds.co/v1/chat/completions',
-      expect.anything(),
-    )
-    expect(providerFetch).toHaveBeenCalledWith(
-      'https://api.openai.example/v1/chat/completions',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ Authorization: 'Bearer sk-test' }),
       }),
     )
-    const requestBody = JSON.parse((providerFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(providerFetch).not.toHaveBeenCalled()
+    const requestBody = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(requestBody.provider).toBe('openai')
     expect(requestBody.model).toBe('gpt-4o-mini')
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '用户模型')).toBe(true)
   })
@@ -933,24 +930,26 @@ describe('LocalChatKitService platform runtime routing', () => {
         status: 'active',
       },
     })
-    const providerFetch = vi.fn(async () => createSseResponse([
+    const providerFetch = vi.fn()
+    vi.stubGlobal('fetch', providerFetch)
+    const authFetch = vi.fn(async () => createSseResponse([
       'data: {"choices":[{"delta":{"content":"缓存恢复"}}]}\n\n',
       'data: [DONE]\n\n',
     ]))
-    vi.stubGlobal('fetch', providerFetch)
     const service = new LocalChatKitService({
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: vi.fn() as any,
+      authFetch: authFetch as any,
     })
 
     const events = await sendMessage(service)
 
-    expect(providerFetch).toHaveBeenCalledWith(
-      'https://api.openai.example/v1/chat/completions',
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/chat/completions',
       expect.objectContaining({ method: 'POST' }),
     )
+    expect(providerFetch).not.toHaveBeenCalled()
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '缓存恢复')).toBe(true)
   })
 
@@ -962,7 +961,9 @@ describe('LocalChatKitService platform runtime routing', () => {
     })
     const providerFetch = vi.fn()
     vi.stubGlobal('fetch', providerFetch)
-    const authFetch = vi.fn(async () => new Response('', { status: 404 }))
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      error: { code: 'model_not_configured', message: 'No AI provider configured.' },
+    }), { status: 400 }))
     const service = new LocalChatKitService({
       store: store as any,
       db: db as any,
@@ -972,9 +973,12 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     const events = await sendMessage(service)
 
-    expect(authFetch).not.toHaveBeenCalled()
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    )
     expect(providerFetch).not.toHaveBeenCalled()
-    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('请先在设置中配置 AI API Key。')
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('消息生成失败。请稍后重试。')
   })
 
   it('surfaces shared credential query failures instead of pretending the API key is missing', async () => {

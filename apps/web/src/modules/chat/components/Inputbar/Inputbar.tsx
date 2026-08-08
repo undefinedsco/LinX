@@ -27,8 +27,11 @@ import {
 } from 'react'
 import { Send, Square, Loader2, GripHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { InputbarTools, InputbarToolsProps } from './InputbarTools'
+
+const COMMON_EMOJIS = ['😀', '🙂', '😂', '😍', '🤔', '👍', '👏', '🎉', '🔥', '✅', '💡', '🙏', '🚀', '❤️', '✨', '😅', '😭', '😎', '🙌', '💬']
 
 // ============================================
 // Types
@@ -209,7 +212,8 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
   ) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
-    const [isDragging, setIsDragging] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [emojiOpen, setEmojiOpen] = useState(false)
     const [customHeight, setCustomHeight] = useState<number | undefined>(undefined)
     const [isDragResizing, setIsDragResizing] = useState(false)
 
@@ -421,10 +425,23 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
             {/* LeftSection - Cherry Studio: flex 1 */}
             <div className="flex items-center flex-1 min-w-0 gap-4">
               {toolbarLeft}
-              <InputbarTools 
+              <InputbarTools
                 disabled={disabled}
-                {...toolsProps} 
+                {...toolsProps}
+                onEmojiClick={() => setEmojiOpen((open) => !open)}
               />
+              <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
+                <PopoverTrigger asChild><span className="sr-only">表情选择器</span></PopoverTrigger>
+                <PopoverContent side="top" align="start" className="w-64 p-2">
+                  <div className="grid grid-cols-5 gap-1">
+                    {COMMON_EMOJIS.map((emoji) => (
+                      <button key={emoji} type="button" className="rounded p-2 text-lg hover:bg-muted" aria-label={`插入${emoji}`} onClick={() => { onChange(`${value}${emoji}`); setEmojiOpen(false); textareaRef.current?.focus() }}>
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* RightSection - Cherry Studio: gap 6px */}

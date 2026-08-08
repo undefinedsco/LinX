@@ -222,7 +222,7 @@ describe('LocalOnboardingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续登录' }))
 
     expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', expect.objectContaining({
-      authorizationSurface: 'embedded',
+      authorizationSurface: 'window',
       route: 'standalone',
       storageProviderUrl: 'http://localhost:5737/',
       storageProviderLabel: 'Standalone',
@@ -267,7 +267,7 @@ describe('LocalOnboardingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续登录' }))
 
     expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
-      authorizationSurface: 'embedded',
+      authorizationSurface: 'window',
       route: 'local',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',

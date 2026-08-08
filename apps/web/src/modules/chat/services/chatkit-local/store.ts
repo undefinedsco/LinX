@@ -294,9 +294,12 @@ function threadItemToMessageRecord(item: ThreadItem): {
         }),
       }
     : item
+  const hasConversationMetadata = ['parent_item_id', 'branch_id', 'supersedes']
+    .some((key) => typeof (item as any)[key] === 'string')
   if (item.type === 'user_message') {
     const hasExtendedState = Array.isArray(item.attachments) && item.attachments.length > 0
       || Boolean(item.inference_options && Object.keys(item.inference_options).length > 0)
+      || hasConversationMetadata
     return {
       content: (item as any).content
         .filter((contentPart: any) => contentPart.type === 'input_text')
@@ -309,8 +312,16 @@ function threadItemToMessageRecord(item: ThreadItem): {
   }
 
   if (item.type === 'assistant_message') {
+    const hasAnnotations = Array.isArray((item as any).content)
+      && (item as any).content.some((contentPart: any) => (
+        contentPart.type === 'output_text'
+        && Array.isArray(contentPart.annotations)
+        && contentPart.annotations.length > 0
+      ))
     const hasExtendedState = Array.isArray(item.attachments) && item.attachments.length > 0
       || typeof (item as ThreadItem & { feedback?: unknown }).feedback === 'string'
+      || hasConversationMetadata
+      || hasAnnotations
     return {
       content: (item as any).content
         .filter((contentPart: any) => contentPart.type === 'output_text')

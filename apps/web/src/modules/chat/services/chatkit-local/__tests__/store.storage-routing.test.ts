@@ -248,6 +248,127 @@ describe('LocalChatKitStore storage routing', () => {
     ])
   })
 
+  it('persists assistant citation annotations for history replay after refresh', async () => {
+    const inserts: Array<Record<string, unknown>> = []
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
+      }),
+      findById: vi.fn(async () => null),
+      insert: vi.fn(() => ({
+        values(values: Record<string, unknown>) {
+          inserts.push(values)
+          return { execute: vi.fn(async () => undefined) }
+        },
+      })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          execute: vi.fn(async () => []),
+        })),
+      })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      vi.fn() as any,
+    )
+
+    await store.addThreadItem('thread-1', {
+      id: 'assistant-with-source',
+      thread_id: 'thread-1',
+      type: 'assistant_message',
+      content: [{
+        type: 'output_text',
+        text: '有来源的回答',
+        annotations: [{
+          index: 6,
+          source: {
+            type: 'url',
+            url: 'https://example.com/report',
+            title: 'Example report',
+          },
+        }],
+      }],
+      attachments: [],
+      status: 'completed',
+      created_at: 0,
+    } as any, {})
+
+    const messageInsert = inserts.find((entry) => (
+      typeof entry.id === 'string'
+      && entry.id.endsWith('/messages.ttl#assistant-with-source')
+    ))
+    expect(JSON.parse(String(messageInsert?.richContent))).toMatchObject({
+      content: [{
+        type: 'output_text',
+        annotations: [{
+          index: 6,
+          source: {
+            type: 'url',
+            url: 'https://example.com/report',
+          },
+        }],
+      }],
+    })
+  })
+
+  it('replays Markdown and fenced code without rewriting ChatKit content', async () => {
+    const markdown = [
+      '## Result',
+      '',
+      '| name | value |',
+      '| --- | ---: |',
+      '| answer | 42 |',
+      '',
+      '```ts',
+      'const answer: number = 42',
+      '```',
+      '',
+      '$$E = mc^2$$',
+    ].join('\n')
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
+      }),
+      findById: vi.fn(async () => null),
+      insert: vi.fn(() => ({
+        values() {
+          return { execute: vi.fn(async () => undefined) }
+        },
+      })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          execute: vi.fn(async () => [{
+            id: 'chat/default/2026/08/09/messages.ttl#markdown-1',
+            chat: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this',
+            thread: 'https://node-0000.undefineds.co/alice/.data/index.ttl#thread-1',
+            role: 'assistant',
+            content: markdown,
+            richContent: null,
+            metadata: { chatkitItemId: 'markdown-1' },
+            status: 'completed',
+            createdAt: '2026-08-09T00:00:00.000Z',
+          }]),
+        })),
+      })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      vi.fn() as any,
+    )
+
+    const result = await store.loadThreadItems('thread-1', undefined, 20, 'asc', {})
+
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: 'markdown-1',
+        type: 'assistant_message',
+        content: [{ type: 'output_text', text: markdown, annotations: [] }],
+      }),
+    ])
+  })
+
   it('replays client tool calls from richContent envelopes', async () => {
     const db = {
       getDialect: () => ({

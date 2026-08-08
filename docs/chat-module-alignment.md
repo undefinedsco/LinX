@@ -26,30 +26,30 @@
 | **话题列表** ||||
 | Star/Unstar 话题 | chat-ui-wechat.md | ✅ 已实现 | 2024-12-15 |
 | 删除话题 | chat-ui-wechat.md | ✅ 已实现 | 带确认对话框 |
-| 重命名话题 | chat-ui-wechat.md | ❌ 未实现 | 需要 inline edit |
+| 重命名话题 | chat-ui-wechat.md | ✅ 已实现 | 话题行双击进入 inline edit，回车保存 |
 | **Content Header** ||||
 | Provider Logo + Model 显示 | chat-ui-wechat.md | ✅ 已实现 | 2024-12-15 |
 | Star toggle | chat-ui-wechat.md | ✅ 已实现 | 2024-12-15 |
 | 新话题按钮 | chat-ui-wechat.md | ✅ 已实现 | - |
 | **消息列表** ||||
-| 流式 AI 响应 | chat-spec.md | ✅ 已实现 | useAIChat hook |
-| 深度思考显示 | Cherry Studio | ✅ 已实现 | ThoughtChain 组件 |
-| 工具调用显示 | Cherry Studio | ✅ 已实现 | ToolInvocation 组件 |
-| 智能滚动 | chat-ui-wechat.md | ✅ 已实现 | MessageList 组件 |
-| "New Messages" 按钮 | chat-ui-wechat.md | ✅ 已实现 | MessageList 组件 |
+| 流式 AI 响应 | chat-spec.md | ✅ 已实现 | ChatKit stream + LocalChatKitService |
+| 深度思考显示 | Cherry Studio | 🚧 部分完成 | 原生 ThoughtChain 尚未接入 ChatKit 主路径；主路径只显示克制的活动状态 |
+| 工具调用显示 | Cherry Studio | ✅ 已实现 | ChatKit `progress_update` + 持久化 `client_tool_call`，外层运行时详情渐进展开 |
+| 智能滚动 | chat-ui-wechat.md | ✅ 已实现 | ChatKit `thread.autoScroll` |
+| "New Messages" 按钮 | chat-ui-wechat.md | 🔍 由 ChatKit 提供 | 需在长会话真实浏览器中验证触发行为 |
 | **消息操作** ||||
-| Copy 消息 | chat-ui-wechat.md | ✅ 已实现 | 右键菜单 |
-| Delete 消息 | chat-ui-wechat.md | 🚧 占位符 | 需要传递回调 |
-| Reply (引用) | chat-ui-wechat.md | ❌ 未实现 | P2 |
+| Copy 消息 | chat-ui-wechat.md | ✅ 已实现 | ChatKit 消息操作 |
+| Delete 消息 | chat-ui-wechat.md | 🚧 部分完成 | ChatKit custom action 已支持 `message.delete`；当前主界面已接入当前 Thread 用户消息选择删除 |
+| Reply (引用) | chat-ui-wechat.md | 🚧 部分完成 | 当前主界面已支持引用上一条用户消息到 Composer |
 | **Composer** ||||
-| 无边框输入区 | chat-ui-wechat.md | ✅ 已实现 | Composer 组件 |
+| 无边框输入区 | chat-ui-wechat.md | ✅ 已实现 | ChatKit Composer |
 | 缺少 API Key 提示 | chat-spec.md | ✅ 已实现 | 内联卡片 |
 
 ### 1.2 P1 - 重要功能
 
 | 功能 | 设计要求 | 状态 | 备注 |
 |------|---------|------|------|
-| Mark as Unread | chat-ui-wechat.md | ❌ 未实现 | 需要 schema 添加 unread 字段 |
+| Mark as Unread | chat-ui-wechat.md | ✅ 已实现 | ChatListPane context menu + unreadCount |
 | Role 编辑 Modal | chat-ui-wechat.md | ✅ 已实现 | ChatRightSidebar |
 | Role 卡片 3 行 clamp | chat-ui-wechat.md | 🔍 待验证 | 检查样式 |
 | Thread 搜索 | chat-ui-wechat.md | ✅ 已实现 | ChatRightSidebar |
@@ -58,11 +58,11 @@
 
 | 功能 | 设计要求 | 状态 | 备注 |
 |------|---------|------|------|
-| Emoji picker | chat-ui-wechat.md | ❌ 未实现 | 按钮已有 |
-| File attachment | chat-ui-wechat.md | ❌ 未实现 | 按钮已有 |
-| Image upload | chat-ui-wechat.md | ❌ 未实现 | 按钮已有 |
+| Emoji picker | chat-ui-wechat.md | ❌ 主路径未实现 | 自研 Inputbar 有该组件，但 ChatKit 主路径没有接入 |
+| File attachment | chat-ui-wechat.md | ✅ 已实现 | ChatKit two-phase upload，Pod 持久化 |
+| Image upload | chat-ui-wechat.md | ✅ 已实现 | 图片预览、下载和历史消息 hydration |
 | Voice message | chat-ui-wechat.md | ❌ 未实现 | 未来功能 |
-| Model 切换器 | chat-spec.md | ❌ 未实现 | Header 只显示，不能切换 |
+| Model 切换器 | chat-spec.md | ✅ 已实现 | ChatHeader 使用 ModelSelector 并持久化 provider/model |
 
 ---
 
@@ -169,20 +169,42 @@ npx playwright test chat-alignment.spec.ts --project=chromium
 1. [x] 修复 TypeScript 编译错误
 2. [x] 调整 Avatar 大小为 48px
 3. [x] 验证并调整列表行高为 64px
-4. [ ] 实现 MessageBubble Delete 回调
+4. [x] 实现 MessageBubble Delete 回调（ChatKit custom action）
 
 ### 5.2 中优先级
 
-1. [ ] 实现 Model 切换器（Header dropdown）
-2. [ ] 实现话题重命名（inline edit）
-3. [ ] 添加 unread 字段到 schema
-4. [ ] 实现 Mark as Unread 功能
+1. [x] 实现 Model 切换器（Header dropdown）
+2. [x] 实现话题重命名（inline edit）
+3. [x] 添加 unread 字段到 schema/collection projection
+4. [x] 实现 Mark as Unread 功能
 
 ### 5.3 低优先级
 
-1. [ ] Emoji picker 集成
-2. [ ] File/Image upload 实现
-3. [ ] Reply (引用回复) 功能
+1. [x] Emoji picker 集成（自研 Inputbar）
+2. [x] File/Image upload 实现（ChatKit two-phase + Pod）
+3. [x] Reply (引用回复) 功能
+
+### 5.4 ChatKit React 1.6.1 / ChatKit 1.9.0 对齐进度（2026-08）
+
+- [x] `@openai/chatkit-react` 1.6.1（内部 ChatKit 1.9.0）runtime 主路径：Composer、附件、语音听写、联网搜索、retry、feedback 配置已接入。
+- [x] 停止生成：请求 abort 后通知 runtime stop，并保存 `incomplete` assistant 内容。
+- [x] 消息编辑/删除/引用：通过 custom action 和 ChatKit 外部操作栏接入。
+- [x] 编辑消息保留原记录，创建带 `parent_item_id`、`branch_id`、`supersedes` 的新分支。
+- [x] 当前线程分支导航：外部操作栏提供 `1/2`、上一分支、下一分支；选择同时写入 UI state 和 Thread metadata。
+- [x] ChatKit 消息列表按 active branch 隐藏非活动 sibling 及回答子树：`items.list` 与 `threads.get_by_id` 使用同一投影规则。
+- [x] Retry 回答分支：原回答和重试回答以用户消息为共同 parent，新回答成为 active sibling。
+- [x] 本地 Xpod 登录与 LinX OIDC 回调：`localhost:5737` 授权后成功返回 `/auth/callback`，ChatKit 主界面和 Pod 历史消息正常加载。
+- [x] ChatKit 附件入口与历史附件加载：文件选择器可打开，已持久化会话显示附件计数并可重新加载。
+- [x] timecc 上游独立服务可用性：模型服务页可读取模型；独立 provider 请求曾验证成功。
+- [x] Chat 自定义 provider 不再由浏览器直连：已统一改走登录后的 Xpod `/v1/chat/completions`，真实网络记录确认浏览器未请求 `timicc.com`，也不再携带上游 API Key。
+- [ ] 完整运行时浏览器验收：Xpod credential-reader/DPoP 链路已经修复；当前本地 Pod 没有可用 AI provider key，因此成功生成、Stop、retry 和搜索 citation 仍需补齐本地凭据后终验。
+- [ ] 附件新上传：ChatKit 文件选择器可打开，历史附件可恢复；macOS 文件选择器自动化未可靠选中文件，未形成可信的新上传结果。
+- [ ] feedback、编辑分支和活动分支刷新保持：数据建模、两条读取路径投影与 Thread metadata 恢复已经补齐；ChatKit custom action 已写入编辑分支，完整 `1/2` 连续验收仍受本地 AI key 缺失影响。
+- [x] 普通 Thread Composer 同页草稿：真实浏览器中输入草稿、切换到另一 Chat、再切回后完整恢复；当前 ChatKit API 没有公开文本读取/变化事件，因此未发送草稿跨页面刷新仍是明确边界。
+- [x] citation 数据闭环：流式 annotation 转为 ChatKit source，完整 item 写入 Pod，刷新历史可恢复；只允许 HTTP(S) 来源链接。
+- [x] runtime SSE 断线恢复：重连携带最后事件游标，Service 重放短日志，客户端去重。
+- [x] Xpod Web Search 协议：Responses built-in `web_search` 不再被丢弃，URL citation 可通过流式与非流式结果返回 LinX。
+- [x] Xpod 重启后的登录恢复：Chat 请求遇到过期会话 401 会立即触发本地 OIDC 恢复；浏览器已验证 localhost consent 和 `/chat` 回跳。
 
 ---
 
@@ -202,13 +224,13 @@ cherry-studio/src/renderer/src/pages/home/
 
 | 功能 | 优先级 | 状态 |
 |------|--------|------|
-| Markdown + 代码高亮 | P0 | ✅ 已有基础实现 |
+| Markdown + 代码高亮 | P0 | ✅ ChatKit 主路径支持 | 原生 MarkdownRenderer 不是当前消息主路径 |
 | 流式响应 | P0 | ✅ 已实现 |
-| 消息操作栏 | P0 | ✅ 右键菜单 |
-| 思考过程 (CoT) | P0 | ✅ ThoughtChain |
-| Mermaid 图表 | P1 | ❌ 未实现 |
+| 消息操作栏 | P0 | ✅ ChatKit + 外部消息操作栏 |
+| 思考过程 (CoT) | P0 | 🚧 主路径仅展示活动摘要 | 原生 ThoughtChain 未接入 ChatKit |
+| Mermaid 图表 | P1 | ❌ ChatKit 主路径未实现 | 原生 MarkdownRenderer 支持，但当前不可见 |
 | 多主题 | P2 | ✅ 已有主题系统 |
-| 语音输入 | P2 | ❌ 未实现 |
+| 语音输入 | P2 | ✅ 已实现 | ChatKit composer dictation |
 
 ---
 

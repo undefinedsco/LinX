@@ -313,6 +313,11 @@ export class RuntimeThreadsModule {
     return this.getLog(id)
   }
 
+  getSessionEventsSince(id: string, afterInclusive: number): RuntimeThreadEvent[] {
+    this.getThreadOrThrow(id)
+    return (this.logs.get(id) ?? []).filter((event) => event.ts >= afterInclusive)
+  }
+
   subscribe(id: string, listener: (event: RuntimeThreadEvent) => void): () => void {
     const emitter = this.getEmitter(id)
     emitter.on('event', listener)

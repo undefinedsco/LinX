@@ -103,6 +103,16 @@ describe('runtime client', () => {
     expect(onConnectionStateChange).toHaveBeenLastCalledWith('reconnecting')
     vi.advanceTimersByTime(10)
     expect(FakeEventSource.instances).toHaveLength(2)
+    expect(FakeEventSource.instances[1]?.url).toBe('/api/runtime/threads/runtime-1/events?after=1')
+
+    FakeEventSource.instances[1]?.onmessage?.(new MessageEvent('message', {
+      data: JSON.stringify({ type: 'assistant_delta', ts: 1, threadId: 'runtime-1', text: 'hello' }),
+    }))
+    FakeEventSource.instances[1]?.onmessage?.(new MessageEvent('message', {
+      data: JSON.stringify({ type: 'assistant_done', ts: 2, threadId: 'runtime-1', text: 'hello' }),
+    }))
+    expect(onEvent).toHaveBeenCalledTimes(2)
+    expect(onEvent).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'assistant_done', ts: 2 }))
 
     unsubscribe()
     expect(FakeEventSource.instances[1]?.close).toHaveBeenCalledTimes(1)

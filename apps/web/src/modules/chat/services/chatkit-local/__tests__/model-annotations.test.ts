@@ -30,6 +30,29 @@ describe('ChatKit model annotations', () => {
   })
 
   it('drops malformed annotations instead of exposing invalid links', () => {
-    expect(normalizeModelAnnotations([{ type: 'url_citation', url: '' }, { source: {} }], 3)).toEqual([])
+    expect(normalizeModelAnnotations([
+      { type: 'url_citation', url: '' },
+      { type: 'url_citation', url: 'javascript:alert(1)' },
+      { type: 'url_citation', url: 'data:text/html,unsafe' },
+      { source: {} },
+    ], 3)).toEqual([])
+  })
+
+  it('preserves citation descriptions and accepts direct Responses API fields', () => {
+    expect(normalizeModelAnnotations([{
+      type: 'url_citation',
+      url: 'https://example.com/report',
+      title: 'Report',
+      description: 'Primary evidence',
+      end_index: 12,
+    }], 4)).toEqual([{
+      index: 12,
+      source: {
+        type: 'url',
+        url: 'https://example.com/report',
+        title: 'Report',
+        description: 'Primary evidence',
+      },
+    }])
   })
 })

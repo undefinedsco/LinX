@@ -10,6 +10,7 @@ import express, { Express, Request, Response } from 'express'
 import { Server } from 'http'
 import { getXpodModule } from './xpod'
 import { getRuntimeThreadsModule } from './runtime-threads'
+import type { RuntimeThreadEvent } from './runtime-runner'
 import { resolveLinxDefaultWorkspaceDir, resolveLinxUserDataDir } from './linx-paths'
 
 const OFFICIAL_CLOUD_IDENTITY_ORIGIN = 'https://id.undefineds.co'
@@ -1160,11 +1161,22 @@ export class WebServerModule {
       res.setHeader('Connection', 'keep-alive')
       res.flushHeaders?.()
 
-      const unsubscribe = runtimeSessions.subscribeSession(sessionId, (event) => {
+      const writeEvent = (event: RuntimeThreadEvent) => {
+        res.write(`id: ${event.ts}\n`)
         res.write(`data: ${JSON.stringify(event)}\n\n`)
+      }
+      const unsubscribe = runtimeSessions.subscribeSession(sessionId, (event) => {
+        writeEvent(event)
       })
 
-      res.write(`data: ${JSON.stringify({ type: 'status', ts: Date.now(), threadId: session.id, status: session.status })}\n\n`)
+      const after = Number(req.query.after)
+      if (Number.isFinite(after) && after >= 0) {
+        for (const event of runtimeSessions.getSessionEventsSince(sessionId, after)) {
+          writeEvent(event)
+        }
+      }
+
+      writeEvent({ type: 'status', ts: Date.now(), threadId: session.id, status: session.status })
 
       req.on('close', () => {
         unsubscribe()

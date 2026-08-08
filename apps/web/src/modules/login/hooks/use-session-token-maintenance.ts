@@ -3,7 +3,7 @@ import { EVENTS } from '@inrupt/solid-client-authn-browser'
 import { useSession } from '@/providers/solid-session-context'
 import { useLoginStore } from '@linx/stores/login'
 
-import { getPendingLoginAttempt } from '../login-utils'
+import { getPendingLoginAttempt, SESSION_RECOVERY_EVENT } from '../login-utils'
 import { useEmbeddedAuthorizationState } from './use-embedded-authorization-state'
 import { useOidcConnect } from './use-oidc-connect'
 
@@ -82,11 +82,13 @@ export function useSessionTokenMaintenance() {
     const onSessionSettled = () => clearRecoveryGuard()
 
     session.events.on(EVENTS.SESSION_EXPIRED, onSessionExpired)
+    window.addEventListener(SESSION_RECOVERY_EVENT, onSessionExpired)
     session.events.on(EVENTS.LOGIN, onSessionSettled)
     session.events.on(EVENTS.LOGOUT, onSessionSettled)
 
     return () => {
       session.events.off(EVENTS.SESSION_EXPIRED, onSessionExpired)
+      window.removeEventListener(SESSION_RECOVERY_EVENT, onSessionExpired)
       session.events.off(EVENTS.LOGIN, onSessionSettled)
       session.events.off(EVENTS.LOGOUT, onSessionSettled)
     }

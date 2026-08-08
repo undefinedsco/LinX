@@ -5993,17 +5993,17 @@
     "@nodelib/fs.scandir" "2.1.5"
     fastq "^1.6.0"
 
-"@openai/chatkit-react@^1.5.1":
-  version "1.5.1"
-  resolved "https://registry.npmjs.org/@openai/chatkit-react/-/chatkit-react-1.5.1.tgz"
-  integrity sha512-iFIOfZ16MLi0dZUmLW273hzBlCsN/xnwefTvoiT6X96DR61jGcJIaCJoNL4OOvp53hmEfhvrp4kENNyDbNt+UA==
+"@openai/chatkit-react@^1.6.1":
+  version "1.6.1"
+  resolved "https://registry.yarnpkg.com/@openai/chatkit-react/-/chatkit-react-1.6.1.tgz#4b467f1fe2e121d4417ea73a38df9a2a4ecca1c5"
+  integrity sha512-NraG0KJMouWG4uuXS5mAlcU8DNvu8lNp4YfpJiA4yzR6S9hnPsiPwbwhGXnMk8JxBQEitmSB1lMivJn/I2wopg==
   dependencies:
-    "@openai/chatkit" "1.7.0"
+    "@openai/chatkit" "1.9.0"
 
-"@openai/chatkit@1.7.0":
-  version "1.7.0"
-  resolved "https://registry.npmjs.org/@openai/chatkit/-/chatkit-1.7.0.tgz"
-  integrity sha512-uCUsShQO8PamPXt1gcFc8dbyV9Vic0yUgoUrEo7NT6z00azba8nU20rchVFHvjdgQsxgE/+BtsDtYoOVcq5Jjw==
+"@openai/chatkit@1.9.0":
+  version "1.9.0"
+  resolved "https://registry.yarnpkg.com/@openai/chatkit/-/chatkit-1.9.0.tgz#c9878b0c71e74cf1c743ce6fce68ad4a32619a23"
+  integrity sha512-AbqNYaCkQfOauFIk/xL3LFmZ/zIBJuvV71EMUK1o1Tu3/qCG5qRjuDnTUVLkkX9Al2ZYQ6yB1oyWN0jNhoBRMQ==
 
 "@opentelemetry/api-logs@0.203.0":
   version "0.203.0"

@@ -2,10 +2,8 @@
  * Local (Browser) ChatKit Service
  *
  * Ports the xpod ChatKitService logic to run entirely in the browser.
- * Uses LocalChatKitStore for Pod persistence and shared models to read AI API
- * keys from the Pod.
- *
- * No API server round-trip — fetch goes directly to the AI provider.
+ * Uses LocalChatKitStore for Pod persistence and the authenticated Xpod runtime
+ * as the AI provider boundary.
  */
 
 import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/client'
@@ -24,15 +22,11 @@ import {
 } from '@/lib/vendor/xpod-chatkit'
 import {
   agentResource,
-  aiProviderResource,
   chatResource,
   contactResource,
-  credentialResource,
   extractChatIdFromChatRef,
-  getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  selectAIConfigCredential,
   type AgentRow,
   type ContactRow,
   type SolidDatabase,
@@ -83,18 +77,6 @@ function resolveContactIri(db: SolidDatabase, contact: Pick<ContactRow, 'id'>): 
 function contactMatchesRef(db: SolidDatabase, contact: ContactRow | null | undefined, ref: string): boolean {
   if (!contact || !ref) return false
   return contact.id === ref || resolveContactIri(db, contact) === ref
-}
-
-function isMissingExactReadError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
-  return /404|not found|missing/i.test(message)
-}
-
-function isUnsupportedCollectionReadError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
-  return /collection queries over plain LDP are not supported|Configure a global query capability/i.test(message)
 }
 
 type LocalChatKitStorePort = ChatKitStore<StoreContext> & {
@@ -160,6 +142,85 @@ function describeRuntimeToolProgress(name: string): { icon: string; text: string
     return { icon: 'square-code', text: '正在运行工作区命令…' }
   }
   return { icon: 'settings-slider', text: '正在使用工作区工具…' }
+}
+
+function readBranchParentId(item: ThreadItem): string | undefined {
+  const value = (item as ThreadItem & { parent_item_id?: unknown }).parent_item_id
+  return typeof value === 'string' ? value : undefined
+}
+
+function readBranchId(item: ThreadItem): string | undefined {
+  const value = (item as ThreadItem & { branch_id?: unknown }).branch_id
+  return typeof value === 'string' ? value : undefined
+}
+
+function projectActiveBranchItems<T extends { data: ThreadItem[] }>(
+  page: T,
+  rawActive: unknown,
+): T {
+  if (!rawActive || typeof rawActive !== 'object') return page
+  const active = rawActive as Record<string, unknown>
+  const hidden = new Set<string>()
+
+  for (const item of page.data) {
+    const parentId = readBranchParentId(item)
+    if (!parentId) continue
+    const selectedId = active[parentId]
+    if (typeof selectedId === 'string' && item.id !== selectedId) {
+      hidden.add(item.id)
+    }
+  }
+
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const item of page.data) {
+      const parentId = readBranchParentId(item)
+      if (!hidden.has(item.id) && parentId && hidden.has(parentId)) {
+        hidden.add(item.id)
+        changed = true
+      }
+    }
+  }
+
+  return { ...page, data: page.data.filter((item) => !hidden.has(item.id)) }
+}
+
+function collectItemSubtreeIds(items: readonly ThreadItem[], rootId: string): Set<string> {
+  const deleted = new Set<string>([rootId])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const item of items) {
+      const parentId = readBranchParentId(item)
+      if (!deleted.has(item.id) && parentId && deleted.has(parentId)) {
+        deleted.add(item.id)
+        changed = true
+      }
+    }
+  }
+  return deleted
+}
+
+function pruneActiveBranchSelections(
+  rawActive: unknown,
+  deletedIds: ReadonlySet<string>,
+  items: readonly ThreadItem[],
+): Record<string, string> {
+  if (!rawActive || typeof rawActive !== 'object') return {}
+  const next: Record<string, string> = {}
+  for (const [parentId, selectedId] of Object.entries(rawActive as Record<string, unknown>)) {
+    if (deletedIds.has(parentId) || typeof selectedId !== 'string') continue
+    if (!deletedIds.has(selectedId)) {
+      next[parentId] = selectedId
+      continue
+    }
+    const replacement = [...items]
+      .reverse()
+      .find((item) => !deletedIds.has(item.id) && readBranchParentId(item) === parentId)
+    if (replacement) next[parentId] = replacement.id
+  }
+  return next
 }
 
 function parseResponsesApiResult(value: unknown): ModelResponse {
@@ -347,8 +408,117 @@ export class LocalChatKitService {
         yield* this.handleThreadsRetryAfterItem(request.params, context)
         break
       case 'threads.custom_action':
+        yield* this.handleCustomAction(request.params, context)
         break
     }
+  }
+
+  private async *handleCustomAction(params: any, context: StoreContext): AsyncIterable<ThreadStreamEvent> {
+    // ChatKit wraps actions as `{ action: { type, payload }, item_id? }`.
+    // Keep accepting the former flattened shape for protocol compatibility.
+    const actionEnvelope = params?.action
+    const payload = actionEnvelope && typeof actionEnvelope === 'object'
+      && actionEnvelope.payload && typeof actionEnvelope.payload === 'object'
+      ? actionEnvelope.payload
+      : params
+    const action = typeof actionEnvelope === 'string'
+      ? actionEnvelope
+      : typeof actionEnvelope?.type === 'string'
+        ? actionEnvelope.type
+        : typeof payload?.action === 'string'
+          ? payload.action
+          : ''
+    const threadId = typeof payload?.thread_id === 'string'
+      ? payload.thread_id
+      : typeof params?.thread_id === 'string'
+        ? params.thread_id
+        : ''
+    const itemId = typeof payload?.item_id === 'string'
+      ? payload.item_id
+      : typeof params?.item_id === 'string'
+        ? params.item_id
+        : ''
+    if (!threadId || !itemId) throw new Error('消息操作缺少 thread_id 或 item_id。')
+
+    if (action === 'message.select_branch') {
+      const thread = await this.store.loadThread(threadId, context)
+      const active = { ...(thread.metadata?.active_branch_by_parent as Record<string, string> | undefined) }
+      const parentId = typeof payload?.parent_item_id === 'string' ? payload.parent_item_id : 'root'
+      active[parentId] = itemId
+      thread.metadata = { ...(thread.metadata ?? {}), active_branch_by_parent: active }
+      thread.updated_at = nowTimestamp()
+      await this.store.saveThread(thread, context)
+      yield { type: 'thread.updated', thread } as ThreadStreamEvent
+      return
+    }
+
+    if (action === 'message.delete') {
+      const thread = await this.store.loadThread(threadId, context)
+      const page = await this.store.loadThreadItems(threadId, undefined, 1000, 'asc', context)
+      const deletedIds = collectItemSubtreeIds(page.data, itemId)
+      for (const deletedId of deletedIds) {
+        await this.store.deleteThreadItem(threadId, deletedId, context)
+        yield { type: 'thread.item.deleted', thread_id: threadId, item_id: deletedId }
+      }
+      const active = pruneActiveBranchSelections(
+        thread.metadata?.active_branch_by_parent,
+        deletedIds,
+        page.data,
+      )
+      thread.metadata = { ...(thread.metadata ?? {}), active_branch_by_parent: active }
+      thread.updated_at = nowTimestamp()
+      await this.store.saveThread(thread, context)
+      return
+    }
+
+    if (action === 'message.edit') {
+      const text = typeof payload?.text === 'string' ? payload.text.trim() : ''
+      if (!text) throw new Error('编辑后的消息不能为空。')
+      const item = await this.store.loadItem(threadId, itemId, context)
+      if (item.type !== 'user_message') throw new Error('只有用户消息可以编辑。')
+      const thread = await this.store.loadThread(threadId, context)
+      const page = await this.store.loadThreadItems(threadId, undefined, 1000, 'asc', context)
+      const branchParentId = readBranchParentId(item)
+        ?? `branch-root:${item.id}`
+      const originalBranchId = readBranchId(item)
+        ?? `branch-original:${item.id}`
+      const original = {
+        ...item,
+        parent_item_id: branchParentId,
+        branch_id: originalBranchId,
+      } as ThreadItem
+      await this.store.saveItem(threadId, original, context)
+      await this.linkFollowingResponseItems(
+        threadId,
+        page.data,
+        item.id,
+        originalBranchId,
+        context,
+      )
+      const branchId = `branch-${crypto.randomUUID()}`
+      const edited = {
+        ...item,
+        id: this.store.generateItemId('user_message', { id: threadId } as ThreadMetadata, context),
+        content: [{ type: 'input_text', text }],
+        updated_at: nowTimestamp(),
+        parent_item_id: branchParentId,
+        branch_id: branchId,
+        supersedes: item.id,
+      } as ThreadItem
+      await this.store.saveItem(threadId, edited, context)
+      const active = { ...(thread.metadata?.active_branch_by_parent as Record<string, string> | undefined) }
+      active[branchParentId] = edited.id
+      thread.metadata = { ...(thread.metadata ?? {}), active_branch_by_parent: active }
+      thread.updated_at = nowTimestamp()
+      await this.store.saveThread(thread, context)
+      yield { type: 'thread.item.added', item: edited }
+      if (payload?.regenerate === true) {
+        yield* this.respond(thread, edited, context, (edited as any).inference_options)
+      }
+      return
+    }
+
+    throw new Error(`不支持的消息操作：${action || 'unknown'}`)
   }
 
   private async processNonStreaming(
@@ -498,13 +668,20 @@ export class LocalChatKitService {
     }
 
     if (lastUserMessage) {
+      await this.linkFollowingResponseItems(
+        params.thread_id,
+        items.data,
+        lastUserMessage.id,
+        readBranchId(lastUserMessage) ?? `branch:${lastUserMessage.id}`,
+        context,
+      )
       const inferenceOptions = lastUserMessage.type === 'user_message'
         ? lastUserMessage.inference_options
         : undefined
       if (inferenceOptions) {
-        yield* this.respond(thread, lastUserMessage, context, inferenceOptions)
+        yield* this.respond(thread, lastUserMessage, context, inferenceOptions, { selectResponseBranch: true })
       } else {
-        yield* this.respond(thread, lastUserMessage, context)
+        yield* this.respond(thread, lastUserMessage, context, undefined, { selectResponseBranch: true })
       }
     }
   }
@@ -512,7 +689,7 @@ export class LocalChatKitService {
   private async handleThreadsGetById(params: any, context: StoreContext) {
     const thread = await this.store.loadThread(params.thread_id, context)
     const items = await this.store.loadThreadItems(params.thread_id, undefined, 50, 'asc', context)
-    return { ...thread, items }
+    return { ...thread, items: projectActiveBranchItems(items, thread.metadata?.active_branch_by_parent) }
   }
 
   private async handleThreadsList(params: any, context: StoreContext) {
@@ -520,7 +697,9 @@ export class LocalChatKitService {
   }
 
   private async handleItemsList(params: any, context: StoreContext) {
-    return this.store.loadThreadItems(params.thread_id, params.after, params.limit ?? 50, params.order ?? 'asc', context)
+    const page = await this.store.loadThreadItems(params.thread_id, params.after, params.limit ?? 50, params.order ?? 'asc', context)
+    const thread = await this.store.loadThread(params.thread_id, context)
+    return projectActiveBranchItems(page, thread.metadata?.active_branch_by_parent)
   }
 
   private async handleItemsFeedback(params: any, context: StoreContext) {
@@ -558,12 +737,20 @@ export class LocalChatKitService {
     userMessage: ThreadItem,
     context: StoreContext,
     inferenceOptions?: any,
+    responseOptions: { selectResponseBranch?: boolean } = {},
   ): AsyncIterable<ThreadStreamEvent> {
     const messages = await this.buildConversationHistory(thread.id, context)
 
-    const assistantItem = this.createAssistantItem(thread, context) as any
+    const assistantItem = this.createAssistantItem(thread, context, userMessage) as any
     const assistantItemId = assistantItem.id
     await this.store.addThreadItem(thread.id, assistantItem, context)
+    if (responseOptions.selectResponseBranch) {
+      const active = { ...(thread.metadata?.active_branch_by_parent as Record<string, string> | undefined) }
+      active[userMessage.id] = assistantItem.id
+      thread.metadata = { ...(thread.metadata ?? {}), active_branch_by_parent: active }
+      thread.updated_at = nowTimestamp()
+      await this.store.saveThread(thread, context)
+    }
     yield { type: 'thread.item.added', item: assistantItem }
 
     let fullText = ''
@@ -671,20 +858,18 @@ export class LocalChatKitService {
           return
         }
 
-        const aiConfig = await this.getAiConfig(agentConfig?.provider)
-        if (!aiConfig) {
-          assistantItem.content = [{ type: 'output_text', text: '请先在设置中配置 AI API Key。', annotations: [] }]
-          assistantItem.status = 'completed'
-          await this.store.saveItem(thread.id, assistantItem, context)
-          yield { type: 'thread.item.done', item: assistantItem }
-          return
-        }
-
-        const model = inferenceOptions?.model ?? agentConfig?.model ?? aiConfig.defaultModel ?? 'openai/gpt-4o-mini'
+        const provider = agentConfig?.provider ?? 'openai'
+        const model = inferenceOptions?.model ?? agentConfig?.model ?? 'openai/gpt-4o-mini'
         if (webSearchRequested) {
           throw new Error('当前自定义 AI 供应商不支持 LinX 联网搜索。请切换到 LinX 平台模型后重试。')
         }
-        const stream = this.streamFromProvider(aiConfig, messages, model, inferenceOptions, context.signal as AbortSignal | undefined)
+        const stream = this.streamFromProviderRuntime(
+          provider,
+          model,
+          messages,
+          inferenceOptions,
+          context.signal as AbortSignal | undefined,
+        )
 
         for await (const chunk of stream) {
           const normalizedChunk = coerceModelStreamChunk(chunk)
@@ -820,7 +1005,11 @@ export class LocalChatKitService {
     }
   }
 
-  private createAssistantItem(thread: ThreadMetadata, context: StoreContext): ThreadItem {
+  private createAssistantItem(
+    thread: ThreadMetadata,
+    context: StoreContext,
+    parentItem?: ThreadItem,
+  ): ThreadItem {
     return {
       id: this.store.generateItemId('assistant_message', thread, context),
       thread_id: thread.id,
@@ -828,8 +1017,33 @@ export class LocalChatKitService {
       content: [{ type: 'output_text', text: '', annotations: [] }],
       attachments: [],
       status: 'in_progress',
+      ...(parentItem ? {
+        parent_item_id: parentItem.id,
+        branch_id: readBranchId(parentItem) ?? `branch:${parentItem.id}`,
+      } : {}),
       created_at: nowTimestamp(),
     } as ThreadItem
+  }
+
+  private async linkFollowingResponseItems(
+    threadId: string,
+    items: ThreadItem[],
+    userItemId: string,
+    branchId: string,
+    context: StoreContext,
+  ): Promise<void> {
+    const userIndex = items.findIndex((item) => item.id === userItemId)
+    if (userIndex < 0) return
+    for (const following of items.slice(userIndex + 1)) {
+      if (following.type === 'user_message') break
+      if (readBranchParentId(following)) continue
+      const linked = {
+        ...following,
+        parent_item_id: userItemId,
+        branch_id: readBranchId(following) ?? branchId,
+      } as unknown as ThreadItem
+      await this.store.saveItem(threadId, linked, context)
+    }
   }
 
   private createRuntimeToolCallItem(
@@ -1032,6 +1246,11 @@ export class LocalChatKitService {
     } finally {
       requestSignal?.removeEventListener('abort', abortFromRequest)
       controller.abort()
+      if (requestSignal?.aborted) {
+        // ChatKit aborts its fetch; explicitly stop the paired runtime so the
+        // server-side session cannot continue working after the UI stopped.
+        void fetch(`/api/runtime/threads/${runtimeThread.id}/stop`, { method: 'POST' }).catch(() => undefined)
+      }
     }
   }
 
@@ -1094,83 +1313,6 @@ export class LocalChatKitService {
         requestFailed: 'Failed to respond runtime tool call',
       },
     )
-  }
-
-  private async getAiConfig(provider: string | null | undefined): Promise<{
-    baseUrl: string
-    apiKey: string
-    defaultModel?: string
-  } | null> {
-    const providerId = normalizeAIConfigProviderId(provider ?? 'openai')
-    if (!providerId) {
-      return null
-    }
-
-    const findProvider = typeof (this.db as any).findById === 'function'
-      ? (this.db as any).findById(aiProviderResource as any, aiProviderResource.buildId({ id: providerId }))
-      : Promise.resolve(null)
-    const [credentialRows, providerRow] = await Promise.all([
-      this.findAiCredentialRows(providerId),
-      findProvider,
-    ])
-
-    let selected = selectAIConfigCredential(
-      providerId,
-      credentialRows as Array<Record<string, unknown>>,
-      providerRow ? [providerRow as Record<string, unknown>] : [],
-    )
-
-    // An exact resource read can legitimately return a partial cached row after
-    // the credential document changes. Fall back to the scoped collection query
-    // before reporting that the provider has no usable credential.
-    if (!selected && credentialRows.length > 0) {
-      const listedRows = await this.listAiCredentialRows()
-      selected = selectAIConfigCredential(
-        providerId,
-        listedRows,
-        providerRow ? [providerRow as Record<string, unknown>] : [],
-      )
-    }
-
-    if (!selected) return null
-
-    return {
-      baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
-      apiKey: selected.apiKey,
-    }
-  }
-
-  private async findAiCredentialRows(providerId: string): Promise<Array<Record<string, unknown>>> {
-    const exactRows: Array<Record<string, unknown>> = []
-    const findById = (this.db as any).findById
-    if (typeof findById === 'function') {
-      const defaultCredentialId = getDefaultAIConfigCredentialId(providerId)
-      const exact = await findById.call(
-        this.db,
-        credentialResource as any,
-        credentialResource.buildId({ id: defaultCredentialId }),
-      )
-        .catch((error: unknown) => {
-          if (isMissingExactReadError(error)) return null
-          throw error
-        })
-      if (exact) exactRows.push(exact as Record<string, unknown>)
-    }
-
-    if (exactRows.length > 0) {
-      return exactRows
-    }
-
-    return this.listAiCredentialRows()
-  }
-
-  private async listAiCredentialRows(): Promise<Array<Record<string, unknown>>> {
-    try {
-      return await this.db.select().from(credentialResource).execute() as Array<Record<string, unknown>>
-    } catch (error) {
-      if (isUnsupportedCollectionReadError(error)) return []
-      throw error
-    }
   }
 
   private async resolveThreadAgentConfig(thread: ThreadMetadata): Promise<ThreadAgentConfig | null> {
@@ -1429,23 +1571,21 @@ export class LocalChatKitService {
     }
   }
 
-  private async *streamFromProvider(
-    config: { baseUrl: string; apiKey: string },
-    messages: ModelMessage[],
+  private async *streamFromProviderRuntime(
+    provider: string,
     model: string,
+    messages: ModelMessage[],
     inferenceOptions?: any,
     signal?: AbortSignal,
   ): AsyncIterable<ModelStreamChunk> {
-    const cleanBase = config.baseUrl.replace(/\/$/, '')
-    const endpoint = `${cleanBase}/chat/completions`
-
-    const response = await fetch(endpoint, {
+    const response = await this.authFetch(`${this.resolveRuntimeBaseUrl()}/chat/completions`, {
       method: 'POST',
       headers: {
+        Accept: 'text/event-stream, text/plain, application/json',
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
+        provider,
         model,
         messages,
         stream: true,
@@ -1457,45 +1597,10 @@ export class LocalChatKitService {
 
     if (!response.ok) {
       const text = await response.text()
-      throw new Error(`AI API Error ${response.status}: ${text.slice(0, 200)}`)
+      throw new Error(`Xpod AI runtime error ${response.status}: ${text.slice(0, 200)}`)
     }
 
-    const reader = response.body?.getReader()
-    if (!reader) {
-      throw new Error('No response body')
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed || !trimmed.startsWith('data: ')) continue
-
-        const data = trimmed.slice(6)
-        if (data === '[DONE]') return
-
-        try {
-          const parsed = JSON.parse(data)
-          const deltaObject = parsed.choices?.[0]?.delta
-          const delta = typeof deltaObject?.content === 'string' ? deltaObject.content : ''
-          const annotations = normalizeModelAnnotations(deltaObject?.annotations, delta.length)
-          if (delta || annotations.length) {
-            yield { text: delta, annotations }
-          }
-        } catch {
-          // skip malformed SSE lines
-        }
-      }
-    }
+    yield* this.readTextOrSseStream(response)
   }
 
   private async buildConversationHistory(

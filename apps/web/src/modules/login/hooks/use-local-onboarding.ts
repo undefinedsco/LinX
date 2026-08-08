@@ -4,6 +4,7 @@ import type {
   LocalOnboardingNetworkConfigInput,
   LocalOnboardingSnapshot,
 } from '@/types/electron-api'
+import { LOCAL_DEV_ISSUER } from '../constants'
 
 export function useLocalOnboarding() {
   const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
@@ -11,7 +12,30 @@ export function useLocalOnboarding() {
   const [loading, setLoading] = useState(Boolean(desktopApi))
   const [acting, setActing] = useState(false)
 
-  const unavailableSnapshot = useMemo<LocalOnboardingSnapshot>(() => ({
+  const unavailableSnapshot = useMemo<LocalOnboardingSnapshot>(() => {
+    const isLocalWebDevelopment = typeof window !== 'undefined'
+      && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    if (isLocalWebDevelopment) {
+      return {
+        state: 'ready',
+        spaceKind: 'standalone',
+        localUrl: `${LOCAL_DEV_ISSUER}/`,
+        baseUrl: `${LOCAL_DEV_ISSUER}/`,
+        publicUrl: null,
+        tunnel: null,
+        connectivity: null,
+        capabilities: null,
+        cloudIdentityUrl: null,
+        provisionCode: null,
+        provisionUrl: null,
+        nodeId: null,
+        message: '使用本地开发 Xpod。',
+        errorCode: null,
+        canRetry: true,
+        canOpenSettings: false,
+      }
+    }
+    return {
     state: 'error',
     spaceKind: null,
     localUrl: null,
@@ -28,7 +52,8 @@ export function useLocalOnboarding() {
     errorCode: 'LOCAL_DESKTOP_ONLY',
     canRetry: false,
     canOpenSettings: false,
-  }), [])
+    }
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!desktopApi?.localOnboarding) {

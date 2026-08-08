@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EVENTS } from '@inrupt/solid-client-authn-browser'
 import { useLoginStore } from '@linx/stores/login'
 
-import { setPendingLoginAttempt } from '../login-utils'
+import { requestSessionRecovery, setPendingLoginAttempt } from '../login-utils'
 import { useSessionTokenMaintenance } from './use-session-token-maintenance'
 
 const connectMock = vi.fn()
@@ -64,6 +64,20 @@ describe('useSessionTokenMaintenance', () => {
 
     await act(async () => {
       sessionEvents.emit(EVENTS.SESSION_EXPIRED)
+      await Promise.resolve()
+    })
+
+    expect(connectMock).toHaveBeenCalledTimes(1)
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
+      authorizationSurface: 'window',
+    }))
+  })
+
+  it('re-authenticates immediately when an authenticated request reports a stale session', async () => {
+    renderHook(() => useSessionTokenMaintenance())
+
+    await act(async () => {
+      requestSessionRecovery()
       await Promise.resolve()
     })
 

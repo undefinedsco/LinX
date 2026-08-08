@@ -32,7 +32,7 @@
     "@lobehub/icons": "^5.8.0",
     "@mantine/core": "^8.3.11",
     "@mantine/hooks": "^8.3.11",
-    "@openai/chatkit-react": "^1.5.1",
+    "@openai/chatkit-react": "^1.6.1",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-context-menu": "^2.2.16",

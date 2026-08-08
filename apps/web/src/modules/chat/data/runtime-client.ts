@@ -251,6 +251,8 @@ export function subscribeRuntimeSessionEvents(
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let retryAttempt = 0
   let disposed = false
+  let lastEventTimestamp = 0
+  let eventSignaturesAtLastTimestamp = new Set<string>()
 
   const clearRetry = () => {
     if (retryTimer !== null) {
@@ -266,7 +268,10 @@ export function subscribeRuntimeSessionEvents(
 
   const connect = () => {
     if (disposed || source || (typeof navigator !== 'undefined' && !navigator.onLine)) return
-    const nextSource = eventSourceFactory(`/api/runtime/threads/${runtimeSessionId}/events`)
+    const replayQuery = lastEventTimestamp > 0
+      ? `?after=${encodeURIComponent(String(lastEventTimestamp))}`
+      : ''
+    const nextSource = eventSourceFactory(`/api/runtime/threads/${runtimeSessionId}/events${replayQuery}`)
     source = nextSource
     nextSource.onopen = () => {
       retryAttempt = 0
@@ -275,6 +280,17 @@ export function subscribeRuntimeSessionEvents(
     nextSource.onmessage = (message) => {
       try {
         const event = JSON.parse(message.data) as RuntimeSessionEvent
+        const eventTimestamp = typeof event.ts === 'number' ? event.ts : 0
+        if (eventTimestamp > 0) {
+          const signature = message.data
+          if (eventTimestamp < lastEventTimestamp) return
+          if (eventTimestamp === lastEventTimestamp && eventSignaturesAtLastTimestamp.has(signature)) return
+          if (eventTimestamp > lastEventTimestamp) {
+            lastEventTimestamp = eventTimestamp
+            eventSignaturesAtLastTimestamp = new Set()
+          }
+          eventSignaturesAtLastTimestamp.add(signature)
+        }
         onEvent(event)
       } catch (error) {
         console.error('Parse runtime session event failed:', error)

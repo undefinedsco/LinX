@@ -10,15 +10,18 @@ const { mockSetThreadId, mockSetComposerValue, mockFetchUpdates, mockUseChatKit 
   const setThreadId = vi.fn()
   const setComposerValue = vi.fn(async () => undefined)
   const fetchUpdates = vi.fn(async () => undefined)
+  const sendCustomAction = vi.fn(async () => undefined)
   return {
     mockSetThreadId: setThreadId,
     mockSetComposerValue: setComposerValue,
     mockFetchUpdates: fetchUpdates,
+    mockSendCustomAction: sendCustomAction,
     mockUseChatKit: vi.fn(() => ({
       control: {},
       setThreadId,
       setComposerValue,
       fetchUpdates,
+      sendCustomAction,
     })),
   }
 })
@@ -28,6 +31,7 @@ const mockResolveLocalWorkspaceUri = vi.fn(async () => 'linx://device-123/repo/l
 const mockUseWorkspaceList = vi.fn()
 const mockUseChatList = vi.fn()
 const mockUseThreadList = vi.fn()
+const mockUseMessageList = vi.fn(() => ({ data: [] }))
 const mockUseDefaultSecretaryBootstrapSettling = vi.fn()
 const mockChatRefetch = vi.fn()
 const mockThreadRefetch = vi.fn()
@@ -116,6 +120,7 @@ vi.mock('../collections', () => ({
   useChatInit: () => ({ isReady: true }),
   useChatList: () => mockUseChatList(),
   useThreadList: () => mockUseThreadList(),
+  useMessageList: () => mockUseMessageList(),
   useWorkspaceList: () => mockUseWorkspaceList(),
   useChatMutations: () => mockMutations,
   useLinxDefaultSecretaryBootstrapSettling: () => mockUseDefaultSecretaryBootstrapSettling(),
@@ -224,6 +229,19 @@ describe('ChatContentPane', () => {
       }),
     )
     expect(mockSetThreadId).not.toHaveBeenCalled()
+  })
+
+  it('keeps the mount-time initial thread stable so ChatKit retains per-thread composer drafts', () => {
+    const { rerender } = render(<ChatContentPane theme="light" />)
+
+    storeState.selectedThreadId = 'thread-2'
+    rerender(<ChatContentPane theme="light" />)
+
+    expect(mockUseChatKit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        initialThread: 'thread-1',
+      }),
+    )
   })
 
   it('uses the chat workspace as a full-bleed operational surface', () => {

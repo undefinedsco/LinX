@@ -1314,6 +1314,7 @@ const threadListColumns: (keyof ThreadRow)[] = [
   'title',
   'starred',
   'workspace',
+  'metadata',
   'updatedAt',
 ]
 
@@ -1334,7 +1335,7 @@ export const threadCollection = createPodCollection<typeof threadResource, Threa
 // Message Collection
 // ============================================================================
 
-// Columns needed for message list view (excludes richContent, replacedBy, deletedAt, updatedAt)
+// Include richContent because message branch metadata is persisted there.
 const messageListColumns: (keyof MessageRow)[] = [
   'id',
   'thread',
@@ -1344,6 +1345,7 @@ const messageListColumns: (keyof MessageRow)[] = [
   'content',
   'status',
   'createdAt',
+  'richContent',
 ]
 
 export const messageCollection = createPodCollection<typeof messageResource, MessageRow, MessageInsert>({
@@ -2326,6 +2328,15 @@ export function useThreadIndex(options?: { enabled?: boolean }) {
   }
 }
 
+export function messageRowMatchesThread(
+  rowThreadRef: string | null | undefined,
+  selectedThreadRef: string | null | undefined,
+): boolean {
+  if (!rowThreadRef || !selectedThreadRef) return false
+  return extractThreadIdFromThreadRef(rowThreadRef)
+    === (extractThreadIdFromThreadRef(selectedThreadRef) ?? selectedThreadRef)
+}
+
 export function useWorkspaceList(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true
 
@@ -2344,7 +2355,7 @@ export function useMessageList(chatId: string | null, threadId: string | null) {
   const query = useLiveQuery(messageCollection)
   const data = useMemo(() => threadId && chatId
     ? ((query.data ?? []) as MessageRow[])
-      .filter((row) => extractThreadIdFromThreadRef(row.thread) === threadId)
+      .filter((row) => messageRowMatchesThread(row.thread, threadId))
       .sort((left, right) => new Date(left.createdAt ?? 0).getTime() - new Date(right.createdAt ?? 0).getTime())
     : [], [chatId, query.data, threadId])
   return { ...query, data, error: null, refetch: () => messageCollection.fetch({ refetch: true }) }

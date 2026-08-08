@@ -5,6 +5,7 @@ import {
   buildMessageListQueryKey,
   buildThreadIndexQueryKey,
   buildThreadListQueryKey,
+  messageRowMatchesThread,
 } from './collections'
 
 describe('chat query account scope', () => {
@@ -41,5 +42,16 @@ describe('chat query account scope', () => {
   it('isolates message caches even when chat and thread ids are reused', () => {
     expect(buildMessageListQueryKey('account:alice', 'chat-1', 'thread-1'))
       .not.toEqual(buildMessageListQueryKey('account:bob', 'chat-1', 'thread-1'))
+  })
+
+  it('matches message thread fragments against complete selected thread resource ids', () => {
+    expect(messageRowMatchesThread(
+      'http://localhost:5737/alice/.data/chat/demo/index.ttl#thread-1',
+      'chat/demo/index.ttl#thread-1',
+    )).toBe(true)
+    expect(messageRowMatchesThread(
+      'http://localhost:5737/alice/.data/chat/demo/index.ttl#thread-2',
+      'chat/demo/index.ttl#thread-1',
+    )).toBe(false)
   })
 })

@@ -210,7 +210,7 @@ export function useLoginController() {
     })
 
     const connectOptions = {
-      authorizationSurface: 'embedded',
+      authorizationSurface: isDesktop ? 'embedded' : 'window',
       route: source,
       accountIssuerUrl,
       accountIssuerLabel: isStandalone ? 'Standalone' : 'Cloud',

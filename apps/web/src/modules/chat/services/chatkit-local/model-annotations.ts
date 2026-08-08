@@ -17,6 +17,17 @@ function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
+function asSafeCitationUrl(value: unknown): string | undefined {
+  const url = asNonEmptyString(value)
+  if (!url) return undefined
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function asIndex(...values: unknown[]): number | undefined {
   return values.find((value): value is number => Number.isInteger(value) && Number(value) >= 0) as number | undefined
 }
@@ -39,7 +50,7 @@ export function normalizeModelAnnotations(
     const source = asRecord(annotation.source)
     const urlCitation = asRecord(annotation.url_citation)
     const fileCitation = asRecord(annotation.file_citation)
-    const url = asNonEmptyString(source?.url ?? urlCitation?.url ?? annotation.url)
+    const url = asSafeCitationUrl(source?.url ?? urlCitation?.url ?? annotation.url)
     const filename = asNonEmptyString(source?.filename ?? fileCitation?.filename ?? annotation.filename)
     const index = asIndex(
       annotation.index,

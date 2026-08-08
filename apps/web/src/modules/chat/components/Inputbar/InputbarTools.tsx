@@ -12,6 +12,7 @@ import {
   Brain, 
   Globe, 
   Mic,
+  Smile,
   Sparkles,
   type LucideIcon
 } from 'lucide-react'
@@ -61,6 +62,7 @@ export interface InputbarToolsProps {
   onDeepThinkingClick?: () => void
   onWebSearchClick?: () => void
   onVoiceClick?: () => void
+  onEmojiClick?: () => void
   // 状态
   deepThinkingActive?: boolean
   webSearchActive?: boolean
@@ -151,6 +153,7 @@ export function InputbarTools({
   onDeepThinkingClick,
   onWebSearchClick,
   onVoiceClick,
+  onEmojiClick,
   deepThinkingActive,
   webSearchActive,
 }: InputbarToolsProps) {
@@ -225,6 +228,12 @@ export function InputbarTools({
             size={size}
             onClick={onVoiceClick}
           />
+        </>
+      )}
+      {onEmojiClick && (
+        <>
+          <ToolSeparator />
+          <ToolButton icon={Smile} label="表情" onClick={onEmojiClick} variant={variant} size={size} disabled={disabled} />
         </>
       )}
 
