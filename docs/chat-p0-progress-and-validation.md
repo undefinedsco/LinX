@@ -323,3 +323,12 @@ yarn workspace @linx/web tsc --noEmit
 - Chat 模块 Vitest 更新为 45 个文件、328/328 通过；Chat 集成测试仍为 5 个文件、13/13 通过，其中 runtime continuation 覆盖无空行 EOF 完成事件。
 - 浏览器重新完成本地 Xpod consent 后，选择 `P0 Browser Pass` 并刷新；当前 Thread 自动恢复，标题、表格、TypeScript 高亮、代码复制入口和引用块刷新前后保持一致。
 - 本地 `xpod-local` 保持 `healthy`；终验窗口没有 credential、写入或 5xx 错误。日志中的 approvals `HEAD 404` 是可选空容器的存在性探测，不属于聊天请求失败。
+
+## 14. 扩展 Markdown 持久化修复（2026-08-10）
+
+- 真实浏览器让 custom provider 生成了公式、链接、脚注、45 行 TypeScript 和超过 180 字符的代码行。首次生成内容已在 ChatKit 正确流式呈现，但完成消息保存返回 Pod PATCH 400，页面因此显示“生成助手回复时出错”。
+- 根因是 `LocalChatKitStore` 的手写 SPARQL 长字符串只处理了引号，没有转义 LaTeX/代码中的反斜杠；例如 `\int` 被 SPARQL parser 识别为非法 escape。
+- 现统一使用一个标准 `sparqlStringLiteral()`，完整转义反斜杠、引号、换行、回车、tab、backspace 和 form feed；消息正文、`richContent` 与会话摘要不再维护三套相近的转义实现。
+- 回归测试把公式、Windows 路径、三引号与多行代码放进完成消息，并用 `sparqljs` 真实解析生成的 PATCH，防止只断言字符串片段却仍产生非法 SPARQL。
+- 修复后浏览器重跑相同长 Markdown：三次消息 PATCH 均返回 205，回答完整结束且没有错误卡；切换到其他会话再返回后，45 行代码与超长行从 Pod 历史正常恢复。
+- 最新 Chat 模块 Vitest：45 个文件、329/329 通过；集成测试 13/13、Chat lint、TypeScript、production build 和 `git diff --check` 通过。

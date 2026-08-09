@@ -206,6 +206,7 @@ npx playwright test chat-alignment.spec.ts --project=chromium
 - [x] runtime SSE EOF 恢复：服务端在最终事件后立即断开且没有尾部空行时仍派发 `assistant_done`，并兼容 CRLF 分隔与 `data:` 无可选空格的合法 SSE 格式。
 - [x] Xpod Web Search 协议：Responses built-in `web_search` 不再被丢弃，URL citation 可通过流式与非流式结果返回 LinX。
 - [x] 流式 citation 累计位置：没有显式 index 的来源按完整已接收文本定位，不会在多 delta 回答中退回当前 chunk 长度。
+- [x] Markdown/代码完成消息持久化：公式反斜杠、Windows 路径、引号与多行代码统一转为合法 SPARQL literal；真实长回答保存 PATCH 205 并可从 Pod 历史恢复。
 - [x] Xpod 重启后的登录恢复：Chat 请求遇到过期会话 401 会立即触发本地 OIDC 恢复；浏览器已验证 localhost consent 和 `/chat` 回跳。
 - [x] 当前 Thread 与消息刷新恢复：恢复不再依赖可能漏失的 `chatkit.ready` 事件；Web Component 挂载并完成定义后固定执行 `setThreadId()` 与 `fetchUpdates()`，本地 Xpod 连续三次刷新均无需切换会话。
 
