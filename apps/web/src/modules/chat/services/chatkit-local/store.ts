@@ -380,6 +380,19 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
   } as ThreadItem
 }
 
+function shouldUpdateAssistantSummary(
+  item: ThreadItem,
+  previousItem: ThreadItem | undefined,
+  nextRecord: ReturnType<typeof threadItemToMessageRecord>,
+): boolean {
+  if (item.type !== 'assistant_message' || nextRecord.status === 'in_progress') return false
+  if (!previousItem || previousItem.type !== 'assistant_message') return true
+
+  const previousRecord = threadItemToMessageRecord(previousItem)
+  return previousRecord.content !== nextRecord.content
+    || previousRecord.status !== nextRecord.status
+}
+
 // ---------------------------------------------------------------------------
 // LocalChatKitStore
 // ---------------------------------------------------------------------------
@@ -877,7 +890,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   async saveItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
-    const { content, status, richContent } = threadItemToMessageRecord(item)
+    const nextRecord = threadItemToMessageRecord(item)
+    const { content, status, richContent } = nextRecord
 
     const cachedItem = this.getCachedThreadItems(threadId)?.find((entry) => entry.id === item.id)
 
@@ -890,7 +904,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       const messageIri = this.resolveMessageIri({ id: rowId })
       await this.directPatchMessage(messageIri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
-      if (item.type === 'assistant_message' && status !== 'in_progress') {
+      if (shouldUpdateAssistantSummary(item, cachedItem, nextRecord)) {
         const chatId = await this.getThreadChatId(threadId)
         await this.updateChatSummary(chatId, rowId, content, new Date(item.created_at * 1000))
       }
@@ -903,7 +917,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         const messageIri = this.resolveMessageIri({ id: rowId })
         await this.directPatchMessage(messageIri, content, richContent, status)
         this.upsertCachedThreadItem(threadId, item)
-        if (item.type === 'assistant_message' && status !== 'in_progress') {
+        if (shouldUpdateAssistantSummary(item, cachedItem, nextRecord)) {
           const chatId = await this.getThreadChatId(threadId)
           await this.updateChatSummary(chatId, rowId, content, new Date(item.created_at * 1000))
         }
@@ -914,10 +928,11 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const existing = await this.findMessageByItemId(threadId, item.id)
 
     if (existing) {
+      const storedItem = cachedItem ?? messageRecordToItem(existing, threadId)
       const messageIri = this.resolveMessageIri(existing)
       await this.directPatchMessage(messageIri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
-      if (item.type === 'assistant_message' && status !== 'in_progress') {
+      if (shouldUpdateAssistantSummary(item, storedItem, nextRecord)) {
         const chatId = await this.getThreadChatId(threadId)
         await this.updateChatSummary(chatId, requireRecordId(existing, 'Message row'), content, new Date(item.created_at * 1000))
       }

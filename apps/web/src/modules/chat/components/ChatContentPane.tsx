@@ -622,7 +622,7 @@ function ChatKitPanel({
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [reconnectStatus, setReconnectStatus] = useState<'idle' | 'syncing' | 'error'>('idle')
-  const [isChatKitReady, setIsChatKitReady] = useState(false)
+  const [isChatKitMounted, setIsChatKitMounted] = useState(false)
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null)
   const [actionMessageId, setActionMessageId] = useState<string | null>(null)
   const sendAvailableRef = useRef(!sendDisabled && isOnline)
@@ -633,6 +633,10 @@ function ChatKitPanel({
   // Subsequent navigation is handled by `setThreadId` below.
   const initialThreadIdRef = useRef(selectedThreadId)
   const chatKitHostRef = useRef<HTMLElement | null>(null)
+  const bindChatKitHost = useCallback((host: HTMLElement | null) => {
+    chatKitHostRef.current = host
+    setIsChatKitMounted(Boolean(host))
+  }, [])
 
   const localFetch = useMemo(() => {
     if (!db || !session.info.webId || !session.fetch) {
@@ -725,7 +729,10 @@ function ChatKitPanel({
     },
     threadItemActions: { feedback: true, retry: true },
     thread: { autoScroll: true },
-    onReady: () => setIsChatKitReady(true),
+    // Restoration is gated by the mounted custom element below. The React
+    // wrapper can attach this handler after a fast `chatkit.ready` event, so
+    // the event alone is not a reliable page-refresh signal.
+    onReady: () => setIsChatKitMounted(Boolean(chatKitHostRef.current)),
     onThreadChange: ({ threadId }: { threadId: string | null }) => {
       if (threadId) {
         selectThread(threadId)
@@ -820,12 +827,19 @@ function ChatKitPanel({
   }, [fetchUpdates])
 
   useEffect(() => {
-    if (!isChatKitReady || !selectedThreadId) return
+    if (!isChatKitMounted || !selectedThreadId) return
 
     let disposed = false
 
     const restoreThread = async () => {
       try {
+        // The wrapper registers its own `whenDefined` callback before this
+        // effect. Waiting here guarantees that setOptions has reached the
+        // upgraded element even when the ready event fired before handlers
+        // were attached.
+        await customElements.whenDefined('openai-chatkit')
+        if (disposed) return
+
         await setThreadId(selectedThreadId)
         if (disposed) return
 
@@ -846,7 +860,7 @@ function ChatKitPanel({
     return () => {
       disposed = true
     }
-  }, [fetchUpdates, isChatKitReady, selectedThreadId, setThreadId])
+  }, [fetchUpdates, isChatKitMounted, selectedThreadId, setThreadId])
 
   useEffect(() => {
     if (!pendingComposerDraft) return
@@ -938,7 +952,7 @@ function ChatKitPanel({
       aria-disabled={sendDisabled}
     >
       <ChatKitComponent
-        ref={chatKitHostRef as any}
+        ref={bindChatKitHost as any}
         control={chatkit.control}
         style={{ display: 'block', width: '100%', height: '100%' }}
       />

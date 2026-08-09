@@ -150,6 +150,8 @@ vi.mock('./ChatListPane', () => ({
 import { ChatContentPane } from './ChatContentPane'
 
 describe('ChatContentPane', () => {
+  vi.spyOn(window.customElements, 'whenDefined').mockResolvedValue(undefined as never)
+
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
@@ -224,7 +226,7 @@ describe('ChatContentPane', () => {
     expect(screen.queryByTestId('compact-chat-list')).not.toBeInTheDocument()
   })
 
-  it('selects and synchronizes the restored thread after ChatKit is ready', async () => {
+  it('selects and synchronizes the restored thread even when the ready event is missed', async () => {
     render(<ChatContentPane theme="light" />)
 
     expect(mockUseChatKit).toHaveBeenCalledWith(
@@ -232,10 +234,6 @@ describe('ChatContentPane', () => {
         initialThread: 'thread-1',
       }),
     )
-
-    expect(mockSetThreadId).not.toHaveBeenCalled()
-    const options = mockUseChatKit.mock.calls.at(-1)?.[0]
-    act(() => options?.onReady?.())
 
     await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
     expect(mockFetchUpdates).toHaveBeenCalledTimes(1)
@@ -311,6 +309,8 @@ describe('ChatContentPane', () => {
 
   it('blocks sending while offline and refreshes the active thread after reconnecting', async () => {
     render(<ChatContentPane theme="light" />)
+    await waitFor(() => expect(mockFetchUpdates).toHaveBeenCalledTimes(1))
+    mockFetchUpdates.mockClear()
 
     act(() => window.dispatchEvent(new Event('offline')))
     expect(screen.getByRole('alert')).toHaveTextContent('网络已断开')
@@ -322,8 +322,10 @@ describe('ChatContentPane', () => {
   })
 
   it('offers an explicit retry when reconnect synchronization fails', async () => {
-    mockFetchUpdates.mockRejectedValueOnce(new Error('network reset')).mockResolvedValueOnce(undefined)
     render(<ChatContentPane theme="light" />)
+    await waitFor(() => expect(mockFetchUpdates).toHaveBeenCalledTimes(1))
+    mockFetchUpdates.mockClear()
+    mockFetchUpdates.mockRejectedValueOnce(new Error('network reset')).mockResolvedValueOnce(undefined)
 
     act(() => window.dispatchEvent(new Event('offline')))
     act(() => window.dispatchEvent(new Event('online')))
