@@ -416,6 +416,41 @@ describe('LocalChatKitService platform runtime routing', () => {
     )
   })
 
+  it('positions streamed citations without explicit indexes after all preceding text', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"第一段"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"第二段","annotations":[{"type":"url_citation","url":"https://example.com/stream","title":"Stream source"}]}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+    const completed = findAssistantDone(events)?.item
+
+    expect(completed?.content?.[0]).toEqual({
+      type: 'output_text',
+      text: '第一段第二段',
+      annotations: [{
+        index: 6,
+        source: {
+          type: 'url',
+          url: 'https://example.com/stream',
+          title: 'Stream source',
+        },
+      }],
+    })
+  })
+
   it('runs the selected web search tool through Responses and persists clickable sources', async () => {
     const store = createMockStore()
     const db = createMockDbWithPodUrl({

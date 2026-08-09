@@ -1075,6 +1075,20 @@ export class LocalChatKitService {
     const decoder = new TextDecoder()
     let buffer = ''
 
+    const parseEvent = (rawEvent: string): RuntimeThreadEvent | null => {
+      if (!rawEvent.trim()) return null
+      const payload = rawEvent
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n')
+      return payload ? JSON.parse(payload) as RuntimeThreadEvent : null
+    }
+    const findBoundary = () => {
+      const match = /\r?\n\r?\n/.exec(buffer)
+      return match ? { index: match.index, length: match[0].length } : null
+    }
+
     try {
       while (true) {
         const { done, value } = await reader.read()
@@ -1082,25 +1096,20 @@ export class LocalChatKitService {
 
         buffer += decoder.decode(value, { stream: true })
 
-        let boundary = buffer.indexOf('\n\n')
-        while (boundary !== -1) {
-          const rawEvent = buffer.slice(0, boundary)
-          buffer = buffer.slice(boundary + 2)
-          boundary = buffer.indexOf('\n\n')
+        let boundary = findBoundary()
+        while (boundary) {
+          const rawEvent = buffer.slice(0, boundary.index)
+          buffer = buffer.slice(boundary.index + boundary.length)
+          boundary = findBoundary()
 
-          if (!rawEvent.trim()) continue
-
-          const payload = rawEvent
-            .split(/\r?\n/)
-            .filter((line) => line.startsWith('data: '))
-            .map((line) => line.slice(6))
-            .join('\n')
-
-          if (!payload) continue
-
-          yield JSON.parse(payload) as RuntimeThreadEvent
+          const event = parseEvent(rawEvent)
+          if (event) yield event
         }
       }
+
+      buffer += decoder.decode()
+      const finalEvent = parseEvent(buffer)
+      if (finalEvent) yield finalEvent
     } finally {
       reader.releaseLock()
     }
@@ -1494,6 +1503,13 @@ export class LocalChatKitService {
 
     const decoder = new TextDecoder()
     let buffer = ''
+    let streamedTextLength = 0
+
+    const parseChunk = (line: string) => {
+      const chunk = this.parseRuntimeStreamLine(line, streamedTextLength)
+      streamedTextLength += chunk.text.length
+      return chunk
+    }
 
     while (true) {
       const { done, value } = await reader.read()
@@ -1504,18 +1520,18 @@ export class LocalChatKitService {
       buffer = lines.pop() || ''
 
       for (const line of lines) {
-        const chunk = this.parseRuntimeStreamLine(line)
+        const chunk = parseChunk(line)
         if (chunk.text || chunk.annotations.length) yield chunk
       }
     }
 
     const tail = decoder.decode()
     if (tail) buffer += tail
-    const finalChunk = this.parseRuntimeStreamLine(buffer)
+    const finalChunk = parseChunk(buffer)
     if (finalChunk.text || finalChunk.annotations.length) yield finalChunk
   }
 
-  private parseRuntimeStreamLine(line: string): ModelStreamChunk {
+  private parseRuntimeStreamLine(line: string, streamedTextLength = 0): ModelStreamChunk {
     const trimmed = line.trim()
     if (!trimmed || trimmed === 'data: [DONE]' || trimmed === '[DONE]') {
       return { text: '', annotations: [] }
@@ -1534,7 +1550,7 @@ export class LocalChatKitService {
       if (typeof delta === 'string') {
         return {
           text: delta,
-          annotations: normalizeModelAnnotations(deltaObject?.annotations, delta.length),
+          annotations: normalizeModelAnnotations(deltaObject?.annotations, streamedTextLength + delta.length),
         }
       }
 
@@ -1549,13 +1565,16 @@ export class LocalChatKitService {
       if (typeof parsed.text === 'string') {
         return {
           text: parsed.text,
-          annotations: normalizeModelAnnotations(parsed.annotations, parsed.text.length),
+          annotations: normalizeModelAnnotations(parsed.annotations, streamedTextLength + parsed.text.length),
         }
       }
 
       return {
         text: '',
-        annotations: normalizeModelAnnotations(deltaObject?.annotations ?? messageObject?.annotations ?? parsed.annotations, 0),
+        annotations: normalizeModelAnnotations(
+          deltaObject?.annotations ?? messageObject?.annotations ?? parsed.annotations,
+          streamedTextLength,
+        ),
       }
     } catch {
       return { text: payload, annotations: [] }

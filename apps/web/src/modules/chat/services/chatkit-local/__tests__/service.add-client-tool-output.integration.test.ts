@@ -39,6 +39,19 @@ function createSseResponse(events: unknown[]) {
   })
 }
 
+function createRawSseResponse(payload: string) {
+  const encoder = new TextEncoder()
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(payload))
+      controller.close()
+    },
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  })
+}
+
 async function collectStreamEvents(result: Awaited<ReturnType<LocalChatKitService['process']>>) {
   expect(result.type).toBe('streaming')
   if (result.type !== 'streaming') {
@@ -144,10 +157,13 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
       }
 
       if (url === '/api/runtime/threads/runtime-1/events') {
-        return createSseResponse([
-          { type: 'assistant_delta', ts: 1, threadId: 'runtime-1', text: '继续处理 ' },
-          { type: 'assistant_done', ts: 2, threadId: 'runtime-1', text: '继续处理 完成' },
-        ])
+        // The SSE specification dispatches a pending data event at EOF. Keep
+        // the final event unterminated and omit the optional space after `data:`
+        // to cover runtime disconnects that close immediately after completion.
+        return createRawSseResponse([
+          `data: ${JSON.stringify({ type: 'assistant_delta', ts: 1, threadId: 'runtime-1', text: '继续处理 ' })}\r\n\r\n`,
+          `data:${JSON.stringify({ type: 'assistant_done', ts: 2, threadId: 'runtime-1', text: '继续处理 完成' })}`,
+        ].join(''))
       }
 
       if (url === '/api/runtime/threads/runtime-1/tool-calls/call-1/respond') {
