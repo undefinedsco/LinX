@@ -315,3 +315,11 @@ yarn workspace @linx/web tsc --noEmit
 - Chat 模块 Vitest：45 个文件、327/327 通过。
 - Chat 集成测试：5 个文件、13/13 通过；测试已按生产路径通过认证的本地 Xpod `/v1/chat/completions` 模拟 provider 响应，不再绕过 gateway 直连 provider。
 - `yarn workspace @linx/web lint:chat`、Web production build 和 `git diff --check` 均通过。
+
+## 13. P1 协议边界补强（2026-08-10）
+
+- **流式 citation 位置**：provider 未提供显式 `index` / `end_index` 时，fallback 现在按已接收的完整文本累计位置计算，不再错误地使用单个 delta 的长度。显式位置仍保持 provider 原值。
+- **runtime SSE 尾事件**：runtime 在 `assistant_done` 后立即关闭连接、未发送尾部空行时，LinX 现在会按 SSE 语义派发 EOF 前的待处理事件；同时兼容 CRLF 分隔和 `data:` 后不带可选空格的合法格式，避免回答永久停留在生成中或断线重连后重复等待。
+- Chat 模块 Vitest 更新为 45 个文件、328/328 通过；Chat 集成测试仍为 5 个文件、13/13 通过，其中 runtime continuation 覆盖无空行 EOF 完成事件。
+- 浏览器重新完成本地 Xpod consent 后，选择 `P0 Browser Pass` 并刷新；当前 Thread 自动恢复，标题、表格、TypeScript 高亮、代码复制入口和引用块刷新前后保持一致。
+- 本地 `xpod-local` 保持 `healthy`；终验窗口没有 credential、写入或 5xx 错误。日志中的 approvals `HEAD 404` 是可选空容器的存在性探测，不属于聊天请求失败。

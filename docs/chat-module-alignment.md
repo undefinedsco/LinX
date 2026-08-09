@@ -203,7 +203,9 @@ npx playwright test chat-alignment.spec.ts --project=chromium
 - [x] 普通 Thread Composer 同页草稿：真实浏览器中输入草稿、切换到另一 Chat、再切回后完整恢复；当前 ChatKit API 没有公开文本读取/变化事件，因此未发送草稿跨页面刷新仍是明确边界。
 - [x] citation 数据闭环：流式 annotation 转为 ChatKit source，完整 item 写入 Pod，刷新历史可恢复；只允许 HTTP(S) 来源链接。
 - [x] runtime SSE 断线恢复：重连携带最后事件游标，Service 重放短日志，客户端去重；普通 React 重渲染不再重建订阅并重置游标。
+- [x] runtime SSE EOF 恢复：服务端在最终事件后立即断开且没有尾部空行时仍派发 `assistant_done`，并兼容 CRLF 分隔与 `data:` 无可选空格的合法 SSE 格式。
 - [x] Xpod Web Search 协议：Responses built-in `web_search` 不再被丢弃，URL citation 可通过流式与非流式结果返回 LinX。
+- [x] 流式 citation 累计位置：没有显式 index 的来源按完整已接收文本定位，不会在多 delta 回答中退回当前 chunk 长度。
 - [x] Xpod 重启后的登录恢复：Chat 请求遇到过期会话 401 会立即触发本地 OIDC 恢复；浏览器已验证 localhost consent 和 `/chat` 回跳。
 - [x] 当前 Thread 与消息刷新恢复：恢复不再依赖可能漏失的 `chatkit.ready` 事件；Web Component 挂载并完成定义后固定执行 `setThreadId()` 与 `fetchUpdates()`，本地 Xpod 连续三次刷新均无需切换会话。
 
