@@ -78,7 +78,8 @@ vi.mock('@/lib/vendor/xpod-chatkit', () => ({
     .map((part) => part.text ?? '')
     .join('\n'),
   generateId: (prefix: string) => `${prefix}-generated`,
-  isStreamingReq: (request: { type?: string }) => request.type === 'threads.add_user_message',
+  isStreamingReq: (request: { type?: string }) => request.type === 'threads.add_user_message'
+    || request.type === 'threads.retry_after_item',
   nowTimestamp: () => 1,
 }))
 
@@ -137,7 +138,7 @@ async function collectStreamEvents(result: Awaited<ReturnType<LocalChatKitServic
   return events
 }
 
-function createMockStore() {
+function createMockStore(initialItems: any[] = []) {
   const thread = {
     id: 'thread-1',
     status: { type: 'active' as const },
@@ -145,7 +146,7 @@ function createMockStore() {
     updated_at: 1,
     metadata: { chat_id: 'chat-1' },
   }
-  const items: any[] = []
+  const items: any[] = [...initialItems]
   let index = 0
 
   return {
@@ -176,18 +177,20 @@ function createMockStore() {
 }
 
 function createMockDb(
-  agent: { provider: string; model: string; metadata?: Record<string, unknown> },
+  agent: { provider: string; model: string; metadata?: Record<string, unknown>; contextRound?: number },
   credentialRows: Array<Record<string, unknown>> = [],
   options: {
     exactCredentialRow?: Record<string, unknown>
     findByIdError?: Error
     contactAbout?: string
+    participantRef?: string
     selectError?: Error
   } = {},
 ) {
+  const participantRef = options.participantRef ?? 'contact-1'
   const chat = {
-    id: 'chat-1',
-    participants: ['contact-1'],
+    id: 'chat-1/index.ttl#this',
+    participants: [participantRef],
   }
   const contact = {
     id: 'contact-1',
@@ -199,6 +202,7 @@ function createMockDb(
     provider: agent.provider,
     model: agent.model,
     metadata: agent.metadata,
+    contextRound: agent.contextRound,
   }
 
   return {
@@ -215,7 +219,8 @@ function createMockDb(
       if (options.findByIdError) {
         throw options.findByIdError
       }
-      if (resource === mocked.chatResource) return chat
+      if (resource === mocked.chatResource && id === chat.id) return chat
+      if (resource === mocked.contactResource && id === contact.id) return contact
       if (resource === mocked.agentResource && id === agentRow.id) return agentRow
       if (resource === mocked.aiProviderResource) {
         return {
@@ -227,6 +232,9 @@ function createMockDb(
       return null
     }),
     findByIri: vi.fn(async (resource: unknown, iri?: string) => {
+      if (resource === mocked.contactResource && iri === participantRef) {
+        return contact
+      }
       if (resource === mocked.agentResource && iri === 'https://node-0000.undefineds.co/alice/agents/agent-1/') {
         return agentRow
       }
@@ -872,16 +880,19 @@ describe('LocalChatKitService platform runtime routing', () => {
   it('routes non-platform providers through the authenticated Pod runtime', async () => {
     const store = createMockStore()
     const db = createMockDb({
-      provider: 'openai',
-      model: 'gpt-4o-mini',
+      provider: 'timecc',
+      model: 'codex-auto-review',
     }, [{
-      id: 'credentials.ttl#openai-default',
-      provider: '/settings/providers/openai.ttl',
+      id: 'credentials.ttl#timecc-default',
+      provider: '/settings/providers/timecc.ttl',
       service: 'ai',
       status: 'active',
       apiKey: 'sk-test',
-      baseUrl: 'https://api.openai.example/v1',
-    }])
+      baseUrl: 'https://timicc.example/v1',
+    }], {
+      participantRef: 'https://node-0000.undefineds.co/alice/.data/contacts/contact-1.ttl',
+      contactAbout: 'https://node-0000.undefineds.co/alice/agents/agent-1/',
+    })
     const providerFetch = vi.fn()
     vi.stubGlobal('fetch', providerFetch)
     const authFetch = vi.fn(async () => createSseResponse([
@@ -905,9 +916,83 @@ describe('LocalChatKitService platform runtime routing', () => {
     )
     expect(providerFetch).not.toHaveBeenCalled()
     const requestBody = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
-    expect(requestBody.provider).toBe('openai')
-    expect(requestBody.model).toBe('gpt-4o-mini')
+    expect(requestBody.provider).toBe('timecc')
+    expect(requestBody.model).toBe('timecc/codex-auto-review')
+    expect(db.findByIri).toHaveBeenCalledWith(
+      mocked.contactResource,
+      'https://node-0000.undefineds.co/alice/.data/contacts/contact-1.ttl',
+    )
+    expect(db.findByIri).toHaveBeenCalledWith(
+      mocked.agentResource,
+      'https://node-0000.undefineds.co/alice/agents/agent-1/',
+    )
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '用户模型')).toBe(true)
+  })
+
+  it('limits provider history to the agent context rounds without starting on an assistant message', async () => {
+    const store = createMockStore([
+      { id: 'user-1', type: 'user_message', content: [{ type: 'input_text', text: 'old user' }] },
+      { id: 'assistant-1', type: 'assistant_message', content: [{ type: 'output_text', text: 'old assistant' }] },
+      { id: 'user-2', type: 'user_message', content: [{ type: 'input_text', text: 'recent user' }] },
+      { id: 'assistant-2', type: 'assistant_message', content: [{ type: 'output_text', text: 'recent assistant' }] },
+    ])
+    const db = createMockDb({
+      provider: 'timecc',
+      model: 'codex-auto-review',
+      contextRound: 2,
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"OK"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    await sendMessage(service)
+
+    const requestBody = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(requestBody.messages).toEqual([
+      expect.objectContaining({ role: 'system' }),
+      { role: 'user', content: 'recent user' },
+      { role: 'assistant', content: 'recent assistant' },
+      { role: 'user', content: '你好' },
+    ])
+  })
+
+  it('keeps the anchored user prompt when retry branch projection temporarily hides history', async () => {
+    const store = createMockStore()
+    const originalLoadItems = store.loadThreadItems
+    const db = createMockDb({ provider: 'timecc', model: 'codex-auto-review', contextRound: 2 })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"OK"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+    await sendMessage(service)
+    const persistedItems = (await originalLoadItems()).data
+    const assistant = persistedItems.find((item: any) => item.type === 'assistant_message')
+    store.loadThreadItems
+      .mockResolvedValueOnce({ data: persistedItems, has_more: false })
+      .mockResolvedValueOnce({ data: [], has_more: false })
+
+    await collectStreamEvents(await service.process(JSON.stringify({
+      type: 'threads.retry_after_item',
+      params: { thread_id: 'thread-1', item_id: assistant.id },
+    }), {}))
+
+    const retryBody = JSON.parse((authFetch.mock.calls.at(-1)?.[1] as RequestInit).body as string)
+    expect(retryBody.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: '你好' }),
+    ]))
   })
 
   it('falls back to the scoped credential collection when the exact cached row is partial', async () => {

@@ -31,11 +31,6 @@ import {
   type ContactRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
-import {
-  asResourceIri,
-  requireRowResourceId,
-  type ResourceIri,
-} from '@/lib/data/resource-identity'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
@@ -63,20 +58,6 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException
     ? error.name === 'AbortError'
     : typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError'
-}
-
-function requireRowId(row: Record<string, unknown> | null | undefined, label: string): string {
-  return requireRowResourceId(row as { id?: string | null }, label)
-}
-
-function resolveContactIri(db: SolidDatabase, contact: Pick<ContactRow, 'id'>): ResourceIri {
-  const id = requireRowId(contact, 'Contact row')
-  return asResourceIri(db.resolveRowIri(contactResource as any, { id }), 'Contact IRI')
-}
-
-function contactMatchesRef(db: SolidDatabase, contact: ContactRow | null | undefined, ref: string): boolean {
-  if (!contact || !ref) return false
-  return contact.id === ref || resolveContactIri(db, contact) === ref
 }
 
 type LocalChatKitStorePort = ChatKitStore<StoreContext> & {
@@ -290,7 +271,25 @@ interface ThreadAgentConfig {
   provider: string
   model: string
   instructions?: string
+  contextRound?: number
   aiRuntimeLocation: AgentAiRuntimeLocation
+}
+
+function normalizeContextRound(value: unknown): number | undefined {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined
+  return Math.min(100, Math.max(1, Math.floor(parsed)))
+}
+
+function modelMessageContainsText(message: ModelMessage, expected: string): boolean {
+  if (!expected) return false
+  const text = typeof message.content === 'string'
+    ? message.content
+    : message.content
+        .filter((part): part is Extract<ModelContentPart, { type: 'text' }> => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n')
+  return text.includes(expected)
 }
 
 
@@ -739,8 +738,6 @@ export class LocalChatKitService {
     inferenceOptions?: any,
     responseOptions: { selectResponseBranch?: boolean } = {},
   ): AsyncIterable<ThreadStreamEvent> {
-    const messages = await this.buildConversationHistory(thread.id, context)
-
     const assistantItem = this.createAssistantItem(thread, context, userMessage) as any
     const assistantItemId = assistantItem.id
     await this.store.addThreadItem(thread.id, assistantItem, context)
@@ -759,6 +756,13 @@ export class LocalChatKitService {
     try {
       const userText = await this.buildRuntimeUserText(userMessage)
       const agentConfig = await this.resolveThreadAgentConfig(thread)
+      const messages = await this.buildConversationHistory(thread.id, context, agentConfig?.contextRound)
+      const originalUserText = userMessage.type === 'user_message'
+        ? extractUserMessageText(userMessage.content)
+        : ''
+      if (!messages.some((message) => message.role === 'user' && modelMessageContainsText(message, originalUserText))) {
+        messages.push({ role: 'user', content: userText })
+      }
       const webSearchRequested = isWebSearchRequested(inferenceOptions)
       const platformModel = this.resolvePlatformModel(agentConfig, inferenceOptions?.model)
         ?? (webSearchRequested && !agentConfig ? 'linx-lite' : null)
@@ -859,7 +863,10 @@ export class LocalChatKitService {
         }
 
         const provider = agentConfig?.provider ?? 'openai'
-        const model = inferenceOptions?.model ?? agentConfig?.model ?? 'openai/gpt-4o-mini'
+        const selectedModel = inferenceOptions?.model ?? agentConfig?.model ?? 'gpt-4o-mini'
+        const model = typeof selectedModel === 'string' && selectedModel.includes('/')
+          ? selectedModel
+          : `${provider}/${selectedModel}`
         if (webSearchRequested) {
           throw new Error('当前自定义 AI 供应商不支持 LinX 联网搜索。请切换到 LinX 平台模型后重试。')
         }
@@ -1328,10 +1335,8 @@ export class LocalChatKitService {
       return null
     }
 
-    const contacts = await this.db.select().from(contactResource).execute() as ContactRow[]
-
     for (const participantRef of participantRefs) {
-      const contact = contacts.find((entry) => contactMatchesRef(this.db, entry, participantRef))
+      const contact = await this.findContactByRef(participantRef)
       const agentRef = contact?.about ?? participantRef
       const agent = await this.findAgentByRef(agentRef)
 
@@ -1350,11 +1355,26 @@ export class LocalChatKitService {
         provider,
         model,
         instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
+        contextRound: normalizeContextRound(agent.contextRound),
         aiRuntimeLocation: readAgentAiRuntimeLocation((agent as Record<string, unknown>).metadata),
       }
     }
 
     return null
+  }
+
+  private async findContactByRef(ref: string): Promise<ContactRow | null> {
+    if (!ref) return null
+    if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(ref)) {
+      const findByIri = (this.db as any).findByIri
+      return typeof findByIri === 'function'
+        ? await findByIri.call(this.db, contactResource as any, ref) as ContactRow | null
+        : null
+    }
+    const findById = (this.db as any).findById
+    return typeof findById === 'function'
+      ? await findById.call(this.db, contactResource as any, ref) as ContactRow | null
+      : null
   }
 
   private async findAgentByRef(ref: string): Promise<AgentRow | null> {
@@ -1372,11 +1392,12 @@ export class LocalChatKitService {
   }
 
   private async findChatById(chatId: string): Promise<any | null> {
-    const direct = await (this.db as any).findById?.(chatResource as any, chatId)
+    const resourceId = chatResource.buildId({ id: chatId })
+    const direct = await (this.db as any).findById?.(chatResource as any, resourceId)
     if (direct) return direct
 
     const chats = await this.db.select().from(chatResource).execute()
-    return chats.find((entry: any) => entry.id === chatId) ?? null
+    return chats.find((entry: any) => entry.id === resourceId) ?? null
   }
 
   private resolvePlatformModel(agentConfig: ThreadAgentConfig | null, requestedModel?: unknown): string | null {
@@ -1606,10 +1627,9 @@ export class LocalChatKitService {
   private async buildConversationHistory(
     threadId: string,
     context: StoreContext,
+    contextRound?: number,
   ): Promise<ModelMessage[]> {
-    const messages: ModelMessage[] = [
-      { role: 'system', content: this.systemPrompt },
-    ]
+    const conversation: ModelMessage[] = []
 
     const items = await this.store.loadThreadItems(threadId, undefined, 100, 'asc', context)
     for (const item of items.data) {
@@ -1617,7 +1637,7 @@ export class LocalChatKitService {
         const text = extractUserMessageText((item as any).content)
         const attachmentParts = await this.buildAttachmentModelParts((item as any).attachments)
         if (text || attachmentParts.length > 0) {
-          messages.push({
+          conversation.push({
             role: 'user',
             content: attachmentParts.length > 0
               ? [{ type: 'text', text: text || '请分析附件。' }, ...attachmentParts]
@@ -1630,12 +1650,21 @@ export class LocalChatKitService {
           .map((contentPart: any) => contentPart.text)
           .join('\n')
         if (text) {
-          messages.push({ role: 'assistant', content: text })
+          conversation.push({ role: 'assistant', content: text })
         }
       }
     }
 
-    return messages
+    const userMessageIndexes = conversation
+      .map((message, index) => message.role === 'user' ? index : -1)
+      .filter((index) => index >= 0)
+    const firstIncludedIndex = contextRound && userMessageIndexes.length > contextRound
+      ? userMessageIndexes[userMessageIndexes.length - contextRound]
+      : 0
+    return [
+      { role: 'system', content: this.systemPrompt },
+      ...conversation.slice(firstIncludedIndex),
+    ]
   }
 
   private async buildAttachmentModelParts(attachments: Attachment[] | undefined): Promise<ModelContentPart[]> {
