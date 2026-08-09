@@ -80,7 +80,7 @@ export interface ClientToolCallItem {
   arguments: Record<string, unknown>
   call_id: string
   status?: string
-  output?: string
+  output?: unknown
   created_at: number
 }
 
