@@ -800,29 +800,36 @@ export class LocalChatKitService {
           yield event
         }
       } else {
+        const provider = agentConfig?.provider ?? 'openai'
+        const selectedModel = inferenceOptions?.model ?? agentConfig?.model ?? 'gpt-4o-mini'
+        const providerModel = typeof selectedModel === 'string' && selectedModel.includes('/')
+          ? selectedModel
+          : `${provider}/${selectedModel}`
+
+        if (webSearchRequested) {
+          yield {
+            type: 'progress_update',
+            icon: 'search',
+            text: '正在搜索网络并整理来源…',
+          } as ThreadStreamEvent
+          const result = await this.respondWithLinxWebSearch(
+            platformModel ?? providerModel,
+            messages,
+            inferenceOptions,
+            agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
+            context.signal as AbortSignal | undefined,
+          )
+          fullText = result.text
+          annotations = result.annotations
+          yield createAssistantTextDeltaEvent(assistantItemId, fullText)
+          assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
+          assistantItem.status = 'completed'
+          await this.store.saveItem(thread.id, assistantItem, context)
+          yield { type: 'thread.item.done', item: assistantItem }
+          return
+        }
+
         if (platformModel) {
-          if (webSearchRequested) {
-            yield {
-              type: 'progress_update',
-              icon: 'search',
-              text: '正在搜索网络并整理来源…',
-            } as ThreadStreamEvent
-            const result = await this.respondWithLinxWebSearch(
-              platformModel,
-              messages,
-              inferenceOptions,
-              agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
-              context.signal as AbortSignal | undefined,
-            )
-            fullText = result.text
-            annotations = result.annotations
-            yield createAssistantTextDeltaEvent(assistantItemId, fullText)
-            assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
-            assistantItem.status = 'completed'
-            await this.store.saveItem(thread.id, assistantItem, context)
-            yield { type: 'thread.item.done', item: assistantItem }
-            return
-          }
 
           const stream = this.streamFromLinxRuntime(
             platformModel,
@@ -848,17 +855,9 @@ export class LocalChatKitService {
           return
         }
 
-        const provider = agentConfig?.provider ?? 'openai'
-        const selectedModel = inferenceOptions?.model ?? agentConfig?.model ?? 'gpt-4o-mini'
-        const model = typeof selectedModel === 'string' && selectedModel.includes('/')
-          ? selectedModel
-          : `${provider}/${selectedModel}`
-        if (webSearchRequested) {
-          throw new Error('当前自定义 AI 供应商不支持 LinX 联网搜索。请切换到 LinX 平台模型后重试。')
-        }
         const stream = this.streamFromProviderRuntime(
           provider,
-          model,
+          providerModel,
           messages,
           inferenceOptions,
           context.signal as AbortSignal | undefined,
@@ -1453,7 +1452,9 @@ export class LocalChatKitService {
         input: messages,
         tools: [{ type: 'web_search' }],
         tool_choice: 'auto',
-        temperature: inferenceOptions?.temperature ?? 0.7,
+        ...(typeof inferenceOptions?.temperature === 'number'
+          ? { temperature: inferenceOptions.temperature }
+          : {}),
         max_output_tokens: inferenceOptions?.max_tokens ?? 2048,
       }),
       signal,

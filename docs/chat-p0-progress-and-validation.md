@@ -178,7 +178,7 @@ yarn workspace @linx/web tsc --noEmit
 | Markdown / 代码 | **通过** | ChatKit 主路径已浏览器验证标题、GFM 表格、引用、语法高亮与代码复制入口 |
 | feedback 持久化 | **通过** | Pod `PATCH 205` 与 RDF `richContent` 已确认；feedback-only PATCH 不再修改会话活跃时间 |
 | citation 数据闭环 | **通过** | annotation 转换、安全 URL、流式合并、Pod 保存和历史恢复均有自动化覆盖 |
-| 搜索 citation 真实视觉 | **上游能力边界** | 本地 custom provider 只有 Chat Completions，不提供 Responses built-in Web Search；LinX 会明确失败且不伪造来源 |
+| 搜索 citation 真实视觉 | **通过** | custom provider 经本地 Xpod Responses Web Search 返回真实回答；ChatKit 展示可点击的 inline citation 和来源入口 |
 | 工具调用展示 | **通过** | 用户态进度摘要、展开技术名、结构化参数、Pod 历史重放均已覆盖 |
 | runtime SSE 断线恢复 | **通过** | 断线携带游标重连、Service 重放、客户端去重；浏览器普通离线恢复也会主动 `fetchUpdates()` |
 | 普通 Thread 同页草稿 | **通过** | ChatKit 保持挂载时跨 Chat/Thread 切换可恢复 |
@@ -265,8 +265,8 @@ yarn workspace @linx/web tsc --noEmit
 ### 当前边界
 
 - 当前锁定版本为 `@openai/chatkit-react` 1.6.1（内部 `@openai/chatkit` 1.9.0）；它没有公开 Composer 文本变化或读取事件，因此未发送草稿的**跨页面刷新**持久化仍不能在不侵入 CDN iframe、也不重做 Composer 的前提下可靠实现；本轮修复的是同一页面生命周期内的跨 Thread 保留。
-- 本地 Pod 已有可用的 custom provider credential，`chat/completions` 真实生成已经通过；该 provider 不提供 Responses API built-in Web Search，因此搜索 citation 仍需支持 `responses + web_search` 的上游。
-- 本地 Xpod 上游目前不支持 Responses API Web Search 时，会显示明确、可重试的 capability 错误，不伪造搜索结果或 citation。
+- 本节记录的是 2026-08-09 当时的 capability 快照；custom provider 的 Responses Web Search 已在第 15 节完成接入和真实浏览器终验。
+- 对未声明 Responses 支持的 provider，Xpod 会在请求上游前返回明确的 capability error，不伪造搜索结果或 citation。
 
 ### 浏览器增量验收
 
@@ -288,13 +288,13 @@ yarn workspace @linx/web tsc --noEmit
 本节覆盖并替代第 5、6 节中关于 credential reader 和 Web Search capability 的旧快照。
 
 - Xpod credential reader / DPoP 上下文已经修复；真实浏览器请求能以 `http://localhost:5737/cuilinsu/profile/card#me` 通过认证并读取 `/settings/credentials.ttl`。
-- 本地 Pod 的 custom provider credential 已可被 Xpod 读取，并能完成 `chat/completions` 生成；它不能承接 `linx-lite` 的 Responses built-in Web Search 路由。
+- 本地 Pod 的 custom provider credential 已可被 Xpod 读取，并能完成 `chat/completions` 生成；本条是接入 Responses Web Search 前的历史快照，最新状态见第 15 节。
 - Xpod Responses gateway 现在保留 `{ type: 'web_search' }` built-in tool，并把 OpenAI Responses 的 URL citation annotations 同时传入流式事件和非流式聚合结果。
 - Xpod 本地 Docker 已从当前工作树重建；`/service/status` 显示 CSS/API 均为 `running`，容器健康检查为 `healthy`。
 - Xpod 目标协议测试 36/36 通过（frontend/provider/handler），TypeScript 构建通过；集成套件 120 项通过、5 项跳过，固定端口并发冲突的单一套件独立重跑 10/10 通过。
 - LinX 现在会在已认证 Chat 请求收到 401 时立即触发 OIDC 恢复，不再等待令牌临近过期；浏览器已验证会弹出本地账号恢复入口，并可经 localhost consent 返回 `/chat`。
 - LinX Web 全量 Vitest：358 个文件、2778 个测试全部通过；Web `build:check`、Service TypeScript build 和 `git diff --check` 均通过。
-- 浏览器已通过 custom provider 完成真实流式生成；搜索请求仍由本地 Xpod `/v1/responses` 接收，但 `linx-lite` 没有可用的 Responses/Web Search 路由，因此真实 citation 视觉验收需要增加具备该能力的上游，而不是再补一个普通 Chat Completions key。
+- 浏览器已通过 custom provider 完成真实流式生成；本轮当时尚未打通 Responses/Web Search，后续已由第 15 节完成真实 citation 视觉终验。
 
 ## 11. P1 最终回归补充（2026-08-09）
 
@@ -305,7 +305,7 @@ yarn workspace @linx/web tsc --noEmit
 - **runtime 订阅稳定性**：事件回调不再依赖每次渲染都会变化的 runtime wrapper，避免普通重渲染重建 SSE 订阅并丢失重放游标。
 - **Markdown/代码真实浏览器验收**：标题、GFM 表格、TypeScript 语法高亮、代码块复制入口和引用块均在 ChatKit 主路径正确呈现；流式增量未再出现旧 `part_index` 协议错误。
 - **普通草稿**：真实浏览器再次确认同页切换 Chat 后恢复；跨刷新仍受 ChatKit 没有 composer change/getter API 的边界限制。
-- **搜索引用**：annotation 转换、URL 安全过滤、Pod 历史恢复和 Xpod Responses citation 转发均有自动化覆盖；真实搜索仍被本地上游 capability 阻塞，页面显示可恢复说明且不伪造来源。
+- **搜索引用**：annotation 转换、URL 安全过滤、Pod 历史恢复和 Xpod Responses citation 转发均有自动化覆盖；这里记录的是当时的阻塞状态，真实搜索和 citation 展示已在第 15 节通过。
 
 ## 12. 最终刷新与质量门禁（2026-08-10）
 
@@ -332,3 +332,13 @@ yarn workspace @linx/web tsc --noEmit
 - 回归测试把公式、Windows 路径、三引号与多行代码放进完成消息，并用 `sparqljs` 真实解析生成的 PATCH，防止只断言字符串片段却仍产生非法 SPARQL。
 - 修复后浏览器重跑相同长 Markdown：三次消息 PATCH 均返回 205，回答完整结束且没有错误卡；切换到其他会话再返回后，45 行代码与超长行从 Pod 历史正常恢复。
 - 最新 Chat 模块 Vitest：45 个文件、329/329 通过；集成测试 13/13、Chat lint、TypeScript、production build 和 `git diff --check` 通过。
+
+## 15. Custom provider 搜索与刷新恢复终验（2026-08-10）
+
+- Xpod 的 OpenAI-compatible adapter 仅在 provider 明确声明 `responses` 且请求包含原生 `web_search` tool 时改走 provider `/responses`；普通请求继续使用 `/chat/completions`，未声明支持的 provider 会在请求上游前返回结构化 capability error。
+- LinX 不再把 custom provider 的搜索请求提前拒绝，而是携带明确的 provider/model 经本地 Xpod `/v1/responses` 执行。Responses 请求只在用户明确配置时发送 `temperature`，兼容拒绝该参数的推理模型。
+- 真实浏览器在 `P0 Browser Pass` 中完成联网搜索，回答展示 `OpenAI Models` 等可点击 citation；本地 Pod 的用户消息和 assistant 完成消息均返回 `PATCH 205`，没有 provider、credential 或写入错误。
+- 首次终验刷新复现了“Thread 已选中但 ChatKit 历史为空”：ChatKit 会把与 `initialThread` 相同的 `setThreadId()` 当成无变化。现在仅在挂载期先切到 `null` 再恢复目标 Thread，后续普通 Thread 切换保持直接切换，不破坏 ChatKit 的分 Thread 草稿。
+- 修复后完整刷新自动恢复当前 Thread、全部历史 Markdown、搜索回答、inline citation 与来源入口；运行中的搜索进度不会作为历史状态残留。
+- Xpod lite 集成测试改为文件串行执行，消除了多个旧 fixture 在检查/监听端口 10000 之间的竞争；这只影响测试调度，不改变生产运行时。
+- Xpod full integration 的 PostgreSQL、Redis、MinIO 和 MinIO Console 改用隔离空闲宿主机端口，相关测试通过环境变量读取实际 PostgreSQL 端口；不会再与本机已有的 `5432/6379/9000/9001` 服务冲突。统一 `test:integration` 门禁最终为 lite 127 通过、5 跳过，full 40/40 通过，测试容器、网络和卷均已自动清理。

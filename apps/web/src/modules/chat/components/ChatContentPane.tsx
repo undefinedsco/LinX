@@ -634,6 +634,7 @@ function ChatKitPanel({
   // inputs that ChatKit already keeps while the element remains mounted.
   // Subsequent navigation is handled by `setThreadId` below.
   const initialThreadIdRef = useRef(selectedThreadId)
+  const restoredInitialThreadRef = useRef(false)
   const chatKitHostRef = useRef<HTMLElement | null>(null)
   const bindChatKitHost = useCallback((host: HTMLElement | null) => {
     chatKitHostRef.current = host
@@ -848,6 +849,19 @@ function ChatKitPanel({
         await customElements.whenDefined('openai-chatkit')
         if (disposed) return
 
+        // ChatKit initializes its internal id from `initialThread`. Calling
+        // `setThreadId` with that same id can therefore be treated as a no-op,
+        // leaving history empty after a hard refresh. Force a transition only
+        // for the mount-time restoration; normal thread navigation must stay
+        // direct so ChatKit can retain its per-thread composer drafts.
+        if (
+          !restoredInitialThreadRef.current
+          && selectedThreadId === initialThreadIdRef.current
+        ) {
+          await setThreadId(null)
+          if (disposed) return
+        }
+
         await setThreadId(selectedThreadId)
         if (disposed) return
 
@@ -856,6 +870,7 @@ function ChatKitPanel({
         // Explicitly synchronize after selection so a page reload always
         // restores messages and persisted item state such as feedback.
         await fetchUpdates()
+        restoredInitialThreadRef.current = true
       } catch (error) {
         if (!disposed) {
           console.error('[ChatKit] Failed to restore thread:', error)

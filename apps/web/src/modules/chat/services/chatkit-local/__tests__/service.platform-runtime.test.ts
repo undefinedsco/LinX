@@ -497,6 +497,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       tools: [{ type: 'web_search' }],
       tool_choice: 'auto',
     }))
+    expect(body).not.toHaveProperty('temperature')
     expect(events).toContainEqual({
       type: 'progress_update',
       icon: 'search',
@@ -607,7 +608,7 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(JSON.stringify(events)).not.toContain('TLS details')
   })
 
-  it('rejects web search for custom chat-completions providers instead of faking it', async () => {
+  it('routes custom OpenAI-compatible provider web search through Xpod Responses', async () => {
     const store = createMockStore()
     const db = createMockDb({
       provider: 'openai',
@@ -618,7 +619,21 @@ describe('LocalChatKitService platform runtime routing', () => {
       apiKey: 'test-key',
       baseUrl: 'https://openrouter.ai/api/v1',
     }])
-    const authFetch = vi.fn()
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      output: [{
+        type: 'message',
+        content: [{
+          type: 'output_text',
+          text: '自定义搜索结果',
+          annotations: [{
+            type: 'url_citation',
+            url: 'https://example.com/custom-source',
+            title: 'Custom source',
+            end_index: 7,
+          }],
+        }],
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     const service = new LocalChatKitService({
       store: store as any,
       db: db as any,
@@ -628,11 +643,24 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
 
-    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
-    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe(
-      '当前自定义 AI 供应商不支持 LinX 联网搜索。请切换到 LinX 平台模型后重试。',
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/responses',
+      expect.objectContaining({ method: 'POST' }),
     )
-    expect(events).not.toContainEqual(expect.objectContaining({ type: 'error' }))
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body).toMatchObject({
+      model: 'openai/gpt-4o-mini',
+      tools: [{ type: 'web_search' }],
+    })
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'completed',
+      content: [expect.objectContaining({
+        text: '自定义搜索结果',
+        annotations: [expect.objectContaining({
+          source: expect.objectContaining({ url: 'https://example.com/custom-source' }),
+        })],
+      })],
+    }))
   })
 
   it('routes Matrix group user messages through Matrix send without local duplicate persistence', async () => {

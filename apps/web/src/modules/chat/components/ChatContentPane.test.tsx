@@ -235,9 +235,10 @@ describe('ChatContentPane', () => {
       }),
     )
 
-    await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
+    await waitFor(() => expect(mockSetThreadId).toHaveBeenNthCalledWith(2, 'thread-1'))
+    expect(mockSetThreadId).toHaveBeenNthCalledWith(1, null)
     expect(mockFetchUpdates).toHaveBeenCalledTimes(1)
-    expect(mockSetThreadId.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockSetThreadId.mock.invocationCallOrder[1]).toBeLessThan(
       mockFetchUpdates.mock.invocationCallOrder[0],
     )
   })
