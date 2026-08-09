@@ -422,6 +422,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private threadItemsCache = new Map<string, ThreadItem[]>()
   private messageRowIdByItemId = new Map<string, string>()
   private onAttachmentsChange?: (attachments: Attachment[]) => void
+  private onThreadItemsChange?: (items: ThreadItem[]) => void
   private onChatSummaryChange?: (summary: {
     chatId: string
     messageId: string
@@ -441,12 +442,14 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       content: string
       createdAt: Date
     }) => Promise<void> | void,
+    onThreadItemsChange?: (items: ThreadItem[]) => void,
   ) {
     this.db = db
     this.webId = webId
     this.authFetch = authFetch
     this.onAttachmentsChange = onAttachmentsChange
     this.onChatSummaryChange = onChatSummaryChange
+    this.onThreadItemsChange = onThreadItemsChange
     if (initialThread) {
       this.threadMetadataCache.set(initialThread.id, initialThread)
       const chatId = getChatIdFromMetadata(initialThread.metadata)
@@ -551,8 +554,9 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private async selectMessagesForThread(threadId: string): Promise<any[]> {
     const chatId = await this.getThreadChatId(threadId)
     const normalizedThreadId = extractThreadId(threadId) ?? threadId
+    const thread = this.buildThreadUri(chatId, normalizedThreadId)
     const messages = await withTimeout(
-      this.db.select().from(Message).execute(),
+      this.db.select().from(Message).where({ thread }).limit(1000).execute(),
       POD_QUERY_TIMEOUT_MS,
       `Timed out loading messages for thread ${threadId}`,
     )
@@ -573,13 +577,16 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const cached = this.threadItemsCache.get(threadId) ?? []
     const index = cached.findIndex((entry) => entry.id === item.id)
     if (index === -1) {
-      this.threadItemsCache.set(threadId, [...cached, item])
+      const next = [...cached, item]
+      this.threadItemsCache.set(threadId, next)
+      this.onThreadItemsChange?.([...next])
       return
     }
 
     const next = [...cached]
     next[index] = item
     this.threadItemsCache.set(threadId, next)
+    this.onThreadItemsChange?.([...next])
   }
 
   private removeCachedThreadItem(threadId: string, itemId: string): void {
@@ -588,9 +595,11 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const next = cached.filter((item) => item.id !== itemId)
     if (next.length === 0) {
       this.threadItemsCache.delete(threadId)
+      this.onThreadItemsChange?.([])
       return
     }
     this.threadItemsCache.set(threadId, next)
+    this.onThreadItemsChange?.([...next])
   }
 
   private resolveRowIri(resource: unknown, row: Record<string, unknown>): string {
@@ -809,6 +818,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     try {
       const cachedItems = this.getCachedThreadItems(threadId)
       if (cachedItems) {
+        this.onThreadItemsChange?.([...cachedItems])
         return this.pageThreadItems(cachedItems, after, limit, order)
       }
 
@@ -820,26 +830,22 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         return order === 'desc' ? bTime - aTime : aTime - bTime
       })
 
-      let startIndex = 0
-      if (after) {
-        const idx = messages.findIndex((m: any) => m.id === after)
-        if (idx !== -1) startIndex = idx + 1
-      }
-      const slice = messages.slice(startIndex, startIndex + limit)
-      const data = await Promise.all(slice.map(async (message: any) => (
+      const data = await Promise.all(messages.map(async (message: any) => (
         this.hydrateItemAttachments(messageRecordToItem(message, threadId))
       )))
+      this.threadItemsCache.set(threadId, data)
       this.emitThreadAttachments(data)
-      return {
-        data,
-        has_more: startIndex + limit < messages.length,
-        first_id: slice.length > 0 ? (slice[0] as any).id : undefined,
-        last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
-      }
+      this.onThreadItemsChange?.(data)
+      return this.pageThreadItems(data, after, limit, order)
     } catch (error) {
       console.error('[LocalStore] Failed to load thread items:', error)
       return { data: [], has_more: false }
     }
+  }
+
+  async refreshThreadItems(threadId: string, context: StoreContext): Promise<void> {
+    this.threadItemsCache.delete(threadId)
+    await this.loadThreadItems(threadId, undefined, 1000, 'asc', context)
   }
 
   async addThreadItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
@@ -969,7 +975,6 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const deleteTriples = [
       `<${messageIri}> <http://rdfs.org/sioc/ns#content> ?oldContent .`,
       `<${messageIri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent .`,
-      `<${messageIri}> <${UDFS.messageStatus}> ?oldStatus .`,
     ]
     const insertTriples = [
       `<${messageIri}> <http://rdfs.org/sioc/ns#content> ${sparqlStringLiteral(content)} .`,
@@ -978,7 +983,6 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       `<${messageIri}> ?existingPredicate ?existingObject .`,
       `OPTIONAL { <${messageIri}> <http://rdfs.org/sioc/ns#content> ?oldContent . }`,
       `OPTIONAL { <${messageIri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent . }`,
-      `OPTIONAL { <${messageIri}> <${UDFS.messageStatus}> ?oldStatus . }`,
     ]
 
     if (richContent !== null) {
@@ -986,6 +990,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     }
 
     if (status) {
+      deleteTriples.push(`<${messageIri}> <${UDFS.messageStatus}> ?oldStatus .`)
+      wherePatterns.push(`OPTIONAL { <${messageIri}> <${UDFS.messageStatus}> ?oldStatus . }`)
       insertTriples.push(`<${messageIri}> <${UDFS.messageStatus}> "${status}" .`)
     }
 

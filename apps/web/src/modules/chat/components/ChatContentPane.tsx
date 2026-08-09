@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSession } from '@/providers/solid-session-context'
 import { requestSessionRecovery } from '@/modules/login/login-utils'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, ArrowRight, Bot, Download, ExternalLink, LockKeyhole, Paperclip, Pencil, PlayCircle, Quote, ShieldAlert, Trash2, WifiOff } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Download, ExternalLink, LockKeyhole, Paperclip, Pencil, PlayCircle, Quote, RefreshCw, ShieldAlert, Square, Trash2, WifiOff } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
@@ -30,8 +30,8 @@ import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useInboxStore } from '@/modules/inbox/store'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
-import { createLocalChatKitFetch, unavailableResponse } from '../services/chatkit-local/fetch-handler'
-import type { Attachment } from '@/lib/vendor/xpod-chatkit'
+import { createLocalChatKitFetch, unavailableResponse, type LocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
+import type { Attachment, ThreadItem } from '@/lib/vendor/xpod-chatkit'
 import { useChatStore } from '../store'
 import {
   useChatInit,
@@ -65,7 +65,7 @@ import {
   type SecretaryStarterAction,
 } from '../ui/SecretaryWelcome'
 import { readMessageBranchMetadata } from '../domain/message-row-adapter'
-import { cycleSibling, groupMessageSiblings } from '../domain/message-tree'
+import { cycleSibling, groupMessageSiblings, selectSiblingIndex } from '../domain/message-tree'
 
 export interface ChatContentPaneProps extends MicroAppPaneProps {}
 
@@ -620,6 +620,7 @@ function ChatKitPanel({
   const theme = useThemeMode()
   const { db } = useSolidDatabase()
   const [threadAttachments, setThreadAttachments] = useState<Attachment[]>([])
+  const [branchThreadItems, setBranchThreadItems] = useState<ThreadItem[]>([])
   const [attachmentsOpen, setAttachmentsOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
@@ -627,6 +628,9 @@ function ChatKitPanel({
   const [isChatKitMounted, setIsChatKitMounted] = useState(false)
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null)
   const [actionMessageId, setActionMessageId] = useState<string | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [pendingRegenerateParentId, setPendingRegenerateParentId] = useState<string | null>(null)
+  const abortGenerationRef = useRef<(() => void) | null>(null)
   const sendAvailableRef = useRef(!sendDisabled && isOnline)
   sendAvailableRef.current = !sendDisabled && isOnline
   // `initialThread` is mount-only configuration. Updating it causes ChatKit to
@@ -643,7 +647,9 @@ function ChatKitPanel({
 
   const localFetch = useMemo(() => {
     if (!db || !sessionWebId || !sessionFetch) {
-      return async () => unavailableResponse()
+      const unavailableFetch = (async () => unavailableResponse()) as unknown as LocalChatKitFetch
+      unavailableFetch.refreshThreadItems = async () => undefined
+      return unavailableFetch
     }
     const authFetchWithRecovery: typeof sessionFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const response = await sessionFetch(input, init)
@@ -664,6 +670,11 @@ function ChatKitPanel({
       },
       isAvailable: () => sendAvailableRef.current,
       onAttachmentsChange: setThreadAttachments,
+      onStreamingChange: ({ active, abort }) => {
+        abortGenerationRef.current = abort ?? null
+        setIsGenerating(active)
+      },
+      onThreadItemsChange: setBranchThreadItems,
       onChatSummaryChange: ({ messageId, content, createdAt }) => {
         return projectChatSummary(selectedChatId, {
           lastMessageId: messageId,
@@ -749,17 +760,45 @@ function ChatKitPanel({
   const setThreadId = chatkit.setThreadId
   const fetchUpdates = chatkit.fetchUpdates
   const { data: messageRows = [], refetch: refetchMessages } = useMessageList(selectedChatId, selectedThreadId)
-  const userMessages = useMemo(
-    () => messageRows.filter((message) => message.role === 'user'),
-    [messageRows],
-  )
+  const userMessages = useMemo(() => {
+    const byId = new Map(messageRows
+      .filter((message) => message.role === 'user')
+      .map((message) => {
+        let itemId = message.id
+        if (typeof message.richContent === 'string') {
+          try {
+            const stored = JSON.parse(message.richContent) as { id?: unknown }
+            if (typeof stored.id === 'string') itemId = stored.id
+          } catch {
+            // Legacy plain-text messages keep their Pod row id.
+          }
+        }
+        return [itemId, { ...message, id: itemId }]
+      }))
+    for (const item of branchThreadItems) {
+      if (item.type !== 'user_message') continue
+      byId.set(item.id, {
+        id: item.id,
+        role: 'user',
+        content: item.content
+          .filter((part) => part.type === 'input_text')
+          .map((part) => part.text)
+          .join('\n'),
+        richContent: JSON.stringify(item),
+        createdAt: new Date(item.created_at * 1000),
+      } as (typeof messageRows)[number])
+    }
+    return [...byId.values()].sort((left, right) => (
+      new Date(left.createdAt ?? 0).getTime() - new Date(right.createdAt ?? 0).getTime()
+    ))
+  }, [branchThreadItems, messageRows])
   const lastUserMessage = userMessages[userMessages.length - 1]
   const actionMessage = userMessages.find((message) => message.id === actionMessageId) ?? lastUserMessage
-  const branchNodes = useMemo(() => messageRows.map((row) => ({
+  const branchNodes = useMemo(() => userMessages.map((row) => ({
     id: row.id,
     ...readMessageBranchMetadata(row),
     createdAt: row.createdAt,
-  })), [messageRows])
+  })), [userMessages])
   const branchGroups = useMemo(() => groupMessageSiblings(branchNodes), [branchNodes])
   const activeBranchByParent = useMemo(() => ({
     ...(persistedActiveBranchByParent ?? {}),
@@ -779,6 +818,40 @@ function ChatKitPanel({
   }, [actionMessage, branchGroups])
   const actionBranchIndex = actionBranchGroup ? actionBranchGroup.items.findIndex((item) => item.id === actionMessage?.id) : -1
   const hasBranchSiblings = Boolean(actionBranchGroup && actionBranchGroup.items.length > 1 && actionMessage)
+  const answerBranchGroup = useMemo(() => {
+    if (!actionMessage) return null
+    const canonicalUserId = (parentId: string | undefined) => {
+      if (!parentId) return parentId
+      const parentFragment = parentId.includes('#') ? parentId.slice(parentId.lastIndexOf('#') + 1) : parentId
+      return userMessages.find((message) => {
+        const messageFragment = message.id.includes('#') ? message.id.slice(message.id.lastIndexOf('#') + 1) : message.id
+        return message.id === parentId || messageFragment === parentFragment
+      })?.id ?? parentId
+    }
+    const answerNodes = branchThreadItems
+      .filter((item) => item.type === 'assistant_message')
+      .map((item) => ({
+        id: item.id,
+        parentItemId: typeof (item as ThreadItem & { parent_item_id?: unknown }).parent_item_id === 'string'
+          ? canonicalUserId((item as ThreadItem & { parent_item_id: string }).parent_item_id)
+          : undefined,
+        branchId: typeof (item as ThreadItem & { branch_id?: unknown }).branch_id === 'string'
+          ? (item as ThreadItem & { branch_id: string }).branch_id
+          : undefined,
+        createdAt: new Date(item.created_at * 1000),
+      }))
+    return groupMessageSiblings(answerNodes).find((group) => group.parentItemId === actionMessage.id) ?? null
+  }, [actionMessage, branchThreadItems, userMessages])
+  const activeAnswerId = actionMessage ? activeBranchByParent[actionMessage.id] : undefined
+  const answerBranchIndex = answerBranchGroup ? selectSiblingIndex(answerBranchGroup, activeAnswerId) : -1
+  const hasAnswerSiblings = Boolean(answerBranchGroup && answerBranchGroup.items.length > 1 && actionMessage)
+  useEffect(() => {
+    if (!answerBranchGroup || !actionMessage || pendingRegenerateParentId !== actionMessage.id) return
+    const newestAnswer = answerBranchGroup.items[answerBranchGroup.items.length - 1]
+    if (!newestAnswer) return
+    setActiveBranch(actionMessage.id, newestAnswer.id)
+    setPendingRegenerateParentId(null)
+  }, [actionMessage, answerBranchGroup, pendingRegenerateParentId, setActiveBranch])
   const cycleActionBranch = (direction: -1 | 1) => {
     if (!actionBranchGroup || !actionMessage) return
     const nextId = cycleSibling(actionBranchGroup, actionMessage.id, direction)
@@ -792,6 +865,21 @@ function ChatKitPanel({
         thread_id: selectedThreadId,
         item_id: nextId,
         parent_item_id: actionBranchGroup.parentItemId ?? 'root',
+      },
+    }).then(() => fetchUpdates())
+  }
+  const cycleAnswerBranch = (direction: -1 | 1) => {
+    if (!answerBranchGroup || !actionMessage) return
+    const nextId = cycleSibling(answerBranchGroup, activeAnswerId, direction)
+    if (!nextId) return
+    setActiveBranch(actionMessage.id, nextId)
+    void chatkit.sendCustomAction({
+      type: 'message.select_branch',
+      payload: {
+        action: 'message.select_branch',
+        thread_id: selectedThreadId,
+        item_id: nextId,
+        parent_item_id: actionMessage.id,
       },
     }).then(() => fetchUpdates())
   }
@@ -870,6 +958,7 @@ function ChatKitPanel({
         // Explicitly synchronize after selection so a page reload always
         // restores messages and persisted item state such as feedback.
         await fetchUpdates()
+        await localFetch.refreshThreadItems(selectedThreadId)
         restoredInitialThreadRef.current = true
       } catch (error) {
         if (!disposed) {
@@ -883,7 +972,7 @@ function ChatKitPanel({
     return () => {
       disposed = true
     }
-  }, [fetchUpdates, isChatKitMounted, selectedThreadId, setThreadId])
+  }, [fetchUpdates, isChatKitMounted, localFetch, selectedThreadId, setThreadId])
 
   useEffect(() => {
     if (!pendingComposerDraft) return
@@ -979,6 +1068,19 @@ function ChatKitPanel({
         control={chatkit.control}
         style={{ display: 'block', width: '100%', height: '100%' }}
       />
+      {isGenerating ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="absolute bottom-20 left-1/2 z-30 h-9 -translate-x-1/2 gap-2 rounded-full bg-background/95 px-4 shadow-md backdrop-blur"
+          aria-label="停止生成"
+          onClick={() => abortGenerationRef.current?.()}
+        >
+          <Square className="size-3 fill-current" />
+          停止生成
+        </Button>
+      ) : null}
       {actionMessage ? (
         <div className="absolute bottom-3 right-3 z-20">
           <div className="flex gap-1 rounded-md border bg-background/95 p-1 shadow-sm">
@@ -992,8 +1094,28 @@ function ChatKitPanel({
                 <Button variant="ghost" size="icon" className="size-7" aria-label="下一个分支" title="下一个分支" onClick={() => cycleActionBranch(1)}><ArrowRight className="size-3.5" /></Button>
               </>
             ) : null}
+            {hasAnswerSiblings ? (
+              <>
+                <Button variant="ghost" size="icon" className="size-7" aria-label="上一个回答" title="上一个回答" onClick={() => cycleAnswerBranch(-1)}><ArrowLeft className="size-3.5" /></Button>
+                <span className="flex min-w-16 items-center justify-center text-xs tabular-nums">回答 {answerBranchIndex + 1}/{answerBranchGroup?.items.length}</span>
+                <Button variant="ghost" size="icon" className="size-7" aria-label="下一个回答" title="下一个回答" onClick={() => cycleAnswerBranch(1)}><ArrowRight className="size-3.5" /></Button>
+              </>
+            ) : null}
             <Button variant="ghost" size="icon" className="size-7" aria-label="编辑消息" title="编辑消息" onClick={() => setEditingMessage({ id: actionMessage.id, text: actionMessage.content ?? '' })}>
               <Pencil className="size-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="size-7" aria-label="重新生成回答" title="重新生成回答" onClick={async () => {
+              setPendingRegenerateParentId(actionMessage.id)
+              try {
+                await chatkit.sendCustomAction({ type: 'message.regenerate', payload: { action: 'message.regenerate', thread_id: selectedThreadId, item_id: actionMessage.id } })
+              } catch {
+                setPendingRegenerateParentId(null)
+                // ChatKit surfaces the protocol error through its configured onError callback.
+              } finally {
+                await Promise.allSettled([fetchUpdates(), localFetch.refreshThreadItems(selectedThreadId)])
+              }
+            }}>
+              <RefreshCw className="size-3.5" />
             </Button>
             <Button variant="ghost" size="icon" className="size-7" aria-label="引用消息" title="引用消息" onClick={() => void setComposerValue({ text: `> ${actionMessage.content ?? ''}\n\n` })}>
               <Quote className="size-3.5" />
@@ -1030,7 +1152,7 @@ function ChatKitPanel({
                 // The edited branch may already be persisted even if regeneration fails.
               } finally {
                 setEditingMessage(null)
-                await Promise.allSettled([fetchUpdates(), refetchMessages()])
+                await Promise.allSettled([fetchUpdates(), refetchMessages(), localFetch.refreshThreadItems(selectedThreadId)])
               }
             }}>保存并重新生成</Button>
           </DialogFooter>

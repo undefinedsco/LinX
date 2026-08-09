@@ -10,7 +10,7 @@
  */
 
 import type { SolidDatabase } from '@undefineds.co/models'
-import type { Attachment, ThreadMetadata } from '@/lib/vendor/xpod-chatkit'
+import type { Attachment, ThreadItem, ThreadMetadata } from '@/lib/vendor/xpod-chatkit'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
@@ -22,6 +22,8 @@ export interface LocalChatKitFetchOptions {
   initialThread?: ThreadMetadata
   isAvailable?: () => boolean
   onAttachmentsChange?: (attachments: Attachment[]) => void
+  onStreamingChange?: (state: { active: boolean; abort?: () => void }) => void
+  onThreadItemsChange?: (items: ThreadItem[]) => void
   onChatSummaryChange?: (summary: {
     chatId: string
     messageId: string
@@ -30,7 +32,7 @@ export interface LocalChatKitFetchOptions {
   }) => Promise<void> | void
 }
 
-export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): typeof fetch {
+export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): LocalChatKitFetch {
   const {
     db,
     webId,
@@ -38,6 +40,8 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
     initialThread,
     isAvailable = () => true,
     onAttachmentsChange,
+    onStreamingChange,
+    onThreadItemsChange,
     onChatSummaryChange,
   } = options
   const store = new LocalChatKitStore(
@@ -47,10 +51,11 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
     initialThread,
     onAttachmentsChange,
     onChatSummaryChange,
+    onThreadItemsChange,
   )
   const service = new LocalChatKitService({ store, db, webId, authFetch })
 
-  return async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const localFetch = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (!isAvailable()) {
       return unavailableResponse()
     }
@@ -95,10 +100,18 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
         body = '{}'
       }
 
-      const context = { signal: init?.signal }
+      const requestController = onStreamingChange ? new AbortController() : null
+      const abortFromCaller = () => requestController?.abort(init?.signal?.reason)
+      if (requestController) {
+        init?.signal?.addEventListener('abort', abortFromCaller, { once: true })
+        if (init?.signal?.aborted) abortFromCaller()
+      }
+
+      const context = { signal: requestController?.signal ?? init?.signal }
       const result = await service.process(body, context)
 
       if (result.type === 'streaming') {
+        onStreamingChange?.({ active: true, abort: () => requestController?.abort('user_cancelled') })
         // Build a ReadableStream from the async generator
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
@@ -109,6 +122,9 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
               controller.close()
             } catch (err) {
               controller.error(err)
+            } finally {
+              init?.signal?.removeEventListener('abort', abortFromCaller)
+              onStreamingChange?.({ active: false })
             }
           },
         })
@@ -122,6 +138,8 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
           },
         })
       }
+
+      init?.signal?.removeEventListener('abort', abortFromCaller)
 
       // Non-streaming
       return new Response(result.json, {
@@ -137,6 +155,14 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
       )
     }
   }
+  localFetch.refreshThreadItems = async (threadId: string) => {
+    await store.refreshThreadItems(threadId, {})
+  }
+  return localFetch
+}
+
+export type LocalChatKitFetch = typeof fetch & {
+  refreshThreadItems: (threadId: string) => Promise<void>
 }
 
 export function unavailableResponse(): Response {

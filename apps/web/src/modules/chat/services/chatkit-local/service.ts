@@ -472,6 +472,14 @@ export class LocalChatKitService {
       return
     }
 
+    if (action === 'message.regenerate') {
+      const item = await this.store.loadItem(threadId, itemId, context)
+      if (item.type !== 'user_message') throw new Error('只能从用户消息重新生成回答。')
+      const thread = await this.store.loadThread(threadId, context)
+      yield* this.respond(thread, item, context, (item as any).inference_options, { selectResponseBranch: true })
+      return
+    }
+
     if (action === 'message.edit') {
       const text = typeof payload?.text === 'string' ? payload.text.trim() : ''
       if (!text) throw new Error('编辑后的消息不能为空。')

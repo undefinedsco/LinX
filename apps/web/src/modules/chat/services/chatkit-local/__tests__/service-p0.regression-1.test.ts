@@ -126,6 +126,32 @@ describe('LocalChatKitService P0 data and cancellation', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'thread.item.added' }))
   })
 
+  it('regenerates a sibling answer from the selected user message', async () => {
+    const item = { id: 'user-1', thread_id: 'thread-1', type: 'user_message', content: [{ type: 'input_text', text: 'again' }] }
+    const thread = { id: 'thread-1', status: { type: 'active' }, metadata: {} }
+    const store = createStore({
+      loadItem: vi.fn(async () => item),
+      loadThread: vi.fn(async () => thread),
+    })
+    const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any }) as any
+    service.respond = vi.fn(async function* () {
+      yield { type: 'thread.item.done', item: { id: 'assistant-2', type: 'assistant_message', content: [] } }
+    })
+
+    const result = await service.process(JSON.stringify({
+      type: 'threads.custom_action',
+      params: {
+        action: {
+          type: 'message.regenerate',
+          payload: { thread_id: 'thread-1', item_id: 'user-1' },
+        },
+      },
+    }), {})
+    if (result.type === 'streaming') for await (const _ of result.stream()) { /* consume */ }
+
+    expect(service.respond).toHaveBeenCalledWith(thread, item, {}, undefined, { selectResponseBranch: true })
+  })
+
   it('persists ChatKit feedback on every referenced item', async () => {
     const item = {
       id: 'assistant-1',

@@ -32,6 +32,8 @@ describe('LocalChatKitStore storage routing', () => {
       )),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => [messageRow]),
         })),
       })),
@@ -62,6 +64,64 @@ describe('LocalChatKitStore storage routing', () => {
     expect(onChatSummaryChange).not.toHaveBeenCalled()
   })
 
+  it('preserves the required status when editing a user message', async () => {
+    const storedItem = {
+      id: 'user-1',
+      thread_id: 'thread-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: 'original' }],
+      created_at: 1,
+    }
+    const messageRow = {
+      id: 'chat/default/1970/01/01/messages.ttl#user-1',
+      chat: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this',
+      thread: 'https://node-0000.undefineds.co/alice/.data/index.ttl#thread-1',
+      role: 'user',
+      content: 'original',
+      richContent: JSON.stringify(storedItem),
+      metadata: { chatkitItemId: 'user-1' },
+      status: 'completed',
+      createdAt: '1970-01-01T00:00:01.000Z',
+    }
+    const authFetch = vi.fn(async () => new Response(null, { status: 205 }))
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'https://node-0000.undefineds.co/alice/' }),
+      resolveRowIri: vi.fn((_resource: unknown, row: { id: string }) => (
+        new URL(`.data/${row.id}`, 'https://node-0000.undefineds.co/alice/').toString()
+      )),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
+          execute: vi.fn(async () => [messageRow]),
+        })),
+      })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      authFetch as any,
+      {
+        id: 'thread-1',
+        title: 'Thread',
+        status: { type: 'active' },
+        created_at: 1,
+        updated_at: 1,
+        metadata: { chat_id: 'default' },
+      },
+    )
+
+    await store.loadThreadItems('thread-1', undefined, 20, 'asc', {})
+    await store.saveItem('thread-1', {
+      ...storedItem,
+      content: [{ type: 'input_text', text: 'edited' }],
+    } as any, {})
+
+    const patch = String((authFetch.mock.calls[0]?.[1] as RequestInit).body)
+    expect(() => new Parser().parse(patch)).not.toThrow()
+    expect(patch).not.toContain('messageStatus')
+  })
+
   it('writes Markdown formulas and code as valid SPARQL string literals', async () => {
     const originalItem = {
       id: 'assistant-markdown',
@@ -90,6 +150,8 @@ describe('LocalChatKitStore storage routing', () => {
       )),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => [messageRow]),
         })),
       })),
@@ -145,6 +207,8 @@ describe('LocalChatKitStore storage routing', () => {
       findById: vi.fn(async () => null),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => [{
             id: 'chat/default/1970/01/01/messages.ttl#row-1',
             chat: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this',
@@ -183,6 +247,8 @@ describe('LocalChatKitStore storage routing', () => {
       })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => []),
         })),
       })),
@@ -232,6 +298,8 @@ describe('LocalChatKitStore storage routing', () => {
       })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => []),
         })),
       })),
@@ -267,6 +335,8 @@ describe('LocalChatKitStore storage routing', () => {
       })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => []),
         })),
       })),
@@ -321,6 +391,8 @@ describe('LocalChatKitStore storage routing', () => {
       })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => []),
         })),
       })),
@@ -360,6 +432,8 @@ describe('LocalChatKitStore storage routing', () => {
       })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => []),
         })),
       })),
@@ -429,6 +503,8 @@ describe('LocalChatKitStore storage routing', () => {
       })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => []),
         })),
       })),
@@ -504,6 +580,8 @@ describe('LocalChatKitStore storage routing', () => {
       })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => [{
             id: 'chat/default/2026/08/09/messages.ttl#markdown-1',
             chat: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this',
@@ -548,6 +626,8 @@ describe('LocalChatKitStore storage routing', () => {
       })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => [{
             id: 'chat/default/1970/01/01/messages.ttl#tool-1',
             chat: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this',
