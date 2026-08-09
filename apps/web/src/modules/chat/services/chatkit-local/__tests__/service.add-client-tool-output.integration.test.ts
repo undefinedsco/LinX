@@ -312,6 +312,7 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
       type: 'client_tool_call',
       call_id: 'call-2',
       name: 'open_url',
+      arguments: { url: 'https://example.com/auth' },
       status: 'pending',
     }), {})
     expect(store.saveItem).toHaveBeenLastCalledWith('thread-1', expect.objectContaining({
