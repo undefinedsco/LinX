@@ -18,9 +18,9 @@
 | 功能 | 设计要求 | 状态 | 备注 |
 |------|---------|------|------|
 | **聊天列表** ||||
-| 64px 行高 + 48px Logo | chat-ui-wechat.md | 🔍 待验证 | 检查 ResourceItem 样式 |
+| 64px 行高 + 48px Logo | chat-ui-wechat.md | ✅ 已实现 | ResourceItem `h-16`，ChatListPane `h-12 w-12` |
 | Starred 排序优先 | chat-spec.md | ✅ 已实现 | repository 层排序 |
-| 搜索过滤 (debounce ~120ms) | chat-ui-wechat.md | ✅ 已实现 | 需确认 debounce 时间 |
+| 搜索过滤 (debounce ~120ms) | chat-ui-wechat.md | ✅ 已实现 | Pod 全局查询前固定 120ms debounce |
 | Star/Unstar 聊天 | chat-ui-wechat.md | ✅ 已实现 | 2024-12-15 |
 | 删除聊天 | chat-ui-wechat.md | ✅ 已实现 | 带确认对话框 |
 | **话题列表** ||||
@@ -51,7 +51,7 @@
 |------|---------|------|------|
 | Mark as Unread | chat-ui-wechat.md | ✅ 已实现 | ChatListPane context menu + unreadCount |
 | Role 编辑 Modal | chat-ui-wechat.md | ✅ 已实现 | ChatRightSidebar |
-| Role 卡片 3 行 clamp | chat-ui-wechat.md | 🔍 待验证 | 检查样式 |
+| Role 卡片 3 行 clamp | chat-ui-wechat.md | ✅ 已实现 | ChatRightSidebar `line-clamp-3` |
 | Thread 搜索 | chat-ui-wechat.md | ✅ 已实现 | ChatRightSidebar |
 
 ### 1.3 P2 - 增强功能
@@ -81,11 +81,11 @@
 
 | 检查项 | 规范值 | 当前状态 | 位置 |
 |--------|--------|---------|------|
-| List Panel 宽度 | 210px 可拖拽 | 🔍 待验证 | PrimaryLayout |
+| List Panel 宽度 | 210px 可拖拽 | ✅ 已实现 | `linxLayout.listPanel` 默认 210、范围 180-400 |
 | 列表行高 | 64px | ✅ 已实现 | ResourceItem `h-16` |
 | Avatar 大小 | 48px, rounded-sm | ✅ 已实现 | ChatListPane `h-12 w-12` |
 | Content Header 高度 | 48px | ✅ 已实现 | ChatContentPane `h-12` |
-| Right Sidebar 宽度 | 320px | 🔍 待验证 | ChatRightSidebar |
+| Right Sidebar 宽度 | 320px | ✅ 已实现 | `useChatLayoutConfig.rightSidebarWidth` |
 
 ### 2.2 样式 Token
 
@@ -197,7 +197,7 @@ npx playwright test chat-alignment.spec.ts --project=chromium
 - [x] ChatKit 附件入口与历史附件加载：文件选择器可打开，已持久化会话显示附件计数并可重新加载。
 - [x] timecc 上游独立服务可用性：模型服务页可读取模型；独立 provider 请求曾验证成功。
 - [x] Chat 自定义 provider 不再由浏览器直连：已统一改走登录后的 Xpod `/v1/chat/completions`，真实网络记录确认浏览器未请求 `timicc.com`，也不再携带上游 API Key。
-- [ ] 完整运行时浏览器验收：Xpod credential-reader/DPoP 和 custom provider 生成链路已经修复；搜索 citation 仍需支持 Responses built-in Web Search 的上游，普通 Chat Completions credential 不能替代。
+- [x] 普通生成运行时浏览器验收：Xpod credential-reader/DPoP 和 custom provider 生成链路已经修复并通过；搜索 citation 的真实视觉验收仍需 Responses built-in Web Search 上游，普通 Chat Completions credential 不能替代。
 - [ ] 附件新上传：ChatKit 文件选择器可打开，历史附件可恢复；macOS 文件选择器自动化未可靠选中文件，未形成可信的新上传结果。
 - [ ] 编辑分支和活动分支刷新保持：数据建模、两条读取路径投影与 Thread metadata 恢复已经补齐；完整 `1/2` 连续验收仍待浏览器终验。feedback 已确认以 `PATCH 205` 写入本地 Pod，RDF `richContent` 可恢复；ChatKit 官方 ThreadItem 协议不返回 feedback 选中态。
 - [x] 普通 Thread Composer 同页草稿：真实浏览器中输入草稿、切换到另一 Chat、再切回后完整恢复；当前 ChatKit API 没有公开文本读取/变化事件，因此未发送草稿跨页面刷新仍是明确边界。
@@ -205,6 +205,7 @@ npx playwright test chat-alignment.spec.ts --project=chromium
 - [x] runtime SSE 断线恢复：重连携带最后事件游标，Service 重放短日志，客户端去重；普通 React 重渲染不再重建订阅并重置游标。
 - [x] Xpod Web Search 协议：Responses built-in `web_search` 不再被丢弃，URL citation 可通过流式与非流式结果返回 LinX。
 - [x] Xpod 重启后的登录恢复：Chat 请求遇到过期会话 401 会立即触发本地 OIDC 恢复；浏览器已验证 localhost consent 和 `/chat` 回跳。
+- [x] 当前 Thread 与消息刷新恢复：恢复不再依赖可能漏失的 `chatkit.ready` 事件；Web Component 挂载并完成定义后固定执行 `setThreadId()` 与 `fetchUpdates()`，本地 Xpod 连续三次刷新均无需切换会话。
 
 ---
 
@@ -228,7 +229,7 @@ cherry-studio/src/renderer/src/pages/home/
 | 流式响应 | P0 | ✅ 已实现 |
 | 消息操作栏 | P0 | ✅ ChatKit + 外部消息操作栏 |
 | 思考过程 (CoT) | P0 | 🚧 主路径仅展示活动摘要 | 原生 ThoughtChain 未接入 ChatKit |
-| Mermaid 图表 | P1 | ❌ ChatKit 主路径未实现 | 原生 MarkdownRenderer 支持，但当前不可见 |
+| Mermaid 图表 | P1 | ⛔ ChatKit 边界 | ChatKit 1.9.0 没有 Mermaid renderer hook；按当前“不维护第二套消息视图”的架构约束不重复实现 |
 | 多主题 | P2 | ✅ 已有主题系统 |
 | 语音输入 | P2 | ✅ 已实现 | ChatKit composer dictation |
 

@@ -167,66 +167,29 @@ yarn workspace @linx/web tsc --noEmit
 | 浏览器出站边界 | 通过 | 真实发送只请求 `localhost:5737/v1/chat/completions` |
 | 消息失败持久化 | 通过 | 用户消息和脱敏失败 assistant item 均写回 Pod |
 
-## 5. 未完成或尚未验收
+## 5. 当前完成度与剩余边界（2026-08-10）
 
-下表是后续工作的权威清单。“已实现待验收”表示代码和单测存在，但还没有真实浏览器成功证据。
+本节是当前权威清单，覆盖后文保留的历史验收快照。
 
-| 能力 | 当前状态 | 剩余工作/通过标准 |
+| 能力 | 当前状态 | 证据或边界 |
 |---|---|---|
-| Xpod 读取 timecc credential | **阻塞** | 修复 Xpod DPoP auth context/credential reader，并确认按请求 provider 选择凭据 |
-| Chat 成功生成 | **阻塞** | 真实 ChatKit 回答完成，Xpod 返回 200/SSE，不再使用平台 fallback |
-| 停止生成 | 已实现待验收 | 在长回答中点击 Stop，确认请求取消、runtime stop、partial content 保留，刷新后仍为 `incomplete` |
-| retry | 已实现待验收 | 点击 Regenerate，确认新回答成功、原回答保留且分支计数正确 |
-| feedback 持久化 | 已实现待验收 | 点赞/点踩后直接检查 Pod row；ChatKit 刷新后未提供稳定选中态，不能只靠视觉判断 |
-| 新附件上传 | 已实现待验收 | 上传新文件，确认 Pod 对象、消息 URI、进度/失败状态、刷新预览和下载 |
-| 图片视觉理解 | 已实现待验收 | 上传图片并询问内容，确认 provider 实际收到 image part |
-| PDF/文档解析 | 已实现待验收 | 上传含可识别标记的文件，确认回答引用文件内容 |
-| 编辑用户消息 | 部分浏览器通过 | 真实 ChatKit 封装已成功创建编辑分支；真实模型生成仍被 Xpod credential reader 阻塞 |
-| 分支导航 | 已实现待验收 | `1/2`、`2/2` 来回切换显示正确，不混入非活动 sibling |
-| active branch 刷新保持 | 已实现待验收 | 选择非默认分支后刷新，同一 Thread 仍显示该分支 |
-| 当前 Thread 选择刷新保持 | **已实现，部分浏览器通过** | selected chat/thread 与每个 Chat 最近 Thread 使用 session storage 保存，单测覆盖 Thread 恢复；浏览器刷新后已停留在 P0 Browser Pass，仍需在模型链路恢复后与 message-bearing Thread 做一次连续验收 |
-| 普通 Thread Composer 草稿 | **受 ChatKit API 阻塞** | ChatKit 1.9 没有公开文本变化/读取 API；当前只保证 Secretary 欢迎页草稿，不宣称普通 Thread 草稿可跨刷新恢复 |
-| 搜索引用 | **未验收** | 当前 custom provider 路径明确拒绝 LinX web search；需切换到支持的 platform runtime 验收 citation |
-| 上传取消/重试 | **需复核** | ChatKit 提供上传 UI，但尚无真实失败、取消和重试的浏览器证据 |
+| Xpod credential / 普通生成 | **通过** | 本地 DPoP credential reader、custom provider 路由和真实流式生成均已通过；浏览器只请求本地 Xpod |
+| 当前 Thread、消息与附件刷新恢复 | **通过** | 不依赖可能漏失的 `chatkit.ready`；连续三次完整刷新自动恢复当前 Thread 和消息区 |
+| Markdown / 代码 | **通过** | ChatKit 主路径已浏览器验证标题、GFM 表格、引用、语法高亮与代码复制入口 |
+| feedback 持久化 | **通过** | Pod `PATCH 205` 与 RDF `richContent` 已确认；feedback-only PATCH 不再修改会话活跃时间 |
+| citation 数据闭环 | **通过** | annotation 转换、安全 URL、流式合并、Pod 保存和历史恢复均有自动化覆盖 |
+| 搜索 citation 真实视觉 | **上游能力边界** | 本地 custom provider 只有 Chat Completions，不提供 Responses built-in Web Search；LinX 会明确失败且不伪造来源 |
+| 工具调用展示 | **通过** | 用户态进度摘要、展开技术名、结构化参数、Pod 历史重放均已覆盖 |
+| runtime SSE 断线恢复 | **通过** | 断线携带游标重连、Service 重放、客户端去重；浏览器普通离线恢复也会主动 `fetchUpdates()` |
+| 普通 Thread 同页草稿 | **通过** | ChatKit 保持挂载时跨 Chat/Thread 切换可恢复 |
+| 普通 Thread 草稿跨刷新 | **ChatKit API 边界** | 官方 1.9.0 只有 `setComposerValue()`，没有文本 getter/change event；不侵入 iframe、不复制 Composer 的约束下无法可靠持久化 |
+| Mermaid | **ChatKit API 边界** | 官方消息 Markdown 没有 Mermaid renderer hook；保留 ChatKit 主路径时不接入不可见的原生 React renderer |
+| 新附件、图片理解、文档解析 | **代码完成，浏览器待补证据** | 历史附件已通过；原生文件选择器自动化和真实多模态 provider 仍需单独终验 |
+| Stop、retry、编辑分支与 active branch | **代码完成，浏览器待补证据** | 自动化与 Pod 模型已覆盖；仍需在可稳定长生成的模型上完成连续 UI 操作记录 |
 
-## 6. 当前运行时阻塞的精确根因
+## 6. 后续真实浏览器验收顺序
 
-在 Xpod 0.3.52 本地镜像的 2026-08-08 16:06 验收快照中，真实 Chat 请求已经达到 Xpod，但返回 500。日志显示的顺序是：
-
-```text
-LinX 携带 DPoP 认证请求 Xpod /v1/chat/completions
-  → Xpod 验证用户成功
-  → PodChatKitStore 只保留 access token，没有 DPoP proof key
-  → 内部 settings SPARQL 请求返回 401
-  → plain LDP collection query fallback 不支持 Credential 枚举
-  → getAiConfig() 返回 undefined
-  → VercelChatService 选择 DEFAULT_API_BASE（rightapi.ai）
-  → provider 返回 Service Unavailable
-  → Xpod 向 LinX 返回 500
-```
-
-已排除：
-
-- 不是 timecc 凭据本身不可用。
-- 不是 Xpod 容器无法访问 timecc。
-- 不再是 Chat 浏览器 CORS；浏览器已不直连 timecc。
-
-正确修复位置在 Xpod，而不是 Vite-only proxy。修复时还应补齐 provider routing contract：当 Pod 中有多个 provider 时，Xpod 必须按请求的 provider/model 选择凭据，不能永远取默认凭据。
-
-## 7. 后续验收顺序
-
-### 阶段 A：先解除 Xpod 阻塞
-
-1. 修复 Xpod 内部 Pod 访问的 DPoP/auth context。
-2. 为 `/v1/chat/completions` 建立明确的 provider routing contract。
-3. 重建并启动 `xpod-local` 容器。
-4. 在 Chat 发送唯一标记消息，确认：
-   - Xpod 返回 200/SSE。
-   - 回答在 ChatKit 中流式显示。
-   - Xpod 日志显示使用 timecc，而非平台 fallback。
-   - 浏览器 Network 中没有 `timicc.com` 请求。
-
-### 阶段 B：验收基础生成闭环
+### 阶段 A：基础生成与分支
 
 1. 普通流式回答。
 2. 长回答中点击 Stop。
@@ -234,7 +197,7 @@ LinX 携带 DPoP 认证请求 Xpod /v1/chat/completions
 4. 对已完成回答执行 Regenerate。
 5. 切换回答 sibling 并刷新。
 
-### 阶段 C：验收消息操作
+### 阶段 B：消息操作
 
 1. 编辑用户消息并重新生成。
 2. 在新旧分支之间来回切换。
@@ -243,7 +206,7 @@ LinX 携带 DPoP 认证请求 Xpod /v1/chat/completions
 5. 删除测试消息，确认 UI 和 Pod 同步。
 6. 点赞和点踩，直接检查 Pod 持久化值。
 
-### 阶段 D：验收附件
+### 阶段 C：附件与多模态
 
 1. 上传一个小型 TXT，检查上传进度和 Pod 对象。
 2. 刷新并下载 TXT，对比内容。
@@ -252,7 +215,7 @@ LinX 携带 DPoP 认证请求 Xpod /v1/chat/completions
 5. 删除附件，确认 Pod 对象不再存在。
 6. 人为断网或使用超限文件，检查失败、取消和重试状态。
 
-## 8. 建议的验收记录模板
+## 7. 建议的验收记录模板
 
 每次真实验收建议按以下格式追加记录：
 
@@ -281,13 +244,13 @@ LinX 携带 DPoP 认证请求 Xpod /v1/chat/completions
 
 证据中不要记录 API Key、access token、DPoP proof 或用户密码。
 
-## 9. 相关文档
+## 8. 相关文档
 
 - `docs/chat-module-alignment.md`：Chat 模块整体能力和长期对齐状态。
 - `docs/dependency-guide.md`：Xpod/models 跨仓依赖和发布约束。
 - `docs/cli-login-and-key-principles.md`：provider key、Pod AI config 和 backend runtime 边界。
 
-## 10. P1 增量修复（2026-08-09）
+## 9. P1 增量修复（2026-08-09）
 
 本轮继续保留 ChatKit 作为消息区和 Composer，没有引入第二套 React 聊天视图。
 
@@ -318,9 +281,9 @@ LinX 携带 DPoP 认证请求 Xpod /v1/chat/completions
 - LinX Web `build:check`：TypeScript 和 Vite production build 通过。
 - LinX Service TypeScript build：通过。
 - `git diff --check`：通过。
-- ESLint：当前 Node 25 与仓库内 `@typescript-eslint` 依赖组合在初始化阶段触发 `Cannot read properties of undefined (reading 'Cjs')`，未进入规则检查；这不是 lint 规则失败，需单独修复工具链版本兼容。
+- Chat 专项 lint：新增基于 Oxlint 的 `yarn workspace @linx/web lint:chat`，原生兼容仓库的 TypeScript 7，并覆盖 no-var、prefer-const、no-unused-vars、Rules of Hooks 与 exhaustive-deps。Web 全量 ESLint 仍受 `@typescript-eslint` 只支持 TypeScript `<6.1` 的上游版本边界影响，不把未执行的 ESLint 当成通过证据。
 
-## 11. P1/Xpod 联调更新（2026-08-09）
+## 10. P1/Xpod 联调更新（2026-08-09）
 
 本节覆盖并替代第 5、6 节中关于 credential reader 和 Web Search capability 的旧快照。
 
@@ -333,12 +296,22 @@ LinX 携带 DPoP 认证请求 Xpod /v1/chat/completions
 - LinX Web 全量 Vitest：358 个文件、2778 个测试全部通过；Web `build:check`、Service TypeScript build 和 `git diff --check` 均通过。
 - 浏览器已通过 custom provider 完成真实流式生成；搜索请求仍由本地 Xpod `/v1/responses` 接收，但 `linx-lite` 没有可用的 Responses/Web Search 路由，因此真实 citation 视觉验收需要增加具备该能力的上游，而不是再补一个普通 Chat Completions key。
 
-## 12. P1 最终回归补充（2026-08-09）
+## 11. P1 最终回归补充（2026-08-09）
 
-- **Thread 刷新恢复**：ChatKit ready 后先调用 `setThreadId()`，再调用官方 `fetchUpdates()`；浏览器刷新后无需切换会话即可恢复当前 Thread、消息和附件。
+- **Thread 刷新恢复**：Web Component ref 挂载后等待 `customElements.whenDefined()`，再调用 `setThreadId()` 和官方 `fetchUpdates()`；不依赖可能在 React 监听器注册前发出的 `chatkit.ready`。本地 Xpod 连续三次刷新均无需切换会话即可恢复当前 Thread、消息和附件。
+- **feedback 会话排序**：feedback 只修改 assistant `richContent`，不再把原消息时间重新投影为会话最新活跃时间。
 - **feedback 数据闭环**：浏览器点击正向反馈后，本地 Xpod 收到对应消息资源的 `PATCH 205`；RDF 索引中的 assistant `richContent` 可确认包含 `"feedback":"positive"`。ChatKit 官方协议只提交 feedback，不在 ThreadItem 返回模型中恢复选中态，因此刷新后的按钮视觉状态不作为数据持久化证据。
 - **工具调用协议**：runtime 的 JSON 字符串参数在进入 ChatKit 前归一化为对象；已存 Pod 的旧字符串工具项在历史回放时同步升级，避免 `client_tool_call.arguments` 协议错误。
 - **runtime 订阅稳定性**：事件回调不再依赖每次渲染都会变化的 runtime wrapper，避免普通重渲染重建 SSE 订阅并丢失重放游标。
 - **Markdown/代码真实浏览器验收**：标题、GFM 表格、TypeScript 语法高亮、代码块复制入口和引用块均在 ChatKit 主路径正确呈现；流式增量未再出现旧 `part_index` 协议错误。
 - **普通草稿**：真实浏览器再次确认同页切换 Chat 后恢复；跨刷新仍受 ChatKit 没有 composer change/getter API 的边界限制。
 - **搜索引用**：annotation 转换、URL 安全过滤、Pod 历史恢复和 Xpod Responses citation 转发均有自动化覆盖；真实搜索仍被本地上游 capability 阻塞，页面显示可恢复说明且不伪造来源。
+
+## 12. 最终刷新与质量门禁（2026-08-10）
+
+- 浏览器重新导航到 `/chat` 并等待初始化后，仍自动选中 `P0 Browser Pass`；会话列表、当前 Thread 和历史消息无需手动切换即可恢复。
+- 恢复后的 ChatKit 消息区继续显示标题、GFM 表格、TypeScript 代码和引用块，证明刷新恢复修复未破坏 Markdown/代码呈现。
+- 本地 `xpod-local` 容器保持 `healthy`；刷新后的 DPoP WebID 验证成功，Thread/消息资源返回 200/304。日志中的一次 `premature close` 对应浏览器重新导航时取消尚未完成的旧读取流，后续恢复请求正常完成，不是 credential reader 或数据写入故障。
+- Chat 模块 Vitest：45 个文件、327/327 通过。
+- Chat 集成测试：5 个文件、13/13 通过；测试已按生产路径通过认证的本地 Xpod `/v1/chat/completions` 模拟 provider 响应，不再绕过 gateway 直连 provider。
+- `yarn workspace @linx/web lint:chat`、Web production build 和 `git diff --check` 均通过。
