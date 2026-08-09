@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { Parser } from 'sparqljs'
 import { LocalChatKitStore } from '../store'
 
 describe('LocalChatKitStore storage routing', () => {
@@ -59,6 +60,74 @@ describe('LocalChatKitStore storage routing', () => {
       expect.objectContaining({ method: 'PATCH' }),
     )
     expect(onChatSummaryChange).not.toHaveBeenCalled()
+  })
+
+  it('writes Markdown formulas and code as valid SPARQL string literals', async () => {
+    const originalItem = {
+      id: 'assistant-markdown',
+      thread_id: 'thread-1',
+      type: 'assistant_message',
+      content: [{ type: 'output_text', text: 'streaming', annotations: [] }],
+      status: 'in_progress',
+      created_at: 1,
+    }
+    const messageRow = {
+      id: 'chat/default/1970/01/01/messages.ttl#assistant-markdown',
+      chat: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this',
+      thread: 'https://node-0000.undefineds.co/alice/.data/index.ttl#thread-1',
+      role: 'assistant',
+      content: 'streaming',
+      richContent: JSON.stringify(originalItem),
+      metadata: { chatkitItemId: 'assistant-markdown' },
+      status: 'in_progress',
+      createdAt: '1970-01-01T00:00:01.000Z',
+    }
+    const authFetch = vi.fn(async () => new Response(null, { status: 205 }))
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'https://node-0000.undefineds.co/alice/' }),
+      resolveRowIri: vi.fn((_resource: unknown, row: { id: string }) => (
+        new URL(`.data/${row.id}`, 'https://node-0000.undefineds.co/alice/').toString()
+      )),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          execute: vi.fn(async () => [messageRow]),
+        })),
+      })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      authFetch as any,
+      {
+        id: 'thread-1',
+        title: 'Thread',
+        status: { type: 'active' },
+        created_at: 1,
+        updated_at: 1,
+        metadata: { chat_id: 'default' },
+      },
+    )
+    const markdown = [
+      '## 扩展验收',
+      String.raw`$$\int_0^1 x^2 dx = \frac{1}{3}$$`,
+      '```ts',
+      String.raw`const windowsPath = "C:\temp\report.md"`,
+      'const triple = `"""`',
+      '```',
+    ].join('\n')
+
+    await store.loadThreadItems('thread-1', undefined, 20, 'asc', {})
+    await store.saveItem('thread-1', {
+      ...originalItem,
+      content: [{ type: 'output_text', text: markdown, annotations: [] }],
+      status: 'completed',
+    } as any, {})
+
+    const patch = String((authFetch.mock.calls[0]?.[1] as RequestInit).body)
+    expect(() => new Parser().parse(patch)).not.toThrow()
+    expect(patch).toContain('\\\\int_0^1')
+    expect(patch).toContain('C:\\\\temp\\\\report.md')
+    expect(patch).toContain('\\n')
   })
 
   it('finds a historical item by richContent when shared RDF metadata is stale', async () => {

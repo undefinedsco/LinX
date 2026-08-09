@@ -90,6 +90,18 @@ function resourceUrlFromIri(iri: string): string {
   return hashIndex >= 0 ? iri.slice(0, hashIndex) : iri
 }
 
+function sparqlStringLiteral(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/\t/g, '\\t')
+    .replace(/\u0008/g, '\\b')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\f/g, '\\f')
+    .replace(/"/g, '\\"')
+  return `"${escaped}"`
+}
+
 function parseRecordMetadata(metadata: unknown): Record<string, unknown> {
   if (!metadata) return {}
   if (typeof metadata === 'string') {
@@ -954,31 +966,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const resourceUrl = resourceUrlFromIri(messageIri)
     const graphUri = resourceUrl
 
-    const escapeForSparql = (value: string): string => {
-      const hasQuotes = value.includes('"')
-      const hasNewlines = value.includes('\n') || value.includes('\r')
-      if (hasQuotes || hasNewlines) {
-        let escaped = value
-        escaped = escaped.replace(/"""/g, '"\\"\\""')
-        if (escaped.endsWith('"')) {
-          const match = escaped.match(/"*$/)
-          const trailingQuotes = match ? match[0].length : 0
-          if (trailingQuotes > 0) {
-            escaped = escaped.slice(0, -trailingQuotes) + '\\"'.repeat(trailingQuotes)
-          }
-        }
-        return `"""${escaped}"""`
-      }
-      return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-    }
-
     const deleteTriples = [
       `<${messageIri}> <http://rdfs.org/sioc/ns#content> ?oldContent .`,
       `<${messageIri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent .`,
       `<${messageIri}> <${UDFS.messageStatus}> ?oldStatus .`,
     ]
     const insertTriples = [
-      `<${messageIri}> <http://rdfs.org/sioc/ns#content> ${escapeForSparql(content)} .`,
+      `<${messageIri}> <http://rdfs.org/sioc/ns#content> ${sparqlStringLiteral(content)} .`,
     ]
     const wherePatterns = [
       `<${messageIri}> ?existingPredicate ?existingObject .`,
@@ -988,7 +982,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     ]
 
     if (richContent !== null) {
-      insertTriples.push(`<${messageIri}> <http://rdfs.org/sioc/ns#richContent> ${escapeForSparql(richContent)} .`)
+      insertTriples.push(`<${messageIri}> <http://rdfs.org/sioc/ns#richContent> ${sparqlStringLiteral(richContent)} .`)
     }
 
     if (status) {
@@ -1102,11 +1096,6 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
     const chatIri = this.buildChatUri(chatId)
     const messageIri = this.resolveMessageIri({ id: messageId })
     const resourceUrl = resourceUrlFromIri(chatIri)
-    const escapeLiteral = (value: string): string => `"${value
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/\r/g, '\\r')
-      .replace(/\n/g, '\\n')}"`
     const timestamp = createdAt.toISOString()
     const update = `
 DELETE {
@@ -1120,7 +1109,7 @@ DELETE {
 INSERT {
   GRAPH <${resourceUrl}> {
     <${chatIri}> <${UDFS.lastMessage}> <${messageIri}> .
-    <${chatIri}> <http://schema.org/text> ${escapeLiteral(content.slice(0, 100))} .
+    <${chatIri}> <http://schema.org/text> ${sparqlStringLiteral(content.slice(0, 100))} .
     <${chatIri}> <${UDFS.lastActiveAt}> "${timestamp}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
     <${chatIri}> <http://purl.org/dc/terms/modified> "${timestamp}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
   }
