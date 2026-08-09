@@ -220,7 +220,7 @@ describe('ChatContentPane', () => {
     expect(screen.queryByTestId('compact-chat-list')).not.toBeInTheDocument()
   })
 
-  it('passes selected thread as the initial ChatKit thread without unsafe pre-upgrade method calls', () => {
+  it('binds the restored thread through the ChatKit control API after ChatKit is ready', async () => {
     render(<ChatContentPane theme="light" />)
 
     expect(mockUseChatKit).toHaveBeenCalledWith(
@@ -228,7 +228,12 @@ describe('ChatContentPane', () => {
         initialThread: 'thread-1',
       }),
     )
+
     expect(mockSetThreadId).not.toHaveBeenCalled()
+    const options = mockUseChatKit.mock.calls.at(-1)?.[0]
+    act(() => options?.onReady?.())
+
+    await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
   })
 
   it('keeps the mount-time initial thread stable so ChatKit retains per-thread composer drafts', () => {
@@ -242,6 +247,23 @@ describe('ChatContentPane', () => {
         initialThread: 'thread-1',
       }),
     )
+  })
+
+  it('preserves a restored thread that is temporarily absent from the navigation query', async () => {
+    storeState.selectedThreadId = 'restored-thread'
+    mockUseThreadList.mockReturnValue({
+      data: [{ id: 'unrelated-empty-thread', title: '默认话题' }],
+      isLoading: false,
+      error: null,
+      refetch: mockThreadRefetch,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => expect(mockUseChatKit).toHaveBeenCalledWith(
+      expect.objectContaining({ initialThread: 'restored-thread' }),
+    ))
+    expect(storeState.selectThread).not.toHaveBeenCalledWith('unrelated-empty-thread')
   })
 
   it('uses the chat workspace as a full-bleed operational surface', () => {

@@ -2,6 +2,44 @@ import { describe, expect, it, vi } from 'vitest'
 import { LocalChatKitStore } from '../store'
 
 describe('LocalChatKitStore storage routing', () => {
+  it('finds a historical item by richContent when shared RDF metadata is stale', async () => {
+    const storedItem = {
+      id: 'assistant-history',
+      thread_id: 'thread-1',
+      type: 'assistant_message',
+      content: [{ type: 'output_text', text: 'history', annotations: [] }],
+      status: 'completed',
+      created_at: 1,
+      feedback: 'positive',
+    }
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'https://node-0000.undefineds.co/alice/' }),
+      findById: vi.fn(async () => null),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          execute: vi.fn(async () => [{
+            id: 'chat/default/1970/01/01/messages.ttl#row-1',
+            chat: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this',
+            thread: 'https://node-0000.undefineds.co/alice/.data/index.ttl#thread-1',
+            role: 'assistant',
+            content: 'history',
+            richContent: JSON.stringify(storedItem),
+            metadata: { chatkitItemId: 'another-item' },
+            status: 'completed',
+            createdAt: '1970-01-01T00:00:01.000Z',
+          }]),
+        })),
+      })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      vi.fn() as any,
+    )
+
+    await expect(store.loadItem('thread-1', 'assistant-history', {})).resolves.toMatchObject(storedItem)
+  })
+
   it('stores message resource refs under the selected SP Pod, not the WebID origin', async () => {
     const inserts: Array<Record<string, unknown>> = []
     const db = {

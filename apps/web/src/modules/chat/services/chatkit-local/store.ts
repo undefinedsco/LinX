@@ -110,7 +110,10 @@ function readChatKitItemId(record: Record<string, unknown> | null | undefined): 
 }
 
 function messageRecordMatchesItem(record: Record<string, unknown>, itemId: string): boolean {
-  return readChatKitItemId(record) === itemId || record.id === itemId
+  if (readChatKitItemId(record) === itemId || record.id === itemId) return true
+  const storedItem = parseStoredThreadItem(record.richContent, '', 0)
+    ?? parseStoredThreadItem(record.content, '', 0)
+  return storedItem?.id === itemId
 }
 
 function isHiddenMatrixProtocolEvent(record: Record<string, unknown> | null | undefined): boolean {

@@ -621,6 +621,7 @@ function ChatKitPanel({
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [reconnectStatus, setReconnectStatus] = useState<'idle' | 'syncing' | 'error'>('idle')
+  const [isChatKitReady, setIsChatKitReady] = useState(false)
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null)
   const [actionMessageId, setActionMessageId] = useState<string | null>(null)
   const sendAvailableRef = useRef(!sendDisabled && isOnline)
@@ -630,7 +631,7 @@ function ChatKitPanel({
   // inputs that ChatKit already keeps while the element remains mounted.
   // Subsequent navigation is handled by `setThreadId` below.
   const initialThreadIdRef = useRef(selectedThreadId)
-  const chatKitHostRef = useRef<(HTMLElement & { setThreadId?: (threadId: string | null) => Promise<void> | void }) | null>(null)
+  const chatKitHostRef = useRef<HTMLElement | null>(null)
 
   const localFetch = useMemo(() => {
     if (!db || !session.info.webId || !session.fetch) {
@@ -723,6 +724,7 @@ function ChatKitPanel({
     },
     threadItemActions: { feedback: true, retry: true },
     thread: { autoScroll: true },
+    onReady: () => setIsChatKitReady(true),
     onThreadChange: ({ threadId }: { threadId: string | null }) => {
       if (threadId) {
         selectThread(threadId)
@@ -733,6 +735,7 @@ function ChatKitPanel({
     },
   })
   const setComposerValue = chatkit.setComposerValue
+  const setThreadId = chatkit.setThreadId
   const fetchUpdates = chatkit.fetchUpdates
   const { data: messageRows = [], refetch: refetchMessages } = useMessageList(selectedChatId, selectedThreadId)
   const userMessages = messageRows.filter((message) => message.role === 'user')
@@ -816,36 +819,17 @@ function ChatKitPanel({
   }, [fetchUpdates])
 
   useEffect(() => {
-    if (!selectedThreadId) return
+    if (!isChatKitReady || !selectedThreadId) return
 
     let disposed = false
 
     const switchThread = async () => {
-      const registry = typeof window !== 'undefined' ? window.customElements : undefined
-      const tagName = 'openai-chatkit'
-      const element = chatKitHostRef.current
-      const isChatKitElement = element?.tagName?.toLowerCase() === tagName
-
-      if (isChatKitElement && registry?.whenDefined && !registry.get(tagName)) {
-        try {
-          await registry.whenDefined(tagName)
-        } catch (error) {
-          console.error('[ChatKit] Failed to wait for custom element definition:', error)
-          return
-        }
-      }
-
-      if (disposed) return
-
-      const setThreadId = chatKitHostRef.current?.setThreadId
-      if (typeof setThreadId !== 'function') {
-        return
-      }
-
       try {
-        await setThreadId.call(chatKitHostRef.current, selectedThreadId)
+        await setThreadId(selectedThreadId)
       } catch (error) {
-        console.error('[ChatKit] Failed to switch thread:', error)
+        if (!disposed) {
+          console.error('[ChatKit] Failed to switch thread:', error)
+        }
       }
     }
 
@@ -854,7 +838,7 @@ function ChatKitPanel({
     return () => {
       disposed = true
     }
-  }, [selectedThreadId])
+  }, [isChatKitReady, selectedThreadId, setThreadId])
 
   useEffect(() => {
     if (!pendingComposerDraft) return
@@ -1299,7 +1283,11 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       .map((thread) => ({ ...thread, _id: thread.id }))
       .filter((thread) => Boolean(thread._id))
 
-    if (selectedThreadId && normalizedThreads.some((thread) => thread._id === selectedThreadId)) {
+    // A restored thread can still be usable even when an older Pod row is
+    // missing the parent relation required by the navigation query. ChatKit
+    // loads it by its persisted resource id, so do not replace an explicit
+    // selection with an unrelated empty thread from the list.
+    if (selectedThreadId) {
       return
     }
 
