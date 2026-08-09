@@ -302,7 +302,7 @@ LinX 携带 DPoP 认证请求 Xpod /v1/chat/completions
 ### 当前边界
 
 - 当前锁定版本为 `@openai/chatkit-react` 1.6.1（内部 `@openai/chatkit` 1.9.0）；它没有公开 Composer 文本变化或读取事件，因此未发送草稿的**跨页面刷新**持久化仍不能在不侵入 CDN iframe、也不重做 Composer 的前提下可靠实现；本轮修复的是同一页面生命周期内的跨 Thread 保留。
-- 本地 Xpod 当前没有可用的 AI provider key，真实成功生成、Stop、retry、搜索 citation 的最终浏览器验收仍依赖补齐本地凭据。
+- 本地 Pod 已有可用的 custom provider credential，`chat/completions` 真实生成已经通过；该 provider 不提供 Responses API built-in Web Search，因此搜索 citation 仍需支持 `responses + web_search` 的上游。
 - 本地 Xpod 上游目前不支持 Responses API Web Search 时，会显示明确、可重试的 capability 错误，不伪造搜索结果或 citation。
 
 ### 浏览器增量验收
@@ -325,10 +325,20 @@ LinX 携带 DPoP 认证请求 Xpod /v1/chat/completions
 本节覆盖并替代第 5、6 节中关于 credential reader 和 Web Search capability 的旧快照。
 
 - Xpod credential reader / DPoP 上下文已经修复；真实浏览器请求能以 `http://localhost:5737/cuilinsu/profile/card#me` 通过认证并读取 `/settings/credentials.ttl`。
-- 当前真实生成的唯一阻塞是该 Pod 没有可用的 provider credential；Xpod 返回明确的 `credential_unavailable`，不再回退到错误 provider，也不再误报登录失效。
+- 本地 Pod 的 custom provider credential 已可被 Xpod 读取，并能完成 `chat/completions` 生成；它不能承接 `linx-lite` 的 Responses built-in Web Search 路由。
 - Xpod Responses gateway 现在保留 `{ type: 'web_search' }` built-in tool，并把 OpenAI Responses 的 URL citation annotations 同时传入流式事件和非流式聚合结果。
 - Xpod 本地 Docker 已从当前工作树重建；`/service/status` 显示 CSS/API 均为 `running`，容器健康检查为 `healthy`。
 - Xpod 目标协议测试 36/36 通过（frontend/provider/handler），TypeScript 构建通过；集成套件 120 项通过、5 项跳过，固定端口并发冲突的单一套件独立重跑 10/10 通过。
 - LinX 现在会在已认证 Chat 请求收到 401 时立即触发 OIDC 恢复，不再等待令牌临近过期；浏览器已验证会弹出本地账号恢复入口，并可经 localhost consent 返回 `/chat`。
 - LinX Web 全量 Vitest：358 个文件、2778 个测试全部通过；Web `build:check`、Service TypeScript build 和 `git diff --check` 均通过。
-- 浏览器重新授权后，唯一发送请求已经写入本地 Pod；Xpod 日志确认认证成功，回答失败原因为 `credential_unavailable`。因此成功生成、Stop、retry、真实搜索 citation 的最终视觉验收仍需要用户在本地 Pod 配置一个可用 provider key。
+- 浏览器已通过 custom provider 完成真实流式生成；搜索请求仍由本地 Xpod `/v1/responses` 接收，但 `linx-lite` 没有可用的 Responses/Web Search 路由，因此真实 citation 视觉验收需要增加具备该能力的上游，而不是再补一个普通 Chat Completions key。
+
+## 12. P1 最终回归补充（2026-08-09）
+
+- **Thread 刷新恢复**：ChatKit ready 后先调用 `setThreadId()`，再调用官方 `fetchUpdates()`；浏览器刷新后无需切换会话即可恢复当前 Thread、消息和附件。
+- **feedback 数据闭环**：浏览器点击正向反馈后，本地 Xpod 收到对应消息资源的 `PATCH 205`；RDF 索引中的 assistant `richContent` 可确认包含 `"feedback":"positive"`。ChatKit 官方协议只提交 feedback，不在 ThreadItem 返回模型中恢复选中态，因此刷新后的按钮视觉状态不作为数据持久化证据。
+- **工具调用协议**：runtime 的 JSON 字符串参数在进入 ChatKit 前归一化为对象；已存 Pod 的旧字符串工具项在历史回放时同步升级，避免 `client_tool_call.arguments` 协议错误。
+- **runtime 订阅稳定性**：事件回调不再依赖每次渲染都会变化的 runtime wrapper，避免普通重渲染重建 SSE 订阅并丢失重放游标。
+- **Markdown/代码真实浏览器验收**：标题、GFM 表格、TypeScript 语法高亮、代码块复制入口和引用块均在 ChatKit 主路径正确呈现；流式增量未再出现旧 `part_index` 协议错误。
+- **普通草稿**：真实浏览器再次确认同页切换 Chat 后恢复；跨刷新仍受 ChatKit 没有 composer change/getter API 的边界限制。
+- **搜索引用**：annotation 转换、URL 安全过滤、Pod 历史恢复和 Xpod Responses citation 转发均有自动化覆盖；真实搜索仍被本地上游 capability 阻塞，页面显示可恢复说明且不伪造来源。
