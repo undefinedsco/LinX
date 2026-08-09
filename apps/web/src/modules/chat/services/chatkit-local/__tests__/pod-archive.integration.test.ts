@@ -105,7 +105,6 @@ describe('LocalChatKit pod archive integration', () => {
     const prompt = 'hello from local chatkit integration'
     const assistantText = 'assistant reply from mocked provider'
     const providerBase = 'https://provider.example/v1'
-    const providerEndpoint = `${providerBase}/chat/completions`
     const providerId = 'openai'
     const credentialId = getDefaultAIConfigCredentialId(providerId)
 
@@ -122,29 +121,25 @@ describe('LocalChatKit pod archive integration', () => {
       apiKey: 'test-key',
     }).execute()
 
-    const authFetch: typeof fetch = async (input, init) => {
-      return sessionFetch(input as RequestInfo | URL, init)
-    }
-
-    const originalFetch = globalThis.fetch
-    const providerFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url
-      if (url === providerEndpoint) {
+      if (url.endsWith('/v1/chat/completions')) {
         const body = JSON.parse(String(init?.body ?? '{}')) as {
+          provider?: string
           model?: string
           messages?: Array<{ role: string; content: string }>
           stream?: boolean
         }
-        expect(body.model).toBe('test-model')
+        expect(body.provider).toBe(providerId)
+        expect(body.model).toBe(`${providerId}/test-model`)
         expect(body.stream).toBe(true)
         expect(body.messages?.some((message) => message.role === 'user' && message.content === prompt)).toBe(true)
         return createProviderResponse(['assistant ', 'reply ', 'from mocked provider'])
       }
-      return originalFetch(input as RequestInfo | URL, init)
+      return sessionFetch(input as RequestInfo | URL, init)
     })
-    vi.stubGlobal('fetch', providerFetch)
 
-    const localFetch = createLocalChatKitFetch({ db, webId, authFetch })
+    const localFetch = createLocalChatKitFetch({ db, webId, authFetch: authFetch as typeof fetch })
     const response = await localFetch('http://local/chatkit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -209,9 +204,9 @@ describe('LocalChatKit pod archive integration', () => {
     expect(turtle).toContain(`index.ttl#${threadId}`)
     expect(turtle).toContain(prompt)
     expect(turtle).toContain(assistantText)
-    const providerCalls = providerFetch.mock.calls.filter(([input]) => {
+    const providerCalls = authFetch.mock.calls.filter(([input]) => {
       const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url
-      return url === providerEndpoint
+      return url.endsWith('/v1/chat/completions')
     })
     expect(providerCalls).toHaveLength(1)
   })

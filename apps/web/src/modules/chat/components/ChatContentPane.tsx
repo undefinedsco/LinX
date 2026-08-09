@@ -610,6 +610,8 @@ function ChatKitPanel({
   onComposerDraftError: (draft: PendingSecretaryDraft, error: unknown) => void
   sendDisabled: boolean
 }) {
+  const sessionFetch = session.fetch
+  const sessionWebId = session.info.webId
   const selectThread = useChatStore((state) => state.selectThread)
   const messageAnchorId = useChatStore((state) => state.messageAnchorId)
   const clearMessageAnchor = useChatStore((state) => state.clearMessageAnchor)
@@ -639,17 +641,17 @@ function ChatKitPanel({
   }, [])
 
   const localFetch = useMemo(() => {
-    if (!db || !session.info.webId || !session.fetch) {
+    if (!db || !sessionWebId || !sessionFetch) {
       return async () => unavailableResponse()
     }
-    const authFetchWithRecovery: typeof session.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const response = await session.fetch(input, init)
+    const authFetchWithRecovery: typeof sessionFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await sessionFetch(input, init)
       if (response.status === 401) requestSessionRecovery()
       return response
     }
     return createLocalChatKitFetch({
       db,
-      webId: session.info.webId,
+      webId: sessionWebId,
       authFetch: authFetchWithRecovery,
       initialThread: {
         id: selectedThreadId,
@@ -670,7 +672,7 @@ function ChatKitPanel({
         })
       },
     })
-  }, [db, selectedChatId, selectedThreadId, selectedThreadTitle, session.fetch, session.info.webId])
+  }, [db, selectedChatId, selectedThreadId, selectedThreadTitle, sessionFetch, sessionWebId])
 
   useEffect(() => {
     setThreadAttachments([])
@@ -746,8 +748,11 @@ function ChatKitPanel({
   const setThreadId = chatkit.setThreadId
   const fetchUpdates = chatkit.fetchUpdates
   const { data: messageRows = [], refetch: refetchMessages } = useMessageList(selectedChatId, selectedThreadId)
-  const userMessages = messageRows.filter((message) => message.role === 'user')
-  const lastUserMessage = [...userMessages].reverse()[0]
+  const userMessages = useMemo(
+    () => messageRows.filter((message) => message.role === 'user'),
+    [messageRows],
+  )
+  const lastUserMessage = userMessages[userMessages.length - 1]
   const actionMessage = userMessages.find((message) => message.id === actionMessageId) ?? lastUserMessage
   const branchNodes = useMemo(() => messageRows.map((row) => ({
     id: row.id,
@@ -759,9 +764,12 @@ function ChatKitPanel({
     ...(persistedActiveBranchByParent ?? {}),
     ...localActiveBranchByParent,
   }), [localActiveBranchByParent, persistedActiveBranchByParent])
-  const persistedActionMessage = [...userMessages]
-    .reverse()
-    .find((message) => Object.values(activeBranchByParent).includes(message.id))
+  const persistedActionMessage = useMemo(
+    () => [...userMessages]
+      .reverse()
+      .find((message) => Object.values(activeBranchByParent).includes(message.id)),
+    [activeBranchByParent, userMessages],
+  )
   const actionBranchGroup = useMemo(() => {
     if (!actionMessage) return null
     const metadata = readMessageBranchMetadata(actionMessage)
@@ -799,7 +807,7 @@ function ChatKitPanel({
       setActionMessageId((persistedActionMessage ?? lastUserMessage)?.id ?? null)
     }
     if (actionMessageId && !userMessages.some((message) => message.id === actionMessageId)) setActionMessageId(lastUserMessage?.id ?? null)
-  }, [actionMessageId, lastUserMessage?.id, localActiveBranchByParent, persistedActionMessage?.id, userMessages])
+  }, [actionMessageId, lastUserMessage, localActiveBranchByParent, persistedActionMessage, userMessages])
 
   useEffect(() => {
     const handleOffline = () => {
@@ -1178,10 +1186,10 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const isSecretary = selectedChatId === LINX_DEFAULT_SECRETARY.chatId
   const secretaryScopeKey = `${databaseScopeKey}:${session.info.webId ?? 'logged-out'}`
-  const secretaryDraftScope: ChatDraftScope = {
+  const secretaryDraftScope: ChatDraftScope = useMemo(() => ({
     accountScope: secretaryScopeKey,
     chatId: LINX_DEFAULT_SECRETARY.chatId,
-  }
+  }), [secretaryScopeKey])
   const activeSecretaryScopeRef = useRef(secretaryScopeKey)
   activeSecretaryScopeRef.current = secretaryScopeKey
   const activeSelectedChatRef = useRef(selectedChatId)
@@ -1209,7 +1217,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       text: loadChatDraft(secretaryDraftScope),
       scopeKey: secretaryScopeKey,
     })
-  }, [secretaryScopeKey])
+  }, [secretaryDraftScope, secretaryScopeKey])
 
   useEffect(() => {
     lastAutoCreateThreadChatRef.current = null
@@ -1268,7 +1276,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   const updateSecretaryDraft = useCallback((text: string) => {
     setSecretaryDraftState({ text, scopeKey: secretaryScopeKey })
     saveChatDraft(secretaryDraftScope, text)
-  }, [secretaryScopeKey])
+  }, [secretaryDraftScope, secretaryScopeKey])
 
   const failSecretaryDraftHandoff = useCallback((draft: PendingSecretaryDraft) => {
     if (activeSecretaryScopeRef.current !== draft.scopeKey) return
