@@ -77,7 +77,7 @@ export interface ClientToolCallItem {
   thread_id: string
   type: 'client_tool_call'
   name: string
-  arguments: string
+  arguments: Record<string, unknown>
   call_id: string
   status?: string
   output?: string

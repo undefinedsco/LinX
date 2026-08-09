@@ -31,6 +31,7 @@ import { requireRowResourceId } from '@/lib/data/resource-identity'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime/chat-reconciler'
+import { normalizeClientToolCallItem } from './tool-call-protocol'
 
 const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
@@ -242,11 +243,11 @@ function parseStoredThreadItem(value: unknown, fallbackThreadId: string, fallbac
       return null
     }
 
-    return {
+    return normalizeClientToolCallItem({
       ...parsed,
       thread_id: typeof parsed.thread_id === 'string' ? parsed.thread_id : fallbackThreadId,
       created_at: typeof parsed.created_at === 'number' ? parsed.created_at : fallbackCreatedAt,
-    } as ThreadItem
+    } as ThreadItem)
   } catch {
     return null
   }

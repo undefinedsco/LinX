@@ -35,6 +35,7 @@ import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
 import { createAssistantTextDeltaEvent } from './thread-stream-events'
+import { normalizeToolCallArguments } from './tool-call-protocol'
 import {
   mergeChatKitAnnotations,
   normalizeModelAnnotations,
@@ -1040,7 +1041,7 @@ export class LocalChatKitService {
       thread_id: thread.id,
       type: 'client_tool_call',
       name: event.name,
-      arguments: event.arguments,
+      arguments: normalizeToolCallArguments(event.arguments),
       call_id: event.requestId,
       status: 'pending',
       created_at: nowTimestamp(),
