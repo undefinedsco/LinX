@@ -823,22 +823,29 @@ function ChatKitPanel({
 
     let disposed = false
 
-    const switchThread = async () => {
+    const restoreThread = async () => {
       try {
         await setThreadId(selectedThreadId)
+        if (disposed) return
+
+        // `initialThread` and `setThreadId` select the conversation, but
+        // ChatKit may elide a history request when both ids are identical.
+        // Explicitly synchronize after selection so a page reload always
+        // restores messages and persisted item state such as feedback.
+        await fetchUpdates()
       } catch (error) {
         if (!disposed) {
-          console.error('[ChatKit] Failed to switch thread:', error)
+          console.error('[ChatKit] Failed to restore thread:', error)
         }
       }
     }
 
-    void switchThread()
+    void restoreThread()
 
     return () => {
       disposed = true
     }
-  }, [isChatKitReady, selectedThreadId, setThreadId])
+  }, [fetchUpdates, isChatKitReady, selectedThreadId, setThreadId])
 
   useEffect(() => {
     if (!pendingComposerDraft) return

@@ -220,7 +220,7 @@ describe('ChatContentPane', () => {
     expect(screen.queryByTestId('compact-chat-list')).not.toBeInTheDocument()
   })
 
-  it('binds the restored thread through the ChatKit control API after ChatKit is ready', async () => {
+  it('selects and synchronizes the restored thread after ChatKit is ready', async () => {
     render(<ChatContentPane theme="light" />)
 
     expect(mockUseChatKit).toHaveBeenCalledWith(
@@ -234,6 +234,10 @@ describe('ChatContentPane', () => {
     act(() => options?.onReady?.())
 
     await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
+    expect(mockFetchUpdates).toHaveBeenCalledTimes(1)
+    expect(mockSetThreadId.mock.invocationCallOrder[0]).toBeLessThan(
+      mockFetchUpdates.mock.invocationCallOrder[0],
+    )
   })
 
   it('keeps the mount-time initial thread stable so ChatKit retains per-thread composer drafts', () => {
