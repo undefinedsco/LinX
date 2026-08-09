@@ -34,6 +34,7 @@ import {
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
+import { createAssistantTextDeltaEvent } from './thread-stream-events'
 import {
   mergeChatKitAnnotations,
   normalizeModelAnnotations,
@@ -814,15 +815,7 @@ export class LocalChatKitService {
             )
             fullText = result.text
             annotations = result.annotations
-            yield {
-              type: 'thread.item.updated',
-              item_id: assistantItemId,
-              update: {
-                type: 'assistant_message.content_part.text_delta',
-                part_index: 0,
-                delta: fullText,
-              },
-            } as ThreadStreamEvent
+            yield createAssistantTextDeltaEvent(assistantItemId, fullText)
             assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
             assistantItem.status = 'completed'
             await this.store.saveItem(thread.id, assistantItem, context)
@@ -843,15 +836,7 @@ export class LocalChatKitService {
             fullText += normalizedChunk.text
             annotations = mergeChatKitAnnotations(annotations, normalizedChunk.annotations)
             if (normalizedChunk.text) {
-              yield {
-                type: 'thread.item.updated',
-                item_id: assistantItemId,
-                update: {
-                  type: 'assistant_message.content_part.text_delta',
-                  part_index: 0,
-                  delta: normalizedChunk.text,
-                },
-              } as ThreadStreamEvent
+              yield createAssistantTextDeltaEvent(assistantItemId, normalizedChunk.text)
             }
           }
 
@@ -883,15 +868,7 @@ export class LocalChatKitService {
           fullText += normalizedChunk.text
           annotations = mergeChatKitAnnotations(annotations, normalizedChunk.annotations)
           if (normalizedChunk.text) {
-            yield {
-              type: 'thread.item.updated',
-              item_id: assistantItemId,
-              update: {
-                type: 'assistant_message.content_part.text_delta',
-                part_index: 0,
-                delta: normalizedChunk.text,
-              },
-            } as ThreadStreamEvent
+            yield createAssistantTextDeltaEvent(assistantItemId, normalizedChunk.text)
           }
         }
 
@@ -1174,15 +1151,7 @@ export class LocalChatKitService {
 
         if (event.type === 'assistant_delta' && event.text) {
           fullText += event.text
-          yield {
-            type: 'thread.item.updated',
-            item_id: assistantItemId,
-            update: {
-              type: 'assistant_message.content_part.text_delta',
-              part_index: 0,
-              delta: event.text,
-            },
-          } as ThreadStreamEvent
+          yield createAssistantTextDeltaEvent(assistantItemId, event.text)
           continue
         }
 

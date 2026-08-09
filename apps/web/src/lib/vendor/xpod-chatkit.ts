@@ -151,7 +151,7 @@ export interface ThreadItemUpdatedEvent {
   item_id: string
   update: {
     type: string
-    part_index?: number
+    content_index?: number
     delta?: string
     [key: string]: unknown
   }
