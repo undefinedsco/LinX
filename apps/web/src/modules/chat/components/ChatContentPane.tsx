@@ -281,12 +281,13 @@ function RuntimeSessionToolbar({
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [runtimeActivity, setRuntimeActivity] = useState<RuntimeActivity | null>(null)
   const [runtimeConnectionState, setRuntimeConnectionState] = useState<RuntimeEventConnectionState>('connected')
+  const refetchRuntimeSession = runtimeSession.refetch
 
   const handleRuntimeSessionEvent = useCallback((event: RuntimeSessionEvent) => {
     if (event.type === 'status' || event.type === 'exit') {
       setRuntimeError(null)
       if (event.type === 'exit' || event.status !== 'active') setRuntimeActivity(null)
-      void runtimeSession.refetch()
+      void refetchRuntimeSession()
       return
     }
 
@@ -313,9 +314,9 @@ function RuntimeSessionToolbar({
     if (event.type === 'error') {
       setRuntimeActivity(null)
       setRuntimeError(formatLoginErrorForUser(event.message, '运行时执行失败。请稍后重试。'))
-      void runtimeSession.refetch()
+      void refetchRuntimeSession()
     }
-  }, [runtimeSession])
+  }, [refetchRuntimeSession])
 
   useRuntimeSessionEvents(
     runtimeSession.runtimeSession?.id,

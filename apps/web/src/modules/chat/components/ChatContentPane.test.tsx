@@ -39,6 +39,7 @@ const mockDatabaseRetry = vi.fn()
 const mockUseSolidDatabase = vi.fn()
 const mockClearMessageAnchor = vi.fn()
 const mockRuntimeEventHandler = { current: null as ((event: unknown) => void) | null }
+const mockUseRuntimeSessionEvents = vi.hoisted(() => vi.fn())
 const mockSession = {
   info: { webId: 'https://alice.example/profile/card#me' as string | undefined },
   fetch: vi.fn() as ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | undefined,
@@ -135,9 +136,11 @@ vi.mock('../runtime-client', () => ({
   isRuntimeSessionMode: () => mockIsRuntimeSessionMode(),
   resolveLocalContainer: (...args: unknown[]) => mockResolveLocalWorkspaceUri(...args),
   useRuntimeSession: () => mockUseRuntimeSession(),
-  useRuntimeSessionEvents: vi.fn((_id: string | undefined, handler: (event: unknown) => void) => {
+  useRuntimeSessionEvents: (...args: [string | undefined, (event: unknown) => void, ...unknown[]]) => {
+    mockUseRuntimeSessionEvents(...args)
+    const [, handler] = args
     mockRuntimeEventHandler.current = handler
-  }),
+  },
 }))
 
 vi.mock('./ChatListPane', () => ({
@@ -198,6 +201,7 @@ describe('ChatContentPane', () => {
     mockSession.info.webId = 'https://alice.example/profile/card#me'
     mockSession.fetch = vi.fn()
     mockRuntimeEventHandler.current = null
+    mockUseRuntimeSessionEvents.mockClear()
   })
 
   it('shows the existing chat list in compact content when no chat is selected', () => {
@@ -1044,6 +1048,27 @@ describe('ChatContentPane', () => {
     expect(screen.getByText('等待确认工作区变更')).toBeInTheDocument()
     expect(screen.getByText('write_file')).toBeInTheDocument()
     expect(screen.queryByText(/secret\.txt/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the runtime event handler stable across unrelated rerenders', () => {
+    const refetch = vi.fn()
+    mockIsRuntimeSessionMode.mockReturnValue(true)
+    mockUseRuntimeSession.mockImplementation(() => ({
+      runtimeSession: { id: 'runtime-1', status: 'active', title: '默认话题', tool: 'codex' },
+      refetch,
+      createSession: { isPending: false, mutateAsync: vi.fn() },
+      startSession: { isPending: false, mutateAsync: vi.fn() },
+      pauseSession: { isPending: false, mutateAsync: vi.fn() },
+      resumeSession: { isPending: false, mutateAsync: vi.fn() },
+      stopSession: { isPending: false, mutateAsync: vi.fn() },
+    }))
+
+    const { rerender } = render(<ChatContentPane theme="light" />)
+    const initialHandler = mockUseRuntimeSessionEvents.mock.calls.at(-1)?.[1]
+
+    rerender(<ChatContentPane theme="dark" />)
+
+    expect(mockUseRuntimeSessionEvents.mock.calls.at(-1)?.[1]).toBe(initialHandler)
   })
 
   it('restores anchored message after chat scene re-entry', () => {
