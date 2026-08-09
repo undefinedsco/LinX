@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ChatListPane } from './ChatListPane'
@@ -158,6 +158,23 @@ describe('ChatListPane', () => {
     const header = screen.getByTestId('chat-list-header')
     expect(header).toHaveClass('h-12')
     expect(header).not.toHaveClass('h-16')
+  })
+
+  it('debounces Pod search queries while keeping the input state immediate', () => {
+    vi.useFakeTimers()
+    let search = ''
+    mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector(createDefaultStoreState({ search })))
+    const { rerender } = render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+    search = 'alice'
+    rerender(<ChatListPane theme="light" />)
+    expect(mockUseChatList).toHaveBeenLastCalledWith(undefined)
+
+    act(() => vi.advanceTimersByTime(119))
+    expect(mockUseChatList).toHaveBeenLastCalledWith(undefined)
+
+    act(() => vi.advanceTimersByTime(1))
+    expect(mockUseChatList).toHaveBeenLastCalledWith({ search: 'alice' })
   })
 
   afterEach(() => {

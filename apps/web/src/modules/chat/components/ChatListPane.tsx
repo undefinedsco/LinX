@@ -16,7 +16,7 @@
  * - 右键: 上下文菜单 (置顶、静音、标记未读、删除)
  * - 悬停: 显示更多操作按钮
  */
-import { useMemo, useState, useCallback, useRef } from 'react'
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
@@ -637,10 +637,18 @@ export function ChatListPane(_props: ChatListPaneProps) {
   const selectChat = useChatStore((state) => state.selectChat)
   const openAddDialog = useChatStore((state) => state.openAddDialog)
   const [folderFilter, setFolderFilter] = useState<ChatListFolderFilter>('all')
+  const [debouncedSearch, setDebouncedSearch] = useState(search)
   const optionRefs = useRef<Array<HTMLDivElement | null>>([])
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 120)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
   // Use new collection-based hooks
-  const { data: rawChats, isLoading: isChatsLoading } = useChatList(search ? { search } : undefined)
+  const { data: rawChats, isLoading: isChatsLoading } = useChatList(
+    debouncedSearch ? { search: debouncedSearch } : undefined,
+  )
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const runtimeMode = isRuntimeSessionMode()
   const { data: threads = [] } = useThreadIndex({ enabled: runtimeMode })
