@@ -342,3 +342,13 @@ yarn workspace @linx/web tsc --noEmit
 - 修复后完整刷新自动恢复当前 Thread、全部历史 Markdown、搜索回答、inline citation 与来源入口；运行中的搜索进度不会作为历史状态残留。
 - Xpod lite 集成测试改为文件串行执行，消除了多个旧 fixture 在检查/监听端口 10000 之间的竞争；这只影响测试调度，不改变生产运行时。
 - Xpod full integration 的 PostgreSQL、Redis、MinIO 和 MinIO Console 改用隔离空闲宿主机端口，相关测试通过环境变量读取实际 PostgreSQL 端口；不会再与本机已有的 `5432/6379/9000/9001` 服务冲突。统一 `test:integration` 门禁最终为 lite 127 通过、5 跳过，full 40/40 通过，测试容器、网络和卷均已自动清理。
+
+## 16. Chat P0 两批终验（2026-08-10）
+
+- **附件与多模态**：真实浏览器完成图片选择上传、图片缩略图/预览、PDF 上传与文本提取；图片内容和 PDF 验证码均真实参与模型回答。刷新后附件入口恢复，图片可重新预览，图片和 PDF 均提供 Blob 打开/下载链接；附件原始内容保存在本地 Xpod。
+- **Stop**：长回答生成期间停止按钮可用；停止后保留已生成文本，assistant 以 `incomplete` 写入 Pod，刷新后仍保持部分回答且不回到运行中。
+- **Retry 与编辑分支**：重新生成产生 sibling 回答并显示回答计数；编辑用户消息保留原分支并生成新分支。修复 resource-relative ID 与旧 fragment ID 混用后，编辑分支不会再混入原分支的部分回答。
+- **active branch 刷新保持**：Thread 元数据中的多值/嵌套 `active_branch_by_parent` 会归一化为一个 JSON 值；刷新后恢复编辑消息和已选回答。Thread 的 title/status/created/modified 同时按单值契约写回，避免历史重复值继续扩散。
+- **provider 路由**：ChatKit 的启动 Thread 现在先从 Pod 水合，但保留已解析的 Thread→Chat 映射；旧 parent 不再把 custom provider 错误降级为 `openai/gpt-4o-mini`。真实浏览器已通过本地 Xpod 和 custom provider 返回“编辑分支通过”。
+- **刷新与认证**：临近过期的会话即使公开 WebID 探测返回 304，也会再次确认并触发 OIDC 恢复，不再把公开资源可访问误判为凭据仍有效。
+- **最终门禁**：Chat 与 token 维护专项 46 个测试文件、349/349 通过；TypeScript、production build 和 `git diff --check` 通过。最终刷新后的浏览器日志窗口无 error/warning；仅 ChatKit CDN 的 localhost domain-verification 属于开发环境既有边界。

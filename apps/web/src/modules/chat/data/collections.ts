@@ -10,7 +10,7 @@
 import { useLiveQuery } from '@tanstack/react-db'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useMemo, useSyncExternalStore } from 'react'
-import { getLiteral, getLiteralAll, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
+import { getLiteral, getLiteralAll, getSolidDataset, getThing, getThingAll, getUrl, getUrlAll } from '@inrupt/solid-client'
 import {
   chatResource,
   threadResource,
@@ -805,28 +805,61 @@ async function normalizeDefaultSecretaryChatSingletons(
 
     const titlePredicate = 'http://purl.org/dc/terms/title'
     const createdPredicate = 'http://purl.org/dc/terms/created'
+    const updatedPredicate = 'http://purl.org/dc/terms/modified'
+    const lastActivePredicate = UDFS.lastActiveAt
     const titles = getLiteralAll(thing, titlePredicate).map((literal) => literal.value)
     const createdValues = getLiteralAll(thing, createdPredicate)
       .map((literal) => literal.value)
       .filter((value) => !Number.isNaN(Date.parse(value)))
       .sort((left, right) => Date.parse(left) - Date.parse(right))
+    const updatedValues = getLiteralAll(thing, updatedPredicate)
+      .map((literal) => literal.value)
+      .filter((value) => !Number.isNaN(Date.parse(value)))
+      .sort((left, right) => Date.parse(left) - Date.parse(right))
+    const lastActiveValues = getLiteralAll(thing, lastActivePredicate)
+      .map((literal) => literal.value)
+      .filter((value) => !Number.isNaN(Date.parse(value)))
+      .sort((left, right) => Date.parse(left) - Date.parse(right))
     const createdAt = createdValues[0]
+    const updatedAt = updatedValues[updatedValues.length - 1]
+    const lastActiveAt = lastActiveValues[lastActiveValues.length - 1]
     const isCanonical = titles.length === 1
       && titles[0] === LINX_DEFAULT_SECRETARY.title
       && createdValues.length === 1
+      && updatedValues.length <= 1
+      && lastActiveValues.length <= 1
     if (isCanonical || !createdAt) return
+
+    const timeDeletePatterns = [
+      updatedAt ? `<${chatIri}> <${updatedPredicate}> ?oldUpdatedAt .` : null,
+      lastActiveAt ? `<${chatIri}> <${lastActivePredicate}> ?oldLastActiveAt .` : null,
+    ].filter((pattern): pattern is string => Boolean(pattern))
+    const timeInsertPatterns = [
+      updatedAt
+        ? `<${chatIri}> <${updatedPredicate}> "${updatedAt}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .`
+        : null,
+      lastActiveAt
+        ? `<${chatIri}> <${lastActivePredicate}> "${lastActiveAt}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .`
+        : null,
+    ].filter((pattern): pattern is string => Boolean(pattern))
+    const timeWherePatterns = [
+      updatedAt ? `OPTIONAL { <${chatIri}> <${updatedPredicate}> ?oldUpdatedAt . }` : null,
+      lastActiveAt ? `OPTIONAL { <${chatIri}> <${lastActivePredicate}> ?oldLastActiveAt . }` : null,
+    ].filter((pattern): pattern is string => Boolean(pattern))
 
     const update = `
 DELETE {
   GRAPH <${resourceUrl}> {
     <${chatIri}> <${titlePredicate}> ?oldTitle .
     <${chatIri}> <${createdPredicate}> ?oldCreatedAt .
+    ${timeDeletePatterns.join('\n    ')}
   }
 }
 INSERT {
   GRAPH <${resourceUrl}> {
     <${chatIri}> <${titlePredicate}> "${LINX_DEFAULT_SECRETARY.title}" .
     <${chatIri}> <${createdPredicate}> "${createdAt}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+    ${timeInsertPatterns.join('\n    ')}
   }
 }
 WHERE {
@@ -834,6 +867,7 @@ WHERE {
     <${chatIri}> ?existingPredicate ?existingObject .
     OPTIONAL { <${chatIri}> <${titlePredicate}> ?oldTitle . }
     OPTIONAL { <${chatIri}> <${createdPredicate}> ?oldCreatedAt . }
+    ${timeWherePatterns.join('\n    ')}
   }
 }`
     const response = await authFetch(resourceUrl, {
@@ -847,6 +881,110 @@ WHERE {
   } catch (error) {
     console.warn('[chatOps] Failed to normalize default Secretary chat metadata:', error)
   }
+}
+
+async function normalizeUpdatedAtSingletons(
+  db: SolidDatabase,
+  rows: Array<{ '@id'?: string; id?: string; parent?: string }>,
+  discoverThreads = false,
+): Promise<void> {
+  const authFetch = (
+    (db as any).getDialect?.()?.getAuthenticatedFetch?.()
+    ?? (db as any).getSession?.()?.fetch
+  ) as typeof fetch | undefined
+  if (!authFetch) return
+
+  const rowsByResource = new Map<string, string[]>()
+  for (const row of rows) {
+    const subjectIri = row['@id']
+      ?? (row.id?.startsWith('http') ? row.id : undefined)
+      ?? resolveResourceIri(
+        db,
+        threadResource,
+        buildResourceId(threadResource as any, row as Record<string, unknown>),
+      )
+      ?? (row.parent?.startsWith('http') && row.id
+        ? `${row.parent.split('#')[0]}#${row.id.split('#').pop()}`
+        : undefined)
+    if (!subjectIri?.includes('#')) continue
+    const resourceUrl = subjectIri.split('#')[0]
+    const subjects = rowsByResource.get(resourceUrl) ?? []
+    subjects.push(subjectIri)
+    rowsByResource.set(resourceUrl, subjects)
+  }
+
+  await Promise.all([...rowsByResource].map(async ([resourceUrl, subjectIris]) => {
+    try {
+      const dataset = await getSolidDataset(resourceUrl, { fetch: authFetch })
+      const candidateSubjectIris = discoverThreads
+        ? getThingAll(dataset)
+          .filter((thing) => getUrlAll(thing, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type')
+            .includes('http://rdfs.org/sioc/ns#Thread'))
+          .map((thing) => thing.url)
+        : subjectIris
+      const replacements = candidateSubjectIris.flatMap((subjectIri) => {
+        const thing = getThing(dataset, subjectIri)
+        if (!thing) return []
+        const values = getLiteralAll(thing, 'http://purl.org/dc/terms/modified')
+          .map((literal) => literal.value)
+          .filter((value) => !Number.isNaN(Date.parse(value)))
+          .sort((left, right) => Date.parse(left) - Date.parse(right))
+        const latest = values[values.length - 1]
+        // Only a chat-resource scan can authoritatively infer a Thread's
+        // parent from the graph URL. A global thread query may resolve a
+        // fragment-only row against the default chat and must never rewrite
+        // ownership based on that fallback.
+        const expectedParent = discoverThreads && resourceUrl.includes('/.data/chat/')
+          ? `${resourceUrl}#this`
+          : undefined
+        const parents = getUrlAll(thing, 'http://rdfs.org/sioc/ns#has_parent')
+        const repairParent = Boolean(expectedParent)
+          && (parents.length !== 1 || parents[0] !== expectedParent)
+        const repairUpdatedAt = values.length > 1 && Boolean(latest)
+        return repairParent || repairUpdatedAt
+          ? [{ subjectIri, latest: repairUpdatedAt ? latest : undefined, expectedParent: repairParent ? expectedParent : undefined }]
+          : []
+      })
+      if (replacements.length === 0) return
+
+      const update = `
+DELETE {
+  GRAPH <${resourceUrl}> {
+    ${replacements.flatMap(({ subjectIri, latest, expectedParent }, index) => [
+      latest ? `<${subjectIri}> <http://purl.org/dc/terms/modified> ?oldUpdatedAt${index} .` : null,
+      expectedParent ? `<${subjectIri}> <http://rdfs.org/sioc/ns#has_parent> ?oldParent${index} .` : null,
+    ].filter((pattern): pattern is string => Boolean(pattern))).join('\n    ')}
+  }
+}
+INSERT {
+  GRAPH <${resourceUrl}> {
+    ${replacements.flatMap(({ subjectIri, latest, expectedParent }) => [
+      latest ? `<${subjectIri}> <http://purl.org/dc/terms/modified> "${latest}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .` : null,
+      expectedParent ? `<${subjectIri}> <http://rdfs.org/sioc/ns#has_parent> <${expectedParent}> .` : null,
+    ].filter((pattern): pattern is string => Boolean(pattern))).join('\n    ')}
+  }
+}
+WHERE {
+  GRAPH <${resourceUrl}> {
+    ${replacements.flatMap(({ subjectIri, latest, expectedParent }, index) => [
+      `<${subjectIri}> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://rdfs.org/sioc/ns#Thread> .`,
+      latest ? `<${subjectIri}> <http://purl.org/dc/terms/modified> ?oldUpdatedAt${index} .` : null,
+      expectedParent ? `OPTIONAL { <${subjectIri}> <http://rdfs.org/sioc/ns#has_parent> ?oldParent${index} . }` : null,
+    ].filter((pattern): pattern is string => Boolean(pattern))).join('\n    ')}
+  }
+}`
+      const response = await authFetch(resourceUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/sparql-update' },
+        body: update,
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`)
+      }
+    } catch (error) {
+      console.warn('[chatOps] Failed to normalize legacy thread metadata:', resourceUrl, error)
+    }
+  }))
 }
 
 function buildDefaultSecretaryContactRows(input: {
@@ -1280,6 +1418,13 @@ export const chatCollection = createPodCollection<typeof chatResource, ChatRow, 
   getDb,
   orderBy: { column: 'lastActiveAt', direction: 'desc' },
   transformRows: async (rows, db) => {
+    await normalizeUpdatedAtSingletons(db, rows.map((row) => ({
+      '@id': resolveResourceIri(
+        db,
+        chatResource,
+        buildResourceId(chatResource as any, row as Record<string, unknown>),
+      ) ?? undefined,
+    })), true)
     const hydratedRows = await hydrateChatRows(db, rows)
     return mergeChatRows(getStagedSecretaryChatRows(), hydratedRows)
   },
@@ -1324,6 +1469,10 @@ export const threadCollection = createPodCollection<typeof threadResource, Threa
   queryClient,
   getDb,
   columns: threadListColumns,
+  transformRows: async (rows, db) => {
+    await normalizeUpdatedAtSingletons(db, rows)
+    return rows
+  },
   orderBy: { column: 'updatedAt', direction: 'desc' },
   getKey: (item) => {
     if (!item.id) throw new Error('Thread item is missing id.')

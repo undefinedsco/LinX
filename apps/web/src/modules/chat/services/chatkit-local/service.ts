@@ -137,6 +137,15 @@ function readBranchId(item: ThreadItem): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+function canonicalBranchRef(value: string): string {
+  const branchRootPrefix = 'branch-root:'
+  if (value.startsWith(branchRootPrefix)) {
+    return `${branchRootPrefix}${canonicalBranchRef(value.slice(branchRootPrefix.length))}`
+  }
+  const hashIndex = value.lastIndexOf('#')
+  return hashIndex >= 0 ? value.slice(hashIndex + 1) : value
+}
+
 function projectActiveBranchItems<T extends { data: ThreadItem[] }>(
   page: T,
   rawActive: unknown,
@@ -144,13 +153,20 @@ function projectActiveBranchItems<T extends { data: ThreadItem[] }>(
   if (!rawActive || typeof rawActive !== 'object') return page
   const active = rawActive as Record<string, unknown>
   const hidden = new Set<string>()
+  const canonicalActive = new Map<string, string>()
+  for (const [parentId, selectedId] of Object.entries(active)) {
+    if (typeof selectedId === 'string') {
+      canonicalActive.set(canonicalBranchRef(parentId), canonicalBranchRef(selectedId))
+    }
+  }
 
   for (const item of page.data) {
     const parentId = readBranchParentId(item)
     if (!parentId) continue
-    const selectedId = active[parentId]
-    if (typeof selectedId === 'string' && item.id !== selectedId) {
-      hidden.add(item.id)
+    const selectedId = canonicalActive.get(canonicalBranchRef(parentId))
+    const itemId = canonicalBranchRef(item.id)
+    if (selectedId && itemId !== selectedId) {
+      hidden.add(itemId)
     }
   }
 
@@ -159,14 +175,15 @@ function projectActiveBranchItems<T extends { data: ThreadItem[] }>(
     changed = false
     for (const item of page.data) {
       const parentId = readBranchParentId(item)
-      if (!hidden.has(item.id) && parentId && hidden.has(parentId)) {
-        hidden.add(item.id)
+      const itemId = canonicalBranchRef(item.id)
+      if (!hidden.has(itemId) && parentId && hidden.has(canonicalBranchRef(parentId))) {
+        hidden.add(itemId)
         changed = true
       }
     }
   }
 
-  return { ...page, data: page.data.filter((item) => !hidden.has(item.id)) }
+  return { ...page, data: page.data.filter((item) => !hidden.has(canonicalBranchRef(item.id))) }
 }
 
 function collectItemSubtreeIds(items: readonly ThreadItem[], rootId: string): Set<string> {
@@ -522,7 +539,13 @@ export class LocalChatKitService {
       await this.store.saveThread(thread, context)
       yield { type: 'thread.item.added', item: edited }
       if (payload?.regenerate === true) {
-        yield* this.respond(thread, edited, context, (edited as any).inference_options)
+        yield* this.respond(
+          thread,
+          edited,
+          context,
+          (edited as any).inference_options,
+          { selectResponseBranch: true },
+        )
       }
       return
     }

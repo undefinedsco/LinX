@@ -64,25 +64,55 @@ function extractThreadId(threadIdOrUri: string | null | undefined): string | und
 
 function getChatIdFromMetadata(metadata?: Record<string, unknown>): string {
   if (metadata && typeof metadata.chat_id === 'string') {
-    return extractChatId(metadata.chat_id)
+    const chatId = metadata.chat_id.trim()
+    if (chatId && !chatId.includes('/') && !chatId.includes('#')) return chatId
+    return extractChatId(chatId)
   }
   return DEFAULT_CHAT_ID
 }
 
 function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undefined {
   if (!metadata) return undefined
+  let parsed: Record<string, unknown> | undefined
   if (typeof metadata === 'string') {
     try {
-      const parsed = JSON.parse(metadata) as Record<string, unknown> | null
-      return parsed ?? undefined
+      const value = JSON.parse(metadata) as unknown
+      parsed = value && typeof value === 'object' && !Array.isArray(value)
+        ? { ...(value as Record<string, unknown>) }
+        : undefined
+    } catch {
+      return undefined
+    }
+  } else if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+    parsed = { ...(metadata as Record<string, unknown>) }
+  }
+  if (!parsed) return undefined
+  const activeBranches = normalizeActiveBranches(parsed.active_branch_by_parent)
+  if (activeBranches) parsed.active_branch_by_parent = activeBranches
+  else delete parsed.active_branch_by_parent
+  return parsed
+}
+
+function normalizeActiveBranches(value: unknown): Record<string, string> | undefined {
+  if (typeof value === 'string') {
+    try {
+      return normalizeActiveBranches(JSON.parse(value) as unknown)
     } catch {
       return undefined
     }
   }
-  if (typeof metadata === 'object') {
-    return metadata as Record<string, unknown>
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+
+  const entries = Object.entries(value as Record<string, unknown>)
+  const merged: Record<string, string> = {}
+  for (const [key, nested] of entries) {
+    if (/^\d+$/.test(key)) {
+      Object.assign(merged, normalizeActiveBranches(nested))
+    } else if (typeof nested === 'string') {
+      merged[key] = nested
+    }
   }
-  return undefined
+  return Object.keys(merged).length > 0 ? merged : undefined
 }
 
 function resourceUrlFromIri(iri: string): string {
@@ -419,6 +449,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   // In-memory caches (per-instance, not per-context)
   private threadChatIdCache = new Map<string, string>()
   private threadMetadataCache = new Map<string, ThreadMetadata>()
+  private provisionalThreadIds = new Set<string>()
   private threadItemsCache = new Map<string, ThreadItem[]>()
   private messageRowIdByItemId = new Map<string, string>()
   private onAttachmentsChange?: (attachments: Attachment[]) => void
@@ -452,6 +483,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.onThreadItemsChange = onThreadItemsChange
     if (initialThread) {
       this.threadMetadataCache.set(initialThread.id, initialThread)
+      this.provisionalThreadIds.add(initialThread.id)
       const chatId = getChatIdFromMetadata(initialThread.metadata)
       this.threadChatIdCache.set(initialThread.id, chatId)
     }
@@ -673,13 +705,27 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   async loadThread(threadId: string, _context: StoreContext): Promise<ThreadMetadata> {
     const cached = this.threadMetadataCache.get(threadId)
-    if (cached) return cached
+    if (cached && !this.provisionalThreadIds.has(threadId)) return cached
 
-    const thread = await findThreadRecord(this.db, threadId, this.threadChatIdCache.get(threadId))
-    if (!thread) throw new Error(`Thread not found: ${threadId}`)
+    let thread: Record<string, unknown> | null = null
+    try {
+      thread = await findThreadRecord(this.db, threadId, this.threadChatIdCache.get(threadId))
+    } catch (error) {
+      if (cached) return cached
+      throw error
+    }
+    if (!thread) {
+      if (cached) return cached
+      throw new Error(`Thread not found: ${threadId}`)
+    }
 
     const metadata = threadRecordToMetadata(thread)
+    const resolvedChatId = this.threadChatIdCache.get(threadId)
+    if (resolvedChatId) {
+      metadata.metadata = { ...(metadata.metadata ?? {}), chat_id: resolvedChatId }
+    }
     this.threadMetadataCache.set(threadId, metadata)
+    this.provisionalThreadIds.delete(threadId)
     return metadata
   }
 
@@ -709,6 +755,16 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         metadata: metadataValue,
         updatedAt: now,
       } as any)
+      await this.normalizeThreadSingletons(
+        this.resolveRowIri(Thread, existingThread as Record<string, unknown>),
+        thread.title,
+        statusToString(thread.status),
+        existingThread.createdAt instanceof Date
+          ? existingThread.createdAt
+          : new Date(existingThread.createdAt ?? thread.created_at * 1000),
+        now,
+        metadataValue?.active_branch_by_parent,
+      )
     } else {
       const chat = this.buildChatUri(chatId)
       await (this.db as any).insert(Thread as any).values({
@@ -728,6 +784,58 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       ...thread,
       metadata: { ...(thread.metadata ?? {}), chat_id: chatId },
     })
+    this.provisionalThreadIds.delete(thread.id)
+  }
+
+  private async normalizeThreadSingletons(
+    threadIri: string,
+    title: string | undefined,
+    status: string,
+    createdAt: Date,
+    updatedAt: Date,
+    activeBranchByParent: unknown,
+  ): Promise<void> {
+    const resourceUrl = resourceUrlFromIri(threadIri)
+    const titlePredicate = 'http://purl.org/dc/terms/title'
+    const createdAtPredicate = 'http://purl.org/dc/terms/created'
+    const updatedAtPredicate = 'http://purl.org/dc/terms/modified'
+    const activeBranchPredicate = UDFS('active_branch_by_parent')
+    const deletes = [
+      `<${threadIri}> <${titlePredicate}> ?oldTitle .`,
+      `<${threadIri}> <${UDFS.status}> ?oldStatus .`,
+      `<${threadIri}> <${createdAtPredicate}> ?oldCreatedAt .`,
+      `<${threadIri}> <${updatedAtPredicate}> ?oldUpdatedAt .`,
+    ]
+    const inserts = [
+      `<${threadIri}> <${UDFS.status}> ${sparqlStringLiteral(status)} .`,
+      `<${threadIri}> <${createdAtPredicate}> ${sparqlStringLiteral(createdAt.toISOString())}^^<http://www.w3.org/2001/XMLSchema#dateTime> .`,
+      `<${threadIri}> <${updatedAtPredicate}> ${sparqlStringLiteral(updatedAt.toISOString())}^^<http://www.w3.org/2001/XMLSchema#dateTime> .`,
+    ]
+    const optional = [
+      `OPTIONAL { <${threadIri}> <${titlePredicate}> ?oldTitle . }`,
+      `OPTIONAL { <${threadIri}> <${UDFS.status}> ?oldStatus . }`,
+      `OPTIONAL { <${threadIri}> <${createdAtPredicate}> ?oldCreatedAt . }`,
+      `OPTIONAL { <${threadIri}> <${updatedAtPredicate}> ?oldUpdatedAt . }`,
+    ]
+
+    if (title) inserts.push(`<${threadIri}> <${titlePredicate}> ${sparqlStringLiteral(title)} .`)
+    if (activeBranchByParent && typeof activeBranchByParent === 'object') {
+      deletes.push(`?metadataNode <${activeBranchPredicate}> ?oldActiveBranch .`)
+      inserts.push(`?metadataNode <${activeBranchPredicate}> ${sparqlStringLiteral(JSON.stringify(activeBranchByParent))}^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> .`)
+      optional.push(
+        `<${threadIri}> <${UDFS.metadata}> ?metadataNode .`,
+        `OPTIONAL { ?metadataNode <${activeBranchPredicate}> ?oldActiveBranch . }`,
+      )
+    }
+
+    const response = await this.authFetch(resourceUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/sparql-update' },
+      body: `DELETE { GRAPH <${resourceUrl}> { ${deletes.join(' ')} } } INSERT { GRAPH <${resourceUrl}> { ${inserts.join(' ')} } } WHERE { GRAPH <${resourceUrl}> { <${threadIri}> ?existingPredicate ?existingObject . ${optional.join(' ')} } }`,
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to normalize thread metadata (${response.status})`)
+    }
   }
 
   async loadThreads(

@@ -48,6 +48,33 @@ describe('LocalChatKitService P0 data and cancellation', () => {
     expect(JSON.parse((loaded as any).json).items.data.map((item: any) => item.id)).toEqual(['root', 'branch-b', 'answer-b'])
   })
 
+  it('matches legacy short parent ids to resource-relative branch ids', async () => {
+    const originalId = 'chat/demo/messages.ttl#user-1'
+    const thread = {
+      id: 'thread-1',
+      status: { type: 'active' },
+      metadata: { active_branch_by_parent: { [`branch-root:${originalId}`]: 'user-2' } },
+    }
+    const store = createStore({
+      loadThread: vi.fn(async () => thread),
+      loadThreadItems: vi.fn(async () => ({ data: [
+        { id: originalId, type: 'user_message', parent_item_id: `branch-root:${originalId}`, content: [] },
+        { id: 'assistant-old', type: 'assistant_message', parent_item_id: 'user-1', content: [] },
+        { id: 'user-2', type: 'user_message', parent_item_id: `branch-root:${originalId}`, content: [] },
+        { id: 'assistant-new', type: 'assistant_message', parent_item_id: 'user-2', content: [] },
+      ], has_more: false })),
+    })
+    const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any })
+
+    const result = await service.process(JSON.stringify({
+      type: 'items.list',
+      params: { thread_id: 'thread-1' },
+    }), {})
+
+    expect(JSON.parse((result as any).json).data.map((item: any) => item.id))
+      .toEqual(['user-2', 'assistant-new'])
+  })
+
   it('handles custom message deletion through the ChatKit action channel', async () => {
     const thread = { id: 'thread-1', status: { type: 'active' }, metadata: { active_branch_by_parent: { 'user-1': 'assistant-1' } } }
     const store = createStore({
@@ -80,10 +107,11 @@ describe('LocalChatKitService P0 data and cancellation', () => {
 
   it('edits a user message and can regenerate from the edited item', async () => {
     const item = { id: 'user-1', thread_id: 'thread-1', type: 'user_message', content: [{ type: 'input_text', text: 'old' }] }
+    const thread = { id: 'thread-1', status: { type: 'active' }, metadata: {} }
     const store = createStore({
       loadItem: vi.fn(async () => ({ ...item })),
       saveItem: vi.fn(async () => undefined),
-      loadThread: vi.fn(async () => ({ id: 'thread-1', status: { type: 'active' }, metadata: {} })),
+      loadThread: vi.fn(async () => thread),
       saveThread: vi.fn(async () => undefined),
       loadThreadItems: vi.fn(async () => ({ data: [
         item,
@@ -112,7 +140,13 @@ describe('LocalChatKitService P0 data and cancellation', () => {
       supersedes: 'user-1',
       branch_id: expect.stringMatching(/^branch-/),
     }), {})
-    expect(service.respond).toHaveBeenCalled()
+    expect(service.respond).toHaveBeenCalledWith(
+      thread,
+      expect.objectContaining({ id: 'user-branch-1' }),
+      {},
+      undefined,
+      { selectResponseBranch: true },
+    )
     expect(store.saveItem).toHaveBeenCalledWith('thread-1', expect.objectContaining({
       id: 'user-1',
       parent_item_id: 'branch-root:user-1',

@@ -115,7 +115,7 @@ const CONTENT_FAILURE_COPY: Partial<Record<ChatContentStateKind, { title: string
 const LOGIN_REQUIRED_RETRY_DELAY_MS = 250
 const LOGIN_REQUIRED_GRACE_MS = 2000
 
-function readActiveBranchSelections(metadata: unknown): Record<string, string> {
+export function readActiveBranchSelections(metadata: unknown): Record<string, string> {
   let value = metadata
   if (typeof value === 'string') {
     try {
@@ -125,7 +125,14 @@ function readActiveBranchSelections(metadata: unknown): Record<string, string> {
     }
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  const active = (value as Record<string, unknown>).active_branch_by_parent
+  let active = (value as Record<string, unknown>).active_branch_by_parent
+  if (typeof active === 'string') {
+    try {
+      active = JSON.parse(active)
+    } catch {
+      return {}
+    }
+  }
   if (!active || typeof active !== 'object' || Array.isArray(active)) return {}
   return Object.fromEntries(
     Object.entries(active as Record<string, unknown>)
@@ -639,6 +646,7 @@ function ChatKitPanel({
   // Subsequent navigation is handled by `setThreadId` below.
   const initialThreadIdRef = useRef(selectedThreadId)
   const restoredInitialThreadRef = useRef(false)
+  const restoredChatIdRef = useRef<string | null>(null)
   const chatKitHostRef = useRef<HTMLElement | null>(null)
   const bindChatKitHost = useCallback((host: HTMLElement | null) => {
     chatKitHostRef.current = host
@@ -666,7 +674,12 @@ function ChatKitPanel({
         status: { type: 'active' },
         created_at: Math.floor(Date.now() / 1000),
         updated_at: Math.floor(Date.now() / 1000),
-        metadata: { chat_id: selectedChatId },
+        metadata: {
+          chat_id: selectedChatId,
+          ...(persistedActiveBranchByParent
+            ? { active_branch_by_parent: persistedActiveBranchByParent }
+            : {}),
+        },
       },
       isAvailable: () => sendAvailableRef.current,
       onAttachmentsChange: setThreadAttachments,
@@ -684,7 +697,7 @@ function ChatKitPanel({
         })
       },
     })
-  }, [db, selectedChatId, selectedThreadId, selectedThreadTitle, sessionFetch, sessionWebId])
+  }, [db, persistedActiveBranchByParent, selectedChatId, selectedThreadId, selectedThreadTitle, sessionFetch, sessionWebId])
 
   useEffect(() => {
     setThreadAttachments([])
@@ -800,6 +813,11 @@ function ChatKitPanel({
     createdAt: row.createdAt,
   })), [userMessages])
   const branchGroups = useMemo(() => groupMessageSiblings(branchNodes), [branchNodes])
+  useEffect(() => {
+    for (const [parentId, itemId] of Object.entries(persistedActiveBranchByParent ?? {})) {
+      setActiveBranch(parentId, itemId)
+    }
+  }, [persistedActiveBranchByParent, setActiveBranch])
   const activeBranchByParent = useMemo(() => ({
     ...(persistedActiveBranchByParent ?? {}),
     ...localActiveBranchByParent,
@@ -939,12 +957,15 @@ function ChatKitPanel({
 
         // ChatKit initializes its internal id from `initialThread`. Calling
         // `setThreadId` with that same id can therefore be treated as a no-op,
-        // leaving history empty after a hard refresh. Force a transition only
-        // for the mount-time restoration; normal thread navigation must stay
-        // direct so ChatKit can retain its per-thread composer drafts.
+        // leaving history empty after a hard refresh. Force a transition on
+        // mount and when changing chat scope; normal same-chat thread
+        // navigation stays direct so ChatKit can retain composer drafts.
         if (
-          !restoredInitialThreadRef.current
-          && selectedThreadId === initialThreadIdRef.current
+          restoredChatIdRef.current !== selectedChatId
+          || (
+            !restoredInitialThreadRef.current
+            && selectedThreadId === initialThreadIdRef.current
+          )
         ) {
           await setThreadId(null)
           if (disposed) return
@@ -960,6 +981,7 @@ function ChatKitPanel({
         await fetchUpdates()
         await localFetch.refreshThreadItems(selectedThreadId)
         restoredInitialThreadRef.current = true
+        restoredChatIdRef.current = selectedChatId
       } catch (error) {
         if (!disposed) {
           console.error('[ChatKit] Failed to restore thread:', error)
@@ -972,7 +994,7 @@ function ChatKitPanel({
     return () => {
       disposed = true
     }
-  }, [fetchUpdates, isChatKitMounted, localFetch, selectedThreadId, setThreadId])
+  }, [fetchUpdates, isChatKitMounted, localFetch, selectedChatId, selectedThreadId, setThreadId])
 
   useEffect(() => {
     if (!pendingComposerDraft) return
@@ -1152,6 +1174,9 @@ function ChatKitPanel({
                 // The edited branch may already be persisted even if regeneration fails.
               } finally {
                 setEditingMessage(null)
+                // Let the refreshed item list select the newly-created user
+                // branch instead of keeping the superseded message selected.
+                setActionMessageId(null)
                 await Promise.allSettled([fetchUpdates(), refetchMessages(), localFetch.refreshThreadItems(selectedThreadId)])
               }
             }}>保存并重新生成</Button>
@@ -1433,6 +1458,10 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     if (!selectedThreadId) return null
     return threads.find((thread) => thread.id === selectedThreadId) ?? null
   }, [selectedThreadId, threads])
+  const persistedActiveBranchByParent = useMemo(
+    () => readActiveBranchSelections(activeThread?.metadata),
+    [activeThread?.metadata],
+  )
   const isStagedSecretaryWelcome = isSecretary && !activeThread
   const isWaitingForChat = isChatsLoading && !activeChat
   const isWaitingForThread = isThreadsLoading && !selectedThreadId
@@ -1715,7 +1744,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
             selectedThreadId={selectedThreadId}
             selectedChatId={selectedChatId}
             selectedThreadTitle={activeThread?.title}
-            persistedActiveBranchByParent={readActiveBranchSelections(activeThread?.metadata)}
+            persistedActiveBranchByParent={persistedActiveBranchByParent}
             pendingComposerDraft={isSecretary
               && activePendingSecretaryDraft?.chatId === selectedChatId
               ? activePendingSecretaryDraft

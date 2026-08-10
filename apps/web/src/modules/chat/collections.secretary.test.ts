@@ -3,10 +3,12 @@ import { agentResource, chatResource, contactResource, threadResource } from '@u
 import { agentResourceId } from '@/lib/data/resource-identity'
 
 const {
+  collectionOptions,
   collectionStates,
   createCollectionMock,
   invalidateQueriesMock,
 } = vi.hoisted(() => {
+  const collectionOptions = new Map<string, any>()
   const collectionStates = new Map<string, Map<string, Record<string, unknown>>>()
   const invalidateQueriesMock = vi.fn()
 
@@ -22,6 +24,7 @@ const {
     } | null
   }) {
     const key = options.queryKey?.join('/') || `collection-${collectionStates.size}`
+    collectionOptions.set(key, options)
     const state = new Map<string, Record<string, unknown>>()
     collectionStates.set(key, state)
 
@@ -84,7 +87,7 @@ const {
     }
   }
 
-  return { collectionStates, createCollectionMock, invalidateQueriesMock }
+  return { collectionOptions, collectionStates, createCollectionMock, invalidateQueriesMock }
 })
 
 vi.mock('@/lib/data/pod-collection', () => ({
@@ -162,6 +165,69 @@ describe('chatOps collection subscriptions', () => {
   })
 })
 
+describe('legacy thread metadata repair', () => {
+  it('keeps the latest updatedAt value for each loaded thread subject', async () => {
+    const resourceUrl = 'https://node-0000.undefineds.co/alice/.data/chat/chat-1/index.ttl'
+    const threadIri = `${resourceUrl}#thread-1`
+    const authenticatedFetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method || init.method === 'GET') {
+        return new Response(`
+          @prefix dcterms: <http://purl.org/dc/terms/> .
+          @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+          @prefix sioc: <http://rdfs.org/sioc/ns#> .
+          <${threadIri}> rdf:type sioc:Thread ; dcterms:modified
+            "2026-06-02T01:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>,
+            "2026-06-02T03:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+        `, { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+      }
+      return new Response(null, { status: 205 })
+    })
+    const transformRows = collectionOptions.get('threads')?.transformRows
+
+    await expect(transformRows?.([
+      { id: 'thread-1', parent: `${resourceUrl}#this` },
+    ], {
+      getDialect: () => ({ getAuthenticatedFetch: () => authenticatedFetchMock }),
+      resolveRowIri: () => threadIri,
+    })).resolves.toEqual([{ id: 'thread-1', parent: `${resourceUrl}#this` }])
+
+    const patchCall = authenticatedFetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(patchCall).toBeDefined()
+    expect(String(patchCall?.[1]?.body)).toContain(
+      `<${threadIri}> <http://purl.org/dc/terms/modified> "2026-06-02T03:00:00.000Z"`,
+    )
+    expect(String(patchCall?.[1]?.body)).not.toContain('sioc/ns#has_parent')
+  })
+
+  it('discovers orphaned thread subjects inside a chat resource', async () => {
+    const resourceUrl = 'https://node-0000.undefineds.co/alice/.data/chat/chat-1/index.ttl'
+    const chatIri = `${resourceUrl}#this`
+    const orphanThreadIri = `${resourceUrl}#orphan-thread`
+    const authenticatedFetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method || init.method === 'GET') {
+        return new Response(`
+          @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+          @prefix sioc: <http://rdfs.org/sioc/ns#> .
+          <${chatIri}> rdf:type <http://www.w3.org/ns/pim/meeting#LongChat> .
+          <${orphanThreadIri}> rdf:type sioc:Thread .
+        `, { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+      }
+      return new Response(null, { status: 205 })
+    })
+    const transformRows = collectionOptions.get('chats')?.transformRows
+
+    await transformRows?.([{ id: 'chat-1', participants: [] }], {
+      getDialect: () => ({ getAuthenticatedFetch: () => authenticatedFetchMock }),
+      resolveRowIri: () => chatIri,
+    })
+
+    const patchCall = authenticatedFetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(String(patchCall?.[1]?.body)).toContain(
+      `<${orphanThreadIri}> <http://rdfs.org/sioc/ns#has_parent> <${chatIri}>`,
+    )
+  })
+})
+
 describe('AI Secretary bootstrap', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -224,6 +290,7 @@ describe('AI Secretary bootstrap', () => {
     existingResources?: boolean
     hangExactReads?: boolean
     existingPodDocuments?: boolean
+    legacySingletonTurtle?: string
   } = {}) {
     const rows = options.rows ?? createSecretaryRows()
     const insertedRows: Array<{ resource: unknown; row: Record<string, unknown> }> = []
@@ -257,7 +324,13 @@ describe('AI Secretary bootstrap', () => {
       },
     }))
     const authenticatedFetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === 'GET') {
+      if (!init?.method || init.method === 'GET') {
+        if (options.legacySingletonTurtle) {
+          return new Response(options.legacySingletonTurtle, {
+            status: 200,
+            headers: { 'Content-Type': 'text/turtle' },
+          })
+        }
         return new Response('', { status: options.existingPodDocuments ? 200 : 404 })
       }
       return new Response('', { status: 201 })
@@ -411,6 +484,42 @@ describe('AI Secretary bootstrap', () => {
     })
     expect(db.select).not.toHaveBeenCalled()
     expect(insertedRows).toEqual([])
+  })
+
+  it('repairs legacy duplicate Secretary timestamps with canonical values', async () => {
+    const rows = createSecretaryRows()
+    const { db, authenticatedFetchMock } = createSecretaryDb({
+      rows,
+      existingResources: true,
+      legacySingletonTurtle: `
+        @prefix dcterms: <http://purl.org/dc/terms/> .
+        @prefix udfs: <https://undefineds.co/ns#> .
+        <${rows.chatIri}>
+          dcterms:title "LinX 主理人" ;
+          dcterms:created "2026-06-02T00:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+          dcterms:modified "2026-06-02T01:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>,
+            "2026-06-02T03:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+          udfs:lastActiveAt "2026-06-02T02:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>,
+            "2026-06-02T04:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+      `,
+    })
+    initializeChatCollections(db as any)
+
+    await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toMatchObject({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: false,
+    })
+
+    const patchCall = authenticatedFetchMock.mock.calls.find(([, init]) => (
+      init?.method === 'PATCH' && String(init.body).includes(rows.chatIri)
+    ))
+    expect(patchCall).toBeDefined()
+    expect(String(patchCall?.[1]?.body)).toContain(
+      `<${rows.chatIri}> <http://purl.org/dc/terms/modified> "2026-06-02T03:00:00.000Z"`,
+    )
+    expect(String(patchCall?.[1]?.body)).toContain(
+      `<${rows.chatIri}> <https://undefineds.co/ns#lastActiveAt> "2026-06-02T04:00:00.000Z"`,
+    )
   })
 
   it('continues bootstrap when missing exact reads hang', async () => {

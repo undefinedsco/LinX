@@ -47,7 +47,15 @@ async function extractOfficeText(bytes: Uint8Array, mimeType: string, name: stri
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const [{ getDocument, GlobalWorkerOptions }, { default: workerSrc }] = await Promise.all([
+    import('pdfjs-dist/legacy/build/pdf.mjs'),
+    import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'),
+  ])
+  // Vite splits this dynamic import, so pdf.js cannot infer the worker URL.
+  // An explicit local asset keeps browser PDF extraction independent of a CDN.
+  if (typeof Worker !== 'undefined') {
+    GlobalWorkerOptions.workerSrc = workerSrc
+  }
   const loadingTask = getDocument({ data: bytes })
   const pdf = await loadingTask.promise
   const pages: string[] = []

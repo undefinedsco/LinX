@@ -156,7 +156,10 @@ describe('useSessionTokenMaintenance', () => {
 
   it('does not recover when the probe succeeds', async () => {
     sessionInfo.expirationDate = Date.now() - 1000
-    sessionFetchMock.mockResolvedValue(new Response('', { status: 200 }))
+    sessionFetchMock.mockImplementation(async () => {
+      sessionInfo.expirationDate = Date.now() + 3600_000
+      return new Response('', { status: 200 })
+    })
     renderHook(() => useSessionTokenMaintenance())
 
     await act(async () => {
@@ -165,6 +168,21 @@ describe('useSessionTokenMaintenance', () => {
     })
 
     expect(connectMock).not.toHaveBeenCalled()
+  })
+
+  it('recovers when a public profile accepts an expired token without refreshing it', async () => {
+    sessionInfo.expirationDate = Date.now() - 1000
+    sessionFetchMock.mockResolvedValue(new Response(null, { status: 304 }))
+    renderHook(() => useSessionTokenMaintenance())
+
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    expect(sessionFetchMock).toHaveBeenCalledTimes(2)
+    expect(connectMock).toHaveBeenCalledTimes(1)
   })
 
   it('ignores expiry signals when logged out', async () => {

@@ -102,6 +102,11 @@ export function useSessionTokenMaintenance() {
     const expiration = session.info.expirationDate
     if (!expiration || expiration - Date.now() > PROBE_EXPIRY_LEEWAY_MS) return
 
+    const tokenStillNearExpiry = () => {
+      const currentExpiration = session.info.expirationDate
+      return !currentExpiration || currentExpiration - Date.now() <= PROBE_EXPIRY_LEEWAY_MS
+    }
+
     const probeOnce = async (): Promise<boolean> => {
       try {
         const response = await session.fetch(session.info.webId as string, { method: 'HEAD' })
@@ -111,12 +116,15 @@ export function useSessionTokenMaintenance() {
       }
     }
 
-    if (!(await probeOnce())) return
-    // Give the SDK's own proactive timer a chance to recover before
-    // concluding the chain is dead.
+    const firstProbeUnauthorized = await probeOnce()
+    if (!firstProbeUnauthorized && !tokenStillNearExpiry()) return
+    // Give the SDK's own proactive refresh a chance to advance expiration.
+    // The WebID profile may be public and return 200/304 even with an expired
+    // token, so the HTTP status alone cannot prove that the token chain works.
     await new Promise((resolve) => window.setTimeout(resolve, PROBE_RETRY_DELAY_MS))
     if (recoveryInProgressRef.current) return
-    if (await probeOnce()) {
+    const secondProbeUnauthorized = await probeOnce()
+    if (secondProbeUnauthorized || tokenStillNearExpiry()) {
       void recover('probe-401')
     }
   }, [recover, session, sessionRequestInProgress])

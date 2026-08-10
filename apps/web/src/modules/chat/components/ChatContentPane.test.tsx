@@ -6,15 +6,17 @@ const mockNavigate = vi.fn()
 const mockUseInboxItems = vi.fn()
 const mockSelectInboxItem = vi.fn()
 const mockSetInboxFilter = vi.fn()
-const { mockSetThreadId, mockSetComposerValue, mockFetchUpdates, mockUseChatKit } = vi.hoisted(() => {
+const { mockSetThreadId, mockSetComposerValue, mockFetchUpdates, mockRefreshThreadItems, mockUseChatKit } = vi.hoisted(() => {
   const setThreadId = vi.fn()
   const setComposerValue = vi.fn(async () => undefined)
   const fetchUpdates = vi.fn(async () => undefined)
   const sendCustomAction = vi.fn(async () => undefined)
+  const refreshThreadItems = vi.fn(async () => undefined)
   return {
     mockSetThreadId: setThreadId,
     mockSetComposerValue: setComposerValue,
     mockFetchUpdates: fetchUpdates,
+    mockRefreshThreadItems: refreshThreadItems,
     mockSendCustomAction: sendCustomAction,
     mockUseChatKit: vi.fn(() => ({
       control: {},
@@ -99,7 +101,9 @@ vi.mock('@/providers/solid-database-provider', () => ({
 }))
 
 vi.mock('../services/chatkit-local/fetch-handler', () => ({
-  createLocalChatKitFetch: () => vi.fn(),
+  createLocalChatKitFetch: () => Object.assign(vi.fn(), {
+    refreshThreadItems: mockRefreshThreadItems,
+  }),
 }))
 
 vi.mock('../store', () => ({
@@ -147,7 +151,15 @@ vi.mock('./ChatListPane', () => ({
   ChatListPane: () => <div data-testid="compact-chat-list">Compact chat list</div>,
 }))
 
-import { ChatContentPane } from './ChatContentPane'
+import { ChatContentPane, readActiveBranchSelections } from './ChatContentPane'
+
+describe('readActiveBranchSelections', () => {
+  it('restores nested JSON literals returned by the Pod object decoder', () => {
+    expect(readActiveBranchSelections({
+      active_branch_by_parent: '{"user-1":"assistant-1"}',
+    })).toEqual({ 'user-1': 'assistant-1' })
+  })
+})
 
 describe('ChatContentPane', () => {
   vi.spyOn(window.customElements, 'whenDefined').mockResolvedValue(undefined as never)
@@ -254,6 +266,27 @@ describe('ChatContentPane', () => {
         initialThread: 'thread-1',
       }),
     )
+  })
+
+  it('forces a thread transition when the selected chat changes', async () => {
+    const { rerender } = render(<ChatContentPane theme="light" />)
+    await waitFor(() => expect(mockRefreshThreadItems).toHaveBeenCalledWith('thread-1'))
+    mockSetThreadId.mockClear()
+
+    mockUseChatList.mockReturnValue({
+      data: [
+        { id: 'chat-1', title: 'Runtime Chat' },
+        { id: 'chat-2', title: 'Second Chat' },
+      ],
+      isLoading: false,
+      error: null,
+      refetch: mockChatRefetch,
+    })
+    storeState.selectedChatId = 'chat-2'
+    rerender(<ChatContentPane theme="light" />)
+
+    await waitFor(() => expect(mockSetThreadId).toHaveBeenNthCalledWith(1, null))
+    expect(mockSetThreadId).toHaveBeenNthCalledWith(2, 'thread-1')
   })
 
   it('preserves a restored thread that is temporarily absent from the navigation query', async () => {

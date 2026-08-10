@@ -108,4 +108,30 @@ describe('ChatKit P0 attachment storage', () => {
       download_url: expect.stringMatching(/^blob:/),
     })
   })
+
+  it('replaces active branch and thread singleton values in one Pod patch', async () => {
+    const authFetch = vi.fn(async () => new Response(null, { status: 205 }))
+    const store = createStore(authFetch)
+
+    await (store as any).normalizeThreadSingletons(
+      'https://pod.example/alice/.data/chat/default/index.ttl#thread-1',
+      'Thread title',
+      'active',
+      new Date('2026-08-01T00:00:00.000Z'),
+      new Date('2026-08-10T00:00:00.000Z'),
+      { 'user-1': 'assistant-2' },
+    )
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://pod.example/alice/.data/chat/default/index.ttl',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: expect.stringContaining('"{\\"user-1\\":\\"assistant-2\\"}"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON>'),
+      }),
+    )
+    const body = authFetch.mock.calls[0]?.[1]?.body as string
+    expect(body).toContain('https://undefineds.co/ns#active_branch_by_parent')
+    expect(body).toContain('http://purl.org/dc/terms/created')
+    expect(body).toContain('http://purl.org/dc/terms/modified')
+  })
 })
