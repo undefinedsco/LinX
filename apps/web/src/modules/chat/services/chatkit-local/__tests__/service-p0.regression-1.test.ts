@@ -4,6 +4,7 @@ import { LocalChatKitService } from '../service'
 function createStore(overrides: Record<string, unknown> = {}) {
   return {
     loadItem: vi.fn(),
+    loadThread: vi.fn(async (id: string) => ({ id, status: { type: 'active' }, metadata: {} })),
     saveItem: vi.fn(),
     ...overrides,
   } as any

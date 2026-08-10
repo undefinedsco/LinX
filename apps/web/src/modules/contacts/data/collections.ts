@@ -412,6 +412,7 @@ export const contactOps = {
       instructions: changes.instructions,
       provider: changes.provider,
       model: changes.model,
+      tools: changes.tools,
       metadata: changes.metadata,
       avatarUrl: changes.avatarUrl,
       updatedAt: changes.updatedAt,

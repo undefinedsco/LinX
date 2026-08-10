@@ -105,16 +105,46 @@ describe('agent-home', () => {
       updatedAt: new Date('2026-08-06T00:00:00.000Z'),
     })
 
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls.every(([target, init]) =>
       String(target) === 'https://alice.example/agents/agent-1/.meta' && init?.method === 'PATCH'
     )).toBe(true)
-    const bodies = fetchMock.mock.calls.map(([, init]) => String(init?.body))
-    expect(bodies[0]).toContain('DELETE DATA')
-    expect(bodies[0]).toContain('Previous Agent')
-    expect(bodies.slice(1).every(body => body.includes('<https://alice.example/agents/agent-1/>'))).toBe(true)
-    expect(bodies.some(body => body.includes('aiRuntimeLocation'))).toBe(true)
-    expect(bodies.some(body => body.includes('XMLSchema#json'))).toBe(true)
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body)
+    expect(body).toContain('DELETE DATA')
+    expect(body).toContain('INSERT DATA')
+    expect(body).toContain('Previous Agent')
+    expect(body).toContain('<https://alice.example/agents/agent-1/>')
+    expect(body).toContain('aiRuntimeLocation')
+    expect(body).toContain('XMLSchema#json')
+  })
+
+  it('updates provider, model, and tools atomically using their schema RDF terms', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 200 }))
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    await updateAgentHomeMetadata(db, agentResourceId('agent-1'), {
+      provider: 'openai',
+      model: 'gpt-5',
+      tools: ['web-search', 'filesystem'],
+    }, {
+      provider: 'undefineds',
+      model: 'linx-lite',
+      tools: ['web-search'],
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body)
+    expect(body).toContain('DELETE DATA')
+    expect(body).toContain('INSERT DATA')
+    expect(body).toContain('https://undefineds.co/ns#provider')
+    expect(body).toContain('https://undefineds.co/ns#model')
+    expect(body).toContain('https://undefineds.co/ns#tools')
+    expect(body).toContain('"filesystem"')
   })
 
   it('treats existing Agent Home files as initialized', async () => {

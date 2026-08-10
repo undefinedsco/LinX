@@ -32,6 +32,7 @@ import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime/chat-reconciler'
 import { normalizeClientToolCallItem } from './tool-call-protocol'
+import { MAX_ATTACHMENT_BYTES } from './attachment-content'
 
 const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
@@ -130,6 +131,69 @@ function sparqlStringLiteral(value: string): string {
     .replace(/\f/g, '\\f')
     .replace(/"/g, '\\"')
   return `"${escaped}"`
+}
+
+async function bodyToLimitedBlob(body: BodyInit, mimeType: string, signal?: AbortSignal): Promise<Blob> {
+  if (body instanceof Blob) {
+    if (body.size > MAX_ATTACHMENT_BYTES) throw new Error('Attachment exceeds the 25 MB upload limit')
+    return body
+  }
+
+  const stream = new Response(body).body
+  if (!stream) return new Blob([], { type: mimeType })
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError')
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > MAX_ATTACHMENT_BYTES) {
+        await reader.cancel('Attachment exceeds the 25 MB upload limit')
+        throw new Error('Attachment exceeds the 25 MB upload limit')
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  return new Blob(chunks.map((chunk) => new Uint8Array(chunk).buffer), { type: mimeType })
+}
+
+async function readLimitedResponseBytes(response: Response): Promise<Uint8Array> {
+  const declaredLength = Number(response.headers.get('Content-Length'))
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_ATTACHMENT_BYTES) {
+    throw new Error('Attachment exceeds the 25 MB download limit')
+  }
+  const reader = response.body?.getReader()
+  if (!reader) return new Uint8Array()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > MAX_ATTACHMENT_BYTES) {
+        await reader.cancel('Attachment exceeds the 25 MB download limit')
+        throw new Error('Attachment exceeds the 25 MB download limit')
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
 }
 
 function parseRecordMetadata(metadata: unknown): Record<string, unknown> {
@@ -885,9 +949,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     try {
       const messages = await this.selectMessagesForThread(threadId)
+      const attachmentIds = new Set(messages.flatMap((message: any) => (
+        this.attachmentIdsFromItem(messageRecordToItem(message, threadId))
+      )))
       for (const message of messages) {
         await this.deleteMessageRecord(message)
       }
+      await Promise.all([...attachmentIds].map((attachmentId) => this.deleteAttachment(attachmentId, _context)))
     } catch (err: any) {
       if (
         !err.message?.includes('404')
@@ -938,13 +1006,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         return order === 'desc' ? bTime - aTime : aTime - bTime
       })
 
-      const data = await Promise.all(messages.map(async (message: any) => (
-        this.hydrateItemAttachments(messageRecordToItem(message, threadId))
-      )))
+      const data = messages.map((message: any) => messageRecordToItem(message, threadId))
       this.threadItemsCache.set(threadId, data)
-      this.emitThreadAttachments(data)
-      this.onThreadItemsChange?.(data)
-      return this.pageThreadItems(data, after, limit, order)
+      const page = this.pageThreadItems(data, after, limit, order)
+      const hydratedPage = await Promise.all(page.data.map((item) => this.hydrateItemAttachments(item)))
+      for (const item of hydratedPage) this.upsertCachedThreadItem(threadId, item)
+      this.emitThreadAttachments(hydratedPage)
+      return { ...page, data: hydratedPage }
     } catch (error) {
       console.error('[LocalStore] Failed to load thread items:', error)
       return { data: [], has_more: false }
@@ -1011,7 +1079,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.recentlyCreatedIds.add(item.id)
     this.upsertCachedThreadItem(threadId, item)
     if (item.type === 'user_message' || (item.type === 'assistant_message' && status !== 'in_progress')) {
-      await this.updateChatSummary(chatId, messageId, content, createdAt)
+      await this.updateChatSummaryBestEffort(chatId, messageId, content, createdAt)
     }
   }
 
@@ -1032,7 +1100,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       this.upsertCachedThreadItem(threadId, item)
       if (shouldUpdateAssistantSummary(item, cachedItem, nextRecord)) {
         const chatId = await this.getThreadChatId(threadId)
-        await this.updateChatSummary(chatId, rowId, content, new Date(item.created_at * 1000))
+        await this.updateChatSummaryBestEffort(chatId, rowId, content, new Date(item.created_at * 1000))
       }
       return
     }
@@ -1045,7 +1113,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         this.upsertCachedThreadItem(threadId, item)
         if (shouldUpdateAssistantSummary(item, cachedItem, nextRecord)) {
           const chatId = await this.getThreadChatId(threadId)
-          await this.updateChatSummary(chatId, rowId, content, new Date(item.created_at * 1000))
+          await this.updateChatSummaryBestEffort(chatId, rowId, content, new Date(item.created_at * 1000))
         }
         return
       }
@@ -1060,7 +1128,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       this.upsertCachedThreadItem(threadId, item)
       if (shouldUpdateAssistantSummary(item, storedItem, nextRecord)) {
         const chatId = await this.getThreadChatId(threadId)
-        await this.updateChatSummary(chatId, requireRecordId(existing, 'Message row'), content, new Date(item.created_at * 1000))
+        await this.updateChatSummaryBestEffort(chatId, requireRecordId(existing, 'Message row'), content, new Date(item.created_at * 1000))
       }
     } else {
       await this.addThreadItem(threadId, item, _context)
@@ -1100,7 +1168,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     if (status) {
       deleteTriples.push(`<${messageIri}> <${UDFS.messageStatus}> ?oldStatus .`)
       wherePatterns.push(`OPTIONAL { <${messageIri}> <${UDFS.messageStatus}> ?oldStatus . }`)
-      insertTriples.push(`<${messageIri}> <${UDFS.messageStatus}> "${status}" .`)
+      insertTriples.push(`<${messageIri}> <${UDFS.messageStatus}> ${sparqlStringLiteral(status)} .`)
     }
 
     const sparql = `
@@ -1139,7 +1207,16 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
       return
     }
 
+    const attachmentIds = this.attachmentIdsFromItem(messageRecordToItem(message, threadId))
     await this.deleteMessageRecord(message)
+    const referencedAttachmentIds = new Set(
+      (await this.selectMessagesForThread(threadId)).flatMap((remaining: any) => (
+        this.attachmentIdsFromItem(messageRecordToItem(remaining, threadId))
+      )),
+    )
+    await Promise.all(attachmentIds
+      .filter((attachmentId) => !referencedAttachmentIds.has(attachmentId))
+      .map((attachmentId) => this.deleteAttachment(attachmentId, _context)))
     this.messageRowIdByItemId.delete(itemId)
     this.removeCachedThreadItem(threadId, itemId)
   }
@@ -1154,32 +1231,27 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
   }
 
   private rememberAttachment(attachment: Attachment): Attachment {
+    const { preview_url: _previewUrl, download_url: _downloadUrl, ...metadata } = attachment
     const remembered = {
-      ...attachment,
-      pod_url: attachment.pod_url || this.attachmentUrl(attachment.id),
+      ...metadata,
+      pod_url: this.attachmentUrl(attachment.id),
     }
     this.attachments.set(remembered.id, remembered)
     return remembered
   }
 
+  private attachmentIdsFromItem(item: ThreadItem): string[] {
+    if (!('attachments' in item) || !Array.isArray(item.attachments)) return []
+    return item.attachments
+      .map((attachment) => attachment.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+  }
+
   private async hydrateItemAttachments(item: ThreadItem): Promise<ThreadItem> {
     if (!Array.isArray((item as any).attachments) || (item as any).attachments.length === 0) return item
-
-    const attachments = await Promise.all((item as any).attachments.map(async (raw: Attachment) => {
-      const attachment = this.rememberAttachment(raw)
-
-      try {
-        const objectUrl = await this.getAttachmentObjectUrl(attachment)
-        return {
-          ...attachment,
-          ...(attachment.type === 'image' ? { preview_url: objectUrl } : {}),
-          download_url: objectUrl,
-        }
-      } catch (error) {
-        console.warn(`[LocalStore] Failed to hydrate attachment ${attachment.id}:`, error)
-        return attachment
-      }
-    }))
+    // Keep historical attachment hydration metadata-only. Binary content is
+    // fetched explicitly when the user previews or downloads one attachment.
+    const attachments = (item as any).attachments.map((raw: Attachment) => this.rememberAttachment(raw))
     return { ...item, attachments } as ThreadItem
   }
 
@@ -1247,6 +1319,21 @@ WHERE {
     }
   }
 
+  private async updateChatSummaryBestEffort(
+    chatId: string,
+    messageId: string,
+    content: string,
+    createdAt: Date,
+  ): Promise<void> {
+    try {
+      await this.updateChatSummary(chatId, messageId, content, createdAt)
+    } catch (error) {
+      // The message is already durable. A denormalized navigation summary must
+      // never make ChatKit retry the primary write and duplicate the message.
+      console.warn('[LocalStore] Chat summary projection will recover on the next durable message:', error)
+    }
+  }
+
   private async getAttachmentObjectUrl(attachment: Attachment): Promise<string> {
     const cached = this.attachmentObjectUrls.get(attachment.id)
     if (cached) return cached
@@ -1256,6 +1343,16 @@ WHERE {
     ], { type: attachment.mime_type }))
     this.attachmentObjectUrls.set(attachment.id, objectUrl)
     return objectUrl
+  }
+
+  async loadAttachmentObjectUrl(attachmentId: string): Promise<string> {
+    const attachment = await this.loadAttachment(attachmentId, {})
+    return this.getAttachmentObjectUrl(attachment)
+  }
+
+  dispose(): void {
+    for (const objectUrl of this.attachmentObjectUrls.values()) URL.revokeObjectURL(objectUrl)
+    this.attachmentObjectUrls.clear()
   }
 
   private attachmentContainerUrl(): string {
@@ -1312,10 +1409,11 @@ WHERE {
   ): Promise<Attachment> {
     const attachment = await this.loadAttachment(attachmentId, {})
     await this.ensureAttachmentContainer()
-    const blob = await new Response(body).blob()
+    const contentType = mimeType || attachment.mime_type
+    const blob = await bodyToLimitedBlob(body, contentType, signal)
     const response = await this.authFetch(this.attachmentUrl(attachmentId), {
       method: 'PUT',
-      headers: { 'Content-Type': mimeType || attachment.mime_type },
+      headers: { 'Content-Type': contentType },
       body: blob,
       signal,
     })
@@ -1348,12 +1446,11 @@ WHERE {
   }
 
   async readAttachmentBytes(attachmentId: string): Promise<Uint8Array> {
-    const attachment = this.attachments.get(attachmentId)
-    const response = await this.authFetch(attachment?.pod_url || this.attachmentUrl(attachmentId))
+    const response = await this.authFetch(this.attachmentUrl(attachmentId))
     if (!response.ok) {
       throw new Error(`Attachment download failed: ${response.status} ${response.statusText}`)
     }
-    return new Uint8Array(await response.arrayBuffer())
+    return readLimitedResponseBytes(response)
   }
 
   async deleteAttachment(attachmentId: string, _context: StoreContext): Promise<void> {

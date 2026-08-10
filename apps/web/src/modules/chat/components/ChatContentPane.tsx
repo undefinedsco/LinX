@@ -66,6 +66,7 @@ import {
 } from '../ui/SecretaryWelcome'
 import { readMessageBranchMetadata } from '../domain/message-row-adapter'
 import { cycleSibling, groupMessageSiblings, selectSiblingIndex } from '../domain/message-tree'
+import { classifyRuntimeTool } from '../domain/runtime-tool-category'
 
 export interface ChatContentPaneProps extends MicroAppPaneProps {}
 
@@ -188,20 +189,18 @@ interface RuntimeActivity {
 }
 
 function describeRuntimeTool(name: string): RuntimeActivity {
-  const normalized = name.toLowerCase()
-  if (/(search|grep|find|lookup|query)/.test(normalized)) {
-    return { label: '正在搜索相关资料', technicalName: name, tone: 'running' }
+  switch (classifyRuntimeTool(name)) {
+    case 'search':
+      return { label: '正在搜索相关资料', technicalName: name, tone: 'running' }
+    case 'read':
+      return { label: '正在读取工作区内容', technicalName: name, tone: 'running' }
+    case 'write':
+      return { label: '等待确认工作区变更', technicalName: name, tone: 'waiting' }
+    case 'execute':
+      return { label: '正在运行工作区命令', technicalName: name, tone: 'running' }
+    default:
+      return { label: '正在使用工作区工具', technicalName: name, tone: 'running' }
   }
-  if (/(read|open|list|inspect|view)/.test(normalized)) {
-    return { label: '正在读取工作区内容', technicalName: name, tone: 'running' }
-  }
-  if (/(write|edit|patch|delete|remove|move)/.test(normalized)) {
-    return { label: '等待确认工作区变更', technicalName: name, tone: 'waiting' }
-  }
-  if (/(exec|shell|bash|terminal|command)/.test(normalized)) {
-    return { label: '正在运行工作区命令', technicalName: name, tone: 'running' }
-  }
-  return { label: '正在使用工作区工具', technicalName: name, tone: 'running' }
 }
 
 function InboxActionBanner({
@@ -638,6 +637,8 @@ function ChatKitPanel({
   const [branchThreadItems, setBranchThreadItems] = useState<ThreadItem[]>([])
   const [attachmentsOpen, setAttachmentsOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
+  const [loadingAttachmentId, setLoadingAttachmentId] = useState<string | null>(null)
+  const [attachmentLoadError, setAttachmentLoadError] = useState<string | null>(null)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [reconnectStatus, setReconnectStatus] = useState<'idle' | 'syncing' | 'error'>('idle')
   const [isChatKitMounted, setIsChatKitMounted] = useState(false)
@@ -665,6 +666,10 @@ function ChatKitPanel({
     if (!db || !sessionWebId || !sessionFetch) {
       const unavailableFetch = (async () => unavailableResponse()) as unknown as LocalChatKitFetch
       unavailableFetch.refreshThreadItems = async () => undefined
+      unavailableFetch.loadAttachmentObjectUrl = async () => {
+        throw new Error('当前空间连接尚未恢复')
+      }
+      unavailableFetch.dispose = () => undefined
       return unavailableFetch
     }
     const authFetchWithRecovery: typeof sessionFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -706,6 +711,47 @@ function ChatKitPanel({
       },
     })
   }, [db, persistedActiveBranchByParent, selectedChatId, selectedThreadId, selectedThreadTitle, sessionFetch, sessionWebId])
+
+  useEffect(() => {
+    setThreadAttachments([])
+    setPreviewAttachment(null)
+    return () => localFetch.dispose?.()
+  }, [localFetch])
+
+  const loadAttachmentForAction = useCallback(async (attachment: Attachment): Promise<Attachment | null> => {
+    setLoadingAttachmentId(attachment.id)
+    setAttachmentLoadError(null)
+    try {
+      const objectUrl = await localFetch.loadAttachmentObjectUrl(attachment.id)
+      const loaded = {
+        ...attachment,
+        ...(attachment.type === 'image' ? { preview_url: objectUrl } : {}),
+        download_url: objectUrl,
+      }
+      setThreadAttachments((current) => current.map((entry) => entry.id === loaded.id ? loaded : entry))
+      return loaded
+    } catch (error) {
+      console.error('[ChatContentPane] Failed to load attachment:', error)
+      setAttachmentLoadError('附件读取失败，请重试。')
+      return null
+    } finally {
+      setLoadingAttachmentId(null)
+    }
+  }, [localFetch])
+
+  const previewStoredAttachment = useCallback(async (attachment: Attachment) => {
+    const loaded = attachment.preview_url ? attachment : await loadAttachmentForAction(attachment)
+    if (loaded) setPreviewAttachment(loaded)
+  }, [loadAttachmentForAction])
+
+  const downloadStoredAttachment = useCallback(async (attachment: Attachment) => {
+    const loaded = attachment.download_url ? attachment : await loadAttachmentForAction(attachment)
+    if (!loaded?.download_url) return
+    const anchor = document.createElement('a')
+    anchor.href = loaded.download_url
+    anchor.download = loaded.name
+    anchor.click()
+  }, [loadAttachmentForAction])
 
   useEffect(() => {
     setThreadAttachments([])
@@ -1112,29 +1158,29 @@ function ChatKitPanel({
         </Button>
       ) : null}
       {actionMessage ? (
-        <div className="absolute bottom-3 right-3 z-20">
-          <div className="flex gap-1 rounded-md border bg-background/95 p-1 shadow-sm">
-            <select aria-label="选择要操作的用户消息" className="h-7 max-w-[220px] bg-transparent px-1 text-xs" value={actionMessage.id} onChange={(event) => setActionMessageId(event.target.value)}>
+        <div className="absolute bottom-3 left-3 right-3 z-20 flex justify-end">
+          <div className="flex max-w-full gap-1 overflow-x-auto rounded-md border bg-background/95 p-1 shadow-sm">
+            <select aria-label="选择要操作的用户消息" className="h-10 min-w-0 max-w-[220px] flex-1 bg-transparent px-1 text-xs md:h-8" value={actionMessage.id} onChange={(event) => setActionMessageId(event.target.value)}>
               {userMessages.map((message, index) => <option key={message.id} value={message.id}>消息 {index + 1}：{(message.content ?? '').slice(0, 24)}</option>)}
             </select>
             {hasBranchSiblings ? (
               <>
-                <Button variant="ghost" size="icon" className="size-7" aria-label="上一个分支" title="上一个分支" onClick={() => cycleActionBranch(-1)}><ArrowLeft className="size-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="上一个分支" title="上一个分支" onClick={() => cycleActionBranch(-1)}><ArrowLeft className="size-3.5" /></Button>
                 <span className="flex min-w-12 items-center justify-center text-xs tabular-nums">{actionBranchIndex + 1}/{actionBranchGroup?.items.length}</span>
-                <Button variant="ghost" size="icon" className="size-7" aria-label="下一个分支" title="下一个分支" onClick={() => cycleActionBranch(1)}><ArrowRight className="size-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="下一个分支" title="下一个分支" onClick={() => cycleActionBranch(1)}><ArrowRight className="size-3.5" /></Button>
               </>
             ) : null}
             {hasAnswerSiblings ? (
               <>
-                <Button variant="ghost" size="icon" className="size-7" aria-label="上一个回答" title="上一个回答" onClick={() => cycleAnswerBranch(-1)}><ArrowLeft className="size-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="上一个回答" title="上一个回答" onClick={() => cycleAnswerBranch(-1)}><ArrowLeft className="size-3.5" /></Button>
                 <span className="flex min-w-16 items-center justify-center text-xs tabular-nums">回答 {answerBranchIndex + 1}/{answerBranchGroup?.items.length}</span>
-                <Button variant="ghost" size="icon" className="size-7" aria-label="下一个回答" title="下一个回答" onClick={() => cycleAnswerBranch(1)}><ArrowRight className="size-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="下一个回答" title="下一个回答" onClick={() => cycleAnswerBranch(1)}><ArrowRight className="size-3.5" /></Button>
               </>
             ) : null}
-            <Button variant="ghost" size="icon" className="size-7" aria-label="编辑消息" title="编辑消息" onClick={() => setEditingMessage({ id: actionMessage.id, text: actionMessage.content ?? '' })}>
+            <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="编辑消息" title="编辑消息" onClick={() => setEditingMessage({ id: actionMessage.id, text: actionMessage.content ?? '' })}>
               <Pencil className="size-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="size-7" aria-label="重新生成回答" title="重新生成回答" onClick={async () => {
+            <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="重新生成回答" title="重新生成回答" onClick={async () => {
               setPendingRegenerateParentId(actionMessage.id)
               try {
                 await chatkit.sendCustomAction({ type: 'message.regenerate', payload: { action: 'message.regenerate', thread_id: selectedThreadId, item_id: actionMessage.id } })
@@ -1147,10 +1193,10 @@ function ChatKitPanel({
             }}>
               <RefreshCw className="size-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="size-7" aria-label="引用消息" title="引用消息" onClick={() => void setComposerValue({ text: `> ${actionMessage.content ?? ''}\n\n` })}>
+            <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="引用消息" title="引用消息" onClick={() => void setComposerValue({ text: `> ${actionMessage.content ?? ''}\n\n` })}>
               <Quote className="size-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="size-7 text-destructive hover:text-destructive" aria-label="删除消息" title="删除消息" onClick={async () => {
+            <Button variant="ghost" size="icon" className="size-10 shrink-0 text-destructive hover:text-destructive md:size-8" aria-label="删除消息" title="删除消息" onClick={async () => {
               if (!window.confirm('确定删除上一条消息吗？')) return
               try {
                 await chatkit.sendCustomAction({ type: 'message.delete', payload: { action: 'message.delete', thread_id: selectedThreadId, item_id: actionMessage.id } })
@@ -1240,16 +1286,16 @@ function ChatKitPanel({
             <DialogTitle>会话附件</DialogTitle>
             <DialogDescription>附件保存在当前空间，可以预览、打开或下载。</DialogDescription>
           </DialogHeader>
+          {attachmentLoadError ? <p role="alert" className="text-sm text-destructive">{attachmentLoadError}</p> : null}
           <div className="grid max-h-[60vh] grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2">
             {threadAttachments.map((attachment) => {
-              const objectUrl = attachment.download_url ?? attachment.preview_url
               return (
                 <div key={attachment.id} className="overflow-hidden rounded-xl border bg-muted/20">
                   {attachment.type === 'image' && attachment.preview_url ? (
                     <button
                       type="button"
                       className="block aspect-video w-full overflow-hidden bg-muted text-left"
-                      onClick={() => setPreviewAttachment(attachment)}
+                      onClick={() => void previewStoredAttachment(attachment)}
                       aria-label={`打开图片 ${attachment.name}`}
                     >
                       <img src={attachment.preview_url} alt={attachment.name} className="size-full object-cover" />
@@ -1264,26 +1310,14 @@ function ChatKitPanel({
                       <p className="truncate text-sm font-medium">{attachment.name}</p>
                       <p className="truncate text-xs text-muted-foreground">{attachment.mime_type}</p>
                     </div>
-                    {objectUrl ? (
-                      <>
-                        {attachment.type === 'image' ? (
-                          <Button type="button" variant="ghost" size="icon" onClick={() => setPreviewAttachment(attachment)} aria-label={`打开 ${attachment.name}`}>
-                            <ExternalLink className="size-4" />
-                          </Button>
-                        ) : (
-                          <Button type="button" variant="ghost" size="icon" asChild>
-                            <a href={objectUrl} target="_blank" rel="noopener noreferrer" aria-label={`打开 ${attachment.name}`}>
-                              <ExternalLink className="size-4" />
-                            </a>
-                          </Button>
-                        )}
-                        <Button type="button" variant="ghost" size="icon" asChild>
-                          <a href={objectUrl} download={attachment.name} aria-label={`下载 ${attachment.name}`}>
-                            <Download className="size-4" />
-                          </a>
-                        </Button>
-                      </>
+                    {attachment.type === 'image' ? (
+                      <Button type="button" variant="ghost" size="icon" disabled={loadingAttachmentId === attachment.id} onClick={() => void previewStoredAttachment(attachment)} aria-label={`打开 ${attachment.name}`}>
+                        <ExternalLink className="size-4" />
+                      </Button>
                     ) : null}
+                    <Button type="button" variant="ghost" size="icon" disabled={loadingAttachmentId === attachment.id} onClick={() => void downloadStoredAttachment(attachment)} aria-label={`下载 ${attachment.name}`}>
+                      <Download className="size-4" />
+                    </Button>
                   </div>
                 </div>
               )

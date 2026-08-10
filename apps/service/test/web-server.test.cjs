@@ -20,6 +20,7 @@ function loadWebServerWithStubs(t, options = {}) {
   }
   const startCalls = []
   const runtimeSessions = options.runtimeSessions ?? []
+  const runtimeModule = options.runtimeModule
 
   global.fetch = async (url, init = {}) => {
     fetchCalls.push({ url: String(url), init })
@@ -80,7 +81,7 @@ function loadWebServerWithStubs(t, options = {}) {
 
     if (request.endsWith('/runtime-threads') || request === './runtime-threads') {
       return {
-        getRuntimeThreadsModule: () => ({
+        getRuntimeThreadsModule: () => runtimeModule ?? ({
           listSessions: () => runtimeSessions,
           getSession: () => null,
           createSession: () => {
@@ -119,6 +120,88 @@ function loadWebServerWithStubs(t, options = {}) {
 
   return { server, tmpDir, fetchCalls, startCalls }
 }
+
+test('runtime SSE replays cursor events, streams live events, and unsubscribes on close', async (t) => {
+  const replayed = {
+    type: 'assistant_delta',
+    ts: 20,
+    threadId: 'runtime-1',
+    text: 'replayed',
+  }
+  let liveListener
+  let unsubscribeCalls = 0
+  let resolveUnsubscribed
+  const unsubscribed = new Promise((resolve) => { resolveUnsubscribed = resolve })
+  const runtimeModule = {
+    listSessions: () => [],
+    getSession: (id) => id === 'runtime-1' ? { id, status: 'active' } : null,
+    getSessionEventsSince: (id, after) => {
+      assert.equal(id, 'runtime-1')
+      assert.equal(after, 10)
+      return [replayed]
+    },
+    subscribeSession: (_id, listener) => {
+      liveListener = listener
+      return () => {
+        unsubscribeCalls += 1
+        resolveUnsubscribed()
+      }
+    },
+  }
+  const { server } = loadWebServerWithStubs(t, { runtimeModule })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const chunks = []
+  const req = http.get(`${origin}/api/runtime/threads/runtime-1/events?after=10`)
+  await new Promise((resolve, reject) => {
+    req.on('response', (res) => {
+      assert.equal(res.statusCode, 200)
+      assert.match(String(res.headers['content-type']), /text\/event-stream/)
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => {
+        chunks.push(chunk)
+        const body = chunks.join('')
+        if (body.includes('replayed') && body.includes('live')) {
+          res.destroy()
+          req.destroy()
+          resolve()
+        }
+      })
+      liveListener({
+        type: 'assistant_done',
+        ts: 30,
+        threadId: 'runtime-1',
+        text: 'live',
+      })
+    })
+    req.on('error', reject)
+  })
+
+  assert.match(chunks.join(''), /id: 20\ndata: .*replayed/)
+  assert.match(chunks.join(''), /id: 30\ndata: .*live/)
+  await unsubscribed
+  assert.equal(unsubscribeCalls, 1)
+})
+
+test('runtime SSE rejects missing sessions without subscribing', async (t) => {
+  let subscriptions = 0
+  const runtimeModule = {
+    listSessions: () => [],
+    getSession: () => null,
+    subscribeSession: () => {
+      subscriptions += 1
+      return () => {}
+    },
+  }
+  const { server } = loadWebServerWithStubs(t, { runtimeModule })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/runtime/threads/missing/events')
+  assert.equal(response.status, 404)
+  assert.equal(subscriptions, 0)
+})
 
 function setupPayload(overrides = {}) {
   const tmpDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-service-pod-'))
@@ -169,6 +252,7 @@ async function requestJson(origin, pathname, options = {}) {
         try {
           resolve({
             status: res.statusCode,
+            headers: res.headers,
             body: data ? JSON.parse(data) : null,
           })
         } catch (error) {
@@ -533,7 +617,11 @@ test('server Responses proxy targets the running local xpod and preserves web se
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'ok' }] }],
     }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Encoding': 'gzip',
+        Connection: 'keep-alive',
+      },
     }),
   })
   const { listener, origin } = await listenOnRandomPort(server.app)
@@ -550,6 +638,7 @@ test('server Responses proxy targets the running local xpod and preserves web se
   })
 
   assert.equal(response.status, 200)
+  assert.equal(response.headers['content-encoding'], undefined)
   const aiCall = fetchCalls.find((call) => call.url === 'http://127.0.0.1:5737/v1/responses')
   assert.ok(aiCall)
   assert.deepEqual(JSON.parse(aiCall.init.body).tools, [{ type: 'web_search' }])

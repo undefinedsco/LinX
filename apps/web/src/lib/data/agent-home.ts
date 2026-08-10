@@ -212,16 +212,22 @@ const AGENT_UPDATE_PREDICATES: Partial<Record<keyof AgentRow, string>> = {
   instructions: 'https://undefineds.co/ns#systemMessage',
   provider: 'https://undefineds.co/ns#provider',
   model: 'https://undefineds.co/ns#model',
+  tools: 'https://undefineds.co/ns#tools',
   metadata: 'https://undefineds.co/ns#metadata',
   avatarUrl: 'http://www.w3.org/2006/vcard/ns#hasPhoto',
   updatedAt: 'http://purl.org/dc/terms/modified',
 }
 
-function formatAgentUpdateValue(field: keyof AgentRow, value: unknown): string {
-  if (field === 'metadata') return toTurtleJson(value)
-  if (field === 'updatedAt') return toTurtleDate(value as Date | string)
-  if (field === 'avatarUrl') return `<${String(value)}>`
-  return toTurtleString(String(value))
+function formatAgentUpdateValues(field: keyof AgentRow, value: unknown, provider: unknown): string[] {
+  if (field === 'tools') {
+    return Array.isArray(value) ? value.map((entry) => toTurtleString(String(entry))) : []
+  }
+  if (field === 'metadata') return [toTurtleJson(value)]
+  if (field === 'updatedAt') return [toTurtleDate(value as Date | string)]
+  if (field === 'avatarUrl') return [`<${String(value)}>`]
+  if (field === 'provider') return [`<${aiConfigProviderRef(String(value))}>`]
+  if (field === 'model') return [`<${aiConfigModelRef(String(provider ?? ''), String(value))}>`]
+  return [toTurtleString(String(value))]
 }
 
 function agentFieldValuesEqual(left: unknown, right: unknown): boolean {
@@ -246,7 +252,7 @@ export async function updateAgentHomeMetadata(
   db: SolidDatabase,
   agentId: BaseRelativeResourceId,
   changes: Partial<Pick<AgentRow,
-    'name' | 'instructions' | 'provider' | 'model' | 'metadata' | 'avatarUrl' | 'updatedAt'
+    'name' | 'instructions' | 'provider' | 'model' | 'tools' | 'metadata' | 'avatarUrl' | 'updatedAt'
   >>,
   previous: Partial<AgentRow> = {},
 ): Promise<void> {
@@ -262,25 +268,30 @@ export async function updateAgentHomeMetadata(
 
   const inserts = entries
     .filter(([, value]) => value !== null && value !== '')
-    .map(([field, value]) =>
-      `<${homeUrl}> <${AGENT_UPDATE_PREDICATES[field as keyof AgentRow]}> ${formatAgentUpdateValue(field as keyof AgentRow, value)} .`
-    )
+    .flatMap(([field, value]) => formatAgentUpdateValues(
+      field as keyof AgentRow,
+      value,
+      changes.provider ?? previous.provider,
+    ).map((object) =>
+      `<${homeUrl}> <${AGENT_UPDATE_PREDICATES[field as keyof AgentRow]}> ${object} .`
+    ))
 
   // Community Solid Server's patcher only accepts basic graph patterns in
   // WHERE (no OPTIONAL), and rejects DELETE-WHERE-only updates. The caller has
   // the collection row already, so delete its exact previous values first.
   const deletes = entries
     .filter(([field]) => previous[field as keyof AgentRow] !== undefined && previous[field as keyof AgentRow] !== '')
-    .map(([field]) => {
+    .flatMap(([field]) => {
       const key = field as keyof AgentRow
-      return `<${homeUrl}> <${AGENT_UPDATE_PREDICATES[key]}> ${formatAgentUpdateValue(key, previous[key])} .`
+      return formatAgentUpdateValues(key, previous[key], previous.provider).map((object) =>
+        `<${homeUrl}> <${AGENT_UPDATE_PREDICATES[key]}> ${object} .`
+      )
     })
-  if (deletes.length > 0) {
-    await patchPodMetadata(fetchFn, metadataUrl, `DELETE DATA { ${deletes.join(' ')} }`)
-  }
-  for (const insert of inserts) {
-    await patchPodMetadata(fetchFn, metadataUrl, `INSERT DATA { ${insert} }`)
-  }
+  const updates = [
+    deletes.length > 0 ? `DELETE DATA { ${deletes.join(' ')} }` : '',
+    inserts.length > 0 ? `INSERT DATA { ${inserts.join(' ')} }` : '',
+  ].filter(Boolean)
+  if (updates.length > 0) await patchPodMetadata(fetchFn, metadataUrl, updates.join(';\n'))
 }
 
 export async function createAgentHome(

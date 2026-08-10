@@ -41,6 +41,7 @@ const mockDatabaseRetry = vi.fn()
 const mockUseSolidDatabase = vi.fn()
 const mockClearMessageAnchor = vi.fn()
 const mockRuntimeEventHandler = { current: null as ((event: unknown) => void) | null }
+const mockRuntimeConnectionHandler = { current: null as ((state: unknown) => void) | null }
 const mockUseRuntimeSessionEvents = vi.hoisted(() => vi.fn())
 const mockSession = {
   info: { webId: 'https://alice.example/profile/card#me' as string | undefined },
@@ -144,6 +145,7 @@ vi.mock('../runtime-client', () => ({
     mockUseRuntimeSessionEvents(...args)
     const [, handler] = args
     mockRuntimeEventHandler.current = handler
+    mockRuntimeConnectionHandler.current = args[3] as ((state: unknown) => void) | null
   },
 }))
 
@@ -223,6 +225,7 @@ describe('ChatContentPane', () => {
     mockSession.info.webId = 'https://alice.example/profile/card#me'
     mockSession.fetch = vi.fn()
     mockRuntimeEventHandler.current = null
+    mockRuntimeConnectionHandler.current = null
     mockUseRuntimeSessionEvents.mockClear()
   })
 
@@ -347,6 +350,58 @@ describe('ChatContentPane', () => {
         }),
       }),
     )
+  })
+
+  it('summarizes runtime activity and connection recovery without exposing raw errors', async () => {
+    const refetch = vi.fn(async () => undefined)
+    mockIsRuntimeSessionMode.mockReturnValue(true)
+    mockUseRuntimeSession.mockReturnValue({
+      runtimeSession: {
+        id: 'runtime-1',
+        threadId: 'thread-1',
+        title: 'Runtime Chat',
+        status: 'active',
+        tool: 'codex',
+        tokenUsage: 0,
+        updatedAt: new Date().toISOString(),
+      },
+      refetch,
+      createSession: { isPending: false, mutateAsync: vi.fn() },
+      startSession: { isPending: false, mutateAsync: vi.fn() },
+      pauseSession: { isPending: false, mutateAsync: vi.fn() },
+      resumeSession: { isPending: false, mutateAsync: vi.fn() },
+      stopSession: { isPending: false, mutateAsync: vi.fn() },
+    })
+
+    render(<ChatContentPane theme="light" />)
+    expect(mockRuntimeEventHandler.current).not.toBeNull()
+
+    act(() => mockRuntimeEventHandler.current?.({
+      type: 'tool_call', ts: 1, threadId: 'runtime-1', name: 'workspace_search', requestId: 'request-1', arguments: {},
+    }))
+    expect(screen.getByText('正在搜索相关资料')).toBeInTheDocument()
+    expect(screen.getByText('workspace_search')).toBeInTheDocument()
+
+    act(() => mockRuntimeEventHandler.current?.({
+      type: 'auth_required', ts: 2, threadId: 'runtime-1', method: 'browser',
+    }))
+    expect(screen.getByText('等待完成认证后继续')).toBeInTheDocument()
+
+    act(() => mockRuntimeConnectionHandler.current?.('reconnecting'))
+    expect(screen.getByRole('status')).toHaveTextContent('运行时连接已中断，正在自动恢复')
+
+    act(() => mockRuntimeEventHandler.current?.({
+      type: 'assistant_done', ts: 3, threadId: 'runtime-1', text: 'done',
+    }))
+    expect(screen.queryByText('等待完成认证后继续')).not.toBeInTheDocument()
+
+    act(() => mockRuntimeEventHandler.current?.({
+      type: 'error', ts: 4, threadId: 'runtime-1',
+      message: 'findById requires a base-relative resource id. Use findByIri(resource, iri) for full IRIs.',
+    }))
+    expect(screen.getByText('LinX 初始化失败。请刷新页面；如果仍失败，请换一个空间重新登录。')).toBeInTheDocument()
+    expect(screen.queryByText(/findById/)).not.toBeInTheDocument()
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1))
   })
 
   it('blocks sending while offline and refreshes the active thread after reconnecting', async () => {

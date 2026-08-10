@@ -49,6 +49,7 @@ import {
   readAgentAiRuntimeLocation,
   type AgentAiRuntimeLocation,
 } from '../../agent-runtime-location'
+import { classifyRuntimeTool } from '../../domain/runtime-tool-category'
 
 function readChatIdFromThread(thread: ThreadMetadata): string | null {
   if (typeof thread.metadata?.chat_id !== 'string') {
@@ -112,20 +113,18 @@ function isWebSearchRequested(inferenceOptions: unknown): boolean {
 }
 
 function describeRuntimeToolProgress(name: string): { icon: string; text: string } {
-  const normalized = name.toLowerCase()
-  if (/(search|grep|find|lookup|query)/.test(normalized)) {
-    return { icon: 'search', text: '正在搜索相关资料…' }
+  switch (classifyRuntimeTool(name)) {
+    case 'search':
+      return { icon: 'search', text: '正在搜索相关资料…' }
+    case 'read':
+      return { icon: 'document', text: '正在读取工作区内容…' }
+    case 'write':
+      return { icon: 'write', text: '工作区变更等待确认…' }
+    case 'execute':
+      return { icon: 'square-code', text: '正在运行工作区命令…' }
+    default:
+      return { icon: 'settings-slider', text: '正在使用工作区工具…' }
   }
-  if (/(read|open|list|inspect|view)/.test(normalized)) {
-    return { icon: 'document', text: '正在读取工作区内容…' }
-  }
-  if (/(write|edit|patch|delete|remove|move)/.test(normalized)) {
-    return { icon: 'write', text: '工作区变更等待确认…' }
-  }
-  if (/(exec|shell|bash|terminal|command)/.test(normalized)) {
-    return { icon: 'square-code', text: '正在运行工作区命令…' }
-  }
-  return { icon: 'settings-slider', text: '正在使用工作区工具…' }
 }
 
 function readBranchParentId(item: ThreadItem): string | undefined {
@@ -352,6 +351,7 @@ export class LocalChatKitService {
   private authFetch: typeof fetch
   private systemPrompt: string
   private runtimeSidecar: RuntimeSidecarSink
+  private readonly attachmentModelPartCache = new Map<string, Promise<ModelContentPart[]>>()
 
   constructor(options: LocalServiceOptions) {
     this.store = options.store
@@ -1656,7 +1656,15 @@ export class LocalChatKitService {
     const conversation: ModelMessage[] = []
 
     const items = await this.store.loadThreadItems(threadId, undefined, 100, 'asc', context)
-    for (const item of items.data) {
+    const thread = await this.store.loadThread(threadId, context)
+    const activeItems = projectActiveBranchItems(items, thread.metadata?.active_branch_by_parent).data
+    const userItemIndexes = activeItems
+      .map((item, index) => item.type === 'user_message' ? index : -1)
+      .filter((index) => index >= 0)
+    const firstItemIndex = contextRound && userItemIndexes.length > contextRound
+      ? userItemIndexes[userItemIndexes.length - contextRound]
+      : 0
+    for (const item of activeItems.slice(firstItemIndex)) {
       if (item.type === 'user_message') {
         const text = extractUserMessageText((item as any).content)
         const attachmentParts = await this.buildAttachmentModelParts((item as any).attachments)
@@ -1679,29 +1687,34 @@ export class LocalChatKitService {
       }
     }
 
-    const userMessageIndexes = conversation
-      .map((message, index) => message.role === 'user' ? index : -1)
-      .filter((index) => index >= 0)
-    const firstIncludedIndex = contextRound && userMessageIndexes.length > contextRound
-      ? userMessageIndexes[userMessageIndexes.length - contextRound]
-      : 0
     return [
       { role: 'system', content: this.systemPrompt },
-      ...conversation.slice(firstIncludedIndex),
+      ...conversation,
     ]
   }
 
   private async buildAttachmentModelParts(attachments: Attachment[] | undefined): Promise<ModelContentPart[]> {
     if (!attachments?.length || !this.store.readAttachmentBytes) return []
 
-    const groups = await Promise.all(attachments.map(async (attachment) => {
-      try {
-        const bytes = await this.store.readAttachmentBytes!(attachment.id)
-        return attachmentToModelParts(attachment, bytes)
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error)
-        return [{ type: 'text', text: `[附件 ${attachment.name} 读取失败：${reason}]` } satisfies ModelContentPart]
+    const groups = await Promise.all(attachments.map((attachment) => {
+      const cached = this.attachmentModelPartCache.get(attachment.id)
+      if (cached) return cached
+      const pending = (async () => {
+        try {
+          const bytes = await this.store.readAttachmentBytes!(attachment.id)
+          return attachmentToModelParts(attachment, bytes)
+        } catch (error) {
+          this.attachmentModelPartCache.delete(attachment.id)
+          const reason = error instanceof Error ? error.message : String(error)
+          return [{ type: 'text', text: `[附件 ${attachment.name} 读取失败：${reason}]` } satisfies ModelContentPart]
+        }
+      })()
+      this.attachmentModelPartCache.set(attachment.id, pending)
+      if (this.attachmentModelPartCache.size > 16) {
+        const oldestKey = this.attachmentModelPartCache.keys().next().value
+        if (oldestKey) this.attachmentModelPartCache.delete(oldestKey)
       }
+      return pending
     }))
     return groups.flat()
   }

@@ -41,8 +41,8 @@ export function SecretaryWelcome({
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-4 py-8 sm:px-6">
         <div className="w-full max-w-3xl">
           <div className="text-center">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Bot className="h-5 w-5" aria-hidden="true" />
+            <span className="inline-flex items-center justify-center text-muted-foreground">
+              <Bot className="size-6" aria-hidden="true" />
             </span>
             <h1 id="secretary-welcome-title" className="mt-4 text-2xl font-semibold tracking-tight text-foreground">
               你好，我是 LinX 主理人

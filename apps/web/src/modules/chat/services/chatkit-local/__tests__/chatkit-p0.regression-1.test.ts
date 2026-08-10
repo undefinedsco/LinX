@@ -51,7 +51,7 @@ describe('ChatKit P0 attachment storage', () => {
     await expect(store.loadAttachment(attachment.id, {})).resolves.toEqual(uploaded)
   })
 
-  it('rehydrates a historical image from authenticated Pod bytes', async () => {
+  it('hydrates historical image metadata and downloads it only on demand', async () => {
     const authFetch = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), {
       status: 200,
       headers: { 'Content-Type': 'image/png' },
@@ -72,15 +72,49 @@ describe('ChatKit P0 attachment storage', () => {
       created_at: 1,
     })
 
+    expect(authFetch).not.toHaveBeenCalled()
+    const objectUrl = await store.loadAttachmentObjectUrl('attach-history')
     expect(authFetch).toHaveBeenCalledWith('https://pod.example/alice/.data/chat-attachments/attach-history')
+    expect(objectUrl).toMatch(/^blob:/)
     expect(item.attachments[0]).toMatchObject({
-      preview_url: expect.stringMatching(/^blob:/),
-      download_url: expect.stringMatching(/^blob:/),
+      pod_url: 'https://pod.example/alice/.data/chat-attachments/attach-history',
     })
     await expect(store.loadAttachment('attach-history', {})).resolves.toMatchObject({ pod_url: expect.stringContaining('attach-history') })
   })
 
-  it('restores persisted message attachments and gives files a download URL', async () => {
+  it('derives historical attachment URLs from the current Pod and enforces byte limits', async () => {
+    const authFetch = vi.fn(async () => new Response(null, {
+      status: 200,
+      headers: { 'Content-Length': String(25 * 1024 * 1024 + 1) },
+    }))
+    const store = createStore(authFetch)
+    const item = await (store as any).hydrateItemAttachments({
+      id: 'user-hostile',
+      thread_id: 'thread-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: 'look' }],
+      attachments: [{
+        id: 'attach-hostile',
+        type: 'file',
+        name: 'notes.txt',
+        mime_type: 'text/plain',
+        pod_url: 'https://attacker.example/private',
+      }],
+      created_at: 1,
+    })
+
+    expect(authFetch).not.toHaveBeenCalled()
+    expect(item.attachments[0].pod_url).toBe('https://pod.example/alice/.data/chat-attachments/attach-hostile')
+    await expect(store.readAttachmentBytes('attach-hostile')).rejects.toThrow('25 MB download limit')
+
+    const pending = store.createAttachment({ name: 'large.bin', mime_type: 'application/octet-stream' })
+    await expect(store.uploadAttachment(
+      pending.id,
+      new Blob([new Uint8Array(25 * 1024 * 1024 + 1)]),
+    )).rejects.toThrow('25 MB upload limit')
+  })
+
+  it('restores persisted message attachment metadata without eager download', async () => {
     const authFetch = vi.fn(async () => new Response(new TextEncoder().encode('hello'), {
       status: 200,
       headers: { 'Content-Type': 'text/plain' },
@@ -105,8 +139,59 @@ describe('ChatKit P0 attachment storage', () => {
 
     expect(item?.attachments[0]).toMatchObject({
       name: 'notes.txt',
-      download_url: expect.stringMatching(/^blob:/),
+      pod_url: 'https://pod.example/alice/.data/chat-attachments/attach-file-history',
     })
+    expect(authFetch).not.toHaveBeenCalled()
+  })
+
+  it('deletes Pod attachment bytes when their owning message is deleted', async () => {
+    const authFetch = vi.fn(async () => new Response(null, { status: 204 }))
+    const store = createStore(authFetch)
+    vi.spyOn(store as any, 'findMessageByItemId').mockResolvedValue({
+      id: 'messages.ttl#user-delete',
+      richContent: JSON.stringify({
+        id: 'user-delete',
+        thread_id: 'thread-1',
+        type: 'user_message',
+        content: [{ type: 'input_text', text: 'delete me' }],
+        attachments: [{
+          id: 'attach-delete',
+          type: 'file',
+          name: 'private.txt',
+          mime_type: 'text/plain',
+        }],
+        created_at: 1,
+      }),
+      createdAt: new Date(1000),
+    })
+    vi.spyOn(store as any, 'deleteMessageRecord').mockResolvedValue(undefined)
+    vi.spyOn(store as any, 'selectMessagesForThread').mockResolvedValue([])
+
+    await store.deleteThreadItem('thread-1', 'user-delete', {})
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://pod.example/alice/.data/chat-attachments/attach-delete',
+      { method: 'DELETE' },
+    )
+  })
+
+  it('revokes attachment object URLs when the store is disposed', async () => {
+    const authFetch = vi.fn(async () => new Response(new Uint8Array([1]), { status: 200 }))
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL')
+    const store = createStore(authFetch)
+    await (store as any).hydrateItemAttachments({
+      id: 'user-dispose',
+      thread_id: 'thread-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: 'preview' }],
+      attachments: [{ id: 'attach-dispose', type: 'image', name: 'a.png', mime_type: 'image/png' }],
+      created_at: 1,
+    })
+    const objectUrl = await store.loadAttachmentObjectUrl('attach-dispose')
+
+    store.dispose()
+
+    expect(revokeObjectURL).toHaveBeenCalledWith(objectUrl)
   })
 
   it('replaces active branch and thread singleton values in one Pod patch', async () => {

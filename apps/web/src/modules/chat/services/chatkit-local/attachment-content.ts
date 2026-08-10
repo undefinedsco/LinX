@@ -3,6 +3,10 @@ import type { Attachment } from '@/lib/vendor/xpod-chatkit'
 
 const MAX_EXTRACTED_CHARACTERS = 120_000
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+const MAX_OFFICE_ENTRIES = 512
+const MAX_OFFICE_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+const MAX_PDF_PAGES = 300
 
 export type ModelContentPart =
   | { type: 'text'; text: string }
@@ -19,7 +23,34 @@ function decodeXmlText(xml: string): string {
   return (document.documentElement.textContent ?? '').replace(/\s+/g, ' ').trim()
 }
 
+function assertSafeOfficeArchive(bytes: Uint8Array): void {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  let entries = 0
+  let totalUncompressedBytes = 0
+
+  for (let offset = 0; offset + 46 <= bytes.byteLength; offset += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) continue
+    const compressedBytes = view.getUint32(offset + 20, true)
+    const uncompressedBytes = view.getUint32(offset + 24, true)
+    const nameLength = view.getUint16(offset + 28, true)
+    const extraLength = view.getUint16(offset + 30, true)
+    const commentLength = view.getUint16(offset + 32, true)
+    if (compressedBytes === 0xffffffff || uncompressedBytes === 0xffffffff) {
+      throw new Error('Office document ZIP64 entries are not supported')
+    }
+    entries += 1
+    totalUncompressedBytes += uncompressedBytes
+    if (entries > MAX_OFFICE_ENTRIES || totalUncompressedBytes > MAX_OFFICE_UNCOMPRESSED_BYTES) {
+      throw new Error('Office document expands beyond the safe extraction limit')
+    }
+    offset += 45 + nameLength + extraLength + commentLength
+  }
+
+  if (entries === 0) throw new Error('Office document central directory is missing')
+}
+
 async function extractOfficeText(bytes: Uint8Array, mimeType: string, name: string): Promise<string> {
+  assertSafeOfficeArchive(bytes)
   const zip = await JSZip.loadAsync(bytes)
   const extension = name.toLowerCase().split('.').pop()
   let entries: string[]
@@ -60,6 +91,9 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   const pdf = await loadingTask.promise
   const pages: string[] = []
   try {
+    if (pdf.numPages > MAX_PDF_PAGES) {
+      throw new Error(`PDF has more than ${MAX_PDF_PAGES} pages`)
+    }
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber)
       const content = await page.getTextContent()
@@ -93,6 +127,9 @@ export async function attachmentToModelParts(
   attachment: Attachment,
   bytes: Uint8Array,
 ): Promise<ModelContentPart[]> {
+  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+    return [{ type: 'text', text: `[附件 ${attachment.name} 超过 25 MB，未解析]` }]
+  }
   if (attachment.mime_type.startsWith('image/')) {
     if (bytes.byteLength > MAX_IMAGE_BYTES) {
       return [{ type: 'text', text: `[图片 ${attachment.name} 超过 10 MB，未发送给视觉模型]` }]

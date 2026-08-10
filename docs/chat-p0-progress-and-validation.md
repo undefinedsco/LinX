@@ -1,7 +1,7 @@
 # Chat P0 调整进度与验收手册
 
-> 更新日期：2026-08-09  
-> 适用范围：LinX Web ChatKit 1.9 主路径、本地 Xpod、Pod 持久化  
+> 更新日期：2026-08-09
+> 适用范围：LinX Web ChatKit 1.9 主路径、本地 Xpod、Pod 持久化
 > 本文档用于后续开发交接和真实环境测试，不以“代码已存在”代替“运行时已验收”。
 
 ## 1. 目标与架构决定
@@ -51,7 +51,7 @@ Xpod
 
 - ChatKit two-phase attachment create/upload 已接入。
 - 附件二进制写入 Pod `.data/chat-attachments/` 容器。
-- 支持加载、删除、历史 hydration、object URL 预览和下载。
+- 支持加载、删除、历史 metadata hydration，以及用户点击时按需生成 object URL 预览和下载；切换会话时回收 URL，避免整页附件并发下载和内存泄漏。
 - 图片转为 vision `image_url` 内容。
 - PDF、Office（DOCX/PPTX/XLSX）和文本附件接入内容提取；不支持格式会生成明确文本提示。
 - Composer 限制为当前已有端到端处理路径的文件类型。

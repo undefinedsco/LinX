@@ -955,8 +955,20 @@ export class WebServerModule {
         })
 
         res.status(upstream.status)
+        const decodedBodyHeaders = new Set([
+          'connection',
+          'content-encoding',
+          'content-length',
+          'keep-alive',
+          'proxy-authenticate',
+          'proxy-authorization',
+          'te',
+          'trailer',
+          'transfer-encoding',
+          'upgrade',
+        ])
         upstream.headers.forEach((value, key) => {
-          if (key.toLowerCase() === 'content-length') return
+          if (decodedBodyHeaders.has(key.toLowerCase())) return
           res.setHeader(key, value)
         })
 
@@ -1006,8 +1018,20 @@ export class WebServerModule {
         })
 
         res.status(upstream.status)
+        const decodedBodyHeaders = new Set([
+          'connection',
+          'content-encoding',
+          'content-length',
+          'keep-alive',
+          'proxy-authenticate',
+          'proxy-authorization',
+          'te',
+          'trailer',
+          'transfer-encoding',
+          'upgrade',
+        ])
         upstream.headers.forEach((value, key) => {
-          if (key.toLowerCase() === 'content-length') return
+          if (decodedBodyHeaders.has(key.toLowerCase())) return
           res.setHeader(key, value)
         })
         res.end(await upstream.text())
@@ -1165,7 +1189,13 @@ export class WebServerModule {
         res.write(`id: ${event.ts}\n`)
         res.write(`data: ${JSON.stringify(event)}\n\n`)
       }
+      let replaying = true
+      const liveDuringReplay: RuntimeThreadEvent[] = []
       const unsubscribe = runtimeSessions.subscribeSession(sessionId, (event) => {
+        if (replaying) {
+          liveDuringReplay.push(event)
+          return
+        }
         writeEvent(event)
       })
 
@@ -1174,6 +1204,10 @@ export class WebServerModule {
         for (const event of runtimeSessions.getSessionEventsSince(sessionId, after)) {
           writeEvent(event)
         }
+      }
+      replaying = false
+      for (const event of liveDuringReplay.sort((a, b) => a.ts - b.ts)) {
+        writeEvent(event)
       }
 
       writeEvent({ type: 'status', ts: Date.now(), threadId: session.id, status: session.status })

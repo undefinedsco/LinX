@@ -158,11 +158,15 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
   localFetch.refreshThreadItems = async (threadId: string) => {
     await store.refreshThreadItems(threadId, {})
   }
+  localFetch.loadAttachmentObjectUrl = (attachmentId: string) => store.loadAttachmentObjectUrl(attachmentId)
+  localFetch.dispose = () => store.dispose()
   return localFetch
 }
 
 export type LocalChatKitFetch = typeof fetch & {
   refreshThreadItems: (threadId: string) => Promise<void>
+  loadAttachmentObjectUrl: (attachmentId: string) => Promise<string>
+  dispose: () => void
 }
 
 export function unavailableResponse(): Response {

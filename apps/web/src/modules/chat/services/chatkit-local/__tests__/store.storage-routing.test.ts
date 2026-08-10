@@ -182,7 +182,7 @@ describe('LocalChatKitStore storage routing', () => {
     await store.saveItem('thread-1', {
       ...originalItem,
       content: [{ type: 'output_text', text: markdown, annotations: [] }],
-      status: 'completed',
+      status: 'completed" . <https://attacker.example/s> <https://attacker.example/p> "x',
     } as any, {})
 
     const patch = String((authFetch.mock.calls[0]?.[1] as RequestInit).body)
@@ -190,6 +190,8 @@ describe('LocalChatKitStore storage routing', () => {
     expect(patch).toContain('\\\\int_0^1')
     expect(patch).toContain('C:\\\\temp\\\\report.md')
     expect(patch).toContain('\\n')
+    expect(patch).toContain('completed\\" . <https://attacker.example/s>')
+    expect(() => new Parser().parse(patch)).not.toThrow()
   })
 
   it('finds a historical item by richContent when shared RDF metadata is stale', async () => {
