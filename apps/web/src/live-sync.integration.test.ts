@@ -41,28 +41,37 @@ describe('live sync subscribe writeUpsert regression', () => {
     unsub = await (contactCollection as any).subscribeToPod(ctx.db)
 
     const id = contactResource.buildId({ id: `live-${Date.now()}` })
-    const insert = contactCollection.insert({
-      id,
-      name: 'Live Sync Contact',
-      about: ctx.webId,
-      contactType: 'solid',
-    } as any)
-    await insert.isPersisted.promise
+    const resourceUrl = new URL(ctx.db.resolveRowIri(contactResource, { id }))
+    resourceUrl.hash = ''
+    try {
+      const insert = contactCollection.insert({
+        id,
+        // This collection is a bounded, name-ordered window. Keep the fixture
+        // deterministically in the first page even when another integration
+        // file's deletes have not propagated through Xpod's index yet.
+        name: `000 Live Sync Contact ${id}`,
+        about: ctx.webId,
+        contactType: 'solid',
+      } as any)
+      await insert.isPersisted.promise
 
-    // allow the SSE round-trip (local write -> subscribe onCreate -> writeUpsert) to settle
-    await new Promise((resolve) => setTimeout(resolve, 2500))
+      // allow the SSE round-trip (local write -> subscribe onCreate -> writeUpsert) to settle
+      await new Promise((resolve) => setTimeout(resolve, 2500))
 
-    const copiesBeforeFetch = contactCollection.toArray.filter((row) => row.id === id)
-    expect(copiesBeforeFetch).toHaveLength(1)
-    expect(contactCollection.get(id)?.name).toBe('Live Sync Contact')
+      const copiesBeforeFetch = contactCollection.toArray.filter((row) => row.id === id)
+      expect(copiesBeforeFetch).toHaveLength(1)
+      expect(contactCollection.get(id)?.name).toBe(`000 Live Sync Contact ${id}`)
 
-    await contactCollection.fetch()
-    const copiesAfterFetch = contactCollection.toArray.filter((row) => row.id === id)
-    expect(copiesAfterFetch).toHaveLength(1)
+      await contactCollection.fetch()
+      const copiesAfterFetch = contactCollection.toArray.filter((row) => row.id === id)
+      expect(copiesAfterFetch).toHaveLength(1)
 
-    const remove = contactCollection.delete(id)
-    await remove.isPersisted.promise
-    await contactCollection.fetch()
-    expect(contactCollection.toArray.filter((row) => row.id === id)).toHaveLength(0)
+      const remove = contactCollection.delete(id)
+      await remove.isPersisted.promise
+      await contactCollection.fetch()
+      expect(contactCollection.toArray.filter((row) => row.id === id)).toHaveLength(0)
+    } finally {
+      await ctx.authenticatedFetch(resourceUrl, { method: 'DELETE' }).catch(() => undefined)
+    }
   })
 })

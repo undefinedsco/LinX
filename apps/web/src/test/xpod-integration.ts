@@ -1064,6 +1064,7 @@ async function createSharedLocalContext<TSchema extends Record<string, unknown>>
     authenticatedFetch: session.fetch,
     requestMetrics,
     setupMetrics,
+    sharedRuntimeConfig: config,
     stop: async () => {
       logPerf('shared context requests', summarizeRequests(requestMetrics))
       await db.disconnect().catch(() => undefined)

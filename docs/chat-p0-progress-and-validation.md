@@ -380,3 +380,14 @@ yarn workspace @linx/web tsc --noEmit
 
 - 共享模型契约已在独立 `packages/models` 仓库提交并标记 `v0.2.50`；LinX 只有在该版本推送并发布后才能把依赖从 `0.2.47` 精确升级到 `0.2.50`。当前本机 GitHub SSH 身份对 `undefinedsco/models` 没有写权限，因此这是唯一跨仓库发布门禁，不把本地 workspace 解析成功当成 CI 可安装证据。
 - 保留 ChatKit 视图层的前提下，普通未发送草稿跨整页刷新和 Mermaid renderer 仍受 SDK 无 Composer getter/change event、无 Markdown renderer hook 的边界约束；本轮没有复制 Composer 或消息渲染器来绕过这些限制。
+
+## 19. Responses 流式与 P2 工作台补充终验（2026-08-11）
+
+- 仅声明 Responses 的 provider/model 不再等待完整 JSON 后一次性显示；LinX 现在向本地 Xpod 请求 Responses SSE，并逐段投影为 ChatKit 文本增量。若兼容服务忽略 `stream` 并返回 JSON，仍保留安全 fallback。
+- Responses SSE parser 覆盖任意字节边界、CRLF/尾事件、`[DONE]`、最终 `response.content_part.done` citation 和流中错误。专项回归使用 240 段 Markdown、GFM 表格、TypeScript 代码、中文多字节字符和 13-byte 网络分片；最终文本、citation 与 Pod 完成消息完全一致。
+- Responses 流中失败会保留已经显示的部分回答并把消息保存为 `incomplete`；provider 堆栈、主机路径和内部诊断不会进入 ChatKit error 或历史正文。
+- 长会话真实 Xpod 集成测试扩大到 125 条消息，跨过默认 100 条模型历史窗口；40/40/40/5 四个 Pod-side cursor 页面顺序稳定、无重复、无遗漏，cursor 每页单调推进。可见消息仍按页水合，历史附件不会随 Thread 打开而批量下载。
+- 离线 generation outbox、并发 reconnect 单飞重放、runtime SSE `after` 游标续接和同时间戳事件去重再次通过专项测试。outbox 只保存 account/thread/item 标识与 inference options，不复制用户正文。
+- P2 组件新增 UI 回归：项目说明/记忆读取编辑、资产搜索与同一 Pod resource 复用、分享消息排除/工具详情 opt-in/撤销；与 Artifact 版本、语音、屏幕/摄像头、导出、图片生成协议等专项合计 73 项通过。
+- 本地已登录浏览器硬刷新后，当前 Thread、模型、历史、附件和 P2 入口自动恢复；项目上下文显示真实 Workspace URI，资产中心恢复 5 个 Pod 资产，分享导出显示逐条排除、Markdown、打印/PDF 和只读分享操作。刷新窗口的本地 Xpod 日志没有 4xx/5xx、credential、412 或未处理异常。
+- 最终门禁：Web 单测 375 文件、2875/2875；本地 Xpod 集成测试 16 文件、29/29；`build:check`、TypeScript、Chat lint 与 `git diff --check` 全部通过。集成测试共享 Xpod 的 fixture 清理也已改为直接删除独立测试文档，避免分页压力用例污染后续 live-sync 验证。

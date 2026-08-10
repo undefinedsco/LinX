@@ -122,6 +122,23 @@ function createSseResponse(chunks: string[]) {
   })
 }
 
+function createByteChunkedSseResponse(payload: string, chunkBytes = 17) {
+  const encoded = new TextEncoder().encode(payload)
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let offset = 0; offset < encoded.byteLength; offset += chunkBytes) {
+        controller.enqueue(encoded.slice(offset, offset + chunkBytes))
+      }
+      controller.close()
+    },
+  })
+
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  })
+}
+
 async function collectStreamEvents(result: Awaited<ReturnType<LocalChatKitService['process']>>) {
   expect(result.type).toBe('streaming')
   if (result.type !== 'streaming') {
@@ -787,6 +804,106 @@ describe('LocalChatKitService platform runtime routing', () => {
       status: 'completed',
       content: [expect.objectContaining({ text: 'Responses 普通回复' })],
     }))
+  })
+
+  it('streams a long Responses Markdown answer across arbitrary byte boundaries and merges final citations', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
+      providerCapabilities: ['responses'],
+    })
+    const sections = Array.from({ length: 240 }, (_, index) => (
+      `## Section ${index + 1}\n\n| key | value |\n| --- | --- |\n| row | 中文-${index + 1} |\n\n`
+    ))
+    sections.push('```ts\nexport const finished = true\n```\n\n[Source](https://example.com/long-report)')
+    const expectedText = sections.join('')
+    const streamPayload = [
+      'data: {"type":"response.created","response":{"id":"resp-long"}}\n\n',
+      ...sections.map((delta) => `data: ${JSON.stringify({ type: 'response.output_text.delta', delta })}\n\n`),
+      `data: ${JSON.stringify({
+        type: 'response.content_part.done',
+        part: {
+          type: 'output_text',
+          text: expectedText,
+          annotations: [{
+            type: 'url_citation',
+            url: 'https://example.com/long-report',
+            title: 'Long report',
+            end_index: expectedText.length,
+          }],
+        },
+      })}\r\n\r\n`,
+      'data: [DONE]',
+    ].join('')
+    const authFetch = vi.fn(async () => createByteChunkedSseResponse(streamPayload, 13))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+    const completed = findAssistantDone(events)?.item
+    const request = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+
+    expect(request).toMatchObject({
+      model: 'responses-only/reasoning-model',
+      stream: true,
+    })
+    expect((authFetch.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({
+      Accept: 'text/event-stream, application/json',
+    })
+    expect(events.filter((event) => (
+      event.type === 'thread.item.updated' && typeof event.update?.delta === 'string'
+    ))).toHaveLength(sections.length)
+    expect(completed?.content?.[0]).toEqual({
+      type: 'output_text',
+      text: expectedText,
+      annotations: [{
+        index: expectedText.length,
+        source: {
+          type: 'url',
+          url: 'https://example.com/long-report',
+          title: 'Long report',
+        },
+      }],
+    })
+    expect(store.saveItem).toHaveBeenCalledWith(
+      'thread-1',
+      expect.objectContaining({ status: 'completed', content: completed.content }),
+      expect.anything(),
+    )
+  })
+
+  it('ends an errored Responses stream as incomplete without exposing provider diagnostics', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
+      providerCapabilities: ['responses'],
+    })
+    const authFetch = vi.fn(async () => createByteChunkedSseResponse([
+      `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: '已生成部分。' })}\n\n`,
+      `data: ${JSON.stringify({ error: { code: 'provider_error', message: 'private stack /Users/provider/secret.ts:42' } })}\n\n`,
+      'data: [DONE]\n\n',
+    ].join(''), 7))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+    const completed = findAssistantDone(events)?.item
+
+    expect(completed).toEqual(expect.objectContaining({
+      status: 'incomplete',
+      content: [expect.objectContaining({ text: '已生成部分。' })],
+    }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({ message: '消息生成失败。请稍后重试。' }),
+    }))
+    expect(JSON.stringify(events)).not.toMatch(/private stack|\/Users|secret\.ts/iu)
   })
 
   it('routes Matrix group user messages through Matrix send without local duplicate persistence', async () => {

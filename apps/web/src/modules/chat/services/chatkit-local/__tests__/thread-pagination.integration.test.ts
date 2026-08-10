@@ -21,7 +21,7 @@ afterAll(async () => {
 }, 90_000)
 
 describe('LocalChatKitStore Pod cursor pagination', () => {
-  it('reads a long thread through stable Pod-side cursor pages', { timeout: 90_000 }, async () => {
+  it('reads a thread beyond the model-history window through stable Pod-side cursor pages', { timeout: 120_000 }, async () => {
     const { db, webId } = await getContext()
     const authFetch = db.getDialect().getAuthenticatedFetch()
     if (typeof authFetch !== 'function') throw new Error('Authenticated integration fetch is unavailable')
@@ -39,7 +39,8 @@ describe('LocalChatKitStore Pod cursor pagination', () => {
     try {
       await writer.saveThread(thread, {})
 
-      for (let index = 0; index < 25; index += 1) {
+      const messageCount = 125
+      for (let index = 0; index < messageCount; index += 1) {
         const item: ThreadItem = {
           id: `assistant-${String(index).padStart(2, '0')}`,
           thread_id: thread.id,
@@ -52,26 +53,31 @@ describe('LocalChatKitStore Pod cursor pagination', () => {
         await writer.addThreadItem(thread.id, item, {})
       }
 
-      const first = await reader.loadThreadItems(thread.id, undefined, 10, 'asc', {})
-      const second = await reader.loadThreadItems(thread.id, first.last_id, 10, 'asc', {})
-      const third = await reader.loadThreadItems(thread.id, second.last_id, 10, 'asc', {})
       const text = (item: ThreadItem) => item.type === 'assistant_message'
         ? item.content[0]?.text
         : undefined
+      const pages: ThreadItem[][] = []
+      const cursors = new Set<string>()
+      let after: string | undefined
+      let hasMore = true
+      while (hasMore) {
+        const page = await reader.loadThreadItems(thread.id, after, 40, 'asc', {})
+        pages.push(page.data)
+        hasMore = page.has_more
+        if (hasMore) {
+          expect(page.last_id).toMatch(/^linx-chat-cursor:/u)
+          expect(cursors.has(page.last_id!)).toBe(false)
+          cursors.add(page.last_id!)
+          after = page.last_id
+        }
+      }
 
-      expect(first.data.map(text)).toEqual(
-        Array.from({ length: 10 }, (_, index) => `answer ${index}`),
+      expect(pages.map((page) => page.length)).toEqual([40, 40, 40, 5])
+      const allItems = pages.flat()
+      expect(new Set(allItems.map((item) => item.id)).size).toBe(messageCount)
+      expect(allItems.map(text)).toEqual(
+        Array.from({ length: messageCount }, (_, index) => `answer ${index}`),
       )
-      expect(second.data.map(text)).toEqual(
-        Array.from({ length: 10 }, (_, index) => `answer ${index + 10}`),
-      )
-      expect(third.data.map(text)).toEqual(
-        Array.from({ length: 5 }, (_, index) => `answer ${index + 20}`),
-      )
-      expect(first.has_more).toBe(true)
-      expect(second.has_more).toBe(true)
-      expect(third.has_more).toBe(false)
-      expect(first.last_id).toMatch(/^linx-chat-cursor:/u)
     } finally {
       reader.dispose()
       writer.dispose()

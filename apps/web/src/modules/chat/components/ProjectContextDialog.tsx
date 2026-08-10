@@ -79,7 +79,7 @@ export function ProjectContextDialog(props: ProjectContextDialogProps) {
                   <h3 className="flex items-center gap-2 text-sm font-medium"><Brain className="size-4" />共享记忆</h3>
                   <p className="text-xs text-muted-foreground">仅保存你明确添加的内容。</p>
                 </div>
-                <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={context.memoryEnabled} onChange={(event) => setContext((current) => ({ ...current, memoryEnabled: event.target.checked }))} />本轮允许使用</label>
+                <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={context.memoryEnabled} onChange={(event) => setContext((current) => ({ ...current, memoryEnabled: event.target.checked }))} />启用项目记忆</label>
               </div>
               <div className="mt-3 flex gap-2">
                 <Input value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} placeholder="添加一条项目记忆" />

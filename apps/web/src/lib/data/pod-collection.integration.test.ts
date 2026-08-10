@@ -2,7 +2,6 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import { aiProviderResource, contactResource, solidSchema } from '@undefineds.co/models'
-import { deleteExactRecord } from './exact-records'
 import { createPodCollection } from './pod-collection'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 
@@ -21,21 +20,31 @@ async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>>
 
 async function cleanup() {
   if (!context) return
-  const db = context.db
-  if (!db) return
-  for (const subject of createdSubjects) {
-    try {
-      await deleteExactRecord(db as any, aiProviderResource as any, subject)
-    } catch {
-      // ignore cleanup errors
+  const pending = Array.from(new Set(
+    [...createdSubjects, ...createdContactSubjects].map((subject) => {
+      const resourceUrl = new URL(subject)
+      resourceUrl.hash = ''
+      return resourceUrl.href
+    }),
+  ))
+  const cleanupErrors: unknown[] = []
+  const workers = Array.from({ length: Math.min(8, pending.length) }, async () => {
+    while (pending.length > 0) {
+      const resourceUrl = pending.pop()
+      if (!resourceUrl) return
+      try {
+        const response = await context!.authenticatedFetch(resourceUrl, { method: 'DELETE' })
+        if (!response.ok && response.status !== 404) {
+          throw new Error(`Fixture DELETE failed with ${response.status}`)
+        }
+      } catch (error) {
+        cleanupErrors.push(error)
+      }
     }
-  }
-  for (const subject of createdContactSubjects) {
-    try {
-      await deleteExactRecord(db as any, contactResource as any, subject)
-    } catch {
-      // ignore cleanup errors
-    }
+  })
+  await Promise.all(workers)
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(cleanupErrors, 'Failed to clean Pod collection integration fixtures')
   }
 }
 

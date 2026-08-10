@@ -997,18 +997,26 @@ export class LocalChatKitService {
             icon: 'search',
             text: '正在搜索网络并整理来源…',
           } as ThreadStreamEvent
-          const result = await this.respondWithLinxWebSearch(
+          const stream = this.streamFromLinxResponses(
             platformModel ?? providerModel,
             messages,
             inferenceOptions,
             agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
             context.signal as AbortSignal | undefined,
+            true,
           )
-          fullText = result.text
-          annotations = result.annotations.length > 0
-            ? result.annotations
-            : inferMarkdownLinkAnnotations(fullText)
-          yield createAssistantTextDeltaEvent(assistantItemId, fullText)
+          for await (const chunk of stream) {
+            const normalizedChunk = coerceModelStreamChunk(chunk)
+            fullText += normalizedChunk.text
+            annotations = mergeChatKitAnnotations(annotations, normalizedChunk.annotations)
+            if (normalizedChunk.text) {
+              yield createAssistantTextDeltaEvent(assistantItemId, normalizedChunk.text)
+            }
+          }
+          if (!fullText.trim() && annotations.length === 0) {
+            throw new Error('AI provider returned an empty Responses result')
+          }
+          if (annotations.length === 0) annotations = inferMarkdownLinkAnnotations(fullText)
           assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
           assistantItem.status = 'completed'
           await this.store.saveItem(thread.id, assistantItem, context)
@@ -1053,16 +1061,24 @@ export class LocalChatKitService {
           if (!providerCapabilities.includes(AIConfigRuntimeCapability.responses)) {
             throw new ProviderCapabilityError(provider, 'Chat Completions 或 Responses API')
           }
-          const result = await this.respondWithLinxResponses(
+          const stream = this.streamFromLinxResponses(
             providerModel,
             messages,
             inferenceOptions,
             agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
             context.signal as AbortSignal | undefined,
           )
-          fullText = result.text
-          annotations = result.annotations
-          yield createAssistantTextDeltaEvent(assistantItemId, fullText)
+          for await (const chunk of stream) {
+            const normalizedChunk = coerceModelStreamChunk(chunk)
+            fullText += normalizedChunk.text
+            annotations = mergeChatKitAnnotations(annotations, normalizedChunk.annotations)
+            if (normalizedChunk.text) {
+              yield createAssistantTextDeltaEvent(assistantItemId, normalizedChunk.text)
+            }
+          }
+          if (!fullText.trim() && annotations.length === 0) {
+            throw new Error('AI provider returned an empty Responses result')
+          }
           assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
           assistantItem.status = 'completed'
           await this.store.saveItem(thread.id, assistantItem, context)
@@ -1664,40 +1680,24 @@ export class LocalChatKitService {
     yield* this.readTextOrSseStream(response)
   }
 
-  private async respondWithLinxWebSearch(
-    model: string,
-    messages: ModelMessage[],
-    inferenceOptions?: any,
-    runtimeLocation: AgentAiRuntimeLocation = DEFAULT_AGENT_AI_RUNTIME_LOCATION,
-    signal?: AbortSignal,
-  ): Promise<ModelResponse> {
-    return this.respondWithLinxResponses(
-      model,
-      messages,
-      inferenceOptions,
-      runtimeLocation,
-      signal,
-      true,
-    )
-  }
-
-  private async respondWithLinxResponses(
+  private async *streamFromLinxResponses(
     model: string,
     messages: ModelMessage[],
     inferenceOptions?: any,
     runtimeLocation: AgentAiRuntimeLocation = DEFAULT_AGENT_AI_RUNTIME_LOCATION,
     signal?: AbortSignal,
     webSearch = false,
-  ): Promise<ModelResponse> {
+  ): AsyncIterable<ModelStreamChunk> {
     const requestInit: RequestInit = {
       method: 'POST',
       headers: {
-        Accept: 'application/json',
+        Accept: 'text/event-stream, application/json',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model,
         input: messages,
+        stream: true,
         ...(webSearch
           ? { tools: [{ type: 'web_search' }], tool_choice: 'auto' }
           : {}),
@@ -1718,7 +1718,91 @@ export class LocalChatKitService {
       throw new Error(`LinX Responses error ${response.status}: ${text.slice(0, 200)}`)
     }
 
-    return parseResponsesApiResult(await response.json())
+    yield* this.readResponsesTextOrSseStream(response)
+  }
+
+  private async *readResponsesTextOrSseStream(response: Response): AsyncIterable<ModelStreamChunk> {
+    const contentType = response.headers.get('Content-Type')?.toLowerCase() ?? ''
+    if (!contentType.includes('text/event-stream') || !response.body) {
+      const result = parseResponsesApiResult(await response.json())
+      if (result.text || result.annotations.length > 0) yield result
+      return
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let streamedTextLength = 0
+
+    const parseEvent = (rawEvent: string): ModelStreamChunk | null => {
+      const payload = rawEvent
+        .split(/\r?\n/u)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n')
+      if (!payload || payload === '[DONE]') return null
+
+      let event: Record<string, any>
+      try {
+        event = JSON.parse(payload) as Record<string, any>
+      } catch {
+        throw new Error('LinX Responses stream returned malformed JSON')
+      }
+      if (event.error) {
+        const message = typeof event.error?.message === 'string'
+          ? event.error.message
+          : 'Responses provider stream failed'
+        throw new Error(`LinX Responses stream error: ${message}`)
+      }
+
+      if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
+        streamedTextLength += event.delta.length
+        return {
+          text: event.delta,
+          annotations: normalizeModelAnnotations(event.annotations, streamedTextLength),
+        }
+      }
+
+      if (event.type === 'response.content_part.done' && event.part?.type === 'output_text') {
+        const completedTextLength = typeof event.part.text === 'string'
+          ? event.part.text.length
+          : streamedTextLength
+        return {
+          text: '',
+          annotations: normalizeModelAnnotations(event.part.annotations, completedTextLength),
+        }
+      }
+
+      return null
+    }
+
+    const flushEvents = function* (): Generator<ModelStreamChunk> {
+      const events = buffer.split(/\r?\n\r?\n/u)
+      buffer = events.pop() ?? ''
+      for (const rawEvent of events) {
+        const chunk = parseEvent(rawEvent)
+        if (chunk && (chunk.text || chunk.annotations.length > 0)) yield chunk
+      }
+    }
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        yield* flushEvents()
+      }
+      buffer += decoder.decode()
+      if (buffer.trim()) {
+        const chunk = parseEvent(buffer)
+        if (chunk && (chunk.text || chunk.annotations.length > 0)) yield chunk
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => undefined)
+      throw error
+    } finally {
+      reader.releaseLock()
+    }
   }
 
   private async generateImageAttachment(
