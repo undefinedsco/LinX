@@ -151,7 +151,15 @@ vi.mock('./ChatListPane', () => ({
   ChatListPane: () => <div data-testid="compact-chat-list">Compact chat list</div>,
 }))
 
-import { ChatContentPane, readActiveBranchSelections } from './ChatContentPane'
+import { ChatContentPane, chatThreadRefsMatch, readActiveBranchSelections } from './ChatContentPane'
+
+describe('chatThreadRefsMatch', () => {
+  it('matches a selected fragment id to its resource-relative Pod row id', () => {
+    expect(chatThreadRefsMatch('chat/example/index.ttl#thread-1', 'thread-1')).toBe(true)
+    expect(chatThreadRefsMatch('chat/example/index.ttl#thread-2', 'thread-1')).toBe(false)
+    expect(chatThreadRefsMatch('chat/one/index.ttl#thread-1', 'chat/two/index.ttl#thread-1')).toBe(false)
+  })
+})
 
 describe('readActiveBranchSelections', () => {
   it('restores nested JSON literals returned by the Pod object decoder', () => {
@@ -966,7 +974,7 @@ describe('ChatContentPane', () => {
     })
     mockUseThreadList.mockReturnValue({
       data: [{
-        id: 'thread-1',
+        id: 'chat/chat-1/index.ttl#thread-1',
         title: '默认话题',
         workspace: 'https://alice.example/.data/workspaces/ws-1/',
       }],

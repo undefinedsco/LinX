@@ -37,6 +37,7 @@ import { RuntimeSidecarSink } from './runtime-sidecar'
 import { createAssistantTextDeltaEvent } from './thread-stream-events'
 import { normalizeToolCallArguments } from './tool-call-protocol'
 import {
+  inferMarkdownLinkAnnotations,
   mergeChatKitAnnotations,
   normalizeModelAnnotations,
   type ChatKitAnnotation,
@@ -851,7 +852,9 @@ export class LocalChatKitService {
             context.signal as AbortSignal | undefined,
           )
           fullText = result.text
-          annotations = result.annotations
+          annotations = result.annotations.length > 0
+            ? result.annotations
+            : inferMarkdownLinkAnnotations(fullText)
           yield createAssistantTextDeltaEvent(assistantItemId, fullText)
           assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
           assistantItem.status = 'completed'

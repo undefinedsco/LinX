@@ -99,3 +99,26 @@ export function mergeChatKitAnnotations(
   }
   return [...merged.values()].sort((left, right) => left.index - right.index)
 }
+
+/**
+ * Some OpenAI-compatible search providers return sources as Markdown links
+ * without Responses annotations. Only the explicit web-search path should
+ * use this fallback; ordinary Markdown links are not automatically citations.
+ */
+export function inferMarkdownLinkAnnotations(text: string): ChatKitAnnotation[] {
+  const annotations: ChatKitAnnotation[] = []
+  const markdownLink = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/gu
+  for (const match of text.matchAll(markdownLink)) {
+    const url = asSafeCitationUrl(match[2])
+    if (!url || match.index === undefined) continue
+    annotations.push({
+      index: match.index + match[0].length,
+      source: {
+        type: 'url',
+        url,
+        title: match[1].trim() || url,
+      },
+    })
+  }
+  return annotations
+}

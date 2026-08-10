@@ -198,8 +198,8 @@ npx playwright test chat-alignment.spec.ts --project=chromium
 - [x] timecc 上游独立服务可用性：模型服务页可读取模型；独立 provider 请求曾验证成功。
 - [x] Chat 自定义 provider 不再由浏览器直连：已统一改走登录后的 Xpod `/v1/chat/completions`，真实网络记录确认浏览器未请求 `timicc.com`，也不再携带上游 API Key。
 - [x] 普通生成运行时浏览器验收：Xpod credential-reader/DPoP 和 custom provider 生成链路已经修复并通过；搜索 citation 的真实视觉验收仍需 Responses built-in Web Search 上游，普通 Chat Completions credential 不能替代。
-- [ ] 附件新上传：ChatKit 文件选择器可打开，历史附件可恢复；macOS 文件选择器自动化未可靠选中文件，未形成可信的新上传结果。
-- [ ] 编辑分支和活动分支刷新保持：数据建模、两条读取路径投影与 Thread metadata 恢复已经补齐；完整 `1/2` 连续验收仍待浏览器终验。feedback 已确认以 `PATCH 205` 写入本地 Pod，RDF `richContent` 可恢复；ChatKit 官方 ThreadItem 协议不返回 feedback 选中态。
+- [x] 附件与多模态：本地 Xpod 已完成图片/PDF 上传、图片理解、PDF 文本消费、历史预览与打开/下载的真实浏览器验收。
+- [x] 编辑分支和活动分支刷新保持：数据建模、两条读取路径投影、Thread metadata 恢复及完整 `1/2` 连续浏览器验收均已通过。feedback 已确认以 `PATCH 205` 写入本地 Pod，RDF `richContent` 可恢复；ChatKit 官方 ThreadItem 协议不返回 feedback 选中态。
 - [x] 普通 Thread Composer 同页草稿：真实浏览器中输入草稿、切换到另一 Chat、再切回后完整恢复；当前 ChatKit API 没有公开文本读取/变化事件，因此未发送草稿跨页面刷新仍是明确边界。
 - [x] citation 数据闭环：流式 annotation 转为 ChatKit source，完整 item 写入 Pod，刷新历史可恢复；只允许 HTTP(S) 来源链接。
 - [x] runtime SSE 断线恢复：重连携带最后事件游标，Service 重放短日志，客户端去重；普通 React 重渲染不再重建订阅并重置游标。

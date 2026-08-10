@@ -535,7 +535,11 @@ describe('LocalChatKitService platform runtime routing', () => {
     const authFetch = vi.fn(async () => new Response(JSON.stringify({
       output: [{
         type: 'message',
-        content: [{ type: 'output_text', text: '搜索结果', annotations: [] }],
+        content: [{
+          type: 'output_text',
+          text: '搜索结果 [官方来源](https://example.com/search)',
+          annotations: [],
+        }],
       }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     const service = new LocalChatKitService({
@@ -555,7 +559,16 @@ describe('LocalChatKitService platform runtime routing', () => {
       expect.stringContaining('/messages'),
       expect.anything(),
     )
-    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('搜索结果')
+    expect(findAssistantDone(events)?.item?.content?.[0]).toEqual(expect.objectContaining({
+      text: '搜索结果 [官方来源](https://example.com/search)',
+      annotations: [expect.objectContaining({
+        source: expect.objectContaining({
+          type: 'url',
+          url: 'https://example.com/search',
+          title: '官方来源',
+        }),
+      })],
+    }))
   })
 
   it('uses LinX Lite search when a legacy chat has no resolvable Agent config', async () => {

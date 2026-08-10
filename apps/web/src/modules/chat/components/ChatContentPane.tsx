@@ -87,6 +87,14 @@ interface ScopedSecretaryError {
   chatId: string
 }
 
+export function chatThreadRefsMatch(left: string | null | undefined, right: string | null | undefined): boolean {
+  if (!left || !right) return false
+  if (left === right) return true
+  if (left.includes('#') && right.includes('#')) return false
+  const fragment = (value: string) => value.includes('#') ? value.slice(value.lastIndexOf('#') + 1) : value
+  return fragment(left) === fragment(right)
+}
+
 const SECRETARY_STARTER_ACTIONS: readonly SecretaryStarterAction[] = [
   { id: 'organize', label: '整理今天的工作', prompt: '帮我整理今天需要推进的工作' },
   { id: 'find', label: '查找空间中的资料', prompt: '帮我查找当前空间中的相关资料' },
@@ -1456,7 +1464,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
 
   const activeThread = useMemo(() => {
     if (!selectedThreadId) return null
-    return threads.find((thread) => thread.id === selectedThreadId) ?? null
+    return threads.find((thread) => chatThreadRefsMatch(thread.id, selectedThreadId)) ?? null
   }, [selectedThreadId, threads])
   const persistedActiveBranchByParent = useMemo(
     () => readActiveBranchSelections(activeThread?.metadata),

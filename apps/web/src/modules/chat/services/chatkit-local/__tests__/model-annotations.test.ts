@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { mergeChatKitAnnotations, normalizeModelAnnotations } from '../model-annotations'
+import {
+  inferMarkdownLinkAnnotations,
+  mergeChatKitAnnotations,
+  normalizeModelAnnotations,
+} from '../model-annotations'
 
 describe('ChatKit model annotations', () => {
   it('normalizes nested OpenAI URL citations for ChatKit', () => {
@@ -54,5 +58,21 @@ describe('ChatKit model annotations', () => {
         description: 'Primary evidence',
       },
     }])
+  })
+
+  it('infers safe Markdown sources for explicit search responses', () => {
+    const text = '查看 [OpenAI Models](https://developers.openai.com/api/docs/models)。'
+    expect(inferMarkdownLinkAnnotations(text)).toEqual([{
+      index: text.indexOf(')') + 1,
+      source: {
+        type: 'url',
+        url: 'https://developers.openai.com/api/docs/models',
+        title: 'OpenAI Models',
+      },
+    }])
+  })
+
+  it('does not infer unsafe or bare URLs as citations', () => {
+    expect(inferMarkdownLinkAnnotations('[bad](javascript:alert(1)) https://example.com')).toEqual([])
   })
 })

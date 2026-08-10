@@ -184,8 +184,8 @@ yarn workspace @linx/web tsc --noEmit
 | 普通 Thread 同页草稿 | **通过** | ChatKit 保持挂载时跨 Chat/Thread 切换可恢复 |
 | 普通 Thread 草稿跨刷新 | **ChatKit API 边界** | 官方 1.9.0 只有 `setComposerValue()`，没有文本 getter/change event；不侵入 iframe、不复制 Composer 的约束下无法可靠持久化 |
 | Mermaid | **ChatKit API 边界** | 官方消息 Markdown 没有 Mermaid renderer hook；保留 ChatKit 主路径时不接入不可见的原生 React renderer |
-| 新附件、图片理解、文档解析 | **代码完成，浏览器待补证据** | 历史附件已通过；原生文件选择器自动化和真实多模态 provider 仍需单独终验 |
-| Stop、retry、编辑分支与 active branch | **代码完成，浏览器待补证据** | 自动化与 Pod 模型已覆盖；仍需在可稳定长生成的模型上完成连续 UI 操作记录 |
+| 新附件、图片理解、文档解析 | **通过** | 本地 Xpod 完成图片/PDF 上传；图片理解、PDF 文本消费、历史预览与打开/下载均有真实浏览器证据 |
+| Stop、retry、编辑分支与 active branch | **通过** | Stop incomplete、sibling retry、编辑分支、分支切换和刷新保持均已完成连续浏览器终验 |
 
 ## 6. 后续真实浏览器验收顺序
 
@@ -351,4 +351,13 @@ yarn workspace @linx/web tsc --noEmit
 - **active branch 刷新保持**：Thread 元数据中的多值/嵌套 `active_branch_by_parent` 会归一化为一个 JSON 值；刷新后恢复编辑消息和已选回答。Thread 的 title/status/created/modified 同时按单值契约写回，避免历史重复值继续扩散。
 - **provider 路由**：ChatKit 的启动 Thread 现在先从 Pod 水合，但保留已解析的 Thread→Chat 映射；旧 parent 不再把 custom provider 错误降级为 `openai/gpt-4o-mini`。真实浏览器已通过本地 Xpod 和 custom provider 返回“编辑分支通过”。
 - **刷新与认证**：临近过期的会话即使公开 WebID 探测返回 304，也会再次确认并触发 OIDC 恢复，不再把公开资源可访问误判为凭据仍有效。
-- **最终门禁**：Chat 与 token 维护专项 46 个测试文件、349/349 通过；TypeScript、production build 和 `git diff --check` 通过。最终刷新后的浏览器日志窗口无 error/warning；仅 ChatKit CDN 的 localhost domain-verification 属于开发环境既有边界。
+- **最终门禁**：Chat 与 token 维护专项 46 个测试文件、352/352 通过；TypeScript、production build 和 `git diff --check` 通过。最终刷新后的浏览器日志窗口无应用 error/warning；仅 ChatKit CDN 的 localhost domain-verification 属于开发环境既有边界。
+
+## 17. P1 完成度复核与 Thread 关系恢复（2026-08-10）
+
+- Markdown/代码、搜索 citation 协议、工具活动渐进展示、runtime SSE 游标重放与同页分 Thread 草稿均再次对照当前实现和测试核验，未发现协议回退。
+- Responses provider 返回标准 URL annotation 时直接保留；显式联网搜索路径若只返回 Markdown 来源链接，现在会补成 ChatKit URL annotation。普通 Markdown 链接不会被误标为 citation，非 HTTP(S) 链接也会被拒绝。
+- 当前安装的 `@openai/chatkit` 1.9.0 类型定义确认：Composer 只公开 `setComposerValue()` 和 `chatkit.tool.change`，不提供文本 getter/change event；消息 Markdown 也没有 renderer hook。因此普通草稿跨页面刷新和 Mermaid 仍是保留 ChatKit 视图层时的明确 SDK 边界，不以侵入跨域 iframe或复制 Composer/消息区规避。
+- 修复了一个会影响 runtime/tool 上下文的刷新遗留：Zustand 可能保存 fragment Thread id，而 Pod collection 返回 resource-relative id。现在当前 Thread 按同一资源 fragment 匹配，刷新后 workspace 关系不会被误判为缺失。
+- 本地 Xpod 浏览器硬刷新后，`P0 Browser Pass` 自动恢复为选中状态，并继续显示“当前话题已绑定空间文件夹”和正确的 Pod workspace URI；Thread 历史、附件计数与活动分支同步恢复。
+- 2026-08-10 最终真实搜索请求已走本地 Xpod，但 `timecc` 上游返回 HTTP 502；ChatKit 正确显示“联网搜索失败”并持久化失败消息。annotation 生成、序列化和恢复由专项测试覆盖，真实成功 citation 展示仍取决于 provider 恢复，不把本次上游故障记录为前端通过。
