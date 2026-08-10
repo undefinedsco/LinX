@@ -48,7 +48,10 @@ async function waitForCondition(condition: () => boolean, timeoutMs = 5000): Pro
 }
 
 afterAll(async () => {
-  if (context?.mode !== 'local-seeded-auth') {
+  // The full integration suite reuses one seeded local runtime across files.
+  // Clean this fixture before the next file so Xpod's physical SELECT cap
+  // cannot hide rows created by otherwise independent tests.
+  if (context?.sharedRuntimeConfig || context?.mode !== 'local-seeded-auth') {
     await cleanup()
   }
   await context?.stop()
@@ -91,9 +94,11 @@ describe('pod-collection integration', () => {
       expect(collection.toArray).toHaveLength(100)
       expect(collection.window?.hasNextPage).toBe(true)
       expect(collection.window?.residentPages).toBe(1)
-      // xpod currently caps one physical SELECT response at about 51 subjects,
-      // so one logical Top-100 window is assembled from exactly two requests.
-      expect(initialRequests).toHaveLength(2)
+      // Xpod caps one physical SELECT response at about 51 subjects and
+      // rejects a composite FILTER OR cursor. The second batch is therefore
+      // assembled from bounded lexicographic branches instead of one OR query.
+      expect(initialRequests.length).toBeGreaterThanOrEqual(2)
+      expect(initialRequests.length).toBeLessThanOrEqual(4)
 
       const persistedRows = await (database as any).select().from(contactResource).execute() as any[]
       const targetRow = persistedRows.find((row) => row.name === rows[104].name)
@@ -127,7 +132,8 @@ describe('pod-collection integration', () => {
       const nextRequests = requestMetrics.slice(nextRequestStart)
 
       expect(nextPage?.length).toBeGreaterThan(0)
-      expect(nextRequests).toHaveLength(1)
+      expect(nextRequests.length).toBeGreaterThanOrEqual(1)
+      expect(nextRequests.length).toBeLessThanOrEqual(3)
       expect(collection.window?.residentPages).toBe(2)
     } finally {
       await releaseSubscription?.()

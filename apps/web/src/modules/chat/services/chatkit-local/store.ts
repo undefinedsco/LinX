@@ -27,6 +27,7 @@ import {
   type SolidDatabase,
   UDFS,
 } from '@undefineds.co/models'
+import { and, asc, desc, eq, gt, like, lt } from '@undefineds.co/drizzle-solid'
 import { requireRowResourceId } from '@/lib/data/resource-identity'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
@@ -37,7 +38,60 @@ import { MAX_ATTACHMENT_BYTES } from './attachment-content'
 const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
 const CHATKIT_ITEM_ID_METADATA_KEY = 'chatkitItemId'
+const THREAD_ITEM_CURSOR_PREFIX = 'linx-chat-cursor:'
+const MAX_CACHED_THREAD_ITEMS = 500
+const MAX_CACHED_MESSAGE_ROW_IDS = 1000
 const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
+
+interface ThreadItemCursor {
+  createdAt: Date
+  rowId: string
+  order: 'asc' | 'desc'
+}
+
+function normalizeThreadItemOrder(order: string): 'asc' | 'desc' {
+  return order === 'desc' ? 'desc' : 'asc'
+}
+
+function cursorFromMessageRow(row: Record<string, unknown>, order: string): ThreadItemCursor {
+  const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(String(row.createdAt ?? ''))
+  if (Number.isNaN(createdAt.getTime())) throw new Error('Message cursor is missing createdAt.')
+  return {
+    createdAt,
+    rowId: requireRecordId(row, 'Message cursor row'),
+    order: normalizeThreadItemOrder(order),
+  }
+}
+
+function encodeThreadItemCursor(cursor: ThreadItemCursor): string {
+  return `${THREAD_ITEM_CURSOR_PREFIX}${encodeURIComponent(JSON.stringify({
+    createdAt: cursor.createdAt.toISOString(),
+    rowId: cursor.rowId,
+    order: cursor.order,
+  }))}`
+}
+
+function decodeThreadItemCursor(value: string | undefined, order: string): ThreadItemCursor | null {
+  if (!value?.startsWith(THREAD_ITEM_CURSOR_PREFIX)) return null
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value.slice(THREAD_ITEM_CURSOR_PREFIX.length))) as {
+      createdAt?: unknown
+      rowId?: unknown
+      order?: unknown
+    }
+    const createdAt = new Date(String(parsed.createdAt ?? ''))
+    const normalizedOrder = normalizeThreadItemOrder(order)
+    if (
+      Number.isNaN(createdAt.getTime())
+      || typeof parsed.rowId !== 'string'
+      || parsed.rowId.length === 0
+      || parsed.order !== normalizedOrder
+    ) return null
+    return { createdAt, rowId: parsed.rowId, order: normalizedOrder }
+  } catch {
+    return null
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -325,7 +379,11 @@ function threadRecordToMetadata(record: any): ThreadMetadata {
     updated_at: record.updatedAt
       ? Math.floor(new Date(record.updatedAt).getTime() / 1000)
       : nowTimestamp(),
-    metadata: { chat_id: chatId, ...(extra ?? {}) },
+    metadata: {
+      chat_id: chatId,
+      ...(typeof record.workspace === 'string' && record.workspace ? { workspace: record.workspace } : {}),
+      ...(extra ?? {}),
+    },
   }
 }
 
@@ -432,6 +490,7 @@ function threadItemToMessageRecord(item: ThreadItem): {
       || typeof (item as ThreadItem & { feedback?: unknown }).feedback === 'string'
       || hasConversationMetadata
       || hasAnnotations
+      || Array.isArray((item as ThreadItem & { artifacts?: unknown }).artifacts)
     return {
       content: (item as any).content
         .filter((contentPart: any) => contentPart.type === 'output_text')
@@ -647,21 +706,147 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       : null
   }
 
-  private async selectMessagesForThread(threadId: string): Promise<any[]> {
+  private async queryMessageRowsForThread(
+    threadId: string,
+    limit: number,
+    order: string,
+    cursor?: ThreadItemCursor | null,
+  ): Promise<any[]> {
     const chatId = await this.getThreadChatId(threadId)
     const normalizedThreadId = extractThreadId(threadId) ?? threadId
     const thread = this.buildThreadUri(chatId, normalizedThreadId)
-    const messages = await withTimeout(
-      this.db.select().from(Message).where({ thread }).limit(1000).execute(),
-      POD_QUERY_TIMEOUT_MS,
-      `Timed out loading messages for thread ${threadId}`,
-    )
+    const normalizedOrder = normalizeThreadItemOrder(order)
+    const createOrderedQuery = () => {
+      let query: any = this.db.select().from(Message).where({ thread })
+      if (typeof query.orderBy === 'function') {
+        query = query.orderBy(
+          normalizedOrder === 'desc' ? desc((Message as any).createdAt) : asc((Message as any).createdAt),
+          asc((Message as any).id),
+        )
+      }
+      return query
+    }
+    const executeQuery = async (query: any, queryLimit: number): Promise<any[]> => {
+      query = query.limit(queryLimit)
+      return withTimeout<any[]>(
+        query.execute(),
+        POD_QUERY_TIMEOUT_MS,
+        `Timed out loading messages for thread ${threadId}`,
+      )
+    }
 
+    if (!cursor) {
+      return executeQuery(createOrderedQuery(), limit)
+    }
+
+    // Current local Xpod rejects a single FILTER OR composite cursor. Split it
+    // into two bounded queries: the remaining ID tie-break rows at the cursor
+    // timestamp, followed by the strict timestamp range.
+    let tieQuery = createOrderedQuery()
+    if (typeof tieQuery.whereCursor === 'function') {
+      tieQuery = tieQuery.whereCursor(and(
+        eq((Message as any).createdAt, cursor.createdAt),
+        gt((Message as any).id, cursor.rowId),
+      ))
+    }
+    const tieRows = (await executeQuery(tieQuery, limit)).filter((row) => {
+      const rowCursor = cursorFromMessageRow(row, order)
+      return rowCursor.createdAt.getTime() === cursor.createdAt.getTime()
+        && rowCursor.rowId > cursor.rowId
+    })
+    if (tieRows.length >= limit) return tieRows.slice(0, limit)
+
+    let rangeQuery = createOrderedQuery()
+    if (typeof rangeQuery.where === 'function') {
+      rangeQuery = rangeQuery.where(normalizedOrder === 'desc'
+        ? lt((Message as any).createdAt, cursor.createdAt)
+        : gt((Message as any).createdAt, cursor.createdAt))
+    }
+    const rangeRows = (await executeQuery(rangeQuery, limit - tieRows.length)).filter((row) => {
+      const rowTime = cursorFromMessageRow(row, order).createdAt.getTime()
+      return normalizedOrder === 'desc'
+        ? rowTime < cursor.createdAt.getTime()
+        : rowTime > cursor.createdAt.getTime()
+    })
+    return [...tieRows, ...rangeRows]
+  }
+
+  private async filterVisibleMessagesForThread(threadId: string, messages: any[]): Promise<any[]> {
+    const chatId = await this.getThreadChatId(threadId)
+    const normalizedThreadId = extractThreadId(threadId) ?? threadId
     return messages.filter((message: any) => (
       extractChatId(message.chat) === chatId
       && extractThreadId(message.thread) === normalizedThreadId
       && !isHiddenMatrixProtocolEvent(message)
     ))
+  }
+
+  private async selectMessagePageForThread(
+    threadId: string,
+    after: string | undefined,
+    limit: number,
+    order: string,
+  ): Promise<{ rows: any[]; hasMore: boolean }> {
+    const normalizedLimit = Math.max(1, Math.min(limit, 250))
+    let cursor = decodeThreadItemCursor(after, order)
+    if (!cursor && after) {
+      const cachedItem = this.threadItemsCache.get(threadId)?.find((item) => item.id === after)
+      const rowId = this.messageRowIdByItemId.get(after)
+      if (cachedItem && rowId) {
+        cursor = {
+          createdAt: new Date(cachedItem.created_at * 1000),
+          rowId,
+          order: normalizeThreadItemOrder(order),
+        }
+      } else {
+        const row = await this.scanMessageByItemId(threadId, after)
+        if (row) cursor = cursorFromMessageRow(row, order)
+      }
+    }
+
+    const visibleRows: any[] = []
+    const queryLimit = Math.min(250, Math.max(normalizedLimit + 1, 32))
+    let hasMoreRawRows = true
+    while (visibleRows.length < normalizedLimit && hasMoreRawRows) {
+      const rawRows = await this.queryMessageRowsForThread(threadId, queryLimit, order, cursor)
+      visibleRows.push(...await this.filterVisibleMessagesForThread(threadId, rawRows))
+      hasMoreRawRows = rawRows.length === queryLimit
+      const lastRow = rawRows[rawRows.length - 1]
+      if (!lastRow || !hasMoreRawRows) break
+      cursor = cursorFromMessageRow(lastRow, order)
+    }
+
+    return {
+      rows: visibleRows.slice(0, normalizedLimit),
+      hasMore: visibleRows.length > normalizedLimit || hasMoreRawRows,
+    }
+  }
+
+  private async selectMessagesForThread(threadId: string): Promise<any[]> {
+    const messages: any[] = []
+    let cursor: ThreadItemCursor | null = null
+    while (true) {
+      const rows = await this.queryMessageRowsForThread(threadId, 250, 'asc', cursor)
+      messages.push(...await this.filterVisibleMessagesForThread(threadId, rows))
+      if (rows.length < 250) return messages
+      const lastRow = rows[rows.length - 1]
+      if (!lastRow) return messages
+      cursor = cursorFromMessageRow(lastRow, 'asc')
+    }
+  }
+
+  private async scanMessageByItemId(threadId: string, itemId: string): Promise<Record<string, unknown> | null> {
+    let cursor: ThreadItemCursor | null = null
+    while (true) {
+      const rows = await this.queryMessageRowsForThread(threadId, 250, 'asc', cursor)
+      const visibleRows = await this.filterVisibleMessagesForThread(threadId, rows)
+      const match = visibleRows.find((message) => messageRecordMatchesItem(message, itemId)) ?? null
+      if (match) return match
+      if (rows.length < 250) return null
+      const lastRow = rows[rows.length - 1]
+      if (!lastRow) return null
+      cursor = cursorFromMessageRow(lastRow, 'asc')
+    }
   }
 
   private getCachedThreadItems(threadId: string): ThreadItem[] | null {
@@ -674,6 +859,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const index = cached.findIndex((entry) => entry.id === item.id)
     if (index === -1) {
       const next = [...cached, item]
+        .sort((left, right) => left.created_at - right.created_at)
+        .slice(-MAX_CACHED_THREAD_ITEMS)
       this.threadItemsCache.set(threadId, next)
       this.onThreadItemsChange?.([...next])
       return
@@ -681,6 +868,19 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     const next = [...cached]
     next[index] = item
+    const bounded = next
+      .sort((left, right) => left.created_at - right.created_at)
+      .slice(-MAX_CACHED_THREAD_ITEMS)
+    this.threadItemsCache.set(threadId, bounded)
+    this.onThreadItemsChange?.([...bounded])
+  }
+
+  private mergeCachedThreadItems(threadId: string, items: ThreadItem[]): void {
+    const merged = new Map((this.threadItemsCache.get(threadId) ?? []).map((item) => [item.id, item]))
+    for (const item of items) merged.set(item.id, item)
+    const next = [...merged.values()]
+      .sort((left, right) => left.created_at - right.created_at)
+      .slice(-MAX_CACHED_THREAD_ITEMS)
     this.threadItemsCache.set(threadId, next)
     this.onThreadItemsChange?.([...next])
   }
@@ -710,7 +910,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   private cacheMessageRow(itemId: string, row: Record<string, unknown>): void {
+    this.messageRowIdByItemId.delete(itemId)
     this.messageRowIdByItemId.set(itemId, requireRecordId(row, 'Message row'))
+    while (this.messageRowIdByItemId.size > MAX_CACHED_MESSAGE_ROW_IDS) {
+      const oldestItemId = this.messageRowIdByItemId.keys().next().value
+      if (typeof oldestItemId !== 'string') break
+      this.messageRowIdByItemId.delete(oldestItemId)
+    }
   }
 
   private async findMessageByItemId(threadId: string, itemId: string): Promise<Record<string, unknown> | null> {
@@ -721,8 +927,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       this.messageRowIdByItemId.delete(itemId)
     }
 
-    const messages = await this.selectMessagesForThread(threadId)
-    const row = messages.find((message: any) => messageRecordMatchesItem(message, itemId)) ?? null
+    const row = await this.scanMessageByItemId(threadId, itemId)
     if (row) {
       this.cacheMessageRow(itemId, row)
     }
@@ -731,32 +936,6 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   private resolveMessageIri(row: Record<string, unknown>): string {
     return this.resolveRowIri(Message, row)
-  }
-
-  private pageThreadItems(
-    items: ThreadItem[],
-    after: string | undefined,
-    limit: number,
-    order: string,
-  ): Page<ThreadItem> {
-    const sorted = [...items].sort((a: any, b: any) => {
-      const aTime = typeof a.created_at === 'number' ? a.created_at : 0
-      const bTime = typeof b.created_at === 'number' ? b.created_at : 0
-      return order === 'desc' ? bTime - aTime : aTime - bTime
-    })
-
-    let startIndex = 0
-    if (after) {
-      const idx = sorted.findIndex((item) => item.id === after)
-      if (idx !== -1) startIndex = idx + 1
-    }
-    const slice = sorted.slice(startIndex, startIndex + limit)
-    return {
-      data: slice,
-      has_more: startIndex + limit < sorted.length,
-      first_id: slice.length > 0 ? slice[0]?.id : undefined,
-      last_id: slice.length > 0 ? slice[slice.length - 1]?.id : undefined,
-    }
   }
 
   private async deleteMessageRecord(message: any): Promise<void> {
@@ -955,7 +1134,11 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       for (const message of messages) {
         await this.deleteMessageRecord(message)
       }
-      await Promise.all([...attachmentIds].map((attachmentId) => this.deleteAttachment(attachmentId, _context)))
+      await Promise.all([...attachmentIds].map(async (attachmentId) => {
+        if (!await this.isAttachmentReferencedElsewhere(attachmentId)) {
+          await this.deleteAttachment(attachmentId, _context)
+        }
+      }))
     } catch (err: any) {
       if (
         !err.message?.includes('404')
@@ -992,27 +1175,21 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     _context: StoreContext,
   ): Promise<Page<ThreadItem>> {
     try {
-      const cachedItems = this.getCachedThreadItems(threadId)
-      if (cachedItems) {
-        this.onThreadItemsChange?.([...cachedItems])
-        return this.pageThreadItems(cachedItems, after, limit, order)
-      }
-
-      const messages = await this.selectMessagesForThread(threadId)
-
-      messages.sort((a: any, b: any) => {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
-        return order === 'desc' ? bTime - aTime : aTime - bTime
+      const { rows, hasMore } = await this.selectMessagePageForThread(threadId, after, limit, order)
+      const data = rows.map((message: any) => {
+        const item = messageRecordToItem(message, threadId)
+        this.cacheMessageRow(item.id, message)
+        return item
       })
-
-      const data = messages.map((message: any) => messageRecordToItem(message, threadId))
-      this.threadItemsCache.set(threadId, data)
-      const page = this.pageThreadItems(data, after, limit, order)
-      const hydratedPage = await Promise.all(page.data.map((item) => this.hydrateItemAttachments(item)))
-      for (const item of hydratedPage) this.upsertCachedThreadItem(threadId, item)
+      const hydratedPage = await Promise.all(data.map((item) => this.hydrateItemAttachments(item)))
+      this.mergeCachedThreadItems(threadId, hydratedPage)
       this.emitThreadAttachments(hydratedPage)
-      return { ...page, data: hydratedPage }
+      return {
+        data: hydratedPage,
+        has_more: hasMore,
+        first_id: rows.length > 0 ? encodeThreadItemCursor(cursorFromMessageRow(rows[0], order)) : undefined,
+        last_id: rows.length > 0 ? encodeThreadItemCursor(cursorFromMessageRow(rows[rows.length - 1], order)) : undefined,
+      }
     } catch (error) {
       console.error('[LocalStore] Failed to load thread items:', error)
       return { data: [], has_more: false }
@@ -1021,7 +1198,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   async refreshThreadItems(threadId: string, context: StoreContext): Promise<void> {
     this.threadItemsCache.delete(threadId)
-    await this.loadThreadItems(threadId, undefined, 1000, 'asc', context)
+    await this.loadThreadItems(threadId, undefined, 100, 'desc', context)
   }
 
   async addThreadItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
@@ -1209,14 +1386,11 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
 
     const attachmentIds = this.attachmentIdsFromItem(messageRecordToItem(message, threadId))
     await this.deleteMessageRecord(message)
-    const referencedAttachmentIds = new Set(
-      (await this.selectMessagesForThread(threadId)).flatMap((remaining: any) => (
-        this.attachmentIdsFromItem(messageRecordToItem(remaining, threadId))
-      )),
-    )
-    await Promise.all(attachmentIds
-      .filter((attachmentId) => !referencedAttachmentIds.has(attachmentId))
-      .map((attachmentId) => this.deleteAttachment(attachmentId, _context)))
+    await Promise.all(attachmentIds.map(async (attachmentId) => {
+      if (!await this.isAttachmentReferencedElsewhere(attachmentId)) {
+        await this.deleteAttachment(attachmentId, _context)
+      }
+    }))
     this.messageRowIdByItemId.delete(itemId)
     this.removeCachedThreadItem(threadId, itemId)
   }
@@ -1245,6 +1419,30 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
     return item.attachments
       .map((attachment) => attachment.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0)
+  }
+
+  private async isAttachmentReferencedElsewhere(attachmentId: string): Promise<boolean> {
+    // ChatKit attachment ids are URL-safe. Preserve unknown ids instead of
+    // interpolating them into a Pod query or deleting without proof.
+    if (!/^[A-Za-z0-9.-]+$/u.test(attachmentId)) return true
+    try {
+      let query: any = this.db.select().from(Message)
+      if (typeof query.where === 'function') {
+        query = query.where(like((Message as any).richContent, `%${attachmentId}%`))
+      }
+      const candidates = await withTimeout<any[]>(
+        query.execute(),
+        POD_QUERY_TIMEOUT_MS,
+        `Timed out checking attachment references for ${attachmentId}`,
+      )
+      return candidates.some((message) => {
+        const candidateThreadId = extractThreadId(message.thread) ?? ''
+        return this.attachmentIdsFromItem(messageRecordToItem(message, candidateThreadId)).includes(attachmentId)
+      })
+    } catch (error) {
+      console.warn('[LocalStore] Attachment reference check failed; preserving binary:', error)
+      return true
+    }
   }
 
   private async hydrateItemAttachments(item: ThreadItem): Promise<ThreadItem> {

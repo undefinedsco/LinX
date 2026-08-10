@@ -1,8 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import type { FilesEntry } from './domain/resource/resource-model'
-import { mergeChatFileEntries, projectChatFileEntries } from './domain/list/chat-files-projection'
+import { mergeChatFileEntries, projectChatArtifactVersions, projectChatFileEntries } from './domain/list/chat-files-projection'
 
 describe('chat files projection', () => {
+  it('preserves chronological runtime artifact occurrences for the Chat artifact workspace', () => {
+    const versions = projectChatArtifactVersions([
+      {
+        id: 'message-1',
+        createdAt: '2026-06-18T10:00:00.000Z',
+        richContent: JSON.stringify({ artifacts: [{ type: 'artifact', name: 'plan.md', resourceUri: 'https://pod.example/work/plan-v1.md', contentType: 'text/markdown' }] }),
+      },
+      {
+        id: 'message-2',
+        createdAt: '2026-06-18T11:00:00.000Z',
+        richContent: JSON.stringify({ items: [{ type: 'tool', result: { artifacts: [{ type: 'artifact', name: 'plan.md', resourceUri: 'https://pod.example/work/plan-v2.md', contentType: 'text/markdown' }] } }] }),
+      },
+    ], 'https://pod.example/')
+
+    expect(versions).toEqual([
+      expect.objectContaining({ versionId: 'message-2:0', uri: 'https://pod.example/work/plan-v2.md' }),
+      expect.objectContaining({ versionId: 'message-1:0', uri: 'https://pod.example/work/plan-v1.md' }),
+    ])
+  })
   it('projects file rich content items into files entries', () => {
     const entries = projectChatFileEntries([
       {

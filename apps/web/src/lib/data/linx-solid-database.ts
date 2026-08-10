@@ -394,14 +394,20 @@ function readDialectPodUrl(db: SolidDatabase): string | null {
   return typeof podUrl === 'string' ? podUrl : null
 }
 
-// NotificationsClient is created lazily on first subscribe and reads the
-// dialect channel preference at that point, so mutating the config here is
-// enough to keep plain-HTTP pods on request/response-only traffic.
+// A plain-HTTP Pod cannot multiplex the many long-lived collection streams
+// used by LinX. Disable subscription at the database boundary so callers do
+// not instantiate NotificationsClient with an empty preference list and emit
+// one "No supported notification channels" error per collection.
 function disableStreamingNotificationChannels(db: SolidDatabase): void {
   const dialect = (db as any).getDialect?.()
   if (dialect?.config) {
     dialect.config.preferredChannels = []
   }
+  Object.defineProperty(db as object, 'subscribe', {
+    configurable: true,
+    value: undefined,
+    writable: true,
+  })
 }
 
 function normalizePodUrl(podUrl?: string | null): string | undefined {

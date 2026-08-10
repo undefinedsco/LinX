@@ -1,0 +1,146 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const shared = vi.hoisted(() => ({
+  list: vi.fn(),
+  create: vi.fn(),
+  remove: vi.fn(),
+}))
+
+vi.mock('@undefineds.co/models', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@undefineds.co/models')>(),
+  conversationShareRepository: shared,
+  removeConversationShare: shared.remove,
+}))
+
+import { createConversationShare, listConversationShares, revokeConversationShare } from './conversation-share'
+
+describe('conversation share persistence', () => {
+  const resources = new Map<string, { body: string; contentType: string }>()
+  let accessControlKind: 'acl' | 'acr' = 'acr'
+  let rejectPermissionWrite = false
+  const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    const method = init?.method ?? 'GET'
+    if (method === 'PUT') {
+      if (rejectPermissionWrite && /\.(?:acl|acr)$/u.test(url)) {
+        resources.set(url, { body: String(init?.body ?? ''), contentType: new Headers(init?.headers).get('Content-Type') ?? '' })
+        return new Response('', { status: 500 })
+      }
+      resources.set(url, { body: String(init?.body ?? ''), contentType: new Headers(init?.headers).get('Content-Type') ?? '' })
+      return new Response('', { status: 201 })
+    }
+    if (method === 'DELETE') {
+      resources.delete(url)
+      return new Response(null, { status: 204 })
+    }
+    if (method === 'HEAD') {
+      if (!resources.has(url)) return new Response('', { status: 404 })
+      return new Response(null, {
+        status: 200,
+        headers: { Link: `<${url}.${accessControlKind}>; rel="acl"` },
+      })
+    }
+    const resource = resources.get(url)
+    return resource
+      ? new Response(resource.body, { status: 200, headers: { 'Content-Type': resource.contentType } })
+      : new Response('', { status: 404 })
+  })
+
+  beforeEach(() => {
+    resources.clear()
+    accessControlKind = 'acr'
+    rejectPermissionWrite = false
+    vi.clearAllMocks()
+    shared.list.mockResolvedValue([])
+    shared.remove.mockResolvedValue({ id: 'share.ttl' })
+  })
+
+  it('discovers and writes an ACP access-control resource while keeping structured metadata', async () => {
+    const db = {} as import('@undefineds.co/models').SolidDatabase
+    shared.create.mockImplementation(async (_db: unknown, input: Record<string, unknown>) => ({
+      ...input,
+      createdAt: input.createdAt,
+    }))
+
+    const share = await createConversationShare({
+      db,
+      authFetch: authFetch as typeof fetch,
+      podBaseUrl: 'https://pod.example/',
+      ownerWebId: 'https://id.example/alice#me',
+      threadUri: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1',
+      messages: [{ id: 'u1', role: 'user', content: 'hello' }],
+      options: { title: 'Shared chat' },
+    })
+
+    expect(resources.get(share.url)?.body).toContain('hello')
+    expect(resources.get(`${share.url}.acr`)?.body).toContain('acp:agent acp:PublicAgent')
+    expect(resources.get(`${share.url}.acr`)?.body).toContain('https://id.example/alice#me')
+    expect(shared.create).toHaveBeenCalledWith(db, expect.objectContaining({
+      thread: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1',
+      resourceUrl: share.url,
+    }))
+
+    shared.list.mockResolvedValue([{
+      id: share.id,
+      thread: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1',
+      resourceUrl: share.url,
+      includeToolDetails: false,
+      excludedMessageIds: [],
+      createdAt: new Date(share.createdAt),
+    }])
+    await expect(listConversationShares({ db, threadUri: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1' })).resolves.toEqual([share])
+
+    await revokeConversationShare({ db, authFetch: authFetch as typeof fetch, share })
+    expect(resources.has(share.url)).toBe(false)
+    expect(resources.has(`${share.url}.acr`)).toBe(false)
+    expect(shared.remove).toHaveBeenCalledWith(db, share.id)
+  })
+
+  it('keeps compatibility with Pods that advertise a WAC resource', async () => {
+    accessControlKind = 'acl'
+    shared.create.mockImplementation(async (_db: unknown, input: Record<string, unknown>) => input)
+    const share = await createConversationShare({
+      db: {} as import('@undefineds.co/models').SolidDatabase,
+      authFetch: authFetch as typeof fetch,
+      podBaseUrl: 'https://pod.example/',
+      ownerWebId: 'https://id.example/alice#me',
+      threadUri: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1',
+      messages: [{ id: 'u1', role: 'user', content: 'hello' }],
+      options: { title: 'Shared chat' },
+    })
+    expect(resources.get(`${share.url}.acl`)?.body).toContain('acl:agentClass foaf:Agent')
+  })
+
+  it('removes public files if metadata persistence fails', async () => {
+    const db = {} as import('@undefineds.co/models').SolidDatabase
+    shared.create.mockRejectedValue(new Error('Pod metadata failed'))
+
+    await expect(createConversationShare({
+      db,
+      authFetch: authFetch as typeof fetch,
+      podBaseUrl: 'https://pod.example/',
+      ownerWebId: 'https://id.example/alice#me',
+      threadUri: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1',
+      messages: [{ id: 'u1', role: 'user', content: 'hello' }],
+      options: { title: 'Shared chat' },
+    })).rejects.toThrow('Pod metadata failed')
+    expect(resources.size).toBe(0)
+  })
+
+  it('removes the public file and advertised permission resource when permission creation fails', async () => {
+    rejectPermissionWrite = true
+
+    await expect(createConversationShare({
+      db: {} as import('@undefineds.co/models').SolidDatabase,
+      authFetch: authFetch as typeof fetch,
+      podBaseUrl: 'https://pod.example/',
+      ownerWebId: 'https://id.example/alice#me',
+      threadUri: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1',
+      messages: [{ id: 'u1', role: 'user', content: 'hello' }],
+      options: { title: 'Shared chat' },
+    })).rejects.toThrow('Share permission write failed with HTTP 500')
+
+    expect(resources.size).toBe(0)
+    expect(shared.create).not.toHaveBeenCalled()
+  })
+})

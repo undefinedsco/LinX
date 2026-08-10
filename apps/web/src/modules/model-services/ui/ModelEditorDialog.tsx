@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { AIConfigRuntimeCapability } from '@undefineds.co/models'
 
 export interface ModelEditorValue {
   id: string
@@ -28,9 +29,11 @@ export interface ModelEditorDialogProps {
 }
 
 const capabilityOptions = [
-  { id: 'vision', label: 'Vision', icon: ImageIcon },
-  { id: 'function_calling', label: 'Tools', icon: Box },
-  { id: 'web', label: 'Web', icon: Globe },
+  { id: AIConfigRuntimeCapability.imageInput, label: 'Vision', icon: ImageIcon },
+  { id: AIConfigRuntimeCapability.imageGeneration, label: 'Image Gen', icon: ImageIcon },
+  { id: AIConfigRuntimeCapability.imageEditing, label: 'Image Edit', icon: ImageIcon },
+  { id: AIConfigRuntimeCapability.toolCalls, label: 'Tools', icon: Box },
+  { id: AIConfigRuntimeCapability.responsesWebSearch, label: 'Web', icon: Globe },
 ] as const
 
 export function ModelEditorDialog({ open, initialValue, onOpenChange, onSave }: ModelEditorDialogProps) {

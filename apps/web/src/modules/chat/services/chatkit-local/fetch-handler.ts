@@ -10,10 +10,16 @@
  */
 
 import type { SolidDatabase } from '@undefineds.co/models'
-import type { Attachment, ThreadItem, ThreadMetadata } from '@/lib/vendor/xpod-chatkit'
+import { nowTimestamp, type Attachment, type ThreadItem, type ThreadMetadata } from '@/lib/vendor/xpod-chatkit'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
+import {
+  enqueueChatGeneration,
+  listChatGenerationOutbox,
+  markChatGenerationAttempt,
+  removeChatGeneration,
+} from './generation-outbox'
 
 export interface LocalChatKitFetchOptions {
   db: SolidDatabase
@@ -24,6 +30,7 @@ export interface LocalChatKitFetchOptions {
   onAttachmentsChange?: (attachments: Attachment[]) => void
   onStreamingChange?: (state: { active: boolean; abort?: () => void }) => void
   onThreadItemsChange?: (items: ThreadItem[]) => void
+  onOutboxChange?: (count: number) => void
   onChatSummaryChange?: (summary: {
     chatId: string
     messageId: string
@@ -42,6 +49,7 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     onAttachmentsChange,
     onStreamingChange,
     onThreadItemsChange,
+    onOutboxChange,
     onChatSummaryChange,
   } = options
   const store = new LocalChatKitStore(
@@ -53,7 +61,27 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     onChatSummaryChange,
     onThreadItemsChange,
   )
-  const service = new LocalChatKitService({ store, db, webId, authFetch })
+  const replayDeferredUserItemIds = new Set<string>()
+  const notifyOutboxChange = () => {
+    onOutboxChange?.(listChatGenerationOutbox(webId).length)
+  }
+  const service = new LocalChatKitService({
+    store,
+    db,
+    webId,
+    authFetch,
+    onGenerationDeferred: (entry) => {
+      replayDeferredUserItemIds.add(entry.userItemId)
+      enqueueChatGeneration({
+        accountScope: webId,
+        threadId: entry.threadId,
+        userItemId: entry.userItemId,
+        inferenceOptions: entry.inferenceOptions,
+      })
+      notifyOutboxChange()
+    },
+  })
+  let outboxFlushPromise: Promise<{ completed: number; pending: number }> | null = null
 
   const localFetch = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (!isAvailable()) {
@@ -158,14 +186,139 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
   localFetch.refreshThreadItems = async (threadId: string) => {
     await store.refreshThreadItems(threadId, {})
   }
+  localFetch.getOutboxSize = () => listChatGenerationOutbox(webId).length
+  const flushOutbox = async () => {
+    let completed = 0
+
+    for (const entry of listChatGenerationOutbox(webId)) {
+      markChatGenerationAttempt(webId, entry.id)
+      replayDeferredUserItemIds.delete(entry.userItemId)
+      try {
+        const result = await service.process(JSON.stringify({
+          type: 'threads.custom_action',
+          params: {
+            action: {
+              type: 'message.regenerate',
+              payload: {
+                action: 'message.regenerate',
+                thread_id: entry.threadId,
+                item_id: entry.userItemId,
+              },
+            },
+          },
+        }), {})
+
+        if (result.type === 'streaming') {
+          const decoder = new TextDecoder()
+          let payload = ''
+          for await (const chunk of result.stream()) {
+            payload += decoder.decode(chunk, { stream: true })
+          }
+          payload += decoder.decode()
+          for (const line of payload.split(/\r?\n/u)) {
+            if (!line.startsWith('data:')) continue
+            try {
+              const event = JSON.parse(line.slice(5).trim()) as { type?: string; error?: { message?: string } }
+              if (event.type === 'error') {
+                throw new Error(event.error?.message ?? 'Queued generation failed')
+              }
+            } catch (error) {
+              if (error instanceof SyntaxError) continue
+              throw error
+            }
+          }
+        }
+
+        if (replayDeferredUserItemIds.has(entry.userItemId)) break
+        removeChatGeneration(webId, entry.id)
+        completed += 1
+        notifyOutboxChange()
+      } catch (error) {
+        console.warn('[LocalChatKitFetch] Queued generation replay failed:', error)
+        break
+      }
+    }
+
+    const pending = listChatGenerationOutbox(webId).length
+    notifyOutboxChange()
+    return { completed, pending }
+  }
+  localFetch.flushOutbox = () => {
+    if (outboxFlushPromise) return outboxFlushPromise
+    outboxFlushPromise = flushOutbox().finally(() => {
+      outboxFlushPromise = null
+    })
+    return outboxFlushPromise
+  }
   localFetch.loadAttachmentObjectUrl = (attachmentId: string) => store.loadAttachmentObjectUrl(attachmentId)
+  localFetch.prepareAttachmentForReuse = async (attachment: Attachment) => {
+    await store.saveAttachment({ ...attachment, upload_descriptor: null }, {})
+    const objectUrl = await store.loadAttachmentObjectUrl(attachment.id)
+    return {
+      ...attachment,
+      upload_descriptor: null,
+      ...(attachment.type === 'image' ? { preview_url: objectUrl } : {}),
+      download_url: objectUrl,
+    }
+  }
+  localFetch.saveArtifactVersion = async (input: Parameters<LocalChatKitFetch['saveArtifactVersion']>[0]) => {
+    const sourceUrl = new URL(input.uri)
+    const sourceName = sourceUrl.pathname.split('/').pop() || input.name
+    const extensionIndex = sourceName.lastIndexOf('.')
+    const stem = extensionIndex > 0 ? sourceName.slice(0, extensionIndex) : sourceName
+    const extension = extensionIndex > 0 ? sourceName.slice(extensionIndex) : ''
+    const versionName = `${stem}.v-${Date.now()}${extension}`
+    sourceUrl.pathname = `${sourceUrl.pathname.slice(0, sourceUrl.pathname.lastIndexOf('/') + 1)}${encodeURIComponent(versionName)}`
+    const contentType = input.mimeType || 'text/plain; charset=utf-8'
+    const response = await authFetch(sourceUrl.href, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: input.content,
+    })
+    if (!response.ok) throw new Error(`Artifact version write failed with HTTP ${response.status}`)
+    const createdAt = nowTimestamp()
+    const thread = await store.loadThread(input.threadId, {})
+    const item = {
+      id: store.generateItemId('assistant_message', thread, {}),
+      thread_id: input.threadId,
+      type: 'assistant_message',
+      content: [{ type: 'output_text', text: `已将「${input.name}」保存为新版本 ${versionName}。` }],
+      status: 'completed',
+      created_at: createdAt,
+      artifacts: [{
+        type: 'artifact',
+        name: input.name,
+        fileName: input.name,
+        resourceUri: sourceUrl.href,
+        contentType,
+        fileSize: new TextEncoder().encode(input.content).byteLength,
+      }],
+    } as ThreadItem & { artifacts: unknown[] }
+    try {
+      await store.addThreadItem(input.threadId, item, {})
+    } catch (error) {
+      await authFetch(sourceUrl.href, { method: 'DELETE' }).catch(() => undefined)
+      throw error
+    }
+    return { uri: sourceUrl.href, name: versionName, createdAt }
+  }
   localFetch.dispose = () => store.dispose()
   return localFetch
 }
 
 export type LocalChatKitFetch = typeof fetch & {
   refreshThreadItems: (threadId: string) => Promise<void>
+  getOutboxSize: () => number
+  flushOutbox: () => Promise<{ completed: number; pending: number }>
   loadAttachmentObjectUrl: (attachmentId: string) => Promise<string>
+  prepareAttachmentForReuse: (attachment: Attachment) => Promise<Attachment>
+  saveArtifactVersion: (input: {
+    threadId: string
+    uri: string
+    name: string
+    mimeType?: string | null
+    content: string
+  }) => Promise<{ uri: string; name: string; createdAt: number }>
   dispose: () => void
 }
 

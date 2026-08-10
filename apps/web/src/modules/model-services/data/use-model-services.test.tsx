@@ -178,6 +178,22 @@ describe('useModelServices data persistence', () => {
     ]))
   })
 
+  it('persists explicit provider runtime capabilities in the provider resource', async () => {
+    const { result } = renderHook(() => useModelServices())
+
+    await act(async () => {
+      await result.current.updateProvider('openai', {
+        capabilities: ['chat_completions', 'responses', 'responses_web_search'],
+      })
+    })
+
+    expect([...mocks.providerRows.values()]).toEqual([
+      expect.objectContaining({
+        capabilities: ['chat_completions', 'responses', 'responses_web_search'],
+      }),
+    ])
+  })
+
   it('restores earlier provider and credential writes when later model persistence fails', async () => {
     const persistenceError = new Error('model persistence failed')
     mocks.modelInsert.mockImplementation((row: Row) => {

@@ -12,6 +12,12 @@ interface ChatMessageLike {
   richContent?: string | null
 }
 
+export interface ChatArtifactVersion extends FilesEntry {
+  versionId: string
+  messageId: string | null
+  createdAt: string | null
+}
+
 interface ChatFileItemLike {
   type?: unknown
   fileName?: unknown
@@ -195,6 +201,43 @@ export function projectChatFileEntries(messages: ChatMessageLike[], podRootUri: 
   }
 
   return Array.from(byUri.values())
+}
+
+/**
+ * Preserve every runtime artifact occurrence instead of collapsing by URI.
+ * The file resource remains authoritative; this projection supplies the
+ * chronological version rail used by Chat's artifact workspace.
+ */
+export function projectChatArtifactVersions(
+  messages: ChatMessageLike[],
+  podRootUri: string,
+): ChatArtifactVersion[] {
+  const versions: ChatArtifactVersion[] = []
+
+  for (const [messageIndex, message] of messages.entries()) {
+    const createdAt = toIsoString(message.updatedAt) ?? toIsoString(message.createdAt)
+    const messageId = typeof message.id === 'string' ? message.id : null
+    let artifactIndex = 0
+    for (const item of parseRichContentItems(message.richContent)) {
+      for (const runtimeItem of extractRuntimeFileItems(item)) {
+        const entry = createChatFileEntry(runtimeItem, message, podRootUri, 'runtime')
+        if (!entry) continue
+        versions.push({
+          ...entry,
+          versionId: `${messageId ?? `message-${messageIndex}`}:${artifactIndex}`,
+          messageId,
+          createdAt,
+        })
+        artifactIndex += 1
+      }
+    }
+  }
+
+  return versions.sort((left, right) => {
+    const modified = modifiedAtTime(right) - modifiedAtTime(left)
+    if (modified !== 0) return modified
+    return right.versionId.localeCompare(left.versionId)
+  })
 }
 
 function chatFilesMergePriority(entry: FilesEntry, chatUris: Set<string>): number {

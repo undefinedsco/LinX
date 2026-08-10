@@ -24,6 +24,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { AIConfigRuntimeCapability } from '@undefineds.co/models'
 import type { ModelListProjection } from '../domain/model-services-projection'
 
 export interface ModelServicesProviderView {
@@ -38,6 +39,7 @@ export interface ModelServicesProviderView {
   enabled: boolean
   modelCount: number
   models: ModelListProjection[]
+  capabilities: string[]
 }
 
 export interface ModelServicesDetailViewProps {
@@ -53,6 +55,7 @@ export interface ModelServicesDetailViewProps {
   verificationRequiresApiKey: boolean
   onApiKeyChange: (value: string) => void
   onBaseUrlChange: (value: string) => void
+  onCapabilityChange: (capability: string, enabled: boolean) => Promise<void>
   onSaveConnection: () => Promise<void>
   onToggleKeyVisibility: () => void
   onToggleEnable: (enabled: boolean) => Promise<void>
@@ -63,6 +66,44 @@ export interface ModelServicesDetailViewProps {
   onDeleteModel: (modelId: string) => Promise<void>
   onCopyModelId: (modelId: string) => Promise<void>
 }
+
+const RUNTIME_CAPABILITIES = [
+  {
+    id: AIConfigRuntimeCapability.chatCompletions,
+    label: 'Chat Completions',
+    description: '使用 OpenAI-compatible /chat/completions 生成普通回复。',
+  },
+  {
+    id: AIConfigRuntimeCapability.responses,
+    label: 'Responses API',
+    description: '允许普通请求使用 /responses；联网搜索依赖此能力。',
+  },
+  {
+    id: AIConfigRuntimeCapability.responsesWebSearch,
+    label: 'Responses Web Search',
+    description: '允许向 /responses 发送原生 web_search 工具。',
+  },
+  {
+    id: AIConfigRuntimeCapability.imageInput,
+    label: '图片输入',
+    description: '模型和上游均可接收图片内容。',
+  },
+  {
+    id: AIConfigRuntimeCapability.imageGeneration,
+    label: '图片生成',
+    description: '允许向 OpenAI-compatible /images/generations 发送生成请求。',
+  },
+  {
+    id: AIConfigRuntimeCapability.imageEditing,
+    label: '图片编辑',
+    description: '允许向 OpenAI-compatible /images/edits 发送已有图片并生成修改版本。',
+  },
+  {
+    id: AIConfigRuntimeCapability.toolCalls,
+    label: '工具调用',
+    description: '模型和上游均支持结构化工具调用。',
+  },
+] as const
 
 function CapabilityIcon({ type }: { type: string }) {
   const capability = {
@@ -102,6 +143,7 @@ export function ModelServicesDetailView({
   verificationRequiresApiKey,
   onApiKeyChange,
   onBaseUrlChange,
+  onCapabilityChange,
   onSaveConnection,
   onToggleKeyVisibility,
   onToggleEnable,
@@ -268,6 +310,40 @@ export function ModelServicesDetailView({
                         {(localBaseUrl || provider.defaultBaseUrl || '').replace(/\/$/, '')}/chat/completions
                       </p>
                     </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-sm font-medium">运行时能力</Label>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        仅开启上游明确支持的协议；路由会在请求前校验这些声明。
+                      </p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {RUNTIME_CAPABILITIES.map((capability) => {
+                        const checked = (provider.capabilities ?? []).includes(capability.id)
+                        return (
+                          <div
+                            key={capability.id}
+                            className="flex min-h-16 items-center justify-between gap-4 rounded-lg border border-border/50 bg-muted/10 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{capability.label}</p>
+                              <p className="mt-0.5 text-xs leading-4 text-muted-foreground">{capability.description}</p>
+                            </div>
+                            <Switch
+                              checked={checked}
+                              disabled={isPlatformProvider}
+                              onCheckedChange={(enabled) => void onCapabilityChange(capability.id, enabled)}
+                              aria-label={`${checked ? '关闭' : '开启'} ${capability.label}`}
+                            />
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {isPlatformProvider ? (
+                      <p className="text-xs text-muted-foreground">平台能力由 LinX 固定维护，无需手动配置。</p>
+                    ) : null}
                   </div>
                 </div>
               </div>

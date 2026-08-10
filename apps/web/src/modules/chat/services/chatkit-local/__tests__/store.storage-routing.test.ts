@@ -3,6 +3,88 @@ import { Parser } from 'sparqljs'
 import { LocalChatKitStore } from '../store'
 
 describe('LocalChatKitStore storage routing', () => {
+  it('pushes message order, look-ahead limit and opaque cursors into Pod queries', async () => {
+    const threadRef = 'https://node-0000.undefineds.co/alice/.data/index.ttl#thread-1'
+    const chatRef = 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this'
+    const rows = [1, 2, 3].map((index) => ({
+      id: `chat/default/1970/01/01/messages.ttl#row-${index}`,
+      chat: chatRef,
+      thread: threadRef,
+      role: 'user',
+      content: `message ${index}`,
+      richContent: JSON.stringify({
+        id: `user-${index}`,
+        thread_id: 'thread-1',
+        type: 'user_message',
+        content: [{ type: 'input_text', text: `message ${index}` }],
+        created_at: index,
+      }),
+      metadata: { chatkitItemId: `user-${index}` },
+      status: 'completed',
+      createdAt: new Date(index * 1000),
+    }))
+    const limit = vi.fn().mockReturnThis()
+    const orderBy = vi.fn().mockReturnThis()
+    const whereCursor = vi.fn().mockReturnThis()
+    let executeCount = 0
+    const execute = vi.fn(async () => {
+      executeCount += 1
+      return executeCount === 1 ? rows : rows.slice(2)
+    })
+    const query = { where: vi.fn().mockReturnThis(), orderBy, whereCursor, limit, execute }
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'https://node-0000.undefineds.co/alice/' }),
+      select: vi.fn(() => ({ from: vi.fn(() => query) })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      vi.fn() as any,
+      {
+        id: 'thread-1',
+        status: { type: 'active' },
+        created_at: 1,
+        updated_at: 1,
+        metadata: { chat_id: 'default' },
+      },
+    )
+
+    const first = await store.loadThreadItems('thread-1', undefined, 2, 'asc', {})
+    const second = await store.loadThreadItems('thread-1', first.last_id, 2, 'asc', {})
+
+    expect(first.data.map((item) => item.id)).toEqual(['user-1', 'user-2'])
+    expect(first.has_more).toBe(true)
+    expect(first.last_id).toMatch(/^linx-chat-cursor:/u)
+    expect(second.data.map((item) => item.id)).toEqual(['user-3'])
+    expect(second.has_more).toBe(false)
+    expect(orderBy).toHaveBeenCalled()
+    expect(whereCursor).toHaveBeenCalledOnce()
+    expect(limit).toHaveBeenNthCalledWith(1, 32)
+    expect(limit).not.toHaveBeenCalledWith(1000)
+  })
+
+  it('keeps only a bounded recent message working set in memory', () => {
+    const store = new LocalChatKitStore(
+      { getDialect: () => ({ getPodUrl: () => 'https://node-0000.undefineds.co/alice/' }) } as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      vi.fn() as any,
+    )
+    const items = Array.from({ length: 620 }, (_, index) => ({
+      id: `message-${index}`,
+      thread_id: 'thread-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: String(index) }],
+      created_at: index,
+    }))
+
+    ;(store as any).mergeCachedThreadItems('thread-1', items)
+
+    const cached = (store as any).threadItemsCache.get('thread-1')
+    expect(cached).toHaveLength(500)
+    expect(cached[0]?.id).toBe('message-120')
+    expect(cached[499]?.id).toBe('message-619')
+  })
+
   it('persists feedback without moving the conversation activity timestamp', async () => {
     const storedItem = {
       id: 'assistant-1',

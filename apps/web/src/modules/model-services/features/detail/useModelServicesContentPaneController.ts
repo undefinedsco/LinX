@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { AIConfigRuntimeCapability } from '@undefineds.co/models'
 import { useToast } from '@/components/ui/use-toast'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { useModelServicesStore } from '../../app/store'
@@ -141,6 +142,38 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
     }
   }
 
+  const changeCapability = async (capability: string, enabled: boolean) => {
+    if (!provider || provider.id === 'undefineds') return
+    const next = new Set(provider.capabilities)
+    if (enabled) next.add(capability)
+    else next.delete(capability)
+
+    if (capability === AIConfigRuntimeCapability.responsesWebSearch && enabled) {
+      next.add(AIConfigRuntimeCapability.responses)
+    }
+    if (capability === AIConfigRuntimeCapability.responses && !enabled) {
+      next.delete(AIConfigRuntimeCapability.responsesWebSearch)
+    }
+    if (
+      !next.has(AIConfigRuntimeCapability.chatCompletions)
+      && !next.has(AIConfigRuntimeCapability.responses)
+    ) {
+      const message = '至少需要启用 Chat Completions 或 Responses API 之一。'
+      setMutationError(message)
+      toast({ variant: 'destructive', description: message })
+      return
+    }
+
+    setMutationError(null)
+    try {
+      await updateProvider(provider.id, { capabilities: [...next] })
+    } catch (error) {
+      const message = formatErrorForUser(error, '运行时能力保存失败，请重试。')
+      setMutationError(message)
+      toast({ variant: 'destructive', description: message })
+    }
+  }
+
   const verify = async () => {
     if (!provider) return
     setIsVerifying(true)
@@ -269,6 +302,7 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
         enabled: provider.enabled,
         modelCount: provider.models.length,
         models: projectedModels,
+        capabilities: provider.capabilities,
       } : null,
       queryError,
       mutationError,
@@ -281,6 +315,7 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
       verificationRequiresApiKey: provider ? !['ollama', 'undefineds'].includes(provider.id) : true,
       onApiKeyChange: changeApiKey,
       onBaseUrlChange: changeBaseUrl,
+      onCapabilityChange: changeCapability,
       onSaveConnection: saveConnection,
       onToggleKeyVisibility: () => setShowKey((visible) => !visible),
       onToggleEnable: toggleEnable,

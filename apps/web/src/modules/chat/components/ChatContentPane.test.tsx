@@ -6,22 +6,31 @@ const mockNavigate = vi.fn()
 const mockUseInboxItems = vi.fn()
 const mockSelectInboxItem = vi.fn()
 const mockSetInboxFilter = vi.fn()
-const { mockSetThreadId, mockSetComposerValue, mockFetchUpdates, mockRefreshThreadItems, mockUseChatKit } = vi.hoisted(() => {
+const { mockSetThreadId, mockSetComposerValue, mockFocusComposer, mockFetchUpdates, mockRefreshThreadItems, mockFlushOutbox, mockGetOutboxSize, mockPrepareAttachmentForReuse, mockUseChatKit } = vi.hoisted(() => {
   const setThreadId = vi.fn()
   const setComposerValue = vi.fn(async () => undefined)
+  const focusComposer = vi.fn(async () => undefined)
   const fetchUpdates = vi.fn(async () => undefined)
   const sendCustomAction = vi.fn(async () => undefined)
   const refreshThreadItems = vi.fn(async () => undefined)
+  const flushOutbox = vi.fn(async () => ({ completed: 0, pending: 0 }))
+  const getOutboxSize = vi.fn(() => 0)
+  const prepareAttachmentForReuse = vi.fn(async (attachment: unknown) => attachment)
   return {
     mockSetThreadId: setThreadId,
     mockSetComposerValue: setComposerValue,
+    mockFocusComposer: focusComposer,
     mockFetchUpdates: fetchUpdates,
     mockRefreshThreadItems: refreshThreadItems,
+    mockFlushOutbox: flushOutbox,
+    mockGetOutboxSize: getOutboxSize,
+    mockPrepareAttachmentForReuse: prepareAttachmentForReuse,
     mockSendCustomAction: sendCustomAction,
     mockUseChatKit: vi.fn(() => ({
       control: {},
       setThreadId,
       setComposerValue,
+      focusComposer,
       fetchUpdates,
       sendCustomAction,
     })),
@@ -33,7 +42,9 @@ const mockResolveLocalWorkspaceUri = vi.fn(async () => 'linx://device-123/repo/l
 const mockUseWorkspaceList = vi.fn()
 const mockUseChatList = vi.fn()
 const mockUseThreadList = vi.fn()
-const mockUseMessageList = vi.fn(() => ({ data: [] }))
+const mockRefetchMessages = vi.fn(async () => undefined)
+const mockUseMessageList = vi.fn(() => ({ data: [] as any[], refetch: mockRefetchMessages }))
+const mockUseMessageIndex = vi.fn(() => ({ data: [] as any[], refetch: mockRefetchMessages }))
 const mockUseDefaultSecretaryBootstrapSettling = vi.fn()
 const mockChatRefetch = vi.fn()
 const mockThreadRefetch = vi.fn()
@@ -104,6 +115,12 @@ vi.mock('@/providers/solid-database-provider', () => ({
 vi.mock('../services/chatkit-local/fetch-handler', () => ({
   createLocalChatKitFetch: () => Object.assign(vi.fn(), {
     refreshThreadItems: mockRefreshThreadItems,
+    flushOutbox: mockFlushOutbox,
+    getOutboxSize: mockGetOutboxSize,
+    loadAttachmentObjectUrl: vi.fn(),
+    prepareAttachmentForReuse: mockPrepareAttachmentForReuse,
+    saveArtifactVersion: vi.fn(),
+    dispose: vi.fn(),
   }),
 }))
 
@@ -127,6 +144,7 @@ vi.mock('../collections', () => ({
   useChatList: () => mockUseChatList(),
   useThreadList: () => mockUseThreadList(),
   useMessageList: () => mockUseMessageList(),
+  useMessageIndex: () => mockUseMessageIndex(),
   useWorkspaceList: () => mockUseWorkspaceList(),
   useChatMutations: () => mockMutations,
   useLinxDefaultSecretaryBootstrapSettling: () => mockUseDefaultSecretaryBootstrapSettling(),
@@ -179,6 +197,10 @@ describe('ChatContentPane', () => {
     window.localStorage.clear()
     mockSetComposerValue.mockResolvedValue(undefined)
     mockFetchUpdates.mockResolvedValue(undefined)
+    mockFlushOutbox.mockResolvedValue({ completed: 0, pending: 0 })
+    mockGetOutboxSize.mockReturnValue(0)
+    mockUseMessageList.mockReturnValue({ data: [], refetch: mockRefetchMessages })
+    mockUseMessageIndex.mockReturnValue({ data: [], refetch: mockRefetchMessages })
     mockUseSolidDatabase.mockReturnValue({
       db: {},
       status: 'ready',
@@ -279,6 +301,90 @@ describe('ChatContentPane', () => {
     )
   })
 
+  it('opens Pod runtime artifacts and sends the selected version back to the composer', async () => {
+    mockUseSolidDatabase.mockReturnValue({
+      db: { getDialect: () => ({ getPodUrl: () => 'https://pod.example/' }) },
+      status: 'ready',
+      error: null,
+      retry: mockDatabaseRetry,
+      scopeKey: 'account:alice',
+    })
+    mockUseMessageList.mockReturnValue({
+      data: [{
+        id: 'message-artifact',
+        role: 'assistant',
+        content: 'created',
+        createdAt: new Date('2026-08-11T02:00:00.000Z'),
+        richContent: JSON.stringify({
+          artifacts: [{
+            type: 'artifact',
+            name: 'summary.md',
+            resourceUri: 'https://pod.example/work/summary.md',
+            contentType: 'text/markdown',
+          }],
+        }),
+      }] as any[],
+      refetch: mockRefetchMessages,
+    })
+    mockSession.fetch = vi.fn(async () => new Response('# Runtime summary', {
+      status: 200,
+      headers: { 'Content-Type': 'text/markdown' },
+    }))
+
+    render(<ChatContentPane theme="light" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '打开产物工作区，共 1 个版本' }))
+    expect(await screen.findByRole('heading', { name: 'Runtime summary' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '继续修改' }))
+
+    await waitFor(() => expect(mockSetComposerValue).toHaveBeenCalledWith({
+      text: expect.stringContaining('https://pod.example/work/summary.md'),
+    }))
+    expect(mockFocusComposer).toHaveBeenCalled()
+  })
+
+  it('reuses a Pod attachment from another conversation without uploading it again', async () => {
+    mockUseSolidDatabase.mockReturnValue({
+      db: { getDialect: () => ({ getPodUrl: () => 'https://pod.example/' }) },
+      status: 'ready',
+      error: null,
+      retry: mockDatabaseRetry,
+      scopeKey: 'account:alice',
+    })
+    mockUseMessageIndex.mockReturnValue({
+      data: [{
+        id: 'message-with-asset',
+        chat: 'chat-archive',
+        thread: 'thread-archive',
+        createdAt: new Date('2026-08-11T03:00:00.000Z'),
+        richContent: JSON.stringify({
+          attachments: [{ id: 'attachment-1', type: 'file', name: 'brief.pdf', mime_type: 'application/pdf' }],
+        }),
+      }] as any[],
+      refetch: mockRefetchMessages,
+    })
+    mockPrepareAttachmentForReuse.mockResolvedValue({
+      id: 'attachment-1',
+      type: 'file',
+      name: 'brief.pdf',
+      mime_type: 'application/pdf',
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '打开会话资产中心，共 1 个资产' }))
+    fireEvent.click(await screen.findByRole('button', { name: '添加 brief.pdf 到输入框' }))
+
+    await waitFor(() => expect(mockPrepareAttachmentForReuse).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'attachment-1',
+      pod_url: 'https://pod.example/.data/chat-attachments/attachment-1',
+    })))
+    expect(mockSetComposerValue).toHaveBeenCalledWith({
+      attachments: [expect.objectContaining({ id: 'attachment-1' })],
+    })
+    expect(mockFocusComposer).toHaveBeenCalled()
+  })
+
   it('forces a thread transition when the selected chat changes', async () => {
     const { rerender } = render(<ChatContentPane theme="light" />)
     await waitFor(() => expect(mockRefreshThreadItems).toHaveBeenCalledWith('thread-1'))
@@ -340,13 +446,13 @@ describe('ChatContentPane', () => {
     expect(mockUseChatKit).toHaveBeenCalledWith(
       expect.objectContaining({
         composer: expect.objectContaining({
-          tools: [expect.objectContaining({
+          tools: expect.arrayContaining([expect.objectContaining({
             id: 'web_search',
             label: '联网搜索',
             icon: 'search',
             pinned: true,
             persistent: false,
-          })],
+          })]),
         }),
       }),
     )
@@ -404,27 +510,55 @@ describe('ChatContentPane', () => {
     await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1))
   })
 
-  it('blocks sending while offline and refreshes the active thread after reconnecting', async () => {
+  it('keeps local sending available offline and replays queued generations after reconnecting', async () => {
+    mockUseSolidDatabase.mockReturnValue({
+      db: { getDialect: () => ({ getPodUrl: () => 'https://pod.example/' }) },
+      status: 'ready',
+      error: null,
+      retry: mockDatabaseRetry,
+      scopeKey: 'account:alice',
+    })
+    mockSession.fetch = vi.fn(async () => new Response('', { status: 200 }))
     render(<ChatContentPane theme="light" />)
     await waitFor(() => expect(mockFetchUpdates).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockSession.fetch).toHaveBeenCalled())
     mockFetchUpdates.mockClear()
+    mockSession.fetch.mockClear()
+    mockSession.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 
     act(() => window.dispatchEvent(new Event('offline')))
-    expect(screen.getByRole('alert')).toHaveTextContent('网络已断开')
-    expect(screen.getByText('网络恢复后可继续发送')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('网络已断开')
+    expect(screen.getByRole('alert')).toHaveTextContent('仍可发送')
+    expect(screen.queryByText('网络恢复后可继续发送')).not.toBeInTheDocument()
 
+    mockSession.fetch.mockResolvedValue(new Response('', { status: 200 }))
     act(() => window.dispatchEvent(new Event('online')))
+    await waitFor(() => expect(mockFlushOutbox).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(mockFetchUpdates).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockRefreshThreadItems).toHaveBeenCalledWith('thread-1'))
     await waitFor(() => expect(screen.queryByText('连接已恢复，正在同步最新消息…')).not.toBeInTheDocument())
   })
 
   it('offers an explicit retry when reconnect synchronization fails', async () => {
+    mockUseSolidDatabase.mockReturnValue({
+      db: { getDialect: () => ({ getPodUrl: () => 'https://pod.example/' }) },
+      status: 'ready',
+      error: null,
+      retry: mockDatabaseRetry,
+      scopeKey: 'account:alice',
+    })
+    mockSession.fetch = vi.fn(async () => new Response('', { status: 200 }))
     render(<ChatContentPane theme="light" />)
     await waitFor(() => expect(mockFetchUpdates).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockSession.fetch).toHaveBeenCalled())
     mockFetchUpdates.mockClear()
     mockFetchUpdates.mockRejectedValueOnce(new Error('network reset')).mockResolvedValueOnce(undefined)
+    mockSession.fetch.mockClear()
+    mockSession.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 
     act(() => window.dispatchEvent(new Event('offline')))
+    expect(await screen.findByText(/网络已断开/u)).toBeInTheDocument()
+    mockSession.fetch.mockResolvedValue(new Response('', { status: 200 }))
     act(() => window.dispatchEvent(new Event('online')))
 
     expect(await screen.findByText('连接已恢复，但消息同步失败。')).toBeInTheDocument()

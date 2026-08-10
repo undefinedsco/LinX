@@ -36,7 +36,7 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
       notifications: {
-        preferredChannels: ['websocket', 'streaming-http'],
+        preferredChannels: ['streaming-http', 'websocket'],
       },
       podUrl: undefined,
       resourcePreparation: 'best-effort',
@@ -63,12 +63,35 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
       notifications: {
-        preferredChannels: ['websocket', 'streaming-http'],
+        preferredChannels: ['streaming-http', 'websocket'],
       },
       podUrl: 'https://pod.example.com/',
       resourcePreparation: 'best-effort',
       schema: { chat: 'schema' },
     })
+  })
+
+  it('disables collection subscriptions for a plain-HTTP local Pod', async () => {
+    const session = { info: { webId: 'http://localhost:5737/alice/profile/card#me' } }
+    const dialect = {
+      config: { preferredChannels: ['streaming-http', 'websocket'] },
+      getPodUrl: () => 'http://localhost:5737/alice/',
+    }
+    const subscribe = vi.fn()
+    const db = {
+      getDialect: vi.fn(() => dialect),
+      subscribe,
+    }
+    drizzleMock.mockReturnValue(db)
+    initializeLinxPodStorageMock.mockResolvedValue(undefined)
+
+    const result = await createLinxSolidDatabase(session, {
+      podUrl: 'http://localhost:5737/alice/',
+    })
+
+    expect(dialect.config.preferredChannels).toEqual([])
+    expect((result as any).subscribe).toBeUndefined()
+    expect(subscribe).not.toHaveBeenCalled()
   })
 
   it('wraps authenticated fetch for local transport while preserving canonical Pod URLs', async () => {
@@ -102,7 +125,7 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(expect.any(Object), {
       disableInteropDiscovery: true,
       notifications: {
-        preferredChannels: ['websocket', 'streaming-http'],
+        preferredChannels: ['streaming-http', 'websocket'],
       },
       podUrl: 'https://node.example/alice/',
       resourcePreparation: 'best-effort',

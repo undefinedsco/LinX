@@ -99,6 +99,7 @@ export function useModelServices() {
           displayName: item.name,
           defaultBaseUrl: item.defaultBaseUrl,
           defaultModels: item.defaultModels,
+          capabilities: item.capabilities,
         })),
     [],
   )
@@ -136,6 +137,7 @@ export function useModelServices() {
           apiKey: '',
           baseUrl: staticDef.defaultBaseUrl,
           models: defaultModels,
+          capabilities: staticDef.capabilities ?? [],
         }),
         apiKey: providerState?.apiKey || '',
         baseUrl: providerState?.baseUrl || staticDef.defaultBaseUrl,

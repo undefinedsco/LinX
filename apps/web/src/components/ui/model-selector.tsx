@@ -162,7 +162,7 @@ export function ModelSelector({ value, onChange, type = 'chat', models: supplied
         </Button>
       </PopoverTrigger>
       
-      <PopoverContent className="flex max-h-[500px] min-h-0 w-[400px] flex-col overflow-hidden p-0" align="start">
+      <PopoverContent portalled={false} className="flex max-h-[500px] min-h-0 w-[400px] flex-col overflow-hidden p-0" align="start">
         {/* Header: Search + Tags */}
         <div className="p-3 pb-2 border-b border-border/40 space-y-2 bg-background">
           <div className="relative">

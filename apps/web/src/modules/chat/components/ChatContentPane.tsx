@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSession } from '@/providers/solid-session-context'
 import { requestSessionRecovery } from '@/modules/login/login-utils'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, ArrowRight, Bot, Download, ExternalLink, LockKeyhole, Paperclip, Pencil, PlayCircle, Quote, RefreshCw, ShieldAlert, Square, Trash2, WifiOff } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Brain, Camera, Download, ExternalLink, FileOutput, FolderOpen, LockKeyhole, Mic, Paperclip, Pencil, PlayCircle, Quote, RefreshCw, Share2, ShieldAlert, Square, Trash2, Volume2, WifiOff } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
@@ -39,6 +39,7 @@ import {
   useChatMutations,
   useThreadList,
   useMessageList,
+  useMessageIndex,
   useWorkspaceList,
   useLinxDefaultSecretaryBootstrapSettling,
   LINX_DEFAULT_SECRETARY,
@@ -67,6 +68,18 @@ import {
 import { readMessageBranchMetadata } from '../domain/message-row-adapter'
 import { cycleSibling, groupMessageSiblings, selectSiblingIndex } from '../domain/message-tree'
 import { classifyRuntimeTool } from '../domain/runtime-tool-category'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { projectChatArtifactVersions } from '@/modules/files/domain/list/chat-files-projection'
+import { ArtifactWorkspace } from './ArtifactWorkspace'
+import { ConversationShareDialog } from './ConversationShareDialog'
+import { ProjectContextDialog } from './ProjectContextDialog'
+import { MultimodalCaptureDialog } from './MultimodalCaptureDialog'
+import { VoiceConversationDialog } from './VoiceConversationDialog'
+import { speakText } from '../domain/speech-output'
+import { projectChatAssets } from '../domain/chat-asset-library'
+import { probeChatConnectivity } from '../domain/chat-connectivity'
+import { ChatAssetLibraryDialog } from './ChatAssetLibraryDialog'
+import { threadRepository } from '@undefineds.co/models'
 
 export interface ChatContentPaneProps extends MicroAppPaneProps {}
 
@@ -180,6 +193,14 @@ function formatDuration(updatedAt?: string) {
   if (minutes < 60) return `${minutes} 分钟`
   const hours = Math.floor(minutes / 60)
   return `${hours} 小时`
+}
+
+function assistantItemText(item: ThreadItem): string {
+  if (item.type !== 'assistant_message') return ''
+  return item.content
+    .flatMap((part) => part.type === 'output_text' && typeof part.text === 'string' ? [part.text] : [])
+    .join('\n')
+    .trim()
 }
 
 interface RuntimeActivity {
@@ -608,6 +629,7 @@ function ChatKitPanel({
   selectedThreadId,
   selectedChatId,
   selectedThreadTitle,
+  selectedWorkspaceUri,
   persistedActiveBranchByParent,
   pendingComposerDraft,
   onComposerDraftApplied,
@@ -618,6 +640,7 @@ function ChatKitPanel({
   selectedThreadId: string
   selectedChatId: string
   selectedThreadTitle?: string
+  selectedWorkspaceUri?: string | null
   persistedActiveBranchByParent?: Record<string, string>
   pendingComposerDraft: PendingSecretaryDraft | null
   onComposerDraftApplied: (draft: PendingSecretaryDraft) => void
@@ -636,19 +659,30 @@ function ChatKitPanel({
   const [threadAttachments, setThreadAttachments] = useState<Attachment[]>([])
   const [branchThreadItems, setBranchThreadItems] = useState<ThreadItem[]>([])
   const [attachmentsOpen, setAttachmentsOpen] = useState(false)
+  const [artifactsOpen, setArtifactsOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [projectContextOpen, setProjectContextOpen] = useState(false)
+  const [captureOpen, setCaptureOpen] = useState(false)
+  const [voiceOpen, setVoiceOpen] = useState(false)
+  const [assetLibraryOpen, setAssetLibraryOpen] = useState(false)
+  const [isReading, setIsReading] = useState(false)
+  const [speechError, setSpeechError] = useState<string | null>(null)
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
   const [loadingAttachmentId, setLoadingAttachmentId] = useState<string | null>(null)
   const [attachmentLoadError, setAttachmentLoadError] = useState<string | null>(null)
-  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
+  const [isOnline, setIsOnline] = useState(true)
+  const isOnlineRef = useRef(true)
   const [reconnectStatus, setReconnectStatus] = useState<'idle' | 'syncing' | 'error'>('idle')
+  const [queuedGenerationCount, setQueuedGenerationCount] = useState(0)
   const [isChatKitMounted, setIsChatKitMounted] = useState(false)
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null)
   const [actionMessageId, setActionMessageId] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [pendingRegenerateParentId, setPendingRegenerateParentId] = useState<string | null>(null)
   const abortGenerationRef = useRef<(() => void) | null>(null)
-  const sendAvailableRef = useRef(!sendDisabled && isOnline)
-  sendAvailableRef.current = !sendDisabled && isOnline
+  const speechAbortRef = useRef<AbortController | null>(null)
+  const sendAvailableRef = useRef(!sendDisabled)
+  sendAvailableRef.current = !sendDisabled
   // `initialThread` is mount-only configuration. Updating it causes ChatKit to
   // rebuild its internal thread state, which discards the per-thread composer
   // inputs that ChatKit already keeps while the element remains mounted.
@@ -662,20 +696,30 @@ function ChatKitPanel({
     setIsChatKitMounted(Boolean(host))
   }, [])
 
+  const authFetchWithRecovery = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!sessionFetch) throw new Error('当前空间连接尚未恢复')
+    const response = await sessionFetch(input, init)
+    if (response.status === 401) requestSessionRecovery()
+    return response
+  }, [sessionFetch])
+
   const localFetch = useMemo(() => {
     if (!db || !sessionWebId || !sessionFetch) {
       const unavailableFetch = (async () => unavailableResponse()) as unknown as LocalChatKitFetch
       unavailableFetch.refreshThreadItems = async () => undefined
+      unavailableFetch.getOutboxSize = () => 0
+      unavailableFetch.flushOutbox = async () => ({ completed: 0, pending: 0 })
       unavailableFetch.loadAttachmentObjectUrl = async () => {
+        throw new Error('当前空间连接尚未恢复')
+      }
+      unavailableFetch.prepareAttachmentForReuse = async () => {
+        throw new Error('当前空间连接尚未恢复')
+      }
+      unavailableFetch.saveArtifactVersion = async () => {
         throw new Error('当前空间连接尚未恢复')
       }
       unavailableFetch.dispose = () => undefined
       return unavailableFetch
-    }
-    const authFetchWithRecovery: typeof sessionFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const response = await sessionFetch(input, init)
-      if (response.status === 401) requestSessionRecovery()
-      return response
     }
     return createLocalChatKitFetch({
       db,
@@ -701,6 +745,7 @@ function ChatKitPanel({
         setIsGenerating(active)
       },
       onThreadItemsChange: setBranchThreadItems,
+      onOutboxChange: setQueuedGenerationCount,
       onChatSummaryChange: ({ messageId, content, createdAt }) => {
         return projectChatSummary(selectedChatId, {
           lastMessageId: messageId,
@@ -710,11 +755,12 @@ function ChatKitPanel({
         })
       },
     })
-  }, [db, persistedActiveBranchByParent, selectedChatId, selectedThreadId, selectedThreadTitle, sessionFetch, sessionWebId])
+  }, [authFetchWithRecovery, db, persistedActiveBranchByParent, selectedChatId, selectedThreadId, selectedThreadTitle, sessionFetch, sessionWebId])
 
   useEffect(() => {
     setThreadAttachments([])
     setPreviewAttachment(null)
+    setQueuedGenerationCount(localFetch.getOutboxSize())
     return () => localFetch.dispose?.()
   }, [localFetch])
 
@@ -781,15 +827,26 @@ function ChatKitPanel({
     composer: {
       placeholder: '输入消息...',
       dictation: { enabled: true },
-      tools: [{
-        id: 'web_search',
-        label: '联网搜索',
-        shortLabel: '搜索',
-        icon: 'search',
-        pinned: true,
-        persistent: false,
-        placeholderOverride: '搜索网络并给出可点击的来源...',
-      }],
+      tools: [
+        {
+          id: 'web_search',
+          label: '联网搜索',
+          shortLabel: '搜索',
+          icon: 'search',
+          pinned: true,
+          persistent: false,
+          placeholderOverride: '搜索网络并给出可点击的来源...',
+        },
+        {
+          id: 'image_generation',
+          label: '生成图片',
+          shortLabel: '图片',
+          icon: 'square-image',
+          pinned: true,
+          persistent: false,
+          placeholderOverride: '描述希望生成的图片...',
+        },
+      ],
       attachments: {
         enabled: true,
         maxCount: 10,
@@ -827,6 +884,54 @@ function ChatKitPanel({
   const setThreadId = chatkit.setThreadId
   const fetchUpdates = chatkit.fetchUpdates
   const { data: messageRows = [], refetch: refetchMessages } = useMessageList(selectedChatId, selectedThreadId)
+  const { data: allMessageRows = [] } = useMessageIndex({ enabled: Boolean(db) })
+  const podBaseUrl = useMemo(() => db ? resolveCurrentPodBaseUrl(db) : null, [db])
+  const chatAssets = useMemo(() => {
+    return podBaseUrl ? projectChatAssets(allMessageRows, podBaseUrl) : []
+  }, [allMessageRows, podBaseUrl])
+  const selectedThreadUri = useMemo(() => {
+    return podBaseUrl
+      ? threadRepository.iriForChat(podBaseUrl, selectedChatId, selectedThreadId)
+      : null
+  }, [podBaseUrl, selectedChatId, selectedThreadId])
+  const artifactVersions = useMemo(() => {
+    return podBaseUrl
+      ? projectChatArtifactVersions(messageRows, `${podBaseUrl}/`)
+      : []
+  }, [messageRows, podBaseUrl])
+  const latestAssistantText = useMemo(() => {
+    for (let index = branchThreadItems.length - 1; index >= 0; index -= 1) {
+      const text = assistantItemText(branchThreadItems[index])
+      if (text) return text
+    }
+    return ''
+  }, [branchThreadItems])
+  const toggleReadAloud = useCallback(() => {
+    if (isReading) {
+      speechAbortRef.current?.abort()
+      speechAbortRef.current = null
+      window.speechSynthesis?.cancel()
+      setIsReading(false)
+      return
+    }
+    if (!latestAssistantText) return
+    const controller = new AbortController()
+    speechAbortRef.current = controller
+    setSpeechError(null)
+    setIsReading(true)
+    void speakText(latestAssistantText, controller.signal).catch((error) => {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setSpeechError(error instanceof Error ? error.message : '回答朗读失败。')
+      }
+    }).finally(() => {
+      if (speechAbortRef.current === controller) speechAbortRef.current = null
+      setIsReading(false)
+    })
+  }, [isReading, latestAssistantText])
+  useEffect(() => () => {
+    speechAbortRef.current?.abort()
+    window.speechSynthesis?.cancel()
+  }, [])
   const userMessages = useMemo(() => {
     const byId = new Map(messageRows
       .filter((message) => message.role === 'user')
@@ -970,30 +1075,83 @@ function ChatKitPanel({
     if (actionMessageId && !userMessages.some((message) => message.id === actionMessageId)) setActionMessageId(lastUserMessage?.id ?? null)
   }, [actionMessageId, lastUserMessage, localActiveBranchByParent, persistedActionMessage, userMessages])
 
-  useEffect(() => {
-    const handleOffline = () => {
+  const synchronizeAfterReconnect = useCallback(async () => {
+    setReconnectStatus('syncing')
+    try {
+      const replay = await localFetch.flushOutbox()
+      await Promise.all([
+        fetchUpdates(),
+        refetchMessages(),
+        localFetch.refreshThreadItems(selectedThreadId),
+      ])
+      setQueuedGenerationCount(replay.pending)
+      setReconnectStatus(replay.pending > 0 ? 'error' : 'idle')
+    } catch (error) {
+      console.error('[ChatKit] Failed to refresh after reconnect:', error)
+      setQueuedGenerationCount(localFetch.getOutboxSize())
+      setReconnectStatus('error')
+    }
+  }, [fetchUpdates, localFetch, refetchMessages, selectedThreadId])
+
+  const probeConnection = useCallback(async (): Promise<boolean> => {
+    if (!podBaseUrl || !sessionFetch) return false
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort('connectivity_probe_timeout'), 5_000)
+    try {
+      const reachable = await probeChatConnectivity({
+        fetcher: sessionFetch,
+        podBaseUrl,
+        signal: controller.signal,
+      })
+      isOnlineRef.current = reachable
+      setIsOnline(reachable)
+      return reachable
+    } catch {
+      isOnlineRef.current = false
       setIsOnline(false)
-      setReconnectStatus('idle')
+      return false
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
+  }, [podBaseUrl, sessionFetch])
+
+  useEffect(() => {
+    let disposed = false
+    const refreshReachability = async (synchronize: boolean) => {
+      const reachable = await probeConnection()
+      if (disposed || !reachable) {
+        if (!reachable) setReconnectStatus('idle')
+        return
+      }
+      if (synchronize) await synchronizeAfterReconnect()
+    }
+    const handleOffline = () => {
+      // Browsers can report offline while a localhost Xpod is healthy. Verify
+      // the selected Pod before showing an offline state.
+      void refreshReachability(false)
     }
     const handleOnline = () => {
-      setIsOnline(true)
-      setReconnectStatus('syncing')
-      void Promise.resolve(fetchUpdates()).then(
-        () => setReconnectStatus('idle'),
-        (error) => {
-          console.error('[ChatKit] Failed to refresh after reconnect:', error)
-          setReconnectStatus('error')
-        },
-      )
+      void refreshReachability(true)
     }
 
     window.addEventListener('offline', handleOffline)
     window.addEventListener('online', handleOnline)
+    void refreshReachability(false)
+    const retryTimer = window.setInterval(() => {
+      if (!isOnlineRef.current) void refreshReachability(true)
+    }, 15_000)
     return () => {
+      disposed = true
+      window.clearInterval(retryTimer)
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('online', handleOnline)
     }
-  }, [fetchUpdates])
+  }, [probeConnection, synchronizeAfterReconnect])
+
+  useEffect(() => {
+    if (!isOnline || localFetch.getOutboxSize() === 0) return
+    void synchronizeAfterReconnect()
+  }, [isOnline, localFetch, synchronizeAfterReconnect])
 
   useEffect(() => {
     if (!isChatKitMounted || !selectedThreadId) return
@@ -1157,30 +1315,30 @@ function ChatKitPanel({
           停止生成
         </Button>
       ) : null}
-      {actionMessage ? (
-        <div className="absolute bottom-3 left-3 right-3 z-20 flex justify-end">
+      {actionMessage && !isGenerating ? (
+        <div className="absolute bottom-40 left-3 right-3 z-20 flex justify-end">
           <div className="flex max-w-full gap-1 overflow-x-auto rounded-md border bg-background/95 p-1 shadow-sm">
             <select aria-label="选择要操作的用户消息" className="h-10 min-w-0 max-w-[220px] flex-1 bg-transparent px-1 text-xs md:h-8" value={actionMessage.id} onChange={(event) => setActionMessageId(event.target.value)}>
               {userMessages.map((message, index) => <option key={message.id} value={message.id}>消息 {index + 1}：{(message.content ?? '').slice(0, 24)}</option>)}
             </select>
             {hasBranchSiblings ? (
               <>
-                <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="上一个分支" title="上一个分支" onClick={() => cycleActionBranch(-1)}><ArrowLeft className="size-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="size-10 shrink-0" aria-label="上一个分支" title="上一个分支" onClick={() => cycleActionBranch(-1)}><ArrowLeft className="size-3.5" /></Button>
                 <span className="flex min-w-12 items-center justify-center text-xs tabular-nums">{actionBranchIndex + 1}/{actionBranchGroup?.items.length}</span>
-                <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="下一个分支" title="下一个分支" onClick={() => cycleActionBranch(1)}><ArrowRight className="size-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="size-10 shrink-0" aria-label="下一个分支" title="下一个分支" onClick={() => cycleActionBranch(1)}><ArrowRight className="size-3.5" /></Button>
               </>
             ) : null}
             {hasAnswerSiblings ? (
               <>
-                <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="上一个回答" title="上一个回答" onClick={() => cycleAnswerBranch(-1)}><ArrowLeft className="size-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="size-10 shrink-0" aria-label="上一个回答" title="上一个回答" onClick={() => cycleAnswerBranch(-1)}><ArrowLeft className="size-3.5" /></Button>
                 <span className="flex min-w-16 items-center justify-center text-xs tabular-nums">回答 {answerBranchIndex + 1}/{answerBranchGroup?.items.length}</span>
-                <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="下一个回答" title="下一个回答" onClick={() => cycleAnswerBranch(1)}><ArrowRight className="size-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="size-10 shrink-0" aria-label="下一个回答" title="下一个回答" onClick={() => cycleAnswerBranch(1)}><ArrowRight className="size-3.5" /></Button>
               </>
             ) : null}
-            <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="编辑消息" title="编辑消息" onClick={() => setEditingMessage({ id: actionMessage.id, text: actionMessage.content ?? '' })}>
+            <Button variant="ghost" size="icon" className="size-10 shrink-0" aria-label="编辑消息" title="编辑消息" onClick={() => setEditingMessage({ id: actionMessage.id, text: actionMessage.content ?? '' })}>
               <Pencil className="size-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="重新生成回答" title="重新生成回答" onClick={async () => {
+            <Button variant="ghost" size="icon" className="size-10 shrink-0" aria-label="重新生成回答" title="重新生成回答" onClick={async () => {
               setPendingRegenerateParentId(actionMessage.id)
               try {
                 await chatkit.sendCustomAction({ type: 'message.regenerate', payload: { action: 'message.regenerate', thread_id: selectedThreadId, item_id: actionMessage.id } })
@@ -1193,10 +1351,10 @@ function ChatKitPanel({
             }}>
               <RefreshCw className="size-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="size-10 shrink-0 md:size-8" aria-label="引用消息" title="引用消息" onClick={() => void setComposerValue({ text: `> ${actionMessage.content ?? ''}\n\n` })}>
+            <Button variant="ghost" size="icon" className="size-10 shrink-0" aria-label="引用消息" title="引用消息" onClick={() => void setComposerValue({ text: `> ${actionMessage.content ?? ''}\n\n` })}>
               <Quote className="size-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="size-10 shrink-0 text-destructive hover:text-destructive md:size-8" aria-label="删除消息" title="删除消息" onClick={async () => {
+            <Button variant="ghost" size="icon" className="size-10 shrink-0 text-destructive hover:text-destructive" aria-label="删除消息" title="删除消息" onClick={async () => {
               if (!window.confirm('确定删除上一条消息吗？')) return
               try {
                 await chatkit.sendCustomAction({ type: 'message.delete', payload: { action: 'message.delete', thread_id: selectedThreadId, item_id: actionMessage.id } })
@@ -1240,14 +1398,25 @@ function ChatKitPanel({
       {!isOnline ? (
         <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-center gap-2 rounded-lg border border-warning/25 bg-background/95 px-3 py-2 text-sm shadow-sm backdrop-blur">
           <WifiOff className="size-4 text-warning" />
-          <span>网络已断开。草稿会保留在输入框中，恢复连接后再发送。</span>
+          <span>
+            网络已断开。仍可发送，消息会保存在本地空间并在连接恢复后自动生成。
+            {queuedGenerationCount > 0 ? ` 当前有 ${queuedGenerationCount} 条等待生成。` : ''}
+          </span>
         </div>
       ) : reconnectStatus !== 'idle' ? (
         <div
           role={reconnectStatus === 'error' ? 'alert' : 'status'}
           className="absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-sm backdrop-blur"
         >
-          <span>{reconnectStatus === 'syncing' ? '连接已恢复，正在同步最新消息…' : '连接已恢复，但消息同步失败。'}</span>
+          <span>
+            {reconnectStatus === 'syncing'
+              ? queuedGenerationCount > 0
+                ? `连接已恢复，正在重试 ${queuedGenerationCount} 条待生成消息…`
+                : '连接已恢复，正在同步最新消息…'
+              : queuedGenerationCount > 0
+                ? `仍有 ${queuedGenerationCount} 条消息等待生成。`
+                : '连接已恢复，但消息同步失败。'}
+          </span>
           {reconnectStatus === 'error' ? (
             <Button
               type="button"
@@ -1255,11 +1424,7 @@ function ChatKitPanel({
               size="sm"
               className="h-7"
               onClick={() => {
-                setReconnectStatus('syncing')
-                void Promise.resolve(fetchUpdates()).then(
-                  () => setReconnectStatus('idle'),
-                  () => setReconnectStatus('error'),
-                )
+                void synchronizeAfterReconnect()
               }}
             >
               重试同步
@@ -1267,19 +1432,49 @@ function ChatKitPanel({
           ) : null}
         </div>
       ) : null}
-      {threadAttachments.length > 0 ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="absolute left-1/2 top-3 z-10 h-8 -translate-x-1/2 gap-1.5 rounded-full bg-background/95 px-3 shadow-sm backdrop-blur"
-          onClick={() => setAttachmentsOpen(true)}
-          aria-label={`查看会话附件，共 ${threadAttachments.length} 个`}
-        >
-          <Paperclip className="size-3.5" />
-          附件 {threadAttachments.length}
-        </Button>
-      ) : null}
+      <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex min-w-0 items-center justify-between gap-2">
+        <div className="pointer-events-auto flex shrink-0 gap-2">
+          {podBaseUrl && selectedWorkspaceUri ? (
+            <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 rounded-full bg-background/95 px-3 shadow-sm backdrop-blur" onClick={() => setProjectContextOpen(true)} aria-label="查看项目上下文与记忆">
+              <Brain className="size-3.5" /><span className="hidden xl:inline">项目上下文</span>
+            </Button>
+          ) : null}
+          {threadAttachments.length > 0 ? (
+            <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 rounded-full bg-background/95 px-3 shadow-sm backdrop-blur" onClick={() => setAttachmentsOpen(true)} aria-label={`查看会话附件，共 ${threadAttachments.length} 个`}>
+              <Paperclip className="size-3.5" /><span>附件 {threadAttachments.length}</span>
+            </Button>
+          ) : null}
+        </div>
+        <div className="pointer-events-auto flex min-w-0 items-center gap-1 overflow-x-auto rounded-full bg-background/80 p-0.5 backdrop-blur">
+          <Button type="button" variant="outline" size="sm" className="h-9 shrink-0 gap-1.5 rounded-full bg-background/95 px-3" onClick={() => setCaptureOpen(true)} aria-label="添加屏幕或摄像头画面">
+            <Camera className="size-3.5" /><span className="hidden xl:inline">画面</span>
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="h-9 shrink-0 gap-1.5 rounded-full bg-background/95 px-3" onClick={() => setVoiceOpen(true)} aria-label="打开实时语音对话">
+            <Mic className="size-3.5" /><span className="hidden xl:inline">语音对话</span>
+          </Button>
+          {latestAssistantText ? (
+            <Button type="button" variant={isReading ? 'secondary' : 'outline'} size="sm" className="h-9 shrink-0 gap-1.5 rounded-full bg-background/95 px-3" onClick={toggleReadAloud} aria-label={isReading ? '停止朗读回答' : '朗读最新回答'}>
+              {isReading ? <Square className="size-3.5 fill-current" /> : <Volume2 className="size-3.5" />}<span className="hidden xl:inline">{isReading ? '停止朗读' : '朗读'}</span>
+            </Button>
+          ) : null}
+          {artifactVersions.length > 0 ? (
+            <Button type="button" variant="outline" size="sm" className="h-9 shrink-0 gap-1.5 rounded-full bg-background/95 px-3" onClick={() => setArtifactsOpen(true)} aria-label={`打开产物工作区，共 ${artifactVersions.length} 个版本`}>
+              <FileOutput className="size-3.5" /><span className="hidden xl:inline">产物 {artifactVersions.length}</span>
+            </Button>
+          ) : null}
+          {podBaseUrl ? (
+            <Button type="button" variant="outline" size="sm" className="h-9 shrink-0 gap-1.5 rounded-full bg-background/95 px-3" onClick={() => setAssetLibraryOpen(true)} aria-label={`打开会话资产中心，共 ${chatAssets.length} 个资产`}>
+              <FolderOpen className="size-3.5" /><span className="hidden xl:inline">资产 {chatAssets.length}</span>
+            </Button>
+          ) : null}
+          {podBaseUrl && sessionWebId ? (
+            <Button type="button" variant="outline" size="sm" className="h-9 shrink-0 gap-1.5 rounded-full bg-background/95 px-3" onClick={() => setShareOpen(true)} aria-label="分享与导出当前会话">
+              <Share2 className="size-3.5" /><span className="hidden xl:inline">分享与导出</span>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {speechError ? <div role="alert" className="absolute right-3 top-14 z-20 rounded-lg border border-destructive/30 bg-background/95 px-3 py-2 text-xs text-destructive shadow-sm">{speechError}</div> : null}
       <Dialog open={attachmentsOpen} onOpenChange={setAttachmentsOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -1325,6 +1520,105 @@ function ChatKitPanel({
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={artifactsOpen} onOpenChange={setArtifactsOpen}>
+        <DialogContent className="flex h-[min(88vh,860px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-5 py-4">
+            <DialogTitle>产物工作区</DialogTitle>
+            <DialogDescription>预览运行产物、切换历史版本，或把选中版本带回对话继续修改。</DialogDescription>
+          </DialogHeader>
+          <ArtifactWorkspace
+            versions={artifactVersions}
+            authFetch={authFetchWithRecovery}
+            onSaveVersion={async (version, content) => {
+              await localFetch.saveArtifactVersion({
+                threadId: selectedThreadId,
+                uri: version.uri,
+                name: version.name,
+                mimeType: version.mimeType,
+                content,
+              })
+              await Promise.allSettled([
+                fetchUpdates(),
+                refetchMessages(),
+                localFetch.refreshThreadItems(selectedThreadId),
+              ])
+            }}
+            onContinue={async (version) => {
+              await setComposerValue({
+                text: `请继续修改产物「${version.name}」。当前版本位于 ${version.uri}，请保留原文件并生成一个新版本。`,
+              })
+              await chatkit.focusComposer()
+              setArtifactsOpen(false)
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+      {db && podBaseUrl && sessionWebId && selectedThreadUri ? (
+        <ConversationShareDialog
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          title={selectedThreadTitle || 'LinX 会话'}
+          threadUri={selectedThreadUri}
+          db={db}
+          ownerWebId={sessionWebId}
+          podBaseUrl={podBaseUrl}
+          authFetch={authFetchWithRecovery}
+          messages={messageRows}
+        />
+      ) : null}
+      {db && podBaseUrl && selectedWorkspaceUri ? (
+        <ProjectContextDialog
+          open={projectContextOpen}
+          onOpenChange={setProjectContextOpen}
+          workspaceUri={selectedWorkspaceUri}
+          db={db}
+        />
+      ) : null}
+      {podBaseUrl ? (
+        <ChatAssetLibraryDialog
+          open={assetLibraryOpen}
+          onOpenChange={setAssetLibraryOpen}
+          assets={chatAssets}
+          authFetch={authFetchWithRecovery}
+          onReuse={async (asset) => {
+            const attachment = await localFetch.prepareAttachmentForReuse(asset)
+            if (attachment.type === 'image' && !attachment.preview_url) {
+              throw new Error('图片预览尚未就绪，请重试。')
+            }
+            const composerAttachment = attachment.type === 'image'
+              ? {
+                  type: 'image' as const,
+                  id: attachment.id,
+                  name: attachment.name,
+                  mime_type: attachment.mime_type,
+                  preview_url: attachment.preview_url!,
+                }
+              : {
+                  type: 'file' as const,
+                  id: attachment.id,
+                  name: attachment.name,
+                  mime_type: attachment.mime_type,
+                }
+            await setComposerValue({ attachments: [composerAttachment] })
+            await chatkit.focusComposer()
+          }}
+        />
+      ) : null}
+      <MultimodalCaptureDialog
+        open={captureOpen}
+        onOpenChange={setCaptureOpen}
+        onCapture={async (file) => {
+          await setComposerValue({ files: [file] })
+          await chatkit.focusComposer()
+        }}
+      />
+      <VoiceConversationDialog
+        open={voiceOpen}
+        onOpenChange={setVoiceOpen}
+        assistantText={latestAssistantText}
+        isGenerating={isGenerating}
+        onSend={(text) => chatkit.sendUserMessage({ text })}
+      />
       <Dialog open={Boolean(previewAttachment)} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
         <DialogContent className="max-w-5xl">
           <DialogHeader>
@@ -1338,9 +1632,9 @@ function ChatKitPanel({
           ) : null}
         </DialogContent>
       </Dialog>
-      {sendDisabled || !isOnline ? (
+      {sendDisabled ? (
         <div className="absolute inset-x-0 bottom-0 z-10 flex min-h-24 items-center justify-center border-t border-warning/20 bg-background/95 px-4 text-sm text-muted-foreground">
-          {isOnline ? '空间连接恢复后可继续发送' : '网络恢复后可继续发送'}
+          空间连接恢复后可继续发送
         </div>
       ) : null}
     </div>
@@ -1786,6 +2080,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
             selectedThreadId={selectedThreadId}
             selectedChatId={selectedChatId}
             selectedThreadTitle={activeThread?.title}
+            selectedWorkspaceUri={activeThread?.workspace}
             persistedActiveBranchByParent={persistedActiveBranchByParent}
             pendingComposerDraft={isSecretary
               && activePendingSecretaryDraft?.chatId === selectedChatId

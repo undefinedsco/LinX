@@ -1,4 +1,5 @@
 import type { AIModel, AIProvider } from './types'
+import { AIConfigRuntimeCapability } from '@undefineds.co/models'
 
 export interface ModelProviderListProjection {
   id: string
@@ -42,8 +43,12 @@ export function inferModelCapabilities(modelId: string, explicitCapabilities: st
 
   const capabilities = new Set<string>()
   const normalizedId = modelId.toLowerCase()
-  if (/vision|4o|claude-3|gemini-1\.5|llava/.test(normalizedId)) capabilities.add('vision')
-  if (/gpt-4|turbo|claude|tool|deepseek|mistral/.test(normalizedId)) capabilities.add('function_calling')
-  if (/online|search|sonar|net/.test(normalizedId)) capabilities.add('web')
+  if (/vision|4o|claude-3|gemini-1\.5|llava/.test(normalizedId)) capabilities.add(AIConfigRuntimeCapability.imageInput)
+  if (/gpt-4|turbo|claude|tool|deepseek|mistral/.test(normalizedId)) capabilities.add(AIConfigRuntimeCapability.toolCalls)
+  if (/online|search|sonar|net/.test(normalizedId)) capabilities.add(AIConfigRuntimeCapability.responsesWebSearch)
+  if (/gpt-image|dall-e|imagen|flux/.test(normalizedId)) {
+    capabilities.add(AIConfigRuntimeCapability.imageGeneration)
+    capabilities.add(AIConfigRuntimeCapability.imageEditing)
+  }
   return [...capabilities]
 }

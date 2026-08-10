@@ -11,7 +11,6 @@ import {
   gt,
   isNull,
   lt,
-  or,
   type PodResource as PodResourceSchema,
 } from '@undefineds.co/drizzle-solid'
 import { deleteExactRecord, updateExactRecord } from './exact-records'
@@ -103,7 +102,7 @@ export function createPodCollection<
 
   let didSeed = false
 
-  const buildQuery = (db: SolidDatabase<any>, cursor?: OrderedWindowCursor) => {
+  const buildQuery = (db: SolidDatabase<any>) => {
     let query: any
     if (columns && columns.length > 0) {
       const selectObj: Record<string, any> = {}
@@ -129,36 +128,52 @@ export function createPodCollection<
       query = query.orderBy(primaryOrder.column as string, primaryOrder.direction ?? 'asc')
     }
 
-    if (cursor && window?.orderBy.length) {
-      const idColumn = (resource as any).id
-      const prefix: any[] = []
-      const branches: any[] = []
-      for (const [index, sort] of window.orderBy.entries()) {
-        const column = (resource as any)[sort.column]
-        const value = cursor.values[index]
-        if (value == null) {
-          prefix.push(isNull(column))
-          continue
-        }
-        const after = sort.direction === 'desc' ? lt(column, value) : gt(column, value)
-        branches.push(prefix.length > 0 ? and(...prefix, after) : after)
-        branches.push(prefix.length > 0 ? and(...prefix, isNull(column)) : isNull(column))
-        prefix.push(eq(column, value))
-      }
-      const idTieBreak = prefix.length > 0
-        ? and(...prefix, gt(idColumn, cursor.id))
-        : gt(idColumn, cursor.id)
-      branches.push(idTieBreak)
-      query = query.whereCursor(branches.length === 1 ? branches[0] : or(...branches))
-    }
     if (window) query = query.limit(window.limit + 1)
     return query
   }
 
+  const buildQueries = (db: SolidDatabase<any>, cursor?: OrderedWindowCursor): any[] => {
+    if (!cursor || !window?.orderBy.length) return [buildQuery(db)]
+
+    // Local Xpod intentionally rejects composite FILTER OR cursors. Execute
+    // the lexicographic branches as independent bounded queries, then merge
+    // and sort them below. The final branch uses whereCursor because it is the
+    // only one that ranges over the reserved resource identifier.
+    const prefix: any[] = []
+    const queries: any[] = []
+    for (const [index, sort] of window.orderBy.entries()) {
+      const column = (resource as any)[sort.column]
+      const value = cursor.values[index]
+      if (value == null) {
+        prefix.push(isNull(column))
+        continue
+      }
+      const after = sort.direction === 'desc' ? lt(column, value) : gt(column, value)
+      queries.push(buildQuery(db).where(prefix.length > 0 ? and(...prefix, after) : after))
+      queries.push(buildQuery(db).where(prefix.length > 0 ? and(...prefix, isNull(column)) : isNull(column)))
+      prefix.push(eq(column, value))
+    }
+    const idTieBreak = prefix.length > 0
+      ? and(...prefix, gt((resource as any).id, cursor.id))
+      : gt((resource as any).id, cursor.id)
+    queries.push(buildQuery(db).whereCursor(idTieBreak))
+    return queries
+  }
+
   const executeRows = async (db: SolidDatabase<any>, cursor?: OrderedWindowCursor): Promise<TData[]> => {
-    let rows: TData[]
+    let rows: TData[] = []
     try {
-      rows = (await buildQuery(db, cursor).execute()) as TData[]
+      const batches = await Promise.all(buildQueries(db, cursor).map((query) => query.execute() as Promise<TData[]>))
+      const seen = new Set<string>()
+      for (const row of batches.flat()) {
+        const key = getKey(row)
+        if (seen.has(key)) continue
+        seen.add(key)
+        rows.push(row)
+      }
+      if (windowPolicy && window) {
+        rows = windowPolicy.sort(rows).slice(0, window.limit + 1)
+      }
     } catch (error) {
       if (isUnsupportedDocumentCollectionRead(error)) {
         console.warn(`[PodCollection] ${queryKey.join('/')} fetch skipped: ${errorMessage(error)}`)
@@ -581,7 +596,6 @@ export function createPodCollection<
 
   const connectToPod = async (db: SolidDatabase<any>) => {
     if (typeof (db as any).subscribe !== 'function') {
-      console.warn('[PodCollection] db.subscribe not available')
       return () => {}
     }
 

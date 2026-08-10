@@ -1,7 +1,7 @@
 // Provider definitions for the model-services surface.
 // Shared provider metadata comes from @undefineds.co/models/discovery; this file only
 // keeps web-specific presentation and docs links.
-import { getBuiltinProvider } from '@undefineds.co/models'
+import { AIConfigRuntimeCapability, getBuiltinProvider } from '@undefineds.co/models'
 
 export interface ProviderDef {
   id: string
@@ -15,6 +15,7 @@ export interface ProviderDef {
   defaultBaseUrl?: string
   defaultApiKeyPlaceholder?: string
   defaultModels?: string[]
+  capabilities: string[]
 }
 
 interface ProviderUiExtras {
@@ -28,6 +29,7 @@ interface ProviderUiExtras {
   defaultBaseUrl?: string
   defaultApiKeyPlaceholder?: string
   defaultModels?: string[]
+  capabilities?: string[]
 }
 
 const MODEL_PROVIDER_ORDER = [
@@ -55,6 +57,7 @@ const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
     modelsUrl: 'https://undefineds.co/linx',
     defaultApiKeyPlaceholder: '登录后可用，无需 API Key',
     defaultModels: ['linx-lite', 'linx'],
+    capabilities: Object.values(AIConfigRuntimeCapability),
   },
   openai: {
     name: 'OpenAI',
@@ -65,6 +68,7 @@ const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
     modelsApi: 'https://api.openai.com/v1/models',
     defaultApiKeyPlaceholder: 'sk-...',
     defaultModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
+    capabilities: Object.values(AIConfigRuntimeCapability),
   },
   anthropic: {
     name: 'Anthropic',
@@ -197,6 +201,7 @@ function buildProviderDef(id: string): ProviderDef {
     defaultBaseUrl: discoveryProvider?.baseUrl ?? extras.defaultBaseUrl,
     defaultApiKeyPlaceholder: extras.defaultApiKeyPlaceholder,
     defaultModels: extras.defaultModels,
+    capabilities: extras.capabilities ?? [AIConfigRuntimeCapability.chatCompletions],
   }
 }
 

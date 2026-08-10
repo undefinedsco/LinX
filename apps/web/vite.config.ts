@@ -18,7 +18,7 @@ const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
 )
-const modelAliases = existsSync(modelsIndex)
+const modelAliases: Record<string, string> = existsSync(modelsIndex)
   ? {
     '@undefineds.co/models/client': modelsClientIndex,
     '@undefineds.co/models': modelsIndex,

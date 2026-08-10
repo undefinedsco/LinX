@@ -165,12 +165,38 @@ describe('ChatKit P0 attachment storage', () => {
       createdAt: new Date(1000),
     })
     vi.spyOn(store as any, 'deleteMessageRecord').mockResolvedValue(undefined)
-    vi.spyOn(store as any, 'selectMessagesForThread').mockResolvedValue([])
+    vi.spyOn(store as any, 'isAttachmentReferencedElsewhere').mockResolvedValue(false)
 
     await store.deleteThreadItem('thread-1', 'user-delete', {})
 
     expect(authFetch).toHaveBeenCalledWith(
       'https://pod.example/alice/.data/chat-attachments/attach-delete',
+      { method: 'DELETE' },
+    )
+  })
+
+  it('preserves attachment bytes when another conversation still references the same asset', async () => {
+    const authFetch = vi.fn(async () => new Response(null, { status: 204 }))
+    const store = createStore(authFetch)
+    vi.spyOn(store as any, 'findMessageByItemId').mockResolvedValue({
+      id: 'messages.ttl#user-delete',
+      richContent: JSON.stringify({
+        id: 'user-delete',
+        thread_id: 'thread-1',
+        type: 'user_message',
+        content: [{ type: 'input_text', text: 'delete me' }],
+        attachments: [{ id: 'attach-shared', type: 'file', name: 'shared.txt', mime_type: 'text/plain' }],
+        created_at: 1,
+      }),
+      createdAt: new Date(1000),
+    })
+    vi.spyOn(store as any, 'deleteMessageRecord').mockResolvedValue(undefined)
+    vi.spyOn(store as any, 'isAttachmentReferencedElsewhere').mockResolvedValue(true)
+
+    await store.deleteThreadItem('thread-1', 'user-delete', {})
+
+    expect(authFetch).not.toHaveBeenCalledWith(
+      'https://pod.example/alice/.data/chat-attachments/attach-shared',
       { method: 'DELETE' },
     )
   })

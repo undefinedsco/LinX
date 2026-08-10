@@ -22,9 +22,12 @@ import {
 } from '@/lib/vendor/xpod-chatkit'
 import {
   agentResource,
+  aiProviderResource,
+  AIConfigRuntimeCapability,
   chatResource,
   contactResource,
   extractChatIdFromChatRef,
+  getAIConfigProviderCapabilities,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   type AgentRow,
@@ -43,13 +46,14 @@ import {
   type ChatKitAnnotation,
 } from './model-annotations'
 import { sendMatrixThreadMessage } from '../../matrix-service'
-import { attachmentToModelParts, type ModelContentPart } from './attachment-content'
+import { attachmentToModelParts, MAX_ATTACHMENT_BYTES, type ModelContentPart } from './attachment-content'
 import {
   DEFAULT_AGENT_AI_RUNTIME_LOCATION,
   readAgentAiRuntimeLocation,
   type AgentAiRuntimeLocation,
 } from '../../agent-runtime-location'
 import { classifyRuntimeTool } from '../../domain/runtime-tool-category'
+import { readProjectContext, renderProjectSystemContext } from '../project-context'
 
 function readChatIdFromThread(thread: ThreadMetadata): string | null {
   if (typeof thread.metadata?.chat_id !== 'string') {
@@ -72,12 +76,92 @@ type LocalChatKitStorePort = ChatKitStore<StoreContext> & {
 
 type ModelMessage = { role: string; content: string | ModelContentPart[] }
 
+class ProviderCapabilityError extends Error {
+  constructor(provider: string, capability: string) {
+    super(`当前 AI 供应商 ${provider} 未声明 ${capability} 能力，请在“模型服务”中确认上游支持后启用。`)
+    this.name = 'ProviderCapabilityError'
+  }
+}
+
+function isRetryableGenerationError(error: unknown): boolean {
+  if (isAbortError(error) || error instanceof ProviderCapabilityError) return false
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
+  if (error instanceof TypeError) return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /network|fetch|connection|socket|timed?\s*out|econn|http\s+(?:408|429|5\d\d)|runtime error (?:408|429|5\d\d)|responses error (?:408|429|5\d\d)/iu.test(message)
+}
+
+function modelMessagesContainImages(messages: ModelMessage[]): boolean {
+  return messages.some((message) => Array.isArray(message.content)
+    && message.content.some((part) => part.type === 'image_url'))
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)))
+  }
+  return btoa(binary)
+}
+
+function assertGeneratedImageUrl(value: string): URL {
+  const url = new URL(value)
+  const localHttp = url.protocol === 'http:'
+    && (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1')
+  if (url.protocol !== 'https:' && !localHttp) {
+    throw new Error('Image provider returned an unsafe download URL')
+  }
+  return url
+}
+
+async function readGeneratedImageBytes(response: Response): Promise<Uint8Array> {
+  const mimeType = response.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() ?? ''
+  if (mimeType && !mimeType.startsWith('image/')) {
+    throw new Error('Image provider returned a non-image download')
+  }
+  const declaredLength = Number(response.headers.get('Content-Length'))
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_ATTACHMENT_BYTES) {
+    throw new Error('Generated image exceeds the 25 MB attachment limit')
+  }
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('Generated image exceeds the 25 MB attachment limit')
+    return bytes
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > MAX_ATTACHMENT_BYTES) {
+      await reader.cancel().catch(() => undefined)
+      throw new Error('Generated image exceeds the 25 MB attachment limit')
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
 export interface LocalServiceOptions {
   store: LocalChatKitStorePort
   db: SolidDatabase
   webId: string
   authFetch: typeof fetch
   systemPrompt?: string
+  onGenerationDeferred?: (entry: {
+    threadId: string
+    userItemId: string
+    inferenceOptions?: Record<string, unknown>
+  }) => Promise<void> | void
 }
 
 export interface StreamingResult {
@@ -110,6 +194,12 @@ function isWebSearchRequested(inferenceOptions: unknown): boolean {
     && typeof toolChoice === 'object'
     && (toolChoice as { id?: unknown }).id === 'web_search',
   )
+}
+
+function isImageGenerationRequested(inferenceOptions: unknown): boolean {
+  if (!inferenceOptions || typeof inferenceOptions !== 'object') return false
+  const toolChoice = (inferenceOptions as { tool_choice?: unknown }).tool_choice
+  return Boolean(toolChoice && typeof toolChoice === 'object' && (toolChoice as { id?: unknown }).id === 'image_generation')
 }
 
 function describeRuntimeToolProgress(name: string): { icon: string; text: string } {
@@ -351,6 +441,7 @@ export class LocalChatKitService {
   private authFetch: typeof fetch
   private systemPrompt: string
   private runtimeSidecar: RuntimeSidecarSink
+  private onGenerationDeferred?: LocalServiceOptions['onGenerationDeferred']
   private readonly attachmentModelPartCache = new Map<string, Promise<ModelContentPart[]>>()
 
   constructor(options: LocalServiceOptions) {
@@ -359,6 +450,7 @@ export class LocalChatKitService {
     this.webId = options.webId
     this.authFetch = options.authFetch
     this.systemPrompt = options.systemPrompt ?? 'You are a helpful assistant.'
+    this.onGenerationDeferred = options.onGenerationDeferred
     this.runtimeSidecar = new RuntimeSidecarSink(this.db, this.webId)
   }
 
@@ -473,8 +565,8 @@ export class LocalChatKitService {
 
     if (action === 'message.delete') {
       const thread = await this.store.loadThread(threadId, context)
-      const page = await this.store.loadThreadItems(threadId, undefined, 1000, 'asc', context)
-      const deletedIds = collectItemSubtreeIds(page.data, itemId)
+      const items = await this.loadAllThreadItems(threadId, context)
+      const deletedIds = collectItemSubtreeIds(items, itemId)
       for (const deletedId of deletedIds) {
         await this.store.deleteThreadItem(threadId, deletedId, context)
         yield { type: 'thread.item.deleted', thread_id: threadId, item_id: deletedId }
@@ -482,7 +574,7 @@ export class LocalChatKitService {
       const active = pruneActiveBranchSelections(
         thread.metadata?.active_branch_by_parent,
         deletedIds,
-        page.data,
+        items,
       )
       thread.metadata = { ...(thread.metadata ?? {}), active_branch_by_parent: active }
       thread.updated_at = nowTimestamp()
@@ -504,7 +596,7 @@ export class LocalChatKitService {
       const item = await this.store.loadItem(threadId, itemId, context)
       if (item.type !== 'user_message') throw new Error('只有用户消息可以编辑。')
       const thread = await this.store.loadThread(threadId, context)
-      const page = await this.store.loadThreadItems(threadId, undefined, 1000, 'asc', context)
+      const items = await this.loadAllThreadItems(threadId, context)
       const branchParentId = readBranchParentId(item)
         ?? `branch-root:${item.id}`
       const originalBranchId = readBranchId(item)
@@ -517,7 +609,7 @@ export class LocalChatKitService {
       await this.store.saveItem(threadId, original, context)
       await this.linkFollowingResponseItems(
         threadId,
-        page.data,
+        items,
         item.id,
         originalBranchId,
         context,
@@ -692,10 +784,10 @@ export class LocalChatKitService {
     context: StoreContext,
   ): AsyncIterable<ThreadStreamEvent> {
     const thread = await this.store.loadThread(params.thread_id, context)
-    const items = await this.store.loadThreadItems(params.thread_id, undefined, 1000, 'asc', context)
+    const items = await this.loadAllThreadItems(params.thread_id, context)
     let lastUserMessage: ThreadItem | undefined
 
-    for (const item of items.data) {
+    for (const item of items) {
       if (item.type === 'user_message') lastUserMessage = item
       if (item.id === params.item_id) break
     }
@@ -703,7 +795,7 @@ export class LocalChatKitService {
     if (lastUserMessage) {
       await this.linkFollowingResponseItems(
         params.thread_id,
-        items.data,
+        items,
         lastUserMessage.id,
         readBranchId(lastUserMessage) ?? `branch:${lastUserMessage.id}`,
         context,
@@ -721,8 +813,12 @@ export class LocalChatKitService {
 
   private async handleThreadsGetById(params: any, context: StoreContext) {
     const thread = await this.store.loadThread(params.thread_id, context)
-    const items = await this.store.loadThreadItems(params.thread_id, undefined, 50, 'asc', context)
-    return { ...thread, items: projectActiveBranchItems(items, thread.metadata?.active_branch_by_parent) }
+    const items = await this.store.loadThreadItems(params.thread_id, undefined, 50, 'desc', context)
+    const chronologicalItems = {
+      ...items,
+      data: [...items.data].sort((left, right) => (left.created_at ?? 0) - (right.created_at ?? 0)),
+    }
+    return { ...thread, items: projectActiveBranchItems(chronologicalItems, thread.metadata?.active_branch_by_parent) }
   }
 
   private async handleThreadsList(params: any, context: StoreContext) {
@@ -790,7 +886,12 @@ export class LocalChatKitService {
     try {
       const userText = await this.buildRuntimeUserText(userMessage)
       const agentConfig = await this.resolveThreadAgentConfig(thread)
-      const messages = await this.buildConversationHistory(thread.id, context, agentConfig?.contextRound)
+      const messages = await this.buildConversationHistory(
+        thread.id,
+        context,
+        agentConfig?.contextRound,
+        userMessage.id,
+      )
       const originalUserText = userMessage.type === 'user_message'
         ? extractUserMessageText(userMessage.content)
         : ''
@@ -798,11 +899,15 @@ export class LocalChatKitService {
         messages.push({ role: 'user', content: userText })
       }
       const webSearchRequested = isWebSearchRequested(inferenceOptions)
+      const imageGenerationRequested = isImageGenerationRequested(inferenceOptions)
+      const sourceImageAttachment = imageGenerationRequested && userMessage.type === 'user_message'
+        ? userMessage.attachments?.find((attachment) => attachment.type === 'image')
+        : undefined
       const platformModel = this.resolvePlatformModel(agentConfig, inferenceOptions?.model)
         ?? (webSearchRequested && !agentConfig ? 'linx-lite' : null)
       // An explicitly selected composer tool is a per-message routing decision.
       // It must not be swallowed by a long-lived coding/runtime session.
-      const runtimeThread = webSearchRequested ? null : await this.getRuntimeThread(thread.id)
+      const runtimeThread = webSearchRequested || imageGenerationRequested ? null : await this.getRuntimeThread(thread.id)
 
       if (runtimeThread) {
         const chatId = readChatIdFromThread(thread) ?? 'default'
@@ -832,13 +937,61 @@ export class LocalChatKitService {
           yield event
         }
       } else {
-        const provider = agentConfig?.provider ?? 'openai'
+        const provider = platformModel ? 'undefineds' : (agentConfig?.provider ?? 'openai')
+        const providerCapabilities = await this.resolveProviderCapabilities(provider)
         const selectedModel = inferenceOptions?.model ?? agentConfig?.model ?? 'gpt-4o-mini'
         const providerModel = typeof selectedModel === 'string' && selectedModel.includes('/')
           ? selectedModel
           : `${provider}/${selectedModel}`
 
+        if (imageGenerationRequested) {
+          const requiredCapability = sourceImageAttachment
+            ? AIConfigRuntimeCapability.imageEditing
+            : AIConfigRuntimeCapability.imageGeneration
+          if (!providerCapabilities.includes(requiredCapability)) {
+            throw new ProviderCapabilityError(provider, sourceImageAttachment ? '图片编辑' : '图片生成')
+          }
+          const imageModel = await this.resolveImageModel(
+            provider,
+            providerModel,
+            requiredCapability,
+            context.signal as AbortSignal | undefined,
+          )
+          yield {
+            type: 'progress_update',
+            icon: 'square-image',
+            text: sourceImageAttachment ? '正在编辑图片…' : '正在生成图片…',
+          } as ThreadStreamEvent
+          const attachment = await this.generateImageAttachment(
+            provider,
+            imageModel,
+            originalUserText || userText,
+            sourceImageAttachment,
+            context.signal as AbortSignal | undefined,
+          )
+          fullText = `${sourceImageAttachment ? '已编辑' : '已生成'}图片：${attachment.name}`
+          yield createAssistantTextDeltaEvent(assistantItemId, fullText)
+          assistantItem.content = [{ type: 'output_text', text: fullText, annotations: [] }]
+          assistantItem.attachments = [attachment]
+          assistantItem.status = 'completed'
+          await this.store.saveItem(thread.id, assistantItem, context)
+          yield { type: 'thread.item.done', item: assistantItem }
+          return
+        }
+
         if (webSearchRequested) {
+          if (!providerCapabilities.includes(AIConfigRuntimeCapability.responses)) {
+            throw new ProviderCapabilityError(provider, 'Responses API')
+          }
+          if (!providerCapabilities.includes(AIConfigRuntimeCapability.responsesWebSearch)) {
+            throw new ProviderCapabilityError(provider, 'Responses Web Search')
+          }
+          if (
+            modelMessagesContainImages(messages)
+            && !providerCapabilities.includes(AIConfigRuntimeCapability.imageInput)
+          ) {
+            throw new ProviderCapabilityError(provider, '图片输入')
+          }
           yield {
             type: 'progress_update',
             icon: 'search',
@@ -889,6 +1042,34 @@ export class LocalChatKitService {
           return
         }
 
+        if (
+          modelMessagesContainImages(messages)
+          && !providerCapabilities.includes(AIConfigRuntimeCapability.imageInput)
+        ) {
+          throw new ProviderCapabilityError(provider, '图片输入')
+        }
+
+        if (!providerCapabilities.includes(AIConfigRuntimeCapability.chatCompletions)) {
+          if (!providerCapabilities.includes(AIConfigRuntimeCapability.responses)) {
+            throw new ProviderCapabilityError(provider, 'Chat Completions 或 Responses API')
+          }
+          const result = await this.respondWithLinxResponses(
+            providerModel,
+            messages,
+            inferenceOptions,
+            agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
+            context.signal as AbortSignal | undefined,
+          )
+          fullText = result.text
+          annotations = result.annotations
+          yield createAssistantTextDeltaEvent(assistantItemId, fullText)
+          assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
+          assistantItem.status = 'completed'
+          await this.store.saveItem(thread.id, assistantItem, context)
+          yield { type: 'thread.item.done', item: assistantItem }
+          return
+        }
+
         const stream = this.streamFromProviderRuntime(
           provider,
           providerModel,
@@ -918,7 +1099,21 @@ export class LocalChatKitService {
     } catch (error: any) {
       const webSearchFailed = isWebSearchRequested(inferenceOptions) && !isAbortError(error)
       const searchErrorMessage = error instanceof Error ? error.message : ''
-      const userMessage = webSearchFailed
+      const generationDeferred = Boolean(this.onGenerationDeferred) && isRetryableGenerationError(error)
+      if (generationDeferred) {
+        await this.onGenerationDeferred?.({
+          threadId: thread.id,
+          userItemId: userMessage.id,
+          inferenceOptions: inferenceOptions && typeof inferenceOptions === 'object'
+            ? { ...inferenceOptions }
+            : undefined,
+        })
+      }
+      const userFacingMessage = generationDeferred
+        ? '网络或 AI 上游暂不可用，已加入发送队列；连接恢复后会自动重试。'
+        : error instanceof ProviderCapabilityError
+        ? error.message
+        : webSearchFailed
         ? searchErrorMessage.startsWith('当前自定义 AI 供应商不支持')
           ? searchErrorMessage
           : '联网搜索暂不可用。请检查本地 xpod 的 AI 上游配置后重试。'
@@ -928,7 +1123,7 @@ export class LocalChatKitService {
         // retryable assistant item. Emitting a ChatKit stream error as well
         // adds an unrelated generic error card and makes a known upstream
         // capability gap look like a broken conversation.
-        console.warn('[LocalChatKitService] Web search unavailable:', userMessage)
+        console.warn('[LocalChatKitService] Web search unavailable:', userFacingMessage)
       } else if (!isAbortError(error)) {
         console.error('[LocalChatKitService] AI/runtime response failed:', error)
       }
@@ -941,19 +1136,20 @@ export class LocalChatKitService {
       }
       assistantItem.content = [{
         type: 'output_text',
-        text: fullText || (isAbortError(error) ? '已停止生成。' : userMessage),
+        text: fullText || (isAbortError(error) ? '已停止生成。' : userFacingMessage),
         annotations: [],
       }]
       assistantItem.status = 'incomplete'
       await this.store.saveItem(thread.id, assistantItem, context)
       yield { type: 'thread.item.done', item: assistantItem }
       if (isAbortError(error)) return
+      if (generationDeferred) return
       if (webSearchFailed) return
       yield {
         type: 'error',
         error: {
           code: 'generation_error',
-          message: userMessage,
+          message: userFacingMessage,
         },
       } as ThreadStreamEvent
     }
@@ -1475,6 +1671,24 @@ export class LocalChatKitService {
     runtimeLocation: AgentAiRuntimeLocation = DEFAULT_AGENT_AI_RUNTIME_LOCATION,
     signal?: AbortSignal,
   ): Promise<ModelResponse> {
+    return this.respondWithLinxResponses(
+      model,
+      messages,
+      inferenceOptions,
+      runtimeLocation,
+      signal,
+      true,
+    )
+  }
+
+  private async respondWithLinxResponses(
+    model: string,
+    messages: ModelMessage[],
+    inferenceOptions?: any,
+    runtimeLocation: AgentAiRuntimeLocation = DEFAULT_AGENT_AI_RUNTIME_LOCATION,
+    signal?: AbortSignal,
+    webSearch = false,
+  ): Promise<ModelResponse> {
     const requestInit: RequestInit = {
       method: 'POST',
       headers: {
@@ -1484,8 +1698,9 @@ export class LocalChatKitService {
       body: JSON.stringify({
         model,
         input: messages,
-        tools: [{ type: 'web_search' }],
-        tool_choice: 'auto',
+        ...(webSearch
+          ? { tools: [{ type: 'web_search' }], tool_choice: 'auto' }
+          : {}),
         ...(typeof inferenceOptions?.temperature === 'number'
           ? { temperature: inferenceOptions.temperature }
           : {}),
@@ -1500,10 +1715,166 @@ export class LocalChatKitService {
 
     if (!response.ok) {
       const text = await response.text()
-      throw new Error(`LinX web search error ${response.status}: ${text.slice(0, 200)}`)
+      throw new Error(`LinX Responses error ${response.status}: ${text.slice(0, 200)}`)
     }
 
     return parseResponsesApiResult(await response.json())
+  }
+
+  private async generateImageAttachment(
+    provider: string,
+    model: string,
+    prompt: string,
+    sourceImage?: Attachment,
+    signal?: AbortSignal,
+  ): Promise<Attachment> {
+    if (!this.store.createAttachment || !this.store.uploadAttachment) {
+      throw new Error('Attachment storage is unavailable')
+    }
+    let sourceImagePayload: { data: string; mime_type: string; name: string } | undefined
+    if (sourceImage) {
+      if (!this.store.readAttachmentBytes) throw new Error('Attachment read is unavailable')
+      const bytes = await this.store.readAttachmentBytes(sourceImage.id)
+      sourceImagePayload = {
+        data: bytesToBase64(bytes),
+        mime_type: sourceImage.mime_type,
+        name: sourceImage.name,
+      }
+    }
+    const endpoint = sourceImage ? 'images/edits' : 'images/generations'
+    const response = await this.authFetch(`${this.resolveRuntimeBaseUrl()}/${endpoint}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, model, prompt, n: 1, response_format: 'b64_json', ...(sourceImagePayload ? { image: sourceImagePayload } : {}) }),
+      signal,
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`Image generation error ${response.status}: ${text.slice(0, 200)}`)
+    }
+    const payload = await response.json() as { data?: Array<{ b64_json?: string; url?: string }> }
+    const resultImage = payload.data?.[0]
+    let bytes: Uint8Array
+    let mimeType = 'image/png'
+    if (resultImage?.b64_json) {
+      const maxBase64Length = Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4 + 4
+      if (resultImage.b64_json.length > maxBase64Length) {
+        throw new Error('Generated image exceeds the 25 MB attachment limit')
+      }
+      const binary = atob(resultImage.b64_json)
+      bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+      if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+        throw new Error('Generated image exceeds the 25 MB attachment limit')
+      }
+    } else if (resultImage?.url) {
+      const imageResponse = await fetch(assertGeneratedImageUrl(resultImage.url), {
+        signal,
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+      })
+      if (!imageResponse.ok) throw new Error(`Generated image download failed with HTTP ${imageResponse.status}`)
+      mimeType = imageResponse.headers.get('Content-Type')?.split(';')[0] || mimeType
+      bytes = await readGeneratedImageBytes(imageResponse)
+    } else {
+      throw new Error('Image provider returned no image data')
+    }
+    const attachment = this.store.createAttachment({
+      name: `${sourceImage ? 'edited' : 'generated'}-${new Date().toISOString().replace(/[:.]/gu, '-')}.png`,
+      mime_type: mimeType,
+    })
+    return this.store.uploadAttachment(
+      attachment.id,
+      new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], { type: mimeType }),
+      mimeType,
+      signal,
+    )
+  }
+
+  private async resolveImageModel(
+    provider: string,
+    preferredModel: string,
+    capability: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const response = await this.authFetch(`${this.resolveRuntimeBaseUrl()}/models`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal,
+    })
+    if (!response.ok) {
+      throw new Error(`Image model discovery failed with HTTP ${response.status}`)
+    }
+    const payload = await response.json() as { data?: Array<{
+      id?: unknown
+      owned_by?: unknown
+      capabilities?: unknown
+      custom_capabilities?: unknown
+    }> }
+    const capabilityKey = capability === AIConfigRuntimeCapability.imageEditing
+      ? 'imageEditing'
+      : 'imageGeneration'
+    const models = (Array.isArray(payload.data) ? payload.data : []).filter((model) => {
+      if (typeof model.id !== 'string') return false
+      if (typeof model.owned_by === 'string' && normalizeAIConfigProviderId(model.owned_by) !== normalizeAIConfigProviderId(provider)) return false
+      const custom = Array.isArray(model.custom_capabilities)
+        ? model.custom_capabilities.filter((value): value is string => typeof value === 'string')
+        : []
+      const capabilities = model.capabilities && typeof model.capabilities === 'object'
+        ? model.capabilities as Record<string, unknown>
+        : {}
+      return custom.includes(capability) || capabilities[capabilityKey] === true
+    })
+    const preferredId = preferredModel.includes('/') ? preferredModel.slice(preferredModel.indexOf('/') + 1) : preferredModel
+    const selected = models.find((model) => model.id === preferredId) ?? models[0]
+    if (!selected || typeof selected.id !== 'string') {
+      throw new ProviderCapabilityError(
+        provider,
+        capability === AIConfigRuntimeCapability.imageEditing ? '可用的图片编辑模型' : '可用的图片生成模型',
+      )
+    }
+    return `${normalizeAIConfigProviderId(provider)}/${selected.id}`
+  }
+
+  private async resolveProviderCapabilities(providerId: string): Promise<string[]> {
+    const provider = normalizeAIConfigProviderId(providerId)
+    if (!provider) return [AIConfigRuntimeCapability.chatCompletions]
+
+    let explicitCapabilities: unknown
+    try {
+      const findById = (this.db as any).findById
+      if (typeof findById === 'function') {
+        const providerRow = await findById.call(
+          this.db,
+          aiProviderResource,
+          aiProviderResource.buildId({ id: provider }),
+        ) as Record<string, unknown> | null
+        explicitCapabilities = providerRow?.capabilities
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/404|not found|missing/iu.test(message)) throw error
+    }
+    return getAIConfigProviderCapabilities(provider, explicitCapabilities)
+  }
+
+  private async loadAllThreadItems(threadId: string, context: StoreContext): Promise<ThreadItem[]> {
+    const items: ThreadItem[] = []
+    const seen = new Set<string>()
+    let after: string | undefined
+
+    while (true) {
+      const page = await this.store.loadThreadItems(threadId, after, 250, 'asc', context)
+      for (const item of page.data) {
+        if (seen.has(item.id)) continue
+        seen.add(item.id)
+        items.push(item)
+      }
+      if (!page.has_more) return items
+      if (!page.last_id || page.last_id === after) {
+        throw new Error(`Thread pagination did not advance for ${threadId}.`)
+      }
+      after = page.last_id
+    }
   }
 
   private async fetchServerOriginatedLinxRuntime(requestInit: RequestInit): Promise<Response> {
@@ -1652,18 +2023,33 @@ export class LocalChatKitService {
     threadId: string,
     context: StoreContext,
     contextRound?: number,
+    anchoredUserItemId?: string,
   ): Promise<ModelMessage[]> {
     const conversation: ModelMessage[] = []
 
-    const items = await this.store.loadThreadItems(threadId, undefined, 100, 'asc', context)
+    const historyLimit = contextRound
+      ? Math.min(250, Math.max(32, contextRound * 4 + 8))
+      : 100
+    const items = await this.store.loadThreadItems(threadId, undefined, historyLimit, 'desc', context)
     const thread = await this.store.loadThread(threadId, context)
-    const activeItems = projectActiveBranchItems(items, thread.metadata?.active_branch_by_parent).data
+    const chronologicalItems = { ...items, data: [...items.data].reverse() }
+    const activeItems = projectActiveBranchItems(
+      chronologicalItems,
+      thread.metadata?.active_branch_by_parent,
+    ).data
     const userItemIndexes = activeItems
       .map((item, index) => item.type === 'user_message' ? index : -1)
       .filter((index) => index >= 0)
-    const firstItemIndex = contextRound && userItemIndexes.length > contextRound
-      ? userItemIndexes[userItemIndexes.length - contextRound]
-      : 0
+    let firstItemIndex = 0
+    if (contextRound) {
+      const includesAnchoredUser = activeItems.some((item) => item.id === anchoredUserItemId)
+      const retainedUserTurns = includesAnchoredUser
+        ? contextRound
+        : Math.max(0, contextRound - 1)
+      firstItemIndex = retainedUserTurns === 0
+        ? activeItems.length
+        : userItemIndexes[Math.max(0, userItemIndexes.length - retainedUserTurns)] ?? 0
+    }
     for (const item of activeItems.slice(firstItemIndex)) {
       if (item.type === 'user_message') {
         const text = extractUserMessageText((item as any).content)
@@ -1687,8 +2073,22 @@ export class LocalChatKitService {
       }
     }
 
+    let systemPrompt = this.systemPrompt
+    const workspaceUri = typeof thread.metadata?.workspace === 'string' ? thread.metadata.workspace : null
+    if (workspaceUri) {
+      try {
+        const projectContext = renderProjectSystemContext(await readProjectContext({
+          db: this.db,
+          workspaceUri,
+        }))
+        if (projectContext) systemPrompt = `${systemPrompt}\n\n${projectContext}`
+      } catch (error) {
+        console.warn('[LocalChatKitService] Project context unavailable:', error)
+      }
+    }
+
     return [
-      { role: 'system', content: this.systemPrompt },
+      { role: 'system', content: systemPrompt },
       ...conversation,
     ]
   }

@@ -10,6 +10,7 @@ function renderView(overrides: Partial<ModelServicesDetailViewProps> = {}) {
       description: 'Provider description',
       enabled: true,
       modelCount: 1,
+      capabilities: ['chat_completions'],
       models: [{
         id: 'gpt-4o',
         name: 'GPT-4o',
@@ -27,6 +28,7 @@ function renderView(overrides: Partial<ModelServicesDetailViewProps> = {}) {
     verificationRequiresApiKey: true,
     onApiKeyChange: vi.fn(),
     onBaseUrlChange: vi.fn(),
+    onCapabilityChange: vi.fn(async () => {}),
     onSaveConnection: vi.fn(async () => {}),
     onToggleKeyVisibility: vi.fn(),
     onToggleEnable: vi.fn(async () => {}),

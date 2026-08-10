@@ -26,6 +26,7 @@ vi.mock('./data/use-model-services', () => ({
         baseUrl: 'https://api.openai.com/v1',
         defaultBaseUrl: 'https://api.openai.com/v1',
         defaultApiKeyPlaceholder: 'sk-...',
+        capabilities: ['chat_completions'],
         models: [],
       },
     },
@@ -154,5 +155,17 @@ describe('ModelServicesContentPane', () => {
     render(<ModelServicesContentPane />)
 
     expect(screen.getByRole('alert')).toHaveTextContent('模型服务配置读取失败，请重试。')
+  })
+
+  it('persists explicit Responses dependencies when web search is enabled', async () => {
+    render(<ModelServicesContentPane />)
+
+    fireEvent.click(screen.getByRole('switch', { name: '开启 Responses Web Search' }))
+
+    await waitFor(() => {
+      expect(mockUpdateProvider).toHaveBeenCalledWith('openai', {
+        capabilities: ['chat_completions', 'responses_web_search', 'responses'],
+      })
+    })
   })
 })

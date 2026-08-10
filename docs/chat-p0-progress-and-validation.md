@@ -1,6 +1,6 @@
 # Chat P0 调整进度与验收手册
 
-> 更新日期：2026-08-09
+> 更新日期：2026-08-11
 > 适用范围：LinX Web ChatKit 1.9 主路径、本地 Xpod、Pod 持久化
 > 本文档用于后续开发交接和真实环境测试，不以“代码已存在”代替“运行时已验收”。
 
@@ -361,3 +361,22 @@ yarn workspace @linx/web tsc --noEmit
 - 修复了一个会影响 runtime/tool 上下文的刷新遗留：Zustand 可能保存 fragment Thread id，而 Pod collection 返回 resource-relative id。现在当前 Thread 按同一资源 fragment 匹配，刷新后 workspace 关系不会被误判为缺失。
 - 本地 Xpod 浏览器硬刷新后，`P0 Browser Pass` 自动恢复为选中状态，并继续显示“当前话题已绑定空间文件夹”和正确的 Pod workspace URI；Thread 历史、附件计数与活动分支同步恢复。
 - 2026-08-10 最终真实搜索请求已走本地 Xpod，但 `timecc` 上游返回 HTTP 502；ChatKit 正确显示“联网搜索失败”并持久化失败消息。annotation 生成、序列化和恢复由专项测试覆盖，真实成功 citation 展示仍取决于 provider 恢复，不把本次上游故障记录为前端通过。
+
+## 18. P1/P2 工作台能力与最终 CR 收口（2026-08-11）
+
+- **Provider 能力契约**：credential、provider 和 model 可显式声明 Chat Completions、Responses、Responses Web Search、图片输入、图片生成与图片编辑；未声明的能力在本地 Xpod 出站前失败，不再把所有 custom provider 乐观推定为支持 `/responses`。
+- **长会话性能**：Thread 按 cursor/limit 分页后再水合可见消息；附件二进制仅在预览或下载时读取。模型上下文先截取最终窗口，再提取附件文本，并复用不可变附件的提取结果，避免每轮重复下载、解析全部历史 PDF/Office 文件。
+- **附件生命周期**：删除消息或 Thread 时会清理不再引用的附件；若同一附件仍被其他会话引用则保留。对象 URL 在附件替换、删除、store 重建和组件卸载时统一释放。
+- **离线恢复**：发送请求使用不含正文的本地 outbox 记录待重放 item/thread 标识；网络恢复后单飞重放，避免多个 reconnect effect 重复发送。连接探测请求本地 Pod 的公开 profile 资源，不再用受 ACP 保护的 Pod 根目录制造 403 噪声。
+- **Artifacts / Canvas**：长文、代码和文件产物可进入右侧工作区，支持版本切换、复制、下载和继续修改；下载产生的临时 URL 会及时释放。
+- **项目上下文与记忆**：会话可绑定 Workspace、项目说明和项目文件；上下文写入 Pod，并在 runtime 请求中明确投影。用户可查看、更新或关闭项目上下文。
+- **资产中心**：当前会话附件和生成产物统一进入资产列表，支持搜索、打开、下载和再次引用；资源 URL 必须位于当前 Pod 根路径下。
+- **分享与导出**：支持 Markdown/HTML 导出、敏感工具参数过滤、匿名只读分享和撤销分享；发布失败时同步清理分享 HTML 与 ACP/WAC 资源，避免残留半成品授权。
+- **语音与画面**：新增语音对话、回答朗读、屏幕/摄像头采集入口；权限拒绝、取消和异步授权竞态均有用户可理解的恢复状态和自动释放媒体轨道。
+- **图片生成与编辑**：LinX 仅调用本地 Xpod `/v1/images/generations` 与 `/v1/images/edits`，provider secret 不进入浏览器；Xpod 对请求图片、provider JSON 和最终图片统一执行 25 MB 边界、MIME/base64 校验与安全 URL 策略。图片能力的 UI 和协议测试已通过；真实上游图片生成仍需选中明确声明相应能力且实际支持该端点的 provider/model 后做最终视觉验收。
+- **本地运行状态**：当前源码已重建为本地 Docker 镜像，`xpod-local` 健康检查通过；重启后 LinX 可恢复当前 Thread、历史消息和资产，本轮日志未出现 credential reader、Pod 412 或 AI gateway 5xx 回归。
+
+### 当前发布门禁与保留边界
+
+- 共享模型契约已在独立 `packages/models` 仓库提交并标记 `v0.2.50`；LinX 只有在该版本推送并发布后才能把依赖从 `0.2.47` 精确升级到 `0.2.50`。当前本机 GitHub SSH 身份对 `undefinedsco/models` 没有写权限，因此这是唯一跨仓库发布门禁，不把本地 workspace 解析成功当成 CI 可安装证据。
+- 保留 ChatKit 视图层的前提下，普通未发送草稿跨整页刷新和 Mermaid renderer 仍受 SDK 无 Composer getter/change event、无 Markdown renderer hook 的边界约束；本轮没有复制 Composer 或消息渲染器来绕过这些限制。

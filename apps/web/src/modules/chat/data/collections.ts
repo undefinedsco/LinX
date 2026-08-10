@@ -2510,6 +2510,17 @@ export function useMessageList(chatId: string | null, threadId: string | null) {
   return { ...query, data, error: null, refetch: () => messageCollection.fetch({ refetch: true }) }
 }
 
+/** All hydrated messages for cross-conversation asset and search projections. */
+export function useMessageIndex(options?: { enabled?: boolean }) {
+  const query = useLiveQuery(messageCollection)
+  const data = useMemo(() => options?.enabled === false
+    ? []
+    : [...((query.data ?? []) as MessageRow[])].sort((left, right) => (
+        new Date(right.createdAt ?? 0).getTime() - new Date(left.createdAt ?? 0).getTime()
+      )), [options?.enabled, query.data])
+  return { ...query, data, error: null, refetch: () => messageCollection.fetch({ refetch: true }) }
+}
+
 // ============================================================================
 // Mutation Hooks (using chatOps)
 // ============================================================================
