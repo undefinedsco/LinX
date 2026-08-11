@@ -239,6 +239,9 @@ function modelIdFromRef(value: unknown, aiRuntime: AiRuntime): string {
 
 async function findProviderRow(db: SolidDatabase, providerId: string): Promise<AIProviderRow | null> {
   if (!providerId) return null
+  const resourceId = aiProviderResource.buildId({ id: providerId })
+  const canonical = await db.findById(aiProviderResource, resourceId) as AIProviderRow | null
+  if (canonical || resourceId === providerId) return canonical
   return await db.findById(aiProviderResource, providerId) as AIProviderRow | null
 }
 

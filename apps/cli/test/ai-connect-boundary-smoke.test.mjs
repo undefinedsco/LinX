@@ -176,8 +176,8 @@ test('linx ai connect smoke covers API-key provider shell-to-core writes', async
     assert.deepEqual(harness.contexts, [undefined], item.inputProvider)
     assert.match(harness.output.join(''), new RegExp(`Connected AI provider: ${item.providerId}`))
 
-    const provider = harness.row('aiProvider', item.providerId)
-    const credential = harness.row('credential', `${item.providerId}-default`)
+    const provider = harness.row('aiProvider', `${item.providerId}.ttl`)
+    const credential = harness.row('credential', `credentials.ttl#${item.providerId}-default`)
     const model = harness.row('aiModel', `${item.providerId}.ttl#boundary-smoke-model`)
 
     assert.ok(provider, `provider row should be written for ${item.inputProvider}`)
@@ -212,8 +212,8 @@ test('Pod-backed OpenRouter credential can be marked as Codex-compatible and con
     model: 'boundary-smoke-model',
   }, harness.dependencies)
 
-  assert.equal(harness.row('aiProvider', 'openrouter').supportsBackend, 'codex')
-  assert.equal(harness.row('aiProvider', 'openrouter').rotationPolicy, 'round_robin')
+  assert.equal(harness.row('aiProvider', 'openrouter.ttl').supportsBackend, 'codex')
+  assert.equal(harness.row('aiProvider', 'openrouter.ttl').rotationPolicy, 'round_robin')
 
   const credential = await podAiModule.loadPodBackendCredential('codex', {
     async getPodDataSession() {
@@ -236,7 +236,7 @@ test('Pod-backed OpenRouter credential can be marked as Codex-compatible and con
       CODEX_BASE_URL: 'https://openrouter.ai/api/v1',
     },
   })
-  assert.ok(harness.row('credential', 'openrouter-default').lastUsedAt instanceof Date)
+  assert.ok(harness.row('credential', 'credentials.ttl#openrouter-default').lastUsedAt instanceof Date)
 })
 
 async function resolveOpenRouterSmokeModel(baseUrl, apiKey) {

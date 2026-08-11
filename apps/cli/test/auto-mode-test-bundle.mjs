@@ -212,6 +212,7 @@ async function buildAutoModeBundle(entryRelative) {
       ],
       skipLibCheck: true,
       verbatimModuleSyntax: false,
+      ignoreDeprecations: '6.0',
       baseUrl: sourceRoot,
       paths: {
         '@undefineds.co/models': [join(modelsDistRoot, 'index.d.ts')],

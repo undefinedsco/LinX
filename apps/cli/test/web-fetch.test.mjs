@@ -77,7 +77,7 @@ test('resolveJinaApiKey reads active Jina credential through shared models', asy
 
   assert.equal(apiKey, 'jina_test_key')
   assert.equal(db.updateCalls.length, 1)
-  assert.equal(db.updateCalls[0].id, 'jina-default')
+  assert.equal(db.updateCalls[0].id, 'credentials.ttl#jina-default')
 })
 
 test('web_fetch resolves Jina credential internally and calls Jina Reader', async (t) => {

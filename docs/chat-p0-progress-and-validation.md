@@ -378,8 +378,10 @@ yarn workspace @linx/web tsc --noEmit
 
 ### 当前发布门禁与保留边界
 
-- 共享模型契约已在独立 `packages/models` 仓库提交并标记 `v0.2.50`；LinX 只有在该版本推送并发布后才能把依赖从 `0.2.47` 精确升级到 `0.2.50`。当前本机 GitHub SSH 身份对 `undefinedsco/models` 没有写权限，因此这是唯一跨仓库发布门禁，不把本地 workspace 解析成功当成 CI 可安装证据。
+- 共享模型契约已 rebase 到独立 `models` 仓库最新 `origin/main`，并准备为 `v0.2.51`。registry 上已有的 `0.2.50` 发布于本轮改动之前，缺少项目上下文、分享和 runtime capability 导出，不能作为 LinX 依赖。`0.2.51` 的 170 项测试（包含 4 组本地 Xpod live CRUD）、TypeScript 构建、skill 检查、release tarball、release-safe 检查与关键导出检查均通过；当前本机 GitHub 身份对 `undefinedsco/models` 没有写权限，因此 tag 推送和 CI registry 发布仍是唯一跨仓库发布门禁，不把本地 workspace 或本地 tarball 当成 CI 可安装证据。
 - 保留 ChatKit 视图层的前提下，普通未发送草稿跨整页刷新和 Mermaid renderer 仍受 SDK 无 Composer getter/change event、无 Markdown renderer hook 的边界约束；本轮没有复制 Composer 或消息渲染器来绕过这些限制。
+
+- 2026-08-11 再次核对 OpenAI 官方 ChatKit API 与 npm latest：`@openai/chatkit` 1.9.0 / `@openai/chatkit-react` 1.6.1 仍只提供 `setComposerValue()`，公开事件不包含 Composer 文本变化，消息 Markdown 也没有 renderer hook。附件、dictation、model/tool 选择和 Thread 恢复接口均已按公开契约使用；草稿跨整页刷新与 Mermaid 继续作为明确 SDK 边界，而不是用跨域 iframe 探测或第二套 Composer/消息区伪实现。
 
 ## 19. Responses 流式与 P2 工作台补充终验（2026-08-11）
 
@@ -391,3 +393,11 @@ yarn workspace @linx/web tsc --noEmit
 - P2 组件新增 UI 回归：项目说明/记忆读取编辑、资产搜索与同一 Pod resource 复用、分享消息排除/工具详情 opt-in/撤销；与 Artifact 版本、语音、屏幕/摄像头、导出、图片生成协议等专项合计 73 项通过。
 - 本地已登录浏览器硬刷新后，当前 Thread、模型、历史、附件和 P2 入口自动恢复；项目上下文显示真实 Workspace URI，资产中心恢复 5 个 Pod 资产，分享导出显示逐条排除、Markdown、打印/PDF 和只读分享操作。刷新窗口的本地 Xpod 日志没有 4xx/5xx、credential、412 或未处理异常。
 - 最终门禁：Web 单测 375 文件、2875/2875；本地 Xpod 集成测试 16 文件、29/29；`build:check`、TypeScript、Chat lint 与 `git diff --check` 全部通过。集成测试共享 Xpod 的 fixture 清理也已改为直接删除独立测试文档，避免分页压力用例污染后续 live-sync 验证。
+
+## 20. 精确 Pod 资源 ID 与跨入口回归（2026-08-11）
+
+- drizzle-solid 0.3.20 的 `findById` / `updateById` / `deleteById` 参数是 base-relative **资源 ID**，不是业务短 key。AI provider、credential、model 和 settings 旧写法把短 key 当资源 ID，可能让写入位置、RDF 引用和后续精确读取指向不同资源。
+- Models 0.2.51 现在统一以 schema `buildId()` 生成新资源 ID：provider 使用 `<provider>.ttl`，credential 使用 `credentials.ttl#<credential>`，model 使用 `<provider>.ttl#<model>`；读取先尝试精确 ID，再为已有数据保留短 ID 回退。credential rotation 使用单独的 `credentialResourceId` 更新真实 RDF 资源，同时继续向 UI 暴露稳定的业务 `credentialId`。
+- settings 默认资源 ID 优先使用 row 中的稳定 `key`，避免 ORM 生成 key 覆盖业务 key 后产生随机文件名。
+- CLI 的 AI connect/status、Jina credential reader 和三个源码入口编译测试已同步精确 ID 契约；TypeScript 7 的单文件编译显式使用 `--ignoreConfig`，避免命令行文件与项目配置同时加载。
+- 最终验证：Models 29 文件、170/170；CLI 492 项中 489 通过、3 个可选 live smoke 跳过、0 失败；Web 375 文件、2875/2875；本地 Xpod Web 集成 16 文件、29/29；Service 16/16；Web `build:check` 与 Chat Oxlint 通过。Web 全量 ESLint 仍被仓库 TypeScript 7 与 `@typescript-eslint` 8.61（peer `<6.1`）的不兼容阻塞，因此没有把该命令误报为通过。

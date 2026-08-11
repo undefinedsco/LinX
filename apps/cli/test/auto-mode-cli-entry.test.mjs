@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync as rawExecFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,14 @@ import { fileURLToPath } from 'node:url'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
+
+function execFileSync(command, args, options) {
+  return rawExecFileSync(
+    command,
+    command === 'tsc' && args[0] !== '--ignoreConfig' ? ['--ignoreConfig', ...args] : args,
+    options,
+  )
+}
 
 function execFileResult(command, args, options = {}) {
   try {

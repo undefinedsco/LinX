@@ -480,10 +480,10 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.ok(providerInsert)
   assert.ok(credentialInsert)
   assert.ok(modelInsert)
-  assert.equal(providerInsert.row.id, 'anthropic')
+  assert.equal(providerInsert.row.id, 'anthropic.ttl')
   assert.equal(providerInsert.row.baseUrl, 'https://api.anthropic.com/v1')
   assert.equal(providerInsert.row.hasModel, '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514')
-  assert.equal(credentialInsert.row.id, 'anthropic-default')
+  assert.equal(credentialInsert.row.id, 'credentials.ttl#anthropic-default')
   assert.equal(credentialInsert.row.provider, '/settings/providers/anthropic.ttl')
   assert.equal(credentialInsert.row.service, 'ai')
   assert.equal(credentialInsert.row.apiKey, 'sk-ant-test-key')
@@ -651,7 +651,7 @@ test('linx ai status reads explicit provider config without provider/model colle
                 throw new Error(`unexpected collection scan: ${resourceName(resource)}`)
               }
               return [{
-                id: 'openai-default',
+                id: 'credentials.ttl#openai-default',
                 provider: '/settings/providers/openai.ttl',
                 service: 'ai',
                 status: 'active',
@@ -664,9 +664,9 @@ test('linx ai status reads explicit provider config without provider/model colle
     },
     async findById(resource, id) {
       findByIds.push([resourceName(resource), id])
-      if (resourceName(resource) === 'aiProvider' && id === 'openai') {
+      if (resourceName(resource) === 'aiProvider' && id === 'openai.ttl') {
         return {
-          id: 'openai',
+          id: 'openai.ttl',
           baseUrl: 'https://api.openai.com/v1',
           hasModel: '/settings/providers/openai.ttl#gpt-5.5',
         }
@@ -704,7 +704,7 @@ test('linx ai status reads explicit provider config without provider/model colle
 
   assert.deepEqual(selectResources, ['credential'])
   assert.deepEqual(findByIds, [
-    ['aiProvider', 'openai'],
+    ['aiProvider', 'openai.ttl'],
     ['aiModel', 'openai.ttl#gpt-5.5'],
   ])
   assert.match(output.join(''), /provider: openai/)
