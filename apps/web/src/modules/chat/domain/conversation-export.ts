@@ -40,9 +40,11 @@ function selectedMessages(messages: ConversationExportMessage[], options: Conver
 
 function exportContent(message: ConversationExportMessage): string {
   const content = message.content?.trim() || '（无文本内容）'
+  const containsRuntimeDiagnostic = /(?:ACP process|process exited|private stack|require stack|cannot find module|findById)/iu.test(content)
+    || /(?:\bat\s+[^\n]+\([^\n]*(?:\/Users\/|\\Users\\|\.tsx?:\d+|\.jsx?:\d+))/iu.test(content)
   if (
     message.role === 'assistant'
-    && /(?:ACP process|process exited|private stack|require stack|cannot find module|findById|\/Users\/|\\Users\\|\bError:\s|\bid=\d+\b|\.tsx?:\d+|\.jsx?:\d+)/iu.test(content)
+    && containsRuntimeDiagnostic
   ) return formatErrorForUser(content, '消息生成失败。请稍后重试。')
   return content
 }

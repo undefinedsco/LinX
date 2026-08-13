@@ -44,4 +44,12 @@ describe('conversation export', () => {
     expect(html).toContain('消息生成失败。请稍后重试。')
     expect(`${markdown}${html}`).not.toMatch(/ACP process|\/Users\/|runtime\.ts/iu)
   })
+
+  it('preserves legitimate technical answers that mention errors and source locations', () => {
+    const content = 'The public API may return `Error: invalid input`; inspect parser.ts:42 and request id=7.'
+    const messages = [{ id: 'a1', role: 'assistant', content }]
+
+    expect(renderConversationMarkdown(messages, { title: 'Technical export' })).toContain(content)
+    expect(renderConversationHtml(messages, { title: 'Technical export' })).toContain(content)
+  })
 })
