@@ -749,6 +749,7 @@ function ChatKitPanel({
       onThreadItemsChange: setBranchThreadItems,
       onOutboxChange: (count) => {
         setQueuedGenerationCount(count)
+        if (count > 0) setReconnectStatus((status) => status === 'idle' ? 'error' : status)
         setOutboxRevision((revision) => revision + 1)
       },
       onChatSummaryChange: ({ messageId, content, createdAt }) => {
@@ -765,7 +766,9 @@ function ChatKitPanel({
   useEffect(() => {
     setThreadAttachments([])
     setPreviewAttachment(null)
-    setQueuedGenerationCount(localFetch.getOutboxSize())
+    const queuedCount = localFetch.getOutboxSize()
+    setQueuedGenerationCount(queuedCount)
+    if (queuedCount > 0) setReconnectStatus('error')
     setOutboxRevision((revision) => revision + 1)
     return () => localFetch.dispose?.()
   }, [localFetch])

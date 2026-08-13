@@ -164,7 +164,7 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
                         <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-destructive" onClick={async () => {
                           setBusy(true)
                           try {
-                            await revokeConversationShare({ db: props.db, authFetch: props.authFetch, share })
+                            await revokeConversationShare({ db: props.db, authFetch: props.authFetch, podBaseUrl: props.podBaseUrl, share })
                             setShares((current) => current.filter((entry) => entry.id !== share.id))
                           } catch (reason) {
                             setError(reason instanceof Error ? reason.message : '撤销分享失败。')

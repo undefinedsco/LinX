@@ -25,12 +25,39 @@ function toRecord(row: ConversationShareRow): ConversationShareRecord {
   }
 }
 
+function httpUrl(value: string, label: string): URL {
+  const url = new URL(value)
+  if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) {
+    throw new Error(`${label} must be an HTTP(S) URL without embedded credentials`)
+  }
+  return url
+}
+
+function ownedShareUrl(podBaseUrl: string, value: string): URL {
+  const base = httpUrl(podBaseUrl, 'Pod base URL')
+  const share = httpUrl(value, 'Share URL')
+  const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`
+  const relativePath = share.pathname.slice(basePath.length)
+  if (
+    share.origin !== base.origin
+    || !share.pathname.startsWith(basePath)
+    || !/^public\/linx-chat-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.html$/iu.test(relativePath)
+    || share.search
+    || share.hash
+  ) throw new Error('Share URL is outside the selected Pod share container')
+  return share
+}
+
 function publicReadAcl(resourceUrl: string, ownerWebId: string): string {
-  return `@prefix acl: <http://www.w3.org/ns/auth/acl#> .\n@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n\n<#owner> a acl:Authorization; acl:accessTo <${resourceUrl}>; acl:agent <${ownerWebId}>; acl:mode acl:Read, acl:Write, acl:Control .\n<#public> a acl:Authorization; acl:accessTo <${resourceUrl}>; acl:agentClass foaf:Agent; acl:mode acl:Read .\n`
+  const resource = httpUrl(resourceUrl, 'Share URL').href
+  const owner = httpUrl(ownerWebId, 'Owner WebID').href
+  return `@prefix acl: <http://www.w3.org/ns/auth/acl#> .\n@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n\n<#owner> a acl:Authorization; acl:accessTo <${resource}>; acl:agent <${owner}>; acl:mode acl:Read, acl:Write, acl:Control .\n<#public> a acl:Authorization; acl:accessTo <${resource}>; acl:agentClass foaf:Agent; acl:mode acl:Read .\n`
 }
 
 function publicReadAcr(resourceUrl: string, ownerWebId: string): string {
-  return `@prefix acp: <http://www.w3.org/ns/solid/acp#> .\n@prefix acl: <http://www.w3.org/ns/auth/acl#> .\n\n<#root> a acp:AccessControlResource; acp:resource <${resourceUrl}>; acp:accessControl <#ownerAccess>, <#publicReadAccess> .\n<#ownerAccess> a acp:AccessControl; acp:apply <#ownerPolicy> .\n<#ownerPolicy> a acp:Policy; acp:allow acl:Read, acl:Write, acl:Control; acp:anyOf <#ownerMatcher> .\n<#ownerMatcher> a acp:Matcher; acp:agent <${ownerWebId}> .\n<#publicReadAccess> a acp:AccessControl; acp:apply <#publicReadPolicy> .\n<#publicReadPolicy> a acp:Policy; acp:allow acl:Read; acp:anyOf <#publicMatcher> .\n<#publicMatcher> a acp:Matcher; acp:agent acp:PublicAgent .\n`
+  const resource = httpUrl(resourceUrl, 'Share URL').href
+  const owner = httpUrl(ownerWebId, 'Owner WebID').href
+  return `@prefix acp: <http://www.w3.org/ns/solid/acp#> .\n@prefix acl: <http://www.w3.org/ns/auth/acl#> .\n\n<#root> a acp:AccessControlResource; acp:resource <${resource}>; acp:accessControl <#ownerAccess>, <#publicReadAccess> .\n<#ownerAccess> a acp:AccessControl; acp:apply <#ownerPolicy> .\n<#ownerPolicy> a acp:Policy; acp:allow acl:Read, acl:Write, acl:Control; acp:anyOf <#ownerMatcher> .\n<#ownerMatcher> a acp:Matcher; acp:agent <${owner}> .\n<#publicReadAccess> a acp:AccessControl; acp:apply <#publicReadPolicy> .\n<#publicReadPolicy> a acp:Policy; acp:allow acl:Read; acp:anyOf <#publicMatcher> .\n<#publicMatcher> a acp:Matcher; acp:agent acp:PublicAgent .\n`
 }
 
 interface AccessControlResource {
@@ -46,6 +73,9 @@ function accessControlResourceFromLink(resourceUrl: string, linkHeader: string |
     const relation = match[2].trim()
     if (relation !== 'acl' && !relation.includes('accessControl')) continue
     const url = new URL(match[1], resourceUrl).href
+    if (new URL(url).origin !== new URL(resourceUrl).origin) {
+      throw new Error('Share permission resource must use the same origin as the shared file')
+    }
     return { kind: new URL(url).pathname.endsWith('.acr') ? 'acr' : 'acl', url }
   }
   return null
@@ -94,8 +124,9 @@ export async function createConversationShare(input: {
 }): Promise<ConversationShareRecord> {
   const shareKey = crypto.randomUUID()
   const id = conversationShareResourceId(shareKey)
-  const root = input.podBaseUrl.replace(/\/+$/u, '')
-  const url = `${root}/public/linx-chat-${shareKey}.html`
+  const root = httpUrl(input.podBaseUrl, 'Pod base URL')
+  if (!root.pathname.endsWith('/')) root.pathname += '/'
+  const url = new URL(`public/linx-chat-${shareKey}.html`, root).href
   const htmlResponse = await input.authFetch(url, {
     method: 'PUT',
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
@@ -137,9 +168,11 @@ export async function createConversationShare(input: {
 export async function revokeConversationShare(input: {
   db: SolidDatabase
   authFetch: typeof fetch
+  podBaseUrl: string
   share: ConversationShareRecord
 }): Promise<void> {
-  const accessControl = await discoverAccessControlResource(input.authFetch, input.share.url).catch(() => undefined)
-  await removeShareResources(input.authFetch, input.share.url, accessControl?.url)
+  const shareUrl = ownedShareUrl(input.podBaseUrl, input.share.url).href
+  const accessControl = await discoverAccessControlResource(input.authFetch, shareUrl).catch(() => undefined)
+  await removeShareResources(input.authFetch, shareUrl, accessControl?.url)
   await removeConversationShare(input.db, input.share.id)
 }

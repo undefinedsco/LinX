@@ -95,9 +95,13 @@ function isPodResourceUri(uri: string, podRootUri: string): boolean {
   try {
     const resourceUrl = new URL(uri)
     const podRootUrl = new URL(podRootUri)
-    return resourceUrl.href.startsWith(podRootUrl.href)
+    const rootPath = podRootUrl.pathname.endsWith('/') ? podRootUrl.pathname : `${podRootUrl.pathname}/`
+    return resourceUrl.origin === podRootUrl.origin
+      && resourceUrl.pathname.startsWith(rootPath)
+      && !resourceUrl.username
+      && !resourceUrl.password
   } catch {
-    return uri.startsWith(podRootUri)
+    return false
   }
 }
 

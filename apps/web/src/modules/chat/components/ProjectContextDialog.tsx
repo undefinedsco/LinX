@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Brain, LoaderCircle, Plus, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -19,6 +19,7 @@ export interface ProjectContextDialogProps {
 }
 
 export function ProjectContextDialog(props: ProjectContextDialogProps) {
+  const loadRequestRef = useRef(0)
   const [context, setContext] = useState<ChatProjectContext>(() => emptyProjectContext(props.workspaceUri))
   const [memoryDraft, setMemoryDraft] = useState('')
   const [loading, setLoading] = useState(false)
@@ -26,22 +27,30 @@ export function ProjectContextDialog(props: ProjectContextDialogProps) {
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
+    const requestId = loadRequestRef.current + 1
+    loadRequestRef.current = requestId
     setLoading(true)
     setError(null)
     try {
-      setContext(await readProjectContext({
+      const nextContext = await readProjectContext({
         db: props.db,
         workspaceUri: props.workspaceUri,
-      }))
+      })
+      if (loadRequestRef.current === requestId) setContext(nextContext)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '项目上下文读取失败。')
+      if (loadRequestRef.current === requestId) {
+        setError(reason instanceof Error ? reason.message : '项目上下文读取失败。')
+      }
     } finally {
-      setLoading(false)
+      if (loadRequestRef.current === requestId) setLoading(false)
     }
   }, [props.db, props.workspaceUri])
 
   useEffect(() => {
     if (props.open) void load()
+    return () => {
+      loadRequestRef.current += 1
+    }
   }, [load, props.open])
 
   const save = async (next = context) => {

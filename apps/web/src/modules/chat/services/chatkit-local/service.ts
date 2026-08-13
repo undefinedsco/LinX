@@ -105,87 +105,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-function assertGeneratedImageUrl(value: string): URL {
-  const url = new URL(value)
-  if (url.protocol !== 'https:' || isPrivateNetworkHost(url.hostname)) {
-    throw new Error('Image provider returned an unsafe download URL')
-  }
-  return url
-}
-
-function isPrivateNetworkHost(value: string): boolean {
-  const hostname = value.toLowerCase().replace(/^\[|\]$/gu, '').replace(/\.$/u, '')
-  if (
-    hostname === 'localhost'
-    || hostname.endsWith('.localhost')
-    || hostname.endsWith('.local')
-    || hostname.endsWith('.internal')
-    || hostname === 'home.arpa'
-    || hostname.endsWith('.home.arpa')
-  ) return true
-
-  if (hostname.includes(':')) {
-    if (
-      hostname === '::1'
-      || hostname === '::'
-      || /^(?:fe[89ab]|fc|fd)/u.test(hostname)
-    ) return true
-  }
-  const mappedIpv4 = hostname.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/u)?.[1]
-  const ipv4 = mappedIpv4 ?? (/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(hostname) ? hostname : null)
-  if (!ipv4) return false
-  const octets = ipv4.split('.').map(Number)
-  if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return true
-  const [first, second] = octets
-  return first === 0
-    || first === 10
-    || first === 127
-    || (first === 100 && second >= 64 && second <= 127)
-    || (first === 169 && second === 254)
-    || (first === 172 && second >= 16 && second <= 31)
-    || (first === 192 && second === 168)
-    || (first === 192 && second === 0)
-    || (first === 198 && (second === 18 || second === 19 || second === 51))
-    || (first === 203 && second === 0)
-    || first >= 224
-}
-
-async function readGeneratedImageBytes(response: Response): Promise<Uint8Array> {
-  const mimeType = response.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() ?? ''
-  if (mimeType && !mimeType.startsWith('image/')) {
-    throw new Error('Image provider returned a non-image download')
-  }
-  const declaredLength = Number(response.headers.get('Content-Length'))
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_ATTACHMENT_BYTES) {
-    throw new Error('Generated image exceeds the 25 MB attachment limit')
-  }
-  const reader = response.body?.getReader()
-  if (!reader) {
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    if (bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('Generated image exceeds the 25 MB attachment limit')
-    return bytes
-  }
-  const chunks: Uint8Array[] = []
-  let total = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.byteLength
-    if (total > MAX_ATTACHMENT_BYTES) {
-      await reader.cancel().catch(() => undefined)
-      throw new Error('Generated image exceeds the 25 MB attachment limit')
-    }
-    chunks.push(value)
-  }
-  const bytes = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return bytes
-}
-
 export interface LocalServiceOptions {
   store: LocalChatKitStorePort
   db: SolidDatabase
@@ -1874,7 +1793,7 @@ export class LocalChatKitService {
     const payload = await response.json() as { data?: Array<{ b64_json?: string; url?: string }> }
     const resultImage = payload.data?.[0]
     let bytes: Uint8Array
-    let mimeType = 'image/png'
+    const mimeType = 'image/png'
     if (resultImage?.b64_json) {
       const maxBase64Length = Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4 + 4
       if (resultImage.b64_json.length > maxBase64Length) {
@@ -1886,14 +1805,7 @@ export class LocalChatKitService {
         throw new Error('Generated image exceeds the 25 MB attachment limit')
       }
     } else if (resultImage?.url) {
-      const imageResponse = await fetch(assertGeneratedImageUrl(resultImage.url), {
-        signal,
-        credentials: 'omit',
-        referrerPolicy: 'no-referrer',
-      })
-      if (!imageResponse.ok) throw new Error(`Generated image download failed with HTTP ${imageResponse.status}`)
-      mimeType = imageResponse.headers.get('Content-Type')?.split(';')[0] || mimeType
-      bytes = await readGeneratedImageBytes(imageResponse)
+      throw new Error('Image provider must return base64 image data')
     } else {
       throw new Error('Image provider returned no image data')
     }

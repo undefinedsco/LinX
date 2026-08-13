@@ -33,8 +33,8 @@ function previewKind(mimeType: string | null, name: string): ArtifactPreview['ki
   return 'binary'
 }
 
-async function readPreview(version: ChatArtifactVersion, authFetch: typeof fetch): Promise<ArtifactPreview> {
-  const response = await authFetch(version.uri)
+async function readPreview(version: ChatArtifactVersion, authFetch: typeof fetch, signal: AbortSignal): Promise<ArtifactPreview> {
+  const response = await authFetch(version.uri, { signal })
   if (!response.ok) throw new Error(`Artifact read failed with HTTP ${response.status}`)
   const mimeType = version.mimeType ?? response.headers.get('Content-Type')?.split(';')[0] ?? ''
   const kind = previewKind(mimeType, version.name)
@@ -111,15 +111,21 @@ export function ArtifactWorkspace({ versions, authFetch, onContinue, onSaveVersi
     if (!selected) return
     let disposed = false
     let objectUrl: string | undefined
+    const controller = new AbortController()
     setLoading(true)
     setError(null)
     setPreview(null)
     setEditing(false)
     setDraft('')
-    void readPreview(selected, authFetch).then(
+    void readPreview(selected, authFetch, controller.signal).then(
       (nextPreview) => {
         objectUrl = nextPreview.objectUrl
-        if (!disposed) setPreview(nextPreview)
+        if (disposed) {
+          if (objectUrl) URL.revokeObjectURL(objectUrl)
+          objectUrl = undefined
+          return
+        }
+        setPreview(nextPreview)
       },
       (reason) => {
         if (!disposed) setError(reason instanceof Error ? reason.message : '产物读取失败。')
@@ -129,6 +135,7 @@ export function ArtifactWorkspace({ versions, authFetch, onContinue, onSaveVersi
     })
     return () => {
       disposed = true
+      controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }, [authFetch, selected])
@@ -139,22 +146,42 @@ export function ArtifactWorkspace({ versions, authFetch, onContinue, onSaveVersi
 
   const download = async () => {
     if (!selected) return
-    const response = await authFetch(selected.uri)
-    if (!response.ok) throw new Error(`Artifact download failed with HTTP ${response.status}`)
-    const objectUrl = URL.createObjectURL(await response.blob())
-    const anchor = document.createElement('a')
-    anchor.href = objectUrl
-    anchor.download = selected.name
-    anchor.click()
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+    setError(null)
+    try {
+      const response = await authFetch(selected.uri)
+      if (!response.ok) throw new Error(`Artifact download failed with HTTP ${response.status}`)
+      const objectUrl = URL.createObjectURL(await response.blob())
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = selected.name
+      anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '产物下载失败。')
+    }
   }
 
   const copy = async () => {
     const content = preview?.content
     if (!content) return
-    await navigator.clipboard.writeText(content)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1200)
+    setError(null)
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '复制产物内容失败。')
+    }
+  }
+
+  const continueEditing = async () => {
+    if (!selected) return
+    setError(null)
+    try {
+      await onContinue(selected)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '无法将产物带回对话。')
+    }
   }
 
   const saveVersion = async () => {
@@ -209,7 +236,7 @@ export function ArtifactWorkspace({ versions, authFetch, onContinue, onSaveVersi
             </>
           ) : null}
           <Button variant="ghost" size="icon" onClick={() => void download()} aria-label="下载产物"><Download className="size-4" /></Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void onContinue(selected)}><RotateCcw className="size-3.5" />继续修改</Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void continueEditing()}><RotateCcw className="size-3.5" />继续修改</Button>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <div className="min-h-full p-5">

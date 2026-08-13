@@ -542,6 +542,17 @@ describe('ChatContentPane', () => {
     await waitFor(() => expect(screen.queryByText('连接已恢复，正在同步最新消息…')).not.toBeInTheDocument())
   })
 
+  it('restores a visible retry state for queued generations after a page reload', async () => {
+    mockGetOutboxSize.mockReturnValue(1)
+    mockGetOutboxRetryAt.mockReturnValue(Date.now() + 60_000)
+    mockSession.fetch = vi.fn(async () => new Response('', { status: 200 }))
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('仍有 1 条消息等待生成')
+    expect(mockFlushOutbox).not.toHaveBeenCalled()
+  })
+
   it('offers an explicit retry when reconnect synchronization fails', async () => {
     mockUseSolidDatabase.mockReturnValue({
       db: { getDialect: () => ({ getPodUrl: () => 'https://pod.example/' }) },

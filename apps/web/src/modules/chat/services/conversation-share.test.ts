@@ -90,7 +90,7 @@ describe('conversation share persistence', () => {
     }])
     await expect(listConversationShares({ db, threadUri: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1' })).resolves.toEqual([share])
 
-    await revokeConversationShare({ db, authFetch: authFetch as typeof fetch, share })
+    await revokeConversationShare({ db, authFetch: authFetch as typeof fetch, podBaseUrl: 'https://pod.example/', share })
     expect(resources.has(share.url)).toBe(false)
     expect(resources.has(`${share.url}.acr`)).toBe(false)
     expect(shared.remove).toHaveBeenCalledWith(db, share.id)
@@ -142,5 +142,36 @@ describe('conversation share persistence', () => {
 
     expect(resources.size).toBe(0)
     expect(shared.create).not.toHaveBeenCalled()
+  })
+
+  it('does not follow cross-origin permission links or revoke foreign share URLs', async () => {
+    const db = {} as import('@undefineds.co/models').SolidDatabase
+    const crossOriginFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT') return new Response('', { status: 201 })
+      if (init?.method === 'HEAD') {
+        return new Response(null, { status: 200, headers: { Link: '<https://attacker.example/share.acl>; rel="acl"' } })
+      }
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 })
+      return new Response('', { status: 404 })
+    })
+
+    await expect(createConversationShare({
+      db,
+      authFetch: crossOriginFetch as typeof fetch,
+      podBaseUrl: 'https://pod.example/',
+      ownerWebId: 'https://id.example/alice#me',
+      threadUri: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1',
+      messages: [{ id: 'u1', role: 'user', content: 'hello' }],
+      options: { title: 'Shared chat' },
+    })).rejects.toThrow('same origin')
+    expect(crossOriginFetch.mock.calls.some(([url]) => String(url).startsWith('https://attacker.example/'))).toBe(false)
+
+    await expect(revokeConversationShare({
+      db,
+      authFetch: crossOriginFetch as typeof fetch,
+      podBaseUrl: 'https://pod.example/',
+      share: { id: 'foreign', url: 'https://attacker.example/share.html', createdAt: new Date().toISOString(), includeToolDetails: false, excludedMessageIds: [] },
+    })).rejects.toThrow('outside the selected Pod')
+    expect(shared.remove).not.toHaveBeenCalled()
   })
 })

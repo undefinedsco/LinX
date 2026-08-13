@@ -52,7 +52,7 @@ describe('ArtifactWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续修改' }))
 
     expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ versionId: 'message-1:0' }))
-    expect(authFetch).toHaveBeenCalledWith('https://pod.example/plan-v1.md')
+    expect(authFetch).toHaveBeenCalledWith('https://pod.example/plan-v1.md', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('shows a recoverable error when an artifact cannot be read', async () => {
@@ -90,5 +90,15 @@ describe('ArtifactWorkspace', () => {
       expect.objectContaining({ uri: 'https://pod.example/plan-v2.md' }),
       '# Version three',
     ))
+  })
+
+  it('shows action failures instead of leaving rejected promises unhandled', async () => {
+    const authFetch = vi.fn(async () => new Response('# Version two', { status: 200, headers: { 'Content-Type': 'text/markdown' } }))
+    const onContinue = vi.fn(async () => { throw new Error('composer unavailable') })
+    render(<ArtifactWorkspace versions={versions.slice(0, 1)} authFetch={authFetch as typeof fetch} onContinue={onContinue} onSaveVersion={vi.fn()} />)
+
+    await screen.findByRole('heading', { name: 'Version two' })
+    fireEvent.click(screen.getByRole('button', { name: '继续修改' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('composer unavailable'))
   })
 })

@@ -76,4 +76,43 @@ describe('ProjectContextDialog', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('项目上下文暂时不可读')
     expect(mocked.writeProjectContext).not.toHaveBeenCalled()
   })
+
+  it('ignores a stale workspace response after the selected workspace changes', async () => {
+    let resolveFirst!: (value: any) => void
+    mocked.readProjectContext
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValueOnce({
+        workspace: 'https://pod.example/workspaces/project-b/',
+        instructions: 'Project B instructions',
+        memoryEnabled: true,
+        memories: [],
+        updatedAt: '2026-08-11T00:00:00.000Z',
+      })
+    const { rerender } = render(<ProjectContextDialog
+      open
+      onOpenChange={vi.fn()}
+      workspaceUri="https://pod.example/workspaces/project-a/"
+      db={{} as any}
+    />)
+
+    rerender(<ProjectContextDialog
+      open
+      onOpenChange={vi.fn()}
+      workspaceUri="https://pod.example/workspaces/project-b/"
+      db={{} as any}
+    />)
+    expect(await screen.findByDisplayValue('Project B instructions')).toBeInTheDocument()
+
+    resolveFirst({
+      workspace: 'https://pod.example/workspaces/project-a/',
+      instructions: 'Stale project A instructions',
+      memoryEnabled: true,
+      memories: [],
+      updatedAt: '2026-08-11T00:00:00.000Z',
+    })
+    await Promise.resolve()
+
+    expect(screen.queryByDisplayValue('Stale project A instructions')).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('Project B instructions')).toBeInTheDocument()
+  })
 })

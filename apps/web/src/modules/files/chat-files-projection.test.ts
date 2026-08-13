@@ -350,6 +350,21 @@ describe('chat files projection', () => {
     ])
   })
 
+  it('does not accept a sibling account path that only shares the Pod path prefix', () => {
+    const entries = projectChatArtifactVersions([{
+      id: 'message-prefix-confusion',
+      createdAt: '2026-06-18T10:00:00.000Z',
+      richContent: JSON.stringify({
+        artifacts: [
+          { type: 'artifact', resourceUri: 'https://pod.example/alice-private/report.md', name: 'foreign.md' },
+          { type: 'artifact', resourceUri: 'https://pod.example/alice/work/report.md', name: 'owned.md' },
+        ],
+      }),
+    }], 'https://pod.example/alice/')
+
+    expect(entries.map((entry) => entry.name)).toEqual(['owned.md'])
+  })
+
   it('keeps workspace metadata when chat entries refer to an existing resource', () => {
     const workspaceEntry: FilesEntry = {
       id: 'https://pod.example/public/report.md',
