@@ -159,4 +159,39 @@ describe('ConversationShareDialog', () => {
     expect(write).toHaveBeenCalledWith(expect.stringContaining('Printable thread'))
     expect(print).toHaveBeenCalledOnce()
   })
+
+  it('hides legacy runtime diagnostics from the message picker', async () => {
+    render(<ConversationShareDialog
+      open
+      onOpenChange={vi.fn()}
+      title="Safe preview"
+      threadUri={existingShare.threadUri}
+      db={{} as any}
+      ownerWebId="https://pod.example/profile/card#me"
+      podBaseUrl="https://pod.example/"
+      authFetch={vi.fn() as any}
+      messages={[{ id: 'assistant-runtime', role: 'assistant', content: 'ACP process exited at /Users/private/runtime.ts:42' }]}
+    />)
+
+    expect(await screen.findByText('消息生成失败。请稍后重试。')).toBeInTheDocument()
+    expect(screen.queryByText(/ACP process|\/Users\//u)).not.toBeInTheDocument()
+  })
+
+  it('shows a user-facing error when share records cannot be loaded', async () => {
+    mocked.listConversationShares.mockRejectedValueOnce(new Error('findById failed at /Users/private/share.ts:42'))
+    render(<ConversationShareDialog
+      open
+      onOpenChange={vi.fn()}
+      title="Safe error"
+      threadUri={existingShare.threadUri}
+      db={{} as any}
+      ownerWebId="https://pod.example/profile/card#me"
+      podBaseUrl="https://pod.example/"
+      authFetch={vi.fn() as any}
+      messages={messages}
+    />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('分享记录读取失败。')
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/findById|\/Users\//u)
+  })
 })

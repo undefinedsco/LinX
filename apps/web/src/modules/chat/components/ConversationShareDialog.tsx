@@ -3,9 +3,11 @@ import { Check, Copy, Download, Link2, LoaderCircle, Printer, Trash2 } from 'luc
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { formatErrorForUser } from '@/lib/user-facing-errors'
 import {
   renderConversationHtml,
   renderConversationMarkdown,
+  safeConversationExportContent,
   safeConversationFileName,
   type ConversationExportMessage,
 } from '../domain/conversation-export'
@@ -55,7 +57,7 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
     try {
       setShares(await listConversationShares({ db: props.db, threadUri: props.threadUri }))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '分享记录读取失败。')
+      setError(formatErrorForUser(reason, '分享记录读取失败。'))
     }
   }, [props.db, props.threadUri])
 
@@ -84,7 +86,7 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
       })
       setShares((current) => [share, ...current])
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '创建分享失败。')
+      setError(formatErrorForUser(reason, '创建分享失败。'))
     } finally {
       setBusy(false)
     }
@@ -133,7 +135,7 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
                       })} />
                       <span className="min-w-0">
                         <span className="block text-xs font-medium">{message.role === 'user' ? '用户' : 'LinX'}</span>
-                        <span className="line-clamp-2 text-xs text-muted-foreground">{message.content || '（无文本内容）'}</span>
+                        <span className="line-clamp-2 text-xs text-muted-foreground">{safeConversationExportContent(message)}</span>
                       </span>
                     </label>
                   )
@@ -158,8 +160,12 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
                       <p className="mt-1 text-[10px] text-muted-foreground">{new Date(share.createdAt).toLocaleString()}</p>
                       <div className="mt-2 flex gap-1">
                         <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={async () => {
-                          await navigator.clipboard.writeText(share.url)
-                          setCopiedShareId(share.id)
+                          try {
+                            await navigator.clipboard.writeText(share.url)
+                            setCopiedShareId(share.id)
+                          } catch (reason) {
+                            setError(formatErrorForUser(reason, '复制分享链接失败。'))
+                          }
                         }}>{copiedShareId === share.id ? <Check className="size-3" /> : <Copy className="size-3" />}复制</Button>
                         <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-destructive" onClick={async () => {
                           setBusy(true)
@@ -167,7 +173,7 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
                             await revokeConversationShare({ db: props.db, authFetch: props.authFetch, podBaseUrl: props.podBaseUrl, share })
                             setShares((current) => current.filter((entry) => entry.id !== share.id))
                           } catch (reason) {
-                            setError(reason instanceof Error ? reason.message : '撤销分享失败。')
+                            setError(formatErrorForUser(reason, '撤销分享失败。'))
                           } finally {
                             setBusy(false)
                           }
