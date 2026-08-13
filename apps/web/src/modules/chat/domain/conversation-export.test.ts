@@ -29,4 +29,19 @@ describe('conversation export', () => {
     expect(html).not.toContain('private')
     expect(html).toContain("default-src 'none'")
   })
+
+  it('does not publish legacy runtime diagnostics stored as assistant text', () => {
+    const messages = [{
+      id: 'a1',
+      role: 'assistant',
+      content: 'ACP process exited before response (id=1) at /Users/private/runtime.ts:42',
+    }]
+
+    const markdown = renderConversationMarkdown(messages, { title: 'Safe export' })
+    const html = renderConversationHtml(messages, { title: 'Safe export' })
+
+    expect(markdown).toContain('消息生成失败。请稍后重试。')
+    expect(html).toContain('消息生成失败。请稍后重试。')
+    expect(`${markdown}${html}`).not.toMatch(/ACP process|\/Users\/|runtime\.ts/iu)
+  })
 })

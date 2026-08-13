@@ -675,6 +675,7 @@ function ChatKitPanel({
   const [reconnectStatus, setReconnectStatus] = useState<'idle' | 'syncing' | 'error'>('idle')
   const [queuedGenerationCount, setQueuedGenerationCount] = useState(0)
   const [outboxRevision, setOutboxRevision] = useState(0)
+  const [chatKitLoadFailed, setChatKitLoadFailed] = useState(false)
   const [isChatKitMounted, setIsChatKitMounted] = useState(false)
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null)
   const [actionMessageId, setActionMessageId] = useState<string | null>(null)
@@ -772,6 +773,25 @@ function ChatKitPanel({
     setOutboxRevision((revision) => revision + 1)
     return () => localFetch.dispose?.()
   }, [localFetch])
+
+  useEffect(() => {
+    if (customElements.get('openai-chatkit')) {
+      setChatKitLoadFailed(false)
+      return
+    }
+    let disposed = false
+    const timeoutId = window.setTimeout(() => {
+      if (!disposed && !customElements.get('openai-chatkit')) setChatKitLoadFailed(true)
+    }, 8_000)
+    void customElements.whenDefined('openai-chatkit').then(() => {
+      window.clearTimeout(timeoutId)
+      if (!disposed) setChatKitLoadFailed(false)
+    })
+    return () => {
+      disposed = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [])
 
   const loadAttachmentForAction = useCallback(async (attachment: Attachment): Promise<Attachment | null> => {
     setLoadingAttachmentId(attachment.id)
@@ -1316,6 +1336,15 @@ function ChatKitPanel({
         control={chatkit.control}
         style={{ display: 'block', width: '100%', height: '100%' }}
       />
+      {chatKitLoadFailed ? (
+        <div role="alert" className="absolute inset-0 z-40 flex items-center justify-center bg-background/95 p-6">
+          <div className="max-w-sm space-y-3 text-center">
+            <p className="text-sm font-medium">聊天界面加载失败</p>
+            <p className="text-sm text-muted-foreground">请检查网络后重新加载。已保存的会话和附件不会丢失。</p>
+            <Button type="button" variant="outline" onClick={() => window.location.reload()}>重新加载</Button>
+          </div>
+        </div>
+      ) : null}
       {isGenerating ? (
         <Button
           type="button"
