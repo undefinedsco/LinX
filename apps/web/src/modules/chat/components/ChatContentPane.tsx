@@ -674,6 +674,7 @@ function ChatKitPanel({
   const isOnlineRef = useRef(true)
   const [reconnectStatus, setReconnectStatus] = useState<'idle' | 'syncing' | 'error'>('idle')
   const [queuedGenerationCount, setQueuedGenerationCount] = useState(0)
+  const [outboxRevision, setOutboxRevision] = useState(0)
   const [isChatKitMounted, setIsChatKitMounted] = useState(false)
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null)
   const [actionMessageId, setActionMessageId] = useState<string | null>(null)
@@ -708,6 +709,7 @@ function ChatKitPanel({
       const unavailableFetch = (async () => unavailableResponse()) as unknown as LocalChatKitFetch
       unavailableFetch.refreshThreadItems = async () => undefined
       unavailableFetch.getOutboxSize = () => 0
+      unavailableFetch.getOutboxRetryAt = () => null
       unavailableFetch.flushOutbox = async () => ({ completed: 0, pending: 0 })
       unavailableFetch.loadAttachmentObjectUrl = async () => {
         throw new Error('当前空间连接尚未恢复')
@@ -745,7 +747,10 @@ function ChatKitPanel({
         setIsGenerating(active)
       },
       onThreadItemsChange: setBranchThreadItems,
-      onOutboxChange: setQueuedGenerationCount,
+      onOutboxChange: (count) => {
+        setQueuedGenerationCount(count)
+        setOutboxRevision((revision) => revision + 1)
+      },
       onChatSummaryChange: ({ messageId, content, createdAt }) => {
         return projectChatSummary(selectedChatId, {
           lastMessageId: messageId,
@@ -761,6 +766,7 @@ function ChatKitPanel({
     setThreadAttachments([])
     setPreviewAttachment(null)
     setQueuedGenerationCount(localFetch.getOutboxSize())
+    setOutboxRevision((revision) => revision + 1)
     return () => localFetch.dispose?.()
   }, [localFetch])
 
@@ -1075,10 +1081,10 @@ function ChatKitPanel({
     if (actionMessageId && !userMessages.some((message) => message.id === actionMessageId)) setActionMessageId(lastUserMessage?.id ?? null)
   }, [actionMessageId, lastUserMessage, localActiveBranchByParent, persistedActionMessage, userMessages])
 
-  const synchronizeAfterReconnect = useCallback(async () => {
+  const synchronizeAfterReconnect = useCallback(async (force = false) => {
     setReconnectStatus('syncing')
     try {
-      const replay = await localFetch.flushOutbox()
+      const replay = await localFetch.flushOutbox({ force })
       await Promise.all([
         fetchUpdates(),
         refetchMessages(),
@@ -1123,7 +1129,7 @@ function ChatKitPanel({
         if (!reachable) setReconnectStatus('idle')
         return
       }
-      if (synchronize) await synchronizeAfterReconnect()
+      if (synchronize) await synchronizeAfterReconnect(true)
     }
     const handleOffline = () => {
       // Browsers can report offline while a localhost Xpod is healthy. Verify
@@ -1149,9 +1155,14 @@ function ChatKitPanel({
   }, [probeConnection, synchronizeAfterReconnect])
 
   useEffect(() => {
-    if (!isOnline || localFetch.getOutboxSize() === 0) return
-    void synchronizeAfterReconnect()
-  }, [isOnline, localFetch, synchronizeAfterReconnect])
+    if (!isOnline || queuedGenerationCount === 0) return
+    const retryAt = localFetch.getOutboxRetryAt()
+    if (retryAt === null) return
+    const timer = window.setTimeout(() => {
+      void synchronizeAfterReconnect(false)
+    }, Math.max(0, retryAt - Date.now()))
+    return () => window.clearTimeout(timer)
+  }, [isOnline, localFetch, outboxRevision, queuedGenerationCount, synchronizeAfterReconnect])
 
   useEffect(() => {
     if (!isChatKitMounted || !selectedThreadId) return
@@ -1424,7 +1435,7 @@ function ChatKitPanel({
               size="sm"
               className="h-7"
               onClick={() => {
-                void synchronizeAfterReconnect()
+                void synchronizeAfterReconnect(true)
               }}
             >
               重试同步

@@ -21,6 +21,7 @@ export interface ArtifactWorkspaceProps {
 }
 
 const MAX_TEXT_PREVIEW_BYTES = 5 * 1024 * 1024
+const MAX_MEDIA_PREVIEW_BYTES = 25 * 1024 * 1024
 
 function previewKind(mimeType: string | null, name: string): ArtifactPreview['kind'] {
   const mime = mimeType?.toLowerCase() ?? ''
@@ -35,12 +36,59 @@ function previewKind(mimeType: string | null, name: string): ArtifactPreview['ki
 async function readPreview(version: ChatArtifactVersion, authFetch: typeof fetch): Promise<ArtifactPreview> {
   const response = await authFetch(version.uri)
   if (!response.ok) throw new Error(`Artifact read failed with HTTP ${response.status}`)
-  const blob = await response.blob()
-  const kind = previewKind(version.mimeType ?? blob.type, version.name)
-  if (kind === 'image' || kind === 'pdf') return { kind, objectUrl: URL.createObjectURL(blob) }
-  if (kind === 'binary') return { kind }
-  if (blob.size > MAX_TEXT_PREVIEW_BYTES) throw new Error('产物超过 5 MB，请下载后查看。')
-  return { kind, content: await blob.text() }
+  const mimeType = version.mimeType ?? response.headers.get('Content-Type')?.split(';')[0] ?? ''
+  const kind = previewKind(mimeType, version.name)
+  if (kind === 'binary') {
+    await response.body?.cancel()
+    return { kind }
+  }
+  const limit = kind === 'image' || kind === 'pdf' ? MAX_MEDIA_PREVIEW_BYTES : MAX_TEXT_PREVIEW_BYTES
+  const declaredLength = Number(response.headers.get('Content-Length'))
+  if (Number.isFinite(declaredLength) && declaredLength > limit) {
+    await response.body?.cancel()
+    throw new Error(kind === 'image' || kind === 'pdf'
+      ? '产物超过 25 MB，请下载后查看。'
+      : '产物超过 5 MB，请下载后查看。')
+  }
+  const bytes = await readPreviewBytes(response, limit)
+  if (kind === 'image' || kind === 'pdf') {
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    return { kind, objectUrl: URL.createObjectURL(new Blob([buffer], { type: mimeType })) }
+  }
+  return { kind, content: new TextDecoder().decode(bytes) }
+}
+
+async function readPreviewBytes(response: Response, limit: number): Promise<Uint8Array> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (bytes.byteLength > limit) throw new Error(limit === MAX_TEXT_PREVIEW_BYTES
+      ? '产物超过 5 MB，请下载后查看。'
+      : '产物超过 25 MB，请下载后查看。')
+    return bytes
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    total += value.byteLength
+    if (total > limit) {
+      await reader.cancel()
+      throw new Error(limit === MAX_TEXT_PREVIEW_BYTES
+        ? '产物超过 5 MB，请下载后查看。'
+        : '产物超过 25 MB，请下载后查看。')
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
 }
 
 export function ArtifactWorkspace({ versions, authFetch, onContinue, onSaveVersion }: ArtifactWorkspaceProps) {

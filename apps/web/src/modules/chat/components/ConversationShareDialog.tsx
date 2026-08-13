@@ -46,6 +46,9 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null)
   const exportOptions = useMemo(() => ({ title: props.title, includeToolDetails, excludedMessageIds }), [excludedMessageIds, includeToolDetails, props.title])
   const visibleMessages = props.messages.filter((message) => message.role === 'user' || message.role === 'assistant')
+  const includedMessageCount = visibleMessages.filter((message, index) => (
+    !excludedMessageIds.has(message.id ?? `message-${index}`)
+  )).length
 
   const refreshShares = useCallback(async () => {
     setError(null)
@@ -60,6 +63,12 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
     if (props.open) void refreshShares()
   }, [props.open, refreshShares])
 
+  useEffect(() => {
+    setExcludedMessageIds(new Set())
+    setCopiedShareId(null)
+    setError(null)
+  }, [props.threadUri])
+
   const createShare = async () => {
     setBusy(true)
     setError(null)
@@ -73,7 +82,7 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
         messages: props.messages,
         options: exportOptions,
       })
-      setShares((current) => [...current, share])
+      setShares((current) => [share, ...current])
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '创建分享失败。')
     } finally {
@@ -82,11 +91,12 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
   }
 
   const printPdf = () => {
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
+    const printWindow = window.open('', '_blank')
     if (!printWindow) {
       setError('浏览器阻止了打印窗口，请允许弹窗后重试。')
       return
     }
+    printWindow.opener = null
     printWindow.document.open()
     printWindow.document.write(renderConversationHtml(props.messages, exportOptions))
     printWindow.document.close()
@@ -133,7 +143,7 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadText(`${safeConversationFileName(props.title)}.md`, renderConversationMarkdown(props.messages, exportOptions), 'text/markdown;charset=utf-8')}><Download className="size-3.5" />Markdown</Button>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={printPdf}><Printer className="size-3.5" />打印 / PDF</Button>
-              <Button size="sm" className="gap-1.5" disabled={busy || visibleMessages.length === excludedMessageIds.size} onClick={() => void createShare()}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}创建只读分享</Button>
+              <Button size="sm" className="gap-1.5" disabled={busy || includedMessageCount === 0} onClick={() => void createShare()}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}创建只读分享</Button>
             </div>
             {error ? <p role="alert" className="mt-3 text-sm text-destructive">{error}</p> : null}
           </section>
@@ -154,7 +164,7 @@ export function ConversationShareDialog(props: ConversationShareDialogProps) {
                         <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-destructive" onClick={async () => {
                           setBusy(true)
                           try {
-                          await revokeConversationShare({ db: props.db, authFetch: props.authFetch, share })
+                            await revokeConversationShare({ db: props.db, authFetch: props.authFetch, share })
                             setShares((current) => current.filter((entry) => entry.id !== share.id))
                           } catch (reason) {
                             setError(reason instanceof Error ? reason.message : '撤销分享失败。')

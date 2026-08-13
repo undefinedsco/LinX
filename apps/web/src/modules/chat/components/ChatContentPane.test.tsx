@@ -6,7 +6,7 @@ const mockNavigate = vi.fn()
 const mockUseInboxItems = vi.fn()
 const mockSelectInboxItem = vi.fn()
 const mockSetInboxFilter = vi.fn()
-const { mockSetThreadId, mockSetComposerValue, mockFocusComposer, mockFetchUpdates, mockRefreshThreadItems, mockFlushOutbox, mockGetOutboxSize, mockPrepareAttachmentForReuse, mockUseChatKit } = vi.hoisted(() => {
+const { mockSetThreadId, mockSetComposerValue, mockFocusComposer, mockFetchUpdates, mockRefreshThreadItems, mockFlushOutbox, mockGetOutboxSize, mockGetOutboxRetryAt, mockPrepareAttachmentForReuse, mockUseChatKit } = vi.hoisted(() => {
   const setThreadId = vi.fn()
   const setComposerValue = vi.fn(async () => undefined)
   const focusComposer = vi.fn(async () => undefined)
@@ -15,6 +15,7 @@ const { mockSetThreadId, mockSetComposerValue, mockFocusComposer, mockFetchUpdat
   const refreshThreadItems = vi.fn(async () => undefined)
   const flushOutbox = vi.fn(async () => ({ completed: 0, pending: 0 }))
   const getOutboxSize = vi.fn(() => 0)
+  const getOutboxRetryAt = vi.fn(() => null as number | null)
   const prepareAttachmentForReuse = vi.fn(async (attachment: unknown) => attachment)
   return {
     mockSetThreadId: setThreadId,
@@ -24,6 +25,7 @@ const { mockSetThreadId, mockSetComposerValue, mockFocusComposer, mockFetchUpdat
     mockRefreshThreadItems: refreshThreadItems,
     mockFlushOutbox: flushOutbox,
     mockGetOutboxSize: getOutboxSize,
+    mockGetOutboxRetryAt: getOutboxRetryAt,
     mockPrepareAttachmentForReuse: prepareAttachmentForReuse,
     mockSendCustomAction: sendCustomAction,
     mockUseChatKit: vi.fn(() => ({
@@ -117,6 +119,7 @@ vi.mock('../services/chatkit-local/fetch-handler', () => ({
     refreshThreadItems: mockRefreshThreadItems,
     flushOutbox: mockFlushOutbox,
     getOutboxSize: mockGetOutboxSize,
+    getOutboxRetryAt: mockGetOutboxRetryAt,
     loadAttachmentObjectUrl: vi.fn(),
     prepareAttachmentForReuse: mockPrepareAttachmentForReuse,
     saveArtifactVersion: vi.fn(),

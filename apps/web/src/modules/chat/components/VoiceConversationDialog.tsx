@@ -59,6 +59,7 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const transcriptRef = useRef('')
   const awaitingResponseRef = useRef(false)
+  const observedGenerationRef = useRef(false)
   const responseBaselineRef = useRef('')
   const sendingRef = useRef(false)
   const assistantTextRef = useRef(props.assistantText)
@@ -95,12 +96,14 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
     try {
       responseBaselineRef.current = assistantTextRef.current
       awaitingResponseRef.current = true
+      observedGenerationRef.current = false
       await onSendRef.current(normalized)
       setTranscript('')
       transcriptRef.current = ''
       setInterimTranscript('')
     } catch (reason) {
       awaitingResponseRef.current = false
+      observedGenerationRef.current = false
       setError(reason instanceof Error ? reason.message : '语音消息发送失败，请重试。')
     } finally {
       sendingRef.current = false
@@ -166,21 +169,31 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
       window.speechSynthesis?.cancel()
       setSpeaking(false)
       awaitingResponseRef.current = false
+      observedGenerationRef.current = false
       return
     }
     if (supported) startListening()
   }, [props.open, startListening, stopListening, supported])
 
   useEffect(() => {
-    if (
-      !props.open
-      || !awaitingResponseRef.current
-      || props.isGenerating
-      || !props.assistantText
-      || props.assistantText === responseBaselineRef.current
-    ) return
+    if (!props.open || !awaitingResponseRef.current) return
+    if (props.isGenerating) {
+      observedGenerationRef.current = true
+      return
+    }
+
+    const hasNewResponse = Boolean(props.assistantText)
+      && props.assistantText !== responseBaselineRef.current
+    if (!hasNewResponse) {
+      if (!observedGenerationRef.current) return
+      awaitingResponseRef.current = false
+      observedGenerationRef.current = false
+      setError('回答生成失败，请重试。')
+      return
+    }
 
     awaitingResponseRef.current = false
+    observedGenerationRef.current = false
     const controller = new AbortController()
     speechAbortRef.current = controller
     setSpeaking(true)

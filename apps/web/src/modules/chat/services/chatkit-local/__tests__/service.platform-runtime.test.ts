@@ -1250,6 +1250,38 @@ describe('LocalChatKitService platform runtime routing', () => {
     ]))
   })
 
+  it.each([
+    'https://localhost/generated.png',
+    'https://127.0.0.1/generated.png',
+    'https://169.254.169.254/latest/meta-data',
+    'https://[::1]/generated.png',
+    'https://[fd00::1]/generated.png',
+  ])('rejects provider image URLs targeting private networks: %s', async (imageUrl) => {
+    const store = createMockStore() as any
+    store.createAttachment = vi.fn()
+    store.uploadAttachment = vi.fn()
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({ data: [{ id: 'image-model', owned_by: 'undefineds', capabilities: { imageGeneration: true } }] })
+      }
+      if (String(input).endsWith('/images/generations')) {
+        return Response.json({ data: [{ url: imageUrl }] })
+      }
+      return new Response('', { status: 404 })
+    })
+    const downloadFetch = vi.spyOn(globalThis, 'fetch')
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+
+    await sendMessage(service, {
+      model: 'linx-lite',
+      tool_choice: { id: 'image_generation' },
+    })
+
+    expect(downloadFetch).not.toHaveBeenCalled()
+    expect(store.uploadAttachment).not.toHaveBeenCalled()
+  })
+
   it('refuses image generation when the selected provider exposes no capable image model', async () => {
     const store = createMockStore() as any
     const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })

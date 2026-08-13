@@ -107,12 +107,47 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 function assertGeneratedImageUrl(value: string): URL {
   const url = new URL(value)
-  const localHttp = url.protocol === 'http:'
-    && (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1')
-  if (url.protocol !== 'https:' && !localHttp) {
+  if (url.protocol !== 'https:' || isPrivateNetworkHost(url.hostname)) {
     throw new Error('Image provider returned an unsafe download URL')
   }
   return url
+}
+
+function isPrivateNetworkHost(value: string): boolean {
+  const hostname = value.toLowerCase().replace(/^\[|\]$/gu, '').replace(/\.$/u, '')
+  if (
+    hostname === 'localhost'
+    || hostname.endsWith('.localhost')
+    || hostname.endsWith('.local')
+    || hostname.endsWith('.internal')
+    || hostname === 'home.arpa'
+    || hostname.endsWith('.home.arpa')
+  ) return true
+
+  if (hostname.includes(':')) {
+    if (
+      hostname === '::1'
+      || hostname === '::'
+      || /^(?:fe[89ab]|fc|fd)/u.test(hostname)
+    ) return true
+  }
+  const mappedIpv4 = hostname.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/u)?.[1]
+  const ipv4 = mappedIpv4 ?? (/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(hostname) ? hostname : null)
+  if (!ipv4) return false
+  const octets = ipv4.split('.').map(Number)
+  if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return true
+  const [first, second] = octets
+  return first === 0
+    || first === 10
+    || first === 127
+    || (first === 100 && second >= 64 && second <= 127)
+    || (first === 169 && second === 254)
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168)
+    || (first === 192 && second === 0)
+    || (first === 198 && (second === 18 || second === 19 || second === 51))
+    || (first === 203 && second === 0)
+    || first >= 224
 }
 
 async function readGeneratedImageBytes(response: Response): Promise<Uint8Array> {

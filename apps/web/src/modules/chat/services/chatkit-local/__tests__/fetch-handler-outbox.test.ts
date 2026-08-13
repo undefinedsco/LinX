@@ -60,7 +60,7 @@ describe('LocalChatKitFetch generation outbox', () => {
       onOutboxChange: (count) => outboxCounts.push(count),
     })
 
-    const result = await localFetch.flushOutbox()
+    const result = await localFetch.flushOutbox({ force: true })
 
     expect(result).toEqual({ completed: 2, pending: 0 })
     expect(mocks.process).toHaveBeenNthCalledWith(1, expect.stringContaining('"thread_id":"thread-1"'), {})
@@ -78,7 +78,7 @@ describe('LocalChatKitFetch generation outbox', () => {
     }]))
     const localFetch = createLocalChatKitFetch({ db: {} as any, webId, authFetch: vi.fn() as any })
 
-    const result = await localFetch.flushOutbox()
+    const result = await localFetch.flushOutbox({ force: true })
 
     expect(result).toEqual({ completed: 0, pending: 2 })
     expect(mocks.process).toHaveBeenCalledTimes(1)
@@ -91,13 +91,37 @@ describe('LocalChatKitFetch generation outbox', () => {
     const localFetch = createLocalChatKitFetch({ db: {} as any, webId, authFetch: vi.fn() as any })
 
     const [first, second] = await Promise.all([
-      localFetch.flushOutbox(),
-      localFetch.flushOutbox(),
+      localFetch.flushOutbox({ force: true }),
+      localFetch.flushOutbox({ force: true }),
     ])
 
     expect(first).toEqual({ completed: 1, pending: 0 })
     expect(second).toEqual(first)
     expect(mocks.process).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for the retry deadline and backs off after provider failures', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-14T00:00:00.000Z'))
+    try {
+      enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
+      const localFetch = createLocalChatKitFetch({ db: {} as any, webId, authFetch: vi.fn() as any })
+      mocks.process.mockResolvedValue(streamingResult([{
+        type: 'error',
+        error: { message: 'provider remains unavailable' },
+      }]))
+
+      expect(localFetch.getOutboxRetryAt()).toBe(Date.now() + 15_000)
+      await expect(localFetch.flushOutbox()).resolves.toEqual({ completed: 0, pending: 1 })
+      expect(mocks.process).not.toHaveBeenCalled()
+
+      vi.advanceTimersByTime(15_000)
+      await expect(localFetch.flushOutbox()).resolves.toEqual({ completed: 0, pending: 1 })
+      expect(mocks.process).toHaveBeenCalledTimes(1)
+      expect(localFetch.getOutboxRetryAt()).toBe(Date.now() + 30_000)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('writes edited Canvas content as a new Pod file and records a versioned chat artifact', async () => {

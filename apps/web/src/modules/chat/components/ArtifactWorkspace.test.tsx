@@ -62,6 +62,20 @@ describe('ArtifactWorkspace', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('HTTP 403'))
   })
 
+  it('rejects oversized previews from metadata before buffering the response body', async () => {
+    const cancel = vi.fn(async () => undefined)
+    const body = { cancel } as unknown as ReadableStream<Uint8Array>
+    const authFetch = vi.fn(async () => ({
+      ok: true,
+      headers: new Headers({ 'Content-Type': 'text/markdown', 'Content-Length': String(5 * 1024 * 1024 + 1) }),
+      body,
+    } as Response))
+    render(<ArtifactWorkspace versions={versions.slice(0, 1)} authFetch={authFetch as typeof fetch} onContinue={vi.fn()} onSaveVersion={vi.fn()} />)
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('超过 5 MB'))
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+
   it('edits text artifacts and saves a new version without overwriting the source', async () => {
     const authFetch = vi.fn(async () => new Response('# Version two', { status: 200, headers: { 'Content-Type': 'text/markdown' } }))
     const onSaveVersion = vi.fn(async () => undefined)

@@ -18,6 +18,7 @@ import {
   enqueueChatGeneration,
   listChatGenerationOutbox,
   markChatGenerationAttempt,
+  nextChatGenerationAttemptAt,
   removeChatGeneration,
 } from './generation-outbox'
 
@@ -187,10 +188,12 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     await store.refreshThreadItems(threadId, {})
   }
   localFetch.getOutboxSize = () => listChatGenerationOutbox(webId).length
-  const flushOutbox = async () => {
+  localFetch.getOutboxRetryAt = () => nextChatGenerationAttemptAt(webId)
+  const flushOutbox = async (force: boolean) => {
     let completed = 0
 
     for (const entry of listChatGenerationOutbox(webId)) {
+      if (!force && (entry.nextAttemptAt ?? entry.queuedAt) > Date.now()) break
       markChatGenerationAttempt(webId, entry.id)
       replayDeferredUserItemIds.delete(entry.userItemId)
       try {
@@ -243,9 +246,9 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     notifyOutboxChange()
     return { completed, pending }
   }
-  localFetch.flushOutbox = () => {
+  localFetch.flushOutbox = (options?: { force?: boolean }) => {
     if (outboxFlushPromise) return outboxFlushPromise
-    outboxFlushPromise = flushOutbox().finally(() => {
+    outboxFlushPromise = flushOutbox(options?.force ?? false).finally(() => {
       outboxFlushPromise = null
     })
     return outboxFlushPromise
@@ -309,7 +312,8 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
 export type LocalChatKitFetch = typeof fetch & {
   refreshThreadItems: (threadId: string) => Promise<void>
   getOutboxSize: () => number
-  flushOutbox: () => Promise<{ completed: number; pending: number }>
+  getOutboxRetryAt: () => number | null
+  flushOutbox: (options?: { force?: boolean }) => Promise<{ completed: number; pending: number }>
   loadAttachmentObjectUrl: (attachmentId: string) => Promise<string>
   prepareAttachmentForReuse: (attachment: Attachment) => Promise<Attachment>
   saveArtifactVersion: (input: {

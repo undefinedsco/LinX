@@ -66,7 +66,7 @@ describe('ConversationShareDialog', () => {
     const options = mocked.createConversationShare.mock.calls[0]?.[0]?.options
     expect(options.excludedMessageIds.has('user-1')).toBe(true)
 
-    fireEvent.click(screen.getAllByRole('button', { name: '撤销' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: '撤销' })[1])
     await waitFor(() => expect(mocked.revokeConversationShare).toHaveBeenCalledWith(expect.objectContaining({
       share: existingShare,
     })))
@@ -91,5 +91,72 @@ describe('ConversationShareDialog', () => {
 
     expect(screen.getByRole('button', { name: '创建只读分享' })).toBeDisabled()
     expect(mocked.createConversationShare).not.toHaveBeenCalled()
+  })
+
+  it('clears stale message exclusions when the selected thread changes', async () => {
+    const { rerender } = render(<ConversationShareDialog
+      open
+      onOpenChange={vi.fn()}
+      title="First thread"
+      threadUri={existingShare.threadUri}
+      db={{} as any}
+      ownerWebId="https://pod.example/profile/card#me"
+      podBaseUrl="https://pod.example/"
+      authFetch={vi.fn() as any}
+      messages={messages}
+    />)
+
+    await screen.findByText(existingShare.url)
+    fireEvent.click(screen.getByRole('checkbox', { name: /用户/u }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /LinX/u }))
+    expect(screen.getByRole('button', { name: '创建只读分享' })).toBeDisabled()
+
+    rerender(<ConversationShareDialog
+      open
+      onOpenChange={vi.fn()}
+      title="Second thread"
+      threadUri="https://pod.example/.data/chat/other.ttl#thread"
+      db={{} as any}
+      ownerWebId="https://pod.example/profile/card#me"
+      podBaseUrl="https://pod.example/"
+      authFetch={vi.fn() as any}
+      messages={messages}
+    />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '创建只读分享' })).toBeEnabled())
+    expect(screen.getByRole('checkbox', { name: /用户/u })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /LinX/u })).toBeChecked()
+  })
+
+  it('writes a printable document into a detached popup', async () => {
+    const write = vi.fn()
+    const print = vi.fn()
+    const addEventListener = vi.fn((_type: string, listener: EventListener) => listener(new Event('load')))
+    const printWindow = {
+      opener: window,
+      document: { open: vi.fn(), write, close: vi.fn() },
+      addEventListener,
+      print,
+    }
+    const open = vi.spyOn(window, 'open').mockReturnValue(printWindow as any)
+    render(<ConversationShareDialog
+      open
+      onOpenChange={vi.fn()}
+      title="Printable thread"
+      threadUri={existingShare.threadUri}
+      db={{} as any}
+      ownerWebId="https://pod.example/profile/card#me"
+      podBaseUrl="https://pod.example/"
+      authFetch={vi.fn() as any}
+      messages={messages}
+    />)
+
+    await screen.findByText(existingShare.url)
+    fireEvent.click(screen.getByRole('button', { name: '打印 / PDF' }))
+
+    expect(open).toHaveBeenCalledWith('', '_blank')
+    expect(printWindow.opener).toBeNull()
+    expect(write).toHaveBeenCalledWith(expect.stringContaining('Printable thread'))
+    expect(print).toHaveBeenCalledOnce()
   })
 })
