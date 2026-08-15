@@ -283,7 +283,7 @@ describe('pod-collection integration', () => {
         id,
         baseUrl: 'https://api.test.com',
         proxyUrl: 'https://proxy.test.com',
-        hasModel: `/settings/providers/${id}.ttl#model-1`,
+        hasModel: [`/settings/providers/${id}.ttl#model-1`],
       } as any)
 
       const optimisticPromise = new Promise<'optimistic'>((resolve) => {
@@ -317,7 +317,7 @@ describe('pod-collection integration', () => {
       expect(created?.id).toBe(providerResourceId)
       expect(created?.baseUrl).toBe('https://api.test.com')
       expect(created?.proxyUrl).toBe('https://proxy.test.com')
-      expect(created?.hasModel).toBe(expectedModelUri)
+      expect(created?.hasModel).toEqual([expectedModelUri])
 
       const update = collection.update(id, (draft: any) => {
         draft.baseUrl = 'https://api.updated.test.com'
@@ -372,7 +372,7 @@ describe('pod-collection integration', () => {
           id,
           baseUrl: 'https://api.test.com',
           proxyUrl: 'https://proxy.test.com',
-          hasModel: `/settings/providers/${id}.ttl#model-1`,
+          hasModel: [`/settings/providers/${id}.ttl#model-1`],
         })
         .execute()
 
