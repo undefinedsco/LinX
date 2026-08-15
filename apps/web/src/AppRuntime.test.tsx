@@ -65,6 +65,15 @@ describe('AppRuntime', () => {
     )
   })
 
+  it('restores persisted sessions when only the local onboarding bridge is present', () => {
+    window.xpodDesktop = { localOnboarding: {} } as any
+
+    render(<AppRuntime />)
+
+    expect(solidSessionProviderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ restorePreviousSession: true }),
+    )
+  })
 
   it('disables iframe session restore in desktop runtime', () => {
     window.xpodDesktop = { auth: { openEmbeddedAuthorization: vi.fn() } } as any

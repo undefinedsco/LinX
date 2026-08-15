@@ -7,7 +7,7 @@
  * Includes `contactOps` for business logic that spans multiple collections.
  */
 
-import { asc, like, or } from '@undefineds.co/drizzle-solid'
+import { asc, like } from '@undefineds.co/drizzle-solid'
 import {
   chatResource,
   contactResource,
@@ -511,7 +511,8 @@ export const contactOps = {
   },
 
   /**
-   * Search contacts by query string using drizzle-solid ilike
+   * Search contacts by query string using per-field drizzle-solid queries.
+   * The local SPARQL executor cannot combine LIKE filters with OR.
    * Searches in: name, alias, externalId, note, about
    */
   async search(query: string): Promise<ContactRow[]> {
@@ -523,23 +524,28 @@ export const contactOps = {
     const pattern = `%${query.trim()}%`
 
     try {
-      const results = await db
+      const searchableColumns = [
+        contactResource.name,
+        contactResource.alias,
+        contactResource.externalId,
+        contactResource.note,
+        contactResource.about,
+      ]
+      const pages = await Promise.all(searchableColumns.map((column) => db
         .select()
         .from(contactResource)
-        .where(
-          or(
-            like(contactResource.name as any, pattern),
-            like(contactResource.alias as any, pattern),
-            like(contactResource.externalId as any, pattern),
-            like(contactResource.note as any, pattern),
-            like(contactResource.about as any, pattern)
-          )
-        )
+        .where(like(column as any, pattern))
         .orderBy(asc(contactResource.name), asc(contactResource.id))
         .limit(100)
-        .execute()
+        .execute()))
+      const rowsById = new Map<string, ContactRow>()
+      for (const row of pages.flat() as ContactRow[]) {
+        rowsById.set(row.id, row)
+      }
 
-      return results as ContactRow[]
+      return [...rowsById.values()]
+        .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+        .slice(0, 100)
     } catch (error) {
       console.error('[contactOps] Search error:', error)
       throw error

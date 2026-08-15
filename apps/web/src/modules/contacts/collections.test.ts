@@ -544,7 +544,7 @@ describe('contactOps Query Operations', () => {
       expect(result).toHaveLength(3)
     })
 
-    it('should search by name using drizzle-solid ilike', async () => {
+    it('should search each supported field without an unsupported FILTER OR', async () => {
       // Mock drizzle-solid returning filtered results
       mockSearchResults = [mockContacts[0]] // Alice Smith
 
@@ -552,8 +552,7 @@ describe('contactOps Query Operations', () => {
 
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Alice Smith')
-      // Verify db.select was called (drizzle-solid path, not fallback)
-      expect(mockDb.select).toHaveBeenCalled()
+      expect(mockDb.select).toHaveBeenCalledTimes(5)
     })
 
     it('should search by alias using drizzle-solid ilike', async () => {

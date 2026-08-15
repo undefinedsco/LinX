@@ -47,9 +47,13 @@ test.describe('Files-standard supporting modules real Pod smoke', () => {
 
     await page.reload()
     await assertSeededLoginReady(page, runtime)
-    await page.getByRole('button', { name: '联系人', exact: true }).click()
     await expect(page.locator('[data-micro-app-id="contacts"]')).toBeVisible({ timeout: 30_000 })
-    await page.getByPlaceholder('搜索联系人').fill(agentName)
+    const contactSearch = page.getByPlaceholder('搜索联系人')
+    if (!await contactSearch.isVisible().catch(() => false)) {
+      await page.getByRole('button', { name: '联系人', exact: true }).click()
+    }
+    await expect(contactSearch).toBeVisible({ timeout: 30_000 })
+    await contactSearch.fill(agentName)
     await expect(page.getByRole('listbox', { name: '联系人' }).getByRole('option', { name: new RegExp(agentName) }))
       .toBeVisible({ timeout: 30_000 })
 

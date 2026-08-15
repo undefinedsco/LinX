@@ -15,7 +15,7 @@ function SessionTokenMaintenance() {
 }
 
 export function AppRuntime() {
-  const isDesktopRuntime = typeof window !== 'undefined' && Boolean(window.xpodDesktop)
+  const isDesktopRuntime = typeof window !== 'undefined' && Boolean(window.xpodDesktop?.auth)
   const isAuthCallback = typeof window !== 'undefined'
     && window.location.pathname.startsWith('/auth/callback')
 
