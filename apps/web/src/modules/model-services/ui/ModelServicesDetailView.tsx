@@ -109,7 +109,7 @@ function CapabilityIcon({ type }: { type: string }) {
   const capability = {
     vision: { icon: ImageIcon, label: '视觉识别', className: 'text-green-500' },
     web: { icon: Globe, label: '联网搜索', className: 'text-blue-500' },
-    function_calling: { icon: Box, label: '函数调用', className: 'text-orange-500' },
+    tool_call: { icon: Box, label: '函数调用', className: 'text-orange-500' },
   }[type]
   if (!capability) return null
 

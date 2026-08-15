@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const shared = vi.hoisted(() => ({
   read: vi.fn(),
-  write: vi.fn(),
+  reconcile: vi.fn(),
 }))
 
 vi.mock('@undefineds.co/models', async (importOriginal) => ({
   ...await importOriginal<typeof import('@undefineds.co/models')>(),
   readChatProjectContext: shared.read,
-  writeChatProjectContext: shared.write,
+  reconcileChatProjectContext: shared.reconcile,
 }))
 
 import { emptyProjectContext, readProjectContext, renderProjectSystemContext, writeProjectContext } from './project-context'
@@ -23,12 +23,12 @@ describe('chat project context adapter', () => {
       instructions: 'Prefer concise answers.',
       memories: [{ id: 'memory-1.ttl', text: 'The release day is Friday.', createdAt: '2026-08-11T00:00:00Z' }],
     }
-    shared.write.mockResolvedValue(context)
+    shared.reconcile.mockResolvedValue(context)
     shared.read.mockResolvedValue(context)
 
-    await expect(writeProjectContext({ db, context })).resolves.toEqual(context)
+    await expect(writeProjectContext({ db, previous: context, context })).resolves.toEqual(context)
     await expect(readProjectContext({ db, workspaceUri: context.workspace })).resolves.toEqual(context)
-    expect(shared.write).toHaveBeenCalledWith(db, context)
+    expect(shared.reconcile).toHaveBeenCalledWith(db, { previous: context, next: context })
     expect(shared.read).toHaveBeenCalledWith(db, context.workspace)
     expect(renderProjectSystemContext(context)).toContain('Prefer concise answers.')
     expect(renderProjectSystemContext(context)).toContain('The release day is Friday.')

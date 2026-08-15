@@ -21,6 +21,7 @@ export interface ProjectContextDialogProps {
 export function ProjectContextDialog(props: ProjectContextDialogProps) {
   const loadRequestRef = useRef(0)
   const [context, setContext] = useState<ChatProjectContext>(() => emptyProjectContext(props.workspaceUri))
+  const [persistedContext, setPersistedContext] = useState<ChatProjectContext>(() => emptyProjectContext(props.workspaceUri))
   const [memoryDraft, setMemoryDraft] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -36,7 +37,10 @@ export function ProjectContextDialog(props: ProjectContextDialogProps) {
         db: props.db,
         workspaceUri: props.workspaceUri,
       })
-      if (loadRequestRef.current === requestId) setContext(nextContext)
+      if (loadRequestRef.current === requestId) {
+        setContext(nextContext)
+        setPersistedContext(nextContext)
+      }
     } catch (reason) {
       if (loadRequestRef.current === requestId) {
         setError(reason instanceof Error ? reason.message : '项目上下文读取失败。')
@@ -57,7 +61,9 @@ export function ProjectContextDialog(props: ProjectContextDialogProps) {
     setSaving(true)
     setError(null)
     try {
-      setContext(await writeProjectContext({ db: props.db, context: next }))
+      const saved = await writeProjectContext({ db: props.db, previous: persistedContext, context: next })
+      setContext(saved)
+      setPersistedContext(saved)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '项目上下文保存失败。')
     } finally {

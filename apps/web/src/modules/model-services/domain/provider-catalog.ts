@@ -3,6 +3,8 @@
 // keeps web-specific presentation and docs links.
 import { AIConfigRuntimeCapability, getBuiltinProvider } from '@undefineds.co/models'
 
+const ALL_CONFIGURABLE_CAPABILITIES = Object.values(AIConfigRuntimeCapability)
+
 export interface ProviderDef {
   id: string
   name: string
@@ -57,7 +59,9 @@ const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
     modelsUrl: 'https://undefineds.co/linx',
     defaultApiKeyPlaceholder: '登录后可用，无需 API Key',
     defaultModels: ['linx-lite', 'linx'],
-    capabilities: Object.values(AIConfigRuntimeCapability),
+    // The platform catalog is presentation fallback only. Live discovery may
+    // add capabilities; do not claim optional routes here.
+    capabilities: [AIConfigRuntimeCapability.chatCompletions],
   },
   openai: {
     name: 'OpenAI',
@@ -68,7 +72,7 @@ const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
     modelsApi: 'https://api.openai.com/v1/models',
     defaultApiKeyPlaceholder: 'sk-...',
     defaultModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
-    capabilities: Object.values(AIConfigRuntimeCapability),
+    capabilities: ALL_CONFIGURABLE_CAPABILITIES,
   },
   anthropic: {
     name: 'Anthropic',

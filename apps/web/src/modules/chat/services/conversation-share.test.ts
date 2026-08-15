@@ -3,13 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const shared = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
-  remove: vi.fn(),
+  markRevoked: vi.fn(),
 }))
 
 vi.mock('@undefineds.co/models', async (importOriginal) => ({
   ...await importOriginal<typeof import('@undefineds.co/models')>(),
   conversationShareRepository: shared,
-  removeConversationShare: shared.remove,
+  markConversationShareRevoked: shared.markRevoked,
 }))
 
 import { createConversationShare, listConversationShares, revokeConversationShare } from './conversation-share'
@@ -18,6 +18,7 @@ describe('conversation share persistence', () => {
   const resources = new Map<string, { body: string; contentType: string }>()
   let accessControlKind: 'acl' | 'acr' = 'acr'
   let rejectPermissionWrite = false
+  let rejectPermissionDiscovery = false
   const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
@@ -34,10 +35,14 @@ describe('conversation share persistence', () => {
       return new Response(null, { status: 204 })
     }
     if (method === 'HEAD') {
+      if (rejectPermissionDiscovery) return new Response('', { status: 500 })
       if (!resources.has(url)) return new Response('', { status: 404 })
+      const relation = accessControlKind === 'acr'
+        ? 'http://www.w3.org/ns/solid/acp#accessControl'
+        : 'acl'
       return new Response(null, {
         status: 200,
-        headers: { Link: `<${url}.${accessControlKind}>; rel="acl"` },
+        headers: { Link: `<${url}.${accessControlKind}>; rel="${relation}"` },
       })
     }
     const resource = resources.get(url)
@@ -50,9 +55,10 @@ describe('conversation share persistence', () => {
     resources.clear()
     accessControlKind = 'acr'
     rejectPermissionWrite = false
+    rejectPermissionDiscovery = false
     vi.clearAllMocks()
     shared.list.mockResolvedValue([])
-    shared.remove.mockResolvedValue({ id: 'share.ttl' })
+    shared.markRevoked.mockResolvedValue({ id: 'share.ttl', revokedAt: new Date() })
   })
 
   it('discovers and writes an ACP access-control resource while keeping structured metadata', async () => {
@@ -93,7 +99,7 @@ describe('conversation share persistence', () => {
     await revokeConversationShare({ db, authFetch: authFetch as typeof fetch, podBaseUrl: 'https://pod.example/', share })
     expect(resources.has(share.url)).toBe(false)
     expect(resources.has(`${share.url}.acr`)).toBe(false)
-    expect(shared.remove).toHaveBeenCalledWith(db, share.id)
+    expect(shared.markRevoked).toHaveBeenCalledWith(db, share.id)
   })
 
   it('keeps compatibility with Pods that advertise a WAC resource', async () => {
@@ -138,7 +144,24 @@ describe('conversation share persistence', () => {
       threadUri: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1',
       messages: [{ id: 'u1', role: 'user', content: 'hello' }],
       options: { title: 'Shared chat' },
-    })).rejects.toThrow('Share permission write failed with HTTP 500')
+    })).rejects.toThrow('Permission write failed with HTTP 500')
+
+    expect(resources.size).toBe(0)
+    expect(shared.create).not.toHaveBeenCalled()
+  })
+
+  it('removes the public file when permission discovery fails', async () => {
+    rejectPermissionDiscovery = true
+
+    await expect(createConversationShare({
+      db: {} as import('@undefineds.co/models').SolidDatabase,
+      authFetch: authFetch as typeof fetch,
+      podBaseUrl: 'https://pod.example/',
+      ownerWebId: 'https://id.example/alice#me',
+      threadUri: 'https://pod.example/.data/chat/chat-1/index.ttl#thread-1',
+      messages: [{ id: 'u1', role: 'user', content: 'hello' }],
+      options: { title: 'Shared chat' },
+    })).rejects.toThrow('Permission discovery failed with HTTP 500')
 
     expect(resources.size).toBe(0)
     expect(shared.create).not.toHaveBeenCalled()
@@ -172,6 +195,6 @@ describe('conversation share persistence', () => {
       podBaseUrl: 'https://pod.example/',
       share: { id: 'foreign', url: 'https://attacker.example/share.html', createdAt: new Date().toISOString(), includeToolDetails: false, excludedMessageIds: [] },
     })).rejects.toThrow('outside the selected Pod')
-    expect(shared.remove).not.toHaveBeenCalled()
+    expect(shared.markRevoked).not.toHaveBeenCalled()
   })
 })

@@ -1,7 +1,7 @@
 import {
   emptyChatProjectContext,
   readChatProjectContext,
-  writeChatProjectContext,
+  reconcileChatProjectContext,
   type ChatProjectContextSnapshot,
   type ChatProjectMemoryEntry,
   type SolidDatabase,
@@ -23,9 +23,13 @@ export function readProjectContext(input: {
 
 export function writeProjectContext(input: {
   db: SolidDatabase
+  previous: ChatProjectContext
   context: ChatProjectContext
 }): Promise<ChatProjectContext> {
-  return writeChatProjectContext(input.db, input.context)
+  return reconcileChatProjectContext(input.db, {
+    previous: input.previous,
+    next: input.context,
+  })
 }
 
 export function renderProjectSystemContext(context: ChatProjectContext): string {

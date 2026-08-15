@@ -58,7 +58,6 @@ vi.mock('@undefineds.co/models', () => ({
   },
   emptyChatProjectContext: (workspace: string) => ({ workspace, instructions: '', memoryEnabled: true, memories: [], updatedAt: new Date(0).toISOString() }),
   readChatProjectContext: mocked.readChatProjectContext,
-  writeChatProjectContext: vi.fn(),
   normalizeAIConfigResourceId: (value?: string | null) => {
     if (!value) return ''
     if (value.startsWith('undefineds/')) return value

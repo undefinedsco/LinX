@@ -52,6 +52,11 @@ describe('ProjectContextDialog', () => {
 
     await waitFor(() => expect(mocked.writeProjectContext).toHaveBeenCalledWith({
       db: expect.anything(),
+      previous: expect.objectContaining({
+        workspace: 'https://pod.example/workspaces/project-a/',
+        instructions: '引用项目文件。',
+        memories: [expect.objectContaining({ id: 'memory-1' })],
+      }),
       context: expect.objectContaining({
         workspace: 'https://pod.example/workspaces/project-a/',
         instructions: '只引用已绑定的项目文件。',
