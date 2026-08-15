@@ -10,6 +10,9 @@ const STANDALONE_POD_LABEL = 'Standalone'
 const REFRESH_INTERVAL = 4000
 const SERVICE_LOCAL_POLL_INTERVAL = 500
 const SERVICE_LOCAL_POLL_ATTEMPTS = 20
+const BROWSER_LOCAL_URL = 'http://localhost:5737/'
+const BROWSER_LOCAL_PROBE_TIMEOUT_MS = 1500
+const LOCAL_ONBOARDING_CONTRACT = 'linx-local-onboarding/v1'
 
 interface ServiceStatusResponse {
   pod?: {
@@ -43,6 +46,11 @@ interface ServiceStatusResponse {
 interface SetupConfigResponse {
   port?: number
   spaceKind?: LocalSpaceKind
+}
+
+interface LocalCapabilitiesResponse {
+  contract?: string
+  baseUrl?: string
 }
 
 function normalizeUrl(url: string): string {
@@ -235,6 +243,16 @@ export function useProviders() {
           },
         })
       }
+    } else {
+      const providerSnapshot = projectLocalOnboardingForSource(localOnboarding, 'standalone')
+      local.push(createLocalLoginProvider({
+        id: 'standalone',
+        source: 'standalone',
+        label: STANDALONE_POD_LABEL,
+        storageUrl: providerSnapshot?.localUrl ?? providerSnapshot?.baseUrl ?? BROWSER_LOCAL_URL,
+        runtimeStatus: resolveRuntimeStatus(providerSnapshot),
+        localOnboarding: providerSnapshot,
+      }))
     }
 
     // Merge: Cloud first, then Local, then custom
@@ -286,7 +304,11 @@ export function useProviders() {
       return next
     }
 
-    if (!isServiceMode) return null
+    if (!isServiceMode) {
+      const snapshot = await connectBrowserLocalSpace(spaceKind)
+      publishLocalOnboarding(snapshot)
+      return snapshot
+    }
 
     setLocalOnboarding((current) => current
       ? {
@@ -367,6 +389,108 @@ export function useProviders() {
     refreshProviders,
     localOnboarding,
     startLocal,
+  }
+}
+
+async function connectBrowserLocalSpace(spaceKind: LocalSpaceKind): Promise<LocalOnboardingSnapshot> {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), BROWSER_LOCAL_PROBE_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(new URL('/api/linx/capabilities', BROWSER_LOCAL_URL).toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const capabilities = await response.json() as LocalCapabilitiesResponse
+    const baseUrl = normalizeLocalBaseUrl(capabilities.baseUrl)
+    if (capabilities.contract !== LOCAL_ONBOARDING_CONTRACT || !baseUrl) {
+      throw new Error('capabilities contract mismatch')
+    }
+
+    if (spaceKind === 'local') {
+      return createBrowserLocalSnapshot({
+        state: 'repair_required',
+        spaceKind,
+        baseUrl,
+        publicUrl: isLocalAccessHostname(new URL(baseUrl).hostname) ? null : baseUrl,
+        message: '网页端已检测到本机 xpod，但缺少 Local 云端绑定信息。请通过 LinX Desktop 或 LinX Service 完成本机空间配置。',
+        errorCode: 'BROWSER_LOCAL_BINDING_REQUIRED',
+      })
+    }
+
+    if (!isLocalAccessHostname(new URL(baseUrl).hostname)) {
+      return createBrowserLocalSnapshot({
+        state: 'repair_required',
+        spaceKind,
+        baseUrl,
+        publicUrl: baseUrl,
+        message: '检测到的 xpod 已绑定为本机空间，不能作为独立空间登录。请改用本机空间入口。',
+        errorCode: 'BROWSER_SPACE_KIND_MISMATCH',
+      })
+    }
+
+    return createBrowserLocalSnapshot({
+      state: 'ready',
+      spaceKind,
+      baseUrl,
+      publicUrl: null,
+      message: '已连接正在运行的独立空间，接下来会打开本机登录页。',
+      errorCode: null,
+    })
+  } catch {
+    return createBrowserLocalSnapshot({
+      state: 'error',
+      spaceKind,
+      baseUrl: BROWSER_LOCAL_URL,
+      publicUrl: null,
+      message: '未检测到可连接的本机空间。请先启动 xpod 后重试。',
+      errorCode: 'BROWSER_LOCAL_UNREACHABLE',
+    })
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
+function createBrowserLocalSnapshot(input: {
+  state: LocalOnboardingSnapshot['state']
+  spaceKind: LocalSpaceKind
+  baseUrl: string
+  publicUrl: string | null
+  message: string
+  errorCode: string | null
+}): LocalOnboardingSnapshot {
+  return {
+    state: input.state,
+    spaceKind: input.spaceKind,
+    localUrl: BROWSER_LOCAL_URL,
+    baseUrl: input.baseUrl,
+    publicUrl: input.publicUrl,
+    tunnel: null,
+    connectivity: null,
+    capabilities: null,
+    cloudIdentityUrl: null,
+    provisionCode: null,
+    provisionUrl: null,
+    nodeId: null,
+    message: input.message,
+    progress: null,
+    errorCode: input.errorCode,
+    canRetry: true,
+    canOpenSettings: false,
+  }
+}
+
+function normalizeLocalBaseUrl(url?: string): string | null {
+  if (!url) return null
+  try {
+    return ensureTrailingSlash(new URL(url).toString())
+  } catch {
+    return null
   }
 }
 

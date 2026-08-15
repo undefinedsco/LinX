@@ -110,7 +110,7 @@ export function LocalOnboardingCard({
     } finally {
       setLaunchingAuth(false)
     }
-  }, [localProviderUrl, oidc, snapshot.cloudIdentityUrl, snapshot.nodeId, snapshot.spaceKind, snapshot.provisionCode])
+  }, [authorizationSurface, localProviderUrl, oidc, snapshot.cloudIdentityUrl, snapshot.nodeId, snapshot.spaceKind, snapshot.provisionCode])
 
   const handleOpenAdvancedSettings = useCallback(async () => {
     setActionError(null)

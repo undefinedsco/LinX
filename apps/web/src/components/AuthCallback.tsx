@@ -259,7 +259,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     } finally {
       desktopRedirectRestoreInProgressRef.current = false
     }
-  }, [onSuccess, session])
+  }, [onSuccess, pendingAttempt?.prompt, retryInteractiveFromSilentAttempt, session])
 
   useEffect(() => {
     if (error || navigatedRef.current || session.info.isLoggedIn) return

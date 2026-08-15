@@ -111,6 +111,45 @@ describe('useProviders', () => {
     })
   })
 
+  it('connects pure Web to an already-running Standalone xpod without starting a process', async () => {
+    delete window.xpodDesktop
+    delete (window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        contract: 'linx-local-onboarding/v1',
+        baseUrl: 'http://localhost:5737/',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useProviders())
+
+    let snapshot: unknown
+    await act(async () => {
+      snapshot = await result.current.startLocal('standalone')
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5737/api/linx/capabilities',
+      expect.objectContaining({
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      }),
+    )
+    expect(snapshot).toMatchObject({
+      state: 'ready',
+      spaceKind: 'standalone',
+      localUrl: 'http://localhost:5737/',
+      baseUrl: 'http://localhost:5737/',
+    })
+    expect(result.current.localOnboarding).toMatchObject({
+      state: 'ready',
+      spaceKind: 'standalone',
+    })
+  })
+
   it('creates explicit Local and Standalone providers in LinX Service space without Cloud provisioning', async () => {
     delete window.xpodDesktop
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true

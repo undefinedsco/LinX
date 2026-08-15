@@ -251,7 +251,9 @@ export function useLoginController() {
     resetDesktopAuthState,
     session.info.isLoggedIn,
     session.info.webId,
+    setConnectingProvider,
     setError,
+    setLocalLoginActive,
     setState,
     storedAccount,
   ])
@@ -384,6 +386,7 @@ export function useLoginController() {
     resetDesktopAuthState,
     restore.restoreComplete,
     restore.restoreFailed,
+    setConnectingProvider,
     setError,
     setState,
     state,
@@ -432,8 +435,13 @@ export function useLoginController() {
     oidc,
     setError,
     resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
     setState,
     setStoredAccount,
+    setLocalLoginActive,
+    setStorageConflict,
+    setView,
     state,
     view,
   ])
@@ -572,6 +580,7 @@ export function useLoginController() {
     }
   }, [
     localOnboarding?.provisionCode,
+    localOnboarding?.provisionUrl,
     localOnboarding?.publicUrl,
     loginSuccess,
     logout,
@@ -581,9 +590,14 @@ export function useLoginController() {
     session.info.isLoggedIn,
     session.info.webId,
     session.fetch,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
     setError,
+    setLocalLoginActive,
     setState,
     setStoredAccount,
+    setStorageConflict,
+    setView,
     storageConflict,
     state,
     storedAccount,
@@ -630,18 +644,25 @@ export function useLoginController() {
 
       const snapshot = await startLocal(source)
 
-      if (snapshot?.state === 'error') {
+      if (!snapshot) {
+        setView('default')
+        setLocalLoginActive(false)
+        setError('未检测到可连接的本机空间。请先启动 xpod 后重试。')
+        return
+      }
+
+      if (snapshot.state === 'error') {
         setLocalLoginActive(false)
         setError(formatLoginErrorForUser(snapshot.message, '本机空间启动失败。请稍后重试。'))
         return
       }
 
-      if (snapshot?.state === 'repair_required') {
+      if (snapshot.state === 'repair_required') {
         setLocalLoginActive(false)
         return
       }
 
-      if (canRestoreLocalSession && snapshot?.state === 'ready') {
+      if (canRestoreLocalSession && snapshot.state === 'ready') {
         if (session.info.isLoggedIn) {
           setState('restoring')
           return
@@ -665,7 +686,7 @@ export function useLoginController() {
         }
       }
 
-      if (snapshot?.state === 'ready') {
+      if (snapshot.state === 'ready') {
         await connectReadyLocalSnapshot(snapshot, source, {
           restoreAccount: options?.restoreAccount ?? storedAccount,
         })
@@ -677,7 +698,23 @@ export function useLoginController() {
       setLocalLoginActive(false)
       setError(formatLoginErrorForUser(error, '本机空间启动失败。请稍后重试。'))
     }
-  }, [connectReadyLocalSnapshot, isDesktop, logout, providers, resetDesktopAuthState, session, setError, setState, startLocal, storedAccount])
+  }, [
+    connectReadyLocalSnapshot,
+    isDesktop,
+    logout,
+    providers,
+    resetDesktopAuthState,
+    session,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setView,
+    startLocal,
+    storedAccount,
+  ])
 
   const connect = useCallback(async (providerKey: string, options?: { prompt?: 'none' | 'consent'; isInvalidClientRetry?: boolean }) => {
     loginFinalizeGenerationRef.current += 1
@@ -736,7 +773,18 @@ export function useLoginController() {
       setError(formatLoginErrorForUser(err, '连接失败。请检查网络后重试。'))
       setState('idle')
     }
-  }, [oidc, providers, resetDesktopAuthState, setError, setState, startLocalLogin, storedAccount])
+  }, [
+    oidc,
+    providers,
+    resetDesktopAuthState,
+    setConnectingProvider,
+    setError,
+    setState,
+    setStorageConflict,
+    setView,
+    startLocalLogin,
+    storedAccount,
+  ])
 
   const continueStoredAccount = useCallback(async () => {
     suppressAutoLoginRef.current = false
@@ -850,7 +898,7 @@ export function useLoginController() {
     }
 
     void connect(targetStorageProviderUrl, connectOptions)
-  }, [connect, isDesktop, providers, session, setError, setState, startLocalLogin, storedAccount])
+  }, [connect, isDesktop, providers, session, setError, setState, setStorageConflict, startLocalLogin, storedAccount])
 
   // Desktop cannot rely on the SessionProvider iframe restore path because
   // the identity provider callback must return through Electron's loopback
@@ -940,7 +988,7 @@ export function useLoginController() {
     } finally {
       setLocalLoginActive(false)
     }
-  }, [setError])
+  }, [setError, setLocalLoginActive])
 
   const testLocalConnectivity = useCallback(async () => {
     const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
@@ -958,7 +1006,7 @@ export function useLoginController() {
     } finally {
       setLocalLoginActive(false)
     }
-  }, [setError])
+  }, [setError, setLocalLoginActive])
 
   const backFromLocal = useCallback(() => {
     oidc.cancel()
@@ -976,7 +1024,19 @@ export function useLoginController() {
     setState('idle')
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
-  }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
+  }, [
+    embeddedAuthorization,
+    oidc,
+    resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setStoredAccount,
+    setView,
+  ])
 
   const cancelConnecting = useCallback(() => {
     oidc.cancel()
@@ -997,7 +1057,20 @@ export function useLoginController() {
       setState('idle')
     }
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
-  }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount, state])
+  }, [
+    embeddedAuthorization,
+    oidc,
+    resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setStoredAccount,
+    setView,
+    state,
+  ])
 
   const switchAccount = useCallback(async () => {
     oidc.cancel()
@@ -1021,7 +1094,20 @@ export function useLoginController() {
     localConnectKeyRef.current = null
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
-  }, [embeddedAuthorization, logout, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
+  }, [
+    embeddedAuthorization,
+    logout,
+    oidc,
+    resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setStoredAccount,
+    setView,
+  ])
 
   const signOut = useCallback(async () => {
     oidc.cancel()
@@ -1043,7 +1129,18 @@ export function useLoginController() {
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
     reset()
-  }, [embeddedAuthorization, logout, oidc, reset, resetDesktopAuthState])
+  }, [
+    embeddedAuthorization,
+    logout,
+    oidc,
+    reset,
+    resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setLocalLoginActive,
+    setStorageConflict,
+    setView,
+  ])
 
   // Listen for sign-out events from other components (e.g. PrimaryLayout)
   useEffect(() => {
@@ -1065,7 +1162,18 @@ export function useLoginController() {
     localConnectKeyRef.current = null
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
-  }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
+  }, [
+    embeddedAuthorization,
+    oidc,
+    resetDesktopAuthState,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setStoredAccount,
+    setView,
+  ])
   const openCurrentSpacePodSetup = useCallback(() => {
     const setupUrl = storageConflict?.setupUrl ?? storageConflict?.managementUrl
     if (!setupUrl || typeof window === 'undefined') {

@@ -226,6 +226,35 @@ describe('useLoginController', () => {
     expect(result.current.localLoginStatus.message).toBe('启动本机空间服务')
   })
 
+  it('leaves the Local startup view when a provider returns no startup snapshot', async () => {
+    providersState.providers = [
+      {
+        id: 'standalone',
+        url: 'http://localhost:5737',
+        label: 'Standalone',
+        source: 'standalone',
+        runtime: {
+          kind: 'local-pod',
+          status: 'stopped',
+          canStart: true,
+          canCreate: false,
+        },
+      },
+    ]
+    startLocalMock.mockResolvedValueOnce(null)
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('standalone')
+    })
+
+    expect(result.current.view).toBe('default')
+    expect(result.current.localLoginStatus.active).toBe(false)
+    expect(result.current.error).toBe('未检测到可连接的本机空间。请先启动 xpod 后重试。')
+    expect(connectMock).not.toHaveBeenCalled()
+  })
+
   it('hydrates the account card from remembered account storage when the login store is empty', async () => {
     window.localStorage.setItem('linx-remembered-account', JSON.stringify({
       displayName: 'Ganlu',
