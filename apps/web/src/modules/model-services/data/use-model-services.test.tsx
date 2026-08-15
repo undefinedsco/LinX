@@ -194,6 +194,53 @@ describe('useModelServices data persistence', () => {
     ])
   })
 
+  it('enables Responses when Web Search is enabled', async () => {
+    const { result } = renderHook(() => useModelServices())
+
+    await act(async () => {
+      await result.current.updateProviderCapability(
+        'openai',
+        'responses_web_search',
+        true,
+        ['chat_completions'],
+      )
+    })
+
+    expect([...mocks.providerRows.values()]).toEqual([
+      expect.objectContaining({
+        capabilities: ['chat_completions', 'responses_web_search', 'responses'],
+      }),
+    ])
+  })
+
+  it('merges serialized capability mutations against the latest persisted row', async () => {
+    const providerRow = {
+      id: 'timecc.ttl',
+      displayName: 'TimeCC',
+      capabilities: ['responses'],
+    }
+    mocks.providerRows.set(providerRow.id, providerRow)
+    mocks.useLiveQuery.mockReset()
+    mocks.useLiveQuery
+      .mockReturnValueOnce({ data: [], isError: false })
+      .mockReturnValueOnce({ data: [{ p: providerRow }], isError: false })
+      .mockReturnValueOnce({ data: [], isError: false })
+    const { result } = renderHook(() => useModelServices())
+
+    await act(async () => {
+      await Promise.all([
+        result.current.updateProviderCapability('timecc', 'image_input', true),
+        result.current.updateProviderCapability('timecc', 'tool_calls', true),
+      ])
+    })
+
+    expect(mocks.providerRows.get('timecc.ttl')?.capabilities).toEqual([
+      'responses',
+      'image_input',
+      'tool_calls',
+    ])
+  })
+
   it('updates an existing Pod model when its row id includes the provider path', async () => {
     const providerRow = {
       id: '/settings/providers/timecc.ttl',
@@ -234,6 +281,10 @@ describe('useModelServices data persistence', () => {
       modelRow.id,
       expect.any(Function),
     )
+    expect(mocks.modelRows.get(modelRow.id)?.rdfType).toEqual([
+      'https://undefineds.co/ns#AIModel',
+      'https://undefineds.co/ns#ChatModel',
+    ])
     expect(mocks.modelInsert).not.toHaveBeenCalled()
   })
 

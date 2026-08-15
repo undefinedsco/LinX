@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { capturePendingCallbackError } from '@/modules/login/login-utils'
 import { getPersistentBrowserStorage, PersistentSessionStorage } from './persistent-session-storage'
 import { SessionContext, useSession } from './solid-session-context'
+import { waitForSessionRestore } from './session-restore-timeout'
 
 interface SolidSessionProviderProps {
   children: ReactNode
@@ -37,21 +38,27 @@ export function SolidSessionProvider({
   const [profile, setProfile] = useState<undefined>(undefined)
 
   useEffect(() => {
+    let active = true
     const handleSessionRestore = (url: string) => onSessionRestore?.(url)
     session.events.on(EVENTS.SESSION_RESTORED, handleSessionRestore)
 
-    void session.handleIncomingRedirect({
-      url: window.location.href,
-      restorePreviousSession: restoreSession,
-    })
+    void waitForSessionRestore(
+      session.handleIncomingRedirect({
+        url: window.location.href,
+        restorePreviousSession: restoreSession,
+      }),
+    )
       .catch((error) => {
         onError?.(error instanceof Error ? error : new Error(String(error)))
       })
       .finally(() => {
-        setSessionRequestInProgress(false)
+        if (active) {
+          setSessionRequestInProgress(false)
+        }
       })
 
     return () => {
+      active = false
       session.events.off(EVENTS.SESSION_RESTORED, handleSessionRestore)
     }
   }, [onError, onSessionRestore, restoreSession, session])

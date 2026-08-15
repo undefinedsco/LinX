@@ -257,9 +257,9 @@ describe('LocalChatKitService P0 data and cancellation', () => {
     service.resolvePlatformModel = vi.fn(() => null)
     service.streamFromProviderRuntime = async function* () {
       yield 'partial answer'
-      const error = new Error('stopped')
-      error.name = 'AbortError'
-      throw error
+      // The UI abort callback uses this string as AbortSignal.reason. Fetch
+      // propagates it verbatim rather than wrapping it in an AbortError.
+      throw 'user_cancelled'
     }
 
     const events: any[] = []

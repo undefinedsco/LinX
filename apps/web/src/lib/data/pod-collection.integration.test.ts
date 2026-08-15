@@ -253,7 +253,7 @@ describe('pod-collection integration', () => {
   })
 
   it('round-trips optimistic collection CRUD through one real Pod resource', { timeout: 30000 }, async () => {
-    const { db: database, baseUrl } = await getContext()
+    const { db: database, podUrl } = await getContext()
     const queryClient = new QueryClient()
 
     const collection = createPodCollection({
@@ -312,7 +312,8 @@ describe('pod-collection integration', () => {
       const providerResourceId = `${id}.ttl`
       const created = await (database as any).findById(aiProviderResource as any, providerResourceId)
       const subject = (created as any)?.['@id']
-      const expectedModelUri = new URL(`/settings/providers/${id}.ttl#model-1`, baseUrl).href
+      // A leading slash in a schema value is Pod-root-relative, not origin-root-relative.
+      const expectedModelUri = new URL(`settings/providers/${id}.ttl#model-1`, podUrl).href
       if (subject) createdSubjects.push(subject)
       expect(created?.id).toBe(providerResourceId)
       expect(created?.baseUrl).toBe('https://api.test.com')

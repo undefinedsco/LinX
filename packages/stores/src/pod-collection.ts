@@ -870,10 +870,21 @@ function changedPersistableFields<TData extends { id?: string }>(
       continue
     }
     if (!samePersistedValue(originalValue, modifiedValue)) {
-      changed[key] = modifiedValue
+      changed[key] = clonePersistedValue(modifiedValue)
     }
   }
   return changed
+}
+
+function clonePersistedValue(value: unknown): unknown {
+  if (value instanceof Date) return new Date(value.getTime())
+  if (Array.isArray(value)) return value.map(clonePersistedValue)
+  if (isPlainRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, clonePersistedValue(nested)]),
+    )
+  }
+  return value
 }
 
 function samePersistedValue(left: unknown, right: unknown): boolean {

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const mockToast = vi.fn()
 const mockUpdateProvider = vi.fn().mockResolvedValue(undefined)
+const mockUpdateProviderCapability = vi.fn().mockResolvedValue(undefined)
 const mockSearchProviderModels = vi.fn()
 let mockQueryError: string | null = null
 
@@ -31,6 +32,7 @@ vi.mock('./data/use-model-services', () => ({
       },
     },
     updateProvider: mockUpdateProvider,
+    updateProviderCapability: mockUpdateProviderCapability,
     error: mockQueryError,
   }),
 }))
@@ -45,6 +47,7 @@ describe('ModelServicesContentPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUpdateProvider.mockResolvedValue(undefined)
+    mockUpdateProviderCapability.mockResolvedValue(undefined)
     mockQueryError = null
   })
 
@@ -157,15 +160,18 @@ describe('ModelServicesContentPane', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('模型服务配置读取失败，请重试。')
   })
 
-  it('persists explicit Responses dependencies when web search is enabled', async () => {
+  it('delegates Web Search as a semantic capability mutation', async () => {
     render(<ModelServicesContentPane />)
 
     fireEvent.click(screen.getByRole('switch', { name: '开启 Responses Web Search' }))
 
     await waitFor(() => {
-      expect(mockUpdateProvider).toHaveBeenCalledWith('openai', {
-        capabilities: ['chat_completions', 'responses_web_search', 'responses'],
-      })
+      expect(mockUpdateProviderCapability).toHaveBeenCalledWith(
+        'openai',
+        'responses_web_search',
+        true,
+        ['chat_completions'],
+      )
     })
   })
 })

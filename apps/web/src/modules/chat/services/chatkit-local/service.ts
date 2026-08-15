@@ -63,6 +63,9 @@ function readChatIdFromThread(thread: ThreadMetadata): string | null {
 }
 
 function isAbortError(error: unknown): boolean {
+  if (typeof error === 'string') {
+    return error === 'user_cancelled' || error === 'user-cancelled'
+  }
   return error instanceof DOMException
     ? error.name === 'AbortError'
     : typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError'

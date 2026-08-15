@@ -1,8 +1,9 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { useLiveQuery } from '@tanstack/react-db'
 import {
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
+  AIConfigRuntimeCapability,
   normalizeAIConfigModelId,
   normalizeAIConfigProviderId,
   sameAIConfigProviderFamily,
@@ -72,6 +73,8 @@ export function useModelServices() {
   const credentialQuery = useLiveQuery((q) => q.from({ c: credentialCollection }))
   const providerQuery = useLiveQuery((q) => q.from({ p: providerCollection }))
   const modelQuery = useLiveQuery((q) => q.from({ m: modelCollection }))
+  const capabilitySaveChainsRef = useRef(new Map<string, Promise<void>>())
+  const pendingCapabilitiesRef = useRef(new Map<string, string[]>())
 
   const queryError = credentialQuery.isError || providerQuery.isError || modelQuery.isError
     ? '模型服务配置读取失败，请重试。'
@@ -192,7 +195,6 @@ export function useModelServices() {
       sameAIConfigProviderFamily(typeof row.isProvidedBy === 'string' ? row.isProvidedBy : '', plan.providerId),
     )
     const compensations: Array<() => Promise<void>> = []
-
     try {
       if (plan.providerPayload) {
         const providerSnapshot = existingProvider ? { ...existingProvider } : null
@@ -284,9 +286,68 @@ export function useModelServices() {
     }
   }, [credentialRows, modelRows, providerRows])
 
+  const updateProviderCapability = useCallback(async (
+    id: string,
+    capability: string,
+    enabled: boolean,
+    renderedCapabilities: string[] = [],
+  ) => {
+    const providerId = normalizeAIConfigProviderId(id)
+    const currentCapabilities = pendingCapabilitiesRef.current.get(providerId) ?? [
+      ...(providers[providerId]?.capabilities ?? []),
+      ...renderedCapabilities,
+    ]
+    const nextCapabilities = mutateProviderCapabilities(
+      currentCapabilities,
+      capability,
+      enabled,
+    )
+    pendingCapabilitiesRef.current.set(providerId, nextCapabilities)
+    const previous = capabilitySaveChainsRef.current.get(providerId) ?? Promise.resolve()
+    const save = previous.catch(() => undefined).then(async () => {
+      await updateProvider(providerId, { capabilities: nextCapabilities })
+    })
+    capabilitySaveChainsRef.current.set(providerId, save)
+    try {
+      await save
+    } finally {
+      if (capabilitySaveChainsRef.current.get(providerId) === save) {
+        capabilitySaveChainsRef.current.delete(providerId)
+      }
+      if (pendingCapabilitiesRef.current.get(providerId) === nextCapabilities) {
+        pendingCapabilitiesRef.current.delete(providerId)
+      }
+    }
+  }, [providers, updateProvider])
+
   return {
     providers,
     updateProvider,
+    updateProviderCapability,
     error: queryError,
   }
+}
+
+function mutateProviderCapabilities(current: unknown, capability: string, enabled: boolean): string[] {
+  const next = new Set(
+    Array.isArray(current)
+      ? current.filter((value): value is string => typeof value === 'string')
+      : [],
+  )
+  if (enabled) next.add(capability)
+  else next.delete(capability)
+
+  if (capability === AIConfigRuntimeCapability.responsesWebSearch && enabled) {
+    next.add(AIConfigRuntimeCapability.responses)
+  }
+  if (capability === AIConfigRuntimeCapability.responses && !enabled) {
+    next.delete(AIConfigRuntimeCapability.responsesWebSearch)
+  }
+  if (
+    !next.has(AIConfigRuntimeCapability.chatCompletions)
+    && !next.has(AIConfigRuntimeCapability.responses)
+  ) {
+    throw new Error('至少需要启用 Chat Completions 或 Responses API 之一。')
+  }
+  return [...next]
 }

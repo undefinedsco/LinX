@@ -9,10 +9,12 @@ const mocks = vi.hoisted(() => ({
     apiKey: 'saved-key',
     baseUrl: 'https://saved.example/v1',
     defaultBaseUrl: 'https://api.openai.com/v1',
+    capabilities: ['chat_completions'],
     models: [],
   },
   toast: vi.fn(),
   updateProvider: vi.fn(),
+  updateProviderCapability: vi.fn(),
 }))
 
 vi.mock('@/components/ui/use-toast', () => ({
@@ -32,6 +34,7 @@ vi.mock('../../data/use-model-services', () => ({
   useModelServices: () => ({
     providers: { openai: mocks.provider },
     updateProvider: mocks.updateProvider,
+    updateProviderCapability: mocks.updateProviderCapability,
     error: null,
   }),
 }))
@@ -61,6 +64,7 @@ describe('useModelServicesContentPaneController connection drafts', () => {
     }
     mocks.toast.mockReset()
     mocks.updateProvider.mockReset()
+    mocks.updateProviderCapability.mockReset()
   })
 
   it('retains API key and base URL drafts when optimistic persistence rolls back', async () => {
@@ -124,5 +128,44 @@ describe('useModelServicesContentPaneController connection drafts', () => {
 
     expect(result.current.detailViewProps.localApiKey).toBe('newer-key')
     expect(result.current.detailViewProps.localBaseUrl).toBe('https://newer.example/v1')
+  })
+})
+
+describe('useModelServicesContentPaneController capability drafts', () => {
+  beforeEach(() => {
+    mocks.provider = {
+      ...mocks.provider,
+      capabilities: ['chat_completions', 'image_input'],
+    }
+    mocks.toast.mockReset()
+    mocks.updateProvider.mockReset()
+    mocks.updateProviderCapability.mockReset()
+  })
+
+  it('delegates capability changes as semantic mutations', async () => {
+    mocks.updateProviderCapability.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useModelServicesContentPaneController())
+
+    await act(async () => {
+      await Promise.all([
+        result.current.detailViewProps.onCapabilityChange('responses', true),
+        result.current.detailViewProps.onCapabilityChange('chat_completions', false),
+      ])
+    })
+
+    expect(mocks.updateProviderCapability).toHaveBeenNthCalledWith(
+      1,
+      'openai',
+      'responses',
+      true,
+      ['chat_completions', 'image_input'],
+    )
+    expect(mocks.updateProviderCapability).toHaveBeenNthCalledWith(
+      2,
+      'openai',
+      'chat_completions',
+      false,
+      ['chat_completions', 'image_input'],
+    )
   })
 })

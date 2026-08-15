@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AIConfigRuntimeCapability } from '@undefineds.co/models'
 import { useToast } from '@/components/ui/use-toast'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { useModelServicesStore } from '../../app/store'
@@ -29,7 +28,12 @@ function verificationErrorMessage(error: unknown): string {
 
 export function useModelServicesContentPaneController(): ModelServicesContentPaneController {
   const { toast } = useToast()
-  const { providers, updateProvider, error: queryError = null } = useModelServices()
+  const {
+    providers,
+    updateProvider,
+    updateProviderCapability,
+    error: queryError = null,
+  } = useModelServices()
   const selectedId = useModelServicesStore((state) => state.selectedProviderId)
   const provider = selectedId ? providers[selectedId] : null
 
@@ -144,29 +148,9 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
 
   const changeCapability = async (capability: string, enabled: boolean) => {
     if (!provider || provider.id === 'undefineds') return
-    const next = new Set(provider.capabilities)
-    if (enabled) next.add(capability)
-    else next.delete(capability)
-
-    if (capability === AIConfigRuntimeCapability.responsesWebSearch && enabled) {
-      next.add(AIConfigRuntimeCapability.responses)
-    }
-    if (capability === AIConfigRuntimeCapability.responses && !enabled) {
-      next.delete(AIConfigRuntimeCapability.responsesWebSearch)
-    }
-    if (
-      !next.has(AIConfigRuntimeCapability.chatCompletions)
-      && !next.has(AIConfigRuntimeCapability.responses)
-    ) {
-      const message = '至少需要启用 Chat Completions 或 Responses API 之一。'
-      setMutationError(message)
-      toast({ variant: 'destructive', description: message })
-      return
-    }
-
     setMutationError(null)
     try {
-      await updateProvider(provider.id, { capabilities: [...next] })
+      await updateProviderCapability(provider.id, capability, enabled, provider.capabilities)
     } catch (error) {
       const message = formatErrorForUser(error, '运行时能力保存失败，请重试。')
       setMutationError(message)

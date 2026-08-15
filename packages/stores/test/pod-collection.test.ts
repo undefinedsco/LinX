@@ -588,6 +588,20 @@ describe('createPodCollection request contract', () => {
     expect(mocks.collection.utils.writeDelete).toHaveBeenCalledWith('one.ttl')
   })
 
+  it('detaches array updates from reactive collection drafts before persistence', async () => {
+    const { options } = createHarness()
+    const original = { id: 'provider.ttl', capabilities: ['responses'] }
+    const capabilities = ['responses', 'image_input']
+
+    await options.onUpdate({
+      transaction: transaction(original, { ...original, capabilities }),
+    })
+
+    const persisted = mocks.updateExactRecord.mock.calls[0][3].capabilities
+    expect(persisted).toEqual(capabilities)
+    expect(persisted).not.toBe(capabilities)
+  })
+
   it('uses the resource-built id consistently across insert update and delete', async () => {
     const { options, resource } = createHarness()
     Object.assign(resource, {

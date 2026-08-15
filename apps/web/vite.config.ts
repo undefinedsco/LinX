@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 
 const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, './package.json'), 'utf8')) as {
@@ -14,6 +15,11 @@ const repoRoot = path.resolve(__dirname, '../..')
 const modelsRoot = path.resolve(repoRoot, 'packages/models/src')
 const modelsIndex = path.resolve(modelsRoot, 'index.ts')
 const modelsClientIndex = path.resolve(modelsRoot, 'client/index.ts')
+const drizzleRuntime = path.resolve(
+  repoRoot,
+  'node_modules/@undefineds.co/drizzle-solid/dist/esm/core/execution/ldp-executor.js',
+)
+const modelsRuntime = path.resolve(modelsRoot, 'ai-config/index.ts')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
@@ -24,6 +30,17 @@ const modelAliases: Record<string, string> = existsSync(modelsIndex)
     '@undefineds.co/models': modelsIndex,
   }
   : {}
+
+function fingerprintFiles(paths: string[]): string {
+  const hash = createHash('sha256')
+  for (const file of paths) {
+    hash.update(file)
+    hash.update(existsSync(file) ? readFileSync(file) : 'missing')
+  }
+  return hash.digest('hex').slice(0, 12)
+}
+
+const dependencyRuntimeFingerprint = fingerprintFiles([drizzleRuntime, modelsRuntime])
 
 function getPackageName(id: string): string | null {
   const marker = '/node_modules/'
@@ -98,6 +115,12 @@ export default defineConfig({
   base: assetBase,
   plugins: [react()],
   optimizeDeps: {
+    // Workspace and normalized runtime dependencies must remain pre-bundled.
+    // Include their runtime fingerprint in Vite's optimizer plugin names so
+    // browsers cannot reuse an immutable bundle after local package changes.
+    rolldownOptions: {
+      plugins: [{ name: `linx-dependency-runtime-${dependencyRuntimeFingerprint}` }],
+    },
     exclude: [
       '@linx/stores',
       '@linx/stores/login',
@@ -113,6 +136,10 @@ export default defineConfig({
     // Keep workspace-linked packages under this app's node_modules tree so their
     // peer dependencies resolve to the patched app-level installs.
     preserveSymlinks: true,
+    // Pod schemas and collections must share one drizzle-solid runtime. Besides
+    // avoiding split class identities, this invalidates Vite's optimized graph
+    // when either shared runtime changes.
+    dedupe: ['@undefineds.co/drizzle-solid', '@undefineds.co/models'],
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@linx/agent-runtime': path.resolve(repoRoot, 'packages/agent-runtime/src'),
