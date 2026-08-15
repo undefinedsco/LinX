@@ -120,6 +120,34 @@ describe('createPodCollection request contract', () => {
     expect(executeSelect).toHaveBeenCalledOnce()
   })
 
+  it('treats a missing Pod collection container as an empty collection', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { executeSelect, options } = createHarness()
+    executeSelect.mockRejectedValueOnce(new Error(
+      'Could not retrieve http://localhost:5737/alice/.data/sessions/ (HTTP status 404): NotFoundHttpError',
+    ))
+
+    await expect(options.queryFn()).resolves.toEqual([])
+
+    expect(consoleError).not.toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it('still reports and rejects unexpected Pod collection failures', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { executeSelect, options } = createHarness()
+    const failure = new Error('Could not retrieve Pod collection (HTTP status 500)')
+    executeSelect.mockRejectedValueOnce(failure)
+
+    await expect(options.queryFn()).rejects.toBe(failure)
+
+    expect(consoleError).toHaveBeenCalledWith(
+      '[PodCollection] central-collection-test fetch failed:',
+      failure,
+    )
+    consoleError.mockRestore()
+  })
+
   it('hydrates only the first bounded page and exposes the next-page state', async () => {
     const rows = Array.from({ length: 101 }, (_, index) => ({
       id: `${index}.ttl`,
@@ -165,7 +193,8 @@ describe('createPodCollection request contract', () => {
 
     expect(loaded.map((row: { id: string }) => row.id)).toEqual(['100.ttl', '101.ttl'])
     expect(selectQuery.whereCursor).toHaveBeenCalledOnce()
-    expect(selectQuery.limit).toHaveBeenCalledTimes(2)
+    // One initial read plus the three lexicographic cursor branches.
+    expect(selectQuery.limit).toHaveBeenCalledTimes(4)
     expect(collection.window.residentPages).toBe(2)
     expect(collection.window.hasNextPage).toBe(false)
     expect(mocks.collection.utils.writeUpsert).toHaveBeenCalledTimes(2)
@@ -410,7 +439,15 @@ describe('createPodCollection request contract', () => {
       { id: 'c.ttl', updatedAt: new Date(2026, 0, 1) },
     ]
     const { collection, options } = createHarness([], {
-      selectResults: [firstPage, secondPage, [{ id: 'c.ttl', updatedAt: new Date(2026, 0, 1) }]],
+      selectResults: [
+        firstPage,
+        secondPage,
+        [],
+        [],
+        [{ id: 'c.ttl', updatedAt: new Date(2026, 0, 1) }],
+        [],
+        [],
+      ],
       window: {
         limit: 1,
         orderBy: [{ column: 'updatedAt', direction: 'desc' }],

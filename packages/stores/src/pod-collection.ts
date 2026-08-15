@@ -175,7 +175,10 @@ export function createPodCollection<
         rows = windowPolicy.sort(rows).slice(0, window.limit + 1)
       }
     } catch (error) {
-      if (isUnsupportedDocumentCollectionRead(error)) {
+      if (isMissingPodCollectionRead(error)) {
+        debugPodCollection(`[PodCollection] ${queryKey.join('/')} container is not initialized yet`)
+        rows = []
+      } else if (isUnsupportedDocumentCollectionRead(error)) {
         console.warn(`[PodCollection] ${queryKey.join('/')} fetch skipped: ${errorMessage(error)}`)
         rows = []
       } else {
@@ -814,6 +817,11 @@ export function createPodCollection<
 
 function isUnsupportedDocumentCollectionRead(error: unknown): boolean {
   return errorMessage(error).includes('Document-mode collection queries over plain LDP are not supported')
+}
+
+function isMissingPodCollectionRead(error: unknown): boolean {
+  const message = errorMessage(error)
+  return /HTTP status 404\b/i.test(message) || /\bNotFoundHttpError\b/i.test(message)
 }
 
 function errorMessage(error: unknown): string {
