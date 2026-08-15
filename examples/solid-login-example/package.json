@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "@undefineds.co/drizzle-solid": "0.3.20",
-    "@undefineds.co/models": "0.2.47"
+    "@undefineds.co/models": "0.2.51"
   }
 }

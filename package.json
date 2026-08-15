@@ -92,7 +92,7 @@
   "resolutions": {
     "**/drizzle-orm": "^0.45.2",
     "**/@undefineds.co/drizzle-solid": "0.3.20",
-    "**/@undefineds.co/models": "0.2.47",
+    "**/@undefineds.co/models": "0.2.51",
     "**/@tiptap/core": "3.27.1",
     "**/@tiptap/extensions": "3.27.1",
     "**/@tiptap/pm": "3.27.1",

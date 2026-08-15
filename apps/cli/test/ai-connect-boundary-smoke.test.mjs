@@ -184,7 +184,9 @@ test('linx ai connect smoke covers API-key provider shell-to-core writes', async
     assert.ok(credential, `credential row should be written for ${item.inputProvider}`)
     assert.ok(model, `model row should be written for ${item.inputProvider}`)
     assert.equal(provider.baseUrl, item.baseUrl)
-    assert.equal(provider.hasModel, `/settings/providers/${item.providerId}.ttl#boundary-smoke-model`)
+    assert.deepEqual(provider.hasModel, [
+      `/settings/providers/${item.providerId}.ttl#boundary-smoke-model`,
+    ])
     assert.equal(credential.provider, `/settings/providers/${item.providerId}.ttl`)
     assert.equal(credential.service, 'ai')
     assert.equal(credential.status, 'active')

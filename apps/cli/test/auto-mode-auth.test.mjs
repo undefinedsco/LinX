@@ -611,9 +611,10 @@ test('pod-backed codex credential is read through shared model db', async () => 
   assert.deepEqual(findByIds
     .filter(([resource]) => resource === 'aiProvider')
     .map(([, id]) => id), [
+      'openai.ttl',
       'openai',
-      'codex',
       'codex.ttl',
+      'codex',
     ])
 })
 

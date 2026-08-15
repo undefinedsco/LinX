@@ -10617,7 +10617,7 @@
     zod "^4.1.8"
 
 "@undefineds.co/models@0.2.45":
-  version "0.2.47"
+  version "0.2.51"
   dependencies:
     "@comunica/query-sparql-solid" "^4.0.2"
     "@inrupt/vocab-common-rdf" "^1.0.5"

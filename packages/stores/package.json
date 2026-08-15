@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@linx/agent-runtime": "*",
-    "@undefineds.co/models": "0.2.47",
+    "@undefineds.co/models": "0.2.51",
     "@undefineds.co/drizzle-solid": "0.3.20",
     "@tanstack/query-db-collection": "^1.0.37",
     "@tanstack/react-db": "^0.1.84",

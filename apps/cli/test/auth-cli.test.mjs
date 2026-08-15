@@ -482,7 +482,9 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.ok(modelInsert)
   assert.equal(providerInsert.row.id, 'anthropic.ttl')
   assert.equal(providerInsert.row.baseUrl, 'https://api.anthropic.com/v1')
-  assert.equal(providerInsert.row.hasModel, '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514')
+  assert.deepEqual(providerInsert.row.hasModel, [
+    '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
+  ])
   assert.equal(credentialInsert.row.id, 'credentials.ttl#anthropic-default')
   assert.equal(credentialInsert.row.provider, '/settings/providers/anthropic.ttl')
   assert.equal(credentialInsert.row.service, 'ai')
