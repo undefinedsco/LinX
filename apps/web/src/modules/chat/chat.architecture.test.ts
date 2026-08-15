@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   dataForbiddenImports,
@@ -10,9 +11,7 @@ import {
 
 const root = 'src/modules/chat'
 
-// domain must not depend on any upper or sibling module. The secretary projection consumes
-// the collections facade through a relative import, but the boundary stays fully closed to
-// react/zustand and every @/modules/*, @/components/, @/providers/ import, with no exceptions.
+// Domain must stay closed to React, state stores, and all upper application layers.
 const domainForbiddenImports = [
   /from ['"]react(?:\/|['"])/,
   /from ['"]zustand(?:\/|['"])/,
@@ -71,5 +70,55 @@ describe('chat module architecture', () => {
     expect(storeFacade).not.toContain('create(')
     expect(storeFacade).not.toContain('zustand')
     expect(collectionsFacade).not.toContain('createPodCollection')
+  })
+
+  it('keeps ChatKit protocol commands behind the workbench adapter', () => {
+    expectFilesToExist([
+      `${root}/domain/conversation-workbench.ts`,
+      `${root}/features/chatkit/chatkit-workbench-adapter.ts`,
+      `${root}/features/chatkit/useChatKitSurface.ts`,
+    ])
+
+    const contentPane = readModuleSource(`${root}/components/ChatContentPane.tsx`)
+    const chatKitPanel = readModuleSource(`${root}/features/chatkit/ChatKitPanel.tsx`)
+    const chatKitSurface = readModuleSource(`${root}/features/chatkit/useChatKitSurface.ts`)
+    const adapter = readModuleSource(`${root}/features/chatkit/chatkit-workbench-adapter.ts`)
+
+    expect(contentPane).not.toContain('useChatKit')
+    expect(chatKitPanel).not.toContain('useChatKit(')
+    expect(chatKitSurface).toContain('createChatKitWorkbenchAdapter')
+    expect(chatKitSurface).not.toMatch(/(?:await|void) chatkit\.sendCustomAction/)
+    expect(adapter).toContain("messageAction('message.edit'")
+    expect(adapter).toContain("messageAction('message.delete'")
+    expect(adapter).toContain("messageAction('message.regenerate'")
+  })
+
+  it('keeps message action UI props-only', () => {
+    for (const file of ['AttachmentWorkspaceDialogs.tsx', 'ChatWorkbenchToolbar.tsx', 'MessageActionDock.tsx', 'MessageEditDialog.tsx']) {
+      const source = readModuleSource(`${root}/ui/${file}`)
+      expect(source).not.toMatch(/useChatKit|useChatStore|useMessageList|createLocalChatKitFetch/)
+      expect(source).not.toMatch(/from ['"]\.\.\/(?:data|features|services|app)/)
+    }
+  })
+
+  it('keeps page and ChatKit containers below the god-component threshold', () => {
+    const contentPane = readModuleSource(`${root}/components/ChatContentPane.tsx`)
+    const chatKitPanel = readModuleSource(`${root}/features/chatkit/ChatKitPanel.tsx`)
+    const chatKitSurface = readModuleSource(`${root}/features/chatkit/useChatKitSurface.ts`)
+    expect(contentPane.split('\n').length).toBeLessThan(400)
+    expect(chatKitPanel.split('\n').length).toBeLessThan(500)
+    expect(chatKitSurface.split('\n').length).toBeLessThan(300)
+  })
+
+  it('does not retain or route through the retired custom message stack', () => {
+    expect(existsSync(`${root}/components/Messages/index.ts`)).toBe(false)
+    expect(existsSync(`${root}/components/Inputbar/index.ts`)).toBe(false)
+    expect(existsSync(`${root}/mocks.ts`)).toBe(false)
+
+    for (const directory of ['features', 'ui', 'domain']) {
+      expectNoForbiddenImports(`${root}/${directory}`, [
+        /from ['"][^'"]*components\/(?:Messages|Inputbar)/,
+      ])
+    }
   })
 })

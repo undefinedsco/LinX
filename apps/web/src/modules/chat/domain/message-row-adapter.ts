@@ -1,5 +1,5 @@
 import type { MessageRow } from '@undefineds.co/models'
-import type { MessageData } from '../components/Messages/Message'
+import type { ConversationMessage } from './conversation-message'
 
 export interface MessageBranchMetadata {
   parentItemId?: string
@@ -8,7 +8,7 @@ export interface MessageBranchMetadata {
 }
 
 export function readMessageBranchMetadata(row: MessageRow): MessageBranchMetadata {
-  const raw = (row as any).richContent
+  const raw = row.richContent
   if (typeof raw !== 'string') return {}
   try {
     const value = JSON.parse(raw) as Record<string, unknown>
@@ -22,17 +22,17 @@ export function readMessageBranchMetadata(row: MessageRow): MessageBranchMetadat
   }
 }
 
-function normalizeRole(role: unknown): MessageData['role'] {
+function normalizeRole(role: unknown): ConversationMessage['role'] {
   return role === 'assistant' || role === 'system' ? role : 'user'
 }
 
-function normalizeStatus(status: unknown): MessageData['status'] {
+function normalizeStatus(status: unknown): ConversationMessage['status'] {
   if (status === 'pending' || status === 'sending' || status === 'sent' || status === 'error') return status
   return undefined
 }
 
 /** Maps the Pod message projection used by live queries to the native message UI contract. */
-export function projectMessageRow(row: MessageRow): MessageData {
+export function projectMessageRow(row: MessageRow): ConversationMessage {
   return {
     id: String(row.id),
     role: normalizeRole(row.role),
@@ -44,6 +44,6 @@ export function projectMessageRow(row: MessageRow): MessageData {
   }
 }
 
-export function projectMessageRows(rows: readonly MessageRow[]): MessageData[] {
+export function projectMessageRows(rows: readonly MessageRow[]): ConversationMessage[] {
   return rows.map(projectMessageRow)
 }

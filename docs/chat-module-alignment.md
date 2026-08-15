@@ -39,8 +39,8 @@
 | "New Messages" 按钮 | chat-ui-wechat.md | 🔍 由 ChatKit 提供 | 需在长会话真实浏览器中验证触发行为 |
 | **消息操作** ||||
 | Copy 消息 | chat-ui-wechat.md | ✅ 已实现 | ChatKit 消息操作 |
-| Delete 消息 | chat-ui-wechat.md | 🚧 部分完成 | ChatKit custom action 已支持 `message.delete`；当前主界面已接入当前 Thread 用户消息选择删除 |
-| Reply (引用) | chat-ui-wechat.md | 🚧 部分完成 | 当前主界面已支持引用上一条用户消息到 Composer |
+| Delete 消息 | chat-ui-wechat.md | ✅ 已实现 | 当前 Thread 的用户/助手消息均可选择删除；删除用户消息时会同时清理后续回答子树与失效分支选择 |
+| Reply (引用) | chat-ui-wechat.md | ✅ 已实现 | 当前 Thread 的任意用户/助手消息均可选择引用到 Composer |
 | **Composer** ||||
 | 无边框输入区 | chat-ui-wechat.md | ✅ 已实现 | ChatKit Composer |
 | 缺少 API Key 提示 | chat-spec.md | ✅ 已实现 | 内联卡片 |
@@ -58,7 +58,7 @@
 
 | 功能 | 设计要求 | 状态 | 备注 |
 |------|---------|------|------|
-| Emoji picker | chat-ui-wechat.md | ❌ 主路径未实现 | 自研 Inputbar 有该组件，但 ChatKit 主路径没有接入 |
+| Emoji picker | chat-ui-wechat.md | ❌ 主路径未实现 | 已移除未使用的旧 Inputbar；后续只通过 ChatKit 能力或工作台扩展接入 |
 | File attachment | chat-ui-wechat.md | ✅ 已实现 | ChatKit two-phase upload，Pod 持久化 |
 | Image upload | chat-ui-wechat.md | ✅ 已实现 | 图片预览、下载和历史消息 hydration |
 | Voice message | chat-ui-wechat.md | ❌ 未实现 | 未来功能 |
@@ -180,12 +180,17 @@ npx playwright test chat-alignment.spec.ts --project=chromium
 
 ### 5.3 低优先级
 
-1. [x] Emoji picker 集成（自研 Inputbar）
+1. [ ] Emoji picker 集成（ChatKit 主路径尚未开放对应能力，不再维护第二套 Composer）
 2. [x] File/Image upload 实现（ChatKit two-phase + Pod）
 3. [x] Reply (引用回复) 功能
 
 ### 5.4 ChatKit React 1.6.1 / ChatKit 1.9.0 对齐进度（2026-08）
 
+- [x] LinX 工作台边界：会话切换、草稿、聚焦与刷新统一经过 `ConversationSurfacePort`；发送、中断、编辑、删除、重试、分支选择与 runtime 交互统一经过 `WorkbenchCommandBus`，ChatKit 协议翻译收口在 `features/chatkit` adapter。
+- [x] 消息 domain contract 不再反向依赖 UI；未使用的旧 `Messages` / `Inputbar` 双轨实现已经删除，architecture test 防止回流。
+- [x] 消息操作投影与 UI 分层：用户/助手能力、引用和删除文案由 `domain/message-actions` 负责；props-only UI 只渲染，`features/messages` controller 执行工作流。
+- [x] 页面职责收口：`ChatContentPane` 只负责工作台编排；ChatKit runtime、网络恢复、消息操作、附件、Secretary 与运行时会话分别归属独立 feature controller。
+- [x] ChatKit 面板弹窗使用单一判别状态，避免互斥弹窗由多组布尔值产生非法组合。
 - [x] `@openai/chatkit-react` 1.6.1（内部 ChatKit 1.9.0）runtime 主路径：Composer、附件、语音听写、联网搜索、retry、feedback 配置已接入。
 - [x] 停止生成：请求 abort 后通知 runtime stop，并保存 `incomplete` assistant 内容。
 - [x] 消息编辑/删除/引用：通过 custom action 和 ChatKit 外部操作栏接入。
@@ -228,7 +233,7 @@ cherry-studio/src/renderer/src/pages/home/
 
 | 功能 | 优先级 | 状态 |
 |------|--------|------|
-| Markdown + 代码高亮 | P0 | ✅ ChatKit 主路径支持 | 原生 MarkdownRenderer 不是当前消息主路径 |
+| Markdown + 代码高亮 | P0 | ✅ ChatKit 主路径支持 | 本地 MarkdownRenderer 仅供产物工作区使用，不构成第二套消息视图 |
 | 流式响应 | P0 | ✅ 已实现 |
 | 消息操作栏 | P0 | ✅ ChatKit + 外部消息操作栏 |
 | 思考过程 (CoT) | P0 | 🚧 主路径仅展示活动摘要 | 原生 ThoughtChain 未接入 ChatKit |

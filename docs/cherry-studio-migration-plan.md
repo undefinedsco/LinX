@@ -2,6 +2,8 @@
 
 本文档描述如何将 Cherry Studio 的交互组件迁移到 LinX，同时保留 LinX 的 Solid Pod 数据存储层。
 
+> **架构状态（2026-08）**：该计划中的自研消息列表与 Inputbar 路径已被 ChatKit 工作台方案取代。本文保留为历史参考；新增能力必须通过 `ConversationSurfacePort` / `WorkbenchCommandBus`、`features/chatkit` adapter 和 props-only UI 扩展，不得恢复第二套消息或 Composer。
+
 > 分支拆分与并发执行策略请参考：`docs/feature-branch-parallel-plan.md`。
 
 ## 核心架构差异
@@ -20,7 +22,7 @@
 
 1. **Block-based 消息系统**
    - 源: `cherry-studio-main/src/renderer/src/types/newMessage.ts`
-   - 目标: `linx/apps/web/src/modules/chat/components/Messages/message-blocks.ts`
+   - 当前合同: `apps/web/src/modules/chat/domain/conversation-message.ts` + `@undefineds.co/models` 的 `message.richContent`
    - 数据真相: `@undefineds.co/models` 的 `message.richContent.items`
    
    ```typescript
@@ -114,8 +116,8 @@
 ### Step 1: 定义块类型 (types)
 
 ```bash
-# 创建块类型定义
-apps/web/src/modules/chat/components/Messages/message-blocks.ts
+# 当前消息合同（历史计划中的自研 block renderer 已退役）
+apps/web/src/modules/chat/domain/conversation-message.ts
 ```
 
 ### Step 2: 迁移消息组件
