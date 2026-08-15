@@ -1532,6 +1532,7 @@ export interface CreateAIChatInput {
 
 export interface UpdateAgentProfileInput {
   agentId: string
+  currentAgent?: AgentRow
   name?: string
   instructions?: string
   aiRuntimeLocation?: AgentAiRuntimeLocation
@@ -1541,6 +1542,7 @@ export interface UpdateAgentProfileInput {
 
 export interface UpdateAgentModelInput {
   agentId: string
+  currentAgent?: AgentRow
   provider: string
   model: string
   chatId?: string
@@ -2109,11 +2111,11 @@ export const chatOps = {
    * Update agent profile and keep related contact/chat display fields in sync.
    */
   async updateAgentProfile(input: UpdateAgentProfileInput): Promise<void> {
-    const { agentId, name, instructions, aiRuntimeLocation, chatId, contactId } = input
+    const { agentId, currentAgent, name, instructions, aiRuntimeLocation, chatId, contactId } = input
     const normalizedName = name?.trim()
     const nextInstructions = instructions?.trim() ?? ''
 
-    const current = agentCollection.get(agentId) as AgentRow | undefined
+    const current = (agentCollection.get(agentId) as AgentRow | undefined) ?? currentAgent
     if (!current) throw new Error(`Agent ${agentId} was not found`)
     const changes: Parameters<typeof updateAgentHomeMetadata>[2] = {}
     if (normalizedName) changes.name = normalizedName
@@ -2157,11 +2159,18 @@ export const chatOps = {
    * Update an agent's model (and avatarUrl when provider changes)
    * Also updates the related Chat's avatarUrl for list display
    */
-  async updateAgentModel(agentId: string, provider: string, model: string, chatId?: string, contactId?: string): Promise<void> {
+  async updateAgentModel(
+    agentId: string,
+    provider: string,
+    model: string,
+    chatId?: string,
+    contactId?: string,
+    currentAgent?: AgentRow,
+  ): Promise<void> {
     const providerInfo = getAgentProviderInfo(provider)
     const providerRef = normalizeAIConfigProviderId(provider)
     const modelRef = normalizeAIConfigResourceId(model)
-    const current = agentCollection.get(agentId) as AgentRow | undefined
+    const current = (agentCollection.get(agentId) as AgentRow | undefined) ?? currentAgent
     if (!current) throw new Error(`Agent ${agentId} was not found`)
     const providerChanged = normalizeAIConfigProviderId(current.provider || '') !== provider
     const changes: Parameters<typeof updateAgentHomeMetadata>[2] = {
@@ -2588,8 +2597,8 @@ export function useChatMutations() {
   })
 
   const updateAgentModel = useMutation({
-    mutationFn: ({ agentId, provider, model, chatId, contactId }: UpdateAgentModelInput) =>
-      chatOps.updateAgentModel(agentId, provider, model, chatId, contactId),
+    mutationFn: ({ agentId, provider, model, chatId, contactId, currentAgent }: UpdateAgentModelInput) =>
+      chatOps.updateAgentModel(agentId, provider, model, chatId, contactId, currentAgent),
   })
 
   return {

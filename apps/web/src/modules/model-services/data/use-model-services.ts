@@ -233,7 +233,12 @@ export function useModelServices() {
       }
 
       if (plan.modelUpserts.length > 0 || plan.modelDeleteIds.length > 0) {
-        const existingById = new Map(
+        const existingByStorageId = new Map(
+          existingModels
+            .filter((row) => typeof row.id === 'string' && row.id.length > 0)
+            .map((row) => [rowKey(row), row] as const),
+        )
+        const existingByModelId = new Map(
           existingModels
             .filter((row) => typeof row.id === 'string' && row.id.length > 0)
             .map((row) => [normalizeAIConfigModelId(row.id as string, plan.providerId), row] as const),
@@ -241,7 +246,8 @@ export function useModelServices() {
 
         for (const modelPayload of plan.modelUpserts) {
           if (!modelPayload.id) continue
-          const existing = existingById.get(modelPayload.id)
+          const existing = existingByStorageId.get(modelPayload.id)
+            ?? existingByModelId.get(normalizeAIConfigModelId(modelPayload.id, plan.providerId))
           const modelSnapshot = existing ? { ...existing } : null
           const modelTx = existing
             ? modelCollection.update(rowKey(existing), (draft: AnyRow) => {

@@ -267,6 +267,7 @@ describe('ChatHeader', () => {
     await waitFor(() => {
       expect(mockUpdateAgentProfile).toHaveBeenCalledWith({
         agentId: 'agent-1',
+        currentAgent: expect.objectContaining({ id: 'agent-1' }),
         name: '新的助手名',
         instructions: '新的提示词',
         aiRuntimeLocation: 'client',
@@ -289,6 +290,7 @@ describe('ChatHeader', () => {
     await waitFor(() => {
       expect(mockUpdateAgentModel).toHaveBeenCalledWith({
         agentId: 'agent-1',
+        currentAgent: expect.objectContaining({ id: 'agent-1' }),
         provider: 'anthropic',
         model: 'claude-3-5-sonnet-latest',
         chatId: 'chat-1',

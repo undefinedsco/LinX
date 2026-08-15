@@ -148,6 +148,7 @@ export function ChatHeader() {
     try {
       await mutations.updateAgentProfile.mutateAsync({
         agentId,
+        currentAgent: agent ?? undefined,
         name: normalizedName,
         instructions: instructionsDraft,
         aiRuntimeLocation: aiRuntimeLocationDraft,
@@ -166,6 +167,7 @@ export function ChatHeader() {
       })
     }
   }, [
+    agent,
     agentId,
     agentNameDraft,
     aiRuntimeLocationDraft,
@@ -208,6 +210,7 @@ export function ChatHeader() {
     try {
       await mutations.updateAgentModel.mutateAsync({
         agentId,
+        currentAgent: agent ?? undefined,
         provider: nextProvider,
         model: normalizedModel,
         chatId: selectedChatId,
@@ -225,6 +228,7 @@ export function ChatHeader() {
       })
     }
   }, [
+    agent,
     agentId,
     contactId,
     configuredProviders,

@@ -194,6 +194,49 @@ describe('useModelServices data persistence', () => {
     ])
   })
 
+  it('updates an existing Pod model when its row id includes the provider path', async () => {
+    const providerRow = {
+      id: '/settings/providers/timecc.ttl',
+      displayName: 'TimeCC',
+      baseUrl: 'https://example.test/v1',
+    }
+    const modelRow = {
+      id: '/settings/providers/timecc.ttl#linx-lite',
+      displayName: 'LinX Lite',
+      isProvidedBy: '/settings/providers/timecc.ttl',
+      status: 'active',
+      capabilities: [],
+      createdAt: new Date('2026-08-16T00:00:00.000Z'),
+      updatedAt: new Date('2026-08-16T00:00:00.000Z'),
+    }
+    mocks.providerRows.set(providerRow.id, providerRow)
+    mocks.modelRows.set(modelRow.id, modelRow)
+    mocks.useLiveQuery.mockReset()
+    mocks.useLiveQuery
+      .mockReturnValueOnce({ data: [], isError: false })
+      .mockReturnValueOnce({ data: [{ p: providerRow }], isError: false })
+      .mockReturnValueOnce({ data: [{ m: modelRow }], isError: false })
+
+    const { result } = renderHook(() => useModelServices())
+
+    await act(async () => {
+      await result.current.updateProvider('timecc', {
+        models: [{
+          id: 'linx-lite',
+          name: 'LinX Lite',
+          enabled: true,
+          capabilities: ['vision'],
+        }],
+      })
+    })
+
+    expect(mocks.modelUpdate).toHaveBeenCalledWith(
+      modelRow.id,
+      expect.any(Function),
+    )
+    expect(mocks.modelInsert).not.toHaveBeenCalled()
+  })
+
   it('restores earlier provider and credential writes when later model persistence fails', async () => {
     const persistenceError = new Error('model persistence failed')
     mocks.modelInsert.mockImplementation((row: Row) => {
