@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { globalAgent as httpsGlobalAgent } from 'node:https'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, parse } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 import { initTheme } from '@earendil-works/pi-coding-agent'
 
@@ -1280,10 +1281,11 @@ test('linx interactive branding stores agent state under .solid/apps/linx and pa
 })
 
 test('linx assistant rendering hides backend reasoning blocks from resumed history', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup, entryPath } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
-  const { AssistantMessageComponent } = await import('@earendil-works/pi-coding-agent')
+  const piAgentEntry = resolveBundlePackageEntry(entryPath, '@earendil-works/pi-coding-agent')
+  const { AssistantMessageComponent } = await import(pathToFileURL(piAgentEntry).href)
   module.patchPiAssistantMessageRendering()
 
   const component = new AssistantMessageComponent({
@@ -1304,6 +1306,17 @@ test('linx assistant rendering hides backend reasoning blocks from resumed histo
   assert.doesNotMatch(rendered, /The user wants me/)
   assert.match(rendered, /Visible answer only/)
 })
+
+function resolveBundlePackageEntry(entryPath, packageName) {
+  let current = dirname(entryPath)
+  const root = parse(current).root
+  while (current !== root) {
+    const candidate = join(current, 'node_modules', ...packageName.split('/'), 'dist', 'index.js')
+    if (existsSync(candidate)) return candidate
+    current = dirname(current)
+  }
+  throw new Error(`Unable to resolve ${packageName} from ${entryPath}`)
+}
 
 test('linx escape interrupt aborts streaming session before Pi default handler', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
@@ -6115,9 +6128,13 @@ test('linx interactive /symphony status reads open issues and running workers fr
           select() {
             return {
               from(resource) {
-                assert.ok(resource === issueResource || resource === sessionResource || resource === deliveryResource)
+                const resourceType = resource?.config?.name
+                const issueType = issueResource.config.name
+                const sessionType = sessionResource.config.name
+                const deliveryType = deliveryResource.config.name
+                assert.ok([issueType, sessionType, deliveryType].includes(resourceType))
                 return {
-                  execute: async () => resource === issueResource
+                  execute: async () => resourceType === issueType
                     ? [
                       {
                         id: 'issue_pod_open',
@@ -6139,7 +6156,7 @@ test('linx interactive /symphony status reads open issues and running workers fr
                         updatedAt: new Date('2026-04-02T00:02:00.000Z'),
                       },
                     ]
-                    : resource === sessionResource
+                    : resourceType === sessionType
                       ? [
                       {
                         id: 'session-running',

@@ -81,7 +81,7 @@ export interface LinxInteractiveBootstrapOptions {
 export type PiInteractiveBootstrapOptions = LinxInteractiveBootstrapOptions
 
 let footerPatched = false
-let assistantMessagePatched = false
+const LINX_ASSISTANT_MESSAGE_PATCH = Symbol.for('linx.pi.assistant-message-patch')
 let linxResumeOutputStyleRestore: (() => void) | null = null
 const BACKEND_OWNED_SLASH_COMMANDS = new Set([
   'commands',
@@ -3888,16 +3888,23 @@ function buildLinxFooterModePrefix(): string {
 }
 
 export function patchPiAssistantMessageRendering(): void {
-  if (assistantMessagePatched) {
+  const currentUpdateContent = AssistantMessageComponent.prototype.updateContent as (
+    typeof AssistantMessageComponent.prototype.updateContent
+    & { [LINX_ASSISTANT_MESSAGE_PATCH]?: boolean }
+  )
+  if (currentUpdateContent[LINX_ASSISTANT_MESSAGE_PATCH]) {
     return
   }
 
-  const originalUpdateContent = AssistantMessageComponent.prototype.updateContent
-  AssistantMessageComponent.prototype.updateContent = function patchedUpdateContent(message: unknown): void {
+  const originalUpdateContent = currentUpdateContent
+  const patchedUpdateContent = function patchedUpdateContent(this: AssistantMessageComponent, message: unknown): void {
     const sanitizedMessage = stripLinxHiddenAssistantContent(message) as Parameters<typeof originalUpdateContent>[0]
     return originalUpdateContent.call(this, sanitizedMessage)
   }
-  assistantMessagePatched = true
+  Object.defineProperty(patchedUpdateContent, LINX_ASSISTANT_MESSAGE_PATCH, {
+    value: true,
+  })
+  AssistantMessageComponent.prototype.updateContent = patchedUpdateContent
 }
 
 function stripLinxHiddenAssistantContent(message: unknown): unknown {
