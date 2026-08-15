@@ -115,7 +115,7 @@ export function useFilesTreePaneController() {
       return
     }
     nodeState.selectTreeNode(createResourceNodeId(entry.uri), entry.uri)
-  }, [nodeState.selectTreeNode])
+  }, [nodeState])
 
   const selection = useSelectedFilesLocation(nodeState.selectedTreeNodeId)
   const addContainerUri = useMemo(() => projectFilesAddContainerUri(selection), [selection])

@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -59,6 +59,8 @@ export const FileEditorSurface = forwardRef<FileEditorSurfaceHandle, {
   })
   const sidecarActions = useResourceSidecarActionsController(file)
   const setContentView = editor.setContentView
+  const structuredReturnAction = editor.structuredReturnAction
+  const returnToSourceStructuredSubject = editor.returnToSourceStructuredSubject
   const [richTextDirty, setRichTextDirty] = useState(false)
   const [richTextSaveStatus, setRichTextSaveStatus] = useState<'saved' | 'dirty' | 'saving' | 'error'>('saved')
   const [rawSourceDirty, setRawSourceDirty] = useState(false)
@@ -78,25 +80,25 @@ export const FileEditorSurface = forwardRef<FileEditorSurfaceHandle, {
     setPendingDiscardAction(null)
   }, [open])
 
-  const requestDiscardConfirmation = (action: PendingDiscardAction) => {
+  const requestDiscardConfirmation = useCallback((action: PendingDiscardAction) => {
     setPendingDiscardAction(action)
     setDiscardDialogOpen(true)
-  }
+  }, [])
 
-  const closeEditor = () => {
+  const closeEditor = useCallback(() => {
     onExited()
-    if (editor.structuredReturnAction) editor.returnToSourceStructuredSubject()
-  }
+    if (structuredReturnAction) returnToSourceStructuredSubject()
+  }, [onExited, returnToSourceStructuredSubject, structuredReturnAction])
 
-  const requestClose = () => {
+  const requestClose = useCallback(() => {
     if (hasUnsavedChanges) {
       requestDiscardConfirmation({ type: 'close' })
       return
     }
     closeEditor()
-  }
+  }, [closeEditor, hasUnsavedChanges, requestDiscardConfirmation])
 
-  useImperativeHandle(ref, () => ({ requestClose }), [hasUnsavedChanges, closeEditor])
+  useImperativeHandle(ref, () => ({ requestClose }), [requestClose])
 
   const handleContentViewChange = (view: 'rich' | 'raw') => {
     if (view === editor.contentView) return
@@ -136,6 +138,7 @@ export const FileEditorSurface = forwardRef<FileEditorSurfaceHandle, {
     hasUnsavedChanges,
     pendingDiscardAction,
     savePending,
+    closeEditor,
     setContentView,
   ])
 

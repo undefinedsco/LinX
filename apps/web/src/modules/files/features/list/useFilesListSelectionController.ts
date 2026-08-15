@@ -93,7 +93,7 @@ export function useFilesListSelectionController({
       selectionAnchorId: file.uri,
     }))
     openFile(file, 'click')
-  }, [files, openFile, replaceFileSelection, selectFile, selectionAnchorId, toggleFileSelection])
+  }, [files, openFile, replaceFileSelection, selectFile, selectionAnchorId])
 
   const applyContextMenuSelection = useCallback((file: FilesEntry) => {
     if (contextMenuSelectionTimerRef.current !== null) {

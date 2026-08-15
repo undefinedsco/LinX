@@ -32,6 +32,7 @@ export function useStructuredViewMetadataController({
   // keyed by document URI instead of the Pod .meta sidecar.
   const [localStoreRevision, setLocalStoreRevision] = useState(0)
   const structuredViewMetadataSidecar = useMemo<FilesStructuredViewMetadataSidecar>(() => {
+    void localStoreRevision
     const metadata = loadLocalStructuredViewMetadata(file.uri)
     return {
       ownerUri: file.uri,

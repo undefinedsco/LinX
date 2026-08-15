@@ -70,7 +70,7 @@ export function LinxWhiteboardToolbar({
     setSearchOpen(false)
     setMoreMenuOpen(false)
     setAddMenuOpen(true)
-  }, [quickAddRequestToken])
+  }, [quickAddRequestToken, setAddMenuOpen])
 
   useEffect(() => {
     if (!hasOpenFlyout) return
@@ -84,7 +84,7 @@ export function LinxWhiteboardToolbar({
     }
     document.addEventListener('pointerdown', dismissFlyouts)
     return () => document.removeEventListener('pointerdown', dismissFlyouts)
-  }, [hasOpenFlyout, onQuickAddDismiss])
+  }, [hasOpenFlyout, onQuickAddDismiss, setAddMenuOpen])
   const normalizedQuery = query.trim().toLowerCase()
   const matchedNodes = useMemo(
     () => normalizedQuery

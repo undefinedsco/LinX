@@ -106,7 +106,7 @@ export function LinxWhiteboardCanvas({
 
   useEffect(() => {
     canvas.syncSnapshot()
-  }, [canvas.syncSnapshot])
+  }, [canvas])
 
   useEffect(() => {
     let wasMobile = window.innerWidth < 640
