@@ -426,6 +426,13 @@ describe('ChatContentPane', () => {
     expect(storeState.selectThread).not.toHaveBeenCalledWith('unrelated-empty-thread')
   })
 
+  it('keeps persisted thread selection owned by LinX navigation', async () => {
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => expect(mockUseChatKit).toHaveBeenCalled())
+    expect(mockUseChatKit.mock.calls.at(-1)?.[0]).not.toHaveProperty('onThreadChange')
+  })
+
   it('uses the chat workspace as a full-bleed operational surface', () => {
     render(<ChatContentPane theme="light" />)
 

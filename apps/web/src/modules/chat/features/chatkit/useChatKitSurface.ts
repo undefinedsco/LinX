@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useChatKit, type OpenAIChatKit } from '@openai/chatkit-react'
-import { useChatStore } from '../../store'
 import { restoreChatMessageAnchor } from '../../message-anchor'
+import { useChatStore } from '../../store'
 import type { PendingComposerDraft } from '../../domain/conversation-workbench'
 import type { LocalChatKitFetch } from '../../services/chatkit-local/fetch-handler'
 import { createChatKitWorkbenchAdapter } from './chatkit-workbench-adapter'
@@ -30,7 +30,6 @@ export function useChatKitSurface({
   onComposerDraftError,
   interrupt,
 }: UseChatKitSurfaceOptions) {
-  const selectThread = useChatStore((state) => state.selectThread)
   const messageAnchorId = useChatStore((state) => state.messageAnchorId)
   const clearMessageAnchor = useChatStore((state) => state.clearMessageAnchor)
   const [loadFailed, setLoadFailed] = useState(false)
@@ -120,9 +119,6 @@ export function useChatKitSurface({
     threadItemActions: { feedback: true, retry: true },
     thread: { autoScroll: true },
     onReady: () => setIsMounted(Boolean(hostRef.current)),
-    onThreadChange: ({ threadId }: { threadId: string | null }) => {
-      if (threadId) selectThread(threadId)
-    },
     onError: ({ error }: { error: Error }) => {
       console.error('[ChatKit] Error:', error)
     },
