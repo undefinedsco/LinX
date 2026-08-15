@@ -1284,8 +1284,12 @@ test('linx assistant rendering hides backend reasoning blocks from resumed histo
   const { module, cleanup, entryPath } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
-  const piAgentEntry = resolveBundlePackageEntry(entryPath, '@earendil-works/pi-coding-agent')
-  const { AssistantMessageComponent } = await import(pathToFileURL(piAgentEntry).href)
+  const assistantMessageModule = resolveBundlePackageFile(
+    entryPath,
+    '@earendil-works/pi-coding-agent',
+    'dist/modes/interactive/components/assistant-message.js',
+  )
+  const { AssistantMessageComponent } = await import(pathToFileURL(assistantMessageModule).href)
   module.patchPiAssistantMessageRendering()
 
   const component = new AssistantMessageComponent({
@@ -1307,15 +1311,15 @@ test('linx assistant rendering hides backend reasoning blocks from resumed histo
   assert.match(rendered, /Visible answer only/)
 })
 
-function resolveBundlePackageEntry(entryPath, packageName) {
+function resolveBundlePackageFile(entryPath, packageName, relativePath) {
   let current = dirname(entryPath)
   const root = parse(current).root
   while (current !== root) {
-    const candidate = join(current, 'node_modules', ...packageName.split('/'), 'dist', 'index.js')
+    const candidate = join(current, 'node_modules', ...packageName.split('/'), relativePath)
     if (existsSync(candidate)) return candidate
     current = dirname(current)
   }
-  throw new Error(`Unable to resolve ${packageName} from ${entryPath}`)
+  throw new Error(`Unable to resolve ${packageName}/${relativePath} from ${entryPath}`)
 }
 
 test('linx escape interrupt aborts streaming session before Pi default handler', async (t) => {
@@ -2083,14 +2087,19 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
     rmSync(linxHome, { recursive: true, force: true })
   })
 
-  const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
+  const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup, entryPath }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => interactiveCleanup())
 
-  const { FooterComponent } = await import('@earendil-works/pi-coding-agent')
+  const footerModule = resolveBundlePackageFile(
+    entryPath,
+    '@earendil-works/pi-coding-agent',
+    'dist/modes/interactive/components/footer.js',
+  )
+  const { FooterComponent } = await import(pathToFileURL(footerModule).href)
   const { visibleWidth } = await import('@earendil-works/pi-tui')
 
   const runtime = {
@@ -2197,14 +2206,19 @@ test('linx footer patch keeps cache rate line within terminal width', async (t) 
     rmSync(linxHome, { recursive: true, force: true })
   })
 
-  const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
+  const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup, entryPath }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => interactiveCleanup())
 
-  const { FooterComponent } = await import('@earendil-works/pi-coding-agent')
+  const footerModule = resolveBundlePackageFile(
+    entryPath,
+    '@earendil-works/pi-coding-agent',
+    'dist/modes/interactive/components/footer.js',
+  )
+  const { FooterComponent } = await import(pathToFileURL(footerModule).href)
   const { visibleWidth } = await import('@earendil-works/pi-tui')
 
   const runtime = {
