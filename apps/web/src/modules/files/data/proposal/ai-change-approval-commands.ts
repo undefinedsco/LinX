@@ -97,10 +97,11 @@ export async function createAiChangeProposalInboxApproval(
   const podBaseUrl = resolveRequiredPodBaseUrl(db)
   const approvalId = crypto.randomUUID()
   const auditId = crypto.randomUUID()
+  const approvalResourceId = approvalResource.buildId({ id: approvalId, createdAt })
   const approvalUri = approvalResource.buildIri(podBaseUrl, { id: approvalId, createdAt } as any)
 
   const approvalPayload = {
-    id: approvalId,
+    id: approvalResourceId,
     session: input.proposal.id,
     toolCallId: `${FILES_AI_CHANGE_APPROVAL_TOOL_NAME}:${approvalId}`,
     toolName: FILES_AI_CHANGE_APPROVAL_TOOL_NAME,

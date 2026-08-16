@@ -64,7 +64,7 @@ describe('vocab proposal inbox approvals', () => {
     const notification = inserts.find((item) => item.table === inboxNotificationResource)?.values
 
     expect(approval).toMatchObject({
-      id: 'approval-1',
+      id: approvalResource.buildId({ id: 'approval-1', createdAt: new Date('2026-06-17T00:00:00.000Z') }),
       session: proposal.id,
       toolCallId: 'files.vocab.proposal:approval-1',
       toolName: 'files.vocab.proposal',

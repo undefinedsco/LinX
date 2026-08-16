@@ -357,7 +357,7 @@ describe('access policy proposals', () => {
 
     expect(approvalUri).toBe('https://pod.example/.data/approvals/2026/06/17.ttl#approval-1')
     expect(inserts.find((item) => item.table === approvalResource)?.values).toMatchObject({
-      id: 'approval-1',
+      id: approvalResource.buildId({ id: 'approval-1', createdAt: new Date('2026-06-17T00:00:00.000Z') }),
       session: proposal.id,
       toolCallId: 'files.access.proposal:approval-1',
       toolName: 'files.access.proposal',

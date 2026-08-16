@@ -4,6 +4,7 @@ import { useFilesStore } from '../../app/store'
 import {
   filesFavoriteHooks,
   useContainerChildTreeNodes,
+  useFilesEntries,
   useFilesContainerEntries,
   useFilesFavoriteList,
   useFilesRootNodes,
@@ -26,6 +27,7 @@ import {
   projectFilesTreeNodeViewState,
   projectFilesTreeSearchResults,
 } from '../../domain/resource/tree-model'
+import { projectContainerEntriesToTreeNodes } from '../../data/pod-adapter'
 
 export type FilesTreeNodeViewModel = {
   isSelected: boolean
@@ -89,14 +91,26 @@ function useFilesTreeNodeState(options?: { rootLoading?: boolean }) {
 
 export function useFilesTreePaneController() {
   const { data, isLoading, error } = useFilesRootNodes()
-  const treeNodes = useMemo(() => data?.nodes ?? [], [data?.nodes])
+  const entryScope = useFilesStore((state) => state.entryScope)
+  const nodeState = useFilesTreeNodeState({ rootLoading: isLoading })
+  const chatEntriesQuery = useFilesEntries(nodeState.selectedTreeNodeId, entryScope)
+  const isChatFilesScope = entryScope === 'chat-files'
+  const treeNodes = useMemo(() => {
+    if (!isChatFilesScope) return data?.nodes ?? []
+    return projectContainerEntriesToTreeNodes(
+      (chatEntriesQuery.data ?? []).filter((entry) => entry.kind !== 'container'),
+      'chat-files',
+      data?.podRootUri ?? null,
+    )
+  }, [chatEntriesQuery.data, data?.nodes, data?.podRootUri, isChatFilesScope])
+  const treeLoading = isChatFilesScope ? chatEntriesQuery.isLoading : isLoading
+  const treeError = isChatFilesScope ? chatEntriesQuery.error : error
   const contentState = projectFilesTreeContentState({
-    error,
-    isLoading,
+    error: treeError,
+    isLoading: treeLoading,
     treeNodes,
   })
   const chrome = useMemo(() => projectFilesTreeChromeModel(), [])
-  const nodeState = useFilesTreeNodeState({ rootLoading: isLoading })
   const footerLabel = projectFilesTreeFooterLabel({
     selectedTreeNodeId: nodeState.selectedTreeNodeId,
     treeNodes,
@@ -106,9 +120,9 @@ export function useFilesTreePaneController() {
   const searchActive = searchText.trim().length > 0
   const searchEntriesQuery = useFilesTreeSearchEntries(searchActive)
   const searchResults = useMemo(() => projectFilesTreeSearchResults({
-    entries: searchEntriesQuery.data ?? [],
+    entries: isChatFilesScope ? chatEntriesQuery.data ?? [] : searchEntriesQuery.data ?? [],
     query: searchText,
-  }), [searchEntriesQuery.data, searchText])
+  }), [chatEntriesQuery.data, isChatFilesScope, searchEntriesQuery.data, searchText])
   const openSearchResult = useCallback((entry: FilesEntry) => {
     if (entry.kind === 'container') {
       nodeState.selectTreeNode(createContainerNodeId(entry.uri), entry.uri)
@@ -133,7 +147,7 @@ export function useFilesTreePaneController() {
     onSearchTextChange: setSearchText,
     openSearchResult,
     searchActive,
-    searchLoading: searchActive && searchEntriesQuery.isLoading,
+    searchLoading: searchActive && (isChatFilesScope ? chatEntriesQuery.isLoading : searchEntriesQuery.isLoading),
     searchResults,
     searchText,
     selectedTreeNodeId: nodeState.selectedTreeNodeId,

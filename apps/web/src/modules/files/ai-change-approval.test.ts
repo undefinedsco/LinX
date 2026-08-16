@@ -404,7 +404,7 @@ describe('AI change proposals', () => {
 
     expect(approvalUri).toBe('https://pod.example/.data/approvals/2026/06/17.ttl#approval-ai-1')
     expect(inserts.find((item) => item.table === approvalResource)?.values).toMatchObject({
-      id: 'approval-ai-1',
+      id: approvalResource.buildId({ id: 'approval-ai-1', createdAt: new Date('2026-06-17T00:00:00.000Z') }),
       session: proposal.id,
       toolCallId: 'files.ai.change.proposal:approval-ai-1',
       toolName: 'files.ai.change.proposal',
