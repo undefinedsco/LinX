@@ -39,6 +39,22 @@ export function useChatKitSurface({
   const restoredChatIdRef = useRef<string | null>(null)
   const hostRef = useRef<OpenAIChatKit | null>(null)
 
+  const handleChatKitLog = useCallback(({ name, data }: {
+    name: string
+    data?: Record<string, unknown>
+  }) => {
+    // ChatKit emits diagnostic events for analytics/debugging. Keep them out
+    // of the normal console because payloads may contain large message/tool
+    // objects; opt in explicitly when investigating ChatKit itself.
+    if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+      console.debug('[chatkit]', name, data ?? {})
+    }
+  }, [])
+
+  const handleChatKitError = useCallback(({ error }: { error: Error }) => {
+    console.error('[ChatKit] Error:', error)
+  }, [])
+
   const bindHost = useCallback((host: OpenAIChatKit | null) => {
     hostRef.current = host
     setIsMounted(Boolean(host))
@@ -119,9 +135,8 @@ export function useChatKitSurface({
     threadItemActions: { feedback: true, retry: true },
     thread: { autoScroll: true },
     onReady: () => setIsMounted(Boolean(hostRef.current)),
-    onError: ({ error }: { error: Error }) => {
-      console.error('[ChatKit] Error:', error)
-    },
+    onError: handleChatKitError,
+    onLog: handleChatKitLog,
   })
 
   const workbench = useMemo(() => createChatKitWorkbenchAdapter({

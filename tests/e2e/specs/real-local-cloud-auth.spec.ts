@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { resolveSavedPublicLocalOrigin, startRealLocalCloudRuntime } from '../helpers/real-local-cloud-runtime.cjs'
 import { expectSecretaryInitialized } from '../helpers/secretary-bootstrap'
+import { expectLoginDialog, selectLoginSpace } from '../helpers/login-ui'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -71,7 +72,7 @@ test.describe('Real Local -> Cloud auth flow', () => {
 
     try {
       await page.goto('/')
-      await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
+      await expectLoginDialog(page)
 
       await clickLocalSpaceEntry(page)
       await waitForLocalReady(page, runtime, 180_000)
@@ -142,13 +143,7 @@ test.describe('Real Local -> Cloud auth flow', () => {
 })
 
 async function clickLocalSpaceEntry(page: Page): Promise<void> {
-  const productEntry = page.locator('[data-provider-source="local"]').locator('xpath=ancestor::button[1]')
-  if (await productEntry.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await productEntry.click()
-    return
-  }
-
-  await page.getByRole('button', { name: /本地空间|Local/ }).click()
+  await selectLoginSpace(page, 'local')
 }
 
 async function continueToLocalAccountSurface(page: Page): Promise<void> {

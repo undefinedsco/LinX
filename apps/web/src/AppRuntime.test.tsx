@@ -27,7 +27,7 @@ vi.mock('./providers/pod-collections-bootstrap', () => ({
   PodCollectionsBootstrap: () => null,
 }))
 
-vi.mock('./lib/telemetry/telemetry-context', () => ({
+vi.mock('./lib/telemetry/telemetry-provider', () => ({
   TelemetryProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 

@@ -237,6 +237,14 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
         completed += 1
         notifyOutboxChange()
       } catch (error) {
+        if (isStaleGenerationEntryError(error)) {
+          // The original user item was deleted or replaced while the browser
+          // was offline. Retrying it can never succeed, so drop only this
+          // permanent queue entry; provider/network failures remain retryable.
+          removeChatGeneration(webId, entry.id)
+          notifyOutboxChange()
+          continue
+        }
         console.warn('[LocalChatKitFetch] Queued generation replay failed:', error)
         break
       }
@@ -307,6 +315,11 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
   }
   localFetch.dispose = () => store.dispose()
   return localFetch
+}
+
+function isStaleGenerationEntryError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /^Item not found:/u.test(message)
 }
 
 export type LocalChatKitFetch = typeof fetch & {

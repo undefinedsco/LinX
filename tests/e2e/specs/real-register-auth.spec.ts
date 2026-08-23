@@ -4,6 +4,7 @@ import {
   type SeededXpodRuntime,
 } from '../helpers/seeded-xpod-runtime'
 import { expectSecretaryInitialized } from '../helpers/secretary-bootstrap'
+import { expectLoginComplete, expectLoginDialog, fillCustomLoginProvider } from '../helpers/login-ui'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -23,14 +24,12 @@ test.describe('Real register auth flow', () => {
     test.setTimeout(120_000)
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
-
-    await page.getByRole('button', { name: /连接其他账号服务|连接其他 Solid 账号/ }).click()
-    await page.getByPlaceholder('https://pod.example.com').fill(runtime.baseUrl)
+    await expectLoginDialog(page)
+    await fillCustomLoginProvider(page, runtime.baseUrl)
 
     await Promise.all([
       page.waitForURL(new RegExp(escapeRegex(new URL(runtime.baseUrl).origin)), { timeout: 30_000 }),
-      page.getByRole('button', { name: '连接' }).click(),
+      page.getByRole('dialog', { name: '登录 LinX' }).getByRole('button', { name: '连接' }).click(),
     ])
 
     await signUpToFreshRuntime(page, runtime)
@@ -190,7 +189,7 @@ async function waitForChatPath(page: Page, timeoutMs: number): Promise<boolean> 
 async function assertLoginRouteReady(page: Page, runtime: SeededXpodRuntime): Promise<void> {
   try {
     await page.waitForFunction(() => Boolean((window as any).__SOLID_DB__), null, { timeout: 30_000 })
-    await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
+    await expectLoginComplete(page)
   } catch (error) {
     const debugState = await readLoginDebugState(page)
     throw new Error(`expected login route to be ready\n${JSON.stringify(debugState, null, 2)}`, { cause: error })

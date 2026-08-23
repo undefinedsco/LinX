@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectLoginDialog, selectLoginSpace } from '../helpers/login-ui'
 
 type Snapshot = {
   state: 'space_required' | 'idle' | 'checking' | 'starting' | 'repair_required' | 'ready' | 'error'
@@ -121,6 +122,19 @@ const READY_LOCAL_SNAPSHOT: Snapshot = {
   errorCode: null,
   canRetry: true,
   canOpenSettings: true,
+}
+
+const READY_STANDALONE_SNAPSHOT: Snapshot = {
+  ...READY_LOCAL_SNAPSHOT,
+  spaceKind: 'standalone',
+  baseUrl: 'http://localhost:5737/',
+  publicUrl: null,
+  connectivity: null,
+  cloudIdentityUrl: null,
+  provisionCode: null,
+  provisionUrl: null,
+  nodeId: 'standalone-test',
+  message: '独立空间已准备好，接下来通过本机账号登录。',
 }
 
 const REPAIR_SNAPSHOT: Snapshot = {
@@ -429,17 +443,17 @@ async function installMockOidcProvider(page: Page, origin = 'http://localhost:57
 async function selectLocalSpace(page: Page) {
   await page.goto('/')
   await expect(page).toHaveURL(/\/(?:$|chat$)/)
-  await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15000 })
-  await page.getByRole('button', { name: /本地空间[\s\S]*(开始|启动|查看|设置|登录|继续)/ }).click()
+  await expectLoginDialog(page)
+  await selectLoginSpace(page, 'local')
   await expect(page).toHaveURL(/\/(?:$|chat$)/)
 }
 
-async function openLocalFlow(page: Page) {
+async function openLocalFlow(page: Page, expectedHeading: '本机空间' | '独立空间') {
   await selectLocalSpace(page)
-  await expect(page.getByRole('heading', { name: '本地空间' })).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('heading', { name: expectedHeading })).toBeVisible({ timeout: 15000 })
 }
 
-async function expectLocalReadyFlowOpenedCloudAuthorization(page: Page) {
+async function expectLocalReadyFlowOpenedAuthorization(page: Page, providerLabel: 'Local' | 'Standalone') {
   await expect(page.getByText('等待登录完成')).toBeVisible({ timeout: 15000 })
 
   const result = await expect.poll(async () => {
@@ -455,85 +469,84 @@ async function expectLocalReadyFlowOpenedCloudAuthorization(page: Page) {
     })
   }).toMatchObject({
     authWindowOpenCalls: 1,
-    authWindowLabels: ['Local'],
+    authWindowLabels: [providerLabel],
   })
 
   return result
 }
 
 test.describe('Local onboarding', () => {
-  test('从登录页进入 Local 子流程', async ({ page }) => {
+  test('从登录页进入独立空间子流程', async ({ page }) => {
     await installDesktopBridge(page, {
       initialSnapshot: SPACE_REQUIRED_SNAPSHOT,
     })
 
-    await openLocalFlow(page)
+    await openLocalFlow(page, '独立空间')
 
-    await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: '本地空间' })).toBeVisible()
-    await expect(page.getByText('正在启动本地空间…')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '独立空间' })).toBeVisible()
+    await expect(page.getByText('正在准备独立空间')).toBeVisible()
+    await expect(page.getByText('正在启动本机服务')).toBeVisible()
     await expect(page.getByRole('button', { name: '返回空间选择' })).toBeVisible()
   })
 
-  test('登录首页会反映 Local 需要补充设置的状态', async ({ page }) => {
+  test('不可用的本机空间会进入恢复界面', async ({ page }) => {
     await installDesktopBridge(page, {
       initialSnapshot: REPAIR_SNAPSHOT,
     })
 
     await page.goto('/')
-
-    await expect(page.getByRole('button', { name: /本地空间[\s\S]*需设置/ })).toBeVisible()
+    await expectLoginDialog(page)
+    await selectLoginSpace(page, 'local')
+    await expect(page.getByRole('heading', { name: '独立空间' })).toBeVisible()
+    await expect(page.getByText('本机空间暂时不可用')).toBeVisible()
   })
 
-  test('默认按仅本地模式启动后会转入标准 xpod 登录流', async ({ page }) => {
+  test('首次启动会进入独立空间 xpod 登录流', async ({ page }) => {
     await installDesktopBridge(page, {
       initialSnapshot: SPACE_REQUIRED_SNAPSHOT,
-      continueSnapshot: READY_LOCAL_SNAPSHOT,
+      continueSnapshot: READY_STANDALONE_SNAPSHOT,
     })
-    await installMockOidcProvider(page, 'https://id.undefineds.co')
+    await installMockOidcProvider(page)
 
     await selectLocalSpace(page)
 
-    await expectLocalReadyFlowOpenedCloudAuthorization(page)
+    await expectLocalReadyFlowOpenedAuthorization(page, 'Standalone')
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
-    expect(playState.chosenSpaces).toEqual(['local'])
+    expect(playState.chosenSpaces).toEqual(['standalone'])
     expect(playState.continueCalls).toBe(1)
     expect(playState.authWindowUrls).toHaveLength(1)
     const openedUrl = new URL(playState.authWindowUrls[0])
-    expect(openedUrl.origin).toBe('https://id.undefineds.co')
-    expect(openedUrl.searchParams.get('provisionCode')).toBe('pc-123')
+    expect(openedUrl.origin).toBe('http://localhost:5737')
+    expect(openedUrl.searchParams.get('provisionCode')).toBeNull()
 
     const pending = await page.evaluate(() => JSON.parse(window.sessionStorage.getItem('linx-pending-login-attempt') ?? 'null'))
     expect(pending).toMatchObject({
-      issuerUrl: 'https://id.undefineds.co',
-      accountIssuerUrl: 'https://id.undefineds.co',
+      issuerUrl: 'http://localhost:5737',
+      accountIssuerUrl: 'http://localhost:5737',
       authorizationSurface: 'embedded',
-      storageProviderUrl: 'https://node-test.undefineds.co',
-      storageProviderLabel: 'Local',
-      authorizationQuery: {
-        provisionCode: 'pc-123',
-      },
+      storageProviderUrl: 'http://localhost:5737',
+      storageProviderLabel: 'Standalone',
       loginTransaction: {
-        route: 'local',
-        oidcEntryUrl: 'https://id.undefineds.co',
-        oidcIssuerUrl: 'https://id.undefineds.co',
-        accountIssuerUrl: 'https://id.undefineds.co',
-        storageProviderUrl: 'https://node-test.undefineds.co',
-        storageProviderLabel: 'Local',
-        nodeId: 'node-test',
+        route: 'standalone',
+        oidcEntryUrl: 'http://localhost:5737',
+        oidcIssuerUrl: 'http://localhost:5737',
+        accountIssuerUrl: 'http://localhost:5737',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderLabel: 'Standalone',
+        nodeId: 'standalone-test',
       },
     })
   })
 
-  test('已有 Local 空间时进入后会直接继续启动', async ({ page }) => {
+  test('只有本机入口时会按独立空间继续启动', async ({ page }) => {
     await installDesktopBridge(page, {
       initialSnapshot: IDLE_LOCAL_SNAPSHOT,
     })
 
-    await openLocalFlow(page)
+    await openLocalFlow(page, '独立空间')
 
-    await expect(page.getByText('正在启动本地空间…')).toBeVisible()
+    await expect(page.getByText('正在准备独立空间')).toBeVisible()
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
     expect(playState.continueCalls).toBe(1)
@@ -560,7 +573,7 @@ test.describe('Local onboarding', () => {
 
     await selectLocalSpace(page)
 
-    await expectLocalReadyFlowOpenedCloudAuthorization(page)
+    await expectLocalReadyFlowOpenedAuthorization(page, 'Local')
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
     expect(playState.chosenSpaces).toEqual([])
@@ -584,11 +597,11 @@ test.describe('Local onboarding', () => {
       initialSnapshot: REPAIR_SNAPSHOT,
     })
 
-    await openLocalFlow(page)
+    await openLocalFlow(page, '独立空间')
 
-    await expect(page.getByText('还差一步完成本地空间绑定')).toBeVisible()
-    await expect(page.getByText('本地空间的数据空间地址还没准备好。请回到空间选择，重新启动本地空间后再登录。')).toBeVisible()
-    await page.getByRole('button', { name: '去完成本地空间设置' }).click()
+    await expect(page.getByText('本机空间暂时不可用')).toBeVisible()
+    await expect(page.getByText('请重试或打开设置检查本机服务。不会自动切换到云端空间。')).toBeVisible()
+    await page.getByRole('button', { name: '打开设置' }).click()
 
     const afterOpen = await page.evaluate(() => (window as any).__linxPlaywrightState)
     expect(afterOpen.openConfigCalls).toBe(1)
@@ -612,11 +625,11 @@ test.describe('Local onboarding', () => {
 
     await expect(page.getByText('登录未完成')).toBeVisible()
     await expect(page.getByText('Denied')).toBeVisible()
-    await expect(page.getByRole('button', { name: '重试本地空间' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '重试本机空间' })).toBeVisible()
 
     expect(await page.evaluate(() => window.sessionStorage.getItem('linx-post-login-micro-app'))).toBe('files')
 
-    await page.getByRole('button', { name: '重试本地空间' }).click()
+    await page.getByRole('button', { name: '重试本机空间' }).click()
 
     await expect.poll(async () => {
       const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)

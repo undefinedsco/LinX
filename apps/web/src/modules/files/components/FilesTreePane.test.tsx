@@ -1,27 +1,79 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { FilesTreePane } from '../features/tree/FilesTreePane'
 import { useFilesStore } from '../app/store'
+import type { FilesEntry, FilesRootData } from '../domain/resource/resource-model'
 
-const mockUseFilesRootNodes = vi.fn()
-const mockUseContainerChildTreeNodes = vi.fn()
-const mockUseActiveFilesWorkspaceContext = vi.fn()
-const mockUseFilesTreeSearchEntries = vi.fn()
-const mockUseFilesContainerEntries = vi.fn()
-const mockUseSelectedFilesLocation = vi.fn()
-const mockFavoriteChange = vi.fn()
+const { filesFixtures, mockFavoriteChange } = vi.hoisted(() => ({
+  filesFixtures: {
+    podRootUri: 'https://pod.example/',
+    workspaceUri: 'https://pod.example/.data/workspaces/ws-1/',
+    rootData: null as FilesRootData | null,
+    rootLoading: false,
+    entries: [] as FilesEntry[],
+    searchEntries: [] as FilesEntry[],
+    containerEntries: {} as Record<string, FilesEntry[]>,
+    queryCalls: [] as Array<{ type: string; containerUri?: string | null }>,
+  },
+  mockFavoriteChange: vi.fn(),
+}))
 
-vi.mock('../data/queries', () => ({
-  useFilesRootNodes: () => mockUseFilesRootNodes(),
-  useContainerChildTreeNodes: (node: unknown) => mockUseContainerChildTreeNodes(node),
-  useActiveFilesWorkspaceContext: () => mockUseActiveFilesWorkspaceContext(),
-  useFilesTreeSearchEntries: (enabled: boolean) => mockUseFilesTreeSearchEntries(enabled),
-  useFilesContainerEntries: (containerUri: string | null, enabled?: boolean) => mockUseFilesContainerEntries(containerUri, enabled),
-  useSelectedFilesLocation: (selectedTreeNodeId: string | null) => mockUseSelectedFilesLocation(selectedTreeNodeId),
+function createQueryOptions<T>(queryKey: readonly unknown[], data: T, enabled = true) {
+  return {
+    queryKey,
+    queryFn: async () => data,
+    enabled,
+    staleTime: Infinity,
+    initialData: data,
+  }
+}
+
+// Keep the production query hooks in this test. Only the collection boundary is
+// backed by deterministic Pod-shaped data, so the test exercises query selection,
+// initial-data hydration, loading state, and tree projection together.
+vi.mock('../data/collections', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../data/collections')>()
+  return {
+    ...actual,
+    filesResourceQueryCollection: {
+      ...actual.filesResourceQueryCollection,
+      resolveCurrentPodRootUri: () => filesFixtures.podRootUri,
+      roots: () => {
+        const options = createQueryOptions(['files', 'roots', filesFixtures.workspaceUri], filesFixtures.rootData)
+        if (filesFixtures.rootLoading) delete options.initialData
+        return options
+      },
+      containerEntries: ({ containerUri }: { containerUri?: string | null }) => {
+        filesFixtures.queryCalls.push({ type: 'containerEntries', containerUri })
+        const data = containerUri ? filesFixtures.containerEntries[containerUri] ?? [] : []
+        return createQueryOptions(['files', 'container-entries', containerUri ?? ''], data, !!containerUri)
+      },
+      entries: () => createQueryOptions(['files', 'entries', 'all'], filesFixtures.entries),
+      treeSearchEntries: () => createQueryOptions(['files', 'tree-search', filesFixtures.workspaceUri], filesFixtures.searchEntries),
+    },
+  }
+})
+
+vi.mock('../data/queries/chat-source-queries', () => ({
+  useActiveFilesWorkspaceContext: () => ({
+    chatId: 'chat-1',
+    threadId: 'thread-1',
+    workspaceUri: filesFixtures.workspaceUri,
+    threadTitle: '代码审阅',
+  }),
+  useFilesChatMessages: () => ({ data: [], isLoading: false, error: null }),
+}))
+
+vi.mock('../data/queries/favorite-queries', () => ({
   useFilesFavoriteList: () => ({ data: [] }),
   filesFavoriteHooks: {
     onStarredChange: (...args: unknown[]) => mockFavoriteChange(...args),
   },
+}))
+
+vi.mock('@/providers/solid-database-provider', () => ({
+  useSolidDatabase: () => ({ db: { id: 'files-tree-test-db' } }),
 }))
 
 vi.mock('../features/add/FilesAddMenu', () => ({
@@ -42,11 +94,151 @@ vi.mock('../features/add/FilesAddMenu', () => ({
 }))
 
 beforeEach(() => {
+  const podRootUri = filesFixtures.podRootUri
+  const workspaceUri = filesFixtures.workspaceUri
+  const makeEntry = (entry: FilesEntry) => entry
+
+  filesFixtures.entries = [
+    makeEntry({
+      id: `${podRootUri}public/`,
+      uri: `${podRootUri}public/`,
+      name: 'public',
+      kind: 'container',
+      semanticKind: 'container',
+      parentUri: podRootUri,
+      mimeType: null,
+      size: null,
+      modifiedAt: null,
+    }),
+    makeEntry({
+      id: `${podRootUri}public/notes.txt`,
+      uri: `${podRootUri}public/notes.txt`,
+      name: 'notes.txt',
+      kind: 'resource',
+      semanticKind: 'file',
+      parentUri: `${podRootUri}public/`,
+      mimeType: 'text/plain',
+      size: 5,
+      modifiedAt: null,
+    }),
+  ]
+  filesFixtures.searchEntries = [...filesFixtures.entries]
+  filesFixtures.containerEntries = {
+    [podRootUri]: [
+      makeEntry({
+        id: `${podRootUri}public/`,
+        uri: `${podRootUri}public/`,
+        name: 'public',
+        kind: 'container',
+        semanticKind: 'container',
+        parentUri: podRootUri,
+        mimeType: null,
+        size: null,
+        modifiedAt: null,
+      }),
+      makeEntry({
+        id: `${podRootUri}.vocab/`,
+        uri: `${podRootUri}.vocab/`,
+        name: '.vocab',
+        kind: 'container',
+        semanticKind: 'container',
+        parentUri: podRootUri,
+        mimeType: null,
+        size: null,
+        modifiedAt: null,
+      }),
+    ],
+    [`${podRootUri}.vocab/`]: [
+      ...['terms.ttl', 'shapes.ttl', 'namespaces.ttl'].map((name) => makeEntry({
+        id: `${podRootUri}.vocab/${name}`,
+        uri: `${podRootUri}.vocab/${name}`,
+        name,
+        kind: 'resource',
+        semanticKind: name === 'terms.ttl'
+          ? 'vocab-terms'
+          : name === 'shapes.ttl'
+            ? 'vocab-shapes'
+            : 'vocab-namespaces',
+        parentUri: `${podRootUri}.vocab/`,
+        mimeType: 'text/turtle',
+        size: 1,
+        modifiedAt: null,
+      })),
+    ],
+    [`${podRootUri}.data/workspaces/`]: [
+      makeEntry({
+        id: workspaceUri,
+        uri: workspaceUri,
+        name: 'ws-1',
+        kind: 'container',
+        semanticKind: 'container',
+        parentUri: `${podRootUri}.data/workspaces/`,
+        mimeType: null,
+        size: null,
+        modifiedAt: null,
+      }),
+    ],
+  }
+  filesFixtures.rootData = {
+    podRootUri,
+    entries: filesFixtures.entries,
+    nodes: [
+      { id: 'all', label: '全部可浏览资源', type: 'all', count: 3 },
+      { id: 'smart-root:recent', label: '最近文件', type: 'recent', count: 2 },
+      {
+        id: `workspace:${workspaceUri}`,
+        label: '当前话题容器',
+        type: 'workspace',
+        uri: workspaceUri,
+        count: 1,
+      },
+      {
+        id: 'pod-root',
+        label: 'Pod 根目录',
+        type: 'container',
+        uri: podRootUri,
+        count: 2,
+      },
+      {
+        id: `container:${podRootUri}.vocab/`,
+        label: '.vocab',
+        type: 'container',
+        uri: `${podRootUri}.vocab/`,
+        count: 3,
+      },
+      {
+        id: 'smart-root:agents',
+        label: 'Agent homes',
+        type: 'agents-root',
+        uri: `${podRootUri}.data/agents/`,
+        count: 1,
+      },
+      {
+        id: 'smart-root:workspaces',
+        label: 'Workspaces',
+        type: 'workspaces-root',
+        uri: `${podRootUri}.data/workspaces/`,
+        count: 2,
+      },
+      {
+        id: 'smart-root:repositories',
+        label: 'Repositories',
+        type: 'repositories-root',
+        uri: `${podRootUri}.data/repositories/`,
+        count: 0,
+      },
+    ],
+  }
+  filesFixtures.queryCalls = []
+  filesFixtures.rootLoading = false
+  mockFavoriteChange.mockReset()
+
   useFilesStore.setState({
     selectedTreeNodeId: 'all',
     expandedTreeNodeIds: new Set(),
     selectedFileId: null,
     selectedFileIds: new Set(),
+    entryScope: 'all',
     searchText: '',
     sortField: 'modifiedAt',
     sortDirection: 'desc',
@@ -54,142 +246,27 @@ beforeEach(() => {
     tagFilter: null,
     detailTab: 'preview',
     editableFileSheetOpenRequestUri: null,
-  })
-
-  mockUseFilesTreeSearchEntries.mockReturnValue({ data: [], isLoading: false, error: null })
-  mockUseFilesContainerEntries.mockReturnValue({ data: [], isLoading: false, error: null })
-  mockUseSelectedFilesLocation.mockImplementation((selectedTreeNodeId: string | null) => {
-    if (selectedTreeNodeId === 'workspace:https://pod.example/.data/workspaces/ws-1/') {
-      return { kind: 'container', containerUri: 'https://pod.example/.data/workspaces/ws-1/' }
-    }
-    return { kind: 'all' }
-  })
-
-  mockUseActiveFilesWorkspaceContext.mockReturnValue({
-    workspaceUri: 'https://pod.example/.data/workspaces/ws-1/',
-    threadTitle: '代码审阅',
-  })
-
-  mockUseFilesRootNodes.mockReturnValue({
-    data: {
-      podRootUri: 'https://pod.example/',
-      nodes: [
-        { id: 'all', label: '全部可浏览资源', type: 'all', count: 3 },
-        { id: 'smart-root:recent', label: '最近文件', type: 'recent', count: 2 },
-        {
-          id: 'workspace:https://pod.example/.data/workspaces/ws-1/',
-          label: '当前话题容器',
-          type: 'workspace',
-          uri: 'https://pod.example/.data/workspaces/ws-1/',
-          count: 1,
-        },
-        {
-          id: 'pod-root',
-          label: 'Pod 根目录',
-          type: 'container',
-          uri: 'https://pod.example/',
-          count: 2,
-        },
-        {
-          id: 'container:https://pod.example/.vocab/',
-          label: '.vocab',
-          type: 'container',
-          uri: 'https://pod.example/.vocab/',
-          count: 3,
-        },
-        {
-          id: 'smart-root:agents',
-          label: 'Agent homes',
-          type: 'agents-root',
-          uri: 'https://pod.example/.data/agents/',
-          count: 1,
-        },
-        {
-          id: 'smart-root:workspaces',
-          label: 'Workspaces',
-          type: 'workspaces-root',
-          uri: 'https://pod.example/.data/workspaces/',
-          count: 2,
-        },
-        {
-          id: 'smart-root:repositories',
-          label: 'Repositories',
-          type: 'repositories-root',
-          uri: 'https://pod.example/.data/repositories/',
-          count: 0,
-        },
-      ],
-    },
-    isLoading: false,
-    error: null,
-  })
-
-  mockUseContainerChildTreeNodes.mockImplementation((node: { id: string }) => {
-    if (node.id === 'pod-root') {
-      return {
-        data: [
-          {
-            id: 'container:https://pod.example/public/',
-            label: 'public',
-            type: 'container',
-            uri: 'https://pod.example/public/',
-            parentId: 'pod-root',
-          },
-        ],
-        isLoading: false,
-      }
-    }
-    if (node.id === 'smart-root:workspaces') {
-      return {
-        data: [
-          {
-            id: 'container:https://pod.example/.data/workspaces/ws-1/',
-            label: 'ws-1',
-            type: 'container',
-            uri: 'https://pod.example/.data/workspaces/ws-1/',
-            parentId: 'smart-root:workspaces',
-          },
-        ],
-        isLoading: false,
-      }
-    }
-    if (node.id === 'container:https://pod.example/.vocab/') {
-      return {
-        data: [
-          {
-            id: 'resource:https://pod.example/.vocab/terms.ttl',
-            label: 'terms.ttl',
-            type: 'container',
-            uri: 'https://pod.example/.vocab/terms.ttl',
-            parentId: 'container:https://pod.example/.vocab/',
-          },
-          {
-            id: 'resource:https://pod.example/.vocab/shapes.ttl',
-            label: 'shapes.ttl',
-            type: 'container',
-            uri: 'https://pod.example/.vocab/shapes.ttl',
-            parentId: 'container:https://pod.example/.vocab/',
-          },
-          {
-            id: 'resource:https://pod.example/.vocab/namespaces.ttl',
-            label: 'namespaces.ttl',
-            type: 'container',
-            uri: 'https://pod.example/.vocab/namespaces.ttl',
-            parentId: 'container:https://pod.example/.vocab/',
-          },
-        ],
-        isLoading: false,
-      }
-    }
-    return { data: [], isLoading: false }
+    sidecarActionRequest: null,
+    folderHistory: [],
   })
 })
 
 const defaultProps = { paneId: 'tree', appId: 'files' }
 
+function renderTreePane() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, refetchOnMount: false, refetchOnWindowFocus: false } },
+  })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <FilesTreePane {...defaultProps} />
+    </QueryClientProvider>,
+  )
+}
+
 describe('FilesTreePane', () => {
   it('renders real root nodes with the search and add header', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     expect(screen.getByRole('textbox', { name: '搜索文件树' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '添加' })).toBeInTheDocument()
@@ -204,7 +281,7 @@ describe('FilesTreePane', () => {
   })
 
   it('selects a root container and its right-side folder preview on click', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     fireEvent.click(screen.getByText('当前话题容器'))
 
@@ -213,7 +290,7 @@ describe('FilesTreePane', () => {
   })
 
   it('selects root nodes with keyboard activation', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     const workspaceNode = screen.getByRole('treeitem', { name: /当前话题容器/ })
 
@@ -223,7 +300,7 @@ describe('FilesTreePane', () => {
   })
 
   it('uses roving focus and arrow navigation across visible tree items', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     const allNode = screen.getByRole('treeitem', { name: /全部可浏览资源/ })
     const recentNode = screen.getByRole('treeitem', { name: /最近文件/ })
@@ -242,7 +319,7 @@ describe('FilesTreePane', () => {
   })
 
   it('selects the recent files smart root on click', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     fireEvent.click(screen.getByText('最近文件'))
 
@@ -251,7 +328,7 @@ describe('FilesTreePane', () => {
   })
 
   it('expands pod root and renders child containers', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     const rootLabel = screen.getByText('Pod 根目录')
     const expandButton = rootLabel.parentElement?.querySelector('button')
@@ -263,7 +340,7 @@ describe('FilesTreePane', () => {
   })
 
   it('selects an expanded child folder for the right-side preview', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     fireEvent.click(screen.getByRole('button', { name: '展开 Pod 根目录' }))
     fireEvent.click(screen.getByRole('treeitem', { name: 'public' }))
@@ -276,7 +353,7 @@ describe('FilesTreePane', () => {
   })
 
   it('keeps resource actions on the selected tree row and opens sidecars from its menu', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     fireEvent.click(screen.getByRole('button', { name: '展开 Pod 根目录' }))
     fireEvent.click(screen.getByRole('treeitem', { name: 'public' }))
@@ -292,14 +369,14 @@ describe('FilesTreePane', () => {
   })
 
   it('renders resource tree rows at the compact 28px shell rhythm', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     expect(screen.getByRole('treeitem', { name: /全部可浏览资源/ }).className).toContain('h-7')
     expect(screen.getByRole('treeitem', { name: /当前话题容器/ }).className).toContain('h-7')
   })
 
   it('expands containers with an accessible keyboard toggle', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     const expandButton = screen.getByRole('button', { name: '展开 Pod 根目录' })
 
@@ -309,7 +386,7 @@ describe('FilesTreePane', () => {
   })
 
   it('expands a path-backed smart root and renders child containers', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     const workspacesLabel = screen.getByText('Workspaces')
     const expandButton = workspacesLabel.parentElement?.querySelector('button')
@@ -321,7 +398,7 @@ describe('FilesTreePane', () => {
   })
 
   it('shows vocab as registry files without fake official folders or sidecars', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     const vocabLabel = screen.getByText('.vocab')
     const expandButton = vocabLabel.parentElement?.querySelector('button')
@@ -340,14 +417,13 @@ describe('FilesTreePane', () => {
   })
 
   it('filters the tree into flat recursive search results and opens a match', () => {
-    mockUseFilesTreeSearchEntries.mockReturnValue({
-      data: [
+    filesFixtures.searchEntries = [
         {
           id: 'https://pod.example/public/docs/report.md',
           uri: 'https://pod.example/public/docs/report.md',
           name: 'report.md',
           kind: 'resource',
-          semanticKind: 'markdown',
+          semanticKind: 'file',
           parentUri: 'https://pod.example/public/docs/',
           mimeType: 'text/markdown',
           size: 12,
@@ -358,21 +434,17 @@ describe('FilesTreePane', () => {
           uri: 'https://pod.example/public/notes.txt',
           name: 'notes.txt',
           kind: 'resource',
-          semanticKind: 'text',
+          semanticKind: 'file',
           parentUri: 'https://pod.example/public/',
           mimeType: 'text/plain',
           size: 5,
           modifiedAt: null,
         },
-      ],
-      isLoading: false,
-      error: null,
-    })
-    render(<FilesTreePane {...defaultProps} />)
+    ]
+    renderTreePane()
 
     fireEvent.change(screen.getByRole('textbox', { name: '搜索文件树' }), { target: { value: 'report' } })
 
-    expect(mockUseFilesTreeSearchEntries).toHaveBeenCalledWith(true)
     expect(screen.getByText('report.md')).toBeInTheDocument()
     expect(screen.queryByText('notes.txt')).not.toBeInTheDocument()
     expect(screen.queryByText('全部可浏览资源')).not.toBeInTheDocument()
@@ -384,24 +456,20 @@ describe('FilesTreePane', () => {
   })
 
   it('opens a container search result as a folder selection', () => {
-    mockUseFilesTreeSearchEntries.mockReturnValue({
-      data: [
+    filesFixtures.searchEntries = [
         {
           id: 'https://pod.example/public/docs/',
           uri: 'https://pod.example/public/docs/',
           name: 'docs',
           kind: 'container',
-          semanticKind: 'folder',
+          semanticKind: 'container',
           parentUri: 'https://pod.example/public/',
           mimeType: null,
           size: null,
           modifiedAt: null,
         },
-      ],
-      isLoading: false,
-      error: null,
-    })
-    render(<FilesTreePane {...defaultProps} />)
+    ]
+    renderTreePane()
 
     fireEvent.change(screen.getByRole('textbox', { name: '搜索文件树' }), { target: { value: 'docs' } })
     fireEvent.click(screen.getByText('docs'))
@@ -411,7 +479,7 @@ describe('FilesTreePane', () => {
   })
 
   it('shows the empty search hint and clears the query with escape', () => {
-    render(<FilesTreePane {...defaultProps} />)
+    renderTreePane()
 
     const input = screen.getByRole('textbox', { name: '搜索文件树' })
     fireEvent.change(input, { target: { value: 'missing' } })
@@ -425,12 +493,7 @@ describe('FilesTreePane', () => {
   })
 
   it('targets the selected container with the add menu', () => {
-    render(<FilesTreePane {...defaultProps} />)
-
-    expect(mockUseFilesContainerEntries).toHaveBeenLastCalledWith(
-      null,
-      false,
-    )
+    renderTreePane()
 
     fireEvent.click(screen.getByText('当前话题容器'))
 
@@ -441,20 +504,15 @@ describe('FilesTreePane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '添加' }))
 
-    expect(mockUseFilesContainerEntries).toHaveBeenLastCalledWith(
-      'https://pod.example/.data/workspaces/ws-1/',
-      true,
-    )
+    expect(filesFixtures.queryCalls).toContainEqual({
+      type: 'containerEntries',
+      containerUri: 'https://pod.example/.data/workspaces/ws-1/',
+    })
   })
 
   it('shows loading state while root nodes are loading', () => {
-    mockUseFilesRootNodes.mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      error: null,
-    })
-
-    render(<FilesTreePane {...defaultProps} />)
+    filesFixtures.rootLoading = true
+    renderTreePane()
 
     expect(screen.getByRole('status', { name: '正在加载容器…' })).toBeInTheDocument()
   })

@@ -12,9 +12,9 @@
     "build": "yarn workspace @linx/stores build && vite build",
     "build:check": "yarn workspace @linx/stores build && tsc && vite build",
     "preview": "vite preview",
-    "test": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks\" vitest",
-    "test:integration": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks\" vitest --config vitest.integration.config.ts",
-    "test:integration:perf": "XPOD_TEST_PERF=1 NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks\" vitest --config vitest.integration.config.ts --disableConsoleIntercept --reporter=verbose",
+    "test": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks --localstorage-file=${LINX_TEST_LOCALSTORAGE_FILE:-${TMPDIR:-/tmp}/linx-vitest-localstorage}\" vitest",
+    "test:integration": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks --localstorage-file=${LINX_TEST_LOCALSTORAGE_FILE:-${TMPDIR:-/tmp}/linx-vitest-localstorage}\" vitest --config vitest.integration.config.ts",
+    "test:integration:perf": "XPOD_TEST_PERF=1 NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks --localstorage-file=${LINX_TEST_LOCALSTORAGE_FILE:-${TMPDIR:-/tmp}/linx-vitest-localstorage}\" vitest --config vitest.integration.config.ts --disableConsoleIntercept --reporter=verbose",
     "lint": "eslint src --report-unused-disable-directives --max-warnings 0",
     "lint:chat": "oxlint src/modules/chat --react-plugin -A all -D no-var -D prefer-const -D no-unused-vars -D react/rules-of-hooks -D react/exhaustive-deps --report-unused-disable-directives"
   },

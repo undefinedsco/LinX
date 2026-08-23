@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 
+const SECRETARY_LABEL = 'LinX 主理人'
+
 function isE2eDebugEnabled(): boolean {
   return process.env.LINX_E2E_DEBUG === '1' || process.env.LINX_E2E_DEBUG === 'true'
 }
@@ -24,12 +26,12 @@ export async function expectSecretaryVisible(page: Page, timeoutMs = 45_000): Pr
   }
 
   if (!ui.uiReady) {
-    throw new Error(`expected AI Secretary to become visible\n${JSON.stringify(ui, null, 2)}`)
+    throw new Error(`expected ${SECRETARY_LABEL} to become visible\n${JSON.stringify(ui, null, 2)}`)
   }
 
   await expect(page.getByText('默认助手准备失败')).toHaveCount(0)
   await expect(page.getByText('正在准备默认助手')).toHaveCount(0)
-  await expect(page.getByText('AI Secretary').first()).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText(SECRETARY_LABEL).first()).toBeVisible({ timeout: 10_000 })
   const elapsedMs = Date.now() - startedAt
   debugLog(`[secretary-bootstrap] visible in ${elapsedMs}ms`)
   return elapsedMs
@@ -46,7 +48,7 @@ export async function expectSecretaryPersisted(page: Page, timeoutMs = 45_000): 
   }
 
   if (!state.filesReady) {
-    throw new Error(`expected AI Secretary to persist in Pod\n${JSON.stringify(state, null, 2)}`)
+    throw new Error(`expected ${SECRETARY_LABEL} to persist in Pod\n${JSON.stringify(state, null, 2)}`)
   }
 
   const elapsedMs = Date.now() - startedAt
@@ -55,22 +57,22 @@ export async function expectSecretaryPersisted(page: Page, timeoutMs = 45_000): 
 }
 
 async function readSecretaryUiState(page: Page): Promise<SecretaryUiState> {
-  return page.evaluate(() => {
+  return page.evaluate((secretaryLabel) => {
     const text = document.body.innerText
     const preparing = text.includes('正在准备默认助手')
     const failed = text.includes('默认助手准备失败')
-    const hasSecretaryLabel = text.includes('AI Secretary')
+    const hasSecretaryLabel = text.includes(secretaryLabel)
     return {
       uiReady: hasSecretaryLabel && !failed,
       preparing,
       failed,
       hasSecretaryLabel,
     }
-  })
+  }, SECRETARY_LABEL)
 }
 
 async function readSecretaryState(page: Page): Promise<SecretaryState> {
-  return page.evaluate(async () => {
+  return page.evaluate(async (secretaryLabel) => {
     const db = (window as any).__SOLID_DB__
     const podUrl = normalizePodUrl(
       (window as any).__SOLID_DB_POD_URL__
@@ -108,7 +110,7 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
         podUrl,
         ui,
         files: [],
-        reason: 'AI Secretary is still preparing.',
+        reason: `${secretaryLabel} is still preparing.`,
       }
     }
 
@@ -119,7 +121,7 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
       },
       {
         path: '.data/chat/__secretary__/index.ttl',
-        includes: 'AI Secretary',
+        includes: secretaryLabel,
       },
     ]
 
@@ -176,10 +178,10 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
       return {
         preparing: text.includes('正在准备默认助手'),
         failed: text.includes('默认助手准备失败'),
-        hasSecretaryLabel: text.includes('AI Secretary'),
+        hasSecretaryLabel: text.includes(secretaryLabel),
       }
     }
-  })
+  }, SECRETARY_LABEL)
 }
 
 interface SecretaryUiState {

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { startRealLocalDeviceRuntime } from '../helpers/real-local-cloud-runtime.cjs'
 import { expectSecretaryInitialized } from '../helpers/secretary-bootstrap'
+import { expectLoginDialog, selectLoginSpace } from '../helpers/login-ui'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -27,9 +28,8 @@ test.describe('Real Local device-only auth flow', () => {
 
     try {
       await page.goto('/')
-      await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
-
-      await page.getByRole('button', { name: /独立空间[\s\S]*(开始|启动|查看|设置|登录|继续)|Standalone/ }).click()
+      await expectLoginDialog(page)
+      await selectLoginSpace(page, 'local')
 
       await waitForLocalAccountPage(page, 90_000)
 

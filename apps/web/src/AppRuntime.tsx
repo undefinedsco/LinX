@@ -2,7 +2,7 @@ import { RouterProvider } from '@tanstack/react-router'
 import { SolidSessionProvider } from './providers/solid-session-provider'
 import { SolidDatabaseProvider } from './providers/solid-database-provider'
 import { PodCollectionsBootstrap } from './providers/pod-collections-bootstrap'
-import { TelemetryProvider } from './lib/telemetry/telemetry-context'
+import { TelemetryProvider } from './lib/telemetry/telemetry-provider'
 import { useSessionTokenMaintenance } from './modules/login/hooks/use-session-token-maintenance'
 import {
   cleanupExpiredLoginTransaction,

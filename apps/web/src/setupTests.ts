@@ -15,10 +15,10 @@ class MemoryStorage implements Storage {
 }
 
 function ensureTestStorage(name: 'localStorage' | 'sessionStorage') {
-  const current = window[name]
-  const storage = typeof current?.getItem === 'function' && typeof current?.setItem === 'function'
-    ? current
-    : new MemoryStorage()
+  // Keep storage isolated to this jsdom environment. Node 25's file-backed
+  // global localStorage is shared by Vitest workers when --localstorage-file is
+  // enabled, which makes auth tests race with one another.
+  const storage = new MemoryStorage()
   Object.defineProperty(window, name, { configurable: true, value: storage })
   Object.defineProperty(globalThis, name, { configurable: true, value: storage })
 }

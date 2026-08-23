@@ -1,18 +1,16 @@
 import { expect, type Page } from '@playwright/test'
 import type { SeededXpodRuntime } from './seeded-xpod-runtime'
+import { expectLoginComplete, expectLoginDialog, fillCustomLoginProvider } from './login-ui'
 
 export async function loginToSeededXpod(page: Page, runtime: SeededXpodRuntime): Promise<void> {
   await installSeededXpodDesktopBridge(page, runtime)
   await page.goto('/')
-  await expect(page.getByRole('dialog', { name: '登录 LinX' })).toBeVisible({ timeout: 15_000 })
-
-  await page.getByRole('button', { name: '更多选项' }).click()
-  await page.getByRole('button', { name: /添加登录方式/ }).click()
-  await page.getByPlaceholder('https://pod.example.com').fill(runtime.baseUrl)
+  await expectLoginDialog(page)
+  await fillCustomLoginProvider(page, runtime.baseUrl)
 
   const providerOrigin = new URL(runtime.baseUrl).origin
   const appOrigin = new URL(page.url()).origin
-  await page.getByRole('button', { name: '连接' }).click()
+  await page.getByRole('dialog', { name: '登录 LinX' }).getByRole('button', { name: '连接' }).click()
 
   await expect.poll(async () => {
     const currentUrl = new URL(page.url())
@@ -94,7 +92,7 @@ export async function assertSeededLoginReady(page: Page, runtime: SeededXpodRunt
       null,
       { timeout: 30_000 },
     )
-    await expect(page.getByRole('dialog', { name: '登录 LinX' })).toHaveCount(0)
+    await expectLoginComplete(page)
   } catch (error) {
     const debugState = await readSeededAuthDebugState(page)
     throw new Error(`expected login route to be ready\n${JSON.stringify({

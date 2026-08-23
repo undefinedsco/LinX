@@ -85,6 +85,15 @@ describe('LocalChatKitFetch generation outbox', () => {
     expect(listChatGenerationOutbox(webId)[0]).toEqual(expect.objectContaining({ attempts: 1 }))
   })
 
+  it('drops a queued generation when its original user item no longer exists', async () => {
+    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-deleted' })
+    mocks.process.mockRejectedValue(new Error('Item not found: user-deleted'))
+    const localFetch = createLocalChatKitFetch({ db: {} as any, webId, authFetch: vi.fn() as any })
+
+    await expect(localFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 0, pending: 0 })
+    expect(listChatGenerationOutbox(webId)).toEqual([])
+  })
+
   it('coalesces concurrent reconnect flushes so one queued generation is replayed once', async () => {
     enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
     mocks.process.mockResolvedValue(streamingResult([{ type: 'thread.item.done' }]))

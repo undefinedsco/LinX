@@ -1,4 +1,6 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+import { loginToSeededXpod } from '../helpers/seeded-auth-flow'
+import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seeded-xpod-runtime'
 
 /**
  * Chat Module Alignment Tests
@@ -6,6 +8,27 @@ import { test, expect } from '@playwright/test'
  * 测试 Chat 模块与设计规范的对齐情况
  * 参考: docs/chat-module-alignment.md
  */
+
+test.describe.configure({ mode: 'serial' })
+
+let runtime: SeededXpodRuntime
+
+test.beforeAll(async ({}, testInfo) => {
+  testInfo.setTimeout(120_000)
+  runtime = await startSeededXpodRuntime()
+})
+
+test.afterAll(async () => {
+  await runtime?.stop()
+})
+
+test.beforeEach(async ({ page }) => {
+  await loginToSeededXpod(page, runtime)
+})
+
+function mutableChatItem(page: Page) {
+  return page.locator('[data-testid="chat-list-item"]').filter({ hasNotText: 'LinX 主理人' }).first()
+}
 
 test.describe('Chat Module - Visual Alignment', () => {
   
@@ -90,7 +113,7 @@ test.describe('Chat Module - Visual Alignment', () => {
     
     test('Header 高度应为 48px', async ({ page }) => {
       // 先点击一个聊天项进入详情
-      const chatItem = page.locator('.group.flex.items-center').first()
+      const chatItem = mutableChatItem(page)
       if (await chatItem.isVisible().catch(() => false)) {
         await chatItem.click()
         await page.waitForTimeout(500)
@@ -112,7 +135,7 @@ test.describe('Chat Module - Visual Alignment', () => {
 
     test('Header 应显示 Provider Logo', async ({ page }) => {
       // 先进入一个聊天
-      const chatItem = page.locator('.group.flex.items-center').first()
+      const chatItem = mutableChatItem(page)
       if (await chatItem.isVisible().catch(() => false)) {
         await chatItem.click()
         await page.waitForTimeout(500)
@@ -133,7 +156,7 @@ test.describe('Chat Module - Visual Alignment', () => {
     })
 
     test('Header 应显示 Star 按钮', async ({ page }) => {
-      const chatItem = page.locator('.group.flex.items-center').first()
+      const chatItem = mutableChatItem(page)
       if (await chatItem.isVisible().catch(() => false)) {
         await chatItem.click()
         await page.waitForTimeout(500)
@@ -162,7 +185,7 @@ test.describe('Chat Module - Functional Alignment', () => {
     
     test('右键菜单应包含 Star 和 Delete 选项', async ({ page }) => {
       // 查找第一个聊天项
-      const chatItem = page.locator('.group.flex.items-center').first()
+      const chatItem = mutableChatItem(page)
       
       const isVisible = await chatItem.isVisible().catch(() => false)
       if (!isVisible) {
@@ -199,7 +222,7 @@ test.describe('Chat Module - Functional Alignment', () => {
     })
 
     test('点击 Star 选项应切换收藏状态', async ({ page }) => {
-      const chatItem = page.locator('.group.flex.items-center').first()
+      const chatItem = mutableChatItem(page)
       
       if (!await chatItem.isVisible().catch(() => false)) {
         console.log('ℹ️ 没有聊天项，跳过测试')
@@ -225,7 +248,7 @@ test.describe('Chat Module - Functional Alignment', () => {
     })
 
     test('点击 Delete 选项应显示确认对话框', async ({ page }) => {
-      const chatItem = page.locator('.group.flex.items-center').first()
+      const chatItem = mutableChatItem(page)
       
       if (!await chatItem.isVisible().catch(() => false)) {
         console.log('ℹ️ 没有聊天项，跳过测试')
@@ -400,11 +423,6 @@ test.describe('Chat Module - Content Panel', () => {
   })
 
   test('选中聊天后应显示消息输入框', async ({ page }) => {
-    if (await page.getByRole('heading', { name: /Welcome back|选择空间/i }).isVisible().catch(() => false)) {
-      console.log('ℹ️ 未登录或空间未选择，跳过 composer 断言')
-      return
-    }
-
     // 先点击一个聊天
     const chatItem = page.locator('[data-testid="chat-list-item"]').first()
     

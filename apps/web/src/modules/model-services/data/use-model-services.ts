@@ -36,6 +36,21 @@ function rowKey(row: AnyRow): string {
   throw new Error('AI config row is missing row.id.')
 }
 
+/**
+ * A credential can be intentionally persisted without exposing its plaintext
+ * API key to the browser.  The runtime decrypts the secret in Xpod, so the
+ * model-service UI must still treat an active encrypted credential as
+ * configured and expose its persisted model list.
+ */
+function hasStoredCredentialMaterial(row: AnyRow): boolean {
+  const status = typeof row.status === 'string' ? row.status.trim().toLowerCase() : 'active'
+  const service = typeof row.service === 'string' ? row.service.trim().toLowerCase() : 'ai'
+  if (status !== 'active' || service !== 'ai') return false
+
+  return [row.apiKey, row.secretPayload, row.encryptedSecret, row.oauthAccessToken, row.oauthRefreshToken]
+    .some((value) => typeof value === 'string' && value.trim().length > 0)
+}
+
 function applyPayload(draft: AnyRow, payload: Record<string, unknown>) {
   for (const [key, value] of Object.entries(payload)) {
     if (value === undefined) {
@@ -118,6 +133,16 @@ export function useModelServices() {
     [credentialRows, modelRows, providerCatalog, providerRows],
   )
 
+  const encryptedCredentialProviderIds = useMemo(
+    () => new Set(
+      credentialRows
+        .filter(hasStoredCredentialMaterial)
+        .map((row) => normalizeAIConfigProviderId(String(row.provider ?? row.id ?? '')))
+        .filter(Boolean),
+    ),
+    [credentialRows],
+  )
+
   const providers = useMemo(() => {
     if (queryError) return {}
     const merged: Record<string, AIProvider> = {}
@@ -142,6 +167,7 @@ export function useModelServices() {
           models: defaultModels,
           capabilities: staticDef.capabilities ?? [],
         }),
+        enabled: Boolean(providerState?.enabled || encryptedCredentialProviderIds.has(staticDef.id)),
         apiKey: providerState?.apiKey || '',
         baseUrl: providerState?.baseUrl || staticDef.defaultBaseUrl,
         models: providerState?.models?.length ? providerState.models : defaultModels,
@@ -163,6 +189,7 @@ export function useModelServices() {
       merged[providerId] = {
         ...providerState,
         id: providerId,
+        enabled: Boolean(providerState.enabled || encryptedCredentialProviderIds.has(providerId)),
         name: displayName,
         description: '来自 Solid Pod 的自定义模型服务',
         defaultBaseUrl,
@@ -172,7 +199,7 @@ export function useModelServices() {
     }
 
     return merged
-  }, [providerRows, providerStates, queryError])
+  }, [encryptedCredentialProviderIds, providerRows, providerStates, queryError])
 
   const updateProvider = useCallback(async (id: string, updates: Partial<AIProvider>) => {
     const plan = buildAIConfigMutationPlan({

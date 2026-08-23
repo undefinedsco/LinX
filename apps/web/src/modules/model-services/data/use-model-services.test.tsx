@@ -178,6 +178,47 @@ describe('useModelServices data persistence', () => {
     ]))
   })
 
+  it('treats an active encrypted credential as configured without exposing its secret', () => {
+    mocks.useLiveQuery.mockReset()
+    mocks.useLiveQuery
+      .mockReturnValueOnce({
+        data: [{ c: {
+          id: 'openai-default',
+          provider: '/settings/providers/openai.ttl',
+          encryptedSecret: '{"ciphertext":"redacted"}',
+          status: 'active',
+          service: 'ai',
+        } }],
+        isError: false,
+      })
+      .mockReturnValueOnce({
+        data: [{ p: {
+          id: 'openai.ttl',
+          displayName: 'OpenAI',
+          baseUrl: 'https://example.test/v1',
+        } }],
+        isError: false,
+      })
+      .mockReturnValueOnce({
+        data: [{ m: {
+          id: 'openai.ttl#gpt-5.5',
+          displayName: 'GPT-5.5',
+          isProvidedBy: '/settings/providers/openai.ttl',
+          rdfType: ['https://undefineds.co/ns#AIModel', 'https://undefineds.co/ns#ChatModel'],
+          status: 'active',
+        } }],
+        isError: false,
+      })
+
+    const { result } = renderHook(() => useModelServices())
+
+    expect(result.current.providers.openai).toMatchObject({
+      enabled: true,
+      apiKey: '',
+      models: [expect.objectContaining({ id: 'gpt-5.5', name: 'GPT-5.5' })],
+    })
+  })
+
   it('persists explicit provider runtime capabilities in the provider resource', async () => {
     const { result } = renderHook(() => useModelServices())
 

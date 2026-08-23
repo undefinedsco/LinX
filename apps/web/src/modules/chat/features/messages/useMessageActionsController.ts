@@ -28,6 +28,16 @@ function assistantText(item: ThreadItem): string {
   return item.content.flatMap((part) => part.type === 'output_text' ? [part.text] : []).join('\n').trim()
 }
 
+/**
+ * Pod rows use base-relative ids while ChatKit items may use the full RDF
+ * subject (`.../messages.ttl#item-id`). Both represent the same message and
+ * must share one key when the two projections are merged.
+ */
+export function canonicalChatKitItemId(value: string): string {
+  const hashIndex = value.lastIndexOf('#')
+  return hashIndex >= 0 ? value.slice(hashIndex + 1) : value
+}
+
 export function useMessageActionsController({
   messageRows,
   threadItems,
@@ -44,7 +54,8 @@ export function useMessageActionsController({
   const [pendingRegenerateParentId, setPendingRegenerateParentId] = useState<string | null>(null)
 
   const userMessages = useMemo(() => {
-    const byId = new Map(messageRows.filter((message) => message.role === 'user').map((message) => {
+    const byId = new Map<string, MessageRow>()
+    for (const message of messageRows.filter((candidate) => candidate.role === 'user')) {
       let itemId = message.id
       if (typeof message.richContent === 'string') {
         try {
@@ -54,11 +65,11 @@ export function useMessageActionsController({
           // Legacy plain-text messages keep their Pod row id.
         }
       }
-      return [itemId, { ...message, id: itemId }]
-    }))
+      byId.set(canonicalChatKitItemId(itemId), { ...message, id: itemId })
+    }
     for (const item of threadItems) {
       if (item.type !== 'user_message') continue
-      byId.set(item.id, {
+      byId.set(canonicalChatKitItemId(item.id), {
         id: item.id,
         role: 'user',
         content: item.content.filter((part) => part.type === 'input_text').map((part) => part.text).join('\n'),
