@@ -47,11 +47,12 @@ describe('ChatKit message write path', () => {
       supersedes: 'user-0',
     })
     expect(findById).not.toHaveBeenCalled()
-    expect(authFetch).toHaveBeenCalledOnce()
-    expect(authFetch.mock.calls[0]?.[1]).toMatchObject({
+    const updateCall = authFetch.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(updateCall).toBeDefined()
+    expect(updateCall?.[1]).toMatchObject({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/sparql-update' },
     })
-    expect(String(authFetch.mock.calls[0]?.[1]?.body)).toContain('hello')
+    expect(String(updateCall?.[1]?.body)).toContain('hello')
   })
 })

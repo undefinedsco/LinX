@@ -283,10 +283,9 @@ describe('ChatContentPane', () => {
       }),
     )
 
-    await waitFor(() => expect(mockSetThreadId).toHaveBeenNthCalledWith(2, 'thread-1'))
-    expect(mockSetThreadId).toHaveBeenNthCalledWith(1, null)
+    await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
     expect(mockFetchUpdates).toHaveBeenCalledTimes(1)
-    expect(mockSetThreadId.mock.invocationCallOrder[1]).toBeLessThan(
+    expect(mockSetThreadId.mock.invocationCallOrder[0]).toBeLessThan(
       mockFetchUpdates.mock.invocationCallOrder[0],
     )
   })
@@ -336,7 +335,9 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    fireEvent.click(await screen.findByRole('button', { name: '打开产物工作区，共 1 个版本' }))
+    const commandOptions = mockUseChatKit.mock.calls.at(-1)?.[0].commands
+    const commands = await commandOptions.onSearch('产物')
+    await act(async () => commandOptions.onSelect(commands[0]))
     expect(await screen.findByRole('heading', { name: 'Runtime summary' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '继续修改' }))
 
@@ -344,6 +345,37 @@ describe('ChatContentPane', () => {
       text: expect.stringContaining('https://pod.example/work/summary.md'),
     }))
     expect(mockFocusComposer).toHaveBeenCalled()
+  })
+
+  it('keeps secondary chat actions out of the transcript chrome and exposes them through composer commands', async () => {
+    mockUseSolidDatabase.mockReturnValue({
+      db: { getDialect: () => ({ getPodUrl: () => 'https://pod.example/' }) },
+      status: 'ready',
+      error: null,
+      retry: mockDatabaseRetry,
+      scopeKey: 'account:alice',
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.queryByRole('button', { name: '打开产物工作区' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /打开会话资产中心/u })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '添加屏幕或摄像头画面' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '打开实时语音对话' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '分享与导出当前会话' })).not.toBeInTheDocument()
+    const commandOptions = mockUseChatKit.mock.calls.at(-1)?.[0].commands
+    const commands = await commandOptions.onSearch('')
+    expect(commands.map((command: { id: string }) => command.id)).toEqual(expect.arrayContaining([
+      'linx.open-capture',
+      'linx.open-voice',
+      'linx.open-artifacts',
+      'linx.open-assets',
+      'linx.open-share',
+    ]))
+    await act(async () => commandOptions.onSelect(
+      commands.find((command: { id: string }) => command.id === 'linx.open-capture'),
+    ))
+    expect(screen.getByRole('heading', { name: '添加屏幕或摄像头画面' })).toBeInTheDocument()
   })
 
   it('reuses a Pod attachment from another conversation without uploading it again', async () => {
@@ -375,7 +407,9 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    fireEvent.click(await screen.findByRole('button', { name: '打开会话资产中心，共 1 个资产' }))
+    const commandOptions = mockUseChatKit.mock.calls.at(-1)?.[0].commands
+    const commands = await commandOptions.onSearch('选择文件')
+    await act(async () => commandOptions.onSelect(commands[0]))
     fireEvent.click(await screen.findByRole('button', { name: '添加 brief.pdf 到输入框' }))
 
     await waitFor(() => expect(mockPrepareAttachmentForReuse).toHaveBeenCalledWith(expect.objectContaining({
@@ -388,9 +422,10 @@ describe('ChatContentPane', () => {
     expect(mockFocusComposer).toHaveBeenCalled()
   })
 
-  it('forces a thread transition when the selected chat changes', async () => {
+  it('restores the selected thread directly when the selected chat changes', async () => {
     const { rerender } = render(<ChatContentPane theme="light" />)
-    await waitFor(() => expect(mockRefreshThreadItems).toHaveBeenCalledWith('thread-1'))
+    await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
+    expect(mockRefreshThreadItems).not.toHaveBeenCalled()
     mockSetThreadId.mockClear()
 
     mockUseChatList.mockReturnValue({
@@ -405,11 +440,11 @@ describe('ChatContentPane', () => {
     storeState.selectedChatId = 'chat-2'
     rerender(<ChatContentPane theme="light" />)
 
-    await waitFor(() => expect(mockSetThreadId).toHaveBeenNthCalledWith(1, null))
-    expect(mockSetThreadId).toHaveBeenNthCalledWith(2, 'thread-1')
+    await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
+    expect(mockSetThreadId).not.toHaveBeenCalledWith(null)
   })
 
-  it('preserves a restored thread that is temporarily absent from the navigation query', async () => {
+  it('replaces a restored thread that does not belong to the selected chat', async () => {
     storeState.selectedThreadId = 'restored-thread'
     mockUseThreadList.mockReturnValue({
       data: [{ id: 'unrelated-empty-thread', title: '默认话题' }],
@@ -420,10 +455,7 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    await waitFor(() => expect(mockUseChatKit).toHaveBeenCalledWith(
-      expect.objectContaining({ initialThread: 'restored-thread' }),
-    ))
-    expect(storeState.selectThread).not.toHaveBeenCalledWith('unrelated-empty-thread')
+    await waitFor(() => expect(storeState.selectThread).toHaveBeenCalledWith('unrelated-empty-thread'))
   })
 
   it('keeps persisted thread selection owned by LinX navigation', async () => {
@@ -1323,6 +1355,20 @@ describe('ChatContentPane', () => {
     rerender(<ChatContentPane theme="dark" />)
 
     expect(mockUseRuntimeSessionEvents.mock.calls.at(-1)?.[1]).toBe(initialHandler)
+  })
+
+  it('passes live theme changes directly to ChatKit', () => {
+    const view = render(<ChatContentPane theme="light" />)
+
+    expect(mockUseChatKit.mock.calls.at(-1)?.[0]).toMatchObject({
+      theme: { colorScheme: 'light' },
+    })
+
+    view.rerender(<ChatContentPane theme="dark" />)
+
+    expect(mockUseChatKit.mock.calls.at(-1)?.[0]).toMatchObject({
+      theme: { colorScheme: 'dark' },
+    })
   })
 
   it('restores anchored message after chat scene re-entry', () => {

@@ -23,7 +23,7 @@ ChatKit 1.9
 
 LinX Web
   ├─ ChatKit service/store adapter
-  ├─ 外部消息操作栏和分支导航
+  ├─ 轻量编辑与分支导航工具栏
   ├─ Pod 消息/附件/feedback 持久化
   └─ Workspace、Runtime、审批和收件箱扩展
 
@@ -70,7 +70,7 @@ Xpod
 - 生成失败时向用户显示脱敏错误，不展示 provider 响应和内部堆栈。
 - 在线/离线状态和重连后刷新已接入 Chat 主界面。
 
-### 3.3 编辑、删除、引用与分支
+### 3.3 编辑、删除与分支
 
 - `threads.custom_action` 支持：
   - `message.edit`
@@ -79,7 +79,7 @@ Xpod
 - 编辑用户消息会为原消息和编辑版本建立共同 sibling parent，并写入 `parent_item_id`、`branch_id`、`supersedes`，不覆盖原消息。
 - 原回答和新回答都绑定到各自用户消息；非活动用户分支的回答子树会一起从 ChatKit 投影中隐藏。
 - 消息树 adapter 和 sibling grouping/cycling 已独立为 domain 逻辑。
-- ChatKit 外部操作栏已接入编辑、删除、引用、上一分支、下一分支。
+- ChatKit 外部只保留 `1/2、2/2` 分支导航；编辑、朗读、产物和资产不再作为常驻会话工具栏按钮，改由 ChatKit 的 `/` 命令按需唤起。ChatKit 1.9.0 尚未开放自定义 message action 插槽，因此不使用跨域 iframe 坐标覆盖来伪造消息旁按钮；删除能力保留在 service 协议中，也不再维护一套重复的重型消息操作栏或历史抽屉。
 - `threads.custom_action` 同时兼容 ChatKit 真实的 `{ action: { type, payload } }` 请求封装与旧扁平参数，避免浏览器操作被误判为缺少 `thread_id` / `item_id`。
 - custom action 完成或生成失败后会同时刷新 ChatKit 与 Message collection，避免两个视图短暂不一致。
 - 当前 Chat、当前 Thread 及每个 Chat 最近使用的 Thread 保存在当前浏览器标签页的 session storage 中，刷新后恢复；Pod 查询仍会校验资源是否属于当前登录空间。
@@ -401,3 +401,10 @@ yarn workspace @linx/web tsc --noEmit
 - settings 默认资源 ID 优先使用 row 中的稳定 `key`，避免 ORM 生成 key 覆盖业务 key 后产生随机文件名。
 - CLI 的 AI connect/status、Jina credential reader 和三个源码入口编译测试已同步精确 ID 契约；TypeScript 7 的单文件编译显式使用 `--ignoreConfig`，避免命令行文件与项目配置同时加载。
 - 最终验证：Models 29 文件、170/170；CLI 492 项中 489 通过、3 个可选 live smoke 跳过、0 失败；Web 375 文件、2875/2875；本地 Xpod Web 集成 16 文件、29/29；Service 16/16；Web `build:check` 与 Chat Oxlint 通过。Web 全量 ESLint 仍被仓库 TypeScript 7 与 `@typescript-eslint` 8.61（peer `<6.1`）的不兼容阻塞，因此没有把该命令误报为通过。
+
+## 21. 分支后续与附件取消终验（2026-08-30）
+
+- 新用户消息会挂到当前活动路径的最后一条回答，并继承 branch ID；在干净会话中完成“原问题 → 编辑为 2/2 → 新分支继续对话 → 切回 1/2”的真实浏览器验证，旧分支不会显示新分支的后续问题和回答，刷新及切回均保持正确。
+- 分支导航与“编辑最近提问”已解耦：工具栏可继续显示最近分叉点，但编辑始终作用于真正的最后一条用户消息。重新生成新增 sibling 后，版本指示器立即选中最新回答；首尾箭头禁用而不循环。
+- 本地 Xpod 暂停响应时完成 24 MB PDF 的真实上传取消：上传中发送按钮禁用，取消后卡片消失，请求中止且 Pod 没有孤儿大文件；26 MB PDF 会得到明确的 25 MB 上限提示。Pod 容器检查和创建请求也已贯穿 `AbortSignal`。
+- 最终验证：Chat 56 文件、390/390；Web 375 文件、2875/2875；TypeScript、Chat Oxlint、production build 与 `git diff --check` 通过。最终浏览器刷新窗口无 error/warning，本地 Xpod 在最终窗口保持 healthy 且无 4xx/5xx、credential、412 或未处理异常。

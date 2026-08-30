@@ -16,6 +16,7 @@ import {
   hasStoredSolidSession,
   isInvalidClientError,
   isInvalidClientErrorCode,
+  reconcileLoginClientSchema,
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
   setPendingPostLoginMicroAppId,
@@ -29,12 +30,35 @@ describe('login-utils post-login target helpers', () => {
     clearPendingPostLoginMicroAppId()
     clearStoredSolidSession()
     window.localStorage.removeItem('linx-remembered-account')
+    window.localStorage.removeItem('linx-login-client-schema')
     window.history.replaceState({}, '', '/')
   })
 
   it('resolves current micro app from pathname', () => {
     window.history.replaceState({}, '', '/files')
     expect(resolvePostLoginMicroAppId()).toBe('files')
+  })
+
+  it('drops obsolete browser identity state without touching application data', () => {
+    window.localStorage.setItem('linx-remembered-account', JSON.stringify({ displayName: 'Old account' }))
+    window.localStorage.setItem('linx-login', JSON.stringify({ state: { storedAccount: { displayName: 'Old account' } } }))
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'old-session')
+    window.localStorage.setItem('solidClientAuthenticationUser:old-session', '{}')
+    window.localStorage.setItem('linx-chat-draft', 'keep me')
+    setPendingLoginAttempt({
+      issuerUrl: 'https://old.example.com',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    })
+
+    expect(reconcileLoginClientSchema()).toBe(true)
+    expect(window.localStorage.getItem('linx-remembered-account')).toBeNull()
+    expect(window.localStorage.getItem('linx-login')).toBeNull()
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:old-session')).toBeNull()
+    expect(getPendingLoginAttempt()).toBeNull()
+    expect(window.localStorage.getItem('linx-chat-draft')).toBe('keep me')
+    expect(reconcileLoginClientSchema()).toBe(false)
   })
 
   it('falls back to chat for non-micro-app routes', () => {

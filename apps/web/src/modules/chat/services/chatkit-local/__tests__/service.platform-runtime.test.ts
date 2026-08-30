@@ -1120,6 +1120,38 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events.some((event) => event.type === 'error')).toBe(false)
   })
 
+  it('requests explicit Xpod service access and queues the original generation for replay', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'service_access_missing',
+        message: 'Pod service access is missing or has been revoked',
+        status: 403,
+      },
+    }), { status: 403, headers: { 'Content-Type': 'application/json' } }))
+    const onGenerationDeferred = vi.fn()
+    const onServiceAccessRequired = vi.fn()
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+      onGenerationDeferred,
+      onServiceAccessRequired,
+    })
+
+    const events = await sendMessage(service, { model: 'linx-lite' })
+
+    expect(onServiceAccessRequired).toHaveBeenCalledOnce()
+    expect(onGenerationDeferred).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: 'thread-1',
+      userItemId: expect.any(String),
+    }))
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toContain('授权后将自动继续生成')
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+  })
+
   it('lets ChatKit platform model selection override the default LinX Lite model', async () => {
     const store = createMockStore()
     const db = createMockDb({
@@ -1481,7 +1513,12 @@ describe('LocalChatKitService platform runtime routing', () => {
       }),
     )
     expect(providerFetch).not.toHaveBeenCalled()
-    const requestBody = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    const gatewayCall = authFetch.mock.calls.find(([url, init]) => (
+      url === 'https://api.undefineds.co/v1/chat/completions'
+      && (init as RequestInit | undefined)?.method === 'POST'
+    ))
+    expect(gatewayCall).toBeDefined()
+    const requestBody = JSON.parse((gatewayCall?.[1] as RequestInit).body as string)
     expect(requestBody.provider).toBe('timecc')
     expect(requestBody.model).toBe('timecc/codex-auto-review')
     expect(db.findByIri).toHaveBeenCalledWith(

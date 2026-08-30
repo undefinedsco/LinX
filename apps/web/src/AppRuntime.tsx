@@ -6,6 +6,7 @@ import { TelemetryProvider } from './lib/telemetry/telemetry-provider'
 import { useSessionTokenMaintenance } from './modules/login/hooks/use-session-token-maintenance'
 import {
   cleanupExpiredLoginTransaction,
+  reconcileLoginClientSchema,
 } from './modules/login/login-utils'
 import { router } from './router'
 
@@ -22,6 +23,7 @@ export function AppRuntime() {
   // Callback processing still needs the oidc.* state/PKCE/sessionId mapping.
   // Never run auth maintenance before AuthCallback has consumed it.
   if (!isAuthCallback) {
+    reconcileLoginClientSchema()
     cleanupExpiredLoginTransaction()
   }
 

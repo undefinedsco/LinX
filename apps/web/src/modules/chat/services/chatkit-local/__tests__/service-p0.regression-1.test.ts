@@ -76,6 +76,42 @@ describe('LocalChatKitService P0 data and cancellation', () => {
       .toEqual(['user-2', 'assistant-new'])
   })
 
+  it('links a follow-up user message to the active response branch', async () => {
+    const thread = {
+      id: 'thread-1',
+      status: { type: 'active' },
+      metadata: { active_branch_by_parent: { 'branch-root': 'edited', edited: 'answer-new' } },
+    }
+    const store = createStore({
+      loadThread: vi.fn(async () => thread),
+      loadThreadItems: vi.fn(async () => ({ data: [
+        { id: 'original', type: 'user_message', parent_item_id: 'branch-root', branch_id: 'original-branch' },
+        { id: 'answer-old', type: 'assistant_message', parent_item_id: 'original', branch_id: 'original-branch' },
+        { id: 'edited', type: 'user_message', parent_item_id: 'branch-root', branch_id: 'edited-branch' },
+        { id: 'answer-new', type: 'assistant_message', parent_item_id: 'edited', branch_id: 'edited-branch' },
+      ], has_more: false })),
+      generateItemId: vi.fn(() => 'follow-up'),
+      addThreadItem: vi.fn(async () => undefined),
+    })
+    const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any }) as any
+    service.respond = vi.fn(async function* () {})
+
+    const result = await service.process(JSON.stringify({
+      type: 'threads.add_user_message',
+      params: {
+        thread_id: 'thread-1',
+        input: { content: [{ type: 'input_text', text: 'continue' }] },
+      },
+    }), {})
+    if (result.type === 'streaming') for await (const _ of result.stream()) { /* consume */ }
+
+    expect(store.addThreadItem).toHaveBeenCalledWith('thread-1', expect.objectContaining({
+      id: 'follow-up',
+      parent_item_id: 'answer-new',
+      branch_id: 'edited-branch',
+    }), {})
+  })
+
   it('handles custom message deletion through the ChatKit action channel', async () => {
     const thread = { id: 'thread-1', status: { type: 'active' }, metadata: { active_branch_by_parent: { 'user-1': 'assistant-1' } } }
     const store = createStore({
@@ -117,6 +153,8 @@ describe('LocalChatKitService P0 data and cancellation', () => {
       loadThreadItems: vi.fn(async () => ({ data: [
         item,
         { id: 'assistant-old', thread_id: 'thread-1', type: 'assistant_message', content: [] },
+        { id: 'user-later', thread_id: 'thread-1', type: 'user_message', content: [{ type: 'input_text', text: 'later' }] },
+        { id: 'assistant-later', thread_id: 'thread-1', type: 'assistant_message', content: [] },
       ], has_more: false })),
       generateItemId: vi.fn(() => 'user-branch-1'),
     })
@@ -158,6 +196,17 @@ describe('LocalChatKitService P0 data and cancellation', () => {
       parent_item_id: 'user-1',
       branch_id: 'branch-original:user-1',
     }), {})
+    expect(store.saveItem).toHaveBeenCalledWith('thread-1', expect.objectContaining({
+      id: 'user-later',
+      parent_item_id: 'assistant-old',
+      branch_id: 'branch-original:user-1',
+    }), {})
+    expect(store.saveItem).toHaveBeenCalledWith('thread-1', expect.objectContaining({
+      id: 'assistant-later',
+      parent_item_id: 'user-later',
+      branch_id: 'branch-original:user-1',
+    }), {})
+    expect(events).toContainEqual(expect.objectContaining({ type: 'thread.updated' }))
     expect(events).toContainEqual(expect.objectContaining({ type: 'thread.item.added' }))
   })
 
@@ -276,9 +325,8 @@ describe('LocalChatKitService P0 data and cancellation', () => {
       status: 'incomplete',
       content: [{ type: 'output_text', text: 'partial answer', annotations: [] }],
     }), expect.anything())
-    expect(events).toContainEqual(expect.objectContaining({
+    expect(events).not.toContainEqual(expect.objectContaining({
       type: 'thread.item.done',
-      item: expect.objectContaining({ status: 'incomplete' }),
     }))
   })
 
@@ -388,5 +436,27 @@ describe('LocalChatKitService P0 data and cancellation', () => {
       { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } },
       { type: 'text', text: expect.stringContaining('Pod document body') },
     ]))
+  })
+
+  it('cuts retry and edit context off at the anchored user message', async () => {
+    const store = createStore({
+      loadThreadItems: vi.fn(async () => ({
+        data: [
+          { id: 'assistant-2', thread_id: 'thread-1', type: 'assistant_message', content: [{ type: 'output_text', text: 'later answer' }] },
+          { id: 'user-2', thread_id: 'thread-1', type: 'user_message', content: [{ type: 'input_text', text: 'later' }] },
+          { id: 'assistant-1', thread_id: 'thread-1', type: 'assistant_message', content: [{ type: 'output_text', text: 'first answer' }] },
+          { id: 'user-1', thread_id: 'thread-1', type: 'user_message', content: [{ type: 'input_text', text: 'first' }] },
+        ],
+        has_more: false,
+      })),
+    })
+    const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any })
+
+    const messages = await (service as any).buildConversationHistory('thread-1', {}, undefined, 'user-1')
+
+    expect(messages).toEqual([
+      expect.objectContaining({ role: 'system' }),
+      { role: 'user', content: 'first' },
+    ])
   })
 })

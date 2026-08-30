@@ -122,6 +122,7 @@ describe('PrimaryLayout', () => {
     render(<PrimaryLayout microAppId="chat" />)
 
     expect(screen.getByRole('button', { name: '个人资料' })).toBeTruthy()
+    expect(screen.getByLabelText('云端空间已连接')).toBeTruthy()
   })
 
   it('keeps the module list pane at a usable desktop width', () => {

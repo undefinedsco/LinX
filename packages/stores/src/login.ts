@@ -93,33 +93,6 @@ export function getRememberedAccount(): StoredAccount | null {
   }
 }
 
-function migrateStoredAccount(value: unknown): StoredAccount | null {
-  if (!value || typeof value !== 'object') return null
-
-  const parsed = value as Partial<StoredAccount> & {
-    providerUrl?: string
-    providerLabel?: string
-  }
-  const storageProviderLabel = resolveStorageProviderLabel(parsed)
-  const issuerUrl = resolveStoredAccountIssuerUrl(parsed, storageProviderLabel)
-  const storageProviderUrl = normalizeStoredUrl(parsed.storageProviderUrl)
-    ?? normalizeStoredUrl(parsed.providerUrl)
-
-  if (typeof parsed.displayName !== 'string' || !issuerUrl) {
-    return null
-  }
-
-  return {
-    displayName: parsed.displayName,
-    avatarUrl: typeof parsed.avatarUrl === 'string' ? parsed.avatarUrl : undefined,
-    issuerUrl,
-    issuerLabel: typeof parsed.issuerLabel === 'string' ? parsed.issuerLabel : undefined,
-    storageProviderUrl: storageProviderUrl ?? undefined,
-    storageProviderLabel,
-    webId: typeof parsed.webId === 'string' ? parsed.webId : undefined,
-  }
-}
-
 function resolveStoredAccountIssuerUrl(
   parsed: Partial<StoredAccount> & { providerUrl?: string; providerLabel?: string },
   storageProviderLabel?: string,
@@ -237,11 +210,14 @@ export const useLoginStore = create<LoginStore>()(
     }),
     {
       name: 'linx-login',
-      version: 2,
+      version: 3,
       migrate: (persistedState) => {
         const state = persistedState as { storedAccount?: unknown; customProviders?: unknown; preferredSpace?: unknown }
         return {
-          storedAccount: migrateStoredAccount(state.storedAccount),
+          // Account bindings from an older login contract are intentionally
+          // not migrated. They may point at a replaced local Xpod, a stale
+          // dynamic OIDC client, or the wrong Local/Standalone mode.
+          storedAccount: null,
           customProviders: Array.isArray(state.customProviders) ? state.customProviders : [],
           preferredSpace: state.preferredSpace === 'local' ? 'local' : 'cloud',
         }

@@ -49,6 +49,7 @@ function recognitionConstructor(): SpeechRecognitionConstructor | null {
 
 export interface VoiceConversationDialogProps {
   open: boolean
+  canSend: boolean
   onOpenChange: (open: boolean) => void
   onSend: (text: string) => Promise<void>
   assistantText: string
@@ -66,7 +67,9 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
   const onSendRef = useRef(props.onSend)
   const speechAbortRef = useRef<AbortController | null>(null)
   const openRef = useRef(props.open)
+  const canSendRef = useRef(props.canSend)
   openRef.current = props.open
+  canSendRef.current = props.canSend
   assistantTextRef.current = props.assistantText
   onSendRef.current = props.onSend
   const [listening, setListening] = useState(false)
@@ -104,7 +107,10 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
     } catch (reason) {
       awaitingResponseRef.current = false
       observedGenerationRef.current = false
-      setError(reason instanceof Error ? reason.message : '语音消息发送失败，请重试。')
+      const message = reason instanceof Error ? reason.message : ''
+      setError(/sendUserMessage\(\).*thread is loading/i.test(message)
+        ? '会话仍在加载，请稍候后继续说。'
+        : message || '语音消息发送失败，请重试。')
     } finally {
       sendingRef.current = false
       setSending(false)
@@ -113,7 +119,7 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
 
   const startListening = useCallback(() => {
     const Recognition = recognitionConstructor()
-    if (!Recognition || recognitionRef.current || awaitingResponseRef.current) return
+    if (!Recognition || !canSendRef.current || recognitionRef.current || awaitingResponseRef.current) return
     speechAbortRef.current?.abort()
     window.speechSynthesis?.cancel()
     setSpeaking(false)
@@ -149,7 +155,7 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
       recognitionRef.current = null
       setListening(false)
       const finalText = transcriptRef.current.trim()
-      if (openRef.current && finalText) void sendTranscript(finalText)
+      if (openRef.current && canSendRef.current && finalText) void sendTranscript(finalText)
     }
     recognitionRef.current = recognition
     setListening(true)
@@ -163,17 +169,19 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
   }, [sendTranscript])
 
   useEffect(() => {
-    if (!props.open) {
+    if (!props.open || !props.canSend) {
       stopListening(true)
-      speechAbortRef.current?.abort()
-      window.speechSynthesis?.cancel()
-      setSpeaking(false)
-      awaitingResponseRef.current = false
-      observedGenerationRef.current = false
+      if (!props.open) {
+        speechAbortRef.current?.abort()
+        window.speechSynthesis?.cancel()
+        setSpeaking(false)
+        awaitingResponseRef.current = false
+        observedGenerationRef.current = false
+      }
       return
     }
     if (supported) startListening()
-  }, [props.open, startListening, stopListening, supported])
+  }, [props.canSend, props.open, startListening, stopListening, supported])
 
   useEffect(() => {
     if (!props.open || !awaitingResponseRef.current) return
@@ -228,19 +236,19 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
         ) : (
           <div className="space-y-4">
             <div className="flex min-h-32 flex-col items-center justify-center rounded-xl border bg-muted/20 p-5 text-center">
-              {sending || props.isGenerating ? <LoaderCircle className="mb-3 size-8 animate-spin text-primary" /> : speaking ? <Volume2 className="mb-3 size-8 animate-pulse text-primary" /> : listening ? <Mic className="mb-3 size-8 animate-pulse text-primary" /> : <MicOff className="mb-3 size-8 text-muted-foreground" />}
+              {!props.canSend || sending || props.isGenerating ? <LoaderCircle className="mb-3 size-8 animate-spin text-primary" /> : speaking ? <Volume2 className="mb-3 size-8 animate-pulse text-primary" /> : listening ? <Mic className="mb-3 size-8 animate-pulse text-primary" /> : <MicOff className="mb-3 size-8 text-muted-foreground" />}
               <p className="text-sm font-medium">
-                {sending ? '正在发送…' : props.isGenerating ? '正在等待回答…' : speaking ? '正在朗读回答…' : listening ? '正在聆听…' : '麦克风已暂停'}
+                {!props.canSend ? '正在准备会话…' : sending ? '正在发送…' : props.isGenerating ? '正在等待回答…' : speaking ? '正在朗读回答…' : listening ? '正在聆听…' : '麦克风已暂停'}
               </p>
               <p className="mt-2 max-h-24 overflow-y-auto text-sm text-muted-foreground">
-                {transcript || interimTranscript || '开始说话，停顿后会自动发送。'}
+                {transcript || interimTranscript || (!props.canSend ? '加载完成后会自动开始聆听。' : '开始说话，停顿后会自动发送。')}
               </p>
             </div>
             <div className="flex justify-center">
               {listening ? (
                 <Button type="button" variant="outline" onClick={() => stopListening(false)}><MicOff className="mr-2 size-4" />暂停聆听</Button>
               ) : (
-                <Button type="button" disabled={sending || props.isGenerating || speaking} onClick={startListening}><Mic className="mr-2 size-4" />继续聆听</Button>
+                <Button type="button" disabled={!props.canSend || sending || props.isGenerating || speaking} onClick={startListening}><Mic className="mr-2 size-4" />继续聆听</Button>
               )}
             </div>
           </div>

@@ -252,18 +252,13 @@ function ProviderSelectionView({
   const localProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'local')
   const standaloneProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'standalone')
   const localAccessProvider = isUsableLocalProvider(localProvider) ? localProvider : standaloneProvider
-  // The explicit space picker must keep the Local provider even before xpod has
-  // started. Clicking “本机空间” is what starts the managed Local runtime and
-  // makes its provisionCode available; falling back here silently changes the
-  // route to Standalone and drops the Cloud provisioning contract.
-  const localSelectionProvider = localProvider ?? standaloneProvider
   const preferredProvider = preferredSpace === 'local' ? localAccessProvider : cloudProvider
 
   if (view === 'methods') {
     return (
       <LoginMethodListView
         cloudProvider={cloudProvider}
-        localProvider={localSelectionProvider}
+        localProvider={localAccessProvider}
         providers={providers}
         onSelectSpace={onSelectSpace}
         onConnect={onConnect}

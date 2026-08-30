@@ -1002,6 +1002,7 @@ describe('useLoginController', () => {
       storageProviderLabel: 'Standalone',
       strictDiscovery: true,
     }))
+    expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
   })
 
   it('starts remembered Local in Desktop and tries silent auth when stored auth matches the account', async () => {
@@ -1687,6 +1688,7 @@ describe('useLoginController', () => {
       storageProviderLabel: 'Standalone',
       strictDiscovery: true,
     }))
+    expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
   })
 
   it('uses the Local SP entry with provision code when continuing a Local login', async () => {

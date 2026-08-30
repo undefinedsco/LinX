@@ -53,6 +53,7 @@ export interface MicroAppLayoutConfig {
   rightSidebar?: ReactNode
   rightSidebarWidth?: number
   rightSidebarToggle?: {
+    label?: string
     open: boolean
     onToggle: () => void
   }

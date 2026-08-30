@@ -4,6 +4,40 @@ const mocks = vi.hoisted(() => ({
   process: vi.fn(),
   addThreadItem: vi.fn(),
   generateItemId: vi.fn(() => 'assistant-artifact'),
+  setAgentAccess: vi.fn(),
+  getSolidDataset: vi.fn(),
+  saveSolidDatasetAt: vi.fn(),
+}))
+
+vi.mock('@inrupt/solid-client', () => ({
+  universalAccess: { setAgentAccess: mocks.setAgentAccess },
+  getSolidDataset: mocks.getSolidDataset,
+  saveSolidDatasetAt: mocks.saveSolidDatasetAt,
+  getThingAll: (dataset: { things: any[] }) => dataset.things,
+  getUrlAll: (thing: any, predicate: string) => thing.urls?.[predicate] ?? [],
+  addUrl: (thing: any, predicate: string, value: string) => ({
+    ...thing,
+    urls: { ...thing.urls, [predicate]: [...(thing.urls?.[predicate] ?? []), value] },
+  }),
+  setThing: (dataset: { things: any[] }, thing: any) => ({
+    ...dataset,
+    things: [...dataset.things.filter((current) => current.url !== thing.url), thing],
+  }),
+  createThing: ({ url }: { url: string }) => ({ url, urls: {} }),
+  buildThing: (initial: any) => {
+    let thing = initial
+    const builder = {
+      addUrl(predicate: string, value: string) {
+        thing = {
+          ...thing,
+          urls: { ...thing.urls, [predicate]: [...(thing.urls?.[predicate] ?? []), value] },
+        }
+        return builder
+      },
+      build: () => thing,
+    }
+    return builder
+  },
 }))
 
 vi.mock('../store', () => ({
@@ -44,6 +78,8 @@ describe('LocalChatKitFetch generation outbox', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    mocks.setAgentAccess.mockResolvedValue({ read: true, append: true, write: true })
+    mocks.saveSolidDatasetAt.mockResolvedValue(undefined)
   })
 
   afterEach(() => vi.restoreAllMocks())
@@ -107,6 +143,197 @@ describe('LocalChatKitFetch generation outbox', () => {
     expect(first).toEqual({ completed: 1, pending: 0 })
     expect(second).toEqual(first)
     expect(mocks.process).toHaveBeenCalledTimes(1)
+  })
+
+  it('grants only the four Xpod-declared AI resources to its service identity', async () => {
+    const podBaseUrl = 'https://pod.example/alice'
+    const resources = [
+      ['providerCredentials', 'settings/credentials.ttl'],
+      ['providerDefinitions', 'settings/providers/'],
+      ['gatewayAccessKeys', 'settings/gateway-access-keys.ttl'],
+      ['quotaSnapshots', 'settings/quota-snapshots.ttl'],
+    ].map(([id, path]) => ({
+      id,
+      url: `${podBaseUrl}/${path}`,
+      ...(id === 'providerDefinitions' ? { members: true as const } : {}),
+      access: { read: true, append: true, write: true },
+    }))
+    const providerUrl = resources[1].url
+    const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/applets/service-access/ai-connections')) return Response.json({
+        appletId: 'co.undefineds.ai-connections',
+        service: { webId: 'https://xpod.example/service/profile/card#me' },
+        resources,
+      })
+      if (url === providerUrl && init?.method === 'HEAD') {
+        return new Response(null, { status: 200, headers: { Link: `<${providerUrl}.acr>; rel="acl"` } })
+      }
+      if (url === `${providerUrl}.acr` && !init?.method) return new Response(null, { status: 404 })
+      if (url === `${providerUrl}.acr` && init?.method === 'PUT') return new Response(null, { status: 201 })
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    const localFetch = createLocalChatKitFetch({
+      db: { getDialect: () => ({ getPodUrl: () => podBaseUrl }) } as any,
+      webId,
+      authFetch: authFetch as any,
+    })
+
+    await localFetch.ensureAiServiceAccess()
+
+    expect(mocks.setAgentAccess).toHaveBeenCalledTimes(3)
+    expect(mocks.setAgentAccess).toHaveBeenNthCalledWith(
+      1,
+      resources[0].url,
+      'https://xpod.example/service/profile/card#me',
+      resources[0].access,
+      { fetch: authFetch },
+    )
+  })
+
+  it('rejects an AI service descriptor that points outside the current Pod', async () => {
+    const podBaseUrl = 'https://pod.example/alice'
+    const authFetch = vi.fn(async () => Response.json({
+      appletId: 'co.undefineds.ai-connections',
+      service: { webId: 'https://xpod.example/service/profile/card#me' },
+      resources: [
+        ['providerCredentials', 'https://evil.example/credentials.ttl'],
+        ['providerDefinitions', `${podBaseUrl}/settings/ai-providers.ttl`],
+        ['gatewayAccessKeys', `${podBaseUrl}/settings/gateway-access-keys.ttl`],
+        ['quotaSnapshots', `${podBaseUrl}/settings/quota-snapshots.ttl`],
+      ].map(([id, url]) => ({
+        id,
+        url,
+        ...(id === 'providerDefinitions' ? { members: true as const } : {}),
+        access: { read: true, append: true, write: true },
+      })),
+    }))
+    const localFetch = createLocalChatKitFetch({
+      db: { getDialect: () => ({ getPodUrl: () => podBaseUrl }) } as any,
+      webId,
+      authFetch: authFetch as any,
+    })
+
+    await expect(localFetch.ensureAiServiceAccess()).rejects.toThrow('越界或不完整')
+    expect(mocks.setAgentAccess).not.toHaveBeenCalled()
+  })
+
+  it('initializes a missing Xpod ACP document before retrying the service grant', async () => {
+    const podBaseUrl = 'https://pod.example/alice'
+    const resourceUrl = `${podBaseUrl}/settings/credentials.ttl`
+    const resources = [
+      ['providerCredentials', resourceUrl],
+      ['providerDefinitions', `${podBaseUrl}/settings/providers/`],
+      ['gatewayAccessKeys', `${podBaseUrl}/settings/access-keys.ttl`],
+      ['quotaSnapshots', `${podBaseUrl}/settings/quota.ttl`],
+    ].map(([id, url]) => ({
+      id,
+      url,
+      ...(id === 'providerDefinitions' ? { members: true as const } : {}),
+      access: { read: true, append: true, write: true },
+    }))
+    mocks.setAgentAccess
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ read: true, append: true, write: true })
+    const memberUrl = resources[1].url
+    const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/applets/service-access/ai-connections')) {
+        return Response.json({
+          appletId: 'co.undefineds.ai-connections',
+          service: { webId: 'https://xpod.example/service/profile/card#me' },
+          resources,
+        })
+      }
+      if (url === resourceUrl && init?.method === 'HEAD') {
+        return new Response(null, {
+          status: 200,
+          headers: { Link: `<${resourceUrl}.acr>; rel="acl"` },
+        })
+      }
+      if (url === `${resourceUrl}.acr` && !init?.method) return new Response(null, { status: 404 })
+      if (url === `${resourceUrl}.acr` && init?.method === 'PUT') return new Response(null, { status: 201 })
+      if (url === memberUrl && init?.method === 'HEAD') {
+        return new Response(null, { status: 200, headers: { Link: `<${memberUrl}.acr>; rel="acl"` } })
+      }
+      if (url === `${memberUrl}.acr` && !init?.method) return new Response(null, { status: 404 })
+      if (url === `${memberUrl}.acr` && init?.method === 'PUT') return new Response(null, { status: 201 })
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    const localFetch = createLocalChatKitFetch({
+      db: { getDialect: () => ({ getPodUrl: () => podBaseUrl }) } as any,
+      webId,
+      authFetch: authFetch as any,
+    })
+
+    await localFetch.ensureAiServiceAccess()
+
+    expect(authFetch).toHaveBeenCalledWith(`${resourceUrl}.acr`, expect.objectContaining({
+      method: 'PUT',
+      body: expect.stringContaining(`acp:agent <${webId}>`),
+    }))
+    expect(mocks.setAgentAccess).toHaveBeenCalledTimes(3)
+  })
+
+  it('adds member access to an existing provider container ACR without replacing owner policies', async () => {
+    const podBaseUrl = 'https://pod.example/alice'
+    const providerUrl = `${podBaseUrl}/settings/providers/`
+    const acrUrl = `${providerUrl}.acr`
+    const resources = [
+      ['providerCredentials', `${podBaseUrl}/settings/credentials.ttl`],
+      ['providerDefinitions', providerUrl],
+      ['gatewayAccessKeys', `${podBaseUrl}/settings/access-keys.ttl`],
+      ['quotaSnapshots', `${podBaseUrl}/settings/quota.ttl`],
+    ].map(([id, url]) => ({
+      id,
+      url,
+      ...(id === 'providerDefinitions' ? { members: true as const } : {}),
+      access: { read: true, append: true, write: true },
+    }))
+    const root = {
+      url: `${acrUrl}#acr`,
+      urls: {
+        'http://www.w3.org/1999/02/22-rdf-syntax-ns#type': ['http://www.w3.org/ns/solid/acp#AccessControlResource'],
+        'http://www.w3.org/ns/solid/acp#accessControl': [`${acrUrl}#owner`],
+      },
+    }
+    const owner = { url: `${acrUrl}#owner`, urls: {} }
+    mocks.getSolidDataset.mockResolvedValue({ things: [root, owner] })
+    const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/applets/service-access/ai-connections')) {
+        return Response.json({
+          appletId: 'co.undefineds.ai-connections',
+          service: { webId: 'https://xpod.example/service/profile/card#me' },
+          resources,
+        })
+      }
+      if (url === providerUrl && init?.method === 'HEAD') {
+        return new Response(null, { status: 200, headers: { Link: `<${acrUrl}>; rel="acl"` } })
+      }
+      if (url === acrUrl && !init?.method) return new Response('', { status: 200 })
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    const localFetch = createLocalChatKitFetch({
+      db: { getDialect: () => ({ getPodUrl: () => podBaseUrl }) } as any,
+      webId,
+      authFetch: authFetch as any,
+    })
+
+    await localFetch.ensureAiServiceAccess()
+
+    expect(mocks.saveSolidDatasetAt).toHaveBeenCalledWith(
+      acrUrl,
+      expect.objectContaining({
+        things: expect.arrayContaining([
+          owner,
+          expect.objectContaining({ url: `${acrUrl}#linxServiceMemberAccess` }),
+          expect.objectContaining({ url: `${acrUrl}#linxServiceMemberPolicy` }),
+          expect.objectContaining({ url: `${acrUrl}#linxServiceMemberMatcher` }),
+        ]),
+      }),
+      { fetch: authFetch },
+    )
   })
 
   it('waits for the retry deadline and backs off after provider failures', async () => {

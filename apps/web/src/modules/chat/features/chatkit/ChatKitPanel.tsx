@@ -1,38 +1,24 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@inrupt/solid-client-authn-browser'
-import { ChatKit as ChatKitComponent } from '@openai/chatkit-react'
-import { Square, WifiOff } from 'lucide-react'
-import { threadRepository } from '@undefineds.co/models'
+import { ChatKit as ChatKitComponent, type Command } from '@openai/chatkit-react'
+import { ShieldCheck, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
-import { projectChatArtifactVersions } from '@/modules/files/domain/list/chat-files-projection'
-import { useChatStore } from '../../store'
-import { useMessageIndex, useMessageList } from '../../collections'
-import { projectChatAssets } from '../../domain/chat-asset-library'
+import { findLatestBranchNavigation, groupMessageSiblings, selectSiblingIndex } from '../../domain/message-tree'
 import type { PendingComposerDraft } from '../../domain/conversation-workbench'
-import { ArtifactWorkspace } from '../../components/ArtifactWorkspace'
-import { ConversationShareDialog } from '../../components/ConversationShareDialog'
 import { ProjectContextDialog } from '../../components/ProjectContextDialog'
 import { MultimodalCaptureDialog } from '../../components/MultimodalCaptureDialog'
 import { VoiceConversationDialog } from '../../components/VoiceConversationDialog'
-import { ChatAssetLibraryDialog } from '../../components/ChatAssetLibraryDialog'
-import { MessageActionDock } from '../../ui/MessageActionDock'
-import { MessageEditDialog } from '../../ui/MessageEditDialog'
 import { useLocalChatKitRuntime } from './useLocalChatKitRuntime'
 import { useChatConnectivity } from './useChatConnectivity'
-import { useMessageActionsController } from '../messages/useMessageActionsController'
 import { useAttachmentActions } from '../attachments/useAttachmentActions'
 import { AttachmentWorkspaceDialogs } from '../../ui/AttachmentWorkspaceDialogs'
-import { ChatWorkbenchToolbar } from '../../ui/ChatWorkbenchToolbar'
+import { ChatGenerationControl } from '../../ui/ChatGenerationControl'
+import { MessageEditDialog } from '../../ui/MessageEditDialog'
 import { useChatKitSurface } from './useChatKitSurface'
 import { useAnswerReadAloud } from './useAnswerReadAloud'
+import { ChatMessageDataDialogs } from './ChatMessageDataDialogs'
+import { createChatWorkbenchCommands } from './chat-workbench-commands'
 
 type WorkbenchDialog =
   | 'artifacts'
@@ -44,6 +30,7 @@ type WorkbenchDialog =
   | null
 
 export function ChatKitPanel({
+  theme,
   session,
   selectedThreadId,
   selectedChatId,
@@ -55,6 +42,7 @@ export function ChatKitPanel({
   onComposerDraftError,
   sendDisabled,
 }: {
+  theme: 'light' | 'dark'
   session: Session
   selectedThreadId: string
   selectedChatId: string
@@ -68,8 +56,6 @@ export function ChatKitPanel({
 }) {
   const sessionFetch = session.fetch
   const sessionWebId = session.info.webId
-  const setActiveBranch = useChatStore((state) => state.setActiveBranch)
-  const localActiveBranchByParent = useChatStore((state) => state.activeBranchByParent)
   const runtime = useLocalChatKitRuntime({
     session,
     selectedThreadId,
@@ -91,15 +77,50 @@ export function ChatKitPanel({
     outboxRevision,
     reconnectStatus,
     setReconnectStatus,
+    serviceAccessRequired,
+    serviceAccessError,
+    isGrantingServiceAccess,
+    grantServiceAccess,
   } = runtime
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog>(null)
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null)
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [localActiveBranchByParent, setLocalActiveBranchByParent] = useState<Record<string, string>>({})
+  const seenMessageBranchRef = useRef<{ key: string; ids: Set<string> }>({ key: '', ids: new Set() })
+  const seenAnswerBranchRef = useRef<{ key: string; ids: Set<string> }>({ key: '', ids: new Set() })
+  const podBaseUrl = useMemo(() => db ? resolveCurrentPodBaseUrl(db) : null, [db])
+  const userMessages = useMemo(
+    () => branchThreadItems.filter((item) => item.type === 'user_message'),
+    [branchThreadItems],
+  )
+  const latestUserMessage = userMessages[userMessages.length - 1]
+  const latestUserMessageText = useMemo(() => latestUserMessage?.type === 'user_message'
+    ? latestUserMessage.content.flatMap((part) => part.type === 'input_text' ? [part.text] : []).join('\n').trim()
+    : '', [latestUserMessage])
+  const readAloud = useAnswerReadAloud(branchThreadItems)
+  const workbenchCommandsRef = useRef<Command[]>([])
+  const commandHandlerRef = useRef<(command: Command) => Promise<void>>(async () => undefined)
+  const searchWorkbenchCommands = useCallback(async (query: string) => {
+    const normalizedQuery = query.trim().toLocaleLowerCase()
+    const workbenchCommands = workbenchCommandsRef.current
+    if (!normalizedQuery) return workbenchCommands
+    return workbenchCommands.filter((command) => [command.label, command.description, command.group]
+      .some((value) => value?.toLocaleLowerCase().includes(normalizedQuery)))
+  }, [])
+  const selectWorkbenchCommand = useCallback(
+    (command: Command) => commandHandlerRef.current(command),
+    [],
+  )
   const attachmentActions = useAttachmentActions({
     localFetch,
     threadId: selectedThreadId,
     attachments: threadAttachments,
     setAttachments: setThreadAttachments,
   })
+  const setAttachmentWorkspaceOpen = attachmentActions.setIsOpen
   const chatKitSurface = useChatKitSurface({
+    theme,
     localFetch,
     selectedThreadId,
     selectedChatId,
@@ -107,24 +128,12 @@ export function ChatKitPanel({
     onComposerDraftApplied,
     onComposerDraftError,
     interrupt: runtime.interrupt,
+    onCommandSearch: searchWorkbenchCommands,
+    onCommandSelect: selectWorkbenchCommand,
   })
   const { surface, commands } = chatKitSurface
   const setComposerValue = surface.setDraft
   const fetchUpdates = surface.refresh
-  const { data: messageRows = [], refetch: refetchMessages } = useMessageList(selectedChatId, selectedThreadId)
-  const { data: allMessageRows = [] } = useMessageIndex({ enabled: Boolean(db) })
-  const messageActions = useMessageActionsController({
-    messageRows,
-    threadItems: branchThreadItems,
-    persistedActiveBranchByParent,
-    localActiveBranchByParent,
-    setActiveBranch,
-    commands,
-    surface,
-    refreshMessages: refetchMessages,
-    refreshThreadItems: () => localFetch.refreshThreadItems(selectedThreadId),
-  })
-  const podBaseUrl = useMemo(() => db ? resolveCurrentPodBaseUrl(db) : null, [db])
   const { isOnline, synchronize: synchronizeAfterReconnect } = useChatConnectivity({
     podBaseUrl,
     sessionFetch,
@@ -135,22 +144,160 @@ export function ChatKitPanel({
     setQueuedGenerationCount,
     setReconnectStatus,
     refreshSurface: fetchUpdates,
-    refreshMessages: refetchMessages,
   })
-  const chatAssets = useMemo(() => {
-    return podBaseUrl ? projectChatAssets(allMessageRows, podBaseUrl) : []
-  }, [allMessageRows, podBaseUrl])
-  const selectedThreadUri = useMemo(() => {
-    return podBaseUrl
-      ? threadRepository.iriForChat(podBaseUrl, selectedChatId, selectedThreadId)
-      : null
-  }, [podBaseUrl, selectedChatId, selectedThreadId])
-  const artifactVersions = useMemo(() => {
-    return podBaseUrl
-      ? projectChatArtifactVersions(messageRows, `${podBaseUrl}/`)
-      : []
-  }, [messageRows, podBaseUrl])
-  const readAloud = useAnswerReadAloud(branchThreadItems)
+  useEffect(() => setLocalActiveBranchByParent({}), [selectedThreadId])
+  const activeBranchByParent = useMemo(() => ({
+    ...(persistedActiveBranchByParent ?? {}),
+    ...localActiveBranchByParent,
+  }), [localActiveBranchByParent, persistedActiveBranchByParent])
+  const userMessageGroups = useMemo(() => groupMessageSiblings(userMessages
+    .map((item) => ({
+      id: item.id,
+      parentItemId: typeof (item as typeof item & { parent_item_id?: unknown }).parent_item_id === 'string'
+        ? (item as typeof item & { parent_item_id: string }).parent_item_id
+        : undefined,
+      createdAt: new Date(item.created_at * 1000),
+    }))), [userMessages])
+  const assistantMessageGroups = useMemo(() => groupMessageSiblings(branchThreadItems
+    .filter((item) => item.type === 'assistant_message')
+    .map((item) => ({
+      id: item.id,
+      parentItemId: typeof (item as typeof item & { parent_item_id?: unknown }).parent_item_id === 'string'
+        ? (item as typeof item & { parent_item_id: string }).parent_item_id
+        : undefined,
+      createdAt: new Date(item.created_at * 1000),
+    }))), [branchThreadItems])
+  const branchSelection = useMemo(() => findLatestBranchNavigation(
+    userMessages.map((item) => item.id),
+    userMessageGroups,
+    assistantMessageGroups,
+    activeBranchByParent,
+  ), [activeBranchByParent, assistantMessageGroups, userMessageGroups, userMessages])
+  const branchUserMessage = userMessages.find((item) => item.id === branchSelection?.userId)
+  const messageBranchGroup = branchSelection?.messageGroup
+  const activeUserMessageId = messageBranchGroup?.parentItemId
+    ? activeBranchByParent[messageBranchGroup.parentItemId] ?? branchUserMessage?.id
+    : branchUserMessage?.id
+  const answerBranchGroup = branchSelection?.answerGroup
+  const activeAnswerId = branchUserMessage ? activeBranchByParent[branchUserMessage.id] : undefined
+  const messageBranch = useMemo(() => messageBranchGroup && messageBranchGroup.items.length > 1 ? {
+    index: selectSiblingIndex(messageBranchGroup, activeUserMessageId),
+    count: messageBranchGroup.items.length,
+  } : undefined, [activeUserMessageId, messageBranchGroup])
+  const answerBranch = useMemo(() => answerBranchGroup && answerBranchGroup.items.length > 1 ? {
+    index: selectSiblingIndex(answerBranchGroup, activeAnswerId),
+    count: answerBranchGroup.items.length,
+  } : undefined, [activeAnswerId, answerBranchGroup])
+  const workbenchCommands = useMemo(() => createChatWorkbenchCommands({
+    hasEditableMessage: Boolean(latestUserMessage && latestUserMessageText),
+    hasReadableAnswer: Boolean(readAloud.latestText),
+    isReading: readAloud.isReading,
+    canOpenProjectContext: Boolean(podBaseUrl && selectedWorkspaceUri),
+    attachmentCount: attachmentActions.attachments.length,
+    canOpenResources: Boolean(podBaseUrl),
+    canShare: Boolean(podBaseUrl && sessionWebId),
+    messageBranch,
+    answerBranch,
+  }), [
+    answerBranch,
+    attachmentActions.attachments.length,
+    latestUserMessage,
+    latestUserMessageText,
+    messageBranch,
+    podBaseUrl,
+    readAloud.isReading,
+    readAloud.latestText,
+    selectedWorkspaceUri,
+    sessionWebId,
+  ])
+  useEffect(() => {
+    workbenchCommandsRef.current = workbenchCommands
+  }, [workbenchCommands])
+  useEffect(() => {
+    selectNewSibling(messageBranchGroup, selectedThreadId, seenMessageBranchRef, setLocalActiveBranchByParent)
+  }, [messageBranchGroup, selectedThreadId])
+  useEffect(() => {
+    selectNewSibling(answerBranchGroup, selectedThreadId, seenAnswerBranchRef, setLocalActiveBranchByParent)
+  }, [answerBranchGroup, selectedThreadId])
+
+  const selectBranch = useCallback(async (kind: 'message' | 'answer', direction: -1 | 1) => {
+    if (!branchUserMessage) return
+    const group = kind === 'message' ? messageBranchGroup : answerBranchGroup
+    if (!group?.parentItemId) return
+    const currentId = kind === 'message' ? activeUserMessageId : activeAnswerId
+    const currentIndex = selectSiblingIndex(group, currentId)
+    const nextId = group.items[currentIndex + direction]?.id
+    if (!nextId) return
+    setLocalActiveBranchByParent((current) => ({ ...current, [group.parentItemId!]: nextId }))
+    await commands.selectBranch(nextId, group.parentItemId)
+    await Promise.allSettled([
+      surface.refresh(),
+      localFetch.refreshThreadItems(selectedThreadId),
+    ])
+  }, [
+    activeAnswerId,
+    activeUserMessageId,
+    answerBranchGroup,
+    branchUserMessage,
+    commands,
+    localFetch,
+    messageBranchGroup,
+    selectedThreadId,
+    surface,
+  ])
+
+  const submitEdit = async () => {
+    if (!editingMessage?.text.trim()) return
+    setIsSubmittingEdit(true)
+    setEditError(null)
+    try {
+      await commands.editMessage(editingMessage.id, editingMessage.text)
+      setEditingMessage(null)
+      await Promise.allSettled([
+        surface.refresh(),
+        localFetch.refreshThreadItems(selectedThreadId),
+      ])
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : '消息编辑失败，请重试。')
+    } finally {
+      setIsSubmittingEdit(false)
+    }
+  }
+
+  useEffect(() => {
+    commandHandlerRef.current = async (command) => {
+      if (command.id === 'linx.edit-latest-message') {
+        if (!latestUserMessage || !latestUserMessageText) return
+        setEditError(null)
+        setEditingMessage({ id: latestUserMessage.id, text: latestUserMessageText })
+        return
+      }
+      if (command.id === 'linx.read-latest-answer') {
+        readAloud.toggle()
+        return
+      }
+      if (command.id === 'linx.previous-message-branch') return selectBranch('message', -1)
+      if (command.id === 'linx.next-message-branch') return selectBranch('message', 1)
+      if (command.id === 'linx.previous-answer-branch') return selectBranch('answer', -1)
+      if (command.id === 'linx.next-answer-branch') return selectBranch('answer', 1)
+      if (command.id === 'linx.open-project-context') setActiveDialog('project-context')
+      if (command.id === 'linx.open-attachments') setAttachmentWorkspaceOpen(true)
+      if (command.id === 'linx.open-capture') setActiveDialog('capture')
+      if (command.id === 'linx.open-voice') setActiveDialog('voice')
+      if (command.id === 'linx.open-artifacts') setActiveDialog('artifacts')
+      if (command.id === 'linx.open-assets') setActiveDialog('assets')
+      if (command.id === 'linx.open-share') setActiveDialog('share')
+    }
+    return () => {
+      commandHandlerRef.current = async () => undefined
+    }
+  }, [
+    latestUserMessage,
+    latestUserMessageText,
+    readAloud,
+    selectBranch,
+    setAttachmentWorkspaceOpen,
+  ])
 
   return (
     <div
@@ -172,43 +319,34 @@ export function ChatKitPanel({
           </div>
         </div>
       ) : null}
-      {isGenerating ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="absolute bottom-20 left-1/2 z-30 h-9 -translate-x-1/2 gap-2 rounded-full bg-background/95 px-4 shadow-md backdrop-blur"
-          aria-label="停止生成"
-          onClick={() => commands.interrupt()}
-        >
-          <Square className="size-3 fill-current" />
-          停止生成
-        </Button>
+      <ChatGenerationControl active={isGenerating} onStop={() => commands.interrupt()} />
+      {serviceAccessRequired ? (
+        <div role="alert" className="absolute inset-x-3 top-3 z-30 flex items-center justify-between gap-4 rounded-xl border bg-background/95 px-4 py-3 shadow-md backdrop-blur">
+          <div className="flex min-w-0 items-start gap-3">
+            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium">允许 Xpod AI 服务读取模型配置</p>
+              <p className="text-xs text-muted-foreground">
+                仅授权当前空间中的模型供应商、密钥、网关和配额配置。不会把你的身份信息发送给模型供应商；授权后会自动继续刚才的消息。
+              </p>
+              {serviceAccessError ? <p className="mt-1 text-xs text-destructive">{serviceAccessError}</p> : null}
+            </div>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0"
+            disabled={isGrantingServiceAccess}
+            onClick={() => {
+              void grantServiceAccess()
+                .then(() => synchronizeAfterReconnect(true))
+                .catch(() => undefined)
+            }}
+          >
+            {isGrantingServiceAccess ? '正在授权…' : '允许并继续'}
+          </Button>
+        </div>
       ) : null}
-      {messageActions.selectedItem && !isGenerating ? (
-        <MessageActionDock
-          items={messageActions.items}
-          selectedItem={messageActions.selectedItem}
-          messageBranch={messageActions.messageBranch}
-          answerBranch={messageActions.answerBranch}
-          onSelect={messageActions.selectMessage}
-          onPreviousMessageBranch={messageActions.previousMessageBranch}
-          onNextMessageBranch={messageActions.nextMessageBranch}
-          onPreviousAnswerBranch={messageActions.previousAnswerBranch}
-          onNextAnswerBranch={messageActions.nextAnswerBranch}
-          onEdit={messageActions.startEditing}
-          onRegenerate={() => void messageActions.regenerate()}
-          onQuote={() => void messageActions.quoteSelected()}
-          onDelete={() => void messageActions.deleteSelected()}
-        />
-      ) : null}
-      <MessageEditDialog
-        open={messageActions.editingMessage !== null}
-        value={messageActions.editingMessage?.text ?? ''}
-        onValueChange={messageActions.setEditingText}
-        onOpenChange={(open) => { if (!open) messageActions.closeEditor() }}
-        onSubmit={() => void messageActions.submitEdit()}
-      />
       {!isOnline ? (
         <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-center gap-2 rounded-lg border border-warning/25 bg-background/95 px-3 py-2 text-sm shadow-sm backdrop-blur">
           <WifiOff className="size-4 text-warning" />
@@ -246,24 +384,6 @@ export function ChatKitPanel({
           ) : null}
         </div>
       ) : null}
-      <ChatWorkbenchToolbar
-        showProjectContext={Boolean(podBaseUrl && selectedWorkspaceUri)}
-        attachmentCount={attachmentActions.attachments.length}
-        artifactCount={artifactVersions.length}
-        assetCount={chatAssets.length}
-        canOpenAssets={Boolean(podBaseUrl)}
-        canShare={Boolean(podBaseUrl && sessionWebId)}
-        canReadAnswer={Boolean(readAloud.latestText)}
-        isReading={readAloud.isReading}
-        onOpenProjectContext={() => setActiveDialog('project-context')}
-        onOpenAttachments={() => attachmentActions.setIsOpen(true)}
-        onOpenCapture={() => setActiveDialog('capture')}
-        onOpenVoice={() => setActiveDialog('voice')}
-        onToggleReadAloud={readAloud.toggle}
-        onOpenArtifacts={() => setActiveDialog('artifacts')}
-        onOpenAssets={() => setActiveDialog('assets')}
-        onOpenShare={() => setActiveDialog('share')}
-      />
       {readAloud.error ? <div role="alert" className="absolute right-3 top-14 z-20 rounded-lg border border-destructive/30 bg-background/95 px-3 py-2 text-xs text-destructive shadow-sm">{readAloud.error}</div> : null}
       <AttachmentWorkspaceDialogs
         open={attachmentActions.isOpen}
@@ -276,53 +396,30 @@ export function ChatKitPanel({
         onDownload={(attachment) => void attachmentActions.download(attachment)}
         onClosePreview={attachmentActions.closePreview}
       />
-      <Dialog
-        open={activeDialog === 'artifacts'}
-        onOpenChange={(open) => setActiveDialog(open ? 'artifacts' : null)}
-      >
-        <DialogContent className="flex h-[min(88vh,860px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="border-b px-5 py-4">
-            <DialogTitle>产物工作区</DialogTitle>
-            <DialogDescription>预览运行产物、切换历史版本，或把选中版本带回对话继续修改。</DialogDescription>
-          </DialogHeader>
-          <ArtifactWorkspace
-            versions={artifactVersions}
-            authFetch={authFetchWithRecovery}
-            onSaveVersion={async (version, content) => {
-              await localFetch.saveArtifactVersion({
-                threadId: selectedThreadId,
-                uri: version.uri,
-                name: version.name,
-                mimeType: version.mimeType,
-                content,
-              })
-              await Promise.allSettled([
-                fetchUpdates(),
-                refetchMessages(),
-                localFetch.refreshThreadItems(selectedThreadId),
-              ])
-            }}
-            onContinue={async (version) => {
-              await setComposerValue({
-                text: `请继续修改产物「${version.name}」。当前版本位于 ${version.uri}，请保留原文件并生成一个新版本。`,
-              })
-              await surface.focusComposer()
-              setActiveDialog(null)
-            }}
-          />
-        </DialogContent>
-      </Dialog>
-      {db && podBaseUrl && sessionWebId && selectedThreadUri ? (
-        <ConversationShareDialog
-          open={activeDialog === 'share'}
-          onOpenChange={(open) => setActiveDialog(open ? 'share' : null)}
-          title={selectedThreadTitle || 'LinX 会话'}
-          threadUri={selectedThreadUri}
+      <MessageEditDialog
+        open={Boolean(editingMessage)}
+        value={editingMessage?.text ?? ''}
+        busy={isSubmittingEdit}
+        error={editError}
+        onValueChange={(text) => setEditingMessage((current) => current ? { ...current, text } : current)}
+        onOpenChange={(open) => {
+          if (!open && !isSubmittingEdit) setEditingMessage(null)
+        }}
+        onSubmit={() => { void submitEdit() }}
+      />
+      {db && podBaseUrl && (activeDialog === 'artifacts' || activeDialog === 'assets' || activeDialog === 'share') ? (
+        <ChatMessageDataDialogs
+          activeDialog={activeDialog}
+          onActiveDialogChange={setActiveDialog}
           db={db}
-          ownerWebId={sessionWebId}
           podBaseUrl={podBaseUrl}
+          sessionWebId={sessionWebId}
+          selectedChatId={selectedChatId}
+          selectedThreadId={selectedThreadId}
+          selectedThreadTitle={selectedThreadTitle}
           authFetch={authFetchWithRecovery}
-          messages={messageRows}
+          localFetch={localFetch}
+          surface={surface}
         />
       ) : null}
       {db && podBaseUrl && selectedWorkspaceUri ? (
@@ -331,36 +428,6 @@ export function ChatKitPanel({
           onOpenChange={(open) => setActiveDialog(open ? 'project-context' : null)}
           workspaceUri={selectedWorkspaceUri}
           db={db}
-        />
-      ) : null}
-      {podBaseUrl ? (
-        <ChatAssetLibraryDialog
-          open={activeDialog === 'assets'}
-          onOpenChange={(open) => setActiveDialog(open ? 'assets' : null)}
-          assets={chatAssets}
-          authFetch={authFetchWithRecovery}
-          onReuse={async (asset) => {
-            const attachment = await localFetch.prepareAttachmentForReuse(asset)
-            if (attachment.type === 'image' && !attachment.preview_url) {
-              throw new Error('图片预览尚未就绪，请重试。')
-            }
-            const composerAttachment = attachment.type === 'image'
-              ? {
-                  type: 'image' as const,
-                  id: attachment.id,
-                  name: attachment.name,
-                  mime_type: attachment.mime_type,
-                  preview_url: attachment.preview_url!,
-                }
-              : {
-                  type: 'file' as const,
-                  id: attachment.id,
-                  name: attachment.name,
-                  mime_type: attachment.mime_type,
-                }
-            await setComposerValue({ attachments: [composerAttachment] })
-            await surface.focusComposer()
-          }}
         />
       ) : null}
       <MultimodalCaptureDialog
@@ -373,6 +440,7 @@ export function ChatKitPanel({
       />
       <VoiceConversationDialog
         open={activeDialog === 'voice'}
+        canSend={chatKitSurface.isThreadReady && !sendDisabled}
         onOpenChange={(open) => setActiveDialog(open ? 'voice' : null)}
         assistantText={readAloud.latestText}
         isGenerating={isGenerating}
@@ -385,4 +453,25 @@ export function ChatKitPanel({
       ) : null}
     </div>
   )
+}
+
+function selectNewSibling(
+  group: ReturnType<typeof groupMessageSiblings>[number] | undefined,
+  threadId: string,
+  seenRef: React.MutableRefObject<{ key: string; ids: Set<string> }>,
+  setActive: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+) {
+  if (!group?.parentItemId) return
+  const key = `${threadId}:${group.parentItemId}`
+  const nextIds = new Set(group.items.map((item) => item.id))
+  const previous = seenRef.current
+  if (previous.key === key) {
+    const newest = [...group.items].reverse().find((item) => !previous.ids.has(item.id))
+    if (newest) {
+      setActive((current) => current[group.parentItemId!] === newest.id
+        ? current
+        : { ...current, [group.parentItemId!]: newest.id })
+    }
+  }
+  seenRef.current = { key, ids: nextIds }
 }

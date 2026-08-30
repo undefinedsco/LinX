@@ -31,13 +31,16 @@ export const useChatLayoutConfig = () => {
       header: <ChatHeader />,
       mainTitle: activeChat?.title ?? '聊天',
       subtitle: activeChat?.description ?? '与 AI 助手协作',
-      rightSidebar: showRightSidebar ? <ChatRightSidebar /> : null,
+      rightSidebar: activeChat && showRightSidebar ? <ChatRightSidebar /> : null,
       rightSidebarWidth: 320,
-      rightSidebarToggle: {
-        open: showRightSidebar,
-        onToggle: toggleRightSidebar,
-      },
+      rightSidebarToggle: activeChat
+        ? {
+            label: '会话详情',
+            open: showRightSidebar,
+            onToggle: toggleRightSidebar,
+          }
+        : undefined,
     }),
-    [activeChat?.description, activeChat?.title, showRightSidebar, toggleRightSidebar],
+    [activeChat, showRightSidebar, toggleRightSidebar],
   )
 }

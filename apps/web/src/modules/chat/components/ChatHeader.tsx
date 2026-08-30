@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from '@/providers/solid-session-context'
-import { Bot, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Bot, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -42,8 +42,6 @@ export function ChatHeader() {
   const { toast } = useToast()
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectChat = useChatStore((state) => state.selectChat)
-  const showRightSidebar = useChatStore((state) => state.showRightSidebar)
-  const toggleRightSidebar = useChatStore((state) => state.toggleRightSidebar)
   const [isAgentDialogOpen, setIsAgentDialogOpen] = useState(false)
   const [isModelDialogOpen, setIsModelDialogOpen] = useState(false)
   const [agentNameDraft, setAgentNameDraft] = useState('')
@@ -259,6 +257,7 @@ export function ChatHeader() {
             <>
               <button
                 type="button"
+                title={`编辑助手设置：${agent?.name || 'Assistant'}`}
                 className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50 shrink-0"
                 onClick={handleOpenAgentDialog}
               >
@@ -277,6 +276,7 @@ export function ChatHeader() {
 
               <button
                 type="button"
+                title={`切换模型：${model || '未选择'}`}
                 className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50"
                 onClick={handleOpenModelDialog}
               >
@@ -295,24 +295,6 @@ export function ChatHeader() {
             <span className="text-sm font-medium text-muted-foreground">聊天</span>
           )}
         </div>
-
-        {chat && (
-          <div className="flex items-center gap-1 shrink-0 ml-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-foreground"
-              onClick={toggleRightSidebar}
-              title={showRightSidebar ? '隐藏设置' : '显示设置'}
-            >
-              {showRightSidebar ? (
-                <PanelRightClose className="w-5 h-5" />
-              ) : (
-                <PanelRightOpen className="w-5 h-5" />
-              )}
-            </Button>
-          </div>
-        )}
       </div>
 
       <Dialog open={isAgentDialogOpen} onOpenChange={setIsAgentDialogOpen}>

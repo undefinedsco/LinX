@@ -256,6 +256,15 @@ describe('ChatHeader', () => {
     })
   })
 
+  it('leaves the right sidebar toggle to the shared page header', () => {
+    render(<ChatHeader />)
+
+    expect(screen.queryByTitle('显示设置')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('隐藏设置')).not.toBeInTheDocument()
+    expect(screen.getByTitle('编辑助手设置：助手A')).toBeInTheDocument()
+    expect(screen.getByTitle('切换模型：gpt-4o-mini')).toBeInTheDocument()
+  })
+
   it('updates agent profile from the header dialog', async () => {
     render(<ChatHeader />)
 

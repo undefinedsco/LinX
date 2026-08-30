@@ -14,6 +14,10 @@ const CALLBACK_ERROR_KEY = 'linx-pending-callback-error'
 const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
 const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
 const SECURE_SOLID_SESSION_PREFIX = 'solidClientAuthn:secure:'
+const REMEMBERED_ACCOUNT_KEY = 'linx-remembered-account'
+const LOGIN_STORE_KEY = 'linx-login'
+const LOGIN_CLIENT_SCHEMA_KEY = 'linx-login-client-schema'
+const LOGIN_CLIENT_SCHEMA_VERSION = '3'
 
 export interface PendingLoginAttempt {
   /** OIDC entry URL passed to Inrupt. For Local+Cloud this is the Cloud issuer. */
@@ -26,7 +30,7 @@ export interface PendingLoginAttempt {
   storageProviderUrl?: string
   storageProviderLabel?: string
   authorizationQuery?: Record<string, string>
-  prompt?: 'none' | 'consent'
+  prompt?: 'none' | 'consent' | 'login'
   strictDiscovery?: boolean
 }
 
@@ -53,6 +57,33 @@ export interface StoredSolidSessionInfo {
   clientId: string | null
   tokenType: string | null
   webId: string | null
+}
+
+/**
+ * Login state is only a restore hint, never an authority. When its contract
+ * changes, discard the previous browser-side identity binding and let the
+ * current Xpod/provider capabilities drive a fresh login. Pod data is not
+ * touched by this migration.
+ */
+export function reconcileLoginClientSchema(): boolean {
+  if (typeof window === 'undefined') return false
+  if (window.localStorage.getItem(LOGIN_CLIENT_SCHEMA_KEY) === LOGIN_CLIENT_SCHEMA_VERSION) {
+    return false
+  }
+
+  clearSolidAuthClientState()
+  window.localStorage.removeItem(REMEMBERED_ACCOUNT_KEY)
+  window.localStorage.removeItem(LOGIN_STORE_KEY)
+  clearPendingPostLoginMicroAppId()
+  clearPendingLoginAttempt()
+  clearPendingCallbackError()
+  markLoginClientSchemaCurrent()
+  return true
+}
+
+export function markLoginClientSchemaCurrent(): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(LOGIN_CLIENT_SCHEMA_KEY, LOGIN_CLIENT_SCHEMA_VERSION)
 }
 
 /**
@@ -286,7 +317,7 @@ export function setPendingLoginAttempt(attempt: PendingLoginAttempt, loginTransa
   if (authorizationQuery) {
     persisted.authorizationQuery = authorizationQuery
   }
-  if (attempt.prompt === 'none' || attempt.prompt === 'consent') {
+  if (attempt.prompt === 'none' || attempt.prompt === 'consent' || attempt.prompt === 'login') {
     persisted.prompt = attempt.prompt
   }
   if (attempt.strictDiscovery === true) {
@@ -396,7 +427,7 @@ function normalizePendingLoginAttemptPayload(parsed: PendingLoginPayload): Pendi
   if (authorizationQuery) {
     attempt.authorizationQuery = authorizationQuery
   }
-  if (parsed.prompt === 'none' || parsed.prompt === 'consent') {
+  if (parsed.prompt === 'none' || parsed.prompt === 'consent' || parsed.prompt === 'login') {
     attempt.prompt = parsed.prompt
   }
   if (parsed.strictDiscovery === true) {

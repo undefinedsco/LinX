@@ -30,11 +30,17 @@ function mutableChatItem(page: Page) {
   return page.locator('[data-testid="chat-list-item"]').filter({ hasNotText: 'LinX 主理人' }).first()
 }
 
+async function openChatRoute(page: Page) {
+  await page.goto('/chat', { waitUntil: 'domcontentloaded' })
+  // Chat keeps live Pod subscriptions open, so `networkidle` is not a valid
+  // readiness signal. The list header is the stable product-level contract.
+  await expect(page.getByTestId('chat-list-header')).toBeVisible({ timeout: 20_000 })
+}
+
 test.describe('Chat Module - Visual Alignment', () => {
   
   test.beforeEach(async ({ page }) => {
-    await page.goto('/chat')
-    await page.waitForLoadState('networkidle')
+    await openChatRoute(page)
   })
 
   test.describe('列表视觉规范', () => {
@@ -176,8 +182,7 @@ test.describe('Chat Module - Visual Alignment', () => {
 test.describe('Chat Module - Functional Alignment', () => {
   
   test.beforeEach(async ({ page }) => {
-    await page.goto('/chat')
-    await page.waitForLoadState('networkidle')
+    await openChatRoute(page)
     await page.waitForTimeout(1000)
   })
 
@@ -406,8 +411,7 @@ test.describe('Chat Module - Functional Alignment', () => {
 test.describe('Chat Module - Content Panel', () => {
   
   test.beforeEach(async ({ page }) => {
-    await page.goto('/chat')
-    await page.waitForLoadState('networkidle')
+    await openChatRoute(page)
   })
 
   test('未选中聊天时显示空状态', async ({ page }) => {

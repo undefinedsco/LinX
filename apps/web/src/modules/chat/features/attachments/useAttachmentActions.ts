@@ -46,7 +46,13 @@ export function useAttachmentActions({ localFetch, threadId, attachments, setAtt
     const anchor = document.createElement('a')
     anchor.href = loaded.download_url
     anchor.download = loaded.name
-    anchor.click()
+    anchor.hidden = true
+    document.body.appendChild(anchor)
+    try {
+      anchor.click()
+    } finally {
+      anchor.remove()
+    }
   }, [load])
 
   useEffect(() => {

@@ -27,6 +27,7 @@ function createUnavailableFetch(): LocalChatKitFetch {
   unavailableFetch.getOutboxSize = () => 0
   unavailableFetch.getOutboxRetryAt = () => null
   unavailableFetch.flushOutbox = async () => ({ completed: 0, pending: 0 })
+  unavailableFetch.ensureAiServiceAccess = async () => { throw new Error('当前空间连接尚未恢复') }
   unavailableFetch.loadAttachmentObjectUrl = async () => { throw new Error('当前空间连接尚未恢复') }
   unavailableFetch.prepareAttachmentForReuse = async () => { throw new Error('当前空间连接尚未恢复') }
   unavailableFetch.saveArtifactVersion = async () => { throw new Error('当前空间连接尚未恢复') }
@@ -51,9 +52,16 @@ export function useLocalChatKitRuntime({
   const [queuedGenerationCount, setQueuedGenerationCount] = useState(0)
   const [outboxRevision, setOutboxRevision] = useState(0)
   const [reconnectStatus, setReconnectStatus] = useState<ReconnectStatus>('idle')
+  const [serviceAccessRequired, setServiceAccessRequired] = useState(false)
+  const [serviceAccessError, setServiceAccessError] = useState<string | null>(null)
+  const [isGrantingServiceAccess, setIsGrantingServiceAccess] = useState(false)
   const abortGenerationRef = useRef<(() => void) | null>(null)
   const sendAvailableRef = useRef(!sendDisabled)
+  const selectedThreadTitleRef = useRef(selectedThreadTitle)
+  const persistedActiveBranchByParentRef = useRef(persistedActiveBranchByParent)
   sendAvailableRef.current = !sendDisabled
+  selectedThreadTitleRef.current = selectedThreadTitle
+  persistedActiveBranchByParentRef.current = persistedActiveBranchByParent
 
   const authFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (!sessionFetch) throw new Error('当前空间连接尚未恢复')
@@ -70,13 +78,15 @@ export function useLocalChatKitRuntime({
       authFetch,
       initialThread: {
         id: selectedThreadId,
-        title: selectedThreadTitle,
+        title: selectedThreadTitleRef.current,
         status: { type: 'active' },
         created_at: Math.floor(Date.now() / 1000),
         updated_at: Math.floor(Date.now() / 1000),
         metadata: {
           chat_id: selectedChatId,
-          ...(persistedActiveBranchByParent ? { active_branch_by_parent: persistedActiveBranchByParent } : {}),
+          ...(persistedActiveBranchByParentRef.current
+            ? { active_branch_by_parent: persistedActiveBranchByParentRef.current }
+            : {}),
         },
       },
       isAvailable: () => sendAvailableRef.current,
@@ -91,6 +101,7 @@ export function useLocalChatKitRuntime({
         if (count > 0) setReconnectStatus((status) => status === 'idle' ? 'error' : status)
         setOutboxRevision((revision) => revision + 1)
       },
+      onServiceAccessRequired: () => setServiceAccessRequired(true),
       onChatSummaryChange: ({ messageId, content, createdAt }) => projectChatSummary(selectedChatId, {
         lastMessageId: messageId,
         lastMessagePreview: content.slice(0, 100),
@@ -98,7 +109,7 @@ export function useLocalChatKitRuntime({
         updatedAt: createdAt,
       }),
     })
-  }, [authFetch, db, persistedActiveBranchByParent, selectedChatId, selectedThreadId, selectedThreadTitle, sessionFetch, sessionWebId])
+  }, [authFetch, db, selectedChatId, selectedThreadId, sessionFetch, sessionWebId])
 
   useEffect(() => {
     setThreadAttachments([])
@@ -109,6 +120,19 @@ export function useLocalChatKitRuntime({
     return () => localFetch.dispose?.()
   }, [localFetch])
   const interrupt = useCallback(() => abortGenerationRef.current?.(), [])
+  const grantServiceAccess = useCallback(async () => {
+    setIsGrantingServiceAccess(true)
+    setServiceAccessError(null)
+    try {
+      await localFetch.ensureAiServiceAccess()
+      setServiceAccessRequired(false)
+    } catch (error) {
+      setServiceAccessError(error instanceof Error ? error.message : 'AI 服务授权失败，请重试。')
+      throw error
+    } finally {
+      setIsGrantingServiceAccess(false)
+    }
+  }, [localFetch])
 
   return {
     db,
@@ -123,6 +147,10 @@ export function useLocalChatKitRuntime({
     outboxRevision,
     reconnectStatus,
     setReconnectStatus,
+    serviceAccessRequired,
+    serviceAccessError,
+    isGrantingServiceAccess,
+    grantServiceAccess,
     interrupt,
   }
 }

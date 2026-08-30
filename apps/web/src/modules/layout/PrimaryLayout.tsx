@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import linxLogoUrl from '@/assets/linx-logo.png'
-import { Moon, Sun, Settings, Bot, Info, Activity, LogOut, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   microAppRegistry,
@@ -20,8 +20,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import {
@@ -38,6 +36,8 @@ import { AboutDialog } from './AboutDialog'
 import { useAppUpdateStatus } from './use-app-update-status'
 import { useThemeMode } from './use-theme-mode'
 import { OPEN_SERVICE_MANAGEMENT_EVENT } from '@/modules/settings/app/events'
+import { useLoginStore, type StoredAccount } from '@linx/stores/login'
+import { SettingsMenu } from './SettingsMenu'
 
 interface PrimaryLayoutProps {
   microAppId: MicroAppId
@@ -63,6 +63,33 @@ function PaneFallback() {
 
 // Preserve the desktop two-pane workflow in narrow side-by-side windows.
 const compactViewportQuery = '(max-width: 559px)'
+
+function resolveSpaceStatus(account: StoredAccount | null): {
+  shortLabel: '本机' | '独立' | '云端'
+  fullLabel: '本机空间' | '独立空间' | '云端空间'
+} {
+  const label = account?.storageProviderLabel?.trim().toLowerCase()
+    ?? account?.issuerLabel?.trim().toLowerCase()
+  if (label === 'local') {
+    return { shortLabel: '本机', fullLabel: '本机空间' }
+  }
+  if (label === 'standalone') {
+    return { shortLabel: '独立', fullLabel: '独立空间' }
+  }
+
+  const providerUrl = account?.storageProviderUrl ?? account?.issuerUrl
+  try {
+    const hostname = providerUrl ? new URL(providerUrl).hostname : ''
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return { shortLabel: '独立', fullLabel: '独立空间' }
+    }
+  } catch {
+    // Invalid historical URLs are treated as cloud only for presentation; the
+    // login schema reconciliation removes them before account restoration.
+  }
+
+  return { shortLabel: '云端', fullLabel: '云端空间' }
+}
 
 function readCompactViewport() {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -93,14 +120,12 @@ function useCompactViewport() {
 function MicroAppContentRenderer({
   microAppId,
   theme,
-  onToggleTheme,
   isCompactViewport,
   compactNavigation,
   listPanelHidden = false,
 }: {
   microAppId: MicroAppId
   theme: ThemeMode
-  onToggleTheme: () => void
   isCompactViewport: boolean
   compactNavigation?: React.ReactNode
   listPanelHidden?: boolean
@@ -195,8 +220,8 @@ function MicroAppContentRenderer({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        aria-label={layoutConfig.rightSidebarToggle.open ? '收起右侧面板' : '展开右侧面板'}
-                        title={layoutConfig.rightSidebarToggle.open ? '收起右侧面板' : '展开右侧面板'}
+                        aria-label={`${layoutConfig.rightSidebarToggle.open ? '收起' : '展开'}${layoutConfig.rightSidebarToggle.label ?? '右侧面板'}`}
+                        title={`${layoutConfig.rightSidebarToggle.open ? '收起' : '展开'}${layoutConfig.rightSidebarToggle.label ?? '右侧面板'}`}
                         aria-expanded={layoutConfig.rightSidebarToggle.open}
                         onClick={layoutConfig.rightSidebarToggle.onToggle}
                       >
@@ -208,15 +233,6 @@ function MicroAppContentRenderer({
                       </Button>
                     ) : null}
                     <InboxBellButton />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={onToggleTheme}
-                      title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-                    >
-                      {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                    </Button>
                   </div>
                 </div>
               )}
@@ -243,64 +259,10 @@ function MicroAppContentRenderer({
   )
 }
 
-function SettingsMenu({
-  onNavigate,
-  onOpenServiceManagement,
-  onOpenAbout,
-  onSignOut,
-  aboutLabel,
-}: {
-  onNavigate: (id: MicroAppId) => void
-  onOpenServiceManagement: () => void
-  onOpenAbout: () => void
-  onSignOut: () => void
-  aboutLabel: string
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="w-9 h-9 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-          aria-label="设置"
-        >
-          <Settings className="w-6 h-6" strokeWidth={1.5} />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-48" align="start" side="right" sideOffset={10}>
-        <DropdownMenuLabel>设置</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => onNavigate('settings')} className="cursor-pointer">
-          <Settings className="mr-2 h-4 w-4" strokeWidth={1.5} />
-          <span>通用设置</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onNavigate('model-services')} className="cursor-pointer">
-          <Bot className="mr-2 h-4 w-4" strokeWidth={1.5} />
-          <span>模型服务</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onOpenServiceManagement} className="cursor-pointer text-boundary focus:text-boundary">
-          <Activity className="mr-2 h-4 w-4" strokeWidth={1.5} />
-          <span>服务管理</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onOpenAbout} className="cursor-pointer">
-          <Info className="mr-2 h-4 w-4" strokeWidth={1.5} />
-          <span>{aboutLabel}</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onSignOut} className="cursor-pointer text-destructive focus:text-destructive">
-          <LogOut className="mr-2 h-4 w-4" strokeWidth={1.5} />
-          <span>退出登录</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
 export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   const navigate = useNavigate()
   const { session, sessionRequestInProgress } = useSession()
+  const storedAccount = useLoginStore((state) => state.storedAccount)
   const [theme, toggleTheme] = useThemeMode()
   const isCompactViewport = useCompactViewport()
   const [isServiceMgmtOpen, setIsServiceMgmtOpen] = useState(false)
@@ -315,6 +277,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   const primaryApps = useMemo(() => primaryNavIds.map((id) => microAppRegistry[id]), [])
   const secondaryApps = useMemo(() => secondaryNavIds.map((id) => microAppRegistry[id]), [])
   const aboutLabel = appUpdate.status.available ? '关于（有更新）' : '关于'
+  const spaceStatus = resolveSpaceStatus(storedAccount)
 
   const handleSignOut = useCallback(() => {
     requestSignOut()
@@ -408,6 +371,13 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                 <SelfProfileCard />
               </PopoverContent>
             </Popover>
+            <span
+              className="max-w-[48px] truncate rounded-full bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium leading-none text-muted-foreground"
+              title={`${spaceStatus.fullLabel} · 已连接`}
+              aria-label={`${spaceStatus.fullLabel}已连接`}
+            >
+              {spaceStatus.shortLabel}
+            </span>
           </div>
           <nav className="flex-1 py-4 flex flex-col items-center gap-4">
             {primaryApps.map((app) => {
@@ -468,6 +438,8 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
               )
             })}
             <SettingsMenu
+              theme={theme}
+              onToggleTheme={toggleTheme}
               onNavigate={handleNavigate}
               onOpenServiceManagement={() => setIsServiceMgmtOpen(true)}
               onOpenAbout={() => setIsAboutOpen(true)}
@@ -484,7 +456,6 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
             key={microAppId}
             microAppId={microAppId}
             theme={theme}
-            onToggleTheme={toggleTheme}
             isCompactViewport={isCompactViewport}
             compactNavigation={compactNavigation}
             listPanelHidden={listPanelHidden}

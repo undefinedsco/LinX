@@ -1,0 +1,4 @@
+LINX_P0_DOCUMENT_TOKEN=ORCHID-4827
+
+This is a non-sensitive local Xpod attachment parsing fixture.
+The expected answer token is ORCHID-4827.

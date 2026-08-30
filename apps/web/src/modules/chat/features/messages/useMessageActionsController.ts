@@ -38,6 +38,19 @@ export function canonicalChatKitItemId(value: string): string {
   return hashIndex >= 0 ? value.slice(hashIndex + 1) : value
 }
 
+export function resolveActionUserMessageId(
+  selectedItem: { id: string; role: 'user' | 'assistant' } | undefined,
+  threadItems: readonly ThreadItem[],
+): string | undefined {
+  if (!selectedItem) return undefined
+  if (selectedItem.role === 'user') return selectedItem.id
+  const assistant = threadItems.find((item) => item.type === 'assistant_message'
+    && canonicalChatKitItemId(item.id) === canonicalChatKitItemId(selectedItem.id)) as
+      | (ThreadItem & { parent_item_id?: unknown })
+      | undefined
+  return typeof assistant?.parent_item_id === 'string' ? assistant.parent_item_id : undefined
+}
+
 export function useMessageActionsController({
   messageRows,
   threadItems,
@@ -89,8 +102,9 @@ export function useMessageActionsController({
     })),
   ), [threadItems, userMessages])
   const selectedItem = selectActionableMessage(items, selectedMessageId)
-  const selectedUserMessage = selectedItem?.role === 'user'
-    ? userMessages.find((message) => message.id === selectedItem.id)
+  const selectedUserMessageId = resolveActionUserMessageId(selectedItem, threadItems)
+  const selectedUserMessage = selectedUserMessageId
+    ? userMessages.find((message) => canonicalChatKitItemId(message.id) === canonicalChatKitItemId(selectedUserMessageId))
     : undefined
 
   const branchGroups = useMemo(() => groupMessageSiblings(userMessages.map((row) => ({

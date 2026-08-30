@@ -341,7 +341,7 @@ describe('LoginModal', () => {
     expect(props.onConnect).toHaveBeenCalledWith('local')
   })
 
-  it('keeps an unstarted Local provider on the explicit Local space route', () => {
+  it('uses the same available local entry from the welcome view and method list', () => {
     const props = createProps({
       providers: createProps().providers.map((provider) => provider.id === 'local'
         ? {
@@ -366,8 +366,8 @@ describe('LoginModal', () => {
     fireEvent.click(screen.getByRole('button', { name: '本机空间' }))
 
     expect(props.onSelectSpace).toHaveBeenCalledWith('local')
-    expect(props.onConnect).toHaveBeenCalledWith('local')
-    expect(props.onConnect).not.toHaveBeenCalledWith('standalone')
+    expect(props.onConnect).toHaveBeenCalledWith('standalone')
+    expect(props.onConnect).not.toHaveBeenCalledWith('local')
   })
 
   it('shows Local startup status inline without leaving the compact login state', () => {

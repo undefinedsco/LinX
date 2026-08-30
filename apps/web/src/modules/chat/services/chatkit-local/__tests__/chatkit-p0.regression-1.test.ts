@@ -38,7 +38,7 @@ describe('ChatKit P0 attachment storage', () => {
 
     const uploaded = await store.uploadAttachment(attachment.id, new Blob(['hello']), 'text/plain')
 
-    expect(authFetch).toHaveBeenNthCalledWith(1, 'https://pod.example/alice/.data/chat-attachments/', { method: 'HEAD' })
+    expect(authFetch).toHaveBeenNthCalledWith(1, 'https://pod.example/alice/.data/chat-attachments/', expect.objectContaining({ method: 'HEAD' }))
     expect(authFetch).toHaveBeenNthCalledWith(2, 'https://pod.example/alice/.data/chat-attachments/', expect.objectContaining({
       method: 'PUT',
       headers: expect.objectContaining({ Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"' }),
@@ -49,6 +49,26 @@ describe('ChatKit P0 attachment storage', () => {
     }))
     expect(uploaded.upload_descriptor).toBeNull()
     await expect(store.loadAttachment(attachment.id, {})).resolves.toEqual(uploaded)
+  })
+
+  it('carries cancellation through the Pod container check and binary upload', async () => {
+    const authFetch = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 201 }))
+    const store = createStore(authFetch)
+    const attachment = store.createAttachment({ name: 'cancel.pdf', mime_type: 'application/pdf' })
+    const controller = new AbortController()
+
+    await store.uploadAttachment(attachment.id, new Blob(['pdf']), 'application/pdf', controller.signal)
+
+    expect(authFetch).toHaveBeenNthCalledWith(1, expect.any(String), expect.objectContaining({
+      method: 'HEAD',
+      signal: controller.signal,
+    }))
+    expect(authFetch).toHaveBeenNthCalledWith(2, expect.stringContaining(attachment.id), expect.objectContaining({
+      method: 'PUT',
+      signal: controller.signal,
+    }))
   })
 
   it('hydrates historical image metadata and downloads it only on demand', async () => {

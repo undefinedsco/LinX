@@ -290,6 +290,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
         ) : null}
         <div className="min-h-0 flex-1 overflow-hidden">
           <ChatKitPanel
+            theme={props.theme}
             session={session}
             selectedThreadId={selectedThreadId}
             selectedChatId={selectedChatId}

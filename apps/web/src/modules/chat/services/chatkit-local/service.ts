@@ -26,6 +26,7 @@ import {
   AIConfigRuntimeCapability,
   chatResource,
   contactResource,
+  credentialResource,
   extractChatIdFromChatRef,
   getAIConfigProviderCapabilities,
   normalizeAIConfigProviderId,
@@ -54,6 +55,9 @@ import {
 } from '../../agent-runtime-location'
 import { classifyRuntimeTool } from '../../domain/runtime-tool-category'
 import { readProjectContext, renderProjectSystemContext } from '../project-context'
+
+const LINX_PLATFORM_PROVIDER_ID = 'undefineds'
+const DEFAULT_LINX_PLATFORM_MODEL_ID = 'linx-lite'
 
 function readChatIdFromThread(thread: ThreadMetadata): string | null {
   if (typeof thread.metadata?.chat_id !== 'string') {
@@ -86,12 +90,30 @@ class ProviderCapabilityError extends Error {
   }
 }
 
+class ServiceAccessRequiredError extends Error {
+  constructor() {
+    super('需要授权 Xpod AI 服务访问当前空间中的模型配置。')
+    this.name = 'ServiceAccessRequiredError'
+  }
+}
+
 function isRetryableGenerationError(error: unknown): boolean {
+  if (error instanceof ServiceAccessRequiredError) return true
   if (isAbortError(error) || error instanceof ProviderCapabilityError) return false
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
   if (error instanceof TypeError) return true
   const message = error instanceof Error ? error.message : String(error)
   return /network|fetch|connection|socket|timed?\s*out|econn|http\s+(?:408|429|5\d\d)|runtime error (?:408|429|5\d\d)|responses error (?:408|429|5\d\d)/iu.test(message)
+}
+
+function hasServiceAccessMissingCode(body: string): boolean {
+  try {
+    const payload = JSON.parse(body) as { error?: string | { code?: string } }
+    return payload.error === 'service_access_missing'
+      || (typeof payload.error === 'object' && payload.error?.code === 'service_access_missing')
+  } catch {
+    return false
+  }
 }
 
 function modelMessagesContainImages(messages: ModelMessage[]): boolean {
@@ -119,6 +141,7 @@ export interface LocalServiceOptions {
     userItemId: string
     inferenceOptions?: Record<string, unknown>
   }) => Promise<void> | void
+  onServiceAccessRequired?: () => Promise<void> | void
 }
 
 export interface StreamingResult {
@@ -399,6 +422,7 @@ export class LocalChatKitService {
   private systemPrompt: string
   private runtimeSidecar: RuntimeSidecarSink
   private onGenerationDeferred?: LocalServiceOptions['onGenerationDeferred']
+  private onServiceAccessRequired?: LocalServiceOptions['onServiceAccessRequired']
   private readonly attachmentModelPartCache = new Map<string, Promise<ModelContentPart[]>>()
 
   constructor(options: LocalServiceOptions) {
@@ -408,6 +432,7 @@ export class LocalChatKitService {
     this.authFetch = options.authFetch
     this.systemPrompt = options.systemPrompt ?? 'You are a helpful assistant.'
     this.onGenerationDeferred = options.onGenerationDeferred
+    this.onServiceAccessRequired = options.onServiceAccessRequired
     this.runtimeSidecar = new RuntimeSidecarSink(this.db, this.webId)
   }
 
@@ -564,7 +589,7 @@ export class LocalChatKitService {
         branch_id: originalBranchId,
       } as ThreadItem
       await this.store.saveItem(threadId, original, context)
-      await this.linkFollowingResponseItems(
+      await this.linkFollowingBranchItems(
         threadId,
         items,
         item.id,
@@ -587,6 +612,7 @@ export class LocalChatKitService {
       thread.metadata = { ...(thread.metadata ?? {}), active_branch_by_parent: active }
       thread.updated_at = nowTimestamp()
       await this.store.saveThread(thread, context)
+      yield { type: 'thread.updated', thread } as ThreadStreamEvent
       yield { type: 'thread.item.added', item: edited }
       if (payload?.regenerate === true) {
         yield* this.respond(
@@ -676,6 +702,12 @@ export class LocalChatKitService {
     context: StoreContext,
   ): AsyncIterable<ThreadStreamEvent> {
     const thread = await this.store.loadThread(params.thread_id, context)
+    const items = await this.loadAllThreadItems(params.thread_id, context)
+    const activeItems = projectActiveBranchItems(
+      { data: items },
+      thread.metadata?.active_branch_by_parent,
+    ).data
+    const parentItem = activeItems[activeItems.length - 1]
     const userMessage = await this.createUserMessage(
       params.thread_id,
       params.input.content,
@@ -683,6 +715,7 @@ export class LocalChatKitService {
       params.input.inference_options,
       thread,
       context,
+      parentItem,
     )
     const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
     if (matrixSent) {
@@ -1070,6 +1103,8 @@ export class LocalChatKitService {
         yield { type: 'thread.item.done', item: assistantItem }
       }
     } catch (error: any) {
+      const serviceAccessRequired = error instanceof ServiceAccessRequiredError
+      if (serviceAccessRequired) await this.onServiceAccessRequired?.()
       const webSearchFailed = isWebSearchRequested(inferenceOptions) && !isAbortError(error)
       const searchErrorMessage = error instanceof Error ? error.message : ''
       const generationDeferred = Boolean(this.onGenerationDeferred) && isRetryableGenerationError(error)
@@ -1082,7 +1117,9 @@ export class LocalChatKitService {
             : undefined,
         })
       }
-      const userFacingMessage = generationDeferred
+      const userFacingMessage = serviceAccessRequired
+        ? '需要授权 Xpod AI 服务访问模型配置。授权后将自动继续生成。'
+        : generationDeferred
         ? '网络或 AI 上游暂不可用，已加入发送队列；连接恢复后会自动重试。'
         : error instanceof ProviderCapabilityError
         ? error.message
@@ -1114,8 +1151,13 @@ export class LocalChatKitService {
       }]
       assistantItem.status = 'incomplete'
       await this.store.saveItem(thread.id, assistantItem, context)
-      yield { type: 'thread.item.done', item: assistantItem }
+      // ChatKit owns the UI transition for a cancelled request. Sending a
+      // terminal item event after its fetch was aborted makes the embedded
+      // renderer process the same cancellation twice and can trigger a React
+      // update loop. Persist the partial item for refresh recovery, then let
+      // the cancelled stream close without another UI event.
       if (isAbortError(error)) return
+      yield { type: 'thread.item.done', item: assistantItem }
       if (generationDeferred) return
       if (webSearchFailed) return
       yield {
@@ -1230,6 +1272,30 @@ export class LocalChatKitService {
         branch_id: readBranchId(following) ?? branchId,
       } as unknown as ThreadItem
       await this.store.saveItem(threadId, linked, context)
+    }
+  }
+
+  private async linkFollowingBranchItems(
+    threadId: string,
+    items: ThreadItem[],
+    userItemId: string,
+    branchId: string,
+    context: StoreContext,
+  ): Promise<void> {
+    const userIndex = items.findIndex((item) => item.id === userItemId)
+    if (userIndex < 0) return
+
+    let previousItemId = userItemId
+    for (const following of items.slice(userIndex + 1)) {
+      if (!readBranchParentId(following)) {
+        const linked = {
+          ...following,
+          parent_item_id: previousItemId,
+          branch_id: readBranchId(following) ?? branchId,
+        } as unknown as ThreadItem
+        await this.store.saveItem(threadId, linked, context)
+      }
+      previousItemId = following.id
     }
   }
 
@@ -1513,7 +1579,7 @@ export class LocalChatKitService {
       : []
 
     if (participantRefs.length === 0) {
-      return null
+      return this.resolveDefaultAgentConfig(chatId)
     }
 
     for (const participantRef of participantRefs) {
@@ -1532,6 +1598,11 @@ export class LocalChatKitService {
         continue
       }
 
+      if (provider === LINX_PLATFORM_PROVIDER_ID) {
+        const configured = await this.resolveConfiguredProviderConfig()
+        if (configured) return configured
+      }
+
       return {
         provider,
         model,
@@ -1541,6 +1612,56 @@ export class LocalChatKitService {
       }
     }
 
+    return this.resolveDefaultAgentConfig(chatId)
+  }
+
+  private async resolveDefaultAgentConfig(chatId: string): Promise<ThreadAgentConfig | null> {
+    if (chatId !== '__secretary__') return null
+
+    const identityUrl = new URL(this.webId)
+    const podOwner = identityUrl.pathname.split('/').filter(Boolean)[0]
+    if (podOwner) {
+      const agent = await this.findAgentByRef(new URL(`/${podOwner}/agents/__secretary__/`, identityUrl.origin).toString())
+      const provider = normalizeAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : '')
+      const model = normalizeAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : '')
+      if (provider && model) {
+        return { provider, model, aiRuntimeLocation: DEFAULT_AGENT_AI_RUNTIME_LOCATION }
+      }
+    }
+
+    return await this.resolveConfiguredProviderConfig() ?? {
+      provider: LINX_PLATFORM_PROVIDER_ID,
+      model: DEFAULT_LINX_PLATFORM_MODEL_ID,
+      aiRuntimeLocation: DEFAULT_AGENT_AI_RUNTIME_LOCATION,
+    }
+  }
+
+  private async resolveConfiguredProviderConfig(): Promise<ThreadAgentConfig | null> {
+    const [providers, credentials] = await Promise.all([
+      this.db.select().from(aiProviderResource).execute(),
+      this.db.select().from(credentialResource).execute(),
+    ])
+    const configuredProviderIds = new Set((credentials as Array<Record<string, unknown>>)
+      .filter((row) => String(row.status ?? 'active') === 'active' && String(row.service ?? 'ai') === 'ai')
+      .map((row) => {
+        const explicit = normalizeAIConfigProviderId(String(row.provider ?? ''))
+        if (explicit) return explicit
+        const credentialId = normalizeAIConfigResourceId(String(row.id ?? row['@id'] ?? ''))
+        return credentialId.replace(/-default$/, '')
+      })
+      .filter(Boolean))
+    for (const providerRow of providers as Array<Record<string, unknown>>) {
+      const provider = normalizeAIConfigProviderId(String(providerRow.id ?? providerRow['@id'] ?? ''))
+      if (provider === LINX_PLATFORM_PROVIDER_ID) continue
+      if (!configuredProviderIds.has(provider)) continue
+      const configuredModels = Array.isArray(providerRow.hasModel)
+        ? providerRow.hasModel
+        : providerRow.hasModel ? [providerRow.hasModel] : []
+      const model = normalizeAIConfigResourceId(String(providerRow.defaultModel ?? configuredModels[0] ?? ''))
+      if (provider && model) {
+        return { provider, model, aiRuntimeLocation: DEFAULT_AGENT_AI_RUNTIME_LOCATION }
+      }
+    }
     return null
   }
 
@@ -1548,9 +1669,13 @@ export class LocalChatKitService {
     if (!ref) return null
     if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(ref)) {
       const findByIri = (this.db as any).findByIri
-      return typeof findByIri === 'function'
+      const direct = typeof findByIri === 'function'
         ? await findByIri.call(this.db, contactResource as any, ref) as ContactRow | null
         : null
+      if (direct) return direct
+
+      const contacts = await this.db.select().from(contactResource).execute()
+      return contacts.find((entry: any) => entry['@id'] === ref) as ContactRow | undefined ?? null
     }
     const findById = (this.db as any).findById
     return typeof findById === 'function'
@@ -1561,10 +1686,38 @@ export class LocalChatKitService {
   private async findAgentByRef(ref: string): Promise<AgentRow | null> {
     if (!ref) return null
     if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(ref)) {
+      if (new URL(ref).pathname.includes('/agents/') && ref.endsWith('/')) {
+        const response = await this.authFetch(`${ref}.meta`, { headers: { Accept: 'text/turtle' } })
+        if (response.ok) {
+          const turtle = await response.text()
+          const providerRefs = [...turtle.matchAll(/<https:\/\/undefineds\.co\/ns#provider>\s+<([^>]+)>/gu)]
+            .map((match) => match[1])
+          const modelRefs = [...turtle.matchAll(/<https:\/\/undefineds\.co\/ns#model>\s+<([^>]+)>/gu)]
+            .map((match) => match[1])
+          const provider = providerRefs
+            .map(normalizeAIConfigProviderId)
+            .find((value) => value && value !== LINX_PLATFORM_PROVIDER_ID)
+            ?? providerRefs.map(normalizeAIConfigProviderId).find(Boolean)
+          const matchingModelRef = provider
+            ? modelRefs.find((value) => value.includes(`/providers/${provider}.ttl#`))
+            : undefined
+          const model = normalizeAIConfigResourceId(matchingModelRef ?? modelRefs[0] ?? '')
+          if (provider && model) {
+            return { id: ref, provider, model } as AgentRow
+          }
+        }
+      }
       const findByIri = (this.db as any).findByIri
-      return typeof findByIri === 'function'
+      const direct = typeof findByIri === 'function'
         ? await findByIri.call(this.db, agentResource as any, ref) as AgentRow | null
         : null
+      if (direct) return direct
+
+      // Directory-backed Agent Homes are indexed from their `.meta` sidecar.
+      // Some Solid database adapters cannot resolve that row through findByIri,
+      // while the resource query still returns it correctly.
+      const agents = await this.db.select().from(agentResource).execute()
+      return agents.find((entry: any) => entry['@id'] === ref) as AgentRow | undefined ?? null
     }
     const findById = (this.db as any).findById
     return typeof findById === 'function'
@@ -1631,6 +1784,9 @@ export class LocalChatKitService {
 
     if (!response.ok) {
       const text = await response.text()
+      if (response.status === 403 && hasServiceAccessMissingCode(text)) {
+        throw new ServiceAccessRequiredError()
+      }
       throw new Error(`LinX runtime error ${response.status}: ${text.slice(0, 200)}`)
     }
 
@@ -1672,6 +1828,9 @@ export class LocalChatKitService {
 
     if (!response.ok) {
       const text = await response.text()
+      if (response.status === 403 && hasServiceAccessMissingCode(text)) {
+        throw new ServiceAccessRequiredError()
+      }
       throw new Error(`LinX Responses error ${response.status}: ${text.slice(0, 200)}`)
     }
 
@@ -2047,6 +2206,9 @@ export class LocalChatKitService {
 
     if (!response.ok) {
       const text = await response.text()
+      if (response.status === 403 && hasServiceAccessMissingCode(text)) {
+        throw new ServiceAccessRequiredError()
+      }
       throw new Error(`Xpod AI runtime error ${response.status}: ${text.slice(0, 200)}`)
     }
 
@@ -2067,10 +2229,14 @@ export class LocalChatKitService {
     const items = await this.store.loadThreadItems(threadId, undefined, historyLimit, 'desc', context)
     const thread = await this.store.loadThread(threadId, context)
     const chronologicalItems = { ...items, data: [...items.data].reverse() }
-    const activeItems = projectActiveBranchItems(
+    let activeItems = projectActiveBranchItems(
       chronologicalItems,
       thread.metadata?.active_branch_by_parent,
     ).data
+    if (anchoredUserItemId) {
+      const anchoredIndex = activeItems.findIndex((item) => item.id === anchoredUserItemId)
+      if (anchoredIndex >= 0) activeItems = activeItems.slice(0, anchoredIndex + 1)
+    }
     const userItemIndexes = activeItems
       .map((item, index) => item.type === 'user_message' ? index : -1)
       .filter((index) => index >= 0)
@@ -2171,6 +2337,7 @@ export class LocalChatKitService {
     inferenceOptions?: Record<string, unknown>,
     thread?: ThreadMetadata,
     context: StoreContext = {},
+    parentItem?: ThreadItem,
   ): Promise<ThreadItem> {
     const fallbackThread = thread || {
       id: threadId,
@@ -2191,6 +2358,10 @@ export class LocalChatKitService {
       type: 'user_message',
       content,
       attachments,
+      ...(parentItem ? {
+        parent_item_id: parentItem.id,
+        branch_id: readBranchId(parentItem) ?? `branch:${parentItem.id}`,
+      } : {}),
       ...(inferenceOptions && Object.keys(inferenceOptions).length > 0
         ? { inference_options: inferenceOptions }
         : {}),

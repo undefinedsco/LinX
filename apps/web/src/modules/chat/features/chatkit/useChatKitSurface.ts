@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useChatKit, type OpenAIChatKit } from '@openai/chatkit-react'
+import { useChatKit, type Command, type OpenAIChatKit } from '@openai/chatkit-react'
 import { restoreChatMessageAnchor } from '../../message-anchor'
 import { useChatStore } from '../../store'
 import type { PendingComposerDraft } from '../../domain/conversation-workbench'
 import type { LocalChatKitFetch } from '../../services/chatkit-local/fetch-handler'
 import { createChatKitWorkbenchAdapter } from './chatkit-workbench-adapter'
+import { useChatKitThreadReadiness } from './useChatKitThreadReadiness'
 
 interface UseChatKitSurfaceOptions {
+  theme: 'light' | 'dark'
   localFetch: LocalChatKitFetch
   selectedThreadId: string
   selectedChatId: string
@@ -14,14 +16,12 @@ interface UseChatKitSurfaceOptions {
   onComposerDraftApplied: (draft: PendingComposerDraft) => void
   onComposerDraftError: (draft: PendingComposerDraft, error: unknown) => void
   interrupt: () => void
-}
-
-function readThemeMode(): 'light' | 'dark' {
-  if (typeof window === 'undefined') return 'light'
-  return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  onCommandSearch?: (query: string) => Promise<Command[]>
+  onCommandSelect?: (command: Command) => Promise<void>
 }
 
 export function useChatKitSurface({
+  theme,
   localFetch,
   selectedThreadId,
   selectedChatId,
@@ -29,25 +29,31 @@ export function useChatKitSurface({
   onComposerDraftApplied,
   onComposerDraftError,
   interrupt,
+  onCommandSearch,
+  onCommandSelect,
 }: UseChatKitSurfaceOptions) {
   const messageAnchorId = useChatStore((state) => state.messageAnchorId)
   const clearMessageAnchor = useChatStore((state) => state.clearMessageAnchor)
   const [loadFailed, setLoadFailed] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const initialThreadIdRef = useRef(selectedThreadId)
-  const restoredInitialThreadRef = useRef(false)
-  const restoredChatIdRef = useRef<string | null>(null)
   const hostRef = useRef<OpenAIChatKit | null>(null)
+  const restoredSurfaceRef = useRef<{
+    host: OpenAIChatKit
+    key: string
+    status: 'restoring' | 'restored'
+  } | null>(null)
+  const readiness = useChatKitThreadReadiness({ selectedChatId, selectedThreadId, isMounted, loadFailed })
+  const { isThreadReady, markLoaded: markThreadLoaded, markLoading: markThreadLoading } = readiness
+  const { markRestored: markThreadRestored, markRestoring: markThreadRestoring, reset: resetThreadReadiness } = readiness
 
   const handleChatKitLog = useCallback(({ name, data }: {
     name: string
     data?: Record<string, unknown>
   }) => {
-    // ChatKit emits diagnostic events for analytics/debugging. Keep them out
-    // of the normal console because payloads may contain large message/tool
-    // objects; opt in explicitly when investigating ChatKit itself.
+    // ChatKit diagnostics can include large message/tool payloads, so logging is opt-in.
     if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
-      console.debug('[chatkit]', name, data ?? {})
+      console.debug(`[chatkit] ${name} ${JSON.stringify(data ?? {})}`)
     }
   }, [])
 
@@ -56,9 +62,11 @@ export function useChatKitSurface({
   }, [])
 
   const bindHost = useCallback((host: OpenAIChatKit | null) => {
+    if (hostRef.current !== host) resetThreadReadiness()
     hostRef.current = host
+    if (!host) restoredSurfaceRef.current = null
     setIsMounted(Boolean(host))
-  }, [])
+  }, [resetThreadReadiness])
 
   useEffect(() => {
     if (customElements.get('openai-chatkit')) {
@@ -88,12 +96,12 @@ export function useChatKitSurface({
     },
     initialThread: initialThreadIdRef.current,
     theme: {
-      colorScheme: readThemeMode(),
+      colorScheme: theme,
       color: { accent: { primary: '#735FC4', level: 2 } },
     },
     header: { enabled: false },
     history: { enabled: false },
-    commands: { enabled: true },
+    commands: { enabled: true, onSearch: onCommandSearch, onSelect: onCommandSelect },
     composer: {
       placeholder: '输入消息...',
       dictation: { enabled: true },
@@ -135,6 +143,8 @@ export function useChatKitSurface({
     threadItemActions: { feedback: true, retry: true },
     thread: { autoScroll: true },
     onReady: () => setIsMounted(Boolean(hostRef.current)),
+    onThreadLoadStart: markThreadLoading,
+    onThreadLoadEnd: markThreadLoaded,
     onError: handleChatKitError,
     onLog: handleChatKitLog,
   })
@@ -163,26 +173,45 @@ export function useChatKitSurface({
 
   useEffect(() => {
     if (!isMounted || !selectedThreadId) return
+    const host = hostRef.current
+    if (!host) return
+    const restoreKey = `${selectedChatId}\n${selectedThreadId}`
+    const previousRestore = restoredSurfaceRef.current
+    if (previousRestore?.host === host && previousRestore.key === restoreKey) return
+
+    const restoreState: NonNullable<typeof restoredSurfaceRef.current> = {
+      host,
+      key: restoreKey,
+      status: 'restoring',
+    }
+    restoredSurfaceRef.current = restoreState
+    markThreadRestoring()
     let disposed = false
 
     const restoreThread = async () => {
       try {
+        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+          console.debug(`[chatkit] restore.start ${JSON.stringify({ selectedChatId, selectedThreadId })}`)
+        }
         await customElements.whenDefined('openai-chatkit')
         if (disposed) return
-        if (
-          restoredChatIdRef.current !== selectedChatId
-          || (!restoredInitialThreadRef.current && selectedThreadId === initialThreadIdRef.current)
-        ) {
-          await workbench.surface.setThread(null)
-          if (disposed) return
-        }
         await workbench.surface.setThread(selectedThreadId)
+        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+          console.debug('[chatkit] restore.selected')
+        }
         if (disposed) return
         await workbench.surface.refresh()
-        await localFetch.refreshThreadItems(selectedThreadId)
-        restoredInitialThreadRef.current = true
-        restoredChatIdRef.current = selectedChatId
+        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+          console.debug('[chatkit] restore.refreshed')
+        }
+        restoreState.status = 'restored'
+        markThreadRestored()
+        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+          console.debug(`[chatkit] restore.done ${JSON.stringify({ selectedChatId, selectedThreadId })}`)
+        }
       } catch (error) {
+        if (restoredSurfaceRef.current === restoreState) restoredSurfaceRef.current = null
+        if (!disposed) resetThreadReadiness()
         if (!disposed) console.error('[ChatKit] Failed to restore thread:', error)
       }
     }
@@ -190,8 +219,14 @@ export function useChatKitSurface({
     void restoreThread()
     return () => {
       disposed = true
+      if (
+        restoredSurfaceRef.current === restoreState
+        && restoreState.status === 'restoring'
+      ) {
+        restoredSurfaceRef.current = null
+      }
     }
-  }, [isMounted, localFetch, selectedChatId, selectedThreadId, workbench.surface])
+  }, [isMounted, markThreadRestored, markThreadRestoring, resetThreadReadiness, selectedChatId, selectedThreadId, workbench.surface])
 
   useEffect(() => {
     if (!pendingComposerDraft) return
@@ -252,6 +287,7 @@ export function useChatKitSurface({
     control: chatkit.control,
     bindHost,
     loadFailed,
+    isThreadReady,
     surface: workbench.surface,
     commands: workbench.commands,
   }

@@ -11,6 +11,21 @@ export interface MessageSiblingGroup {
   items: MessageTreeNode[]
 }
 
+export interface BranchNavigationSelection {
+  userId: string
+  messageGroup?: MessageSiblingGroup
+  answerGroup?: MessageSiblingGroup
+}
+
+function createdAtTimestamp(value: MessageTreeNode['createdAt']): number {
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === 'string') {
+    const timestamp = Date.parse(value)
+    return Number.isNaN(timestamp) ? 0 : timestamp
+  }
+  return 0
+}
+
 /** Groups sibling versions so the UI can render ChatGPT-style 1/2 navigation. */
 export function groupMessageSiblings(messages: readonly MessageTreeNode[]): MessageSiblingGroup[] {
   const groups = new Map<string, MessageTreeNode[]>()
@@ -22,7 +37,7 @@ export function groupMessageSiblings(messages: readonly MessageTreeNode[]): Mess
   }
   return [...groups.entries()].map(([key, items]) => ({
     parentItemId: key.startsWith('root:') ? null : key,
-    items: [...items].sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? ''))),
+    items: [...items].sort((a, b) => createdAtTimestamp(a.createdAt) - createdAtTimestamp(b.createdAt)),
   }))
 }
 
@@ -37,6 +52,52 @@ export function cycleSibling(group: MessageSiblingGroup, activeId: string | null
   const current = selectSiblingIndex(group, activeId)
   const next = (current + direction + group.items.length) % group.items.length
   return group.items[next]?.id ?? null
+}
+
+/** Finds the newest branching point while respecting the active edited-message branch. */
+export function findLatestBranchNavigation(
+  userIds: readonly string[],
+  userGroups: readonly MessageSiblingGroup[],
+  answerGroups: readonly MessageSiblingGroup[],
+  activeByParent: Readonly<Record<string, string | undefined>> = {},
+): BranchNavigationSelection | undefined {
+  const positions = new Map(userIds.map((id, index) => [id, index]))
+  let selected: (BranchNavigationSelection & { position: number }) | undefined
+  for (const messageGroup of userGroups) {
+    if (messageGroup.items.length < 2 || !messageGroup.parentItemId) continue
+    const activeId = activeByParent[messageGroup.parentItemId]
+    const userId = messageGroup.items[selectSiblingIndex(messageGroup, activeId)]?.id
+    if (!userId) continue
+    const position = Math.max(...messageGroup.items.map((item) => positions.get(item.id) ?? -1))
+    if (!selected || position >= selected.position) {
+      selected = {
+        position,
+        userId,
+        messageGroup,
+        answerGroup: answerGroups.find((group) => group.parentItemId === userId),
+      }
+    }
+  }
+  for (const answerGroup of answerGroups) {
+    if (answerGroup.items.length < 2 || !answerGroup.parentItemId) continue
+    const messageGroup = userGroups.find((group) => group.items.some((item) => item.id === answerGroup.parentItemId))
+    if (messageGroup && messageGroup.items.length > 1 && messageGroup.parentItemId) {
+      const activeId = activeByParent[messageGroup.parentItemId]
+      if (messageGroup.items[selectSiblingIndex(messageGroup, activeId)]?.id !== answerGroup.parentItemId) continue
+    }
+    const position = positions.get(answerGroup.parentItemId) ?? -1
+    if (!selected || position >= selected.position) {
+      selected = {
+        position,
+        userId: answerGroup.parentItemId,
+        messageGroup: messageGroup && messageGroup.items.length > 1 ? messageGroup : undefined,
+        answerGroup,
+      }
+    }
+  }
+  if (!selected) return undefined
+  const { position: _position, ...navigation } = selected
+  return navigation
 }
 
 /** Returns the visible path by selecting one sibling at each message level. */

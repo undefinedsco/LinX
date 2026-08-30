@@ -103,7 +103,10 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
     if (!selectedChatId || !isReady || (!activeChat && !isSecretary)
       || (!isSecretary && (chatsQuery.isLoading || threadsQuery.isLoading || chatsQuery.error || threadsQuery.error))) return
     const normalizedThreads = threads.map((thread) => ({ ...thread, _id: thread.id })).filter((thread) => Boolean(thread._id))
-    if (selectedThreadId) return
+    // A persisted thread id can outlive its chat (or be recorded under the
+    // wrong chat by an older client). Only keep it when the scoped thread
+    // query confirms ownership; otherwise recover to a valid thread below.
+    if (selectedThreadId && activeThread) return
     if (normalizedThreads.length > 0) {
       setCreationFailure(null)
       selectThread(normalizedThreads[0]._id)
@@ -134,7 +137,7 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
         isCreatingThreadRef.current = false
       },
     })
-  }, [activeChat, chatsQuery.error, chatsQuery.isLoading, creationRetryKey, isDefaultSecretarySettling, isReady, isSecretary, mutations.createThread, mutations.ensureThreadWorkspace, scopeKey, selectThread, selectedChatId, selectedThreadId, threads, threadsQuery.error, threadsQuery.isLoading])
+  }, [activeChat, activeThread, chatsQuery.error, chatsQuery.isLoading, creationRetryKey, isDefaultSecretarySettling, isReady, isSecretary, mutations.createThread, mutations.ensureThreadWorkspace, scopeKey, selectThread, selectedChatId, selectedThreadId, threads, threadsQuery.error, threadsQuery.isLoading])
 
   return {
     selectedChatId,

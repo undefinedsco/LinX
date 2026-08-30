@@ -36,7 +36,7 @@ interface OidcConnectOptions {
   storageProviderLabel?: string
   issuerLabel?: string
   authorizationQuery?: Record<string, string | null | undefined>
-  prompt?: 'none' | 'consent'
+  prompt?: 'none' | 'consent' | 'login'
   strictDiscovery?: boolean
   nodeId?: string
 }
@@ -249,7 +249,7 @@ export function useOidcConnect() {
         handleRedirect,
       } satisfies Parameters<typeof login>[0]
       if (options?.prompt) {
-        ;(loginOptions as Parameters<typeof login>[0] & { prompt: 'none' | 'consent' }).prompt = options.prompt
+        ;(loginOptions as Parameters<typeof login>[0] & { prompt: 'none' | 'consent' | 'login' }).prompt = options.prompt
       }
       console.info('[login] oidc login setup', {
         oidcIssuer: loginOptions.oidcIssuer,

@@ -10,8 +10,21 @@
  */
 
 import type { SolidDatabase } from '@undefineds.co/models'
+import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/client'
+import {
+  addUrl,
+  buildThing,
+  createThing,
+  getSolidDataset,
+  getThingAll,
+  getUrlAll,
+  saveSolidDatasetAt,
+  setThing,
+  universalAccess,
+} from '@inrupt/solid-client'
 import { nowTimestamp, type Attachment, type ThreadItem, type ThreadMetadata } from '@/lib/vendor/xpod-chatkit'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
 import {
@@ -21,6 +34,22 @@ import {
   nextChatGenerationAttemptAt,
   removeChatGeneration,
 } from './generation-outbox'
+
+const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+const ACP = 'http://www.w3.org/ns/solid/acp#'
+const ACL = 'http://www.w3.org/ns/auth/acl#'
+const ACP_ACCESS_CONTROL_RESOURCE = `${ACP}AccessControlResource`
+const ACP_MEMBER_ACCESS_CONTROL = `${ACP}memberAccessControl`
+const ACP_ACCESS_CONTROL = `${ACP}AccessControl`
+const ACP_APPLY = `${ACP}apply`
+const ACP_POLICY = `${ACP}Policy`
+const ACP_ALLOW = `${ACP}allow`
+const ACP_ANY_OF = `${ACP}anyOf`
+const ACP_MATCHER = `${ACP}Matcher`
+const ACP_AGENT = `${ACP}agent`
+const ACL_READ = `${ACL}Read`
+const ACL_APPEND = `${ACL}Append`
+const ACL_WRITE = `${ACL}Write`
 
 export interface LocalChatKitFetchOptions {
   db: SolidDatabase
@@ -32,6 +61,7 @@ export interface LocalChatKitFetchOptions {
   onStreamingChange?: (state: { active: boolean; abort?: () => void }) => void
   onThreadItemsChange?: (items: ThreadItem[]) => void
   onOutboxChange?: (count: number) => void
+  onServiceAccessRequired?: () => void
   onChatSummaryChange?: (summary: {
     chatId: string
     messageId: string
@@ -51,6 +81,7 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     onStreamingChange,
     onThreadItemsChange,
     onOutboxChange,
+    onServiceAccessRequired,
     onChatSummaryChange,
   } = options
   const store = new LocalChatKitStore(
@@ -81,6 +112,7 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
       })
       notifyOutboxChange()
     },
+    onServiceAccessRequired,
   })
   let outboxFlushPromise: Promise<{ completed: number; pending: number }> | null = null
 
@@ -140,7 +172,10 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
       const result = await service.process(body, context)
 
       if (result.type === 'streaming') {
-        onStreamingChange?.({ active: true, abort: () => requestController?.abort('user_cancelled') })
+        onStreamingChange?.({
+          active: true,
+          abort: () => requestController?.abort(new DOMException('Generation stopped by user', 'AbortError')),
+        })
         // Build a ReadableStream from the async generator
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
@@ -261,6 +296,27 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     })
     return outboxFlushPromise
   }
+  localFetch.ensureAiServiceAccess = async () => {
+    const podBaseUrl = resolveCurrentPodBaseUrl(db)
+    if (!podBaseUrl) throw new Error('无法确定当前空间地址。')
+    const runtimeBaseUrl = resolveLinxRuntimeApiBaseUrlForIssuerUrl(new URL(podBaseUrl).origin)
+    const descriptorUrl = new URL('/api/applets/service-access/ai-connections', runtimeBaseUrl).href
+    const response = await authFetch(descriptorUrl, { headers: { Accept: 'application/json' } })
+    if (!response.ok) throw new Error(`读取 Xpod AI 授权信息失败（HTTP ${response.status}）。`)
+    const descriptor = validateAiServiceAccessDescriptor(await response.json(), podBaseUrl)
+    for (const resource of descriptor.resources) {
+      const granted = await grantAiServiceResourceAccess({
+        resource,
+        ownerWebId: webId,
+        serviceWebId: descriptor.service.webId,
+        members: resource.members === true,
+        authFetch,
+      })
+      if (!granted?.read || !granted.append || !granted.write) {
+        throw new Error(`未能完成 ${resource.id} 的 AI 服务授权。`)
+      }
+    }
+  }
   localFetch.loadAttachmentObjectUrl = (attachmentId: string) => store.loadAttachmentObjectUrl(attachmentId)
   localFetch.prepareAttachmentForReuse = async (attachment: Attachment) => {
     await store.saveAttachment({ ...attachment, upload_descriptor: null }, {})
@@ -317,6 +373,158 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
   return localFetch
 }
 
+async function grantAiServiceResourceAccess(input: {
+  resource: {
+    id: string
+    url: string
+    access: { read: true; append: true; write: true }
+    members?: true
+  }
+  ownerWebId: string
+  serviceWebId: string
+  members: boolean
+  authFetch: typeof fetch
+}): Promise<{ read?: boolean; append?: boolean; write?: boolean } | null> {
+  const options = { fetch: input.authFetch }
+  if (input.members) {
+    return grantXpodContainerMemberAccess(input)
+  }
+  const existing = await universalAccess.setAgentAccess(
+    input.resource.url,
+    input.serviceWebId,
+    input.resource.access,
+    options,
+  ).catch(() => null)
+  if (existing?.read && existing.append && existing.write) return existing
+
+  // Xpod advertises a per-resource ACR even before that ACR exists. Inrupt's
+  // universal helper interprets the missing ACR as WAC and returns null. Create
+  // the initial ACP document once; subsequent grants keep using the library so
+  // existing policies are preserved.
+  const acr = await discoverXpodAcr(input.resource.url, input.authFetch)
+  if (acr.exists) {
+    throw new Error(`未能更新 ${input.resource.id} 的 Xpod 访问控制。`)
+  }
+  const initialized = await input.authFetch(acr.url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/turtle' },
+    body: createInitialServiceAcr({
+      resourceUrl: input.resource.url,
+      ownerWebId: input.ownerWebId,
+      serviceWebId: input.serviceWebId,
+      members: input.members,
+    }),
+  })
+  if (initialized.ok) return input.resource.access
+  if (initialized.status !== 409 && initialized.status !== 412) {
+    throw new Error(`创建 ${input.resource.id} 的 Xpod 访问控制失败（HTTP ${initialized.status}）。`)
+  }
+
+  return universalAccess.setAgentAccess(
+    input.resource.url,
+    input.serviceWebId,
+    input.resource.access,
+    options,
+  )
+}
+
+async function grantXpodContainerMemberAccess(input: {
+  resource: { id: string; url: string; access: { read: true; append: true; write: true } }
+  ownerWebId: string
+  serviceWebId: string
+  authFetch: typeof fetch
+}): Promise<{ read: true; append: true; write: true }> {
+  const state = await discoverXpodAcr(input.resource.url, input.authFetch)
+  if (!state.exists) {
+    const initialized = await input.authFetch(state.url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/turtle' },
+      body: createInitialServiceAcr({
+        resourceUrl: input.resource.url,
+        ownerWebId: input.ownerWebId,
+        serviceWebId: input.serviceWebId,
+        members: true,
+      }),
+    })
+    if (!initialized.ok) {
+      throw new Error(`创建 ${input.resource.id} 的 Xpod 访问控制失败（HTTP ${initialized.status}）。`)
+    }
+    return input.resource.access
+  }
+
+  let acr = await getSolidDataset(state.url, { fetch: input.authFetch })
+  const root = getThingAll(acr).find((thing) => getUrlAll(thing, RDF_TYPE).includes(ACP_ACCESS_CONTROL_RESOURCE))
+  if (!root) throw new Error('Xpod 访问控制文档缺少根资源。')
+  const controlUrl = `${state.url}#linxServiceMemberAccess`
+  const policyUrl = `${state.url}#linxServiceMemberPolicy`
+  const matcherUrl = `${state.url}#linxServiceMemberMatcher`
+  acr = setThing(acr, addUrl(root, ACP_MEMBER_ACCESS_CONTROL, controlUrl))
+  acr = setThing(acr, buildThing(createThing({ url: controlUrl }))
+    .addUrl(RDF_TYPE, ACP_ACCESS_CONTROL)
+    .addUrl(ACP_APPLY, policyUrl)
+    .build())
+  acr = setThing(acr, buildThing(createThing({ url: policyUrl }))
+    .addUrl(RDF_TYPE, ACP_POLICY)
+    .addUrl(ACP_ALLOW, ACL_READ)
+    .addUrl(ACP_ALLOW, ACL_APPEND)
+    .addUrl(ACP_ALLOW, ACL_WRITE)
+    .addUrl(ACP_ANY_OF, matcherUrl)
+    .build())
+  acr = setThing(acr, buildThing(createThing({ url: matcherUrl }))
+    .addUrl(RDF_TYPE, ACP_MATCHER)
+    .addUrl(ACP_AGENT, input.serviceWebId)
+    .build())
+  await saveSolidDatasetAt(state.url, acr, { fetch: input.authFetch })
+  return input.resource.access
+}
+
+async function discoverXpodAcr(resourceUrl: string, authFetch: typeof fetch): Promise<{ url: string; exists: boolean }> {
+  const info = await authFetch(resourceUrl, { method: 'HEAD' })
+  if (info.status !== 200 && info.status !== 404) {
+    throw new Error(`读取 Xpod 资源授权信息失败（HTTP ${info.status}）。`)
+  }
+  const match = info.headers.get('Link')?.match(/<([^>]+)>\s*;\s*rel=["']acl["']/iu)
+  if (!match?.[1]) throw new Error('Xpod 资源没有提供访问控制地址。')
+
+  const discovered = new URL(match[1], resourceUrl)
+  const expected = new URL(`${resourceUrl}.acr`)
+  if (discovered.href !== expected.href) {
+    throw new Error('Xpod 返回了越界的访问控制地址。')
+  }
+  const current = await authFetch(discovered.href, { headers: { Accept: 'text/turtle' } })
+  if (current.status !== 404 && !current.ok) {
+    throw new Error(`读取 Xpod 访问控制文档失败（HTTP ${current.status}）。`)
+  }
+  return { url: discovered.href, exists: current.ok }
+}
+
+function createInitialServiceAcr(input: {
+  resourceUrl: string
+  ownerWebId: string
+  serviceWebId: string
+  members: boolean
+}): string {
+  const iri = (value: string) => `<${value.replace(/>/gu, '%3E')}>`
+  return [
+    '@prefix acp: <http://www.w3.org/ns/solid/acp#>.',
+    '@prefix acl: <http://www.w3.org/ns/auth/acl#>.',
+    '@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.',
+    '',
+    '<#acr> a acp:AccessControlResource;',
+    `  acp:resource ${iri(input.resourceUrl)};`,
+    `  acp:accessControl <#owner>, <#service>${input.members ? ';\n  acp:memberAccessControl <#owner>, <#service>' : ''}.`,
+    '<#owner> a acp:AccessControl; acp:apply <#ownerPolicy>.',
+    '<#ownerPolicy> a acp:Policy;',
+    '  acp:allow acl:Read, acl:Write, acl:Control; acp:anyOf <#ownerMatcher>.',
+    `<#ownerMatcher> a acp:Matcher; acp:agent ${iri(input.ownerWebId)}.`,
+    '<#service> a acp:AccessControl; acp:apply <#servicePolicy>.',
+    '<#servicePolicy> a acp:Policy;',
+    '  acp:allow acl:Read, acl:Append, acl:Write; acp:anyOf <#serviceMatcher>.',
+    `<#serviceMatcher> a acp:Matcher; acp:agent ${iri(input.serviceWebId)}.`,
+    '',
+  ].join('\n')
+}
+
 function isStaleGenerationEntryError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return /^Item not found:/u.test(message)
@@ -327,6 +535,7 @@ export type LocalChatKitFetch = typeof fetch & {
   getOutboxSize: () => number
   getOutboxRetryAt: () => number | null
   flushOutbox: (options?: { force?: boolean }) => Promise<{ completed: number; pending: number }>
+  ensureAiServiceAccess: () => Promise<void>
   loadAttachmentObjectUrl: (attachmentId: string) => Promise<string>
   prepareAttachmentForReuse: (attachment: Attachment) => Promise<Attachment>
   saveArtifactVersion: (input: {
@@ -337,6 +546,67 @@ export type LocalChatKitFetch = typeof fetch & {
     content: string
   }) => Promise<{ uri: string; name: string; createdAt: number }>
   dispose: () => void
+}
+
+const AI_SERVICE_RESOURCE_IDS = new Set([
+  'providerCredentials',
+  'providerDefinitions',
+  'gatewayAccessKeys',
+  'quotaSnapshots',
+])
+
+function validateAiServiceAccessDescriptor(value: unknown, podBaseUrl: string): {
+  service: { webId: string }
+  resources: Array<{
+    id: string
+    url: string
+    access: { read: true; append: true; write: true }
+    members?: true
+  }>
+} {
+  const descriptor = value as Record<string, any>
+  const serviceWebId = descriptor?.service?.webId
+  const resources = descriptor?.resources
+  const podRoot = `${podBaseUrl.replace(/\/$/u, '')}/`
+  const podRootUrl = new URL(podRoot)
+  if (descriptor?.appletId !== 'co.undefineds.ai-connections'
+    || typeof serviceWebId !== 'string'
+    || !/^https?:\/\//u.test(serviceWebId)
+    || !Array.isArray(resources)
+    || resources.length !== AI_SERVICE_RESOURCE_IDS.size) {
+    throw new Error('Xpod 返回了无效的 AI 服务授权信息。')
+  }
+  const seen = new Set<string>()
+  for (const resource of resources) {
+    const access = resource?.access
+    let resourceUrl: URL | null = null
+    try {
+      resourceUrl = new URL(resource?.url)
+    } catch {
+      // Rejected by the shared validation branch below.
+    }
+    if (!AI_SERVICE_RESOURCE_IDS.has(resource?.id)
+      || seen.has(resource.id)
+      || typeof resource?.url !== 'string'
+      || !resourceUrl
+      || resourceUrl.href !== resource.url
+      || resourceUrl.origin !== podRootUrl.origin
+      || !resourceUrl.pathname.startsWith(podRootUrl.pathname)
+      || resourceUrl.search !== ''
+      || resourceUrl.hash !== ''
+      || ((resource.id === 'providerDefinitions') !== resourceUrl.pathname.endsWith('/'))
+      || /%2f|%5c|\\/iu.test(resourceUrl.pathname)
+      || access?.read !== true
+      || access?.append !== true
+      || access?.write !== true) {
+      throw new Error('Xpod 返回了越界或不完整的 AI 服务授权信息。')
+    }
+    if ((resource.id === 'providerDefinitions') !== (resource.members === true)) {
+      throw new Error('Xpod 返回了越界或不完整的 AI 服务授权信息。')
+    }
+    seen.add(resource.id)
+  }
+  return descriptor as ReturnType<typeof validateAiServiceAccessDescriptor>
 }
 
 export function unavailableResponse(): Response {

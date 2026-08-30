@@ -187,6 +187,14 @@ function sparqlStringLiteral(value: string): string {
   return `"${escaped}"`
 }
 
+function requiresSafeInitialLiteral(value: string | null): boolean {
+  return value !== null && /[\r\n]/u.test(value) && value.includes('\\')
+}
+
+function initialLiteralPlaceholder(value: string): string {
+  return value.replace(/\\/gu, '∖')
+}
+
 async function bodyToLimitedBlob(body: BodyInit, mimeType: string, signal?: AbortSignal): Promise<Blob> {
   if (body instanceof Blob) {
     if (body.size > MAX_ATTACHMENT_BYTES) throw new Error('Attachment exceeds the 25 MB upload limit')
@@ -569,11 +577,14 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private attachments = new Map<string, Attachment>()
   private attachmentObjectUrls = new Map<string, string>()
   private recentlyCreatedIds = new Set<string>()
+  private initializedMessageDocuments = new Set<string>()
   // In-memory caches (per-instance, not per-context)
   private threadChatIdCache = new Map<string, string>()
   private threadMetadataCache = new Map<string, ThreadMetadata>()
   private provisionalThreadIds = new Set<string>()
   private threadItemsCache = new Map<string, ThreadItem[]>()
+  private completeThreadItemCaches = new Set<string>()
+  private completeThreadItemLoadPromises = new Map<string, Promise<void>>()
   private messageRowIdByItemId = new Map<string, string>()
   private onAttachmentsChange?: (attachments: Attachment[]) => void
   private onThreadItemsChange?: (items: ThreadItem[]) => void
@@ -774,11 +785,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private async filterVisibleMessagesForThread(threadId: string, messages: any[]): Promise<any[]> {
     const chatId = await this.getThreadChatId(threadId)
     const normalizedThreadId = extractThreadId(threadId) ?? threadId
-    return messages.filter((message: any) => (
-      extractChatId(message.chat) === chatId
-      && extractThreadId(message.thread) === normalizedThreadId
-      && !isHiddenMatrixProtocolEvent(message)
-    ))
+    return messages.filter((message: any) => {
+      const messageChatId = extractChatIdFromChatRef(message.chat)
+        ?? threadRepository.chatIdFromRef(message.thread)
+      return messageChatId === chatId
+        && extractThreadId(message.thread) === normalizedThreadId
+        && !isHiddenMatrixProtocolEvent(message)
+    })
   }
 
   private async selectMessagePageForThread(
@@ -852,6 +865,43 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private getCachedThreadItems(threadId: string): ThreadItem[] | null {
     const cached = this.threadItemsCache.get(threadId)
     return cached ? [...cached] : null
+  }
+
+  private loadCompleteCachedThreadItemPage(
+    threadId: string,
+    after: string | undefined,
+    limit: number,
+    order: string,
+  ): Page<ThreadItem> | null {
+    if (after || !this.completeThreadItemCaches.has(threadId)) return null
+    const cached = this.getCachedThreadItems(threadId)
+    if (!cached) return null
+
+    const normalizedLimit = Math.max(1, Math.min(limit, 250))
+    const normalizedOrder = normalizeThreadItemOrder(order)
+    const ordered = cached.sort((left, right) => (
+      normalizedOrder === 'desc'
+        ? right.created_at - left.created_at
+        : left.created_at - right.created_at
+    ))
+    const data = ordered.slice(0, normalizedLimit)
+    const cursorFor = (item: ThreadItem | undefined): string | undefined => {
+      if (!item) return undefined
+      const rowId = this.messageRowIdByItemId.get(item.id)
+      return rowId
+        ? encodeThreadItemCursor({
+            createdAt: new Date(item.created_at * 1000),
+            rowId,
+            order: normalizedOrder,
+          })
+        : item.id
+    }
+    return {
+      data,
+      has_more: data.length < ordered.length,
+      first_id: cursorFor(data[0]),
+      last_id: cursorFor(data[data.length - 1]),
+    }
   }
 
   private upsertCachedThreadItem(threadId: string, item: ThreadItem): void {
@@ -936,6 +986,57 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   private resolveMessageIri(row: Record<string, unknown>): string {
     return this.resolveRowIri(Message, row)
+  }
+
+  private async ensureMessageDocument(messageIri: string): Promise<void> {
+    const resourceUrl = resourceUrlFromIri(messageIri)
+    if (this.initializedMessageDocuments.has(resourceUrl)) return
+
+    const podBaseUrl = requirePodBaseUrl(this.db).replace(/\/?$/, '/')
+    const resource = new URL(resourceUrl)
+    const pod = new URL(podBaseUrl)
+    if (resource.origin !== pod.origin || !resource.pathname.startsWith(pod.pathname)) {
+      throw new Error(`Message resource is outside the active Pod: ${resourceUrl}`)
+    }
+
+    const relativePath = resource.pathname.slice(pod.pathname.length)
+    const segments = relativePath.split('/').filter(Boolean)
+    let currentUrl = podBaseUrl
+    for (const segment of segments.slice(0, -1)) {
+      currentUrl = new URL(`${encodeURIComponent(segment)}/`, currentUrl).toString()
+      const existing = await this.authFetch(currentUrl, { method: 'HEAD' })
+      if (existing.ok) continue
+      if (existing.status !== 404) {
+        throw new Error(`Message container check failed: ${existing.status} ${existing.statusText}`)
+      }
+      const created = await this.authFetch(currentUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'text/turtle',
+          Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"',
+        },
+        body: '',
+      })
+      if (!created.ok && created.status !== 409) {
+        throw new Error(`Message container creation failed: ${created.status} ${created.statusText}`)
+      }
+    }
+
+    const existing = await this.authFetch(resourceUrl, { method: 'HEAD' })
+    if (!existing.ok) {
+      if (existing.status !== 404) {
+        throw new Error(`Message document check failed: ${existing.status} ${existing.statusText}`)
+      }
+      const created = await this.authFetch(resourceUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'text/turtle' },
+        body: '',
+      })
+      if (!created.ok && created.status !== 409) {
+        throw new Error(`Message document creation failed: ${created.status} ${created.statusText}`)
+      }
+    }
+    this.initializedMessageDocuments.add(resourceUrl)
   }
 
   private async deleteMessageRecord(message: any): Promise<void> {
@@ -1161,6 +1262,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.threadMetadataCache.delete(threadId)
     this.threadChatIdCache.delete(threadId)
     this.threadItemsCache.delete(threadId)
+    this.completeThreadItemCaches.delete(threadId)
   }
 
   // -----------------------------------------------------------------------
@@ -1174,7 +1276,31 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     order: string,
     _context: StoreContext,
   ): Promise<Page<ThreadItem>> {
+    let resolveCompleteLoad: (() => void) | undefined
+    let completeLoadPromise: Promise<void> | undefined
     try {
+      const cachedPage = this.loadCompleteCachedThreadItemPage(threadId, after, limit, order)
+      if (cachedPage) {
+        this.emitThreadAttachments(cachedPage.data)
+        return cachedPage
+      }
+
+      if (!after) {
+        const pendingLoad = this.completeThreadItemLoadPromises.get(threadId)
+        if (pendingLoad) {
+          await pendingLoad
+          const coalescedPage = this.loadCompleteCachedThreadItemPage(threadId, after, limit, order)
+          if (coalescedPage) {
+            this.emitThreadAttachments(coalescedPage.data)
+            return coalescedPage
+          }
+        }
+        completeLoadPromise = new Promise<void>((resolve) => {
+          resolveCompleteLoad = resolve
+        })
+        this.completeThreadItemLoadPromises.set(threadId, completeLoadPromise)
+      }
+
       const { rows, hasMore } = await this.selectMessagePageForThread(threadId, after, limit, order)
       const data = rows.map((message: any) => {
         const item = messageRecordToItem(message, threadId)
@@ -1183,6 +1309,9 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       })
       const hydratedPage = await Promise.all(data.map((item) => this.hydrateItemAttachments(item)))
       this.mergeCachedThreadItems(threadId, hydratedPage)
+      if (!after && !hasMore) {
+        this.completeThreadItemCaches.add(threadId)
+      }
       this.emitThreadAttachments(hydratedPage)
       return {
         data: hydratedPage,
@@ -1193,11 +1322,21 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     } catch (error) {
       console.error('[LocalStore] Failed to load thread items:', error)
       return { data: [], has_more: false }
+    } finally {
+      resolveCompleteLoad?.()
+      if (
+        completeLoadPromise
+        && this.completeThreadItemLoadPromises.get(threadId) === completeLoadPromise
+      ) {
+        this.completeThreadItemLoadPromises.delete(threadId)
+      }
     }
   }
 
   async refreshThreadItems(threadId: string, context: StoreContext): Promise<void> {
+    await this.completeThreadItemLoadPromises.get(threadId)
     this.threadItemsCache.delete(threadId)
+    this.completeThreadItemCaches.delete(threadId)
     await this.loadThreadItems(threadId, undefined, 100, 'desc', context)
   }
 
@@ -1217,19 +1356,31 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         : 'user'
 
     const chat = this.buildChatUri(chatId)
+    const requiresLiteralPatch = requiresSafeInitialLiteral(content)
+      || requiresSafeInitialLiteral(richContent)
+    const initialContent = requiresLiteralPatch ? initialLiteralPlaceholder(content) : content
     const metadata = buildChatKitMessageReconcilerMetadata({
       db: this.db,
       chat,
       thread,
       messageId,
       role: reconcilerRole,
-      content,
+      content: initialContent,
       maker,
       createdAt,
       existingMetadata: {
         [CHATKIT_ITEM_ID_METADATA_KEY]: item.id,
       },
     })
+
+    const messageIri = messageResource.buildIri(requirePodBaseUrl(this.db), {
+      id: messageId,
+      parent: chat,
+      chat,
+      thread,
+      createdAt,
+    })
+    await this.ensureMessageDocument(messageIri)
 
     await withTimeout(
       (this.db as any).insert(Message as any).values({
@@ -1240,8 +1391,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         thread,
         maker,
         role,
-        content,
-        richContent: richContent ?? undefined,
+        content: initialContent,
+        richContent: requiresLiteralPatch ? undefined : richContent ?? undefined,
         metadata,
         status: status ?? undefined,
         createdAt,
@@ -1249,6 +1400,10 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       POD_QUERY_TIMEOUT_MS,
       `Timed out saving message ${item.id}`,
     )
+    if (requiresLiteralPatch) {
+      const messageIri = this.resolveMessageIri({ id: messageId })
+      await this.directPatchMessage(messageIri, content, richContent, status)
+    }
     if (typeof this.db.resolveRowIri !== 'function' && typeof this.db.findById === 'function') {
       await this.db.findById(Message as any, messageId)
     }
@@ -1558,9 +1713,9 @@ WHERE {
     return new URL('.data/chat-attachments/', podBaseUrl).toString()
   }
 
-  private async ensureAttachmentContainer(): Promise<void> {
+  private async ensureAttachmentContainer(signal?: AbortSignal): Promise<void> {
     const containerUrl = this.attachmentContainerUrl()
-    const existing = await this.authFetch(containerUrl, { method: 'HEAD' })
+    const existing = await this.authFetch(containerUrl, { method: 'HEAD', signal })
     if (existing.ok) return
     if (existing.status !== 404) {
       throw new Error(`Attachment container check failed: ${existing.status} ${existing.statusText}`)
@@ -1573,6 +1728,7 @@ WHERE {
         Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"',
       },
       body: '',
+      signal,
     })
     if (!response.ok && response.status !== 409) {
       throw new Error(`Attachment container creation failed: ${response.status} ${response.statusText}`)
@@ -1606,7 +1762,7 @@ WHERE {
     signal?: AbortSignal,
   ): Promise<Attachment> {
     const attachment = await this.loadAttachment(attachmentId, {})
-    await this.ensureAttachmentContainer()
+    await this.ensureAttachmentContainer(signal)
     const contentType = mimeType || attachment.mime_type
     const blob = await bodyToLimitedBlob(body, contentType, signal)
     const response = await this.authFetch(this.attachmentUrl(attachmentId), {

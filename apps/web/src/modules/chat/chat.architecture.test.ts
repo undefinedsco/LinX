@@ -94,7 +94,7 @@ describe('chat module architecture', () => {
   })
 
   it('keeps message action UI props-only', () => {
-    for (const file of ['AttachmentWorkspaceDialogs.tsx', 'ChatWorkbenchToolbar.tsx', 'MessageActionDock.tsx', 'MessageEditDialog.tsx']) {
+    for (const file of ['AttachmentWorkspaceDialogs.tsx', 'ChatGenerationControl.tsx', 'MessageEditDialog.tsx']) {
       const source = readModuleSource(`${root}/ui/${file}`)
       expect(source).not.toMatch(/useChatKit|useChatStore|useMessageList|createLocalChatKitFetch/)
       expect(source).not.toMatch(/from ['"]\.\.\/(?:data|features|services|app)/)

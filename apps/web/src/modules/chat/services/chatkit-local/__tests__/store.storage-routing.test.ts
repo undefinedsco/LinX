@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { Parser } from 'sparqljs'
 import { LocalChatKitStore } from '../store'
 
+const successfulAuthFetch = () => vi.fn(async () => new Response(null, { status: 205 })) as any
+
 describe('LocalChatKitStore storage routing', () => {
   it('pushes message order, look-ahead limit and opaque cursors into Pod queries', async () => {
     const threadRef = 'https://node-0000.undefineds.co/alice/.data/index.ttl#thread-1'
@@ -39,7 +41,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
       {
         id: 'thread-1',
         status: { type: 'active' },
@@ -63,11 +65,69 @@ describe('LocalChatKitStore storage routing', () => {
     expect(limit).not.toHaveBeenCalledWith(1000)
   })
 
+  it('reuses a complete first page when ChatKit immediately requests the same thread again', async () => {
+    const threadId = 'thread-shared-complete-cache'
+    const threadRef = `https://node-0000.undefineds.co/alice/.data/index.ttl#${threadId}`
+    const chatRef = 'https://node-0000.undefineds.co/alice/.data/chat/cache/index.ttl#this'
+    const rows = [2, 1].map((index) => ({
+      id: `chat/default/1970/01/01/messages.ttl#row-${index}`,
+      chat: chatRef,
+      thread: threadRef,
+      role: 'user',
+      content: `message ${index}`,
+      richContent: JSON.stringify({
+        id: `user-${index}`,
+        thread_id: threadId,
+        type: 'user_message',
+        content: [{ type: 'input_text', text: `message ${index}` }],
+        created_at: index,
+      }),
+      metadata: { chatkitItemId: `user-${index}` },
+      status: 'completed',
+      createdAt: new Date(index * 1000),
+    }))
+    const execute = vi.fn(async () => rows)
+    const query = {
+      where: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
+      whereCursor: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      execute,
+    }
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'https://node-0000.undefineds.co/alice/' }),
+      select: vi.fn(() => ({ from: vi.fn(() => query) })),
+    } as any
+    const store = new LocalChatKitStore(
+      db,
+      'https://id.undefineds.co/alice/profile/card#me',
+      successfulAuthFetch(),
+      {
+        id: threadId,
+        status: { type: 'active' },
+        created_at: 1,
+        updated_at: 1,
+        metadata: { chat_id: 'cache' },
+      },
+    )
+
+    const [first, repeated] = await Promise.all([
+      store.loadThreadItems(threadId, undefined, 50, 'desc', {}),
+      store.loadThreadItems(threadId, undefined, 100, 'desc', {}),
+    ])
+
+    expect(first.data.map((item) => item.id)).toEqual(['user-2', 'user-1'])
+    expect(repeated.data).toEqual(first.data)
+    expect(repeated.has_more).toBe(false)
+    expect(repeated.last_id).toMatch(/^linx-chat-cursor:/u)
+    expect(execute).toHaveBeenCalledOnce()
+  })
+
   it('keeps only a bounded recent message working set in memory', () => {
     const store = new LocalChatKitStore(
       { getDialect: () => ({ getPodUrl: () => 'https://node-0000.undefineds.co/alice/' }) } as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
     const items = Array.from({ length: 620 }, (_, index) => ({
       id: `message-${index}`,
@@ -199,7 +259,10 @@ describe('LocalChatKitStore storage routing', () => {
       content: [{ type: 'input_text', text: 'edited' }],
     } as any, {})
 
-    const patch = String((authFetch.mock.calls[0]?.[1] as RequestInit).body)
+    const patchCall = authFetch.mock.calls.find(([, init]) => (
+      (init as RequestInit | undefined)?.headers as Record<string, string> | undefined
+    )?.['Content-Type'] === 'application/sparql-update')
+    const patch = String((patchCall?.[1] as RequestInit).body)
     expect(() => new Parser().parse(patch)).not.toThrow()
     expect(patch).not.toContain('messageStatus')
   })
@@ -267,13 +330,67 @@ describe('LocalChatKitStore storage routing', () => {
       status: 'completed" . <https://attacker.example/s> <https://attacker.example/p> "x',
     } as any, {})
 
-    const patch = String((authFetch.mock.calls[0]?.[1] as RequestInit).body)
+    const patchCall = authFetch.mock.calls.find(([, init]) => (
+      (init as RequestInit | undefined)?.headers as Record<string, string> | undefined
+    )?.['Content-Type'] === 'application/sparql-update')
+    const patch = String((patchCall?.[1] as RequestInit).body)
     expect(() => new Parser().parse(patch)).not.toThrow()
     expect(patch).toContain('\\\\int_0^1')
     expect(patch).toContain('C:\\\\temp\\\\report.md')
     expect(patch).toContain('\\n')
     expect(patch).toContain('completed\\" . <https://attacker.example/s>')
     expect(() => new Parser().parse(patch)).not.toThrow()
+  })
+
+  it('persists new multiline messages with LaTeX through a safe initial insert', async () => {
+    const insertedValues = vi.fn((values: Record<string, unknown>) => ({
+      execute: vi.fn(async () => [values]),
+    }))
+    const authFetch = vi.fn(async () => new Response(null, { status: 205 }))
+    const db = {
+      getDialect: () => ({ getPodUrl: () => 'https://node-0000.undefineds.co/alice/' }),
+      resolveRowIri: vi.fn((_resource: unknown, row: { id: string }) => (
+        new URL(`.data/${row.id}`, 'https://node-0000.undefineds.co/alice/').toString()
+      )),
+      insert: vi.fn(() => ({ values: insertedValues })),
+    }
+    const store = new LocalChatKitStore(
+      db as any,
+      'https://id.undefineds.co/alice/profile/card#me',
+      authFetch as any,
+      {
+        id: 'thread-1',
+        title: 'Thread',
+        status: { type: 'active' },
+        created_at: 1,
+        updated_at: 1,
+        metadata: { chat_id: 'default' },
+      },
+      undefined,
+      vi.fn(),
+    )
+    const content = String.raw`第一行
+第二行包含 \int 和 \frac`
+
+    await store.addThreadItem('thread-1', {
+      id: 'user-latex',
+      thread_id: 'thread-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: content }],
+      created_at: 1,
+    } as any, {})
+
+    expect(insertedValues).toHaveBeenCalledWith(expect.objectContaining({
+      content: content.replace(/\\/gu, '∖'),
+      richContent: undefined,
+    }))
+    const patchCall = authFetch.mock.calls.find(([, init]) => (
+      (init as RequestInit | undefined)?.headers as Record<string, string> | undefined
+    )?.['Content-Type'] === 'application/sparql-update')
+    const patch = String((patchCall?.[1] as RequestInit).body)
+    expect(() => new Parser().parse(patch)).not.toThrow()
+    expect(patch).toContain('\\\\int')
+    expect(patch).toContain('\\n')
   })
 
   it('finds a historical item by richContent when shared RDF metadata is stale', async () => {
@@ -310,7 +427,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
 
     await expect(store.loadItem('thread-1', 'assistant-history', {})).resolves.toMatchObject(storedItem)
@@ -340,7 +457,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
 
     await store.addThreadItem('thread-1', {
@@ -391,7 +508,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
 
     await expect(store.addThreadItem('thread-1', {
@@ -428,7 +545,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
 
     await expect(store.addThreadItem('thread-1', {
@@ -484,7 +601,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
 
     await store.addThreadItem('thread-1', {
@@ -525,7 +642,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
 
     await store.addThreadItem('thread-1', {
@@ -596,7 +713,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
 
     await store.addThreadItem('thread-1', {
@@ -668,8 +785,9 @@ describe('LocalChatKitStore storage routing', () => {
           limit: vi.fn().mockReturnThis(),
           execute: vi.fn(async () => [{
             id: 'chat/default/2026/08/09/messages.ttl#markdown-1',
-            chat: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this',
-            thread: 'https://node-0000.undefineds.co/alice/.data/index.ttl#thread-1',
+            // `chat` is a virtual routing field and is not persisted in the
+            // message document. Recovery derives it from the thread IRI.
+            thread: 'https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#thread-1',
             role: 'assistant',
             content: markdown,
             richContent: null,
@@ -683,7 +801,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
 
     const result = await store.loadThreadItems('thread-1', undefined, 20, 'asc', {})
@@ -744,7 +862,7 @@ describe('LocalChatKitStore storage routing', () => {
     const store = new LocalChatKitStore(
       db as any,
       'https://id.undefineds.co/alice/profile/card#me',
-      vi.fn() as any,
+      successfulAuthFetch(),
     )
 
     const result = await store.loadThreadItems('thread-1', undefined, 20, 'asc', {})

@@ -17,4 +17,21 @@ describe('MessageEditDialog', () => {
     expect(onValueChange).toHaveBeenCalledWith('next')
     expect(onSubmit).toHaveBeenCalledOnce()
   })
+
+  it('locks actions and surfaces an error while submission is busy', () => {
+    render(
+      <MessageEditDialog
+        open
+        value="updated"
+        busy
+        error="生成失败"
+        onValueChange={vi.fn()}
+        onOpenChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: '正在生成…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '取消' })).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent('生成失败')
+  })
 })

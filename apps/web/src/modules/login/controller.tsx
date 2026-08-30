@@ -22,6 +22,7 @@ import {
   getPendingCallbackError,
   isInvalidClientError,
   isInvalidClientErrorCode,
+  markLoginClientSchemaCurrent,
   resolvePostLoginMicroAppId,
   SIGN_OUT_EVENT,
 } from './login-utils'
@@ -84,6 +85,7 @@ export function useLoginController() {
     setLegacyState(nextState)
   }, [setLegacyState])
   const loginSuccess = useCallback((account: StoredAccount) => {
+    markLoginClientSchemaCurrent()
     dispatchFlow({ type: 'set-phase', phase: 'authenticated' })
     legacyLoginSuccess(account)
   }, [legacyLoginSuccess])
@@ -220,7 +222,9 @@ export function useLoginController() {
       authorizationQuery: isStandalone
         ? undefined
         : { provisionCode: snapshot.provisionCode },
-      ...(shouldTrySilentDesktopAuth ? { prompt: 'none' as const } : {}),
+      ...(shouldTrySilentDesktopAuth
+        ? { prompt: 'none' as const }
+        : {}),
       ...(isStandalone ? { strictDiscovery: true as const } : {}),
       nodeId: snapshot.nodeId ?? undefined,
     } as const
@@ -716,7 +720,7 @@ export function useLoginController() {
     storedAccount,
   ])
 
-  const connect = useCallback(async (providerKey: string, options?: { prompt?: 'none' | 'consent'; isInvalidClientRetry?: boolean }) => {
+  const connect = useCallback(async (providerKey: string, options?: { prompt?: 'none' | 'consent' | 'login'; isInvalidClientRetry?: boolean }) => {
     loginFinalizeGenerationRef.current += 1
     suppressAutoLoginRef.current = false
     setStorageConflict(null)

@@ -97,6 +97,16 @@ async function podResourceExists(fetchFn: typeof fetch, resourceUrl: string): Pr
   throw new Error(`Failed to inspect Pod resource ${resourceUrl}: HTTP ${response.status}`)
 }
 
+async function readAgentMetadata(fetchFn: typeof fetch, metadataUrl: string): Promise<string | null> {
+  const response = await fetchFn(metadataUrl, { headers: { Accept: 'text/turtle' } })
+  return response.ok ? response.text() : null
+}
+
+function buildAgentSchemaTypeInsert(metadataUrl: string): string {
+  const subjectRef = metadataUrl.endsWith('.meta') ? metadataUrl.slice(0, -'.meta'.length) : metadataUrl
+  return `INSERT DATA { <${subjectRef}> a <http://xmlns.com/foaf/0.1/Agent> . }`
+}
+
 async function deletePodResource(fetchFn: typeof fetch, resourceUrl: string): Promise<void> {
   const response = await fetchFn(resourceUrl, { method: 'DELETE' })
   if (!response.ok && response.status !== 404) {
@@ -177,7 +187,7 @@ function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: st
     '',
     'INSERT DATA {',
     `<${subjectRef}>`,
-    '  a udfs:AgentConfig ;',
+    '  a foaf:Agent, udfs:AgentConfig ;',
     `  foaf:name ${toTurtleString(input.name)} ;`,
     `  udfs:provider <${providerRef}> ;`,
     `  udfs:credential <${credentialRef}> ;`,
@@ -312,7 +322,12 @@ export async function createAgentHome(
     for (const file of buildAgentHomeFiles(input)) {
       const fileUrl = resolvePodPath(db, `${homePath}${file.path}`)
       if (file.writeMode === 'patch-metadata') {
-        await patchPodMetadata(fetchFn, fileUrl, buildAgentMetaSparqlInsert(input, fileUrl))
+        const existingMetadata = created ? null : await readAgentMetadata(fetchFn, fileUrl)
+        if (existingMetadata?.includes('http://xmlns.com/foaf/0.1/Agent')) continue
+        const patch = existingMetadata?.includes('https://undefineds.co/ns#AgentConfig')
+          ? buildAgentSchemaTypeInsert(fileUrl)
+          : buildAgentMetaSparqlInsert(input, fileUrl)
+        await patchPodMetadata(fetchFn, fileUrl, patch)
         continue
       }
 

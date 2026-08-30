@@ -131,6 +131,7 @@ describe('ChatKit local fetch P0 transport', () => {
     expect(states[0]?.active).toBe(true)
     states[0]?.abort?.()
     expect(serviceSignal?.aborted).toBe(true)
+    expect(serviceSignal?.reason).toMatchObject({ name: 'AbortError' })
 
     releaseStream()
     await response.text()

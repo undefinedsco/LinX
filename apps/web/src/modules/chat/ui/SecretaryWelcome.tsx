@@ -39,20 +39,20 @@ export function SecretaryWelcome({
       aria-labelledby="secretary-welcome-title"
     >
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-4 py-8 sm:px-6">
-        <div className="w-full max-w-3xl">
+        <div className="w-full max-w-2xl">
           <div className="text-center">
             <span className="inline-flex items-center justify-center text-muted-foreground">
-              <Bot className="size-6" aria-hidden="true" />
+              <Bot className="size-5" aria-hidden="true" />
             </span>
-            <h1 id="secretary-welcome-title" className="mt-4 text-2xl font-semibold tracking-tight text-foreground">
+            <h1 id="secretary-welcome-title" className="mt-3 text-xl font-semibold tracking-tight text-foreground">
               你好，我是 LinX 主理人
             </h1>
-            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
+            <p className="mx-auto mt-1.5 max-w-lg text-sm leading-6 text-muted-foreground">
               我可以帮你整理信息、规划工作，并在当前空间中推进任务。
             </p>
           </div>
 
-          <div className="mt-6 flex flex-wrap justify-center gap-2">
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
             {starterActions.map((action) => (
               <button
                 key={action.id}
@@ -66,35 +66,33 @@ export function SecretaryWelcome({
           </div>
 
           <form
-            className="mt-6"
+            className="mt-5"
             onSubmit={(event) => {
               event.preventDefault()
               if (canSubmit) onSubmit()
             }}
           >
-            <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition-shadow focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
+            <div className="relative rounded-2xl border border-border bg-card transition-[border-color,box-shadow] focus-within:border-foreground/20 focus-within:ring-2 focus-within:ring-foreground/5">
               <textarea
                 aria-label="给主理人发消息"
                 value={composerValue}
                 onChange={(event) => onComposerValueChange(event.target.value)}
                 placeholder="告诉主理人你想推进什么"
-                rows={3}
-                className="block min-h-24 w-full resize-none bg-transparent px-5 pb-2 pt-4 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground"
+                rows={2}
+                className="block min-h-20 w-full resize-none rounded-2xl bg-transparent px-4 pb-12 pt-3.5 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground"
               />
-              <div className="flex h-11 items-center justify-end px-3 pb-2">
-                <Button
-                  type="submit"
-                  size="icon"
-                  className="h-8 w-8 rounded-full"
-                  disabled={!canSubmit}
-                  aria-label="开始对话"
-                  title="开始对话"
-                >
-                  <SendHorizontal className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </div>
+              <Button
+                type="submit"
+                size="icon"
+                className="absolute bottom-3 right-3 h-8 w-8 rounded-full"
+                disabled={!canSubmit}
+                aria-label="开始对话"
+                title="开始对话"
+              >
+                <SendHorizontal className="h-4 w-4" aria-hidden="true" />
+              </Button>
             </div>
-            <div className="mt-2 flex min-h-7 items-center justify-between gap-3 px-2">
+            <div className="mt-2 flex min-h-7 items-center justify-between gap-3 px-1">
               <p role="status" className="text-xs text-muted-foreground">
                 {composerStatus}
               </p>

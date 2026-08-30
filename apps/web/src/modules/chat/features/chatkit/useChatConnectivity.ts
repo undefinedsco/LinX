@@ -14,7 +14,7 @@ interface UseChatConnectivityOptions {
   setQueuedGenerationCount: (count: number) => void
   setReconnectStatus: (status: ReconnectStatus) => void
   refreshSurface: () => Promise<void>
-  refreshMessages: () => Promise<unknown>
+  refreshMessages?: () => Promise<unknown>
 }
 
 export function useChatConnectivity({
@@ -38,7 +38,7 @@ export function useChatConnectivity({
       const replay = await localFetch.flushOutbox({ force })
       await Promise.all([
         refreshSurface(),
-        refreshMessages(),
+        ...(refreshMessages ? [ refreshMessages() ] : []),
         localFetch.refreshThreadItems(selectedThreadId),
       ])
       setQueuedGenerationCount(replay.pending)

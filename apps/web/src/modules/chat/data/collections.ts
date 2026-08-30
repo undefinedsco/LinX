@@ -23,7 +23,6 @@ import {
   getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
   selectAIConfigCredential,
   UDFS,
@@ -2428,30 +2427,13 @@ export function buildMessageListQueryKey(scopeKey: string, chatId: string, threa
  */
 export function useChatList(filters?: { search?: string }) {
   const query = useLiveQuery(chatCollection)
-  const messageQuery = useLiveQuery(messageCollection)
   const data = useMemo(() => {
-    const latestMessageByChat = new Map<string, MessageRow>()
-    for (const message of (messageQuery.data ?? []) as MessageRow[]) {
-      const chatKey = extractChatIdFromChatRef(message.chat ?? message.parent)
-      const chatId = normalizeChatRowId(chatKey)
-      if (!chatId || !message.content) continue
-      const current = latestMessageByChat.get(chatId)
-      if (!current || new Date(message.createdAt).getTime() > new Date(current.createdAt).getTime()) {
-        latestMessageByChat.set(chatId, message)
-      }
-    }
-    const rows = ((query.data ?? []) as ChatRow[]).map((row) => {
-      if (row.lastMessagePreview || !row.id) return row
-      const latestMessage = latestMessageByChat.get(row.id)
-      return latestMessage
-        ? { ...row, lastMessagePreview: latestMessage.content.slice(0, 100) }
-        : row
-    })
+    const rows = (query.data ?? []) as ChatRow[]
     const term = filters?.search?.trim().toLocaleLowerCase()
     if (!term) return rows
     return rows.filter((row) => [row.title, row.lastMessagePreview]
       .some((value) => value?.toLocaleLowerCase().includes(term)))
-  }, [filters?.search, messageQuery.data, query.data])
+  }, [filters?.search, query.data])
   return { ...query, data, error: null, refetch: () => chatCollection.fetch({ refetch: true }) }
 }
 
