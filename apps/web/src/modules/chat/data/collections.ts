@@ -84,7 +84,10 @@ let stagedDefaultSecretaryRows: {
   chat: ChatRow
 } | null = null
 const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
-const DEFAULT_SECRETARY_EXACT_READ_TIMEOUT_MS = 1_500
+// Guangzhou's authenticated SPARQL reads routinely take 2-4 seconds under
+// startup load. A shorter timeout incorrectly treated an existing Secretary
+// row as missing and briefly inserted a second timestamp set before cleanup.
+const DEFAULT_SECRETARY_EXACT_READ_TIMEOUT_MS = 5_000
 export const SECRETARY_BOOTSTRAP_TIMEOUT_MS = 10_000
 
 function observeChatQueryScope(scopeKey: string, db: SolidDatabase | null): number {
@@ -1257,7 +1260,10 @@ async function ensureDefaultSecretaryRow<T extends Record<string, unknown> & { i
 
   if (cached && options.trustCached === false) {
     const documentExists = await podDocumentExists(db, iri)
-    if (documentExists) {
+    // `null` means the existence probe was interrupted or unavailable. It is
+    // never safe to turn an indeterminate read into a create: the target may
+    // already exist and RDF inserts append values to the same subject.
+    if (documentExists !== false) {
       return { row: cached, created: false }
     }
   }
@@ -1822,12 +1828,30 @@ export const chatOps = {
     if (db && !threadIri) {
       throw new Error(`Failed to resolve thread IRI for thread ${threadKey}`)
     }
+
+    if (db && options?.threadId && threadIri) {
+      const existing = await findOptionalExactRecord<ThreadRow>(db, threadResource, threadResourceId)
+      if (existing) {
+        const normalized = normalizeCollectionRow(existing, threadResourceId, threadIri)
+        threadChatIdCache.set(threadResourceId, chatId)
+        threadChatIdCache.set(threadKey, chatId)
+        writeCollectionRow(threadCollection, normalized, threadResourceId)
+        return normalized
+      }
+    }
     
+    const initialWorkspace = db && options?.threadId
+      ? (() => {
+          const podBaseUrl = getPodBaseUrl(db)
+          return podBaseUrl ? resolveWorkspaceContainerUri(podBaseUrl, threadResourceId) : undefined
+        })()
+      : undefined
     const threadData = {
       id: threadResourceId,
       ...(threadIri ? { '@id': threadIri } : {}),
       parent: chatIri ?? chatId,
       title: title || `话题 ${now.toLocaleTimeString()}`,
+      ...(initialWorkspace ? { workspace: initialWorkspace } : {}),
       createdAt: now,
       updatedAt: now,
     } as ThreadInsert & { '@id'?: string }
@@ -2538,8 +2562,8 @@ export function useChatMutations() {
   })
 
   const createThread = useMutation({
-    mutationFn: ({ chatId, title }: { chatId: string; title?: string }) => 
-      chatOps.createThread(chatId, title),
+    mutationFn: ({ chatId, title, threadId }: { chatId: string; title?: string; threadId?: string }) =>
+      chatOps.createThread(chatId, title, { threadId }),
   })
 
   const ensureThreadWorkspace = useMutation({

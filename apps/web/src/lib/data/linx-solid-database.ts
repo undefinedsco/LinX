@@ -69,7 +69,9 @@ async function createLinxSolidDatabaseUncached(
   report({ stage: 'database:create:start' })
   installBrowserSparqlEngine()
 
-  const runtimeSession = createTransportRewriteSession(session, options.transportUrlRewrite)
+  const runtimeSession = createFreshSparqlSession(
+    createTransportRewriteSession(session, options.transportUrlRewrite),
+  )
   const instance = drizzle(runtimeSession as any, {
     disableInteropDiscovery: true,
     notifications: {
@@ -155,6 +157,47 @@ export function createTransportRewriteSession(
 
   return {
     fetch: rewrittenFetch,
+  }
+}
+
+/**
+ * Pod SPARQL results are authorization- and revision-scoped. Explicitly bypass
+ * the browser HTTP cache so a reload cannot reuse an older result produced
+ * before the most recent Pod write (or before Xpod started returning no-store).
+ */
+export function createFreshSparqlSession(session: unknown): unknown {
+  const sourceSession = session as { fetch?: typeof fetch } | null | undefined
+  if (typeof sourceSession?.fetch !== 'function') {
+    return session
+  }
+
+  const freshFetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const requestUrl = getRequestUrl(input)
+    const nextInit = requestUrl && isSparqlEndpoint(requestUrl)
+      ? { ...init, cache: 'no-store' as RequestCache }
+      : init
+    return sourceSession.fetch!(input, nextInit)
+  }
+
+  if (typeof session === 'object' && session !== null) {
+    return new Proxy(session, {
+      get(target, property, receiver) {
+        if (property === 'fetch') {
+          return freshFetch
+        }
+        return Reflect.get(target, property, receiver)
+      },
+    })
+  }
+
+  return { fetch: freshFetch }
+}
+
+function isSparqlEndpoint(requestUrl: string): boolean {
+  try {
+    return new URL(requestUrl).pathname.includes('/-/sparql')
+  } catch {
+    return false
   }
 }
 

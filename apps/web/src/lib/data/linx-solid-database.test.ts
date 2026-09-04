@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { solidProfileResource } from '@undefineds.co/models'
-import { createLinxSolidDatabase, createTransportRewriteSession } from './linx-solid-database'
+import {
+  createFreshSparqlSession,
+  createLinxSolidDatabase,
+  createTransportRewriteSession,
+} from './linx-solid-database'
 
 const drizzleMock = vi.fn()
 const initializeLinxPodStorageMock = vi.fn()
@@ -150,6 +154,28 @@ describe('createLinxSolidDatabase', () => {
     expect(wrapped.events).toBe(session.events)
     await wrapped.fetch(new URL('https://node.example/alice/.data/chat/index.ttl'))
     expect(originalFetch.mock.calls[0]?.[0]?.toString()).toBe('http://localhost:5737/alice/.data/chat/index.ttl')
+  })
+
+  it('bypasses browser caches only for Pod SPARQL reads', async () => {
+    const originalFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('ok'))
+    const session = {
+      info: { webId: 'https://id.example/alice#me' },
+      fetch: originalFetch,
+    }
+    const wrapped = createFreshSparqlSession(session) as typeof session
+
+    await wrapped.fetch('https://pod.example/alice/.data/chat/-/sparql?query=SELECT')
+    await wrapped.fetch('https://pod.example/alice/.data/chat/thread.ttl')
+
+    expect(originalFetch).toHaveBeenNthCalledWith(1,
+      'https://pod.example/alice/.data/chat/-/sparql?query=SELECT',
+      { cache: 'no-store' },
+    )
+    expect(originalFetch).toHaveBeenNthCalledWith(2,
+      'https://pod.example/alice/.data/chat/thread.ttl',
+      undefined,
+    )
+    expect(wrapped.info).toBe(session.info)
   })
 
   it('overrides the dialect runtime when drizzle-solid does not forward podUrl yet', async () => {

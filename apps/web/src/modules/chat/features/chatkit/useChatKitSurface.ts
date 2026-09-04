@@ -6,7 +6,6 @@ import type { PendingComposerDraft } from '../../domain/conversation-workbench'
 import type { LocalChatKitFetch } from '../../services/chatkit-local/fetch-handler'
 import { createChatKitWorkbenchAdapter } from './chatkit-workbench-adapter'
 import { useChatKitThreadReadiness } from './useChatKitThreadReadiness'
-
 interface UseChatKitSurfaceOptions {
   theme: 'light' | 'dark'
   localFetch: LocalChatKitFetch
@@ -36,6 +35,7 @@ export function useChatKitSurface({
   const clearMessageAnchor = useChatStore((state) => state.clearMessageAnchor)
   const [loadFailed, setLoadFailed] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+  const [readyRevision, setReadyRevision] = useState(0)
   const initialThreadIdRef = useRef(selectedThreadId)
   const hostRef = useRef<OpenAIChatKit | null>(null)
   const restoredSurfaceRef = useRef<{
@@ -62,12 +62,13 @@ export function useChatKitSurface({
   }, [])
 
   const bindHost = useCallback((host: OpenAIChatKit | null) => {
-    if (hostRef.current !== host) resetThreadReadiness()
+    if (hostRef.current !== host) {
+      resetThreadReadiness()
+    }
     hostRef.current = host
-    if (!host) restoredSurfaceRef.current = null
     setIsMounted(Boolean(host))
+    if (!host) restoredSurfaceRef.current = null
   }, [resetThreadReadiness])
-
   useEffect(() => {
     if (customElements.get('openai-chatkit')) {
       setLoadFailed(false)
@@ -94,6 +95,9 @@ export function useChatKitSurface({
       fetch: localFetch,
       uploadStrategy: { type: 'two_phase' },
     },
+    // ChatKit consumes the initial thread while applying its first options.
+    // The explicit restore effect below remains responsible for later LinX
+    // navigation changes and for hosts that mount before emitting `ready`.
     initialThread: initialThreadIdRef.current,
     theme: {
       colorScheme: theme,
@@ -142,7 +146,7 @@ export function useChatKitSurface({
     },
     threadItemActions: { feedback: true, retry: true },
     thread: { autoScroll: true },
-    onReady: () => setIsMounted(Boolean(hostRef.current)),
+    onReady: () => { restoredSurfaceRef.current = null; setReadyRevision((revision) => revision + 1) },
     onThreadLoadStart: markThreadLoading,
     onThreadLoadEnd: markThreadLoaded,
     onError: handleChatKitError,
@@ -226,7 +230,7 @@ export function useChatKitSurface({
         restoredSurfaceRef.current = null
       }
     }
-  }, [isMounted, markThreadRestored, markThreadRestoring, resetThreadReadiness, selectedChatId, selectedThreadId, workbench.surface])
+  }, [isMounted, markThreadRestored, markThreadRestoring, readyRevision, resetThreadReadiness, selectedChatId, selectedThreadId, workbench.surface])
 
   useEffect(() => {
     if (!pendingComposerDraft) return

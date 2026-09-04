@@ -120,7 +120,11 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
     const creationScope = scopeKey
     const creationChatId = selectedChatId
     const creationAttempt = ++creationAttemptRef.current
-    mutations.createThread.mutate({ chatId: selectedChatId, title: '默认话题' }, {
+    mutations.createThread.mutate({
+      chatId: selectedChatId,
+      title: '默认话题',
+      ...(isSecretary ? { threadId: LINX_DEFAULT_SECRETARY.threadKey } : {}),
+    }, {
       onSuccess: (thread) => {
         if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
         setCreationFailure(null)

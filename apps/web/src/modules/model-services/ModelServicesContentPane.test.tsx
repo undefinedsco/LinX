@@ -5,6 +5,8 @@ const mockToast = vi.fn()
 const mockUpdateProvider = vi.fn().mockResolvedValue(undefined)
 const mockUpdateProviderCapability = vi.fn().mockResolvedValue(undefined)
 const mockSearchProviderModels = vi.fn()
+const mockSaveProviderApiKeyThroughGateway = vi.fn().mockResolvedValue('credential-openai')
+const mockSessionFetch = vi.fn()
 let mockQueryError: string | null = null
 
 vi.mock('@/components/ui/use-toast', () => ({
@@ -39,6 +41,19 @@ vi.mock('./data/use-model-services', () => ({
 
 vi.mock('./data/model-fetcher', () => ({
   searchProviderModels: (...args: unknown[]) => mockSearchProviderModels(...args),
+  saveProviderApiKeyThroughGateway: (...args: unknown[]) => mockSaveProviderApiKeyThroughGateway(...args),
+}))
+
+vi.mock('@/providers/solid-session-context', () => ({
+  useSession: () => ({
+    session: {
+      fetch: mockSessionFetch,
+      info: {
+        isLoggedIn: true,
+        webId: 'https://pod.example/alice/profile/card#me',
+      },
+    },
+  }),
 }))
 
 import { ModelServicesContentPane } from './ModelServicesContentPane'
@@ -48,6 +63,7 @@ describe('ModelServicesContentPane', () => {
     vi.clearAllMocks()
     mockUpdateProvider.mockResolvedValue(undefined)
     mockUpdateProviderCapability.mockResolvedValue(undefined)
+    mockSaveProviderApiKeyThroughGateway.mockResolvedValue('credential-openai')
     mockQueryError = null
   })
 
@@ -69,13 +85,23 @@ describe('ModelServicesContentPane', () => {
     await waitFor(() => {
       expect(mockSearchProviderModels).toHaveBeenCalled()
     })
-    expect(mockUpdateProvider).toHaveBeenCalledWith('openai', expect.objectContaining({
-      apiKey: 'sk-test',
+    expect(mockSaveProviderApiKeyThroughGateway).toHaveBeenCalledWith(
+      'openai',
+      'sk-test',
+      'https://api.openai.com/v1',
+      expect.objectContaining({
+        apiBaseUrl: expect.any(String),
+        authenticatedFetch: mockSessionFetch,
+      }),
+    )
+    expect(mockUpdateProvider).toHaveBeenCalledWith('openai', {
+      apiKey: '',
+      baseUrl: 'https://api.openai.com/v1',
       models: expect.arrayContaining([
         expect.objectContaining({ id: 'gpt-4o' }),
         expect.objectContaining({ id: 'gpt-4o-mini' }),
       ]),
-    }))
+    })
     expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
       description: '连接成功，已同步 2 个模型',
     }))
@@ -113,6 +139,24 @@ describe('ModelServicesContentPane', () => {
       expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
         variant: 'destructive',
         description: '连接失败：模型列表获取失败。请检查密钥、服务地址或网络后重试。',
+      }))
+    })
+  })
+
+  it('does not misreport a model Gateway network failure as a login-page failure', async () => {
+    mockSearchProviderModels.mockRejectedValue(new TypeError('Failed to fetch'))
+
+    render(<ModelServicesContentPane />)
+
+    fireEvent.change(screen.getByPlaceholderText('sk-...'), {
+      target: { value: 'sk-test' },
+    })
+    fireEvent.click(screen.getByText('验证'))
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+        variant: 'destructive',
+        description: '连接失败：无法连接 Xpod 模型服务。请检查本地空间是否已启动，然后重试。',
       }))
     })
   })

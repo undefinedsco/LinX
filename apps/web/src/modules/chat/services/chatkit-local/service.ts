@@ -116,6 +116,49 @@ function hasServiceAccessMissingCode(body: string): boolean {
   }
 }
 
+function readRuntimeErrorFields(payload: unknown): { code?: string; message?: string } {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {}
+  const candidate = payload as Record<string, unknown>
+  const error = candidate.error
+  if (typeof error === 'string') return { message: error }
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return {}
+  const errorRecord = error as Record<string, unknown>
+  return {
+    ...(typeof errorRecord.code === 'string' ? { code: errorRecord.code } : {}),
+    ...(typeof errorRecord.message === 'string' ? { message: errorRecord.message } : {}),
+  }
+}
+
+export function summarizeRuntimeError(body: string): string {
+  try {
+    const payload = JSON.parse(body) as Record<string, unknown>
+    const outer = readRuntimeErrorFields(payload)
+    const error = payload.error
+    const details = error && typeof error === 'object' && !Array.isArray(error)
+      ? (error as Record<string, unknown>).details
+      : undefined
+    const nestedBody = details && typeof details === 'object' && !Array.isArray(details)
+      ? (details as Record<string, unknown>).body
+      : undefined
+    if (typeof nestedBody === 'string') {
+      try {
+        const nested = readRuntimeErrorFields(JSON.parse(nestedBody))
+        if (nested.message || nested.code) {
+          return [nested.code, nested.message].filter(Boolean).join(': ').slice(0, 500)
+        }
+      } catch {
+        // The upstream body is optional diagnostic data and may not be JSON.
+      }
+    }
+    if (outer.message || outer.code) {
+      return [outer.code, outer.message].filter(Boolean).join(': ').slice(0, 500)
+    }
+  } catch {
+    // Preserve a bounded fallback for non-JSON runtime errors.
+  }
+  return body.replace(/\s+/gu, ' ').trim().slice(0, 200)
+}
+
 function modelMessagesContainImages(messages: ModelMessage[]): boolean {
   return messages.some((message) => Array.isArray(message.content)
     && message.content.some((part) => part.type === 'image_url'))
@@ -1787,7 +1830,7 @@ export class LocalChatKitService {
       if (response.status === 403 && hasServiceAccessMissingCode(text)) {
         throw new ServiceAccessRequiredError()
       }
-      throw new Error(`LinX runtime error ${response.status}: ${text.slice(0, 200)}`)
+      throw new Error(`LinX runtime error ${response.status}: ${summarizeRuntimeError(text)}`)
     }
 
     yield* this.readTextOrSseStream(response)
@@ -1831,7 +1874,7 @@ export class LocalChatKitService {
       if (response.status === 403 && hasServiceAccessMissingCode(text)) {
         throw new ServiceAccessRequiredError()
       }
-      throw new Error(`LinX Responses error ${response.status}: ${text.slice(0, 200)}`)
+      throw new Error(`LinX Responses error ${response.status}: ${summarizeRuntimeError(text)}`)
     }
 
     yield* this.readResponsesTextOrSseStream(response)
@@ -2015,7 +2058,9 @@ export class LocalChatKitService {
       const capabilities = model.capabilities && typeof model.capabilities === 'object'
         ? model.capabilities as Record<string, unknown>
         : {}
-      return custom.includes(capability) || capabilities[capabilityKey] === true
+      const normalizedModelId = model.id.toLowerCase()
+      const inferredImageModel = /gpt-image|dall-e|imagen|flux/.test(normalizedModelId)
+      return custom.includes(capability) || capabilities[capabilityKey] === true || inferredImageModel
     })
     const preferredId = preferredModel.includes('/') ? preferredModel.slice(preferredModel.indexOf('/') + 1) : preferredModel
     const selected = models.find((model) => model.id === preferredId) ?? models[0]
@@ -2209,7 +2254,7 @@ export class LocalChatKitService {
       if (response.status === 403 && hasServiceAccessMissingCode(text)) {
         throw new ServiceAccessRequiredError()
       }
-      throw new Error(`Xpod AI runtime error ${response.status}: ${text.slice(0, 200)}`)
+      throw new Error(`Xpod AI runtime error ${response.status}: ${summarizeRuntimeError(text)}`)
     }
 
     yield* this.readTextOrSseStream(response)

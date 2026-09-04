@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { searchProviderModels } from './model-fetcher'
+import { saveProviderApiKeyThroughGateway, searchProviderModels } from './model-fetcher'
 
 describe('searchProviderModels', () => {
   afterEach(() => {
@@ -45,5 +45,84 @@ describe('searchProviderModels', () => {
       'https://proxy.example.test/v1/models',
       expect.any(Object),
     )
+  })
+
+  it('discovers models through the authenticated Xpod gateway when available', async () => {
+    const browserFetch = vi.fn()
+    vi.stubGlobal('fetch', browserFetch)
+    const authenticatedFetch = vi.fn(async () => Response.json({
+      provider: 'openai',
+      models: [
+        { id: 'gpt-5.6', displayName: 'GPT-5.6', capabilities: ['responses'] },
+      ],
+    }))
+
+    await expect(searchProviderModels(
+      'openai',
+      undefined,
+      'https://timicc.example/v1',
+      undefined,
+      {
+        apiBaseUrl: 'https://pod.example/alice/',
+        authenticatedFetch,
+      },
+    )).resolves.toEqual({
+      '在线获取': [{
+        id: 'gpt-5.6',
+        name: 'GPT-5.6',
+        capabilities: ['responses'],
+        logo: undefined,
+      }],
+    })
+
+    expect(authenticatedFetch).toHaveBeenCalledWith(
+      'https://pod.example/api/ai/gateway/providers/openai/models/refresh',
+      expect.objectContaining({
+        method: 'POST',
+        mode: 'cors',
+      }),
+    )
+    expect(browserFetch).not.toHaveBeenCalled()
+  })
+
+  it('stores provider API keys through the authenticated Xpod credential vault', async () => {
+    const authenticatedFetch = vi.fn(async () => Response.json({
+      credential: { id: 'credentials.ttl#cloud-openai-test' },
+    }, { status: 201 }))
+
+    await expect(saveProviderApiKeyThroughGateway(
+      'openai',
+      'sk-test',
+      'https://timicc.example/v1',
+      { apiBaseUrl: 'https://pod.example/alice/', authenticatedFetch },
+    )).resolves.toBe('credentials.ttl#cloud-openai-test')
+
+    expect(authenticatedFetch).toHaveBeenCalledWith(
+      'https://pod.example/api/ai/providers/openai/credentials/api-key',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          apiKey: 'sk-test',
+          baseUrl: 'https://timicc.example/v1',
+          priority: 0,
+        }),
+      }),
+    )
+  })
+
+  it('maps an upstream key failure returned by Xpod without exposing server details', async () => {
+    const authenticatedFetch = vi.fn(async () => Response.json({
+      error: 'provider_models_fetch_failed',
+      providerStatus: 401,
+      detail: 'Authorization: Bearer secret',
+    }, { status: 502 }))
+
+    await expect(searchProviderModels(
+      'openai',
+      undefined,
+      undefined,
+      undefined,
+      { apiBaseUrl: 'https://pod.example/', authenticatedFetch },
+    )).rejects.toThrow('密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。')
   })
 })

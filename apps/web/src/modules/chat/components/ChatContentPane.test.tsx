@@ -153,6 +153,7 @@ vi.mock('../collections', () => ({
   useLinxDefaultSecretaryBootstrapSettling: () => mockUseDefaultSecretaryBootstrapSettling(),
   LINX_DEFAULT_SECRETARY: {
     chatId: '__secretary__/index.ttl#this',
+    threadKey: '__default__',
     threadTitle: '默认话题',
   },
 }))
@@ -671,6 +672,7 @@ describe('ChatContentPane', () => {
       {
         chatId: '__secretary__/index.ttl#this',
         title: '默认话题',
+        threadId: '__default__',
       },
       expect.any(Object),
     )

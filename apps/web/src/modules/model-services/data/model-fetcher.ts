@@ -7,6 +7,17 @@ export interface Model {
   logo?: string
 }
 
+export interface ProviderModelGatewayOptions {
+  apiBaseUrl: string
+  authenticatedFetch: typeof fetch
+}
+
+interface GatewayCredentialResponse {
+  credential?: {
+    id?: string
+  }
+}
+
 const providerMap = Object.fromEntries(MODEL_PROVIDERS.map((p) => [p.id, p]))
 
 /**
@@ -66,11 +77,99 @@ function formatModelListError(status: number): string {
   return '模型列表获取失败。请检查密钥、服务地址或网络后重试。'
 }
 
+function formatGatewayModelListError(status: number, payload: unknown): string {
+  const record = payload && typeof payload === 'object'
+    ? payload as Record<string, unknown>
+    : {}
+  const providerStatus = typeof record.providerStatus === 'number'
+    ? record.providerStatus
+    : undefined
+
+  if (providerStatus !== undefined) return formatModelListError(providerStatus)
+  if (status === 401 || status === 403) {
+    return '当前空间授权已失效。请重新连接空间后重试。'
+  }
+  if (status === 404) {
+    return '未找到已保存的模型凭据。请先保存 API Key 后重试。'
+  }
+  if (status === 429) {
+    return '请求太频繁。请稍等一会儿再试。'
+  }
+  if (status >= 500) {
+    return 'Xpod 模型服务暂时没有响应。请稍后重试。'
+  }
+  return '模型列表获取失败。请检查密钥、服务地址或网络后重试。'
+}
+
+async function discoverModelsThroughGateway(
+  providerId: string,
+  gateway: ProviderModelGatewayOptions,
+): Promise<unknown> {
+  const apiBaseUrl = new URL(gateway.apiBaseUrl).origin
+  const endpoint = new URL(
+    `/api/ai/gateway/providers/${encodeURIComponent(providerId)}/models/refresh`,
+    apiBaseUrl,
+  ).href
+  const response = await gateway.authenticatedFetch(endpoint, {
+    method: 'POST',
+    credentials: 'omit',
+    mode: 'cors',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+    body: '{}',
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(formatGatewayModelListError(response.status, payload))
+  }
+  return payload
+}
+
+export async function saveProviderApiKeyThroughGateway(
+  providerId: string,
+  apiKey: string,
+  baseUrl: string | undefined,
+  gateway: ProviderModelGatewayOptions,
+): Promise<string> {
+  const normalizedApiKey = apiKey.trim()
+  if (!normalizedApiKey) throw new Error('请先填写 API Key 再验证连接')
+
+  const apiBaseUrl = new URL(gateway.apiBaseUrl).origin
+  const endpoint = new URL(
+    `/api/ai/providers/${encodeURIComponent(providerId)}/credentials/api-key`,
+    apiBaseUrl,
+  ).href
+  const response = await gateway.authenticatedFetch(endpoint, {
+    method: 'POST',
+    credentials: 'omit',
+    mode: 'cors',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      apiKey: normalizedApiKey,
+      ...(baseUrl?.trim() ? { baseUrl: baseUrl.trim() } : {}),
+      priority: 0,
+    }),
+  })
+  const payload = await response.json().catch(() => ({})) as GatewayCredentialResponse
+  if (!response.ok) {
+    throw new Error(formatGatewayModelListError(response.status, payload))
+  }
+  const credentialId = payload.credential?.id?.trim()
+  if (!credentialId) throw new Error('Xpod 未返回已保存的模型凭据，请重试。')
+  return credentialId
+}
+
 export const searchProviderModels = async (
   provider: ProviderDef | string,
   apiKey?: string,
   baseUrl?: string,
   query?: string,
+  gateway?: ProviderModelGatewayOptions,
 ): Promise<Record<string, Model[]>> => {
   const providerDef = typeof provider === 'string' ? providerMap[provider] : provider
   const providerId = providerDef?.id || (typeof provider === 'string' ? provider : 'custom')
@@ -84,7 +183,7 @@ export const searchProviderModels = async (
     return { '平台内置': models }
   }
 
-  if (providerId !== 'ollama' && !apiKey) {
+  if (!gateway && providerId !== 'ollama' && !apiKey) {
     throw new Error('请先填写 API Key 再搜索在线模型')
   }
 
@@ -92,20 +191,22 @@ export const searchProviderModels = async (
     ? `${baseUrl.replace(/\/$/, '')}/models`
     : providerDef?.modelsApi || `${(providerDef?.defaultBaseUrl || '').replace(/\/$/, '')}/models`
 
-  const res = await fetch(endpoint, {
-    headers: buildHeaders(providerId, apiKey),
-  })
-  if (!res.ok) {
-    const text = await res.text()
-    console.warn('[ModelFetcher] Failed to fetch model list:', {
-      providerId,
-      status: res.status,
-      body: text.slice(0, 500),
-    })
-    throw new Error(formatModelListError(res.status))
-  }
-
-  const data = await res.json()
+  const data = gateway
+    ? await discoverModelsThroughGateway(providerId, gateway)
+    : await (async () => {
+        const res = await fetch(endpoint, {
+          headers: buildHeaders(providerId, apiKey),
+        })
+        if (!res.ok) {
+          await res.text().catch(() => '')
+          console.warn('[ModelFetcher] Failed to fetch model list:', {
+            providerId,
+            status: res.status,
+          })
+          throw new Error(formatModelListError(res.status))
+        }
+        return res.json()
+      })()
   const rawItems = extractList(data)
   const models: Model[] = rawItems
     .map((item: any) => {

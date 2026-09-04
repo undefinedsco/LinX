@@ -290,6 +290,7 @@ describe('AI Secretary bootstrap', () => {
     existingResources?: boolean
     hangExactReads?: boolean
     existingPodDocuments?: boolean
+    podDocumentError?: Error
     legacySingletonTurtle?: string
   } = {}) {
     const rows = options.rows ?? createSecretaryRows()
@@ -325,6 +326,9 @@ describe('AI Secretary bootstrap', () => {
     }))
     const authenticatedFetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (!init?.method || init.method === 'GET') {
+        if (options.podDocumentError) {
+          throw options.podDocumentError
+        }
         if (options.legacySingletonTurtle) {
           return new Response(options.legacySingletonTurtle, {
             status: 200,
@@ -552,7 +556,7 @@ describe('AI Secretary bootstrap', () => {
     initializeChatCollections(db as any)
 
     const resultPromise = chatOps.ensureLinxWelcome({ force: true })
-    await vi.advanceTimersByTimeAsync(2_000)
+    await vi.advanceTimersByTimeAsync(6_000)
 
     await expect(resultPromise).resolves.toEqual({
       chatId: LINX_DEFAULT_SECRETARY.chatId,
@@ -566,6 +570,24 @@ describe('AI Secretary bootstrap', () => {
       expect.stringContaining('/.data/chat/__secretary__/index.ttl'),
       expect.objectContaining({ method: 'GET' }),
     )
+    expect(insertedRows).toEqual([])
+  })
+
+  it('does not create duplicate Secretary rows when both existence reads are indeterminate', async () => {
+    vi.useFakeTimers()
+    const { db, insertedRows } = createSecretaryDb({
+      hangExactReads: true,
+      podDocumentError: new Error('temporary network failure'),
+    })
+    initializeChatCollections(db as any)
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    await vi.advanceTimersByTimeAsync(6_000)
+
+    await expect(resultPromise).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: false,
+    })
     expect(insertedRows).toEqual([])
   })
 

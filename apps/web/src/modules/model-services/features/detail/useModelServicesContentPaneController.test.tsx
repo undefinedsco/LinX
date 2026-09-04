@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
     models: [],
   },
   toast: vi.fn(),
+  sessionFetch: vi.fn(),
+  saveProviderApiKeyThroughGateway: vi.fn(),
+  searchProviderModels: vi.fn(),
   updateProvider: vi.fn(),
   updateProviderCapability: vi.fn(),
 }))
@@ -27,7 +30,20 @@ vi.mock('../../app/store', () => ({
 }))
 
 vi.mock('../../data/model-fetcher', () => ({
-  searchProviderModels: vi.fn(),
+  saveProviderApiKeyThroughGateway: mocks.saveProviderApiKeyThroughGateway,
+  searchProviderModels: mocks.searchProviderModels,
+}))
+
+vi.mock('@/providers/solid-session-context', () => ({
+  useSession: () => ({
+    session: {
+      fetch: mocks.sessionFetch,
+      info: {
+        isLoggedIn: true,
+        webId: 'https://pod.example/alice/profile/card#me',
+      },
+    },
+  }),
 }))
 
 vi.mock('../../data/use-model-services', () => ({
@@ -63,6 +79,9 @@ describe('useModelServicesContentPaneController connection drafts', () => {
       baseUrl: 'https://saved.example/v1',
     }
     mocks.toast.mockReset()
+    mocks.sessionFetch.mockReset()
+    mocks.saveProviderApiKeyThroughGateway.mockReset()
+    mocks.searchProviderModels.mockReset()
     mocks.updateProvider.mockReset()
     mocks.updateProviderCapability.mockReset()
   })
@@ -128,6 +147,68 @@ describe('useModelServicesContentPaneController connection drafts', () => {
 
     expect(result.current.detailViewProps.localApiKey).toBe('newer-key')
     expect(result.current.detailViewProps.localBaseUrl).toBe('https://newer.example/v1')
+  })
+})
+
+describe('useModelServicesContentPaneController provider verification', () => {
+  beforeEach(() => {
+    mocks.provider = {
+      ...mocks.provider,
+      apiKey: 'saved-key',
+      baseUrl: 'https://saved.example/v1',
+      models: [],
+    }
+    mocks.toast.mockReset()
+    mocks.sessionFetch.mockReset()
+    mocks.saveProviderApiKeyThroughGateway.mockReset()
+    mocks.searchProviderModels.mockReset()
+    mocks.updateProvider.mockReset()
+    mocks.updateProviderCapability.mockReset()
+  })
+
+  it('seals the current credential in Xpod before discovering models', async () => {
+    mocks.saveProviderApiKeyThroughGateway.mockResolvedValue('credentials.ttl#cloud-openai-test')
+    mocks.updateProvider.mockResolvedValue(undefined)
+    mocks.searchProviderModels.mockResolvedValue({
+      '在线获取': [{ id: 'gpt-5.6', name: 'GPT-5.6', capabilities: ['responses'] }],
+    })
+    const { result } = renderHook(() => useModelServicesContentPaneController())
+
+    act(() => {
+      result.current.detailViewProps.onApiKeyChange('draft-key')
+      result.current.detailViewProps.onBaseUrlChange('https://timicc.example/v1')
+    })
+
+    await act(async () => {
+      await result.current.detailViewProps.onVerify()
+    })
+
+    expect(mocks.saveProviderApiKeyThroughGateway).toHaveBeenCalledWith(
+      'openai',
+      'draft-key',
+      'https://timicc.example/v1',
+      {
+        apiBaseUrl: 'https://pod.example',
+        authenticatedFetch: mocks.sessionFetch,
+      },
+    )
+    expect(mocks.searchProviderModels).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'openai' }),
+      undefined,
+      'https://timicc.example/v1',
+      undefined,
+      {
+        apiBaseUrl: 'https://pod.example',
+        authenticatedFetch: mocks.sessionFetch,
+      },
+    )
+    expect(mocks.updateProvider).toHaveBeenCalledWith('openai', {
+      apiKey: '',
+      baseUrl: 'https://timicc.example/v1',
+      models: [{ id: 'gpt-5.6', name: 'GPT-5.6', capabilities: ['responses'], enabled: true }],
+    })
+    expect(mocks.saveProviderApiKeyThroughGateway.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.searchProviderModels.mock.invocationCallOrder[0])
   })
 })
 

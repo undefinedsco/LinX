@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { useSession } from '@/providers/solid-session-context'
 import { useNavigate } from '@tanstack/react-router'
-import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { defaultMicroAppId } from '@/modules/layout/micro-app-registry'
 import { isLocalAccessUrl } from '@/lib/local-access-url'
 import { getRememberedAccount, useLoginStore, type StoredAccount } from '@linx/stores/login'
@@ -14,6 +13,7 @@ import {
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
   clearStoredSolidSession,
+  clearUnrestorableSolidAuthState,
   consumePendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
   getPendingLoginAttempt,
@@ -44,6 +44,7 @@ import {
   selectLoginFlowVisibleError,
   type LoginErrorScope,
 } from './login-flow'
+import { LINQ_OFFICIAL_ISSUER } from './constants'
 
 const LOCAL_RESTORE_TIMEOUT_MS = 5000
 function normalizeUrl(url: string): string {
@@ -182,7 +183,7 @@ export function useLoginController() {
 
     const accountIssuerUrl = isStandalone
       ? localProviderUrl
-      : normalizeRememberedUrl(snapshot.cloudIdentityUrl) ?? LINX_CLOUD_IDENTITY_ORIGIN
+      : normalizeRememberedUrl(snapshot.cloudIdentityUrl) ?? LINQ_OFFICIAL_ISSUER
 
     if (!isStandalone && !snapshot.provisionCode) {
       setError('本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。')
@@ -747,6 +748,12 @@ export function useLoginController() {
     })
 
     try {
+      // A previous interrupted/expired browser session can leave orphaned
+      // Inrupt keys without a currentSession pointer. In that state login()
+      // resolves without navigating, so the UI eventually reports a timeout.
+      // Remove only unrestorable auth metadata before starting a fresh flow;
+      // a complete restorable session is preserved.
+      clearUnrestorableSolidAuthState()
       const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
       const surface = desktopApi ? 'embedded' : 'window'
       if (desktopApi) {
@@ -762,6 +769,12 @@ export function useLoginController() {
         ...(options?.prompt ? { prompt: options.prompt } : {}),
       })
     } catch (err: any) {
+      if (options?.prompt === 'none' && isSilentAuthFailure(err)) {
+        // A remembered account can still require first-party consent (for
+        // example after the IdP or dynamic client was recreated). Retry once
+        // interactively instead of leaving the user on a timed-out spinner.
+        return connect(providerKey, { ...options, prompt: 'consent' })
+      }
       if (isInvalidClientError(err) && !options?.isInvalidClientRetry) {
         // The provider forgot our dynamic client registration (server restart or
         // registration expiry). Purge the stale registration and retry once —
@@ -919,8 +932,9 @@ export function useLoginController() {
 
   // Browser session restore uses a cross-site hidden iframe. Modern browsers
   // may withhold the IdP account cookie there even while its first-party SSO
-  // session is still valid. Retry once as a top-level prompt=none flow so a
-  // remembered account can resume without asking for credentials.
+  // session is still valid. Retry once as a normal top-level authorization
+  // flow: remembered consent completes silently, while missing consent opens
+  // the provider page instead of returning another consent_required loop.
   useEffect(() => {
     if (isDesktop || !restore.restoreFailed || webSilentRestoreAttemptedRef.current) return
     if (!storedAccount || session.info.isLoggedIn || sessionRequestInProgress) return
@@ -938,7 +952,7 @@ export function useLoginController() {
 
     webSilentRestoreAttemptedRef.current = true
     const provider = resolveProviderByKey(issuerUrl, providers)
-    void connect(provider?.id ?? issuerUrl, { prompt: 'none' })
+    void connect(provider?.id ?? issuerUrl)
   }, [
     connect,
     isDesktop,
@@ -1261,6 +1275,18 @@ function isSilentAuthError(error: string): boolean {
     || error === 'interaction_required'
     || error === 'consent_required'
     || error === 'account_selection_required'
+}
+
+function isSilentAuthFailure(error: unknown): boolean {
+  const candidate = error as { code?: unknown; error?: unknown; message?: unknown } | null
+  const values = [candidate?.code, candidate?.error, candidate?.message, error]
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.toLowerCase())
+
+  return values.some((value) =>
+    isSilentAuthError(value)
+    || /requested scopes not granted|consent required|login required|interaction required/.test(value),
+  )
 }
 
 function resolveStorageConflictAction(

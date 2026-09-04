@@ -150,7 +150,13 @@ describe('agent-home', () => {
   it('treats existing Agent Home files as initialized', async () => {
     const fetchMock = vi.fn(async (_input, init) => {
       if (init?.method === 'HEAD') return new Response('', { status: 200 })
-      return new Response('', { status: init?.method === 'PATCH' ? 200 : 412 })
+      if (!init?.method) {
+        return new Response([
+          '<https://alice.example/agents/agent-1/> a <http://xmlns.com/foaf/0.1/Agent> .',
+          '<https://alice.example/agents/agent-1/> a <https://undefineds.co/ns#AgentConfig> .',
+        ].join('\n'), { status: 200 })
+      }
+      return new Response('', { status: 200 })
     })
     const db = {
       getDialect: () => ({
@@ -167,7 +173,6 @@ describe('agent-home', () => {
     })).resolves.toBeUndefined()
 
     const writeCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT' || init?.method === 'PATCH')
-    expect(writeCalls).toHaveLength(1)
-    expect(writeCalls[0]?.[1]?.method).toBe('PATCH')
+    expect(writeCalls).toHaveLength(0)
   })
 })

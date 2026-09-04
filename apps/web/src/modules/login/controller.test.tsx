@@ -391,7 +391,7 @@ describe('useLoginController', () => {
     })
   })
 
-  it('falls back to a top-level silent restore for a remembered Web account', async () => {
+  it('falls back to a normal top-level restore for a remembered Web account', async () => {
     restoreState.restoreFailed = true
     providersState.providers = [
       {
@@ -421,8 +421,8 @@ describe('useLoginController', () => {
       expect(connectMock).toHaveBeenCalledWith('cloud', expect.objectContaining({
         authorizationSurface: 'window',
         route: 'cloud',
-        prompt: 'none',
       }))
+      expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
     })
     expect(connectMock).toHaveBeenCalledTimes(1)
   })
@@ -488,6 +488,33 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().error).toBeNull()
   })
 
+  it('removes orphaned Solid auth metadata before starting a fresh Cloud login', async () => {
+    connectMock.mockResolvedValueOnce(undefined)
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+    ]
+    window.localStorage.setItem(
+      'solidClientAuthn:secure:solidClientAuthenticationUser:orphaned-session',
+      JSON.stringify({ isLoggedIn: 'true', webId: 'https://cloud.example.com/alice#me' }),
+    )
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('https://cloud.example.com')
+    })
+
+    expect(connectMock).toHaveBeenCalledTimes(1)
+    expect(window.localStorage.getItem(
+      'solidClientAuthn:secure:solidClientAuthenticationUser:orphaned-session',
+    )).toBeNull()
+  })
+
   it('surfaces the error when invalid_client persists after the automatic retry', async () => {
     connectMock
       .mockRejectedValueOnce(new Error('invalid_client: unknown client'))
@@ -510,6 +537,36 @@ describe('useLoginController', () => {
     expect(connectMock).toHaveBeenCalledTimes(2)
     expect(useLoginStore.getState().state).toBe('idle')
     expect(useLoginStore.getState().error).toBeTruthy()
+  })
+
+  it('retries a failed silent Cloud login interactively when consent is required', async () => {
+    connectMock
+      .mockRejectedValueOnce(new Error('consent_required: requested scopes not granted'))
+      .mockResolvedValueOnce(undefined)
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+    ]
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('https://cloud.example.com', { prompt: 'none' })
+    })
+
+    expect(connectMock).toHaveBeenCalledTimes(2)
+    expect(connectMock).toHaveBeenNthCalledWith(1, 'https://cloud.example.com', expect.objectContaining({
+      prompt: 'none',
+    }))
+    expect(connectMock).toHaveBeenNthCalledWith(2, 'https://cloud.example.com', expect.objectContaining({
+      prompt: 'consent',
+    }))
+    expect(useLoginStore.getState().state).toBe('connecting')
+    expect(useLoginStore.getState().error).toBeNull()
   })
 
   it('enters connecting state for Cloud providers and reports connection errors', async () => {

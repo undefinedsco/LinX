@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLoginStore, getAllProviders } from '@linx/stores/login'
 import { isLocalAccessHostname } from '@/lib/local-access-url'
+import { LINQ_OFFICIAL_ISSUER } from '../constants'
 import type { LoginProviderOption } from '../types'
 import type { LocalSpaceKind, LocalOnboardingSnapshot, SolidProvider } from '@/types/electron-api'
 
-const CLOUD_IDENTITY_URL = 'https://id.undefineds.co'
 const LOCAL_POD_LABEL = 'Local'
 const STANDALONE_POD_LABEL = 'Standalone'
 const REFRESH_INTERVAL = 4000
@@ -165,20 +165,25 @@ export function useProviders() {
   const providers = useMemo<LoginProviderOption[]>(() => {
     // Cloud and Custom providers are combined Solid providers: one URL is both
     // the OIDC issuer and the storage provider.
-    const cloud = getAllProviders(customProviders).map<LoginProviderOption>((p) => ({
-      ...p,
-      source: p.isDefault ? 'cloud' : 'custom',
-      oidcProvider: {
-        kind: p.isDefault ? 'cloud' : 'custom',
-        url: normalizeUrl(p.url),
-        label: p.isDefault ? 'Cloud' : p.label,
-      },
-      storageProvider: {
-        kind: p.isDefault ? 'cloud' : 'custom',
-        url: normalizeUrl(p.url),
-        label: p.isDefault ? 'Cloud' : p.label,
-      },
-    }))
+    const cloud = getAllProviders(customProviders).map<LoginProviderOption>((p) => {
+      const providerUrl = normalizeUrl(p.isDefault ? LINQ_OFFICIAL_ISSUER : p.url)
+
+      return {
+        ...p,
+        url: providerUrl,
+        source: p.isDefault ? 'cloud' : 'custom',
+        oidcProvider: {
+          kind: p.isDefault ? 'cloud' : 'custom',
+          url: providerUrl,
+          label: p.isDefault ? 'Cloud' : p.label,
+        },
+        storageProvider: {
+          kind: p.isDefault ? 'cloud' : 'custom',
+          url: providerUrl,
+          label: p.isDefault ? 'Cloud' : p.label,
+        },
+      }
+    })
 
     // Local and Standalone are product-level local entries. Do not collapse
     // them into device-only/remote-ready runtime states.
@@ -513,7 +518,7 @@ function createLocalLoginProvider(input: {
     source: input.source,
     oidcProvider: {
       kind: isStandalone ? 'local' : 'cloud',
-      url: isStandalone ? normalizedStorageUrl : CLOUD_IDENTITY_URL,
+      url: isStandalone ? normalizedStorageUrl : LINQ_OFFICIAL_ISSUER,
       label: isStandalone ? STANDALONE_POD_LABEL : 'Cloud',
     },
     storageProvider: {

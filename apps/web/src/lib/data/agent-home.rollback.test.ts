@@ -44,7 +44,6 @@ describe('Agent Home creation receipt', () => {
   it('never deletes a home that existed before initialization', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'HEAD') return new Response('', { status: 200 })
-      if (init?.method === 'PUT') return new Response('', { status: 412 })
       return new Response('', { status: 200 })
     })
 
@@ -57,10 +56,7 @@ describe('Agent Home creation receipt', () => {
 
     expect(receipt.created).toBe(false)
     await receipt.rollback()
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ method: 'PUT' }),
-    )
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0)
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ method: 'DELETE' }),

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Plus, Search, User, UserPlus } from 'lucide-react'
 import { ModelSelector } from '@/components/ui/model-selector'
 import type { ModelOption } from '@/components/ui/model-selector'
@@ -47,6 +47,7 @@ interface FriendSearchState {
 }
 
 export function AddChatDialog({ onCreated }: AddChatDialogProps) {
+  const wasOpenRef = useRef(false)
   const isOpen = useChatStore((state) => state.isAddDialogOpen)
   const dialogMode = useChatStore((state) => state.addDialogMode)
   const closeAddDialog = useChatStore((state) => state.closeAddDialog)
@@ -95,7 +96,12 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
 
   // Reset form when dialog opens
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) {
+      wasOpenRef.current = false
+      return
+    }
+    if (wasOpenRef.current) return
+    wasOpenRef.current = true
     setAgentName('')
     setInstructions('')
     setCreateRuntime(false)

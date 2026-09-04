@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Wrench } from 'lucide-react'
-import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { Button } from '@/components/ui/button'
 import { LoginCardShell } from './LoginCardShell'
+import { LINQ_OFFICIAL_ISSUER } from './constants'
 import { useConfigWindowState } from './hooks/use-config-window-state'
 import { useLocalOnboarding } from './hooks/use-local-onboarding'
 import { useOidcConnect } from './hooks/use-oidc-connect'
@@ -91,10 +91,11 @@ export function LocalOnboardingCard({
           nodeId: snapshot.nodeId ?? undefined,
         })
       } else {
-        await oidc.connect(snapshot.cloudIdentityUrl ?? LINX_CLOUD_IDENTITY_ORIGIN, {
+        const accountIssuerUrl = snapshot.cloudIdentityUrl ?? LINQ_OFFICIAL_ISSUER
+        await oidc.connect(accountIssuerUrl, {
           authorizationSurface,
           route: 'local',
-          accountIssuerUrl: snapshot.cloudIdentityUrl ?? LINX_CLOUD_IDENTITY_ORIGIN,
+          accountIssuerUrl,
           accountIssuerLabel: 'Cloud',
           storageProviderUrl: localProviderUrl,
           storageProviderLabel: 'Local',

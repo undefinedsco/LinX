@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { resolveLinxRuntimeOriginForIssuerUrl } from '@undefineds.co/models/client'
 import { useToast } from '@/components/ui/use-toast'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
+import { useSession } from '@/providers/solid-session-context'
 import { useModelServicesStore } from '../../app/store'
-import { searchProviderModels } from '../../data/model-fetcher'
+import { saveProviderApiKeyThroughGateway, searchProviderModels } from '../../data/model-fetcher'
 import { useModelServices } from '../../data/use-model-services'
 import { projectModelList } from '../../domain/model-services-projection'
 import type { AIModel } from '../../domain/types'
@@ -23,11 +25,15 @@ function verificationErrorMessage(error: unknown): string {
   if (/模型列表获取失败|model list|models/i.test(rawMessage)) {
     return '模型列表获取失败。请检查密钥、服务地址或网络后重试。'
   }
+  if (/failed to fetch|networkerror|load failed/i.test(rawMessage)) {
+    return '无法连接 Xpod 模型服务。请检查本地空间是否已启动，然后重试。'
+  }
   return formatErrorForUser(error, '请检查密钥、服务地址或网络后重试。')
 }
 
 export function useModelServicesContentPaneController(): ModelServicesContentPaneController {
   const { toast } = useToast()
+  const { session } = useSession()
   const {
     providers,
     updateProvider,
@@ -121,10 +127,17 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
 
     setMutationError(null)
     try {
-      await updateProvider(provider.id, { apiKey: submittedApiKey, baseUrl: submittedBaseUrl })
+      const storesCredentialInXpod = provider.id !== 'undefineds'
+        && provider.id !== 'ollama'
+        && Boolean(session.info.webId)
+      await updateProvider(provider.id, storesCredentialInXpod
+        ? { baseUrl: submittedBaseUrl }
+        : { apiKey: submittedApiKey, baseUrl: submittedBaseUrl })
       const currentDraft = connectionDraftRef.current
       if (currentDraft.providerId === provider.id) {
-        if (currentDraft.apiKeyVersion === submittedApiKeyVersion) currentDraft.apiKeyDirty = false
+        if (!storesCredentialInXpod && currentDraft.apiKeyVersion === submittedApiKeyVersion) {
+          currentDraft.apiKeyDirty = false
+        }
         if (currentDraft.baseUrlVersion === submittedBaseUrlVersion) currentDraft.baseUrlDirty = false
       }
     } catch (error) {
@@ -165,10 +178,30 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
     try {
       const normalizedApiKey = localApiKey.trim()
       const normalizedBaseUrl = localBaseUrl.trim()
+      const webId = session.info.webId
+      const gateway = provider.id !== 'undefineds' && provider.id !== 'ollama' && webId
+        ? {
+            apiBaseUrl: resolveLinxRuntimeOriginForIssuerUrl(new URL(webId).origin),
+            authenticatedFetch: session.fetch,
+          }
+        : undefined
+
+      if (gateway) {
+        if (normalizedApiKey) {
+          await saveProviderApiKeyThroughGateway(
+            provider.id,
+            normalizedApiKey,
+            normalizedBaseUrl || provider.defaultBaseUrl,
+            gateway,
+          )
+        }
+      }
       const fetchedGroups = await searchProviderModels(
         provider,
-        normalizedApiKey || undefined,
+        gateway ? undefined : normalizedApiKey || undefined,
         normalizedBaseUrl || undefined,
+        undefined,
+        gateway,
       )
       const fetchedModels: AIModel[] = Object.values(fetchedGroups).flat().map((model) => ({
         id: model.id,
@@ -181,15 +214,28 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
         ...fetchedModels.filter((model) => !provider.models.some((existing) => existing.id === model.id)),
       ]
 
-      await updateProvider(provider.id, {
-        apiKey: normalizedApiKey,
-        baseUrl: normalizedBaseUrl || provider.defaultBaseUrl,
-        models: mergedModels,
-      })
+      await updateProvider(provider.id, gateway
+        ? {
+            apiKey: '',
+            baseUrl: normalizedBaseUrl || provider.defaultBaseUrl,
+            models: mergedModels,
+          }
+        : {
+            apiKey: normalizedApiKey,
+            baseUrl: normalizedBaseUrl || provider.defaultBaseUrl,
+            models: mergedModels,
+          })
       toast({
         description: fetchedModels.length > 0 ? `连接成功，已同步 ${fetchedModels.length} 个模型` : '连接成功',
         className: 'bg-green-500/15 border-green-500/20 text-green-600',
       })
+      if (gateway) {
+        const draft = connectionDraftRef.current
+        draft.apiKey = ''
+        draft.apiKeyDirty = false
+        setLocalApiKey('')
+        setShowKey(false)
+      }
     } catch (error) {
       const message = verificationErrorMessage(error)
       setMutationError(message)
@@ -296,7 +342,10 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
       isVerifying,
       modelSearch,
       isPlatformProvider,
-      verificationRequiresApiKey: provider ? !['ollama', 'undefineds'].includes(provider.id) : true,
+      verificationRequiresApiKey: provider
+        ? !['ollama', 'undefineds'].includes(provider.id)
+          && (!provider.enabled || localBaseUrl.trim() !== (provider.baseUrl ?? '').trim())
+        : true,
       onApiKeyChange: changeApiKey,
       onBaseUrlChange: changeBaseUrl,
       onCapabilityChange: changeCapability,

@@ -331,10 +331,11 @@ export async function createAgentHome(
         continue
       }
 
-      if (!created && await podResourceExists(fetchFn, fileUrl)) {
-        continue
-      }
-
+      // Template files belong to Agent Home creation. Existing homes are not
+      // legacy-repaired during normal startup; doing so would generate a 412
+      // on every reload because extension-bearing HEAD requests redirect on
+      // some Solid servers. Metadata remains independently reconciled above.
+      if (!created) continue
       await putPodFileIfMissing(
         fetchFn,
         fileUrl,

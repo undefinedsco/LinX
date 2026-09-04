@@ -68,7 +68,12 @@ export function SolidSessionProvider({
     try {
       await session.login(options)
     } catch (error) {
-      onError?.(error instanceof Error ? error : new Error(String(error)))
+      const normalizedError = error instanceof Error ? error : new Error(String(error))
+      onError?.(normalizedError)
+      // Callers own the login state machine and need the rejection to decide
+      // whether to retry a silent request interactively. Swallowing it leaves
+      // the UI waiting for a redirect that will never happen.
+      throw normalizedError
     } finally {
       setSessionRequestInProgress(false)
     }
