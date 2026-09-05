@@ -145,6 +145,7 @@ test.describe('Guangzhou real Chat acceptance', () => {
     const editedMarker = `GZ-EDIT-${Date.now()}`
     await selectCommand(chat, composer, /^编辑最近提问$/)
     const editDialog = page.getByRole('dialog', { name: '编辑消息' })
+    await expect(editDialog).toBeVisible({ timeout: 30_000 })
     await editDialog.getByRole('textbox', { name: '消息内容' }).fill(`请只回复“${editedMarker}”。`)
     await editDialog.getByRole('button', { name: '保存并重新生成' }).click()
     await expect(editDialog).toBeHidden({ timeout: 30_000 })
@@ -374,7 +375,11 @@ async function selectCommand(
       // ChatKit command results live inside a shadow-rooted iframe. Headless
       // Chromium can report the iframe document itself as intercepting pointer
       // events even after the unique command is visible and stable.
-      await command.click({ force: true, timeout: 30_000 })
+      await command.evaluate((element) => {
+        const target = element.closest<HTMLElement>('button,[role="option"],[role="menuitem"]')
+          ?? element as HTMLElement
+        target.click()
+      })
       return
     }
     await composer.press('Escape').catch(() => undefined)
