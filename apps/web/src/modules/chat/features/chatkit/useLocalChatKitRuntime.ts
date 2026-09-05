@@ -60,16 +60,19 @@ export function useLocalChatKitRuntime({
   const sendAvailableRef = useRef(!sendDisabled)
   const selectedThreadTitleRef = useRef(selectedThreadTitle)
   const persistedActiveBranchByParentRef = useRef(persistedActiveBranchByParent)
+  const sessionFetchRef = useRef(sessionFetch)
   sendAvailableRef.current = !sendDisabled
   selectedThreadTitleRef.current = selectedThreadTitle
   persistedActiveBranchByParentRef.current = persistedActiveBranchByParent
+  sessionFetchRef.current = sessionFetch
 
   const authFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (!sessionFetch) throw new Error('当前空间连接尚未恢复')
-    const response = await sessionFetch(input, init)
+    const currentSessionFetch = sessionFetchRef.current
+    if (!currentSessionFetch) throw new Error('当前空间连接尚未恢复')
+    const response = await currentSessionFetch(input, init)
     if (response.status === 401) requestSessionRecovery()
     return response
-  }, [sessionFetch])
+  }, [])
 
   const localFetch = useMemo(() => {
     if (!db || !sessionWebId || !sessionFetch) return createUnavailableFetch()
@@ -110,7 +113,7 @@ export function useLocalChatKitRuntime({
         updatedAt: createdAt,
       }),
     })
-  }, [authFetch, db, selectedChatId, selectedThreadId, sessionFetch, sessionWebId])
+  }, [authFetch, db, selectedChatId, selectedThreadId, sessionWebId])
 
   useEffect(() => {
     setThreadAttachments([])
