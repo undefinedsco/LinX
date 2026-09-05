@@ -613,6 +613,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private provisionalThreadIds = new Set<string>()
   private threadItemsCache = new Map<string, ThreadItem[]>()
   private completeThreadItemCaches = new Set<string>()
+  private locallyMutatedThreadIds = new Set<string>()
   private completeThreadItemLoadPromises = new Map<string, Promise<void>>()
   private messageRowIdByItemId = new Map<string, string>()
   private onAttachmentsChange?: (attachments: Attachment[]) => void
@@ -1379,6 +1380,15 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   async refreshThreadItems(threadId: string, context: StoreContext): Promise<void> {
     await this.completeThreadItemLoadPromises.get(threadId)
+    // Every local write updates the in-memory item cache synchronously. ChatKit
+    // requests an immediate refresh after those writes; querying the whole RDF
+    // graph again here adds no freshness and can exceed a minute on managed
+    // Pods. Reserve the expensive reload for external/explicit refreshes.
+    if (this.locallyMutatedThreadIds.delete(threadId)) {
+      const cached = this.threadItemsCache.get(threadId)
+      if (cached) this.onThreadItemsChange?.([...cached])
+      return
+    }
     this.threadItemsCache.delete(threadId)
     this.completeThreadItemCaches.delete(threadId)
     await this.loadThreadItems(threadId, undefined, 100, 'desc', context)
@@ -1455,6 +1465,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.messageRowIdByItemId.set(item.id, messageId)
     this.recentlyCreatedIds.add(item.id)
     this.upsertCachedThreadItem(threadId, item)
+    this.locallyMutatedThreadIds.add(threadId)
     if (item.type === 'user_message' || (item.type === 'assistant_message' && status !== 'in_progress')) {
       await this.updateChatSummaryBestEffort(chatId, messageId, content, createdAt)
     }
@@ -1475,6 +1486,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       const messageIri = this.resolveMessageIri({ id: rowId })
       await this.directPatchMessage(messageIri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
+      this.locallyMutatedThreadIds.add(threadId)
       if (shouldUpdateAssistantSummary(item, cachedItem, nextRecord)) {
         const chatId = await this.getThreadChatId(threadId)
         await this.updateChatSummaryBestEffort(chatId, rowId, content, new Date(item.created_at * 1000))
@@ -1488,6 +1500,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         const messageIri = this.resolveMessageIri({ id: rowId })
         await this.directPatchMessage(messageIri, content, richContent, status)
         this.upsertCachedThreadItem(threadId, item)
+        this.locallyMutatedThreadIds.add(threadId)
         if (shouldUpdateAssistantSummary(item, cachedItem, nextRecord)) {
           const chatId = await this.getThreadChatId(threadId)
           await this.updateChatSummaryBestEffort(chatId, rowId, content, new Date(item.created_at * 1000))
@@ -1503,6 +1516,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       const messageIri = this.resolveMessageIri(existing)
       await this.directPatchMessage(messageIri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
+      this.locallyMutatedThreadIds.add(threadId)
       if (shouldUpdateAssistantSummary(item, storedItem, nextRecord)) {
         const chatId = await this.getThreadChatId(threadId)
         await this.updateChatSummaryBestEffort(chatId, requireRecordId(existing, 'Message row'), content, new Date(item.created_at * 1000))
@@ -1593,6 +1607,7 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
     }))
     this.messageRowIdByItemId.delete(itemId)
     this.removeCachedThreadItem(threadId, itemId)
+    this.locallyMutatedThreadIds.add(threadId)
   }
 
   // -----------------------------------------------------------------------
