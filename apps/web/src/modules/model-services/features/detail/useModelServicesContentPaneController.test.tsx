@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   },
   toast: vi.fn(),
   sessionFetch: vi.fn(),
+  ensureAiServiceAccessForSession: vi.fn(),
   saveProviderApiKeyThroughGateway: vi.fn(),
   searchProviderModels: vi.fn(),
   updateProvider: vi.fn(),
@@ -32,6 +33,10 @@ vi.mock('../../app/store', () => ({
 vi.mock('../../data/model-fetcher', () => ({
   saveProviderApiKeyThroughGateway: mocks.saveProviderApiKeyThroughGateway,
   searchProviderModels: mocks.searchProviderModels,
+}))
+
+vi.mock('@/modules/chat/services/chatkit-local/fetch-handler', () => ({
+  ensureAiServiceAccessForSession: mocks.ensureAiServiceAccessForSession,
 }))
 
 vi.mock('@/providers/solid-session-context', () => ({
@@ -75,11 +80,14 @@ describe('useModelServicesContentPaneController connection drafts', () => {
   beforeEach(() => {
     mocks.provider = {
       ...mocks.provider,
+      id: 'openai',
       apiKey: 'saved-key',
       baseUrl: 'https://saved.example/v1',
     }
     mocks.toast.mockReset()
     mocks.sessionFetch.mockReset()
+    mocks.ensureAiServiceAccessForSession.mockReset()
+    mocks.ensureAiServiceAccessForSession.mockResolvedValue(undefined)
     mocks.saveProviderApiKeyThroughGateway.mockReset()
     mocks.searchProviderModels.mockReset()
     mocks.updateProvider.mockReset()
@@ -87,6 +95,7 @@ describe('useModelServicesContentPaneController connection drafts', () => {
   })
 
   it('retains API key and base URL drafts when optimistic persistence rolls back', async () => {
+    mocks.provider = { ...mocks.provider, id: 'undefineds' }
     const persistence = createDeferred<void>()
     mocks.updateProvider.mockReturnValueOnce(persistence.promise)
     const { result, rerender } = renderHook(() => useModelServicesContentPaneController())
@@ -120,6 +129,7 @@ describe('useModelServicesContentPaneController connection drafts', () => {
   })
 
   it('does not clear newer edits when an earlier save completes', async () => {
+    mocks.provider = { ...mocks.provider, id: 'undefineds' }
     const persistence = createDeferred<void>()
     mocks.updateProvider.mockReturnValueOnce(persistence.promise)
     const { result, rerender } = renderHook(() => useModelServicesContentPaneController())
@@ -148,18 +158,37 @@ describe('useModelServicesContentPaneController connection drafts', () => {
     expect(result.current.detailViewProps.localApiKey).toBe('newer-key')
     expect(result.current.detailViewProps.localBaseUrl).toBe('https://newer.example/v1')
   })
+
+  it('does not write Xpod-managed connection drafts through the provider collection', async () => {
+    const { result } = renderHook(() => useModelServicesContentPaneController())
+
+    act(() => {
+      result.current.detailViewProps.onApiKeyChange('draft-key')
+      result.current.detailViewProps.onBaseUrlChange('https://draft.example/v1')
+    })
+    await act(async () => {
+      await result.current.detailViewProps.onSaveConnection()
+    })
+
+    expect(mocks.updateProvider).not.toHaveBeenCalled()
+    expect(result.current.detailViewProps.localApiKey).toBe('draft-key')
+    expect(result.current.detailViewProps.localBaseUrl).toBe('https://draft.example/v1')
+  })
 })
 
 describe('useModelServicesContentPaneController provider verification', () => {
   beforeEach(() => {
     mocks.provider = {
       ...mocks.provider,
+      id: 'openai',
       apiKey: 'saved-key',
       baseUrl: 'https://saved.example/v1',
       models: [],
     }
     mocks.toast.mockReset()
     mocks.sessionFetch.mockReset()
+    mocks.ensureAiServiceAccessForSession.mockReset()
+    mocks.ensureAiServiceAccessForSession.mockResolvedValue(undefined)
     mocks.saveProviderApiKeyThroughGateway.mockReset()
     mocks.searchProviderModels.mockReset()
     mocks.updateProvider.mockReset()
@@ -192,6 +221,11 @@ describe('useModelServicesContentPaneController provider verification', () => {
         authenticatedFetch: mocks.sessionFetch,
       },
     )
+    expect(mocks.ensureAiServiceAccessForSession).toHaveBeenCalledWith({
+      podBaseUrl: 'https://pod.example/alice',
+      webId: 'https://pod.example/alice/profile/card#me',
+      authFetch: mocks.sessionFetch,
+    })
     expect(mocks.searchProviderModels).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'openai' }),
       undefined,
@@ -203,8 +237,6 @@ describe('useModelServicesContentPaneController provider verification', () => {
       },
     )
     expect(mocks.updateProvider).toHaveBeenCalledWith('openai', {
-      apiKey: '',
-      baseUrl: 'https://timicc.example/v1',
       models: [{ id: 'gpt-5.6', name: 'GPT-5.6', capabilities: ['responses'], enabled: true }],
     })
     expect(mocks.saveProviderApiKeyThroughGateway.mock.invocationCallOrder[0])
@@ -216,6 +248,7 @@ describe('useModelServicesContentPaneController capability drafts', () => {
   beforeEach(() => {
     mocks.provider = {
       ...mocks.provider,
+      id: 'openai',
       capabilities: ['chat_completions', 'image_input'],
     }
     mocks.toast.mockReset()

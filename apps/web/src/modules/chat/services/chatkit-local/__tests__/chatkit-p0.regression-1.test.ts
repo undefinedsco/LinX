@@ -102,6 +102,34 @@ describe('ChatKit P0 attachment storage', () => {
     await expect(store.loadAttachment('attach-history', {})).resolves.toMatchObject({ pod_url: expect.stringContaining('attach-history') })
   })
 
+  it('hydrates a generated image to a browser-safe URL so ChatKit can restore it', async () => {
+    const authFetch = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { 'Content-Type': 'image/png' },
+    }))
+    const store = createStore(authFetch)
+    const item = await (store as any).hydrateItemAttachments({
+      id: 'generated-image-1',
+      thread_id: 'thread-1',
+      type: 'generated_image',
+      image: {
+        id: 'attach-generated-history',
+        url: 'https://pod.example/alice/.data/chat-attachments/attach-generated-history',
+      },
+      attachment: {
+        id: 'attach-generated-history',
+        type: 'image',
+        name: 'generated.png',
+        mime_type: 'image/png',
+      },
+      created_at: 1,
+    })
+
+    expect(authFetch).toHaveBeenCalledWith('https://pod.example/alice/.data/chat-attachments/attach-generated-history')
+    expect(item.image.url).toBe('data:image/png;base64,AQID')
+    expect(item.attachment.download_url).toBe(item.image.url)
+  })
+
   it('derives historical attachment URLs from the current Pod and enforces byte limits', async () => {
     const authFetch = vi.fn(async () => new Response(null, {
       status: 200,

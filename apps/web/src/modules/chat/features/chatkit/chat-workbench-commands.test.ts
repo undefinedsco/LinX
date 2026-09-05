@@ -22,6 +22,7 @@ describe('createChatWorkbenchCommands', () => {
       'linx.read-latest-answer',
       'linx.open-project-context',
       'linx.open-attachments',
+      'linx.generate-image',
       'linx.open-capture',
       'linx.open-voice',
       'linx.open-artifacts',
@@ -46,6 +47,7 @@ describe('createChatWorkbenchCommands', () => {
 
     expect(commands.map((command) => command.id)).toEqual([
       'linx.next-message-branch',
+      'linx.generate-image',
       'linx.open-capture',
       'linx.open-voice',
     ])

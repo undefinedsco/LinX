@@ -105,7 +105,20 @@ export interface AssistantMessageItem {
   created_at: number
 }
 
-export type ThreadItem = UserMessageItem | AssistantMessageItem | ClientToolCallItem
+export interface GeneratedImageItem {
+  id: string
+  thread_id: string
+  type: 'generated_image'
+  image: {
+    id: string
+    url: string
+  } | null
+  /** LinX persistence metadata used to restore the authenticated Pod binary. */
+  attachment?: Attachment
+  created_at: number
+}
+
+export type ThreadItem = UserMessageItem | AssistantMessageItem | ClientToolCallItem | GeneratedImageItem
 
 export type StoreItemType = ThreadItem['type']
 

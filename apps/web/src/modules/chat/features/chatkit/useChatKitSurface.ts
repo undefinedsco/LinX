@@ -36,7 +36,6 @@ export function useChatKitSurface({
   const [loadFailed, setLoadFailed] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [readyRevision, setReadyRevision] = useState(0)
-  const initialThreadIdRef = useRef(selectedThreadId)
   const hostRef = useRef<OpenAIChatKit | null>(null)
   const restoredSurfaceRef = useRef<{
     host: OpenAIChatKit
@@ -44,7 +43,7 @@ export function useChatKitSurface({
     status: 'restoring' | 'restored'
   } | null>(null)
   const readiness = useChatKitThreadReadiness({ selectedChatId, selectedThreadId, isMounted, loadFailed })
-  const { isThreadReady, markLoaded: markThreadLoaded, markLoading: markThreadLoading } = readiness
+  const { isThreadReady, markLoaded: markThreadLoaded } = readiness
   const { markRestored: markThreadRestored, markRestoring: markThreadRestoring, reset: resetThreadReadiness } = readiness
 
   const handleChatKitLog = useCallback(({ name, data }: {
@@ -52,7 +51,7 @@ export function useChatKitSurface({
     data?: Record<string, unknown>
   }) => {
     // ChatKit diagnostics can include large message/tool payloads, so logging is opt-in.
-    if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+    if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
       console.debug(`[chatkit] ${name} ${JSON.stringify(data ?? {})}`)
     }
   }, [])
@@ -63,12 +62,17 @@ export function useChatKitSurface({
 
   const bindHost = useCallback((host: OpenAIChatKit | null) => {
     if (hostRef.current !== host) {
-      resetThreadReadiness()
+      if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+        console.debug(`[chatkit] host.changed ${JSON.stringify({ mounted: Boolean(host) })}`)
+      }
     }
     hostRef.current = host
-    setIsMounted(Boolean(host))
-    if (!host) restoredSurfaceRef.current = null
-  }, [resetThreadReadiness])
+    if (host) setIsMounted(true)
+    // ChatKit transiently invokes its callback ref with null and a new host
+    // during ordinary internal rerenders. Resetting restoration state here
+    // creates a readiness loop. A real replacement emits onReady, whose
+    // revision reruns restoration against the new host.
+  }, [])
   useEffect(() => {
     if (customElements.get('openai-chatkit')) {
       setLoadFailed(false)
@@ -95,10 +99,11 @@ export function useChatKitSurface({
       fetch: localFetch,
       uploadStrategy: { type: 'two_phase' },
     },
-    // ChatKit consumes the initial thread while applying its first options.
-    // The explicit restore effect below remains responsible for later LinX
-    // navigation changes and for hosts that mount before emitting `ready`.
-    initialThread: initialThreadIdRef.current,
+    // Keep initial selection empty. LinX resolves the persisted chat/thread
+    // asynchronously, and letting ChatKit also restore its mount-time value
+    // races the explicit restore below. That race can leave a valid thread id
+    // attached to an empty iframe after reload.
+    initialThread: null,
     theme: {
       colorScheme: theme,
       color: { accent: { primary: '#735FC4', level: 2 } },
@@ -123,8 +128,11 @@ export function useChatKitSurface({
           id: 'image_generation',
           label: '生成图片',
           shortLabel: '图片',
-          icon: 'square-image',
-          pinned: true,
+          // `images` is supported by both the current CDN component and the
+          // installed ChatKit types. The newer `square-image` token caused the
+          // whole tool to be silently omitted by older cached components.
+          icon: 'images',
+          pinned: false,
           persistent: false,
           placeholderOverride: '描述希望生成的图片...',
         },
@@ -147,7 +155,10 @@ export function useChatKitSurface({
     threadItemActions: { feedback: true, retry: true },
     thread: { autoScroll: true },
     onReady: () => { restoredSurfaceRef.current = null; setReadyRevision((revision) => revision + 1) },
-    onThreadLoadStart: markThreadLoading,
+    // Explicit restoration below owns the user-facing readiness gate. Some
+    // iframe versions emit a late load-start event after fetchUpdates has
+    // already resolved, without a matching load-end payload for the same id;
+    // letting that event clear readiness leaves the composer disabled forever.
     onThreadLoadEnd: markThreadLoaded,
     onError: handleChatKitError,
     onLog: handleChatKitLog,
@@ -176,7 +187,11 @@ export function useChatKitSurface({
   ])
 
   useEffect(() => {
-    if (!isMounted || !selectedThreadId) return
+    // The custom element can be mounted before its iframe runtime is ready.
+    // ChatKit silently ignores setThreadId calls during that window, leaving
+    // a correctly selected LinX thread with an empty message surface after a
+    // reload. Only restore after ChatKit has emitted onReady.
+    if (!isMounted || readyRevision === 0 || !selectedThreadId) return
     const host = hostRef.current
     if (!host) return
     const restoreKey = `${selectedChatId}\n${selectedThreadId}`
@@ -194,23 +209,33 @@ export function useChatKitSurface({
 
     const restoreThread = async () => {
       try {
-        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+        if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
           console.debug(`[chatkit] restore.start ${JSON.stringify({ selectedChatId, selectedThreadId })}`)
         }
         await customElements.whenDefined('openai-chatkit')
         if (disposed) return
+        // On a full page reload ChatKit can retain the initial thread id while
+        // its iframe has no hydrated items. Re-selecting the same id is then a
+        // no-op. Clear the iframe selection first so restoring always performs
+        // a real thread load from the Pod-backed store.
+        // Some ChatKit iframe versions never settle the Promise returned by
+        // setThreadId(null) while the surface is still finishing startup.
+        // Clearing is only a transition that forces the following selection
+        // to be treated as a real load, so it must not block that selection.
+        void Promise.resolve(chatkit.setThreadId(null)).catch(() => undefined)
+        if (disposed) return
         await workbench.surface.setThread(selectedThreadId)
-        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+        if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
           console.debug('[chatkit] restore.selected')
         }
         if (disposed) return
         await workbench.surface.refresh()
-        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+        if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
           console.debug('[chatkit] restore.refreshed')
         }
         restoreState.status = 'restored'
         markThreadRestored()
-        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+        if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
           console.debug(`[chatkit] restore.done ${JSON.stringify({ selectedChatId, selectedThreadId })}`)
         }
       } catch (error) {
@@ -230,7 +255,7 @@ export function useChatKitSurface({
         restoredSurfaceRef.current = null
       }
     }
-  }, [isMounted, markThreadRestored, markThreadRestoring, readyRevision, resetThreadReadiness, selectedChatId, selectedThreadId, workbench.surface])
+  }, [chatkit.setThreadId, isMounted, markThreadRestored, markThreadRestoring, readyRevision, resetThreadReadiness, selectedChatId, selectedThreadId, workbench.surface])
 
   useEffect(() => {
     if (!pendingComposerDraft) return
@@ -294,5 +319,6 @@ export function useChatKitSurface({
     isThreadReady,
     surface: workbench.surface,
     commands: workbench.commands,
+    selectComposerTool: (selectedToolId: string | null) => chatkit.setComposerValue({ selectedToolId }),
   }
 }

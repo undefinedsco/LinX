@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  createPodCollection: vi.fn(() => ({})),
+  preload: vi.fn(async () => undefined),
+  createPodCollection: vi.fn(),
   rebindPodCollections: vi.fn(async () => undefined),
   cancelQueries: vi.fn(async () => undefined),
 }))
@@ -22,7 +23,7 @@ describe('model service collection database binding', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
-    mocks.createPodCollection.mockImplementation(() => ({}))
+    mocks.createPodCollection.mockImplementation(() => ({ preload: mocks.preload }))
     mocks.rebindPodCollections.mockResolvedValue(undefined)
   })
 
@@ -42,6 +43,7 @@ describe('model service collection database binding', () => {
       true,
       false,
     ])
+    expect(mocks.preload).toHaveBeenCalledTimes(6)
   })
 
   it('allows the same database to retry after a failed rebind', async () => {

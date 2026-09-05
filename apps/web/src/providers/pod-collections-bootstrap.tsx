@@ -36,6 +36,13 @@ function useSelectChat() {
 export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapProps) {
   const { db } = useSolidDatabase()
   const lastStartedRef = useRef<SolidDatabase | null>(null)
+  // Xpod's streaming notification endpoint currently uses one long-lived
+  // connection per collection. Opening every product collection while the
+  // user is on Chat can exhaust the browser's per-origin connection pool and
+  // leave ordinary Pod writes queued indefinitely. Keep Chat's three live
+  // channels on the Chat route; the other modules still initialize normally
+  // and establish their channels when entered directly.
+  const isChatRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/chat')
 
   configureChatContactsPort({ agentCollection, contactCollection })
   configureContactsChatPort({
@@ -75,53 +82,55 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
 
     lastStartedRef.current = db
 
-    void filesOps.subscribeToPod()
-      .then((nextUnsubscribe) => {
-        if (cancelled) {
-          nextUnsubscribe()
-          return
-        }
-        unsubscribeFiles = nextUnsubscribe
-      })
-      .catch((error) => {
-        console.warn('[PodCollectionsBootstrap] Failed to subscribe files collections:', error)
-      })
+    if (!isChatRoute) {
+      void filesOps.subscribeToPod()
+        .then((nextUnsubscribe) => {
+          if (cancelled) {
+            nextUnsubscribe()
+            return
+          }
+          unsubscribeFiles = nextUnsubscribe
+        })
+        .catch((error) => {
+          console.warn('[PodCollectionsBootstrap] Failed to subscribe files collections:', error)
+        })
 
-    void favoriteOps.subscribeToPod()
-      .then((nextUnsubscribe) => {
-        if (cancelled) {
-          nextUnsubscribe()
-          return
-        }
-        unsubscribeFavorites = nextUnsubscribe
-      })
-      .catch((error) => {
-        console.warn('[PodCollectionsBootstrap] Failed to subscribe favorite collection:', error)
-      })
+      void favoriteOps.subscribeToPod()
+        .then((nextUnsubscribe) => {
+          if (cancelled) {
+            nextUnsubscribe()
+            return
+          }
+          unsubscribeFavorites = nextUnsubscribe
+        })
+        .catch((error) => {
+          console.warn('[PodCollectionsBootstrap] Failed to subscribe favorite collection:', error)
+        })
 
-    void inboxOps.subscribeToPod()
-      .then((nextUnsubscribe) => {
-        if (cancelled) {
-          nextUnsubscribe()
-          return
-        }
-        unsubscribeInbox = nextUnsubscribe
-      })
-      .catch((error) => {
-        console.warn('[PodCollectionsBootstrap] Failed to subscribe inbox collections:', error)
-      })
+      void inboxOps.subscribeToPod()
+        .then((nextUnsubscribe) => {
+          if (cancelled) {
+            nextUnsubscribe()
+            return
+          }
+          unsubscribeInbox = nextUnsubscribe
+        })
+        .catch((error) => {
+          console.warn('[PodCollectionsBootstrap] Failed to subscribe inbox collections:', error)
+        })
 
-    void symphonyControlOps.subscribeToPod()
-      .then((nextUnsubscribe) => {
-        if (cancelled) {
-          nextUnsubscribe()
-          return
-        }
-        unsubscribeSymphony = nextUnsubscribe
-      })
-      .catch((error) => {
-        console.warn('[PodCollectionsBootstrap] Failed to subscribe Symphony control collections:', error)
-      })
+      void symphonyControlOps.subscribeToPod()
+        .then((nextUnsubscribe) => {
+          if (cancelled) {
+            nextUnsubscribe()
+            return
+          }
+          unsubscribeSymphony = nextUnsubscribe
+        })
+        .catch((error) => {
+          console.warn('[PodCollectionsBootstrap] Failed to subscribe Symphony control collections:', error)
+        })
+    }
 
     const isCurrentBootstrap = () => !cancelled && lastStartedRef.current === db
     const applyWelcomeResult = (result: LinxWelcomeResult | null) => {
@@ -178,7 +187,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
       unsubscribeInbox?.()
       unsubscribeSymphony?.()
     }
-  }, [db])
+  }, [db, isChatRoute])
 
   return <>{children}</>
 }

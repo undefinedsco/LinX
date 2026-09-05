@@ -86,25 +86,42 @@ describe('searchProviderModels', () => {
   })
 
   it('stores provider API keys through the authenticated Xpod credential vault', async () => {
-    const authenticatedFetch = vi.fn(async () => Response.json({
-      credential: { id: 'credentials.ttl#cloud-openai-test' },
-    }, { status: 201 }))
+    const authenticatedFetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({
+        attemptId: 'attempt-1',
+        state: 'state-1',
+        signature: 'signature-1',
+      }))
+      .mockResolvedValueOnce(Response.json({
+        credentialId: 'cloud-openai-test',
+      }))
 
     await expect(saveProviderApiKeyThroughGateway(
       'openai',
       'sk-test',
       'https://timicc.example/v1',
       { apiBaseUrl: 'https://pod.example/alice/', authenticatedFetch },
-    )).resolves.toBe('credentials.ttl#cloud-openai-test')
+    )).resolves.toBe('cloud-openai-test')
 
-    expect(authenticatedFetch).toHaveBeenCalledWith(
-      'https://pod.example/api/ai/providers/openai/credentials/api-key',
+    expect(authenticatedFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://pod.example/api/ai/gateway/providers/openai/connect/begin',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ mode: 'browserAssistedApiKey' }),
+      }),
+    )
+    expect(authenticatedFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://pod.example/api/ai/gateway/providers/openai/connect/complete-api-key',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
+          attemptId: 'attempt-1',
+          state: 'state-1',
+          signature: 'signature-1',
           apiKey: 'sk-test',
           baseUrl: 'https://timicc.example/v1',
-          priority: 0,
         }),
       }),
     )

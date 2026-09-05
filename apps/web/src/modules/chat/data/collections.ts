@@ -2545,7 +2545,20 @@ export function useMessageIndex(options?: { enabled?: boolean }) {
  */
 export function useChatMutations() {
   const createAIChat = useMutation({
-    mutationFn: (input: CreateAIChatInput) => chatOps.createAIChat(input),
+    mutationFn: async (input: CreateAIChatInput) => {
+      const created = await chatOps.createAIChat(input)
+      // A list request that started before creation can resolve afterwards and
+      // replace the optimistic row with a stale snapshot. Reconcile in the
+      // background, then re-assert the persisted row. Creation must not wait
+      // for a cold full-Pod chat query, which can take tens of seconds.
+      void chatCollection.fetch({ refetch: true }).then(() => {
+        writeCollectionRow(chatCollection, created, created.id)
+      }).catch((error) => {
+        console.warn('[chat] Background chat reconciliation failed:', error)
+        writeCollectionRow(chatCollection, created, created.id)
+      })
+      return created
+    },
   })
 
   const updateChat = useMutation({
@@ -2562,8 +2575,16 @@ export function useChatMutations() {
   })
 
   const createThread = useMutation({
-    mutationFn: ({ chatId, title, threadId }: { chatId: string; title?: string; threadId?: string }) =>
-      chatOps.createThread(chatId, title, { threadId }),
+    mutationFn: async ({ chatId, title, threadId }: { chatId: string; title?: string; threadId?: string }) => {
+      const created = await chatOps.createThread(chatId, title, { threadId })
+      void threadCollection.fetch({ refetch: true }).then(() => {
+        writeCollectionRow(threadCollection, created, created.id)
+      }).catch((error) => {
+        console.warn('[chat] Background thread reconciliation failed:', error)
+        writeCollectionRow(threadCollection, created, created.id)
+      })
+      return created
+    },
   })
 
   const ensureThreadWorkspace = useMutation({

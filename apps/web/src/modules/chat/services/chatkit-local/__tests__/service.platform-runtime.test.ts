@@ -1246,6 +1246,17 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(JSON.parse((generateCall?.[1] as RequestInit).body as string).model).toBe('undefineds/image-model')
     expect(store.uploadAttachment).toHaveBeenCalledWith('generated-attachment', expect.any(Blob), 'image/png', undefined)
     expect(findAssistantDone(events)?.item?.attachments).toEqual([expect.objectContaining({ id: 'generated-attachment' })])
+    const generatedImageDone = events.find(event => (
+      event.type === 'thread.item.done' && (event as any).item?.type === 'generated_image'
+    )) as any
+    expect(generatedImageDone?.item).toEqual(expect.objectContaining({
+      image: { id: 'generated-attachment', url: expect.stringMatching(/^data:image\/png;base64,/u) },
+      attachment: expect.objectContaining({ id: 'generated-attachment' }),
+    }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'thread.item.updated',
+      update: expect.objectContaining({ type: 'generated_image.updated', progress: 1 }),
+    }))
     expect(events.some((event) => event.type === 'error')).toBe(false)
   })
 

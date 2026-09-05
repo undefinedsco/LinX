@@ -24,6 +24,7 @@ interface UseLocalChatKitRuntimeOptions {
 function createUnavailableFetch(): LocalChatKitFetch {
   const unavailableFetch = (async () => unavailableResponse()) as unknown as LocalChatKitFetch
   unavailableFetch.refreshThreadItems = async () => undefined
+  unavailableFetch.interrupt = () => undefined
   unavailableFetch.getOutboxSize = () => 0
   unavailableFetch.getOutboxRetryAt = () => null
   unavailableFetch.flushOutbox = async () => ({ completed: 0, pending: 0 })
@@ -119,7 +120,13 @@ export function useLocalChatKitRuntime({
     setOutboxRevision((revision) => revision + 1)
     return () => localFetch.dispose?.()
   }, [localFetch])
-  const interrupt = useCallback(() => abortGenerationRef.current?.(), [])
+  const interrupt = useCallback(() => {
+    // Abort every active ChatKit stream. Custom actions such as regenerate or
+    // edit can briefly overlap a refresh stream, so retaining only the latest
+    // callback can leave the actual model request running.
+    localFetch.interrupt()
+    abortGenerationRef.current?.()
+  }, [localFetch])
   const grantServiceAccess = useCallback(async () => {
     setIsGrantingServiceAccess(true)
     setServiceAccessError(null)

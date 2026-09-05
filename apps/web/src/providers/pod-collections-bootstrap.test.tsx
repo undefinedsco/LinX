@@ -117,6 +117,7 @@ vi.mock('@/modules/symphony/collections', () => ({
 describe('PodCollectionsBootstrap', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
     useSolidDatabaseMock.mockReturnValue({ db: null })
     initializeChatCollectionsMock.mockResolvedValue(undefined)
     ensureLinxWelcomeMock.mockResolvedValue(null)
@@ -130,6 +131,24 @@ describe('PodCollectionsBootstrap', () => {
       selectedChatId: null,
       selectedThreadId: null,
     }
+  })
+
+  it('keeps non-chat notification streams closed on the Chat route', async () => {
+    const db = { id: 'db' }
+    window.history.replaceState({}, '', '/chat')
+    useSolidDatabaseMock.mockReturnValue({ db })
+
+    render(<PodCollectionsBootstrap><div>chat app</div></PodCollectionsBootstrap>)
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(subscribeToPodMock).toHaveBeenCalledTimes(1)
+    expect(subscribeFavoritesToPodMock).not.toHaveBeenCalled()
+    expect(subscribeFilesToPodMock).not.toHaveBeenCalled()
+    expect(subscribeInboxToPodMock).not.toHaveBeenCalled()
+    expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
   })
 
   afterEach(() => {

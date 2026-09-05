@@ -1009,6 +1009,31 @@ export class LocalChatKitService {
           assistantItem.status = 'completed'
           await this.store.saveItem(thread.id, assistantItem, context)
           yield { type: 'thread.item.done', item: assistantItem }
+
+          const generatedImageItem = {
+            id: this.store.generateItemId('generated_image', thread, context),
+            thread_id: thread.id,
+            type: 'generated_image' as const,
+            image: null,
+            attachment,
+            parent_item_id: userMessage.id,
+            branch_id: readBranchId(assistantItem),
+            created_at: nowTimestamp(),
+          }
+          yield { type: 'thread.item.added', item: generatedImageItem }
+          const image = {
+            id: attachment.id,
+            url: typeof attachment.generated_data_url === 'string'
+              ? attachment.generated_data_url
+              : attachment.download_url ?? attachment.preview_url ?? attachment.pod_url ?? '',
+          }
+          yield {
+            type: 'thread.item.updated',
+            item_id: generatedImageItem.id,
+            update: { type: 'generated_image.updated', image, progress: 1 },
+          }
+          const completedGeneratedImageItem = { ...generatedImageItem, image }
+          yield { type: 'thread.item.done', item: completedGeneratedImageItem }
           return
         }
 
@@ -2018,12 +2043,16 @@ export class LocalChatKitService {
       name: `${sourceImage ? 'edited' : 'generated'}-${new Date().toISOString().replace(/[:.]/gu, '-')}.png`,
       mime_type: mimeType,
     })
-    return this.store.uploadAttachment(
+    const uploaded = await this.store.uploadAttachment(
       attachment.id,
       new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], { type: mimeType }),
       mimeType,
       signal,
     )
+    return {
+      ...uploaded,
+      generated_data_url: `data:${mimeType};base64,${bytesToBase64(bytes)}`,
+    }
   }
 
   private async resolveImageModel(

@@ -67,6 +67,17 @@ export async function initializeModelCollections(db: SolidDatabase | null): Prom
         cancelInFlight: () => queryClient.cancelQueries({ queryKey: modelQueryKey, exact: true }),
       },
     ], Boolean(db))
+    // Model choices are used by Chat immediately after login, before the user
+    // visits Model Services. Eagerly hydrate these small configuration
+    // collections so an OIDC database rebind cannot leave Chat with an empty
+    // model picker after cancelling the first in-flight query.
+    if (db) {
+      await Promise.all([
+        credentialCollection.preload(),
+        providerCollection.preload(),
+        modelCollection.preload(),
+      ])
+    }
   } catch (error) {
     if (activeDatabase === db) {
       activeDatabase = undefined

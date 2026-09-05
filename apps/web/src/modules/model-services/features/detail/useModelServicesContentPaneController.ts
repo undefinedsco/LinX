@@ -3,6 +3,8 @@ import { resolveLinxRuntimeOriginForIssuerUrl } from '@undefineds.co/models/clie
 import { useToast } from '@/components/ui/use-toast'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { useSession } from '@/providers/solid-session-context'
+import { resolvePodBaseUrl } from '@undefineds.co/drizzle-solid'
+import { ensureAiServiceAccessForSession } from '@/modules/chat/services/chatkit-local/fetch-handler'
 import { useModelServicesStore } from '../../app/store'
 import { saveProviderApiKeyThroughGateway, searchProviderModels } from '../../data/model-fetcher'
 import { useModelServices } from '../../data/use-model-services'
@@ -125,17 +127,21 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
     const submittedBaseUrlVersion = draft.baseUrlVersion
     if (submittedApiKey === (provider.apiKey ?? '') && submittedBaseUrl === (provider.baseUrl ?? '')) return
 
+    const storesCredentialInXpod = provider.id !== 'undefineds'
+      && provider.id !== 'ollama'
+      && Boolean(session.info.webId)
+    // Xpod owns the sealed credential row. Persisting either field through the
+    // regular provider collection can replace the sealed payload with plain or
+    // empty data. Keep the draft local until Verify submits the complete pair
+    // through the authenticated gateway.
+    if (storesCredentialInXpod) return
+
     setMutationError(null)
     try {
-      const storesCredentialInXpod = provider.id !== 'undefineds'
-        && provider.id !== 'ollama'
-        && Boolean(session.info.webId)
-      await updateProvider(provider.id, storesCredentialInXpod
-        ? { baseUrl: submittedBaseUrl }
-        : { apiKey: submittedApiKey, baseUrl: submittedBaseUrl })
+      await updateProvider(provider.id, { apiKey: submittedApiKey, baseUrl: submittedBaseUrl })
       const currentDraft = connectionDraftRef.current
       if (currentDraft.providerId === provider.id) {
-        if (!storesCredentialInXpod && currentDraft.apiKeyVersion === submittedApiKeyVersion) {
+        if (currentDraft.apiKeyVersion === submittedApiKeyVersion) {
           currentDraft.apiKeyDirty = false
         }
         if (currentDraft.baseUrlVersion === submittedBaseUrlVersion) currentDraft.baseUrlDirty = false
@@ -186,8 +192,13 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
           }
         : undefined
 
-      if (gateway) {
+      if (gateway && webId) {
         if (normalizedApiKey) {
+          await ensureAiServiceAccessForSession({
+            podBaseUrl: resolvePodBaseUrl(webId),
+            webId,
+            authFetch: session.fetch,
+          })
           await saveProviderApiKeyThroughGateway(
             provider.id,
             normalizedApiKey,
@@ -215,11 +226,7 @@ export function useModelServicesContentPaneController(): ModelServicesContentPan
       ]
 
       await updateProvider(provider.id, gateway
-        ? {
-            apiKey: '',
-            baseUrl: normalizedBaseUrl || provider.defaultBaseUrl,
-            models: mergedModels,
-          }
+        ? { models: mergedModels }
         : {
             apiKey: normalizedApiKey,
             baseUrl: normalizedBaseUrl || provider.defaultBaseUrl,

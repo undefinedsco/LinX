@@ -144,7 +144,6 @@ export function useModelServices() {
   )
 
   const providers = useMemo(() => {
-    if (queryError) return {}
     const merged: Record<string, AIProvider> = {}
 
     MODEL_PROVIDERS.forEach((staticDef) => {
@@ -199,7 +198,7 @@ export function useModelServices() {
     }
 
     return merged
-  }, [encryptedCredentialProviderIds, providerRows, providerStates, queryError])
+  }, [encryptedCredentialProviderIds, providerRows, providerStates])
 
   const updateProvider = useCallback(async (id: string, updates: Partial<AIProvider>) => {
     const plan = buildAIConfigMutationPlan({

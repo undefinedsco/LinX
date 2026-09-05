@@ -12,10 +12,11 @@ export interface ProviderModelGatewayOptions {
   authenticatedFetch: typeof fetch
 }
 
-interface GatewayCredentialResponse {
-  credential?: {
-    id?: string
-  }
+interface GatewayConnectResponse {
+  attemptId?: string
+  state?: string
+  signature?: string
+  credentialId?: string
 }
 
 const providerMap = Object.fromEntries(MODEL_PROVIDERS.map((p) => [p.id, p]))
@@ -137,11 +138,33 @@ export async function saveProviderApiKeyThroughGateway(
   if (!normalizedApiKey) throw new Error('请先填写 API Key 再验证连接')
 
   const apiBaseUrl = new URL(gateway.apiBaseUrl).origin
-  const endpoint = new URL(
-    `/api/ai/providers/${encodeURIComponent(providerId)}/credentials/api-key`,
+  const beginEndpoint = new URL(
+    `/api/ai/gateway/providers/${encodeURIComponent(providerId)}/connect/begin`,
     apiBaseUrl,
   ).href
-  const response = await gateway.authenticatedFetch(endpoint, {
+  const beginResponse = await gateway.authenticatedFetch(beginEndpoint, {
+    method: 'POST',
+    credentials: 'omit',
+    mode: 'cors',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ mode: 'browserAssistedApiKey' }),
+  })
+  const attempt = await beginResponse.json().catch(() => ({})) as GatewayConnectResponse
+  if (!beginResponse.ok) {
+    throw new Error(formatGatewayModelListError(beginResponse.status, attempt))
+  }
+  if (!attempt.attemptId || !attempt.state || !attempt.signature) {
+    throw new Error('Xpod 未返回有效的模型连接凭据，请重试。')
+  }
+
+  const completeEndpoint = new URL(
+    `/api/ai/gateway/providers/${encodeURIComponent(providerId)}/connect/complete-api-key`,
+    apiBaseUrl,
+  ).href
+  const completeResponse = await gateway.authenticatedFetch(completeEndpoint, {
     method: 'POST',
     credentials: 'omit',
     mode: 'cors',
@@ -150,16 +173,18 @@ export async function saveProviderApiKeyThroughGateway(
       'content-type': 'application/json',
     },
     body: JSON.stringify({
+      attemptId: attempt.attemptId,
+      state: attempt.state,
+      signature: attempt.signature,
       apiKey: normalizedApiKey,
       ...(baseUrl?.trim() ? { baseUrl: baseUrl.trim() } : {}),
-      priority: 0,
     }),
   })
-  const payload = await response.json().catch(() => ({})) as GatewayCredentialResponse
-  if (!response.ok) {
-    throw new Error(formatGatewayModelListError(response.status, payload))
+  const completed = await completeResponse.json().catch(() => ({})) as GatewayConnectResponse
+  if (!completeResponse.ok) {
+    throw new Error(formatGatewayModelListError(completeResponse.status, completed))
   }
-  const credentialId = payload.credential?.id?.trim()
+  const credentialId = completed.credentialId?.trim()
   if (!credentialId) throw new Error('Xpod 未返回已保存的模型凭据，请重试。')
   return credentialId
 }

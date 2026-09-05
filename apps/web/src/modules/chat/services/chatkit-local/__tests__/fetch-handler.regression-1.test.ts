@@ -137,4 +137,31 @@ describe('ChatKit local fetch P0 transport', () => {
     await response.text()
     expect(states.at(-1)).toEqual({ active: false })
   })
+
+  it('interrupts every overlapping ChatKit stream', async () => {
+    const signals: AbortSignal[] = []
+    mocks.process.mockImplementation(async (_body, context) => {
+      signals.push(context.signal)
+      return {
+        type: 'streaming',
+        stream: async function* () {
+          await new Promise<void>((resolve) => context.signal.addEventListener('abort', () => resolve(), { once: true }))
+        },
+      }
+    })
+    const localFetch = createLocalChatKitFetch({
+      db: {} as any,
+      webId: 'https://id.example/alice#me',
+      authFetch: vi.fn() as any,
+      onStreamingChange: vi.fn(),
+    })
+
+    const first = await localFetch('local://chatkit', { method: 'POST', body: '{}' })
+    const second = await localFetch('local://chatkit', { method: 'POST', body: '{}' })
+    localFetch.interrupt()
+
+    expect(signals).toHaveLength(2)
+    expect(signals.every((signal) => signal.aborted)).toBe(true)
+    await Promise.all([first.text(), second.text()])
+  })
 })

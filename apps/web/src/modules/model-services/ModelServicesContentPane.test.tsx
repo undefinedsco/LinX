@@ -6,6 +6,7 @@ const mockUpdateProvider = vi.fn().mockResolvedValue(undefined)
 const mockUpdateProviderCapability = vi.fn().mockResolvedValue(undefined)
 const mockSearchProviderModels = vi.fn()
 const mockSaveProviderApiKeyThroughGateway = vi.fn().mockResolvedValue('credential-openai')
+const mockEnsureAiServiceAccessForSession = vi.fn().mockResolvedValue(undefined)
 const mockSessionFetch = vi.fn()
 let mockQueryError: string | null = null
 
@@ -44,6 +45,10 @@ vi.mock('./data/model-fetcher', () => ({
   saveProviderApiKeyThroughGateway: (...args: unknown[]) => mockSaveProviderApiKeyThroughGateway(...args),
 }))
 
+vi.mock('@/modules/chat/services/chatkit-local/fetch-handler', () => ({
+  ensureAiServiceAccessForSession: (...args: unknown[]) => mockEnsureAiServiceAccessForSession(...args),
+}))
+
 vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
@@ -64,6 +69,7 @@ describe('ModelServicesContentPane', () => {
     mockUpdateProvider.mockResolvedValue(undefined)
     mockUpdateProviderCapability.mockResolvedValue(undefined)
     mockSaveProviderApiKeyThroughGateway.mockResolvedValue('credential-openai')
+    mockEnsureAiServiceAccessForSession.mockResolvedValue(undefined)
     mockQueryError = null
   })
 
@@ -94,9 +100,12 @@ describe('ModelServicesContentPane', () => {
         authenticatedFetch: mockSessionFetch,
       }),
     )
+    expect(mockEnsureAiServiceAccessForSession).toHaveBeenCalledWith({
+      podBaseUrl: 'https://pod.example/alice',
+      webId: 'https://pod.example/alice/profile/card#me',
+      authFetch: mockSessionFetch,
+    })
     expect(mockUpdateProvider).toHaveBeenCalledWith('openai', {
-      apiKey: '',
-      baseUrl: 'https://api.openai.com/v1',
       models: expect.arrayContaining([
         expect.objectContaining({ id: 'gpt-4o' }),
         expect.objectContaining({ id: 'gpt-4o-mini' }),
@@ -161,7 +170,7 @@ describe('ModelServicesContentPane', () => {
     })
   })
 
-  it('keeps a persistence failure visible instead of reporting success', async () => {
+  it('does not persist a sealed credential through the plain provider collection on blur', async () => {
     mockUpdateProvider.mockRejectedValueOnce(new Error('Pod write failed'))
 
     render(<ModelServicesContentPane />)
@@ -170,11 +179,8 @@ describe('ModelServicesContentPane', () => {
     fireEvent.change(apiKey, { target: { value: 'sk-test' } })
     fireEvent.blur(apiKey)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('LinX 还不能在当前空间保存数据')
-    expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
-      variant: 'destructive',
-      description: expect.stringContaining('LinX 还不能在当前空间保存数据'),
-    }))
+    expect(mockUpdateProvider).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('does not report verification success when persisting fetched models fails', async () => {

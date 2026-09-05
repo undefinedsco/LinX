@@ -248,16 +248,22 @@ export function ChatKitPanel({
 
   const submitEdit = async () => {
     if (!editingMessage?.text.trim()) return
+    const submittedEdit = editingMessage
     setIsSubmittingEdit(true)
     setEditError(null)
+    // A ChatKit custom action resolves only after its streamed regeneration
+    // finishes. Close the editor once the user submits so the normal chat
+    // generation UI owns that potentially long wait. Restore the draft only
+    // if the underlying edit/regeneration request actually fails.
+    setEditingMessage(null)
     try {
-      await commands.editMessage(editingMessage.id, editingMessage.text)
-      setEditingMessage(null)
+      await commands.editMessage(submittedEdit.id, submittedEdit.text)
       await Promise.allSettled([
         surface.refresh(),
         localFetch.refreshThreadItems(selectedThreadId),
       ])
     } catch (error) {
+      setEditingMessage(submittedEdit)
       setEditError(error instanceof Error ? error.message : '消息编辑失败，请重试。')
     } finally {
       setIsSubmittingEdit(false)
@@ -280,6 +286,11 @@ export function ChatKitPanel({
       if (command.id === 'linx.next-message-branch') return selectBranch('message', 1)
       if (command.id === 'linx.previous-answer-branch') return selectBranch('answer', -1)
       if (command.id === 'linx.next-answer-branch') return selectBranch('answer', 1)
+      if (command.id === 'linx.generate-image') {
+        await chatKitSurface.selectComposerTool('image_generation')
+        await surface.focusComposer()
+        return
+      }
       if (command.id === 'linx.open-project-context') setActiveDialog('project-context')
       if (command.id === 'linx.open-attachments') setAttachmentWorkspaceOpen(true)
       if (command.id === 'linx.open-capture') setActiveDialog('capture')
@@ -303,13 +314,21 @@ export function ChatKitPanel({
     <div
       data-testid="chatkit-send-boundary"
       className="relative h-full flex-1 overflow-hidden"
-      aria-disabled={sendDisabled}
+      data-thread-ready={chatKitSurface.isThreadReady ? 'true' : 'false'}
+      aria-disabled={sendDisabled || !chatKitSurface.isThreadReady}
     >
-      <ChatKitComponent
-        ref={chatKitSurface.bindHost}
-        control={chatKitSurface.control}
-        style={{ display: 'block', width: '100%', height: '100%' }}
-      />
+      <div className={chatKitSurface.isThreadReady ? 'h-full' : 'h-full pointer-events-none'}>
+        <ChatKitComponent
+          ref={chatKitSurface.bindHost}
+          control={chatKitSurface.control}
+          style={{ display: 'block', width: '100%', height: '100%' }}
+        />
+      </div>
+      {!chatKitSurface.isThreadReady && !chatKitSurface.loadFailed ? (
+        <div className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-[1px]">
+          <span className="text-sm font-normal text-muted-foreground">正在恢复对话…</span>
+        </div>
+      ) : null}
       {chatKitSurface.loadFailed ? (
         <div role="alert" className="absolute inset-0 z-40 flex items-center justify-center bg-background/95 p-6">
           <div className="max-w-sm space-y-3 text-center">

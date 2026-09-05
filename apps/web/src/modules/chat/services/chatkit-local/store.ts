@@ -36,7 +36,15 @@ import { normalizeClientToolCallItem } from './tool-call-protocol'
 import { MAX_ATTACHMENT_BYTES } from './attachment-content'
 
 const DEFAULT_CHAT_ID = 'default'
-const POD_QUERY_TIMEOUT_MS = 15000
+// Managed Pods can take more than 30 seconds for a cold RDF lookup while the
+// PostgreSQL-backed store warms its query plan. Keep the guard finite, but do
+// not turn a successful authenticated read into a false "thread not found".
+const POD_QUERY_TIMEOUT_MS = 60000
+// Message queries scan the chat data container and are measurably slower than
+// exact resource reads on a cold Xpod. Guangzhou has returned successful
+// results after 19-20 seconds under load, so the generic 15 second guard used
+// to turn a valid thread into an empty ChatKit transcript after refresh.
+const POD_MESSAGE_QUERY_TIMEOUT_MS = 60000
 const CHATKIT_ITEM_ID_METADATA_KEY = 'chatkitItemId'
 const THREAD_ITEM_CURSOR_PREFIX = 'linx-chat-cursor:'
 const MAX_CACHED_THREAD_ITEMS = 500
@@ -411,7 +419,9 @@ function parseStoredThreadItem(value: unknown, fallbackThreadId: string, fallbac
     ) as Partial<ThreadItem> | null
     const isStoredMessage = parsed?.type === 'user_message' || parsed?.type === 'assistant_message'
     const isStoredToolCall = parsed?.type === 'client_tool_call' && typeof (parsed as any).call_id === 'string'
-    if (!parsed || (!isStoredMessage && !isStoredToolCall)) {
+    const isStoredGeneratedImage = parsed?.type === 'generated_image'
+      && ((parsed as any).image === null || typeof (parsed as any).image?.id === 'string')
+    if (!parsed || (!isStoredMessage && !isStoredToolCall && !isStoredGeneratedImage)) {
       return null
     }
 
@@ -460,11 +470,25 @@ function threadItemToMessageRecord(item: ThreadItem): {
   status: string | null
   richContent: string | null
 } {
-  const storageItem = Array.isArray((item as any).attachments)
+  const storageItem = item.type === 'generated_image' && item.attachment
+    ? {
+        ...item,
+        image: item.image ? { ...item.image, url: item.attachment.pod_url ?? item.image.url } : null,
+        attachment: (() => {
+          const {
+            preview_url: _previewUrl,
+            download_url: _downloadUrl,
+            generated_data_url: _generatedDataUrl,
+            ...stored
+          } = item.attachment
+          return stored
+        })(),
+      }
+    : Array.isArray((item as any).attachments)
     ? {
         ...item,
         attachments: (item as any).attachments.map((attachment: Attachment) => {
-          const { download_url: _downloadUrl, ...stored } = attachment
+          const { download_url: _downloadUrl, generated_data_url: _generatedDataUrl, ...stored } = attachment
           if (stored.type === 'image' && stored.pod_url) stored.preview_url = stored.pod_url
           return stored
         }),
@@ -511,7 +535,11 @@ function threadItemToMessageRecord(item: ThreadItem): {
   }
 
   return {
-    content: item.type === 'client_tool_call' ? (item as any).name || item.type : JSON.stringify(item),
+    content: item.type === 'client_tool_call'
+      ? (item as any).name || item.type
+      : item.type === 'generated_image'
+        ? item.attachment?.name ?? item.image?.id ?? item.type
+        : JSON.stringify(item),
     role: MessageRole.SYSTEM,
     status: typeof (item as any).status === 'string' ? (item as any).status : null,
     richContent: item.type === 'client_tool_call'
@@ -581,6 +609,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   // In-memory caches (per-instance, not per-context)
   private threadChatIdCache = new Map<string, string>()
   private threadMetadataCache = new Map<string, ThreadMetadata>()
+  private threadRecordCache = new Map<string, Record<string, unknown>>()
   private provisionalThreadIds = new Set<string>()
   private threadItemsCache = new Map<string, ThreadItem[]>()
   private completeThreadItemCaches = new Set<string>()
@@ -741,7 +770,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       query = query.limit(queryLimit)
       return withTimeout<any[]>(
         query.execute(),
-        POD_QUERY_TIMEOUT_MS,
+        POD_MESSAGE_QUERY_TIMEOUT_MS,
         `Timed out loading messages for thread ${threadId}`,
       )
     }
@@ -1069,6 +1098,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       metadata.metadata = { ...(metadata.metadata ?? {}), chat_id: resolvedChatId }
     }
     this.threadMetadataCache.set(threadId, metadata)
+    this.threadRecordCache.set(threadId, thread)
     this.provisionalThreadIds.delete(threadId)
     return metadata
   }
@@ -1086,7 +1116,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     await this.ensureChat(chatId)
     this.threadChatIdCache.set(thread.id, chatId)
 
-    const existingThread = await findThreadRecord(this.db, thread.id, chatId)
+    const existingThread = this.threadRecordCache.get(thread.id)
+      ?? await findThreadRecord(this.db, thread.id, chatId)
 
     if (existingThread) {
       const chat = this.buildChatUri(chatId)
@@ -1127,6 +1158,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.threadMetadataCache.set(thread.id, {
       ...thread,
       metadata: { ...(thread.metadata ?? {}), chat_id: chatId },
+    })
+    this.threadRecordCache.set(thread.id, {
+      ...(existingThread ?? {}),
+      id: this.buildThreadId(chatId, thread.id),
+      createdAt: existingThread?.createdAt ?? new Date(thread.created_at * 1000),
+      updatedAt: now,
     })
     this.provisionalThreadIds.delete(thread.id)
   }
@@ -1260,6 +1297,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       ) throw err
     }
     this.threadMetadataCache.delete(threadId)
+    this.threadRecordCache.delete(threadId)
     this.threadChatIdCache.delete(threadId)
     this.threadItemsCache.delete(threadId)
     this.completeThreadItemCaches.delete(threadId)
@@ -1307,7 +1345,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         this.cacheMessageRow(item.id, message)
         return item
       })
-      const hydratedPage = await Promise.all(data.map((item) => this.hydrateItemAttachments(item)))
+      const hydratedPage = (await Promise.all(data.map(async (item) => {
+        const hydratedItem = await this.hydrateItemAttachments(item)
+        const generatedImage = this.generatedImageFromAssistant(hydratedItem)
+        return generatedImage
+          ? [hydratedItem, await this.hydrateItemAttachments(generatedImage)]
+          : [hydratedItem]
+      }))).flat()
       this.mergeCachedThreadItems(threadId, hydratedPage)
       if (!after && !hasMore) {
         this.completeThreadItemCaches.add(threadId)
@@ -1356,7 +1400,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         : 'user'
 
     const chat = this.buildChatUri(chatId)
-    const requiresLiteralPatch = requiresSafeInitialLiteral(content)
+    const requiresLiteralPatch = item.type === 'generated_image'
+      || requiresSafeInitialLiteral(content)
       || requiresSafeInitialLiteral(richContent)
     const initialContent = requiresLiteralPatch ? initialLiteralPlaceholder(content) : content
     const metadata = buildChatKitMessageReconcilerMetadata({
@@ -1570,10 +1615,13 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
   }
 
   private attachmentIdsFromItem(item: ThreadItem): string[] {
-    if (!('attachments' in item) || !Array.isArray(item.attachments)) return []
-    return item.attachments
+    const ids = 'attachments' in item && Array.isArray(item.attachments)
+      ? item.attachments
       .map((attachment) => attachment.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      : []
+    if (item.type === 'generated_image' && item.attachment?.id) ids.push(item.attachment.id)
+    return [...new Set(ids)]
   }
 
   private async isAttachmentReferencedElsewhere(attachmentId: string): Promise<boolean> {
@@ -1601,11 +1649,47 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
   }
 
   private async hydrateItemAttachments(item: ThreadItem): Promise<ThreadItem> {
+    if (item.type === 'generated_image' && item.attachment) {
+      const attachment = this.rememberAttachment(item.attachment)
+      // Generated media is rendered inside ChatKit's isolated iframe. A blob
+      // URL created by the parent document is origin-bound, so use data here.
+      const dataUrl = await this.getAttachmentDataUrl(attachment)
+      return {
+        ...item,
+        attachment: {
+          ...attachment,
+          preview_url: dataUrl,
+          download_url: dataUrl,
+        },
+        image: item.image
+          ? { ...item.image, url: dataUrl }
+          : { id: attachment.id, url: dataUrl },
+      }
+    }
     if (!Array.isArray((item as any).attachments) || (item as any).attachments.length === 0) return item
     // Keep historical attachment hydration metadata-only. Binary content is
     // fetched explicitly when the user previews or downloads one attachment.
     const attachments = (item as any).attachments.map((raw: Attachment) => this.rememberAttachment(raw))
     return { ...item, attachments } as ThreadItem
+  }
+
+  private generatedImageFromAssistant(item: ThreadItem): ThreadItem | null {
+    if (item.type !== 'assistant_message' || !Array.isArray(item.attachments)) return null
+    const attachment = item.attachments.find((candidate) => (
+      candidate.type === 'image'
+      && /^(generated|edited)-/u.test(candidate.name)
+    ))
+    if (!attachment) return null
+    return {
+      id: `generated-image-${item.id}`,
+      thread_id: item.thread_id,
+      type: 'generated_image',
+      image: null,
+      attachment,
+      parent_item_id: (item as any).parent_item_id,
+      branch_id: (item as any).branch_id,
+      created_at: item.created_at,
+    } as ThreadItem
   }
 
   private emitThreadAttachments(items: ThreadItem[]): void {
@@ -1615,6 +1699,9 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
       const itemAttachments = 'attachments' in item ? item.attachments ?? [] : []
       for (const attachment of itemAttachments) {
         attachments.set(attachment.id, attachment)
+      }
+      if (item.type === 'generated_image' && item.attachment) {
+        attachments.set(item.attachment.id, item.attachment)
       }
     }
     this.onAttachmentsChange([...attachments.values()])
@@ -1696,6 +1783,16 @@ WHERE {
     ], { type: attachment.mime_type }))
     this.attachmentObjectUrls.set(attachment.id, objectUrl)
     return objectUrl
+  }
+
+  private async getAttachmentDataUrl(attachment: Attachment): Promise<string> {
+    const bytes = await this.readAttachmentBytes(attachment.id)
+    let binary = ''
+    const chunkSize = 0x8000
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)))
+    }
+    return `data:${attachment.mime_type};base64,${btoa(binary)}`
   }
 
   async loadAttachmentObjectUrl(attachmentId: string): Promise<string> {

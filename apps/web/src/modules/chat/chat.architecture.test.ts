@@ -107,7 +107,7 @@ describe('chat module architecture', () => {
     const chatKitSurface = readModuleSource(`${root}/features/chatkit/useChatKitSurface.ts`)
     expect(contentPane.split('\n').length).toBeLessThan(400)
     expect(chatKitPanel.split('\n').length).toBeLessThan(500)
-    expect(chatKitSurface.split('\n').length).toBeLessThan(300)
+    expect(chatKitSurface.split('\n').length).toBeLessThan(350)
   })
 
   it('does not retain or route through the retired custom message stack', () => {

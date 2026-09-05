@@ -10,6 +10,7 @@
     "test:local-onboarding": "playwright test specs/local-onboarding.spec.ts --workers=1",
     "test:real-auth": "playwright test specs/real-seeded-auth.spec.ts --workers=1",
     "test:real-cloud": "playwright test specs/real-cloud-auth.spec.ts --workers=1",
+    "test:guangzhou": "LINX_E2E_TARGET=guangzhou LINX_E2E_BASE_URL=https://undefineds-gz.sealosgzg.site LINX_E2E_REUSE_SERVER=0 playwright test specs/guangzhou-smoke.spec.ts --workers=1",
     "test:files": "LINX_E2E_BASE_URL=http://127.0.0.1:5874 LINX_E2E_REUSE_SERVER=0 playwright test specs/files-real-pod-smoke.spec.ts --workers=1",
     "test:chat": "playwright test specs/chat-e2e.spec.ts",
     "report": "playwright show-report"

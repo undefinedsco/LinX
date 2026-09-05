@@ -219,6 +219,42 @@ describe('useModelServices data persistence', () => {
     })
   })
 
+  it('keeps already loaded providers available after a transient collection error', () => {
+    mocks.useLiveQuery.mockReset()
+    mocks.useLiveQuery
+      .mockReturnValueOnce({
+        data: [{ c: {
+          id: 'openai-default',
+          provider: '/settings/providers/openai.ttl',
+          encryptedSecret: '{"ciphertext":"redacted"}',
+          status: 'active',
+          service: 'ai',
+        } }],
+        isError: true,
+      })
+      .mockReturnValueOnce({
+        data: [{ p: { id: 'openai.ttl', displayName: 'OpenAI' } }],
+        isError: false,
+      })
+      .mockReturnValueOnce({
+        data: [{ m: {
+          id: 'openai.ttl#gpt-5.6-terra',
+          displayName: 'GPT-5.6 Terra',
+          isProvidedBy: '/settings/providers/openai.ttl',
+          status: 'active',
+        } }],
+        isError: false,
+      })
+
+    const { result } = renderHook(() => useModelServices())
+
+    expect(result.current.error).toBe('模型服务配置读取失败，请重试。')
+    expect(result.current.providers.openai).toMatchObject({
+      enabled: true,
+      models: [expect.objectContaining({ id: 'gpt-5.6-terra' })],
+    })
+  })
+
   it('persists explicit provider runtime capabilities in the provider resource', async () => {
     const { result } = renderHook(() => useModelServices())
 

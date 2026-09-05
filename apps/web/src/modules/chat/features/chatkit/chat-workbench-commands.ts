@@ -52,6 +52,12 @@ export function createChatWorkbenchCommands(options: ChatWorkbenchCommandOptions
     group: '输入与上下文',
   })
   commands.push({
+    id: 'linx.generate-image',
+    label: '生成图片',
+    description: '切换到图片生成模式并在输入框中描述画面',
+    icon: 'images',
+    group: '输入与上下文',
+  }, {
     id: 'linx.open-capture',
     label: '拍照或共享画面',
     description: '把摄像头、屏幕或窗口画面添加到输入框',

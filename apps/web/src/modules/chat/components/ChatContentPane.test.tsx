@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { forwardRef } from 'react'
+import { forwardRef, useEffect } from 'react'
 
 const mockNavigate = vi.fn()
 const mockUseInboxItems = vi.fn()
@@ -81,11 +81,16 @@ vi.mock('@/providers/solid-session-context', () => ({
 
 vi.mock('@openai/chatkit-react', () => ({
   useChatKit: mockUseChatKit,
-  ChatKit: forwardRef<HTMLDivElement>((_props, ref) => (
-    <div ref={ref} data-testid="chatkit-root">
-      <div data-message-id="msg-3">anchored message</div>
-    </div>
-  )),
+  ChatKit: forwardRef<HTMLDivElement>((_props, ref) => {
+    useEffect(() => {
+      mockUseChatKit.mock.calls.at(-1)?.[0].onReady?.()
+    }, [])
+    return (
+      <div ref={ref} data-testid="chatkit-root">
+        <div data-message-id="msg-3">anchored message</div>
+      </div>
+    )
+  }),
 }))
 
 vi.mock('@undefineds.co/models', async (importOriginal) => {
@@ -275,23 +280,25 @@ describe('ChatContentPane', () => {
     expect(screen.queryByTestId('compact-chat-list')).not.toBeInTheDocument()
   })
 
-  it('selects and synchronizes the restored thread even when the ready event is missed', async () => {
+  it('restores the selected thread after ChatKit reports ready', async () => {
     render(<ChatContentPane theme="light" />)
 
     expect(mockUseChatKit).toHaveBeenCalledWith(
       expect.objectContaining({
-        initialThread: 'thread-1',
+        initialThread: null,
       }),
     )
 
     await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
+    expect(mockSetThreadId).toHaveBeenNthCalledWith(1, null)
+    expect(mockSetThreadId).toHaveBeenNthCalledWith(2, 'thread-1')
     expect(mockFetchUpdates).toHaveBeenCalledTimes(1)
     expect(mockSetThreadId.mock.invocationCallOrder[0]).toBeLessThan(
       mockFetchUpdates.mock.invocationCallOrder[0],
     )
   })
 
-  it('keeps the mount-time initial thread stable so ChatKit retains per-thread composer drafts', () => {
+  it('keeps the declarative initial thread empty across navigation rerenders', () => {
     const { rerender } = render(<ChatContentPane theme="light" />)
 
     storeState.selectedThreadId = 'thread-2'
@@ -299,7 +306,7 @@ describe('ChatContentPane', () => {
 
     expect(mockUseChatKit).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        initialThread: 'thread-1',
+        initialThread: null,
       }),
     )
   })
@@ -423,7 +430,7 @@ describe('ChatContentPane', () => {
     expect(mockFocusComposer).toHaveBeenCalled()
   })
 
-  it('restores the selected thread directly when the selected chat changes', async () => {
+  it('clears and restores the selected thread when the selected chat changes', async () => {
     const { rerender } = render(<ChatContentPane theme="light" />)
     await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
     expect(mockRefreshThreadItems).not.toHaveBeenCalled()
@@ -442,7 +449,8 @@ describe('ChatContentPane', () => {
     rerender(<ChatContentPane theme="light" />)
 
     await waitFor(() => expect(mockSetThreadId).toHaveBeenCalledWith('thread-1'))
-    expect(mockSetThreadId).not.toHaveBeenCalledWith(null)
+    expect(mockSetThreadId).toHaveBeenNthCalledWith(1, null)
+    expect(mockSetThreadId).toHaveBeenNthCalledWith(2, 'thread-1')
   })
 
   it('replaces a restored thread that does not belong to the selected chat', async () => {
