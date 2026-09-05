@@ -120,7 +120,7 @@ test.describe('Guangzhou real Chat acceptance', () => {
     // Historical attachments are exposed through the same ChatKit command
     // menu as the composer. Open the persisted list, preview the image and
     // download the text file to prove the stored resources remain usable.
-    await selectCommand(chat, composer, /^查看会话附件/)
+    await selectCommand(chat, composer, '查看会话附件')
     const attachmentsDialog = page.getByRole('dialog', { name: '会话附件' })
     await expect(attachmentsDialog).toBeVisible({ timeout: 30_000 })
     await attachmentsDialog.getByRole('button', { name: '打开 guangzhou-vision.png' }).click({ timeout: 30_000 })
@@ -136,14 +136,14 @@ test.describe('Guangzhou real Chat acceptance', () => {
     // navigable instead of replacing one another.
     await imageAnswer.getByRole('button', { name: 'Regenerate message' }).click()
     await waitForIdle(page)
-    await selectCommand(chat, composer, /^上一个回答版本$/)
-    await selectCommand(chat, composer, /^下一个回答版本$/)
+    await selectCommand(chat, composer, '上一个回答版本')
+    await selectCommand(chat, composer, '下一个回答版本')
 
     // Editing the latest question creates a sibling user-message branch and
     // regenerates from the edited prompt. Verify both branch directions and
     // that the selected branch survives a full reload.
     const editedMarker = `GZ-EDIT-${Date.now()}`
-    await selectCommand(chat, composer, /^编辑最近提问$/)
+    await selectCommand(chat, composer, '编辑最近提问')
     const editDialog = page.getByRole('dialog', { name: '编辑消息' })
     await expect(editDialog).toBeVisible({ timeout: 30_000 })
     await editDialog.getByRole('textbox', { name: '消息内容' }).fill(`请只回复“${editedMarker}”。`)
@@ -155,8 +155,8 @@ test.describe('Guangzhou real Chat acceptance', () => {
       })
     await expect(chat.locator('article[data-thread-turn="assistant"]').last()).toContainText(editedMarker, { timeout: 120_000 })
     await waitForIdle(page)
-    await selectCommand(chat, composer, /^上一个提问版本$/)
-    await selectCommand(chat, composer, /^下一个提问版本$/)
+    await selectCommand(chat, composer, '上一个提问版本')
+    await selectCommand(chat, composer, '下一个提问版本')
     await page.reload()
     await expect(chat.locator('article[data-thread-turn="assistant"]').last()).toContainText(editedMarker, { timeout: 90_000 })
 
@@ -362,24 +362,20 @@ async function waitForChatThreadReady(page: Page): Promise<void> {
 async function selectCommand(
   chat: ReturnType<Page['frameLocator']>,
   composer: Locator,
-  label: RegExp,
+  label: string,
 ): Promise<void> {
-  const command = chat.getByText(label).first()
+  const command = chat.getByText(new RegExp(`^${label}`)).first()
   // ChatKit snapshots the command list when the slash menu opens. A command
   // that becomes available immediately after a streamed mutation therefore
   // requires reopening the menu so it can observe the refreshed branch state.
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await composer.fill('')
-    await composer.fill('/')
+    await composer.fill(`/${label}`)
     if (await command.isVisible().catch(() => false)) {
-      // ChatKit command results live inside a shadow-rooted iframe. Headless
-      // Chromium can report the iframe document itself as intercepting pointer
-      // events even after the unique command is visible and stable.
-      await command.evaluate((element) => {
-        const target = element.closest<HTMLElement>('button,[role="option"],[role="menuitem"]')
-          ?? element as HTMLElement
-        target.click()
-      })
+      // Keyboard selection is the same path used by a person and avoids
+      // clicking a nested label instead of the command row in ChatKit.
+      await composer.press('ArrowDown')
+      await composer.press('Enter')
       return
     }
     await composer.press('Escape').catch(() => undefined)
