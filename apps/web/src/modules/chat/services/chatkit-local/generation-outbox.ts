@@ -79,8 +79,12 @@ function writeEntries(accountScope: string, entries: ChatGenerationOutboxEntry[]
   }
 }
 
-export function listChatGenerationOutbox(accountScope: string): ChatGenerationOutboxEntry[] {
+export function listChatGenerationOutbox(
+  accountScope: string,
+  threadId?: string,
+): ChatGenerationOutboxEntry[] {
   return readEntries(accountScope)
+    .filter((entry) => !threadId || entry.threadId === threadId)
     .sort((left, right) => left.queuedAt - right.queuedAt)
 }
 
@@ -124,8 +128,8 @@ export function markChatGenerationAttempt(
   return updated
 }
 
-export function nextChatGenerationAttemptAt(accountScope: string): number | null {
-  const first = listChatGenerationOutbox(accountScope)[0]
+export function nextChatGenerationAttemptAt(accountScope: string, threadId?: string): number | null {
+  const first = listChatGenerationOutbox(accountScope, threadId)[0]
   if (!first) return null
   return first.nextAttemptAt ?? first.queuedAt
 }

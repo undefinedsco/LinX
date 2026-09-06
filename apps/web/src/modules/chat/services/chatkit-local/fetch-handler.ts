@@ -96,8 +96,9 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     onThreadItemsChange,
   )
   const replayDeferredUserItemIds = new Set<string>()
+  const outboxThreadId = initialThread?.id
   const notifyOutboxChange = () => {
-    onOutboxChange?.(listChatGenerationOutbox(webId).length)
+    onOutboxChange?.(listChatGenerationOutbox(webId, outboxThreadId).length)
   }
   const service = new LocalChatKitService({
     store,
@@ -233,12 +234,12 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     await store.refreshThreadItems(threadId, {})
   }
   localFetch.interrupt = interruptActiveStreams
-  localFetch.getOutboxSize = () => listChatGenerationOutbox(webId).length
-  localFetch.getOutboxRetryAt = () => nextChatGenerationAttemptAt(webId)
+  localFetch.getOutboxSize = () => listChatGenerationOutbox(webId, outboxThreadId).length
+  localFetch.getOutboxRetryAt = () => nextChatGenerationAttemptAt(webId, outboxThreadId)
   const flushOutbox = async (force: boolean) => {
     let completed = 0
 
-    for (const entry of listChatGenerationOutbox(webId)) {
+    for (const entry of listChatGenerationOutbox(webId, outboxThreadId)) {
       if (!force && (entry.nextAttemptAt ?? entry.queuedAt) > Date.now()) break
       markChatGenerationAttempt(webId, entry.id)
       replayDeferredUserItemIds.delete(entry.userItemId)
@@ -296,7 +297,7 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
       }
     }
 
-    const pending = listChatGenerationOutbox(webId).length
+    const pending = listChatGenerationOutbox(webId, outboxThreadId).length
     notifyOutboxChange()
     return { completed, pending }
   }

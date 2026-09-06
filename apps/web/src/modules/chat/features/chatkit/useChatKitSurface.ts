@@ -229,15 +229,23 @@ export function useChatKitSurface({
           console.debug('[chatkit] restore.selected')
         }
         if (disposed) return
-        await workbench.surface.refresh()
-        if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
-          console.debug('[chatkit] restore.refreshed')
-        }
         restoreState.status = 'restored'
         markThreadRestored()
         if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
           console.debug(`[chatkit] restore.done ${JSON.stringify({ selectedChatId, selectedThreadId })}`)
         }
+        // The selected thread is now safe to display and use. Pull newer Pod
+        // items in the background so a slow remote refresh does not keep the
+        // entire chat surface behind a blocking restore screen.
+        void workbench.surface.refresh()
+          .then(() => {
+            if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
+              console.debug('[chatkit] restore.refreshed')
+            }
+          })
+          .catch((error) => {
+            if (!disposed) console.warn('[ChatKit] Background thread refresh failed:', error)
+          })
       } catch (error) {
         if (restoredSurfaceRef.current === restoreState) restoredSurfaceRef.current = null
         if (!disposed) resetThreadReadiness()

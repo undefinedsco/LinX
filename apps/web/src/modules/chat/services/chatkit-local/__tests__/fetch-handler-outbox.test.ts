@@ -105,6 +105,31 @@ describe('LocalChatKitFetch generation outbox', () => {
     expect(outboxCounts.at(-1)).toBe(0)
   })
 
+  it('shows and replays only pending generations for the current thread', async () => {
+    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
+    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-2', userItemId: 'user-2' })
+    mocks.process.mockResolvedValue(streamingResult([{ type: 'thread.item.done' }]))
+    const localFetch = createLocalChatKitFetch({
+      db: {} as any,
+      webId,
+      authFetch: vi.fn() as any,
+      initialThread: {
+        id: 'thread-2',
+        status: { type: 'active' },
+        created_at: 1,
+        updated_at: 1,
+      },
+    })
+
+    expect(localFetch.getOutboxSize()).toBe(1)
+    await expect(localFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 1, pending: 0 })
+    expect(mocks.process).toHaveBeenCalledOnce()
+    expect(mocks.process).toHaveBeenCalledWith(expect.stringContaining('"thread_id":"thread-2"'), {})
+    expect(listChatGenerationOutbox(webId)).toEqual([
+      expect.objectContaining({ threadId: 'thread-1', userItemId: 'user-1' }),
+    ])
+  })
+
   it('keeps the failed entry and later entries queued after a replay error', async () => {
     enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
     enqueueChatGeneration({ accountScope: webId, threadId: 'thread-2', userItemId: 'user-2' })

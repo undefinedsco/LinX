@@ -317,7 +317,7 @@ export function ChatKitPanel({
       data-thread-ready={chatKitSurface.isThreadReady ? 'true' : 'false'}
       aria-disabled={sendDisabled || !chatKitSurface.isThreadReady}
     >
-      <div className={chatKitSurface.isThreadReady ? 'h-full' : 'h-full pointer-events-none'}>
+      <div className="h-full">
         <ChatKitComponent
           ref={chatKitSurface.bindHost}
           control={chatKitSurface.control}
@@ -325,8 +325,10 @@ export function ChatKitPanel({
         />
       </div>
       {!chatKitSurface.isThreadReady && !chatKitSurface.loadFailed ? (
-        <div className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-[1px]">
-          <span className="text-sm font-normal text-muted-foreground">正在恢复对话…</span>
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center">
+          <span aria-live="polite" className="rounded-full border bg-background/90 px-3 py-1.5 text-xs font-normal text-muted-foreground shadow-sm backdrop-blur">
+            正在加载历史消息…
+          </span>
         </div>
       ) : null}
       {chatKitSurface.loadFailed ? (

@@ -105,7 +105,10 @@ export function useLocalChatKitRuntime({
         if (count > 0) setReconnectStatus((status) => status === 'idle' ? 'error' : status)
         setOutboxRevision((revision) => revision + 1)
       },
-      onServiceAccessRequired: () => setServiceAccessRequired(true),
+      onServiceAccessRequired: () => {
+        setServiceAccessRequired(true)
+        setReconnectStatus('idle')
+      },
       onChatSummaryChange: ({ messageId, content, createdAt }) => projectChatSummary(selectedChatId, {
         lastMessageId: messageId,
         lastMessagePreview: content.slice(0, 100),

@@ -39,4 +39,14 @@ describe('chat generation outbox', () => {
     removeChatGeneration('alice', first.id)
     expect(listChatGenerationOutbox('alice')).toEqual([])
   })
+
+  it('scopes pending generations to the selected thread', () => {
+    enqueueChatGeneration({ accountScope: 'alice', threadId: 'thread-1', userItemId: 'user-1' })
+    enqueueChatGeneration({ accountScope: 'alice', threadId: 'thread-2', userItemId: 'user-2' })
+
+    expect(listChatGenerationOutbox('alice', 'thread-1')).toEqual([
+      expect.objectContaining({ threadId: 'thread-1', userItemId: 'user-1' }),
+    ])
+    expect(listChatGenerationOutbox('alice', 'new-thread')).toEqual([])
+  })
 })
