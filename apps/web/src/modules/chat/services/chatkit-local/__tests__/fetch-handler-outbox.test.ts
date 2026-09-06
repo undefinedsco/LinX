@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   setAgentAccess: vi.fn(),
   getSolidDataset: vi.fn(),
   saveSolidDatasetAt: vi.fn(),
+  serviceOptions: null as any,
 }))
 
 vi.mock('@inrupt/solid-client', () => ({
@@ -53,6 +54,9 @@ vi.mock('../store', () => ({
 
 vi.mock('../service', () => ({
   LocalChatKitService: class LocalChatKitService {
+    constructor(options: any) {
+      mocks.serviceOptions = options
+    }
     process = mocks.process
   },
 }))
@@ -77,6 +81,7 @@ describe('LocalChatKitFetch generation outbox', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.serviceOptions = null
     localStorage.clear()
     mocks.setAgentAccess.mockResolvedValue({ read: true, append: true, write: true })
     mocks.saveSolidDatasetAt.mockResolvedValue(undefined)
@@ -170,6 +175,27 @@ describe('LocalChatKitFetch generation outbox', () => {
     expect(mocks.process).toHaveBeenCalledTimes(1)
   })
 
+  it('pauses queued generation retries across thread runtimes until service access is granted', async () => {
+    const db = {} as any
+    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
+    const onServiceAccessRequired = vi.fn()
+    const firstFetch = createLocalChatKitFetch({
+      db,
+      webId,
+      authFetch: vi.fn() as any,
+      onServiceAccessRequired,
+    })
+
+    mocks.serviceOptions.onServiceAccessRequired()
+    await expect(firstFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 0, pending: 1 })
+    expect(onServiceAccessRequired).toHaveBeenCalledOnce()
+    expect(mocks.process).not.toHaveBeenCalled()
+
+    const secondFetch = createLocalChatKitFetch({ db, webId, authFetch: vi.fn() as any })
+    await expect(secondFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 0, pending: 1 })
+    expect(mocks.process).not.toHaveBeenCalled()
+  })
+
   it('grants only the four Xpod-declared AI resources to its service identity', async () => {
     const podBaseUrl = 'https://pod.example/alice'
     const resources = [
@@ -204,7 +230,11 @@ describe('LocalChatKitFetch generation outbox', () => {
       authFetch: authFetch as any,
     })
 
+    mocks.serviceOptions.onServiceAccessRequired()
     await localFetch.ensureAiServiceAccess()
+    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
+    mocks.process.mockResolvedValue(streamingResult([{ type: 'thread.item.done' }]))
+    await expect(localFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 1, pending: 0 })
 
     expect(mocks.setAgentAccess).toHaveBeenCalledTimes(3)
     expect(mocks.setAgentAccess).toHaveBeenNthCalledWith(

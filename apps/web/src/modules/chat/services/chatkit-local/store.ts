@@ -34,6 +34,7 @@ import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime/chat-reconciler'
 import { normalizeClientToolCallItem } from './tool-call-protocol'
 import { MAX_ATTACHMENT_BYTES } from './attachment-content'
+import { getLocalChatKitRuntimeCache } from './runtime-cache'
 
 const DEFAULT_CHAT_ID = 'default'
 // Managed Pods can take more than 30 seconds for a cold RDF lookup while the
@@ -49,6 +50,7 @@ const CHATKIT_ITEM_ID_METADATA_KEY = 'chatkitItemId'
 const THREAD_ITEM_CURSOR_PREFIX = 'linx-chat-cursor:'
 const MAX_CACHED_THREAD_ITEMS = 500
 const MAX_CACHED_MESSAGE_ROW_IDS = 1000
+const THREAD_ITEM_REFRESH_DEDUP_WINDOW_MS = 5_000
 const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
 
 interface ThreadItemCursor {
@@ -604,18 +606,18 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private authFetch: typeof fetch
   private attachments = new Map<string, Attachment>()
   private attachmentObjectUrls = new Map<string, string>()
-  private recentlyCreatedIds = new Set<string>()
-  private initializedMessageDocuments = new Set<string>()
-  // In-memory caches (per-instance, not per-context)
-  private threadChatIdCache = new Map<string, string>()
-  private threadMetadataCache = new Map<string, ThreadMetadata>()
-  private threadRecordCache = new Map<string, Record<string, unknown>>()
-  private provisionalThreadIds = new Set<string>()
-  private threadItemsCache = new Map<string, ThreadItem[]>()
-  private completeThreadItemCaches = new Set<string>()
-  private locallyMutatedThreadIds = new Set<string>()
-  private completeThreadItemLoadPromises = new Map<string, Promise<void>>()
-  private messageRowIdByItemId = new Map<string, string>()
+  private recentlyCreatedIds: Set<string>
+  private initializedMessageDocuments: Set<string>
+  private threadChatIdCache: Map<string, string>
+  private threadMetadataCache: Map<string, ThreadMetadata>
+  private threadRecordCache: Map<string, Record<string, unknown>>
+  private provisionalThreadIds: Set<string>
+  private threadItemsCache: Map<string, ThreadItem[]>
+  private completeThreadItemCaches: Set<string>
+  private locallyMutatedThreadIds: Set<string>
+  private completeThreadItemLoadPromises: Map<string, Promise<void>>
+  private messageRowIdByItemId: Map<string, string>
+  private threadItemsLoadedAt: Map<string, number>
   private onAttachmentsChange?: (attachments: Attachment[]) => void
   private onThreadItemsChange?: (items: ThreadItem[]) => void
   private onChatSummaryChange?: (summary: {
@@ -642,12 +644,27 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.db = db
     this.webId = webId
     this.authFetch = authFetch
+    const cache = getLocalChatKitRuntimeCache(db, webId)
+    this.recentlyCreatedIds = cache.recentlyCreatedIds
+    this.initializedMessageDocuments = cache.initializedMessageDocuments
+    this.threadChatIdCache = cache.threadChatIdByThreadId
+    this.threadMetadataCache = cache.threadMetadataByThreadId
+    this.threadRecordCache = cache.threadRecordByThreadId
+    this.provisionalThreadIds = cache.provisionalThreadIds
+    this.threadItemsCache = cache.threadItemsByThreadId
+    this.completeThreadItemCaches = cache.completeThreadItemCaches
+    this.locallyMutatedThreadIds = cache.locallyMutatedThreadIds
+    this.completeThreadItemLoadPromises = cache.completeThreadItemLoadPromises
+    this.messageRowIdByItemId = cache.messageRowIdByItemId
+    this.threadItemsLoadedAt = cache.threadItemsLoadedAt
     this.onAttachmentsChange = onAttachmentsChange
     this.onChatSummaryChange = onChatSummaryChange
     this.onThreadItemsChange = onThreadItemsChange
     if (initialThread) {
-      this.threadMetadataCache.set(initialThread.id, initialThread)
-      this.provisionalThreadIds.add(initialThread.id)
+      if (!this.threadMetadataCache.has(initialThread.id)) {
+        this.threadMetadataCache.set(initialThread.id, initialThread)
+        this.provisionalThreadIds.add(initialThread.id)
+      }
       const chatId = getChatIdFromMetadata(initialThread.metadata)
       this.threadChatIdCache.set(initialThread.id, chatId)
     }
@@ -1302,6 +1319,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.threadChatIdCache.delete(threadId)
     this.threadItemsCache.delete(threadId)
     this.completeThreadItemCaches.delete(threadId)
+    this.threadItemsLoadedAt.delete(threadId)
   }
 
   // -----------------------------------------------------------------------
@@ -1354,6 +1372,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
           : [hydratedItem]
       }))).flat()
       this.mergeCachedThreadItems(threadId, hydratedPage)
+      this.threadItemsLoadedAt.set(threadId, Date.now())
       if (!after && !hasMore) {
         this.completeThreadItemCaches.add(threadId)
       }
@@ -1385,6 +1404,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     // graph again here adds no freshness and can exceed a minute on managed
     // Pods. Reserve the expensive reload for external/explicit refreshes.
     if (this.locallyMutatedThreadIds.delete(threadId)) {
+      const cached = this.threadItemsCache.get(threadId)
+      if (cached) this.onThreadItemsChange?.([...cached])
+      return
+    }
+    const loadedAt = this.threadItemsLoadedAt.get(threadId)
+    if (loadedAt && Date.now() - loadedAt < THREAD_ITEM_REFRESH_DEDUP_WINDOW_MS) {
       const cached = this.threadItemsCache.get(threadId)
       if (cached) this.onThreadItemsChange?.([...cached])
       return

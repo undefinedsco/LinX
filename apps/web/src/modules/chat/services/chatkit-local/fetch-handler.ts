@@ -28,6 +28,7 @@ import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
+import { getLocalChatKitRuntimeCache } from './runtime-cache'
 import {
   enqueueChatGeneration,
   listChatGenerationOutbox,
@@ -95,6 +96,7 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     onChatSummaryChange,
     onThreadItemsChange,
   )
+  const runtimeCache = getLocalChatKitRuntimeCache(db, webId)
   const replayDeferredUserItemIds = new Set<string>()
   const outboxThreadId = initialThread?.id
   const notifyOutboxChange = () => {
@@ -115,7 +117,10 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
       })
       notifyOutboxChange()
     },
-    onServiceAccessRequired,
+    onServiceAccessRequired: () => {
+      runtimeCache.aiServiceAccessBlocked = true
+      onServiceAccessRequired?.()
+    },
   })
   let outboxFlushPromise: Promise<{ completed: number; pending: number }> | null = null
   const activeStreamingControllers = new Set<AbortController>()
@@ -239,6 +244,15 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
   const flushOutbox = async (force: boolean) => {
     let completed = 0
 
+    // A missing service grant cannot heal through retries. Keep the durable
+    // queue intact and wait for the explicit grant flow instead of repeatedly
+    // loading credentials and calling the provider in the background.
+    if (runtimeCache.aiServiceAccessBlocked) {
+      const pending = listChatGenerationOutbox(webId, outboxThreadId).length
+      notifyOutboxChange()
+      return { completed, pending }
+    }
+
     for (const entry of listChatGenerationOutbox(webId, outboxThreadId)) {
       if (!force && (entry.nextAttemptAt ?? entry.queuedAt) > Date.now()) break
       markChatGenerationAttempt(webId, entry.id)
@@ -312,6 +326,7 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     const podBaseUrl = resolveCurrentPodBaseUrl(db)
     if (!podBaseUrl) throw new Error('无法确定当前空间地址。')
     await ensureAiServiceAccessForSession({ podBaseUrl, webId, authFetch })
+    runtimeCache.aiServiceAccessBlocked = false
   }
   localFetch.loadAttachmentObjectUrl = (attachmentId: string) => store.loadAttachmentObjectUrl(attachmentId)
   localFetch.prepareAttachmentForReuse = async (attachment: Attachment) => {
