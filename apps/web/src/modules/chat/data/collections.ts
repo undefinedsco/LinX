@@ -1560,6 +1560,33 @@ export interface UpdateAgentModelInput {
  * All operations that need to coordinate multiple collections go here.
  * Simple CRUD can use the collections directly.
  */
+async function updateLinkedContact(
+  db: SolidDatabase,
+  contactId: string,
+  changes: Partial<ContactRow>,
+): Promise<void> {
+  const updatedAt = new Date()
+  const cached = _contactCollection.get(contactId) as ContactRow | undefined
+  const target = {
+    ...(cached ?? {}),
+    id: contactId,
+  }
+
+  // Chat and agent rows can be restored before the contacts collection has
+  // finished its slower background query. Persist against the exact Pod row
+  // so changing a model/profile never depends on that cache being warm.
+  await updateExactRecord(db, contactResource as any, target, {
+    ...changes,
+    updatedAt,
+  } as Record<string, unknown>)
+
+  writeCollectionRow(_contactCollection, {
+    ...(cached ?? target),
+    ...changes,
+    updatedAt,
+  } as ContactRow, contactId)
+}
+
 export const chatOps = {
   // ==========================================================================
   // Query Operations
@@ -2152,11 +2179,7 @@ export const chatOps = {
     writeCollectionRow(agentCollection, { ...current, ...changes } as AgentRow, agentId)
 
     if (contactId && normalizedName) {
-      const contactTx = _contactCollection.update(contactId, (draft: any) => {
-        draft.name = normalizedName
-        draft.updatedAt = new Date()
-      })
-      await contactTx.isPersisted.promise
+      await updateLinkedContact(db, contactId, { name: normalizedName })
     }
 
     if (chatId && normalizedName) {
@@ -2207,11 +2230,7 @@ export const chatOps = {
     writeCollectionRow(agentCollection, { ...current, ...changes } as AgentRow, agentId)
 
     if (contactId && providerInfo?.logoUrl) {
-      const contactTx = _contactCollection.update(contactId, (draft: any) => {
-        draft.avatarUrl = providerInfo.logoUrl
-        draft.updatedAt = new Date()
-      })
-      await contactTx.isPersisted.promise
+      await updateLinkedContact(db, contactId, { avatarUrl: providerInfo.logoUrl })
     }
     
     // Also update Chat avatarUrl if chatId provided and provider changed
