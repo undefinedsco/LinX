@@ -1101,6 +1101,9 @@ export class LocalChatKitService {
             }
           }
 
+          if (!fullText.trim() && annotations.length === 0) {
+            throw new Error('LinX runtime returned an empty response')
+          }
           assistantItem.content = [{ type: 'output_text', text: fullText, annotations }]
           assistantItem.status = 'completed'
           await this.store.saveItem(thread.id, assistantItem, context)

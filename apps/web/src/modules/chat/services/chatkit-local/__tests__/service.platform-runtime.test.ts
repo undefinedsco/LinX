@@ -979,6 +979,35 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地可聊')).toBe(true)
   })
 
+  it('marks an empty platform runtime response incomplete instead of persisting a blank reply', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: '/settings/providers/undefineds.ttl',
+      model: 'undefineds/linx-lite',
+    })
+    const authFetch = vi.fn(async () => createSseResponse(['data: [DONE]\n\n']))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'incomplete',
+      content: [expect.objectContaining({
+        text: expect.stringContaining('服务没有返回内容'),
+      })],
+    }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({ code: 'generation_error' }),
+    }))
+  })
+
   it('defaults platform runtime calls to client-originated Pod access', async () => {
     const store = createMockStore()
     const db = createMockDbWithPodUrl({
