@@ -225,6 +225,12 @@ function isImageGenerationRequested(inferenceOptions: unknown): boolean {
   return Boolean(toolChoice && typeof toolChoice === 'object' && (toolChoice as { id?: unknown }).id === 'image_generation')
 }
 
+function isImageGenerationModel(model: unknown): boolean {
+  if (typeof model !== 'string') return false
+  const modelId = model.includes('/') ? model.slice(model.lastIndexOf('/') + 1) : model
+  return /^(?:gpt-image(?:-|$)|dall-e(?:-|$)|imagen(?:-|$)|flux(?:-|$))/iu.test(modelId)
+}
+
 function describeRuntimeToolProgress(name: string): { icon: string; text: string } {
   switch (classifyRuntimeTool(name)) {
     case 'search':
@@ -932,7 +938,11 @@ export class LocalChatKitService {
         messages.push({ role: 'user', content: userText })
       }
       const webSearchRequested = isWebSearchRequested(inferenceOptions)
+      const selectedModel = inferenceOptions?.model ?? agentConfig?.model ?? 'gpt-4o-mini'
+      // Image-only models are an explicit routing signal even when the composer
+      // did not attach the optional image-generation tool choice.
       const imageGenerationRequested = isImageGenerationRequested(inferenceOptions)
+        || isImageGenerationModel(selectedModel)
       const sourceImageAttachment = imageGenerationRequested && userMessage.type === 'user_message'
         ? userMessage.attachments?.find((attachment) => attachment.type === 'image')
         : undefined
@@ -972,7 +982,6 @@ export class LocalChatKitService {
       } else {
         const provider = platformModel ? 'undefineds' : (agentConfig?.provider ?? 'openai')
         const providerCapabilities = await this.resolveProviderCapabilities(provider)
-        const selectedModel = inferenceOptions?.model ?? agentConfig?.model ?? 'gpt-4o-mini'
         const providerModel = typeof selectedModel === 'string' && selectedModel.includes('/')
           ? selectedModel
           : `${provider}/${selectedModel}`
@@ -1147,20 +1156,31 @@ export class LocalChatKitService {
           return
         }
 
-        const stream = this.streamFromProviderRuntime(
-          provider,
-          providerModel,
-          messages,
-          inferenceOptions,
-          context.signal as AbortSignal | undefined,
-        )
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const stream = this.streamFromProviderRuntime(
+            provider,
+            providerModel,
+            messages,
+            inferenceOptions,
+            context.signal as AbortSignal | undefined,
+          )
 
-        for await (const chunk of stream) {
-          const normalizedChunk = coerceModelStreamChunk(chunk)
-          fullText += normalizedChunk.text
-          annotations = mergeChatKitAnnotations(annotations, normalizedChunk.annotations)
-          if (normalizedChunk.text) {
-            yield createAssistantTextDeltaEvent(assistantItemId, normalizedChunk.text)
+          for await (const chunk of stream) {
+            const normalizedChunk = coerceModelStreamChunk(chunk)
+            fullText += normalizedChunk.text
+            annotations = mergeChatKitAnnotations(annotations, normalizedChunk.annotations)
+            if (normalizedChunk.text) {
+              yield createAssistantTextDeltaEvent(assistantItemId, normalizedChunk.text)
+            }
+          }
+
+          if (fullText.trim() || annotations.length > 0) break
+          if (attempt === 0) {
+            yield {
+              type: 'progress_update',
+              icon: 'refresh',
+              text: '服务暂未返回内容，正在重试…',
+            } as ThreadStreamEvent
           }
         }
 
@@ -2090,8 +2110,7 @@ export class LocalChatKitService {
       const capabilities = model.capabilities && typeof model.capabilities === 'object'
         ? model.capabilities as Record<string, unknown>
         : {}
-      const normalizedModelId = model.id.toLowerCase()
-      const inferredImageModel = /gpt-image|dall-e|imagen|flux/.test(normalizedModelId)
+      const inferredImageModel = isImageGenerationModel(model.id)
       return custom.includes(capability) || capabilities[capabilityKey] === true || inferredImageModel
     })
     const preferredId = preferredModel.includes('/') ? preferredModel.slice(preferredModel.indexOf('/') + 1) : preferredModel

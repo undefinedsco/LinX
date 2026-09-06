@@ -1289,6 +1289,80 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events.some((event) => event.type === 'error')).toBe(false)
   })
 
+  it('routes a selected image-only model to image generation without requiring a composer tool choice', async () => {
+    const store = createMockStore() as any
+    store.createAttachment = vi.fn(() => ({
+      id: 'generated-attachment',
+      type: 'image',
+      name: 'generated.png',
+      mime_type: 'image/png',
+    }))
+    store.uploadAttachment = vi.fn(async (_id: string, _body: BodyInit, mimeType: string) => ({
+      id: 'generated-attachment',
+      type: 'image',
+      name: 'generated.png',
+      mime_type: mimeType,
+      preview_url: 'blob:generated',
+    }))
+    const db = createMockDb(
+      { provider: 'openai', model: 'gpt-5.6-sol' },
+      [],
+      { providerCapabilities: ['chat_completions', 'image_generation'] },
+    )
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({ data: [{ id: 'gpt-image-1', owned_by: 'openai' }] })
+      }
+      if (String(input).endsWith('/images/generations')) {
+        return Response.json({ data: [{ b64_json: btoa('png-bytes') }] })
+      }
+      return new Response('', { status: 404 })
+    })
+    const service = new LocalChatKitService({
+      store,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { model: 'gpt-image-1' })
+
+    expect(authFetch.mock.calls.some(([input]) => String(input).endsWith('/chat/completions'))).toBe(false)
+    expect(authFetch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/images\/generations$/u),
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(findAssistantDone(events)?.item?.status).toBe('completed')
+  })
+
+  it('retries once when Chat Completions succeeds without returning any content', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'openai', model: 'gpt-5.6-terra' })
+    const authFetch = vi.fn()
+      .mockResolvedValueOnce(createSseResponse(['data: [DONE]\n\n']))
+      .mockResolvedValueOnce(createSseResponse([
+        'data: {"choices":[{"delta":{"content":"第二次返回正常"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(authFetch).toHaveBeenCalledTimes(2)
+    expect(events).toContainEqual({
+      type: 'progress_update',
+      icon: 'refresh',
+      text: '服务暂未返回内容，正在重试…',
+    })
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('第二次返回正常')
+    expect(findAssistantDone(events)?.item?.status).toBe('completed')
+  })
+
   it('rejects insecure provider-hosted image URLs before downloading them', async () => {
     const store = createMockStore() as any
     store.createAttachment = vi.fn()
