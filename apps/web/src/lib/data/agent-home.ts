@@ -171,17 +171,17 @@ function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{
   ]
 }
 
-function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: string): string {
+function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: string, podBaseUrl: string): string {
   const providerId = input.provider
   const modelId = input.model
   const providerRef = aiConfigProviderRef(providerId)
   const modelRef = aiConfigModelRef(providerId, modelId)
-  const credentialRef = `/settings/credentials.ttl#${getDefaultAIConfigCredentialId(providerId)}`
+  const credentialRef = `settings/credentials.ttl#${getDefaultAIConfigCredentialId(providerId)}`
   const instructions = input.instructions?.trim()
   const subjectRef = metadataUrl.endsWith('.meta') ? metadataUrl.slice(0, -'.meta'.length) : metadataUrl
 
   return [
-    `BASE <${metadataUrl}>`,
+    `BASE <${podBaseUrl}>`,
     'PREFIX udfs: <https://undefineds.co/ns#>',
     'PREFIX foaf: <http://xmlns.com/foaf/0.1/>',
     '',
@@ -286,22 +286,21 @@ export async function updateAgentHomeMetadata(
       `<${homeUrl}> <${AGENT_UPDATE_PREDICATES[field as keyof AgentRow]}> ${object} .`
     ))
 
-  // Community Solid Server's patcher only accepts basic graph patterns in
-  // WHERE (no OPTIONAL), and rejects DELETE-WHERE-only updates. The caller has
-  // the collection row already, so delete its exact previous values first.
+  // Replace the stored values, not just a possibly stale collection snapshot.
+  // Each WHERE is a basic graph pattern supported by CSS; the separate INSERT
+  // also handles fields that did not exist. No unrelated predicates are touched.
   const deletes = entries
-    .filter(([field]) => previous[field as keyof AgentRow] !== undefined && previous[field as keyof AgentRow] !== '')
-    .flatMap(([field]) => {
-      const key = field as keyof AgentRow
-      return formatAgentUpdateValues(key, previous[key], previous.provider).map((object) =>
-        `<${homeUrl}> <${AGENT_UPDATE_PREDICATES[key]}> ${object} .`
-      )
+    .map(([field]) => {
+      const pattern = `<${homeUrl}> <${AGENT_UPDATE_PREDICATES[field as keyof AgentRow]}> ?previousValue .`
+      return `DELETE { ${pattern} } INSERT {} WHERE { ${pattern} }`
     })
   const updates = [
-    deletes.length > 0 ? `DELETE DATA { ${deletes.join(' ')} }` : '',
+    ...deletes,
     inserts.length > 0 ? `INSERT DATA { ${inserts.join(' ')} }` : '',
   ].filter(Boolean)
-  if (updates.length > 0) await patchPodMetadata(fetchFn, metadataUrl, updates.join(';\n'))
+  if (updates.length > 0) {
+    await patchPodMetadata(fetchFn, metadataUrl, `BASE <${resolvePodPath(db, '')}>\n${updates.join(';\n')}`)
+  }
 }
 
 export async function createAgentHome(
@@ -326,7 +325,7 @@ export async function createAgentHome(
         if (existingMetadata?.includes('http://xmlns.com/foaf/0.1/Agent')) continue
         const patch = existingMetadata?.includes('https://undefineds.co/ns#AgentConfig')
           ? buildAgentSchemaTypeInsert(fileUrl)
-          : buildAgentMetaSparqlInsert(input, fileUrl)
+          : buildAgentMetaSparqlInsert(input, fileUrl, resolvePodPath(db, ''))
         await patchPodMetadata(fetchFn, fileUrl, patch)
         continue
       }

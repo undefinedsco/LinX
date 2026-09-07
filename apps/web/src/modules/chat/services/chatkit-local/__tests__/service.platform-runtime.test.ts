@@ -874,13 +874,15 @@ describe('LocalChatKitService platform runtime routing', () => {
     )
   })
 
-  it('ends an errored Responses stream as incomplete without exposing provider diagnostics', async () => {
+  it.each(['responses', 'chat_completions'])('ends an errored %s stream as incomplete without exposing provider diagnostics', async (protocol) => {
     const store = createMockStore()
     const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
-      providerCapabilities: ['responses'],
+      providerCapabilities: [protocol],
     })
     const authFetch = vi.fn(async () => createByteChunkedSseResponse([
-      `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: '已生成部分。' })}\n\n`,
+      `data: ${JSON.stringify(protocol === 'responses'
+        ? { type: 'response.output_text.delta', delta: '已生成部分。' }
+        : { choices: [{ delta: { content: '已生成部分。' } }] })}\n\n`,
       `data: ${JSON.stringify({ error: { code: 'provider_error', message: 'private stack /Users/provider/secret.ts:42' } })}\n\n`,
       'data: [DONE]\n\n',
     ].join(''), 7))

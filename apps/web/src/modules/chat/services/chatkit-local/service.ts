@@ -2237,8 +2237,18 @@ export class LocalChatKitService {
       return { text: '', annotations: [] }
     }
 
+    let parsed: any
     try {
-      const parsed = JSON.parse(payload)
+      parsed = JSON.parse(payload)
+    } catch {
+      return { text: payload, annotations: [] }
+    }
+    // An HTTP-200 SSE response can still end in a provider error. Do not turn
+    // it into a successful partial response or retry it as an empty stream.
+    if (parsed?.error) {
+      throw new Error(`LinX runtime stream error: ${summarizeRuntimeError(payload)}`)
+    }
+    {
       const deltaObject = parsed.choices?.[0]?.delta
       const messageObject = parsed.choices?.[0]?.message
       const delta = deltaObject?.content
@@ -2271,8 +2281,6 @@ export class LocalChatKitService {
           streamedTextLength,
         ),
       }
-    } catch {
-      return { text: payload, annotations: [] }
     }
   }
 

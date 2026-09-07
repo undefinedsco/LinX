@@ -110,9 +110,9 @@ describe('agent-home', () => {
       String(target) === 'https://alice.example/agents/agent-1/.meta' && init?.method === 'PATCH'
     )).toBe(true)
     const body = String(fetchMock.mock.calls[0]?.[1]?.body)
-    expect(body).toContain('DELETE DATA')
+    expect(body).toContain('DELETE {')
     expect(body).toContain('INSERT DATA')
-    expect(body).toContain('Previous Agent')
+    expect(body).toContain('?previousValue')
     expect(body).toContain('<https://alice.example/agents/agent-1/>')
     expect(body).toContain('aiRuntimeLocation')
     expect(body).toContain('XMLSchema#json')
@@ -139,12 +139,16 @@ describe('agent-home', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const body = String(fetchMock.mock.calls[0]?.[1]?.body)
-    expect(body).toContain('DELETE DATA')
+    expect(body).toContain('DELETE {')
     expect(body).toContain('INSERT DATA')
     expect(body).toContain('https://undefineds.co/ns#provider')
     expect(body).toContain('https://undefineds.co/ns#model')
     expect(body).toContain('https://undefineds.co/ns#tools')
     expect(body).toContain('"filesystem"')
+    expect(body).toContain('BASE <https://alice.example/>')
+    expect(body).toContain('DELETE {')
+    expect(body).toContain('WHERE {')
+    expect(body).toContain('?previousValue')
   })
 
   it('treats existing Agent Home files as initialized', async () => {
