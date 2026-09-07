@@ -1124,6 +1124,28 @@ describe('ChatContentPane', () => {
     })
   })
 
+  it('rechecks the Pod before creating a thread from an empty hydrated cache', async () => {
+    storeState.selectedThreadId = 'persisted-thread'
+    const refetch = vi.fn(async () => [{ id: 'persisted-thread', title: '已有话题' }])
+    mockUseThreadList.mockReturnValue({ data: [], isLoading: false, refetch })
+
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(storeState.selectThread).toHaveBeenCalledWith('persisted-thread'))
+    expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+  })
+
+  it('does not create a new empty thread when the restoration lookup fails', async () => {
+    const refetch = vi.fn(async () => { throw new Error('恢复话题超时') })
+    mockUseThreadList.mockReturnValue({ data: [], isLoading: false, refetch })
+
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1))
+    expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+  })
+
   it('shows a recoverable error after initial thread creation fails', async () => {
     storeState.selectedChatId = 'chat-1'
     storeState.selectedThreadId = null

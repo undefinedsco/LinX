@@ -2495,7 +2495,10 @@ export function useThreadList(chatId: string, options?: { enabled?: boolean }) {
     return ((query.data ?? []) as ThreadRow[])
       .filter((row) => resolveThreadChatRowId(row) === normalizeChatRowId(chatId))
   }, [chatId, enabled, isDefaultSecretarySettling, query.data])
-  return { ...query, data, error: null, refetch: () => threadCollection.fetch({ refetch: true }) }
+  return { ...query, data, error: null, refetch: async () => {
+    const rows = await threadCollection.fetch({ refetch: true })
+    return rows.filter((row) => resolveThreadChatRowId(row) === normalizeChatRowId(chatId))
+  } }
 }
 
 /**

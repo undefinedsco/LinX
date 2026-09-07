@@ -120,26 +120,43 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
     const creationScope = scopeKey
     const creationChatId = selectedChatId
     const creationAttempt = ++creationAttemptRef.current
-    mutations.createThread.mutate({
-      chatId: selectedChatId,
-      title: '默认话题',
-      ...(isSecretary ? { threadId: LINX_DEFAULT_SECRETARY.threadKey } : {}),
-    }, {
-      onSuccess: (thread) => {
-        if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
-        setCreationFailure(null)
-        if (thread.id) {
-          selectThread(thread.id)
-          void mutations.ensureThreadWorkspace.mutateAsync({ threadId: thread.id, title: '默认话题' })
-            .catch((error) => console.error('Bind default Pod workspace failed:', error))
-        }
+    // The live collection can be ready with an empty pre-authentication cache
+    // while the Pod rebind is still fetching. Confirm remote emptiness before
+    // creating anything, otherwise every refresh can create a blank thread.
+    void Promise.resolve().then(() => threadsQuery.refetch?.()).then((restored) => {
+      if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
+      const restoredThreads = Array.isArray(restored) ? restored : []
+      const existing = restoredThreads.find((thread) => chatThreadRefsMatch(thread.id, selectedThreadId)) ?? restoredThreads[0]
+      if (existing?.id) {
+        selectThread(existing.id)
         isCreatingThreadRef.current = false
-      },
-      onError: (error) => {
-        if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
-        setCreationFailure({ message: error instanceof Error ? error.message : '创建话题失败', scopeKey: creationScope, chatId: creationChatId })
-        isCreatingThreadRef.current = false
-      },
+        return
+      }
+      mutations.createThread.mutate({
+        chatId: selectedChatId,
+        title: '默认话题',
+        ...(isSecretary ? { threadId: LINX_DEFAULT_SECRETARY.threadKey } : {}),
+      }, {
+        onSuccess: (thread) => {
+          if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
+          setCreationFailure(null)
+          if (thread.id) {
+            selectThread(thread.id)
+            void mutations.ensureThreadWorkspace.mutateAsync({ threadId: thread.id, title: '默认话题' })
+              .catch((error) => console.error('Bind default Pod workspace failed:', error))
+          }
+          isCreatingThreadRef.current = false
+        },
+        onError: (error) => {
+          if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
+          setCreationFailure({ message: error instanceof Error ? error.message : '创建话题失败', scopeKey: creationScope, chatId: creationChatId })
+          isCreatingThreadRef.current = false
+        },
+      })
+    }).catch((error) => {
+      if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
+      setCreationFailure({ message: error instanceof Error ? error.message : '恢复话题失败', scopeKey: creationScope, chatId: creationChatId })
+      isCreatingThreadRef.current = false
     })
   }, [activeChat, activeThread, chatsQuery.error, chatsQuery.isLoading, creationRetryKey, isDefaultSecretarySettling, isReady, isSecretary, mutations.createThread, mutations.ensureThreadWorkspace, scopeKey, selectThread, selectedChatId, selectedThreadId, threads, threadsQuery.error, threadsQuery.isLoading])
 
