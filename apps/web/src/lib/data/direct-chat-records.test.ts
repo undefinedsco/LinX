@@ -1,8 +1,37 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createCollection } from '@tanstack/react-db'
+import { queryCollectionOptions } from '@tanstack/query-db-collection'
+import { QueryClient } from '@tanstack/react-query'
 import { agentResource, contactResource } from '@undefineds.co/models'
 import { createAgentContactRecords, ensureAgentContactRecords, writeCollectionRow } from './direct-chat-records'
 
 describe('direct-chat-records', () => {
+  it('notifies live subscribers when publishing a persisted thread', async () => {
+    const client = new QueryClient()
+    const collection = createCollection(queryCollectionOptions({
+      queryKey: ['persisted-thread-notification'],
+      queryClient: client,
+      queryFn: async (): Promise<Array<{ id: string; title: string }>> => [],
+      getKey: (row) => row.id,
+    }))
+    await collection.preload()
+    const changes: string[] = []
+    const subscription = collection.subscribeChanges((events) => {
+      changes.push(...events.map((event) => event.type))
+    })
+    try {
+      writeCollectionRow(collection, { id: 'default', title: 'Default topic' })
+      expect(collection.get('default')?.title).toBe('Default topic')
+      expect(changes).toContain('insert')
+      changes.length = 0
+      writeCollectionRow(collection, { id: 'default', title: 'Updated topic' })
+      expect(changes).toContain('update')
+    } finally {
+      subscription.unsubscribe()
+      await collection.cleanup()
+      client.clear()
+    }
+  })
   it('publishes a persisted row to both public and internal collection state', () => {
     const row = { id: 'chat-1', title: 'Visible immediately' }
     const state = { data: [] as typeof row[] }

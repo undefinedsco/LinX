@@ -326,21 +326,20 @@ export function writeCollectionRow<T extends PersistedRow>(
   const id = rowId
     ? asBaseRelativeResourceId(rowId, 'collection row id')
     : requireRowResourceId(row, 'collection row')
-  upsertStateRow(collection?.state, row, id)
-  upsertInternalStateRow(collection?._state, row, id)
-
   const canManualSync =
     typeof collection?.utils?.writeUpsert === 'function'
     && (typeof collection.isReady !== 'function' || collection.isReady())
 
   if (canManualSync) {
-    try {
-      collection.utils?.writeUpsert?.(row)
-    } catch {
-      // The local state has already been updated. TanStack manual sync may not
-      // be initialized in headless integration tests or early app bootstrap.
-    }
+    // Let TanStack own the change notification. Mutating syncedData first
+    // makes an insert look like an unchanged row, so live queries never see it.
+    collection.utils?.writeUpsert?.({ ...row, id })
+    return
   }
+
+  // Bootstrap/headless collections do not have an initialized sync channel yet.
+  upsertStateRow(collection?.state, row, id)
+  upsertInternalStateRow(collection?._state, row, id)
 }
 
 function upsertInternalStateRow<T extends PersistedRow>(
