@@ -1,22 +1,12 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import { existsSync } from 'node:fs'
 
 const repoRoot = path.resolve(__dirname, '../..')
-const modelsRoot = path.resolve(repoRoot, 'packages/models/src')
-const modelsIndex = path.resolve(modelsRoot, 'index.ts')
-const modelsClientIndex = path.resolve(modelsRoot, 'client/index.ts')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
 )
-const modelAliases = existsSync(modelsIndex)
-  ? {
-    '@undefineds.co/models/client': modelsClientIndex,
-    '@undefineds.co/models': modelsIndex,
-  }
-  : {}
 
 export default defineConfig({
   plugins: [react()],
@@ -63,7 +53,6 @@ export default defineConfig({
       '@linx/stores/pod-write-guard': path.resolve(repoRoot, 'packages/stores/src/pod-write-guard.ts'),
       '@linx/stores/symphony-control': path.resolve(repoRoot, 'packages/stores/src/symphony-control.ts'),
       '@linx/stores': path.resolve(repoRoot, 'packages/stores/src'),
-      ...modelAliases,
       '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.mts', '.jsx', '.json'],

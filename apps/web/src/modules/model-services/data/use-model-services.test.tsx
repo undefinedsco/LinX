@@ -359,9 +359,11 @@ describe('useModelServices data persistence', () => {
       expect.any(Function),
     )
     expect(mocks.modelRows.get(modelRow.id)?.rdfType).toEqual([
-      'https://undefineds.co/ns#AIModel',
       'https://undefineds.co/ns#ChatModel',
     ])
+    expect(mocks.modelRows.get(modelRow.id)?.capabilities).toContain(
+      'https://undefineds.co/ns#ChatCapability',
+    )
     expect(mocks.modelInsert).not.toHaveBeenCalled()
   })
 

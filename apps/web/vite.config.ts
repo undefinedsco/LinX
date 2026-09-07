@@ -12,24 +12,15 @@ const releaseRepo = String(process.env.VITE_RELEASE_REPO ?? 'undefinedsco/LinX')
 const assetBase = process.env.LINX_VITE_BASE ?? '/'
 const outputDir = process.env.LINX_VITE_OUT_DIR ?? 'dist'
 const repoRoot = path.resolve(__dirname, '../..')
-const modelsRoot = path.resolve(repoRoot, 'packages/models/src')
-const modelsIndex = path.resolve(modelsRoot, 'index.ts')
-const modelsClientIndex = path.resolve(modelsRoot, 'client/index.ts')
 const drizzleRuntime = path.resolve(
   repoRoot,
   'node_modules/@undefineds.co/drizzle-solid/dist/esm/core/execution/ldp-executor.js',
 )
-const modelsRuntime = path.resolve(modelsRoot, 'ai-config/index.ts')
+const modelsRuntime = path.resolve(repoRoot, 'node_modules/@undefineds.co/models/dist/ai-config/index.js')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
 )
-const modelAliases: Record<string, string> = existsSync(modelsIndex)
-  ? {
-    '@undefineds.co/models/client': modelsClientIndex,
-    '@undefineds.co/models': modelsIndex,
-  }
-  : {}
 
 function fingerprintFiles(paths: string[]): string {
   const hash = createHash('sha256')
@@ -152,7 +143,6 @@ export default defineConfig({
       '@linx/stores/pod-db': path.resolve(repoRoot, 'packages/stores/src/pod-collection.ts'),
       '@linx/stores/pod-write-guard': path.resolve(repoRoot, 'packages/stores/src/pod-write-guard.ts'),
       '@linx/stores': path.resolve(__dirname, '../../packages/stores/src'),
-      ...modelAliases,
       '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.mts', '.jsx', '.json'],
