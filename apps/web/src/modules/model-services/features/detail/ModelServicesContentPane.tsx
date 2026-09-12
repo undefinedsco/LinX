@@ -1,13 +1,6 @@
-import { ModelEditorDialog } from '../../ui/ModelEditorDialog'
-import { ModelServicesDetailView } from '../../ui/ModelServicesDetailView'
-import { useModelServicesContentPaneController } from './useModelServicesContentPaneController'
+import { useMountedModelServices } from '../../xpod/ModelServicesProvider'
 
 export function ModelServicesContentPane() {
-  const { detailViewProps, editorDialogProps } = useModelServicesContentPaneController()
-  return (
-    <>
-      <ModelServicesDetailView {...detailViewProps} />
-      <ModelEditorDialog {...editorDialogProps} />
-    </>
-  )
+  const { slots } = useMountedModelServices()
+  return <div className="h-full min-h-0 overflow-auto">{slots.main}</div>
 }

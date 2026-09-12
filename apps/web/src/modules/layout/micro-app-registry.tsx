@@ -1,4 +1,4 @@
-import { lazy, type ComponentType, type ReactNode } from 'react'
+import { lazy, type ComponentType, type PropsWithChildren, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   MessageSquare,
@@ -75,6 +75,7 @@ export interface MicroAppDefinition {
   ListPane: MicroAppListPane
   ContentPane: MicroAppContentPane
   LayoutConfigBridge?: MicroAppLayoutConfigBridge
+  Provider?: ComponentType<PropsWithChildren>
   hidePrimaryRailOnCompact?: boolean
   hideContentHeaderOnCompact?: boolean
 }
@@ -138,6 +139,9 @@ const ChatLayoutConfigBridge = lazyBridge(() =>
 )
 const ModelServicesLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/model-services/app/ModelServicesLayoutConfigBridge').then((mod) => ({ default: mod.ModelServicesLayoutConfigBridge })),
+)
+const ModelServicesProvider = lazyBridge(() =>
+  import('@/modules/model-services/xpod/ModelServicesProvider').then((mod) => ({ default: mod.ModelServicesProvider })),
 )
 const FilesLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/files/app/FilesLayoutConfigBridge').then((mod) => ({ default: mod.FilesLayoutConfigBridge })),
@@ -239,6 +243,7 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     ListPane: ModelServicesListPane,
     ContentPane: ModelServicesContentPane,
     LayoutConfigBridge: ModelServicesLayoutConfigBridge,
+    Provider: ModelServicesProvider,
   },
 }
 

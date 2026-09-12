@@ -134,6 +134,10 @@ function MicroAppContentRenderer({
   const ListPane = activeMicroApp.ListPane
   const ContentPane = activeMicroApp.ContentPane
   const LayoutConfigBridge = activeMicroApp.LayoutConfigBridge
+  // Xpod AI Connections is workspace infrastructure, not page-local state.
+  // Keep its controller mounted for every micro-app so chat/contact consumers
+  // read the same public model catalog as the model-services screen.
+  const Provider = activeMicroApp.Provider
   const [layoutConfig, setLayoutConfig] = useState<MicroAppLayoutConfig | undefined>(undefined)
   const handleLayoutConfigChange = useCallback(
     (nextConfig: MicroAppLayoutConfig | undefined) => {
@@ -152,7 +156,7 @@ function MicroAppContentRenderer({
     panelIds,
   })
 
-  return (
+  const content = (
     <>
       {LayoutConfigBridge ? (
         <Suspense fallback={null}>
@@ -257,6 +261,12 @@ function MicroAppContentRenderer({
       </ResizablePanelGroup>
     </>
   )
+
+  return Provider ? (
+    <Suspense fallback={<PaneFallback />}>
+      <Provider>{content}</Provider>
+    </Suspense>
+  ) : content
 }
 
 export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {

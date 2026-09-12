@@ -29,13 +29,6 @@ import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
 import { getLocalChatKitRuntimeCache } from './runtime-cache'
-import {
-  enqueueChatGeneration,
-  listChatGenerationOutbox,
-  markChatGenerationAttempt,
-  nextChatGenerationAttemptAt,
-  removeChatGeneration,
-} from './generation-outbox'
 
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
 const ACP = 'http://www.w3.org/ns/solid/acp#'
@@ -63,7 +56,6 @@ export interface LocalChatKitFetchOptions {
   onAttachmentsChange?: (attachments: Attachment[]) => void
   onStreamingChange?: (state: { active: boolean; abort?: () => void }) => void
   onThreadItemsChange?: (items: ThreadItem[]) => void
-  onOutboxChange?: (count: number) => void
   onServiceAccessRequired?: () => void
   onChatSummaryChange?: (summary: {
     chatId: string
@@ -83,7 +75,6 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     onAttachmentsChange,
     onStreamingChange,
     onThreadItemsChange,
-    onOutboxChange,
     onServiceAccessRequired,
     onChatSummaryChange,
   } = options
@@ -97,32 +88,17 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     onThreadItemsChange,
   )
   const runtimeCache = getLocalChatKitRuntimeCache(db, webId)
-  const replayDeferredUserItemIds = new Set<string>()
-  const outboxThreadId = initialThread?.id
-  const notifyOutboxChange = () => {
-    onOutboxChange?.(listChatGenerationOutbox(webId, outboxThreadId).length)
-  }
   const service = new LocalChatKitService({
     store,
     db,
     webId,
     authFetch,
-    onGenerationDeferred: (entry) => {
-      replayDeferredUserItemIds.add(entry.userItemId)
-      enqueueChatGeneration({
-        accountScope: webId,
-        threadId: entry.threadId,
-        userItemId: entry.userItemId,
-        inferenceOptions: entry.inferenceOptions,
-      })
-      notifyOutboxChange()
-    },
+    attachmentThreadId: initialThread?.id,
     onServiceAccessRequired: () => {
       runtimeCache.aiServiceAccessBlocked = true
       onServiceAccessRequired?.()
     },
   })
-  let outboxFlushPromise: Promise<{ completed: number; pending: number }> | null = null
   const activeStreamingControllers = new Set<AbortController>()
   const interruptActiveStreams = () => {
     const reason = new DOMException('Generation stopped by user', 'AbortError')
@@ -239,89 +215,6 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     await store.refreshThreadItems(threadId, {})
   }
   localFetch.interrupt = interruptActiveStreams
-  localFetch.getOutboxSize = () => listChatGenerationOutbox(webId, outboxThreadId).length
-  localFetch.getOutboxRetryAt = () => nextChatGenerationAttemptAt(webId, outboxThreadId)
-  const flushOutbox = async (force: boolean) => {
-    let completed = 0
-
-    // A missing service grant cannot heal through retries. Keep the durable
-    // queue intact and wait for the explicit grant flow instead of repeatedly
-    // loading credentials and calling the provider in the background.
-    if (runtimeCache.aiServiceAccessBlocked) {
-      const pending = listChatGenerationOutbox(webId, outboxThreadId).length
-      notifyOutboxChange()
-      return { completed, pending }
-    }
-
-    for (const entry of listChatGenerationOutbox(webId, outboxThreadId)) {
-      if (!force && (entry.nextAttemptAt ?? entry.queuedAt) > Date.now()) break
-      markChatGenerationAttempt(webId, entry.id)
-      replayDeferredUserItemIds.delete(entry.userItemId)
-      try {
-        const result = await service.process(JSON.stringify({
-          type: 'threads.custom_action',
-          params: {
-            action: {
-              type: 'message.regenerate',
-              payload: {
-                action: 'message.regenerate',
-                thread_id: entry.threadId,
-                item_id: entry.userItemId,
-              },
-            },
-          },
-        }), {})
-
-        if (result.type === 'streaming') {
-          const decoder = new TextDecoder()
-          let payload = ''
-          for await (const chunk of result.stream()) {
-            payload += decoder.decode(chunk, { stream: true })
-          }
-          payload += decoder.decode()
-          for (const line of payload.split(/\r?\n/u)) {
-            if (!line.startsWith('data:')) continue
-            try {
-              const event = JSON.parse(line.slice(5).trim()) as { type?: string; error?: { message?: string } }
-              if (event.type === 'error') {
-                throw new Error(event.error?.message ?? 'Queued generation failed')
-              }
-            } catch (error) {
-              if (error instanceof SyntaxError) continue
-              throw error
-            }
-          }
-        }
-
-        if (replayDeferredUserItemIds.has(entry.userItemId)) break
-        removeChatGeneration(webId, entry.id)
-        completed += 1
-        notifyOutboxChange()
-      } catch (error) {
-        if (isStaleGenerationEntryError(error)) {
-          // The original user item was deleted or replaced while the browser
-          // was offline. Retrying it can never succeed, so drop only this
-          // permanent queue entry; provider/network failures remain retryable.
-          removeChatGeneration(webId, entry.id)
-          notifyOutboxChange()
-          continue
-        }
-        console.warn('[LocalChatKitFetch] Queued generation replay failed:', error)
-        break
-      }
-    }
-
-    const pending = listChatGenerationOutbox(webId, outboxThreadId).length
-    notifyOutboxChange()
-    return { completed, pending }
-  }
-  localFetch.flushOutbox = (options?: { force?: boolean }) => {
-    if (outboxFlushPromise) return outboxFlushPromise
-    outboxFlushPromise = flushOutbox(options?.force ?? false).finally(() => {
-      outboxFlushPromise = null
-    })
-    return outboxFlushPromise
-  }
   localFetch.ensureAiServiceAccess = async () => {
     const podBaseUrl = resolveCurrentPodBaseUrl(db)
     if (!podBaseUrl) throw new Error('无法确定当前空间地址。')
@@ -396,7 +289,14 @@ export async function ensureAiServiceAccessForSession(input: {
   const descriptorUrl = new URL('/api/applets/service-access/ai-connections', runtimeBaseUrl).href
   const response = await input.authFetch(descriptorUrl, { headers: { Accept: 'application/json' } })
   if (!response.ok) throw new Error(`读取 Xpod AI 授权信息失败（HTTP ${response.status}）。`)
-  const descriptor = validateAiServiceAccessDescriptor(await response.json(), input.podBaseUrl)
+  const payload = await response.json()
+  // Interactive Xpod requests can run as the authenticated Pod owner. There
+  // is no separate principal to grant in that case; creating ACLs (or empty
+  // credential documents) would be unnecessary and can corrupt JSON assets.
+  // Keep the strict resource validation for actual delegation below.
+  if (payload?.appletId === 'co.undefineds.ai-connections'
+    && payload?.service?.webId === input.webId) return
+  const descriptor = validateAiServiceAccessDescriptor(payload, input.podBaseUrl)
   for (const resource of descriptor.resources) {
     const granted = await grantAiServiceResourceAccess({
       resource,
@@ -411,7 +311,7 @@ export async function ensureAiServiceAccessForSession(input: {
   }
 }
 
-async function grantAiServiceResourceAccess(input: {
+export async function grantAiServiceResourceAccess(input: {
   resource: {
     id: string
     url: string
@@ -423,6 +323,25 @@ async function grantAiServiceResourceAccess(input: {
   members: boolean
   authFetch: typeof fetch
 }): Promise<{ read?: boolean; append?: boolean; write?: boolean } | null> {
+  // Resource write access does not grant creation rights on its parent.
+  // Initialize as the owner; never overwrite existing or concurrent data.
+  const info = await input.authFetch(input.resource.url, { method: 'HEAD' })
+  if (info.status === 404) {
+    const initialized = await input.authFetch(input.resource.url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'text/turtle',
+        'If-None-Match': '*',
+        ...(input.members ? { Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"' } : {}),
+      },
+      body: '',
+    })
+    if (!initialized.ok && initialized.status !== 412) {
+      throw new Error(`初始化 ${input.resource.id} 失败（HTTP ${initialized.status}）。`)
+    }
+  } else if (!info.ok) {
+    throw new Error(`读取 ${input.resource.id} 失败（HTTP ${info.status}）。`)
+  }
   const options = { fetch: input.authFetch }
   if (input.members) {
     return grantXpodAcrAccess(input)
@@ -582,17 +501,9 @@ function createInitialServiceAcr(input: {
   ].join('\n')
 }
 
-function isStaleGenerationEntryError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  return /^Item not found:/u.test(message)
-}
-
 export type LocalChatKitFetch = typeof fetch & {
   interrupt: () => void
   refreshThreadItems: (threadId: string) => Promise<void>
-  getOutboxSize: () => number
-  getOutboxRetryAt: () => number | null
-  flushOutbox: (options?: { force?: boolean }) => Promise<{ completed: number; pending: number }>
   ensureAiServiceAccess: () => Promise<void>
   loadAttachmentObjectUrl: (attachmentId: string) => Promise<string>
   prepareAttachmentForReuse: (attachment: Attachment) => Promise<Attachment>

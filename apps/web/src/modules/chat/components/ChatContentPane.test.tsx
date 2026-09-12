@@ -6,16 +6,13 @@ const mockNavigate = vi.fn()
 const mockUseInboxItems = vi.fn()
 const mockSelectInboxItem = vi.fn()
 const mockSetInboxFilter = vi.fn()
-const { mockSetThreadId, mockSetComposerValue, mockFocusComposer, mockFetchUpdates, mockRefreshThreadItems, mockFlushOutbox, mockGetOutboxSize, mockGetOutboxRetryAt, mockPrepareAttachmentForReuse, mockUseChatKit } = vi.hoisted(() => {
+const { mockSetThreadId, mockSetComposerValue, mockFocusComposer, mockFetchUpdates, mockRefreshThreadItems, mockPrepareAttachmentForReuse, mockUseChatKit } = vi.hoisted(() => {
   const setThreadId = vi.fn()
   const setComposerValue = vi.fn(async () => undefined)
   const focusComposer = vi.fn(async () => undefined)
   const fetchUpdates = vi.fn(async () => undefined)
   const sendCustomAction = vi.fn(async () => undefined)
   const refreshThreadItems = vi.fn(async () => undefined)
-  const flushOutbox = vi.fn(async () => ({ completed: 0, pending: 0 }))
-  const getOutboxSize = vi.fn(() => 0)
-  const getOutboxRetryAt = vi.fn(() => null as number | null)
   const prepareAttachmentForReuse = vi.fn(async (attachment: unknown) => attachment)
   return {
     mockSetThreadId: setThreadId,
@@ -23,9 +20,6 @@ const { mockSetThreadId, mockSetComposerValue, mockFocusComposer, mockFetchUpdat
     mockFocusComposer: focusComposer,
     mockFetchUpdates: fetchUpdates,
     mockRefreshThreadItems: refreshThreadItems,
-    mockFlushOutbox: flushOutbox,
-    mockGetOutboxSize: getOutboxSize,
-    mockGetOutboxRetryAt: getOutboxRetryAt,
     mockPrepareAttachmentForReuse: prepareAttachmentForReuse,
     mockSendCustomAction: sendCustomAction,
     mockUseChatKit: vi.fn(() => ({
@@ -122,9 +116,6 @@ vi.mock('@/providers/solid-database-provider', () => ({
 vi.mock('../services/chatkit-local/fetch-handler', () => ({
   createLocalChatKitFetch: () => Object.assign(vi.fn(), {
     refreshThreadItems: mockRefreshThreadItems,
-    flushOutbox: mockFlushOutbox,
-    getOutboxSize: mockGetOutboxSize,
-    getOutboxRetryAt: mockGetOutboxRetryAt,
     loadAttachmentObjectUrl: vi.fn(),
     prepareAttachmentForReuse: mockPrepareAttachmentForReuse,
     saveArtifactVersion: vi.fn(),
@@ -206,8 +197,6 @@ describe('ChatContentPane', () => {
     window.localStorage.clear()
     mockSetComposerValue.mockResolvedValue(undefined)
     mockFetchUpdates.mockResolvedValue(undefined)
-    mockFlushOutbox.mockResolvedValue({ completed: 0, pending: 0 })
-    mockGetOutboxSize.mockReturnValue(0)
     mockUseMessageList.mockReturnValue({ data: [], refetch: mockRefetchMessages })
     mockUseMessageIndex.mockReturnValue({ data: [], refetch: mockRefetchMessages })
     mockUseSolidDatabase.mockReturnValue({
@@ -561,7 +550,7 @@ describe('ChatContentPane', () => {
     await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1))
   })
 
-  it('keeps local sending available offline and replays queued generations after reconnecting', async () => {
+  it('fails offline sends once and only refreshes data after reconnecting', async () => {
     mockUseSolidDatabase.mockReturnValue({
       db: { getDialect: () => ({ getPodUrl: () => 'https://pod.example/' }) },
       status: 'ready',
@@ -579,26 +568,14 @@ describe('ChatContentPane', () => {
 
     act(() => window.dispatchEvent(new Event('offline')))
     expect(await screen.findByRole('alert')).toHaveTextContent('网络已断开')
-    expect(screen.getByRole('alert')).toHaveTextContent('仍可发送')
+    expect(screen.getByRole('alert')).toHaveTextContent('请重新发送')
     expect(screen.queryByText('网络恢复后可继续发送')).not.toBeInTheDocument()
 
     mockSession.fetch.mockResolvedValue(new Response('', { status: 200 }))
     act(() => window.dispatchEvent(new Event('online')))
-    await waitFor(() => expect(mockFlushOutbox).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(mockFetchUpdates).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(mockRefreshThreadItems).toHaveBeenCalledWith('thread-1'))
     await waitFor(() => expect(screen.queryByText('连接已恢复，正在同步最新消息…')).not.toBeInTheDocument())
-  })
-
-  it('restores a visible retry state for queued generations after a page reload', async () => {
-    mockGetOutboxSize.mockReturnValue(1)
-    mockGetOutboxRetryAt.mockReturnValue(Date.now() + 60_000)
-    mockSession.fetch = vi.fn(async () => new Response('', { status: 200 }))
-
-    render(<ChatContentPane theme="light" />)
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('仍有 1 条消息等待生成')
-    expect(mockFlushOutbox).not.toHaveBeenCalled()
   })
 
   it('offers an explicit retry when reconnect synchronization fails', async () => {

@@ -72,9 +72,6 @@ export function ChatKitPanel({
     setThreadAttachments,
     threadItems: branchThreadItems,
     isGenerating,
-    queuedGenerationCount,
-    setQueuedGenerationCount,
-    outboxRevision,
     reconnectStatus,
     setReconnectStatus,
     serviceAccessRequired,
@@ -139,9 +136,6 @@ export function ChatKitPanel({
     sessionFetch,
     localFetch,
     selectedThreadId,
-    queuedGenerationCount,
-    outboxRevision,
-    setQueuedGenerationCount,
     setReconnectStatus,
     refreshSurface: fetchUpdates,
   })
@@ -348,7 +342,7 @@ export function ChatKitPanel({
             <div className="min-w-0">
               <p className="text-sm font-medium">允许 Xpod AI 服务读取模型配置</p>
               <p className="text-xs text-muted-foreground">
-                仅授权当前空间中的模型供应商、密钥、网关和配额配置。不会把你的身份信息发送给模型供应商；授权后会自动继续刚才的消息。
+                仅授权当前空间中的模型供应商、密钥、网关和配额配置。不会把你的身份信息发送给模型供应商；授权后请重新发送刚才的消息。
               </p>
               {serviceAccessError ? <p className="mt-1 text-xs text-destructive">{serviceAccessError}</p> : null}
             </div>
@@ -372,8 +366,7 @@ export function ChatKitPanel({
         <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-center gap-2 rounded-lg border border-warning/25 bg-background/95 px-3 py-2 text-sm shadow-sm backdrop-blur">
           <WifiOff className="size-4 text-warning" />
           <span>
-            网络已断开。仍可发送，消息会保存在本地空间并在连接恢复后自动生成。
-            {queuedGenerationCount > 0 ? ` 当前有 ${queuedGenerationCount} 条等待生成。` : ''}
+            网络已断开。当前发送会直接失败，连接恢复后请重新发送。
           </span>
         </div>
       ) : reconnectStatus !== 'idle' ? (
@@ -383,12 +376,8 @@ export function ChatKitPanel({
         >
           <span>
             {reconnectStatus === 'syncing'
-              ? queuedGenerationCount > 0
-                ? `连接已恢复，正在重试 ${queuedGenerationCount} 条待生成消息…`
-                : '连接已恢复，正在同步最新消息…'
-              : queuedGenerationCount > 0
-                ? `仍有 ${queuedGenerationCount} 条消息等待生成。`
-                : '连接已恢复，但消息同步失败。'}
+              ? '连接已恢复，正在同步最新消息…'
+              : '连接已恢复，但消息同步失败。'}
           </span>
           {reconnectStatus === 'error' ? (
             <Button

@@ -1,379 +1,107 @@
-import { useCallback, useMemo, useRef } from 'react'
-import { useLiveQuery } from '@tanstack/react-db'
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
-  buildAIConfigMutationPlan,
-  buildAIConfigProviderStateMap,
-  AIConfigRuntimeCapability,
-  normalizeAIConfigModelId,
-  normalizeAIConfigProviderId,
-  sameAIConfigProviderFamily,
-  selectAIConfigCredential,
-} from '@undefineds.co/models'
-import {
-  credentialCollection,
-  providerCollection,
-  modelCollection,
-} from './collections'
-import { MODEL_PROVIDERS } from '../domain/provider-catalog'
-import type { AIProvider, AIModel } from '../domain/types'
+  type AiConnectionsProvider,
+  type AiGatewayModel,
+  type AiProviderSummary,
+  createAiConnectionsClient,
+} from '@undefineds.co/ai-connections'
+import type { AIProvider } from '../domain/types'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { useSession } from '@/providers/solid-session-context'
+import { useSolidDatabase } from '@/providers/solid-database-provider'
 
-type AnyRow = Record<string, any>
-
-function isRow(row: AnyRow | null): row is AnyRow {
-  return row !== null
-}
-
-function unwrapLiveQueryRow(row: AnyRow, alias: string): AnyRow | null {
-  const nested = row?.[alias]
-  if (nested && typeof nested === 'object') return nested
-  return row && typeof row === 'object' ? row : null
-}
-
-function rowKey(row: AnyRow): string {
-  if (typeof row?.id === 'string' && row.id.length > 0) {
-    return row.id
-  }
-  throw new Error('AI config row is missing row.id.')
-}
-
-/**
- * A credential can be intentionally persisted without exposing its plaintext
- * API key to the browser.  The runtime decrypts the secret in Xpod, so the
- * model-service UI must still treat an active encrypted credential as
- * configured and expose its persisted model list.
- */
-function hasStoredCredentialMaterial(row: AnyRow): boolean {
-  const status = typeof row.status === 'string' ? row.status.trim().toLowerCase() : 'active'
-  const service = typeof row.service === 'string' ? row.service.trim().toLowerCase() : 'ai'
-  if (status !== 'active' || service !== 'ai') return false
-
-  return [row.apiKey, row.secretPayload, row.encryptedSecret, row.oauthAccessToken, row.oauthRefreshToken]
-    .some((value) => typeof value === 'string' && value.trim().length > 0)
-}
-
-function applyPayload(draft: AnyRow, payload: Record<string, unknown>) {
-  for (const [key, value] of Object.entries(payload)) {
-    if (value === undefined) {
-      delete draft[key]
-      continue
-    }
-    draft[key] = value
-  }
-}
-
-async function waitPersist(tx: any) {
-  if (tx?.isPersisted?.promise) {
-    await tx.isPersisted.promise
-  }
-}
-
-function restoreRow(draft: AnyRow, snapshot: AnyRow) {
-  for (const key of Object.keys(draft)) {
-    if (!(key in snapshot)) delete draft[key]
-  }
-  Object.assign(draft, snapshot)
-}
-
-async function compensatePersistedWrites(compensations: Array<() => Promise<void>>) {
-  for (const compensate of compensations.reverse()) {
-    try {
-      await compensate()
-    } catch {
-      // Continue restoring independent resources; the original persistence error remains authoritative.
-    }
-  }
+const PROVIDER_NAMES: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  kimi: 'Kimi',
+  bailian: '百炼',
+  deepseek: 'DeepSeek',
 }
 
 export function useModelServices() {
-  const credentialQuery = useLiveQuery((q) => q.from({ c: credentialCollection }))
-  const providerQuery = useLiveQuery((q) => q.from({ p: providerCollection }))
-  const modelQuery = useLiveQuery((q) => q.from({ m: modelCollection }))
-  const capabilitySaveChainsRef = useRef(new Map<string, Promise<void>>())
-  const pendingCapabilitiesRef = useRef(new Map<string, string[]>())
+  const { session } = useSession()
+  const database = useSolidDatabase()
+  const webId = session.info.webId
+  const podBaseUrl = database.db ? resolveCurrentPodBaseUrl(database.db) : null
+  const client = useMemo(() => (
+    database.status === 'ready' && webId && podBaseUrl
+      ? createAiConnectionsClient({ webId, podBaseUrl, authenticatedFetch: session.fetch })
+      : null
+  ), [database.status, podBaseUrl, session.fetch, webId])
 
-  const queryError = credentialQuery.isError || providerQuery.isError || modelQuery.isError
-    ? '模型服务配置读取失败，请重试。'
-    : null
+  const query = useQuery({
+    queryKey: ['xpod-ai-model-catalog', client?.webId, client?.apiBase],
+    enabled: Boolean(client),
+    staleTime: 30_000,
+    queryFn: async () => {
+      if (!client) return { providers: [], models: [] }
+      const [providers, models] = await Promise.all([client.listProviders(), client.listModels()])
+      return { providers, models }
+    },
+  })
 
-  const credentialRows = useMemo(
-    () => credentialQuery.data?.map((row) => unwrapLiveQueryRow(row as AnyRow, 'c')).filter(isRow) ?? [],
-    [credentialQuery.data],
+  const providers = useMemo(
+    () => projectCatalog(query.data?.providers ?? [], query.data?.models ?? []),
+    [query.data],
   )
-  const providerRows = useMemo(
-    () => providerQuery.data?.map((row) => unwrapLiveQueryRow(row as AnyRow, 'p')).filter(isRow) ?? [],
-    [providerQuery.data],
-  )
-  const modelRows = useMemo(
-    () => modelQuery.data?.map((row) => unwrapLiveQueryRow(row as AnyRow, 'm')).filter(isRow) ?? [],
-    [modelQuery.data],
-  )
-
-  const providerCatalog = useMemo(
-    () =>
-      MODEL_PROVIDERS
-        .filter((item) => item.id !== 'custom')
-        .map((item) => ({
-          id: item.id,
-          displayName: item.name,
-          defaultBaseUrl: item.defaultBaseUrl,
-          defaultModels: item.defaultModels,
-          capabilities: item.capabilities,
-        })),
-    [],
-  )
-
-  const providerStates = useMemo(
-    () =>
-      buildAIConfigProviderStateMap({
-        catalog: providerCatalog,
-        providerRows,
-        credentialRows,
-        modelRows,
-      }),
-    [credentialRows, modelRows, providerCatalog, providerRows],
-  )
-
-  const encryptedCredentialProviderIds = useMemo(
-    () => new Set(
-      credentialRows
-        .filter(hasStoredCredentialMaterial)
-        .map((row) => normalizeAIConfigProviderId(String(row.provider ?? row.id ?? '')))
-        .filter(Boolean),
-    ),
-    [credentialRows],
-  )
-
-  const providers = useMemo(() => {
-    const merged: Record<string, AIProvider> = {}
-
-    MODEL_PROVIDERS.forEach((staticDef) => {
-      if (staticDef.id === 'custom') return
-      const providerState = providerStates[staticDef.id]
-      const defaultModels: AIModel[] = (staticDef.defaultModels || []).map((modelId) => ({
-        id: modelId,
-        name: modelId,
-        enabled: true,
-        capabilities: [],
-      }))
-
-      merged[staticDef.id] = {
-        ...staticDef,
-        ...(providerState ?? {
-          id: staticDef.id,
-          enabled: false,
-          apiKey: '',
-          baseUrl: staticDef.defaultBaseUrl,
-          models: defaultModels,
-          capabilities: staticDef.capabilities ?? [],
-        }),
-        enabled: Boolean(providerState?.enabled || encryptedCredentialProviderIds.has(staticDef.id)),
-        apiKey: providerState?.apiKey || '',
-        baseUrl: providerState?.baseUrl || staticDef.defaultBaseUrl,
-        models: providerState?.models?.length ? providerState.models : defaultModels,
-      }
-    })
-
-    for (const [providerId, providerState] of Object.entries(providerStates)) {
-      if (merged[providerId]) continue
-      const providerRow = providerRows.find((row) =>
-        normalizeAIConfigProviderId(String(row.id ?? '')) === providerId
-      )
-      const displayName = typeof providerRow?.displayName === 'string' && providerRow.displayName.trim()
-        ? providerRow.displayName.trim()
-        : providerId
-      const defaultBaseUrl = typeof providerRow?.baseUrl === 'string'
-        ? providerRow.baseUrl
-        : undefined
-
-      merged[providerId] = {
-        ...providerState,
-        id: providerId,
-        enabled: Boolean(providerState.enabled || encryptedCredentialProviderIds.has(providerId)),
-        name: displayName,
-        description: '来自 Solid Pod 的自定义模型服务',
-        defaultBaseUrl,
-        defaultModels: providerState.models.map((model) => model.id),
-        baseUrl: providerState.baseUrl || defaultBaseUrl,
-      }
-    }
-
-    return merged
-  }, [encryptedCredentialProviderIds, providerRows, providerStates])
-
-  const updateProvider = useCallback(async (id: string, updates: Partial<AIProvider>) => {
-    const plan = buildAIConfigMutationPlan({
-      providerId: id,
-      currentProviderRows: providerRows,
-      currentCredentialRows: credentialRows,
-      currentModelRows: modelRows,
-      updates,
-    })
-
-    const existingProvider = providerRows.find((row) =>
-      sameAIConfigProviderFamily(typeof row.id === 'string' ? row.id : '', plan.providerId),
-    )
-    const existingCredential = credentialRows.find((row) =>
-      sameAIConfigProviderFamily(typeof row.provider === 'string' ? row.provider : '', plan.providerId),
-    )
-    const selectedCredential = selectAIConfigCredential(plan.providerId, credentialRows, providerRows)?.credential
-    const credentialTarget = selectedCredential ?? existingCredential
-    const existingModels = modelRows.filter((row) =>
-      sameAIConfigProviderFamily(typeof row.isProvidedBy === 'string' ? row.isProvidedBy : '', plan.providerId),
-    )
-    const compensations: Array<() => Promise<void>> = []
-    try {
-      if (plan.providerPayload) {
-        const providerSnapshot = existingProvider ? { ...existingProvider } : null
-        const providerTx = existingProvider
-          ? providerCollection.update(rowKey(existingProvider), (draft: AnyRow) => {
-              applyPayload(draft, plan.providerPayload as AnyRow)
-            })
-          : providerCollection.insert(plan.providerPayload as any)
-
-        await waitPersist(providerTx)
-        compensations.push(async () => {
-          const tx = providerSnapshot
-            ? providerCollection.update(rowKey(providerSnapshot), (draft: AnyRow) => {
-                restoreRow(draft, providerSnapshot)
-              })
-            : providerCollection.delete(rowKey(plan.providerPayload as AnyRow))
-          await waitPersist(tx)
-        })
-      }
-
-      if (plan.credentialPayload) {
-        const credentialSnapshot = credentialTarget ? { ...credentialTarget } : null
-        const credentialTx = credentialTarget
-          ? credentialCollection.update(rowKey(credentialTarget), (draft: AnyRow) => {
-              applyPayload(draft, plan.credentialPayload as AnyRow)
-            })
-          : credentialCollection.insert(plan.credentialPayload as any)
-
-        await waitPersist(credentialTx)
-        compensations.push(async () => {
-          const tx = credentialSnapshot
-            ? credentialCollection.update(rowKey(credentialSnapshot), (draft: AnyRow) => {
-                restoreRow(draft, credentialSnapshot)
-              })
-            : credentialCollection.delete(rowKey(plan.credentialPayload as AnyRow))
-          await waitPersist(tx)
-        })
-      }
-
-      if (plan.modelUpserts.length > 0 || plan.modelDeleteIds.length > 0) {
-        const existingByStorageId = new Map(
-          existingModels
-            .filter((row) => typeof row.id === 'string' && row.id.length > 0)
-            .map((row) => [rowKey(row), row] as const),
-        )
-        const existingByModelId = new Map(
-          existingModels
-            .filter((row) => typeof row.id === 'string' && row.id.length > 0)
-            .map((row) => [normalizeAIConfigModelId(row.id as string, plan.providerId), row] as const),
-        )
-
-        for (const modelPayload of plan.modelUpserts) {
-          if (!modelPayload.id) continue
-          const existing = existingByStorageId.get(modelPayload.id)
-            ?? existingByModelId.get(normalizeAIConfigModelId(modelPayload.id, plan.providerId))
-          const modelSnapshot = existing ? { ...existing } : null
-          const modelTx = existing
-            ? modelCollection.update(rowKey(existing), (draft: AnyRow) => {
-                applyPayload(draft, modelPayload as AnyRow)
-              })
-            : modelCollection.insert(modelPayload as any)
-
-          await waitPersist(modelTx)
-          compensations.push(async () => {
-            const tx = modelSnapshot
-              ? modelCollection.update(rowKey(modelSnapshot), (draft: AnyRow) => {
-                  restoreRow(draft, modelSnapshot)
-                })
-              : modelCollection.delete(rowKey(modelPayload as AnyRow))
-            await waitPersist(tx)
-          })
-        }
-
-        for (const row of existingModels) {
-          const modelId = typeof row.id === 'string' ? row.id : ''
-          const normalizedModelId = normalizeAIConfigModelId(modelId, plan.providerId)
-          if (!plan.modelDeleteIds.includes(normalizedModelId)) continue
-          const modelSnapshot = { ...row }
-          const deleteTx = modelCollection.delete(rowKey(row))
-          await waitPersist(deleteTx)
-          compensations.push(async () => {
-            await waitPersist(modelCollection.insert(modelSnapshot as any))
-          })
-        }
-      }
-    } catch (error) {
-      await compensatePersistedWrites(compensations)
-      throw error
-    }
-  }, [credentialRows, modelRows, providerRows])
-
-  const updateProviderCapability = useCallback(async (
-    id: string,
-    capability: string,
-    enabled: boolean,
-    renderedCapabilities: string[] = [],
-  ) => {
-    const providerId = normalizeAIConfigProviderId(id)
-    const currentCapabilities = pendingCapabilitiesRef.current.get(providerId) ?? [
-      ...(providers[providerId]?.capabilities ?? []),
-      ...renderedCapabilities,
-    ]
-    const nextCapabilities = mutateProviderCapabilities(
-      currentCapabilities,
-      capability,
-      enabled,
-    )
-    pendingCapabilitiesRef.current.set(providerId, nextCapabilities)
-    const previous = capabilitySaveChainsRef.current.get(providerId) ?? Promise.resolve()
-    const save = previous.catch(() => undefined).then(async () => {
-      await updateProvider(providerId, { capabilities: nextCapabilities })
-    })
-    capabilitySaveChainsRef.current.set(providerId, save)
-    try {
-      await save
-    } finally {
-      if (capabilitySaveChainsRef.current.get(providerId) === save) {
-        capabilitySaveChainsRef.current.delete(providerId)
-      }
-      if (pendingCapabilitiesRef.current.get(providerId) === nextCapabilities) {
-        pendingCapabilitiesRef.current.delete(providerId)
-      }
-    }
-  }, [providers, updateProvider])
 
   return {
     providers,
-    updateProvider,
-    updateProviderCapability,
-    error: queryError,
+    error: query.error instanceof Error ? query.error.message : null,
+    isLoading: query.isLoading,
+    refresh: query.refetch,
   }
 }
 
-function mutateProviderCapabilities(current: unknown, capability: string, enabled: boolean): string[] {
-  const next = new Set(
-    Array.isArray(current)
-      ? current.filter((value): value is string => typeof value === 'string')
-      : [],
+function projectCatalog(
+  summaries: AiProviderSummary[],
+  models: AiGatewayModel[],
+): Record<string, AIProvider> {
+  const summariesByProvider = new Map(summaries.map((summary) => [summary.id, summary]))
+  const catalogModels = mergeCatalogModels(
+    models,
+    summaries.flatMap((summary) => summary.selectedModels),
   )
-  if (enabled) next.add(capability)
-  else next.delete(capability)
+  const providerIds = new Set<AiConnectionsProvider>([
+    ...summaries.map((summary) => summary.id),
+    ...catalogModels.map((model) => model.provider),
+  ])
 
-  if (capability === AIConfigRuntimeCapability.responsesWebSearch && enabled) {
-    next.add(AIConfigRuntimeCapability.responses)
+  return Object.fromEntries([...providerIds].map((providerId) => {
+    const summary = summariesByProvider.get(providerId)
+    const providerModels = (catalogModels as Array<AiGatewayModel & { id: string }>)
+      .filter((model) => model.provider === providerId)
+      .map((model) => ({
+        id: model.id,
+        name: model.displayName || model.id,
+        enabled: true,
+        capabilities: model.capabilities ?? [],
+        isCustom: model.custom === true,
+      }))
+
+    const provider: AIProvider = {
+      id: providerId,
+      name: summary?.name || PROVIDER_NAMES[providerId] || providerId,
+      description: '由 Xpod 公共模型服务管理',
+      enabled: Boolean(summary && summary.status !== 'unconfigured' && summary.status !== 'unavailable' && providerModels.length > 0),
+      baseUrl: summary?.credentials.find((credential) => credential.enabled)?.baseUrl,
+      models: providerModels,
+      defaultModels: providerModels.map((model) => model.id),
+      capabilities: [...new Set(providerModels.flatMap((model) => model.capabilities))],
+    }
+    return [providerId, provider]
+  }))
+}
+
+function mergeCatalogModels(
+  gatewayModels: AiGatewayModel[],
+  selectedModels: AiGatewayModel[],
+): AiGatewayModel[] {
+  const merged = new Map<string, AiGatewayModel>()
+  for (const model of [...gatewayModels, ...selectedModels]) {
+    const key = `${model.provider}:${model.id}`
+    merged.set(key, { ...merged.get(key), ...model })
   }
-  if (capability === AIConfigRuntimeCapability.responses && !enabled) {
-    next.delete(AIConfigRuntimeCapability.responsesWebSearch)
-  }
-  if (
-    !next.has(AIConfigRuntimeCapability.chatCompletions)
-    && !next.has(AIConfigRuntimeCapability.responses)
-  ) {
-    throw new Error('至少需要启用 Chat Completions 或 Responses API 之一。')
-  }
-  return [...next]
+  return [...merged.values()]
 }

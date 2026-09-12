@@ -1,411 +1,86 @@
-import { act, renderHook } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook, waitFor } from '@testing-library/react'
+import type { PropsWithChildren } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-type Row = Record<string, unknown> & { id: string }
-
 const mocks = vi.hoisted(() => ({
-  useLiveQuery: vi.fn(),
-  providerRows: new Map<string, Row>(),
-  credentialRows: new Map<string, Row>(),
-  modelRows: new Map<string, Row>(),
-  providerInsert: vi.fn(),
-  providerUpdate: vi.fn(),
-  providerDelete: vi.fn(),
-  credentialInsert: vi.fn(),
-  credentialUpdate: vi.fn(),
-  credentialDelete: vi.fn(),
-  modelInsert: vi.fn(),
-  modelUpdate: vi.fn(),
-  modelDelete: vi.fn(),
-  providerStartSync: vi.fn(),
-  credentialStartSync: vi.fn(),
-  modelStartSync: vi.fn(),
+  createClient: vi.fn(),
+  fetch: vi.fn(),
 }))
 
-function persistedTx() {
-  return { isPersisted: { promise: Promise.resolve() } }
-}
+vi.mock('@undefineds.co/ai-connections', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@undefineds.co/ai-connections')>(),
+  createAiConnectionsClient: mocks.createClient,
+}))
 
-function configureCollection(
-  rows: Map<string, Row>,
-  insert: ReturnType<typeof vi.fn>,
-  update: ReturnType<typeof vi.fn>,
-  remove: ReturnType<typeof vi.fn>,
-) {
-  insert.mockImplementation((row: Row) => {
-    rows.set(row.id, { ...row })
-    return persistedTx()
-  })
-  update.mockImplementation((id: string, mutate: (draft: Row) => void) => {
-    const current = rows.get(id)
-    if (!current) throw new Error(`Missing row: ${id}`)
-    const next = { ...current }
-    mutate(next)
-    rows.set(id, next)
-    return persistedTx()
-  })
-  remove.mockImplementation((id: string) => {
-    rows.delete(id)
-    return persistedTx()
-  })
-}
-
-vi.mock('@tanstack/react-db', () => ({
-  useLiveQuery: mocks.useLiveQuery,
+vi.mock('@/providers/solid-session-context', () => ({
+  useSession: () => ({
+    session: {
+      info: { webId: 'https://pod.example/profile/card#me' },
+      fetch: mocks.fetch,
+    },
+  }),
 }))
 
 vi.mock('@/providers/solid-database-provider', () => ({
-  useSolidDatabase: () => ({ db: {} }),
-}))
-
-vi.mock('./collections', () => ({
-  providerCollection: {
-    startSyncImmediate: mocks.providerStartSync,
-    insert: mocks.providerInsert,
-    update: mocks.providerUpdate,
-    delete: mocks.providerDelete,
-  },
-  credentialCollection: {
-    startSyncImmediate: mocks.credentialStartSync,
-    insert: mocks.credentialInsert,
-    update: mocks.credentialUpdate,
-    delete: mocks.credentialDelete,
-  },
-  modelCollection: {
-    startSyncImmediate: mocks.modelStartSync,
-    insert: mocks.modelInsert,
-    update: mocks.modelUpdate,
-    delete: mocks.modelDelete,
-  },
+  useSolidDatabase: () => ({
+    db: { getDialect: () => ({ getPodUrl: () => 'https://pod.example/' }) },
+    status: 'ready',
+  }),
 }))
 
 import { useModelServices } from './use-model-services'
 
-describe('useModelServices data persistence', () => {
+describe('useModelServices', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.providerRows.clear()
-    mocks.credentialRows.clear()
-    mocks.modelRows.clear()
-
-    configureCollection(
-      mocks.providerRows,
-      mocks.providerInsert,
-      mocks.providerUpdate,
-      mocks.providerDelete,
-    )
-    configureCollection(
-      mocks.credentialRows,
-      mocks.credentialInsert,
-      mocks.credentialUpdate,
-      mocks.credentialDelete,
-    )
-    configureCollection(
-      mocks.modelRows,
-      mocks.modelInsert,
-      mocks.modelUpdate,
-      mocks.modelDelete,
-    )
-
-    mocks.useLiveQuery
-      .mockReturnValueOnce({ data: [], isError: false })
-      .mockReturnValueOnce({ data: [], isError: false })
-      .mockReturnValueOnce({ data: [], isError: false })
-  })
-
-  it('delegates initial hydration to useLiveQuery without manual collection starts', () => {
-    renderHook(() => useModelServices())
-
-    expect(mocks.useLiveQuery).toHaveBeenCalledTimes(3)
-    expect(mocks.providerStartSync).not.toHaveBeenCalled()
-    expect(mocks.credentialStartSync).not.toHaveBeenCalled()
-    expect(mocks.modelStartSync).not.toHaveBeenCalled()
-  })
-
-  it('keeps Pod-defined custom providers visible to consumers', () => {
-    mocks.useLiveQuery.mockReset()
-    mocks.useLiveQuery
-      .mockReturnValueOnce({
-        data: [{ c: { id: 'timecc-default.ttl', provider: '/settings/providers/timecc.ttl', apiKey: 'secret' } }],
-        isError: false,
-      })
-      .mockReturnValueOnce({
-        data: [{ p: { id: 'timecc.ttl', displayName: 'TimeCC', baseUrl: 'https://example.test/v1' } }],
-        isError: false,
-      })
-      .mockReturnValueOnce({
-        data: [{ m: { id: 'timecc.ttl#gpt-test', displayName: 'GPT Test', isProvidedBy: '/settings/providers/timecc.ttl' } }],
-        isError: false,
-      })
-
-    const { result } = renderHook(() => useModelServices())
-
-    expect(result.current.providers.timecc).toMatchObject({
-      id: 'timecc',
-      name: 'TimeCC',
-      baseUrl: 'https://example.test/v1',
-    })
-    expect(result.current.providers.timecc.models).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'gpt-test', name: 'GPT Test' }),
-    ]))
-  })
-
-  it('accepts flat rows returned by the live collection runtime', () => {
-    mocks.useLiveQuery.mockReset()
-    mocks.useLiveQuery
-      .mockReturnValueOnce({
-        data: [{ id: 'timecc-default', provider: '/settings/providers/timecc.ttl', apiKey: 'secret' }],
-        isError: false,
-      })
-      .mockReturnValueOnce({
-        data: [{ id: 'timecc.ttl', displayName: 'TimeCC', baseUrl: 'https://example.test/v1' }],
-        isError: false,
-      })
-      .mockReturnValueOnce({
-        data: [{ id: 'timecc.ttl#gpt-test', displayName: 'GPT Test', isProvidedBy: '/settings/providers/timecc.ttl' }],
-        isError: false,
-      })
-
-    const { result } = renderHook(() => useModelServices())
-
-    expect(result.current.providers.timecc).toMatchObject({
-      id: 'timecc',
-      name: 'TimeCC',
-      enabled: true,
-    })
-    expect(result.current.providers.timecc.models).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'gpt-test', name: 'GPT Test' }),
-    ]))
-  })
-
-  it('treats an active encrypted credential as configured without exposing its secret', () => {
-    mocks.useLiveQuery.mockReset()
-    mocks.useLiveQuery
-      .mockReturnValueOnce({
-        data: [{ c: {
-          id: 'openai-default',
-          provider: '/settings/providers/openai.ttl',
-          encryptedSecret: '{"ciphertext":"redacted"}',
-          status: 'active',
-          service: 'ai',
-        } }],
-        isError: false,
-      })
-      .mockReturnValueOnce({
-        data: [{ p: {
-          id: 'openai.ttl',
-          displayName: 'OpenAI',
-          baseUrl: 'https://example.test/v1',
-        } }],
-        isError: false,
-      })
-      .mockReturnValueOnce({
-        data: [{ m: {
-          id: 'openai.ttl#gpt-5.5',
-          displayName: 'GPT-5.5',
-          isProvidedBy: '/settings/providers/openai.ttl',
-          rdfType: ['https://undefineds.co/ns#AIModel', 'https://undefineds.co/ns#ChatModel'],
-          status: 'active',
-        } }],
-        isError: false,
-      })
-
-    const { result } = renderHook(() => useModelServices())
-
-    expect(result.current.providers.openai).toMatchObject({
-      enabled: true,
-      apiKey: '',
-      models: [expect.objectContaining({ id: 'gpt-5.5', name: 'GPT-5.5' })],
-    })
-  })
-
-  it('keeps already loaded providers available after a transient collection error', () => {
-    mocks.useLiveQuery.mockReset()
-    mocks.useLiveQuery
-      .mockReturnValueOnce({
-        data: [{ c: {
-          id: 'openai-default',
-          provider: '/settings/providers/openai.ttl',
-          encryptedSecret: '{"ciphertext":"redacted"}',
-          status: 'active',
-          service: 'ai',
-        } }],
-        isError: true,
-      })
-      .mockReturnValueOnce({
-        data: [{ p: { id: 'openai.ttl', displayName: 'OpenAI' } }],
-        isError: false,
-      })
-      .mockReturnValueOnce({
-        data: [{ m: {
-          id: 'openai.ttl#gpt-5.6-terra',
-          displayName: 'GPT-5.6 Terra',
-          isProvidedBy: '/settings/providers/openai.ttl',
-          status: 'active',
-        } }],
-        isError: false,
-      })
-
-    const { result } = renderHook(() => useModelServices())
-
-    expect(result.current.error).toBe('模型服务配置读取失败，请重试。')
-    expect(result.current.providers.openai).toMatchObject({
-      enabled: true,
-      models: [expect.objectContaining({ id: 'gpt-5.6-terra' })],
-    })
-  })
-
-  it('persists explicit provider runtime capabilities in the provider resource', async () => {
-    const { result } = renderHook(() => useModelServices())
-
-    await act(async () => {
-      await result.current.updateProvider('openai', {
-        capabilities: ['chat_completions', 'responses', 'responses_web_search'],
-      })
-    })
-
-    expect([...mocks.providerRows.values()]).toEqual([
-      expect.objectContaining({
-        capabilities: ['chat_completions', 'responses', 'responses_web_search'],
-      }),
-    ])
-  })
-
-  it('enables Responses when Web Search is enabled', async () => {
-    const { result } = renderHook(() => useModelServices())
-
-    await act(async () => {
-      await result.current.updateProviderCapability(
-        'openai',
-        'responses_web_search',
-        true,
-        ['chat_completions'],
-      )
-    })
-
-    expect([...mocks.providerRows.values()]).toEqual([
-      expect.objectContaining({
-        capabilities: ['chat_completions', 'responses_web_search', 'responses'],
-      }),
-    ])
-  })
-
-  it('merges serialized capability mutations against the latest persisted row', async () => {
-    const providerRow = {
-      id: 'timecc.ttl',
-      displayName: 'TimeCC',
-      capabilities: ['responses'],
-    }
-    mocks.providerRows.set(providerRow.id, providerRow)
-    mocks.useLiveQuery.mockReset()
-    mocks.useLiveQuery
-      .mockReturnValueOnce({ data: [], isError: false })
-      .mockReturnValueOnce({ data: [{ p: providerRow }], isError: false })
-      .mockReturnValueOnce({ data: [], isError: false })
-    const { result } = renderHook(() => useModelServices())
-
-    await act(async () => {
-      await Promise.all([
-        result.current.updateProviderCapability('timecc', 'image_input', true),
-        result.current.updateProviderCapability('timecc', 'tool_calls', true),
-      ])
-    })
-
-    expect(mocks.providerRows.get('timecc.ttl')?.capabilities).toEqual([
-      'responses',
-      'image_input',
-      'tool_calls',
-    ])
-  })
-
-  it('updates an existing Pod model when its row id includes the provider path', async () => {
-    const providerRow = {
-      id: '/settings/providers/timecc.ttl',
-      displayName: 'TimeCC',
-      baseUrl: 'https://example.test/v1',
-    }
-    const modelRow = {
-      id: '/settings/providers/timecc.ttl#linx-lite',
-      displayName: 'LinX Lite',
-      isProvidedBy: '/settings/providers/timecc.ttl',
-      status: 'active',
-      capabilities: [],
-      createdAt: new Date('2026-08-16T00:00:00.000Z'),
-      updatedAt: new Date('2026-08-16T00:00:00.000Z'),
-    }
-    mocks.providerRows.set(providerRow.id, providerRow)
-    mocks.modelRows.set(modelRow.id, modelRow)
-    mocks.useLiveQuery.mockReset()
-    mocks.useLiveQuery
-      .mockReturnValueOnce({ data: [], isError: false })
-      .mockReturnValueOnce({ data: [{ p: providerRow }], isError: false })
-      .mockReturnValueOnce({ data: [{ m: modelRow }], isError: false })
-
-    const { result } = renderHook(() => useModelServices())
-
-    await act(async () => {
-      await result.current.updateProvider('timecc', {
-        models: [{
-          id: 'linx-lite',
-          name: 'LinX Lite',
+    mocks.createClient.mockReturnValue({
+      webId: 'https://pod.example/profile/card#me',
+      apiBase: 'https://pod.example/api/ai',
+      listProviders: vi.fn(async () => [{
+        id: 'custom',
+        name: 'Custom',
+        offerings: [],
+        credentials: [{
+          id: 'credential-1',
+          offeringId: 'custom',
+          authMode: 'apiKey',
           enabled: true,
-          capabilities: ['vision'],
+          priority: 0,
+          health: 'healthy',
+          baseUrl: 'https://gateway.example',
+          version: 1,
         }],
-      })
+        selectedModels: [{
+          id: 'gpt-test',
+          provider: 'custom',
+          displayName: 'GPT Test',
+          capabilities: ['chat'],
+        }],
+        status: 'available',
+      }]),
+      listModels: vi.fn(async () => []),
     })
-
-    expect(mocks.modelUpdate).toHaveBeenCalledWith(
-      modelRow.id,
-      expect.any(Function),
-    )
-    expect(mocks.modelRows.get(modelRow.id)?.rdfType).toEqual([
-      'https://undefineds.co/ns#ChatModel',
-    ])
-    expect(mocks.modelRows.get(modelRow.id)?.capabilities).toContain(
-      'https://undefineds.co/ns#ChatCapability',
-    )
-    expect(mocks.modelInsert).not.toHaveBeenCalled()
   })
 
-  it('restores earlier provider and credential writes when later model persistence fails', async () => {
-    const persistenceError = new Error('model persistence failed')
-    mocks.modelInsert.mockImplementation((row: Row) => {
-      mocks.modelRows.set(row.id, { ...row })
-      return {
-        isPersisted: {
-          promise: Promise.reject(persistenceError).catch((error) => {
-            mocks.modelRows.delete(row.id)
-            throw error
-          }),
-        },
-      }
+  it('reads the Xpod catalog without mounting the management applet', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: PropsWithChildren) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    const { result } = renderHook(() => useModelServices(), { wrapper })
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(mocks.createClient).toHaveBeenCalledWith({
+      webId: 'https://pod.example/profile/card#me',
+      podBaseUrl: 'https://pod.example',
+      authenticatedFetch: mocks.fetch,
     })
-
-    const { result } = renderHook(() => useModelServices())
-
-    let surfacedError: unknown
-    await act(async () => {
-      try {
-        await result.current.updateProvider('openai', {
-          apiKey: 'sk-new',
-          baseUrl: 'https://api.example.test/v1',
-          models: [{
-            id: 'test-model',
-            name: 'Test Model',
-            enabled: true,
-            capabilities: [],
-          }],
-        })
-      } catch (error) {
-        surfacedError = error
-      }
+    expect(result.current.providers.custom).toMatchObject({
+      enabled: true,
+      baseUrl: 'https://gateway.example',
+      models: [{ id: 'gpt-test', name: 'GPT Test', capabilities: ['chat'] }],
     })
-
-    expect(surfacedError).toBe(persistenceError)
-    expect(mocks.providerRows).toEqual(new Map())
-    expect(mocks.credentialRows).toEqual(new Map())
-    expect(mocks.modelRows).toEqual(new Map())
-    expect(mocks.providerDelete).toHaveBeenCalledOnce()
-    expect(mocks.credentialDelete).toHaveBeenCalledOnce()
   })
 })

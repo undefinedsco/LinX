@@ -1,6 +1,9 @@
 import type { AIConfigModel, AIConfigProviderState } from '@undefineds.co/models'
-import { type ProviderDef } from './provider-catalog'
 
-export interface AIProvider extends ProviderDef, AIConfigProviderState {}
+export interface AIProvider extends AIConfigProviderState {
+  name: string
+  description?: string
+  defaultModels?: string[]
+}
 
 export type AIModel = AIConfigModel

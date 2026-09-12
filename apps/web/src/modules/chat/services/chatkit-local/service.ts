@@ -22,13 +22,10 @@ import {
 } from '@/lib/vendor/xpod-chatkit'
 import {
   agentResource,
-  aiProviderResource,
   AIConfigRuntimeCapability,
   chatResource,
   contactResource,
-  credentialResource,
   extractChatIdFromChatRef,
-  getAIConfigProviderCapabilities,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   type AgentRow,
@@ -103,6 +100,7 @@ function isRetryableGenerationError(error: unknown): boolean {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
   if (error instanceof TypeError) return true
   const message = error instanceof Error ? error.message : String(error)
+  if (/credential row.*missing.*secret|missing encrypted secret payload/iu.test(message)) return false
   return /network|fetch|connection|socket|timed?\s*out|econn|http\s+(?:408|429|5\d\d)|runtime error (?:408|429|5\d\d)|responses error (?:408|429|5\d\d)/iu.test(message)
 }
 
@@ -159,9 +157,17 @@ export function summarizeRuntimeError(body: string): string {
   return body.replace(/\s+/gu, ' ').trim().slice(0, 200)
 }
 
-function modelMessagesContainImages(messages: ModelMessage[]): boolean {
-  return messages.some((message) => Array.isArray(message.content)
-    && message.content.some((part) => part.type === 'image_url'))
+function stripHistoricalImageParts(messages: ModelMessage[]): ModelMessage[] {
+  return messages.map((message) => {
+    if (!Array.isArray(message.content)) return message
+    const content = message.content.filter((part) => part.type !== 'image_url')
+    return {
+      ...message,
+      content: content.length > 0
+        ? content
+        : [{ type: 'text', text: '[历史图片已省略]' }],
+    }
+  })
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -179,12 +185,8 @@ export interface LocalServiceOptions {
   webId: string
   authFetch: typeof fetch
   systemPrompt?: string
-  onGenerationDeferred?: (entry: {
-    threadId: string
-    userItemId: string
-    inferenceOptions?: Record<string, unknown>
-  }) => Promise<void> | void
   onServiceAccessRequired?: () => Promise<void> | void
+  attachmentThreadId?: string
 }
 
 export interface StreamingResult {
@@ -470,8 +472,8 @@ export class LocalChatKitService {
   private authFetch: typeof fetch
   private systemPrompt: string
   private runtimeSidecar: RuntimeSidecarSink
-  private onGenerationDeferred?: LocalServiceOptions['onGenerationDeferred']
   private onServiceAccessRequired?: LocalServiceOptions['onServiceAccessRequired']
+  private attachmentThreadId?: string
   private readonly attachmentModelPartCache = new Map<string, Promise<ModelContentPart[]>>()
 
   constructor(options: LocalServiceOptions) {
@@ -480,8 +482,8 @@ export class LocalChatKitService {
     this.webId = options.webId
     this.authFetch = options.authFetch
     this.systemPrompt = options.systemPrompt ?? 'You are a helpful assistant.'
-    this.onGenerationDeferred = options.onGenerationDeferred
     this.onServiceAccessRequired = options.onServiceAccessRequired
+    this.attachmentThreadId = options.attachmentThreadId
     this.runtimeSidecar = new RuntimeSidecarSink(this.db, this.webId)
   }
 
@@ -693,6 +695,7 @@ export class LocalChatKitService {
         return this.handleItemsFeedback(request.params, context)
       case 'attachments.create':
         if (!this.store.createAttachment) throw new Error('Attachment storage is unavailable')
+        await this.assertAttachmentCapability(request.params, context)
         return this.store.createAttachment(request.params)
       case 'attachments.delete':
         await this.store.deleteAttachment(request.params.attachment_id, context)
@@ -703,6 +706,26 @@ export class LocalChatKitService {
         return this.handleThreadsDelete(request.params, context)
       default:
         return null
+    }
+  }
+
+  private async assertAttachmentCapability(params: { mime_type?: unknown }, context: StoreContext): Promise<void> {
+    if (typeof params.mime_type !== 'string' || !params.mime_type.toLowerCase().startsWith('image/')) return
+    if (!this.attachmentThreadId) return
+
+    const thread = await this.store.loadThread(this.attachmentThreadId, context)
+    const agentConfig = await this.resolveThreadAgentConfig(thread)
+    const platformModel = this.resolvePlatformModel(agentConfig)
+    const runtimeThread = await this.getRuntimeThread(thread.id)
+    if (runtimeThread) return
+
+    const provider = platformModel ? 'undefineds' : (agentConfig?.provider ?? 'openai')
+    const capabilities = await this.resolveProviderCapabilities(provider)
+    if (
+      !capabilities.includes(AIConfigRuntimeCapability.imageInput)
+      && !capabilities.includes(AIConfigRuntimeCapability.imageEditing)
+    ) {
+      throw new Error('此模型不支持图像输入。请尝试其他模型')
     }
   }
 
@@ -1046,18 +1069,25 @@ export class LocalChatKitService {
           return
         }
 
+        const supportsImageInput = providerCapabilities.includes(AIConfigRuntimeCapability.imageInput)
+        const currentMessageHasImage = userMessage.type === 'user_message'
+          && userMessage.attachments?.some((attachment) => attachment.type === 'image')
+        if (currentMessageHasImage && !supportsImageInput) {
+          throw new ProviderCapabilityError(provider, '图片输入')
+        }
+        // A previous turn may contain an image even though the current request
+        // is text-only. Providers without vision can still answer normally as
+        // long as old binary image parts are not resent to the upstream API.
+        const requestMessages = supportsImageInput
+          ? messages
+          : stripHistoricalImageParts(messages)
+
         if (webSearchRequested) {
           if (!providerCapabilities.includes(AIConfigRuntimeCapability.responses)) {
             throw new ProviderCapabilityError(provider, 'Responses API')
           }
           if (!providerCapabilities.includes(AIConfigRuntimeCapability.responsesWebSearch)) {
             throw new ProviderCapabilityError(provider, 'Responses Web Search')
-          }
-          if (
-            modelMessagesContainImages(messages)
-            && !providerCapabilities.includes(AIConfigRuntimeCapability.imageInput)
-          ) {
-            throw new ProviderCapabilityError(provider, '图片输入')
           }
           yield {
             type: 'progress_update',
@@ -1066,7 +1096,7 @@ export class LocalChatKitService {
           } as ThreadStreamEvent
           const stream = this.streamFromLinxResponses(
             platformModel ?? providerModel,
-            messages,
+            requestMessages,
             inferenceOptions,
             agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
             context.signal as AbortSignal | undefined,
@@ -1095,7 +1125,7 @@ export class LocalChatKitService {
 
           const stream = this.streamFromLinxRuntime(
             platformModel,
-            messages,
+            requestMessages,
             inferenceOptions,
             agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
             context.signal as AbortSignal | undefined,
@@ -1120,20 +1150,13 @@ export class LocalChatKitService {
           return
         }
 
-        if (
-          modelMessagesContainImages(messages)
-          && !providerCapabilities.includes(AIConfigRuntimeCapability.imageInput)
-        ) {
-          throw new ProviderCapabilityError(provider, '图片输入')
-        }
-
         if (!providerCapabilities.includes(AIConfigRuntimeCapability.chatCompletions)) {
           if (!providerCapabilities.includes(AIConfigRuntimeCapability.responses)) {
             throw new ProviderCapabilityError(provider, 'Chat Completions 或 Responses API')
           }
           const stream = this.streamFromLinxResponses(
             providerModel,
-            messages,
+            requestMessages,
             inferenceOptions,
             agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
             context.signal as AbortSignal | undefined,
@@ -1160,7 +1183,7 @@ export class LocalChatKitService {
           const stream = this.streamFromProviderRuntime(
             provider,
             providerModel,
-            messages,
+            requestMessages,
             inferenceOptions,
             context.signal as AbortSignal | undefined,
           )
@@ -1198,26 +1221,17 @@ export class LocalChatKitService {
       if (serviceAccessRequired) await this.onServiceAccessRequired?.()
       const webSearchFailed = isWebSearchRequested(inferenceOptions) && !isAbortError(error)
       const searchErrorMessage = error instanceof Error ? error.message : ''
-      const generationDeferred = Boolean(this.onGenerationDeferred) && isRetryableGenerationError(error)
-      if (generationDeferred) {
-        await this.onGenerationDeferred?.({
-          threadId: thread.id,
-          userItemId: userMessage.id,
-          inferenceOptions: inferenceOptions && typeof inferenceOptions === 'object'
-            ? { ...inferenceOptions }
-            : undefined,
-        })
-      }
+      const retryableGenerationFailure = isRetryableGenerationError(error)
       const userFacingMessage = serviceAccessRequired
-        ? '需要授权 Xpod AI 服务访问模型配置。授权后将自动继续生成。'
-        : generationDeferred
-        ? '网络或 AI 上游暂不可用，已加入发送队列；连接恢复后会自动重试。'
+        ? '需要授权 Xpod AI 服务访问模型配置。授权后请重新发送。'
         : error instanceof ProviderCapabilityError
         ? error.message
         : webSearchFailed
         ? searchErrorMessage.startsWith('当前自定义 AI 供应商不支持')
           ? searchErrorMessage
           : '联网搜索暂不可用。请检查本地 xpod 的 AI 上游配置后重试。'
+        : retryableGenerationFailure
+        ? '网络或 AI 上游暂不可用，请稍后重试。'
         : formatErrorForUser(error, '消息生成失败。请稍后重试。')
       if (webSearchFailed) {
         // Search capability failures are already represented as an inline,
@@ -1249,7 +1263,7 @@ export class LocalChatKitService {
       // the cancelled stream close without another UI event.
       if (isAbortError(error)) return
       yield { type: 'thread.item.done', item: assistantItem }
-      if (generationDeferred) return
+      if (retryableGenerationFailure || serviceAccessRequired) return
       if (webSearchFailed) return
       yield {
         type: 'error',
@@ -1728,32 +1742,11 @@ export class LocalChatKitService {
   }
 
   private async resolveConfiguredProviderConfig(): Promise<ThreadAgentConfig | null> {
-    const [providers, credentials] = await Promise.all([
-      this.db.select().from(aiProviderResource).execute(),
-      this.db.select().from(credentialResource).execute(),
-    ])
-    const configuredProviderIds = new Set((credentials as Array<Record<string, unknown>>)
-      .filter((row) => String(row.status ?? 'active') === 'active' && String(row.service ?? 'ai') === 'ai')
-      .map((row) => {
-        const explicit = normalizeAIConfigProviderId(String(row.provider ?? ''))
-        if (explicit) return explicit
-        const credentialId = normalizeAIConfigResourceId(String(row.id ?? row['@id'] ?? ''))
-        return credentialId.replace(/-default$/, '')
-      })
-      .filter(Boolean))
-    for (const providerRow of providers as Array<Record<string, unknown>>) {
-      const provider = normalizeAIConfigProviderId(String(providerRow.id ?? providerRow['@id'] ?? ''))
-      if (provider === LINX_PLATFORM_PROVIDER_ID) continue
-      if (!configuredProviderIds.has(provider)) continue
-      const configuredModels = Array.isArray(providerRow.hasModel)
-        ? providerRow.hasModel
-        : providerRow.hasModel ? [providerRow.hasModel] : []
-      const model = normalizeAIConfigResourceId(String(providerRow.defaultModel ?? configuredModels[0] ?? ''))
-      if (provider && model) {
-        return { provider, model, aiRuntimeLocation: DEFAULT_AGENT_AI_RUNTIME_LOCATION }
-      }
-    }
-    return null
+    const models = await this.loadGatewayModels()
+    const selected = models.find((model) => model.provider && model.model)
+    return selected
+      ? { provider: selected.provider, model: selected.model, aiRuntimeLocation: DEFAULT_AGENT_AI_RUNTIME_LOCATION }
+      : null
   }
 
   private async findContactByRef(ref: string): Promise<ContactRow | null> {
@@ -2127,23 +2120,36 @@ export class LocalChatKitService {
   private async resolveProviderCapabilities(providerId: string): Promise<string[]> {
     const provider = normalizeAIConfigProviderId(providerId)
     if (!provider) return [AIConfigRuntimeCapability.chatCompletions]
+    const capabilities = (await this.loadGatewayModels())
+      .filter((model) => model.provider === provider)
+      .flatMap((model) => model.capabilities)
+    return capabilities.length > 0
+      ? [...new Set(capabilities)]
+      : [AIConfigRuntimeCapability.chatCompletions]
+  }
 
-    let explicitCapabilities: unknown
-    try {
-      const findById = (this.db as any).findById
-      if (typeof findById === 'function') {
-        const providerRow = await findById.call(
-          this.db,
-          aiProviderResource,
-          aiProviderResource.buildId({ id: provider }),
-        ) as Record<string, unknown> | null
-        explicitCapabilities = providerRow?.capabilities
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!/404|not found|missing/iu.test(message)) throw error
-    }
-    return getAIConfigProviderCapabilities(provider, explicitCapabilities)
+  private async loadGatewayModels(): Promise<Array<{ provider: string; model: string; capabilities: string[] }>> {
+    const response = await this.authFetch(`${this.resolveRuntimeBaseUrl()}/models`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) throw new Error(`模型目录读取失败（HTTP ${response.status}）。`)
+    const payload = await response.json() as { data?: Array<Record<string, unknown>> }
+    return (Array.isArray(payload.data) ? payload.data : []).flatMap((entry) => {
+      const rawId = typeof entry.id === 'string' ? entry.id.trim() : ''
+      const ownedBy = normalizeAIConfigProviderId(String(entry.provider ?? entry.owned_by ?? ''))
+      const separator = rawId.indexOf('/')
+      const provider = ownedBy || (separator > 0 ? normalizeAIConfigProviderId(rawId.slice(0, separator)) : '')
+      const model = separator > 0 ? rawId.slice(separator + 1) : rawId
+      if (!provider || !model) return []
+      return [{
+        provider,
+        model,
+        capabilities: Array.isArray(entry.capabilities)
+          ? entry.capabilities.filter((value): value is string => typeof value === 'string')
+          : [],
+      }]
+    })
   }
 
   private async loadAllThreadItems(threadId: string, context: StoreContext): Promise<ThreadItem[]> {

@@ -61,22 +61,66 @@ vi.mock('../service', () => ({
   },
 }))
 
-import { createLocalChatKitFetch } from '../fetch-handler'
-import { enqueueChatGeneration, listChatGenerationOutbox } from '../generation-outbox'
+import { createLocalChatKitFetch, ensureAiServiceAccessForSession } from '../fetch-handler'
 
-function streamingResult(events: Array<Record<string, unknown>>) {
-  const encoder = new TextEncoder()
-  return {
-    type: 'streaming' as const,
-    stream: async function* () {
-      for (const event of events) {
-        yield encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
+describe('LocalChatKitFetch service access and artifacts', () => {
+  it('does not rewrite access policies or initialize documents when interactive service uses the owner identity', async () => {
+    const podBaseUrl = 'https://pod.example/alice/'
+    const ownerWebId = `${podBaseUrl}profile/card#me`
+    const authFetch = vi.fn(async () => Response.json({
+      appletId: 'co.undefineds.ai-connections',
+      service: { webId: ownerWebId, label: 'Xpod AI Connection' },
+      resources: [{
+        id: 'gatewayAccessKeySecrets',
+        url: `${podBaseUrl}.data/ai/gateway/access-key-secrets.json`,
+        mediaType: 'application/json',
+        access: { read: true, append: true, write: true },
+      }],
+    }))
+    await ensureAiServiceAccessForSession({ podBaseUrl, webId: ownerWebId, authFetch })
+    expect(authFetch).toHaveBeenCalledOnce()
+    expect(mocks.setAgentAccess).not.toHaveBeenCalled()
+  })
+
+  it('still rejects a different applet even if its service WebID equals the owner', async () => {
+    const podBaseUrl = 'https://pod.example/alice/'
+    const ownerWebId = `${podBaseUrl}profile/card#me`
+    const authFetch = vi.fn(async () => Response.json({
+      appletId: 'untrusted-applet', service: { webId: ownerWebId }, resources: [],
+    }))
+    await expect(ensureAiServiceAccessForSession({ podBaseUrl, webId: ownerWebId, authFetch }))
+      .rejects.toThrow('无效的 AI 服务授权信息')
+    expect(mocks.setAgentAccess).not.toHaveBeenCalled()
+  })
+
+  it('creates missing resources as the owner before granting service access, without overwriting concurrent writes', async () => {
+    const podBaseUrl = 'https://pod.example/alice/'
+    const resources = [
+      ['providerCredentials', 'settings/credentials.ttl'],
+      ['providerDefinitions', 'settings/providers/'],
+      ['gatewayAccessKeys', 'settings/gateway-access-keys.ttl'],
+      ['quotaSnapshots', 'settings/quota-snapshots.ttl'],
+    ].map(([id, path]) => ({ id, url: podBaseUrl + path, ...(id === 'providerDefinitions' ? { members: true } : {}), access: { read: true, append: true, write: true } }))
+    const created = new Set<string>()
+    const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/applets/service-access/ai-connections')) return Response.json({ appletId: 'co.undefineds.ai-connections', service: { webId: 'https://xpod.example/service/profile/card#me' }, resources })
+      if (init?.method === 'HEAD') return new Response(null, { status: created.has(url) ? 200 : 404, headers: { Link: `<${url}.acr>; rel="acl"` } })
+      if (init?.method === 'PUT' && !url.endsWith('.acr')) {
+        expect(new Headers(init.headers).get('If-None-Match')).toBe('*')
+        created.add(url)
+        return new Response(null, { status: 412 })
       }
-    },
-  }
-}
-
-describe('LocalChatKitFetch generation outbox', () => {
+      if (url.endsWith('.acr')) return new Response(null, { status: init?.method === 'PUT' ? 201 : 404 })
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    mocks.setAgentAccess.mockImplementation(async (url: string) => {
+      expect(created.has(url)).toBe(true)
+      return { read: true, append: true, write: true }
+    })
+    await ensureAiServiceAccessForSession({ podBaseUrl, webId: `${podBaseUrl}profile/card#me`, authFetch })
+    expect(created.size).toBe(4)
+  })
   const webId = 'https://id.example/alice#me'
 
   beforeEach(() => {
@@ -88,113 +132,6 @@ describe('LocalChatKitFetch generation outbox', () => {
   })
 
   afterEach(() => vi.restoreAllMocks())
-
-  it('replays queued generations in order and removes successful entries', async () => {
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-2', userItemId: 'user-2' })
-    const outboxCounts: number[] = []
-    mocks.process.mockResolvedValue(streamingResult([{ type: 'thread.item.done' }]))
-    const localFetch = createLocalChatKitFetch({
-      db: {} as any,
-      webId,
-      authFetch: vi.fn() as any,
-      onOutboxChange: (count) => outboxCounts.push(count),
-    })
-
-    const result = await localFetch.flushOutbox({ force: true })
-
-    expect(result).toEqual({ completed: 2, pending: 0 })
-    expect(mocks.process).toHaveBeenNthCalledWith(1, expect.stringContaining('"thread_id":"thread-1"'), {})
-    expect(mocks.process).toHaveBeenNthCalledWith(2, expect.stringContaining('"thread_id":"thread-2"'), {})
-    expect(listChatGenerationOutbox(webId)).toEqual([])
-    expect(outboxCounts.at(-1)).toBe(0)
-  })
-
-  it('shows and replays only pending generations for the current thread', async () => {
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-2', userItemId: 'user-2' })
-    mocks.process.mockResolvedValue(streamingResult([{ type: 'thread.item.done' }]))
-    const localFetch = createLocalChatKitFetch({
-      db: {} as any,
-      webId,
-      authFetch: vi.fn() as any,
-      initialThread: {
-        id: 'thread-2',
-        status: { type: 'active' },
-        created_at: 1,
-        updated_at: 1,
-      },
-    })
-
-    expect(localFetch.getOutboxSize()).toBe(1)
-    await expect(localFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 1, pending: 0 })
-    expect(mocks.process).toHaveBeenCalledOnce()
-    expect(mocks.process).toHaveBeenCalledWith(expect.stringContaining('"thread_id":"thread-2"'), {})
-    expect(listChatGenerationOutbox(webId)).toEqual([
-      expect.objectContaining({ threadId: 'thread-1', userItemId: 'user-1' }),
-    ])
-  })
-
-  it('keeps the failed entry and later entries queued after a replay error', async () => {
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-2', userItemId: 'user-2' })
-    mocks.process.mockResolvedValue(streamingResult([{
-      type: 'error',
-      error: { message: 'provider remains unavailable' },
-    }]))
-    const localFetch = createLocalChatKitFetch({ db: {} as any, webId, authFetch: vi.fn() as any })
-
-    const result = await localFetch.flushOutbox({ force: true })
-
-    expect(result).toEqual({ completed: 0, pending: 2 })
-    expect(mocks.process).toHaveBeenCalledTimes(1)
-    expect(listChatGenerationOutbox(webId)[0]).toEqual(expect.objectContaining({ attempts: 1 }))
-  })
-
-  it('drops a queued generation when its original user item no longer exists', async () => {
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-deleted' })
-    mocks.process.mockRejectedValue(new Error('Item not found: user-deleted'))
-    const localFetch = createLocalChatKitFetch({ db: {} as any, webId, authFetch: vi.fn() as any })
-
-    await expect(localFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 0, pending: 0 })
-    expect(listChatGenerationOutbox(webId)).toEqual([])
-  })
-
-  it('coalesces concurrent reconnect flushes so one queued generation is replayed once', async () => {
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
-    mocks.process.mockResolvedValue(streamingResult([{ type: 'thread.item.done' }]))
-    const localFetch = createLocalChatKitFetch({ db: {} as any, webId, authFetch: vi.fn() as any })
-
-    const [first, second] = await Promise.all([
-      localFetch.flushOutbox({ force: true }),
-      localFetch.flushOutbox({ force: true }),
-    ])
-
-    expect(first).toEqual({ completed: 1, pending: 0 })
-    expect(second).toEqual(first)
-    expect(mocks.process).toHaveBeenCalledTimes(1)
-  })
-
-  it('pauses queued generation retries across thread runtimes until service access is granted', async () => {
-    const db = {} as any
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
-    const onServiceAccessRequired = vi.fn()
-    const firstFetch = createLocalChatKitFetch({
-      db,
-      webId,
-      authFetch: vi.fn() as any,
-      onServiceAccessRequired,
-    })
-
-    mocks.serviceOptions.onServiceAccessRequired()
-    await expect(firstFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 0, pending: 1 })
-    expect(onServiceAccessRequired).toHaveBeenCalledOnce()
-    expect(mocks.process).not.toHaveBeenCalled()
-
-    const secondFetch = createLocalChatKitFetch({ db, webId, authFetch: vi.fn() as any })
-    await expect(secondFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 0, pending: 1 })
-    expect(mocks.process).not.toHaveBeenCalled()
-  })
 
   it('grants only the four Xpod-declared AI resources to its service identity', async () => {
     const podBaseUrl = 'https://pod.example/alice'
@@ -222,6 +159,7 @@ describe('LocalChatKitFetch generation outbox', () => {
       }
       if (url === `${providerUrl}.acr` && !init?.method) return new Response(null, { status: 404 })
       if (url === `${providerUrl}.acr` && init?.method === 'PUT') return new Response(null, { status: 201 })
+      if (init?.method === 'HEAD' && resources.some((resource) => resource.url === url)) return new Response(null, { status: 200 })
       throw new Error(`Unexpected request: ${url}`)
     })
     const localFetch = createLocalChatKitFetch({
@@ -232,9 +170,6 @@ describe('LocalChatKitFetch generation outbox', () => {
 
     mocks.serviceOptions.onServiceAccessRequired()
     await localFetch.ensureAiServiceAccess()
-    enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
-    mocks.process.mockResolvedValue(streamingResult([{ type: 'thread.item.done' }]))
-    await expect(localFetch.flushOutbox({ force: true })).resolves.toEqual({ completed: 1, pending: 0 })
 
     expect(mocks.setAgentAccess).toHaveBeenCalledTimes(3)
     expect(mocks.setAgentAccess).toHaveBeenNthCalledWith(
@@ -313,6 +248,7 @@ describe('LocalChatKitFetch generation outbox', () => {
       }
       if (url === `${memberUrl}.acr` && !init?.method) return new Response(null, { status: 404 })
       if (url === `${memberUrl}.acr` && init?.method === 'PUT') return new Response(null, { status: 201 })
+      if (init?.method === 'HEAD' && resources.some((resource) => resource.url === url)) return new Response(null, { status: 200 })
       throw new Error(`Unexpected request: ${url}`)
     })
     const localFetch = createLocalChatKitFetch({
@@ -367,6 +303,7 @@ describe('LocalChatKitFetch generation outbox', () => {
         return new Response(null, { status: 200, headers: { Link: `<${acrUrl}>; rel="acl"` } })
       }
       if (url === acrUrl && !init?.method) return new Response('', { status: 200 })
+      if (init?.method === 'HEAD' && resources.some((resource) => resource.url === url)) return new Response(null, { status: 200 })
       throw new Error(`Unexpected request: ${url}`)
     })
     const localFetch = createLocalChatKitFetch({
@@ -389,30 +326,6 @@ describe('LocalChatKitFetch generation outbox', () => {
       }),
       { fetch: authFetch },
     )
-  })
-
-  it('waits for the retry deadline and backs off after provider failures', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-08-14T00:00:00.000Z'))
-    try {
-      enqueueChatGeneration({ accountScope: webId, threadId: 'thread-1', userItemId: 'user-1' })
-      const localFetch = createLocalChatKitFetch({ db: {} as any, webId, authFetch: vi.fn() as any })
-      mocks.process.mockResolvedValue(streamingResult([{
-        type: 'error',
-        error: { message: 'provider remains unavailable' },
-      }]))
-
-      expect(localFetch.getOutboxRetryAt()).toBe(Date.now() + 15_000)
-      await expect(localFetch.flushOutbox()).resolves.toEqual({ completed: 0, pending: 1 })
-      expect(mocks.process).not.toHaveBeenCalled()
-
-      vi.advanceTimersByTime(15_000)
-      await expect(localFetch.flushOutbox()).resolves.toEqual({ completed: 0, pending: 1 })
-      expect(mocks.process).toHaveBeenCalledTimes(1)
-      expect(localFetch.getOutboxRetryAt()).toBe(Date.now() + 30_000)
-    } finally {
-      vi.useRealTimers()
-    }
   })
 
   it('writes edited Canvas content as a new Pod file and records a versioned chat artifact', async () => {

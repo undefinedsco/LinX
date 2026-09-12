@@ -25,9 +25,6 @@ function createUnavailableFetch(): LocalChatKitFetch {
   const unavailableFetch = (async () => unavailableResponse()) as unknown as LocalChatKitFetch
   unavailableFetch.refreshThreadItems = async () => undefined
   unavailableFetch.interrupt = () => undefined
-  unavailableFetch.getOutboxSize = () => 0
-  unavailableFetch.getOutboxRetryAt = () => null
-  unavailableFetch.flushOutbox = async () => ({ completed: 0, pending: 0 })
   unavailableFetch.ensureAiServiceAccess = async () => { throw new Error('当前空间连接尚未恢复') }
   unavailableFetch.loadAttachmentObjectUrl = async () => { throw new Error('当前空间连接尚未恢复') }
   unavailableFetch.prepareAttachmentForReuse = async () => { throw new Error('当前空间连接尚未恢复') }
@@ -50,8 +47,6 @@ export function useLocalChatKitRuntime({
   const [threadAttachments, setThreadAttachments] = useState<Attachment[]>([])
   const [threadItems, setThreadItems] = useState<ThreadItem[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
-  const [queuedGenerationCount, setQueuedGenerationCount] = useState(0)
-  const [outboxRevision, setOutboxRevision] = useState(0)
   const [reconnectStatus, setReconnectStatus] = useState<ReconnectStatus>('idle')
   const [serviceAccessRequired, setServiceAccessRequired] = useState(false)
   const [serviceAccessError, setServiceAccessError] = useState<string | null>(null)
@@ -100,11 +95,6 @@ export function useLocalChatKitRuntime({
         setIsGenerating(active)
       },
       onThreadItemsChange: setThreadItems,
-      onOutboxChange: (count) => {
-        setQueuedGenerationCount(count)
-        if (count > 0) setReconnectStatus((status) => status === 'idle' ? 'error' : status)
-        setOutboxRevision((revision) => revision + 1)
-      },
       onServiceAccessRequired: () => {
         setServiceAccessRequired(true)
         setReconnectStatus('idle')
@@ -120,10 +110,6 @@ export function useLocalChatKitRuntime({
 
   useEffect(() => {
     setThreadAttachments([])
-    const queuedCount = localFetch.getOutboxSize()
-    setQueuedGenerationCount(queuedCount)
-    if (queuedCount > 0) setReconnectStatus('error')
-    setOutboxRevision((revision) => revision + 1)
     return () => localFetch.dispose?.()
   }, [localFetch])
   const interrupt = useCallback(() => {
@@ -155,9 +141,6 @@ export function useLocalChatKitRuntime({
     setThreadAttachments,
     threadItems,
     isGenerating,
-    queuedGenerationCount,
-    setQueuedGenerationCount,
-    outboxRevision,
     reconnectStatus,
     setReconnectStatus,
     serviceAccessRequired,

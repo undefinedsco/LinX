@@ -9,9 +9,6 @@ interface UseChatConnectivityOptions {
   sessionFetch?: Session['fetch']
   localFetch: LocalChatKitFetch
   selectedThreadId: string
-  queuedGenerationCount: number
-  outboxRevision: number
-  setQueuedGenerationCount: (count: number) => void
   setReconnectStatus: (status: ReconnectStatus) => void
   refreshSurface: () => Promise<void>
   refreshMessages?: () => Promise<unknown>
@@ -22,9 +19,6 @@ export function useChatConnectivity({
   sessionFetch,
   localFetch,
   selectedThreadId,
-  queuedGenerationCount,
-  outboxRevision,
-  setQueuedGenerationCount,
   setReconnectStatus,
   refreshSurface,
   refreshMessages,
@@ -32,23 +26,20 @@ export function useChatConnectivity({
   const [isOnline, setIsOnline] = useState(true)
   const isOnlineRef = useRef(true)
 
-  const synchronize = useCallback(async (force = false) => {
+  const synchronize = useCallback(async (_force = false) => {
     setReconnectStatus('syncing')
     try {
-      const replay = await localFetch.flushOutbox({ force })
       await Promise.all([
         refreshSurface(),
         ...(refreshMessages ? [ refreshMessages() ] : []),
         localFetch.refreshThreadItems(selectedThreadId),
       ])
-      setQueuedGenerationCount(replay.pending)
-      setReconnectStatus(replay.pending > 0 ? 'error' : 'idle')
+      setReconnectStatus('idle')
     } catch (error) {
       console.error('[ChatKit] Failed to refresh after reconnect:', error)
-      setQueuedGenerationCount(localFetch.getOutboxSize())
       setReconnectStatus('error')
     }
-  }, [localFetch, refreshMessages, refreshSurface, selectedThreadId, setQueuedGenerationCount, setReconnectStatus])
+  }, [localFetch, refreshMessages, refreshSurface, selectedThreadId, setReconnectStatus])
 
   const probe = useCallback(async () => {
     if (!podBaseUrl || !sessionFetch) return false
@@ -93,14 +84,6 @@ export function useChatConnectivity({
       window.removeEventListener('online', handleOnline)
     }
   }, [probe, setReconnectStatus, synchronize])
-
-  useEffect(() => {
-    if (!isOnline || queuedGenerationCount === 0) return
-    const retryAt = localFetch.getOutboxRetryAt()
-    if (retryAt === null) return
-    const timer = window.setTimeout(() => { void synchronize(false) }, Math.max(0, retryAt - Date.now()))
-    return () => window.clearTimeout(timer)
-  }, [isOnline, localFetch, outboxRevision, queuedGenerationCount, synchronize])
 
   return { isOnline, synchronize }
 }

@@ -1,8 +1,7 @@
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
-import { ModelServicesListView } from '../../ui/ModelServicesListView'
-import { useModelServicesListPaneController } from './useModelServicesListPaneController'
+import { useMountedModelServices } from '../../xpod/ModelServicesProvider'
 
 export function ModelServicesListPane({}: MicroAppPaneProps) {
-  const viewProps = useModelServicesListPaneController()
-  return <ModelServicesListView {...viewProps} />
+  const { slots } = useMountedModelServices()
+  return <div className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden">{slots.listHeader}{slots.list}</div>
 }

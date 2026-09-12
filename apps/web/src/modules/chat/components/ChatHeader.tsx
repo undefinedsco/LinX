@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ModelSelector } from '@/components/ui/model-selector'
 import type { ModelOption } from '@/components/ui/model-selector'
 import { useModelServices } from '@/modules/model-services/data/use-model-services'
+import type { AIProvider } from '@/modules/model-services/domain/types'
 import { useToast } from '@/components/ui/use-toast'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
@@ -36,6 +37,46 @@ import {
   readAgentAiRuntimeLocation,
   type AgentAiRuntimeLocation,
 } from '../agent-runtime-location'
+
+export function buildChatModelOptions(
+  configuredProviders: Record<string, AIProvider>,
+  activeProvider: string,
+  activeModel: string,
+): ModelOption[] {
+  const options = Object.values(configuredProviders).flatMap((configuredProvider) =>
+    configuredProvider.enabled ? configuredProvider.models
+      .filter((configuredModel) => configuredModel.enabled)
+      .map((configuredModel) => ({
+        id: `${configuredProvider.id}/${configuredModel.id}`,
+        name: configuredModel.name,
+        providerId: configuredProvider.id,
+        providerName: configuredProvider.name,
+        capabilities: configuredModel.capabilities as ModelOption['capabilities'],
+      }))
+      : []
+  )
+
+  const normalizedProvider = activeProvider.trim()
+  const normalizedModel = activeModel.trim()
+  const activeId = normalizedProvider && normalizedModel
+    ? `${normalizedProvider}/${normalizedModel}`
+    : ''
+  if (!activeId || options.some((option) => option.id === activeId)) return options
+
+  const configuredProvider = configuredProviders[normalizedProvider]
+  const configuredModel = configuredProvider?.models.find((candidate) => candidate.id === normalizedModel)
+  const providerInfo = getAgentProviderInfo(normalizedProvider)
+  return [
+    ...options,
+    {
+      id: activeId,
+      name: configuredModel?.name || normalizedModel,
+      providerId: normalizedProvider,
+      providerName: configuredProvider?.name || providerInfo?.displayName || normalizedProvider,
+      capabilities: (configuredModel?.capabilities ?? []) as ModelOption['capabilities'],
+    },
+  ]
+}
 
 export function ChatHeader() {
   const { session } = useSession()
@@ -72,23 +113,15 @@ export function ChatHeader() {
     if (!provider) return null
     return getAgentProviderInfo(provider)
   }, [provider])
-  const configuredModelOptions = useMemo<ModelOption[]>(() =>
-    Object.values(configuredProviders).flatMap((configuredProvider) =>
-      configuredProvider.enabled ? configuredProvider.models
-        .filter((configuredModel) => configuredModel.enabled)
-        .map((configuredModel) => ({
-          id: `${configuredProvider.id}/${configuredModel.id}`,
-          name: configuredModel.name,
-          providerId: configuredProvider.id,
-          providerName: configuredProvider.name,
-          capabilities: configuredModel.capabilities as ModelOption['capabilities'],
-        }))
-        : []
-    ), [configuredProviders])
+  const configuredModelOptions = useMemo(
+    () => buildChatModelOptions(configuredProviders, provider, model),
+    [configuredProviders, model, provider],
+  )
   const selectedDraftProviderId = useMemo(() => {
     const separator = modelDraft.indexOf('/')
-    if (separator > 0 && configuredProviders[modelDraft.slice(0, separator)]) {
-      return modelDraft.slice(0, separator)
+    if (separator > 0) {
+      const candidate = modelDraft.slice(0, separator)
+      if (configuredProviders[candidate] || getAgentProviderInfo(candidate)) return candidate
     }
     return findAgentProviderForModel(modelDraft)
   }, [configuredProviders, modelDraft])
@@ -191,10 +224,11 @@ export function ChatHeader() {
 
     const separator = selectedModel.indexOf('/')
     const explicitProvider = separator > 0 ? selectedModel.slice(0, separator) : ''
-    const normalizedModel = explicitProvider && configuredProviders[explicitProvider]
+    const knownProvider = explicitProvider && (configuredProviders[explicitProvider] || getAgentProviderInfo(explicitProvider))
+    const normalizedModel = knownProvider
       ? selectedModel.slice(separator + 1)
       : selectedModel
-    const nextProvider = explicitProvider && configuredProviders[explicitProvider]
+    const nextProvider = knownProvider
       ? explicitProvider
       : findAgentProviderForModel(normalizedModel)
     if (!nextProvider) {
