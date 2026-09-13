@@ -19,6 +19,7 @@ interface UseLocalChatKitRuntimeOptions {
   selectedThreadTitle?: string
   persistedActiveBranchByParent?: Record<string, string>
   sendDisabled: boolean
+  onRequestError?: (message: string) => void
 }
 
 function createUnavailableFetch(): LocalChatKitFetch {
@@ -40,6 +41,7 @@ export function useLocalChatKitRuntime({
   selectedThreadTitle,
   persistedActiveBranchByParent,
   sendDisabled,
+  onRequestError,
 }: UseLocalChatKitRuntimeOptions) {
   const { db } = useSolidDatabase()
   const sessionFetch = session.fetch
@@ -56,9 +58,11 @@ export function useLocalChatKitRuntime({
   const selectedThreadTitleRef = useRef(selectedThreadTitle)
   const persistedActiveBranchByParentRef = useRef(persistedActiveBranchByParent)
   const sessionFetchRef = useRef(sessionFetch)
+  const onRequestErrorRef = useRef(onRequestError)
   sendAvailableRef.current = !sendDisabled
   selectedThreadTitleRef.current = selectedThreadTitle
   persistedActiveBranchByParentRef.current = persistedActiveBranchByParent
+  onRequestErrorRef.current = onRequestError
   sessionFetchRef.current = sessionFetch
 
   const authFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -90,6 +94,7 @@ export function useLocalChatKitRuntime({
       },
       isAvailable: () => sendAvailableRef.current,
       onAttachmentsChange: setThreadAttachments,
+      onRequestError: (message) => onRequestErrorRef.current?.(message),
       onStreamingChange: ({ active, abort }) => {
         abortGenerationRef.current = abort ?? null
         setIsGenerating(active)
@@ -98,6 +103,10 @@ export function useLocalChatKitRuntime({
       onServiceAccessRequired: () => {
         setServiceAccessRequired(true)
         setReconnectStatus('idle')
+      },
+      onServiceAccessRecovered: () => {
+        setServiceAccessRequired(false)
+        setServiceAccessError(null)
       },
       onChatSummaryChange: ({ messageId, content, createdAt }) => projectChatSummary(selectedChatId, {
         lastMessageId: messageId,

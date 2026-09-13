@@ -152,6 +152,7 @@ describe('SolidDatabaseProvider', () => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
     delete (window as any).__SOLID_DB__
+    delete (window as any).__LINX_DB_DIAGNOSTICS__
     delete (window as any).__LINX_ACCESS_ROUTE__
     delete window.xpodDesktop
     window.sessionStorage.clear()

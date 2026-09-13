@@ -5,11 +5,21 @@
     <link rel="icon" type="image/png" href="%BASE_URL%linx-logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LinX - Your AI Secretary</title>
-    <script
-      src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
-      crossorigin="anonymous"
-      async
-    ></script>
+    <!-- Local HTTP uses the same-origin proxy; deployed HTTPS uses the
+         official browser CDN path because the CDN rejects server-side proxy
+         requests from some deployment edges. -->
+    <script>
+      (() => {
+        const isLoopback = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+        const chatkitScript = document.createElement('script')
+        chatkitScript.src = isLoopback
+          ? '/chatkit-cdn/deployments/chatkit/chatkit.js'
+          : 'https://cdn.platform.openai.com/deployments/chatkit/chatkit.js'
+        chatkitScript.crossOrigin = 'anonymous'
+        chatkitScript.async = false
+        document.head.append(chatkitScript)
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -56,7 +56,9 @@ export interface LocalChatKitFetchOptions {
   onAttachmentsChange?: (attachments: Attachment[]) => void
   onStreamingChange?: (state: { active: boolean; abort?: () => void }) => void
   onThreadItemsChange?: (items: ThreadItem[]) => void
+  onRequestError?: (message: string) => void
   onServiceAccessRequired?: () => void
+  onServiceAccessRecovered?: () => void
   onChatSummaryChange?: (summary: {
     chatId: string
     messageId: string
@@ -75,7 +77,9 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     onAttachmentsChange,
     onStreamingChange,
     onThreadItemsChange,
+    onRequestError,
     onServiceAccessRequired,
+    onServiceAccessRecovered,
     onChatSummaryChange,
   } = options
   const store = new LocalChatKitStore(
@@ -172,6 +176,7 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
           async start(controller) {
             try {
               for await (const chunk of result.stream()) {
+                onServiceAccessRecovered?.()
                 controller.enqueue(chunk)
               }
               controller.close()
@@ -205,6 +210,9 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     } catch (error: any) {
       console.error('[LocalChatKitFetch] Error:', error)
       const message = formatErrorForUser(error, '聊天服务暂时不可用。请稍后重试。')
+      // ChatKit renders a fixed generic toast for failed requests, so surface
+      // the formatted reason through the host app as well.
+      onRequestError?.(message)
       return new Response(
         JSON.stringify({ error: { code: 'local_error', message } }),
         { status: 500, headers: { 'Content-Type': 'application/json' } },

@@ -906,6 +906,115 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(store.createAttachment).not.toHaveBeenCalled()
   })
 
+  it('accepts image attachments when the gateway declares image input through modalities', async () => {
+    const store = createMockStore()
+    store.createAttachment = vi.fn(() => ({
+      id: 'image-attachment',
+      type: 'image',
+      name: 'photo.png',
+      mime_type: 'image/png',
+    }))
+    const db = createMockDb({ provider: 'custom', model: 'gpt-5.5' })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({
+          data: [{
+            id: 'gpt-5.5',
+            owned_by: 'custom',
+            custom: true,
+            modalities: { input: ['image'] },
+          }],
+        })
+      }
+      return new Response('', { status: 404 })
+    })
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+      attachmentThreadId: 'thread-1',
+    })
+
+    await service.process(JSON.stringify({
+      type: 'attachments.create',
+      params: { name: 'photo.png', size: 3, mime_type: 'image/png' },
+    }), {})
+
+    expect(store.createAttachment).toHaveBeenCalledOnce()
+  })
+
+  it('checks image input against the selected model, not the whole provider', async () => {
+    const modelsPayload = {
+      data: [
+        { id: 'vision-model', owned_by: 'custom', custom: true, modalities: { input: ['image'] } },
+        { id: 'text-only-model', owned_by: 'custom', custom: true },
+      ],
+    }
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) return Response.json(modelsPayload)
+      return new Response('', { status: 404 })
+    })
+    const runCreate = async (model: string) => {
+      const store = createMockStore()
+      store.createAttachment = vi.fn(() => ({
+        id: 'image-attachment',
+        type: 'image',
+        name: 'photo.png',
+        mime_type: 'image/png',
+      }))
+      const service = new LocalChatKitService({
+        store: store as any,
+        db: createMockDb({ provider: 'custom', model }) as any,
+        webId: 'https://id.undefineds.co/profile/card#me',
+        authFetch: authFetch as any,
+        attachmentThreadId: 'thread-1',
+      })
+      await service.process(JSON.stringify({
+        type: 'attachments.create',
+        params: { name: 'photo.png', size: 3, mime_type: 'image/png' },
+      }), {})
+      return store.createAttachment
+    }
+
+    await expect(runCreate('text-only-model')).rejects.toThrow('此模型不支持图像输入。请尝试其他模型')
+    await expect(runCreate('vision-model')).resolves.toHaveBeenCalledOnce()
+  })
+
+  it('serves persisted image attachments with session object URLs when listing items', async () => {
+    const store = createMockStore([{
+      id: 'item-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: '看图' }],
+      attachments: [{
+        id: 'attach-1',
+        type: 'image',
+        name: 'a.png',
+        mime_type: 'image/png',
+        pod_url: 'https://pod.example/chat-attachments/a.png',
+        preview_url: 'https://pod.example/chat-attachments/a.png',
+      }],
+    }])
+    store.loadAttachmentObjectUrl = vi.fn(async () => 'blob:preview-a')
+    const db = createMockDb({ provider: 'custom', model: 'gpt-5.5' })
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: vi.fn() as any,
+    })
+
+    const result = await service.process(JSON.stringify({
+      type: 'items.list',
+      params: { thread_id: 'thread-1' },
+    }), {}) as { type: string; json: string }
+    const page = JSON.parse(result.json)
+    const attachment = page.data[0].attachments[0]
+    expect(attachment.preview_url).toBe('blob:preview-a')
+    expect(attachment.download_url).toBe('blob:preview-a')
+    expect(store.loadAttachmentObjectUrl).toHaveBeenCalledWith('attach-1')
+  })
+
   it('still accepts non-image attachments for a model without image input', async () => {
     const store = createMockStore()
     store.createAttachment = vi.fn(() => ({

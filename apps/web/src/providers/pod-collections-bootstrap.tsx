@@ -22,7 +22,6 @@ import {
 import { favoriteOps, initializeFavoriteCollections } from '@/modules/favorites/collections'
 import { filesOps, initializeFilesCollections } from '@/modules/files/collections'
 import { inboxOps, initializeInboxCollections } from '@/modules/inbox/collections'
-import { initializeModelCollections } from '@/modules/model-services/data/collections'
 import { initializeSymphonyControlCollections, symphonyControlOps } from '@/modules/symphony/collections'
 
 interface PodCollectionsBootstrapProps {
@@ -55,7 +54,6 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
   })
 
   startCollectionBinding('contacts', () => initializeContactCollections(db))
-  startCollectionBinding('model services', () => initializeModelCollections(db))
 
   useEffect(() => {
     initializeFavoriteCollections(db)

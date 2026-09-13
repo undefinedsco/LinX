@@ -164,4 +164,26 @@ describe('ChatKit local fetch P0 transport', () => {
     expect(signals.every((signal) => signal.aborted)).toBe(true)
     await Promise.all([first.text(), second.text()])
   })
+
+  it('surfaces request failures through onRequestError with a formatted message', async () => {
+    mocks.process.mockRejectedValue(new Error('此模型不支持图像输入。请尝试其他模型'))
+    const onRequestError = vi.fn()
+    const localFetch = createLocalChatKitFetch({
+      db: {} as any,
+      webId: 'https://id.example/alice#me',
+      authFetch: vi.fn() as any,
+      onRequestError,
+    })
+
+    const response = await localFetch('local://chatkit', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'attachments.create', params: {} }),
+    })
+
+    expect(response.status).toBe(500)
+    expect(onRequestError).toHaveBeenCalledWith('此模型不支持图像输入。请尝试其他模型')
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.objectContaining({ message: '此模型不支持图像输入。请尝试其他模型' }),
+    })
+  })
 })

@@ -54,6 +54,14 @@ describe('formatLoginErrorForUser', () => {
       .toBe('LinX 还不能在当前空间保存数据。请返回登录方式页，换一个空间后重试。')
   })
 
+  it('does not ask users to change spaces when a Pod write fails on the server', () => {
+    expect(formatLoginErrorForUser(
+      'Write failed to http://localhost:5737/test/.data/contacts/test.ttl: 500 Internal Server Error: query options could not be mapped to the native QLever ABI',
+    )).toBe('服务暂时没有响应。请稍后重试。')
+    expect(formatLoginErrorForUser('Pod write failed (HTTP status 500)'))
+      .toBe('服务暂时没有响应。请稍后重试。')
+  })
+
   it('turns Pod permission failures into user-actionable space guidance', () => {
     expect(formatLoginErrorForUser('Failed to create Pod container https://node-0000.undefineds.co/alice/.data/agents/__secretary__/: HTTP 403'))
       .toBe('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')

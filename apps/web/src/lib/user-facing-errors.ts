@@ -87,6 +87,10 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
     return '密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。'
   }
 
+  if (/credential row.*missing.*secret|missing encrypted secret payload/.test(normalized)) {
+    return '当前模型密钥不可用，请在“模型服务”中重新验证。'
+  }
+
   if (/当前模型服务已停用|model service.*disabled/.test(normalized)) {
     return '当前模型服务已停用，请重新选择模型。'
   }
@@ -121,6 +125,12 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
     return '空间准备超时。请检查网络，或返回登录方式页重试。'
   }
 
+  // A failed Pod write can be a server fault, not an account/space problem.
+  // Keep specific auth and missing-root guidance above this general status.
+  if (/(?:http(?:\s+status)?|api error|runtime request failed|request failed)[:\s]*5\d\d\b|5\d\d internal|internal server error/.test(normalized)) {
+    return '服务暂时没有响应。请稍后重试。'
+  }
+
   if (
     /pod write failed|write failed|read failed|solid database is missing authenticated fetch|agent resource id must|agent home|ai secretary|secretary.*初始化失败|created ai secretary.*missing id|secretary chat row|secretary thread row/.test(normalized)
   ) {
@@ -145,10 +155,6 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
 
   if (/(?:http|api error|runtime request failed|request failed)[:\s]*429\b|429 too many requests|rate limit|too many requests/.test(normalized)) {
     return '请求太频繁。请稍等一会儿再试。'
-  }
-
-  if (/(?:http|api error|runtime request failed|request failed)[:\s]*5\d\d\b|5\d\d internal|internal server error/.test(normalized)) {
-    return '服务暂时没有响应。请稍后重试。'
   }
 
   if (/model list|models.*failed|模型列表获取失败/.test(normalized)) {

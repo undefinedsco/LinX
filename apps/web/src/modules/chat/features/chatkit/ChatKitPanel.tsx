@@ -3,6 +3,7 @@ import type { Session } from '@inrupt/solid-client-authn-browser'
 import { ChatKit as ChatKitComponent, type Command } from '@openai/chatkit-react'
 import { ShieldCheck, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/use-toast'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { findLatestBranchNavigation, groupMessageSiblings, selectSiblingIndex } from '../../domain/message-tree'
 import type { PendingComposerDraft } from '../../domain/conversation-workbench'
@@ -16,6 +17,7 @@ import { AttachmentWorkspaceDialogs } from '../../ui/AttachmentWorkspaceDialogs'
 import { ChatGenerationControl } from '../../ui/ChatGenerationControl'
 import { MessageEditDialog } from '../../ui/MessageEditDialog'
 import { useChatKitSurface } from './useChatKitSurface'
+import { useGenerationLifecycle } from './useGenerationLifecycle'
 import { useAnswerReadAloud } from './useAnswerReadAloud'
 import { ChatMessageDataDialogs } from './ChatMessageDataDialogs'
 import { createChatWorkbenchCommands } from './chat-workbench-commands'
@@ -56,6 +58,7 @@ export function ChatKitPanel({
 }) {
   const sessionFetch = session.fetch
   const sessionWebId = session.info.webId
+  const { toast } = useToast()
   const runtime = useLocalChatKitRuntime({
     session,
     selectedThreadId,
@@ -63,6 +66,9 @@ export function ChatKitPanel({
     selectedThreadTitle,
     persistedActiveBranchByParent,
     sendDisabled,
+    onRequestError: useCallback((message: string) => {
+      toast({ variant: 'destructive', description: message })
+    }, [toast]),
   })
   const {
     db,
@@ -130,14 +136,14 @@ export function ChatKitPanel({
   })
   const { surface, commands } = chatKitSurface
   const setComposerValue = surface.setDraft
-  const fetchUpdates = surface.refresh
+  useGenerationLifecycle(isGenerating, surface)
   const { isOnline, synchronize: synchronizeAfterReconnect } = useChatConnectivity({
     podBaseUrl,
     sessionFetch,
     localFetch,
     selectedThreadId,
     setReconnectStatus,
-    refreshSurface: fetchUpdates,
+    refreshSurface: surface.refresh,
   })
   useEffect(() => setLocalActiveBranchByParent({}), [selectedThreadId])
   const activeBranchByParent = useMemo(() => ({
@@ -320,7 +326,7 @@ export function ChatKitPanel({
       </div>
       {!chatKitSurface.isThreadReady && !chatKitSurface.loadFailed ? (
         <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center">
-          <span aria-live="polite" className="rounded-full border bg-background/90 px-3 py-1.5 text-xs font-normal text-muted-foreground shadow-sm backdrop-blur">
+          <span aria-live="polite" className="px-3 py-1.5 text-xs font-normal text-muted-foreground/80">
             正在加载历史消息…
           </span>
         </div>

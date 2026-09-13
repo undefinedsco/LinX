@@ -33,6 +33,16 @@ interface SolidDatabaseContextValue extends SolidDatabaseState {
   retry: () => void
 }
 
+interface SolidDatabaseDiagnostics {
+  status: SolidDatabaseState['status']
+  scopeKey: string
+  podUrl: string | null
+  attemptId: number
+  startedAt: string | null
+  finishedAt: string | null
+  error: string | null
+}
+
 const SolidDatabaseContext = createContext<SolidDatabaseContextValue>({
   db: null,
   status: 'idle',
@@ -51,6 +61,8 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
   const initGenerationRef = useRef(0)
   const inFlightSessionKeyRef = useRef<string | null>(null)
   const observedSessionKeyRef = useRef<string | null>(null)
+  const attemptIdRef = useRef(0)
+  const attemptStartedAtRef = useRef<string | null>(null)
 
   const [value, setValue] = useState<SolidDatabaseState>({
     db: null,
@@ -64,6 +76,15 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
       (window as any).__SOLID_DB_STATUS__ = nextValue.status
       ;(window as any).__SOLID_DB_ERROR__ = nextValue.error?.message ?? null
       ;(window as any).__SOLID_DB_POD_URL__ = resolveDatabasePodUrl(nextValue.db)
+      ;(window as any).__LINX_DB_DIAGNOSTICS__ = {
+        status: nextValue.status,
+        scopeKey: nextValue.scopeKey,
+        podUrl: resolveDatabasePodUrl(nextValue.db),
+        attemptId: attemptIdRef.current,
+        startedAt: attemptStartedAtRef.current,
+        finishedAt: nextValue.status === 'ready' || nextValue.status === 'error' ? new Date().toISOString() : null,
+        error: nextValue.error?.message ?? null,
+      } satisfies SolidDatabaseDiagnostics
     }
     setValue(nextValue)
   }
@@ -196,6 +217,8 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
 
     const generation = initGenerationRef.current + 1
     initGenerationRef.current = generation
+    attemptIdRef.current += 1
+    attemptStartedAtRef.current = new Date().toISOString()
     inFlightSessionKeyRef.current = databaseKey
     const initDatabase = async () => {
       try {

@@ -76,6 +76,7 @@ type LocalChatKitStorePort = ChatKitStore<StoreContext> & {
   createAttachment?: (input: { name: string; mime_type: string }) => Attachment
   uploadAttachment?: (attachmentId: string, body: BodyInit, mimeType?: string, signal?: AbortSignal) => Promise<Attachment>
   readAttachmentBytes?: (attachmentId: string) => Promise<Uint8Array>
+  loadAttachmentObjectUrl?: (attachmentId: string) => Promise<string>
 }
 
 type ModelMessage = { role: string; content: string | ModelContentPart[] }
@@ -720,7 +721,7 @@ export class LocalChatKitService {
     if (runtimeThread) return
 
     const provider = platformModel ? 'undefineds' : (agentConfig?.provider ?? 'openai')
-    const capabilities = await this.resolveProviderCapabilities(provider)
+    const capabilities = await this.resolveModelCapabilities(provider, platformModel ?? agentConfig?.model)
     if (
       !capabilities.includes(AIConfigRuntimeCapability.imageInput)
       && !capabilities.includes(AIConfigRuntimeCapability.imageEditing)
@@ -880,7 +881,14 @@ export class LocalChatKitService {
       ...items,
       data: [...items.data].sort((left, right) => (left.created_at ?? 0) - (right.created_at ?? 0)),
     }
-    return { ...thread, items: projectActiveBranchItems(chronologicalItems, thread.metadata?.active_branch_by_parent) }
+    const projected = projectActiveBranchItems(chronologicalItems, thread.metadata?.active_branch_by_parent)
+    return {
+      ...thread,
+      items: {
+        ...projected,
+        data: await Promise.all(projected.data.map((item) => this.hydrateItemAttachmentUrls(item))),
+      },
+    }
   }
 
   private async handleThreadsList(params: any, context: StoreContext) {
@@ -890,7 +898,11 @@ export class LocalChatKitService {
   private async handleItemsList(params: any, context: StoreContext) {
     const page = await this.store.loadThreadItems(params.thread_id, params.after, params.limit ?? 50, params.order ?? 'asc', context)
     const thread = await this.store.loadThread(params.thread_id, context)
-    return projectActiveBranchItems(page, thread.metadata?.active_branch_by_parent)
+    const projected = projectActiveBranchItems(page, thread.metadata?.active_branch_by_parent)
+    return {
+      ...projected,
+      data: await Promise.all(projected.data.map((item) => this.hydrateItemAttachmentUrls(item))),
+    }
   }
 
   private async handleItemsFeedback(params: any, context: StoreContext) {
@@ -2123,9 +2135,27 @@ export class LocalChatKitService {
     const capabilities = (await this.loadGatewayModels())
       .filter((model) => model.provider === provider)
       .flatMap((model) => model.capabilities)
-    return capabilities.length > 0
-      ? [...new Set(capabilities)]
-      : [AIConfigRuntimeCapability.chatCompletions]
+    // Chat Completions is the universal OpenAI-compatible baseline: providers
+    // whose declared list only mentions extras (e.g. image input) still route
+    // through chat completions for plain text.
+    return [...new Set([AIConfigRuntimeCapability.chatCompletions, ...capabilities])]
+  }
+
+  private async resolveModelCapabilities(providerId: string, modelId?: string | null): Promise<string[]> {
+    const provider = normalizeAIConfigProviderId(providerId)
+    if (!provider) return [AIConfigRuntimeCapability.chatCompletions]
+    const entries = await this.loadGatewayModels()
+    const wanted = (modelId ?? '').trim().toLowerCase()
+    const match = wanted
+      ? entries.find((entry) => entry.provider === provider && (
+        entry.model.toLowerCase() === wanted
+        || `${entry.provider}/${entry.model}`.toLowerCase() === wanted
+      ))
+      : undefined
+    const capabilities = match
+      ? match.capabilities
+      : entries.filter((entry) => entry.provider === provider).flatMap((entry) => entry.capabilities)
+    return [...new Set([AIConfigRuntimeCapability.chatCompletions, ...capabilities])]
   }
 
   private async loadGatewayModels(): Promise<Array<{ provider: string; model: string; capabilities: string[] }>> {
@@ -2142,13 +2172,26 @@ export class LocalChatKitService {
       const provider = ownedBy || (separator > 0 ? normalizeAIConfigProviderId(rawId.slice(0, separator)) : '')
       const model = separator > 0 ? rawId.slice(separator + 1) : rawId
       if (!provider || !model) return []
-      return [{
-        provider,
-        model,
-        capabilities: Array.isArray(entry.capabilities)
-          ? entry.capabilities.filter((value): value is string => typeof value === 'string')
-          : [],
-      }]
+      const stringList = (value: unknown): string[] => (Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === 'string')
+        : [])
+      const structured = entry.capabilities && !Array.isArray(entry.capabilities)
+        ? entry.capabilities as Record<string, unknown>
+        : {}
+      // The gateway surfaces model abilities in three shapes: a plain string
+      // list, a structured capability object, and custom capabilities or
+      // modalities declared per model. Collapse them into the runtime
+      // capability vocabulary so uploads and routing see one list.
+      const capabilities = new Set<string>(stringList(entry.capabilities))
+      for (const capability of stringList(entry.custom_capabilities)) capabilities.add(capability)
+      if (structured.imageInput === true) capabilities.add(AIConfigRuntimeCapability.imageInput)
+      if (structured.toolCalls === true) capabilities.add(AIConfigRuntimeCapability.toolCalls)
+      if (stringList(entry.modalities && typeof entry.modalities === 'object'
+        ? (entry.modalities as Record<string, unknown>).input
+        : undefined).includes('image')) {
+        capabilities.add(AIConfigRuntimeCapability.imageInput)
+      }
+      return [{ provider, model, capabilities: [...capabilities] }]
     })
   }
 
@@ -2164,12 +2207,47 @@ export class LocalChatKitService {
         seen.add(item.id)
         items.push(item)
       }
-      if (!page.has_more) return items
+      if (!page.has_more) break
       if (!page.last_id || page.last_id === after) {
         throw new Error(`Thread pagination did not advance for ${threadId}.`)
       }
       after = page.last_id
     }
+    // Persisted items carry the authenticated Pod URL as preview, which the
+    // embedded ChatKit surface cannot fetch. Hand attachments fresh
+    // session-scoped object URLs so transcripts render and download after
+    // reload.
+    return Promise.all(items.map((item) => this.hydrateItemAttachmentUrls(item)))
+  }
+
+  private async hydrateItemAttachmentUrls(item: ThreadItem): Promise<ThreadItem> {
+    if (!this.store.loadAttachmentObjectUrl) return item
+    let next = item
+    const attachments = (next as { attachments?: Attachment[] }).attachments
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      const hydrated = await Promise.all(attachments.map(async (attachment) => {
+        if (typeof attachment?.id !== 'string') return attachment
+        try {
+          const objectUrl = await this.store.loadAttachmentObjectUrl!(attachment.id)
+          return attachment.type === 'image'
+            ? { ...attachment, preview_url: objectUrl, download_url: objectUrl }
+            : { ...attachment, download_url: objectUrl }
+        } catch {
+          return attachment
+        }
+      }))
+      next = { ...next, attachments: hydrated } as ThreadItem
+    }
+    const image = (next as { image?: { id?: string; url?: string } | null }).image
+    if (next.type === 'generated_image' && image && typeof image.id === 'string') {
+      try {
+        const objectUrl = await this.store.loadAttachmentObjectUrl!(image.id)
+        next = { ...next, image: { ...image, url: objectUrl } } as ThreadItem
+      } catch {
+        // Keep the persisted Pod URL when the bytes cannot be re-read.
+      }
+    }
+    return next
   }
 
   private async fetchServerOriginatedLinxRuntime(requestInit: RequestInit): Promise<Response> {

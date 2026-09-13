@@ -106,7 +106,13 @@ export function useChatKitSurface({
     initialThread: null,
     theme: {
       colorScheme: theme,
-      color: { accent: { primary: '#735FC4', level: 2 } },
+      radius: 'round',
+      density: 'normal',
+      typography: { baseSize: 15 },
+      color: {
+        accent: { primary: '#735FC4', level: 1 },
+        grayscale: { hue: 252, tint: 2 },
+      },
     },
     header: { enabled: false },
     history: { enabled: false },
@@ -231,6 +237,12 @@ export function useChatKitSurface({
         if (disposed) return
         restoreState.status = 'restored'
         markThreadRestored()
+        // Restoring a thread can leave the embedded surface scrolled at the
+        // beginning of the transcript. Put the composer back in view so the
+        // user can continue typing without manually scrolling to the bottom.
+        void workbench.surface.focusComposer().catch((error) => {
+          if (!disposed) console.warn('[ChatKit] Failed to focus composer after restore:', error)
+        })
         if (import.meta.env.VITE_DEBUG_CHATKIT === 'true') {
           console.debug(`[chatkit] restore.done ${JSON.stringify({ selectedChatId, selectedThreadId })}`)
         }

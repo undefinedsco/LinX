@@ -483,16 +483,16 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.equal(providerInsert.row.id, 'anthropic.ttl')
   assert.equal(providerInsert.row.baseUrl, 'https://api.anthropic.com/v1')
   assert.deepEqual(providerInsert.row.hasModel, [
-    '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
+    'settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
   ])
   assert.equal(credentialInsert.row.id, 'credentials.ttl#anthropic-default')
-  assert.equal(credentialInsert.row.provider, '/settings/providers/anthropic.ttl')
+  assert.equal(credentialInsert.row.provider, 'settings/providers/anthropic.ttl')
   assert.equal(credentialInsert.row.service, 'ai')
   assert.equal(credentialInsert.row.apiKey, 'sk-ant-test-key')
   assert.equal(credentialInsert.row.defaultModel, undefined)
   assert.equal(modelInsert.row.id, 'anthropic.ttl#claude-sonnet-4-20250514')
   assert.equal(modelInsert.row.displayName, 'claude-sonnet-4-20250514')
-  assert.equal(modelInsert.row.isProvidedBy, '/settings/providers/anthropic.ttl')
+  assert.equal(modelInsert.row.isProvidedBy, 'settings/providers/anthropic.ttl')
   assert.equal(harness.syncResults.length, 1)
   assert.deepEqual(harness.syncResults[0], {
     source: 'cli-ai-command',
@@ -512,11 +512,11 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
       action: 'ai.connect',
       resourceBindings: {
         provider: {
-          uri: '/settings/providers/anthropic.ttl',
+          uri: 'settings/providers/anthropic.ttl',
           local: 'anthropic',
         },
         model: {
-          uri: '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
+          uri: 'settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
           local: 'claude-sonnet-4-20250514',
         },
       },
@@ -581,7 +581,7 @@ test('linx ai disconnect removes provider credential config from Pod', async (t)
       action: 'ai.disconnect',
       resourceBindings: {
         provider: {
-          uri: '/settings/providers/anthropic.ttl',
+          uri: 'settings/providers/anthropic.ttl',
           local: 'anthropic',
         },
       },
@@ -780,6 +780,6 @@ test('linx ai connect uses the resolved Pod context before ORM writes', async (t
   assert.ok(harness.operations.some((item) =>
     item.op === 'insert'
     && item.resource === 'credential'
-    && item.row.provider === '/settings/providers/openai.ttl'
+    && item.row.provider === 'settings/providers/openai.ttl'
     && item.row.apiKey === 'sk-openai-test-key'))
 })

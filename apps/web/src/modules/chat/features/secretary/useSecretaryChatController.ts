@@ -7,11 +7,10 @@ import {
   useThreadList,
 } from '../../collections'
 import { useChatStore } from '../../store'
-import { clearChatDraft, loadChatDraft, saveChatDraft, type ChatDraftScope } from '../../draft-store'
+import type { ChatDraftScope } from '../../draft-store'
 import { chatThreadRefsMatch, readActiveBranchSelections } from '../../domain/thread-selection'
-import type { PendingComposerDraft } from '../../domain/conversation-workbench'
+import { useSecretaryDraft } from './useSecretaryDraft'
 
-interface ScopedDraft { text: string; scopeKey: string }
 interface ScopedError { message: string; scopeKey: string; chatId: string }
 
 interface UseSecretaryChatControllerOptions {
@@ -41,57 +40,24 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
   const creationAttemptRef = useRef(0)
   const [creationFailure, setCreationFailure] = useState<ScopedError | null>(null)
   const [creationRetryKey, setCreationRetryKey] = useState(0)
-  const [draftState, setDraftState] = useState<ScopedDraft>({ text: '', scopeKey: '' })
-  const [pendingDraft, setPendingDraft] = useState<PendingComposerDraft | null>(null)
-  const [handoffFailure, setHandoffFailure] = useState<ScopedError | null>(null)
-
-  const draft = draftState.scopeKey === scopeKey ? draftState.text : ''
-  const activePendingDraft = pendingDraft?.scopeKey === scopeKey ? pendingDraft : null
   const creationError = creationFailure?.scopeKey === scopeKey && creationFailure.chatId === selectedChatId ? creationFailure.message : null
-  const handoffError = handoffFailure?.scopeKey === scopeKey && handoffFailure.chatId === selectedChatId ? handoffFailure.message : null
-
-  useEffect(() => {
-    setCreationFailure(null)
-    setPendingDraft(null)
-    setHandoffFailure(null)
-    setDraftState({ text: loadChatDraft(draftScope), scopeKey })
-  }, [draftScope, scopeKey])
-  useEffect(() => {
-    lastAutoCreateChatRef.current = null
-    isCreatingThreadRef.current = false
-    creationAttemptRef.current += 1
-  }, [selectedChatId])
-
   const retryThreadCreation = useCallback(() => {
     lastAutoCreateChatRef.current = null
     setCreationFailure(null)
     setCreationRetryKey((current) => current + 1)
   }, [])
-  const updateDraft = useCallback((text: string) => {
-    setDraftState({ text, scopeKey })
-    saveChatDraft(draftScope, text)
-  }, [draftScope, scopeKey])
-  const submitDraft = useCallback(() => {
-    const text = draft.trim()
-    if (!text || !selectedChatId || !webId) return
-    setPendingDraft({ text, attempt: 0, chatId: selectedChatId, scopeKey })
-    setHandoffFailure(null)
-    retryThreadCreation()
-  }, [draft, retryThreadCreation, scopeKey, selectedChatId, webId])
-  const retryDraftHandoff = useCallback(() => {
-    setHandoffFailure(null)
-    setPendingDraft((current) => current?.scopeKey === scopeKey ? { ...current, attempt: current.attempt + 1 } : current)
-  }, [scopeKey])
-  const completeDraftHandoff = useCallback((completed: PendingComposerDraft) => {
-    setPendingDraft((current) => current === completed ? null : current)
-    setDraftState((current) => current.scopeKey === completed.scopeKey ? { text: '', scopeKey: completed.scopeKey } : current)
-    setHandoffFailure((current) => current?.scopeKey === completed.scopeKey ? null : current)
-    clearChatDraft({ accountScope: completed.scopeKey, chatId: LINX_DEFAULT_SECRETARY.chatId })
-  }, [])
-  const failDraftHandoff = useCallback((failed: PendingComposerDraft) => {
-    if (activeScopeRef.current !== failed.scopeKey) return
-    setHandoffFailure({ message: '无法将草稿填入当前话题。草稿仍保留，可重试。', scopeKey: failed.scopeKey, chatId: failed.chatId })
-  }, [])
+  const draftController = useSecretaryDraft({
+    scopeKey,
+    draftScope,
+    selectedChatId,
+    webId,
+    onSubmit: retryThreadCreation,
+  })
+  useEffect(() => {
+    lastAutoCreateChatRef.current = null
+    isCreatingThreadRef.current = false
+    creationAttemptRef.current += 1
+  }, [selectedChatId])
 
   const chats = chatsQuery.data
   const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data])
@@ -100,7 +66,8 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
   const persistedActiveBranchByParent = useMemo(() => readActiveBranchSelections(activeThread?.metadata), [activeThread?.metadata])
 
   useEffect(() => {
-    if (!selectedChatId || !isReady || (!activeChat && !isSecretary)
+    const hasExplicitSecretaryDraft = isSecretary && Boolean(draftController.activePendingDraft)
+    if (!selectedChatId || (!isReady && !hasExplicitSecretaryDraft) || (!activeChat && !isSecretary)
       || (!isSecretary && (chatsQuery.isLoading || threadsQuery.isLoading || chatsQuery.error || threadsQuery.error))) return
     const normalizedThreads = threads.map((thread) => ({ ...thread, _id: thread.id })).filter((thread) => Boolean(thread._id))
     // A persisted thread id can outlive its chat (or be recorded under the
@@ -112,7 +79,11 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
       selectThread(normalizedThreads[0]._id)
       return
     }
-    if (isSecretary && isDefaultSecretarySettling) return
+    // The welcome bootstrap may still be settling, but an explicit user
+    // submission must be allowed to create the default thread immediately.
+    // Otherwise the composer appears enabled while the pending draft waits
+    // forever for a background bootstrap promise to settle.
+    if (isSecretary && isDefaultSecretarySettling && !draftController.activePendingDraft) return
     if (isCreatingThreadRef.current || mutations.createThread.isPending || lastAutoCreateChatRef.current === selectedChatId) return
 
     isCreatingThreadRef.current = true
@@ -123,7 +94,13 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
     // The live collection can be ready with an empty pre-authentication cache
     // while the Pod rebind is still fetching. Confirm remote emptiness before
     // creating anything, otherwise every refresh can create a blank thread.
-    void Promise.resolve().then(() => threadsQuery.refetch?.()).then((restored) => {
+    // An explicit welcome-page submission is different: the user has already
+    // asked to start a conversation, so a slow historical refetch must not
+    // leave the pending draft and disabled button hanging forever.
+    const restoreBeforeCreate = hasExplicitSecretaryDraft
+      ? Promise.resolve([])
+      : Promise.resolve().then(() => threadsQuery.refetch?.())
+    void restoreBeforeCreate.then((restored) => {
       if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
       const restoredThreads = Array.isArray(restored) ? restored : []
       const existing = restoredThreads.find((thread) => chatThreadRefsMatch(thread.id, selectedThreadId)) ?? restoredThreads[0]
@@ -158,7 +135,7 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
       setCreationFailure({ message: error instanceof Error ? error.message : '恢复话题失败', scopeKey: creationScope, chatId: creationChatId })
       isCreatingThreadRef.current = false
     })
-  }, [activeChat, activeThread, chatsQuery.error, chatsQuery.isLoading, creationRetryKey, isDefaultSecretarySettling, isReady, isSecretary, mutations.createThread, mutations.ensureThreadWorkspace, scopeKey, selectThread, selectedChatId, selectedThreadId, threads, threadsQuery.error, threadsQuery.isLoading])
+  }, [activeChat, activeThread, chatsQuery.error, chatsQuery.isLoading, creationRetryKey, draftController.activePendingDraft, isDefaultSecretarySettling, isReady, isSecretary, mutations.createThread, mutations.ensureThreadWorkspace, scopeKey, selectThread, selectedChatId, selectedThreadId, threads, threadsQuery.error, threadsQuery.isLoading])
 
   return {
     selectedChatId,
@@ -177,15 +154,8 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
     refetchChats: chatsQuery.refetch,
     refetchThreads: threadsQuery.refetch,
     isCreatingThread: mutations.createThread.isPending,
-    draft,
-    activePendingDraft,
+    ...draftController,
     creationError,
-    handoffError,
-    updateDraft,
-    submitDraft,
     retryThreadCreation,
-    retryDraftHandoff,
-    completeDraftHandoff,
-    failDraftHandoff,
   }
 }

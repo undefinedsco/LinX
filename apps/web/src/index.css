@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
+@source "../../../node_modules/@undefineds.co/ai-connections/dist";
+@source "../../../node_modules/@undefineds.co/shared-ui/dist";
 
 /**
  * LinX 颜色系统 - 基于 Shadcn 结构，主色收敛到 Linked Data Taro Purple

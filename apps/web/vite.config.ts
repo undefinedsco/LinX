@@ -17,6 +17,18 @@ const drizzleRuntime = path.resolve(
   'node_modules/@undefineds.co/drizzle-solid/dist/esm/core/execution/ldp-executor.js',
 )
 const modelsRuntime = path.resolve(repoRoot, 'node_modules/@undefineds.co/models/dist/ai-config/index.js')
+const modelsEntryRuntime = path.resolve(repoRoot, 'node_modules/@undefineds.co/models/dist/index.js')
+const modelsChatProjectRuntime = path.resolve(
+  repoRoot,
+  'node_modules/@undefineds.co/models/dist/chat-project.repository.js',
+)
+const aiConnectionsRuntime = path.resolve(repoRoot, 'vendor/ai-connections/dist/index.js')
+const aiConnectionsClientRuntime = path.resolve(
+  repoRoot,
+  'vendor/ai-connections/dist/ai-connections-client.js',
+)
+const aiConnectionsMainRuntime = path.resolve(repoRoot, 'vendor/ai-connections/dist/AiConnectionsMain.js')
+const aiConnectionsPanelRuntime = path.resolve(repoRoot, 'vendor/ai-connections/dist/AiConnectionsPanel.js')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
@@ -31,7 +43,17 @@ function fingerprintFiles(paths: string[]): string {
   return hash.digest('hex').slice(0, 12)
 }
 
-const dependencyRuntimeFingerprint = fingerprintFiles([drizzleRuntime, modelsRuntime])
+const dependencyRuntimeFingerprint = fingerprintFiles([
+  drizzleRuntime,
+  modelsRuntime,
+  modelsEntryRuntime,
+  modelsChatProjectRuntime,
+  aiConnectionsRuntime,
+  aiConnectionsClientRuntime,
+  aiConnectionsMainRuntime,
+  aiConnectionsPanelRuntime,
+])
+const chatkitCdnOrigin = 'https://cdn.platform.openai.com'
 
 function getPackageName(id: string): string | null {
   const marker = '/node_modules/'
@@ -105,6 +127,26 @@ function resolveVendorChunk(id: string): string | undefined {
 export default defineConfig({
   base: assetBase,
   plugins: [react()],
+  server: {
+    proxy: {
+      '/chatkit-cdn': {
+        target: chatkitCdnOrigin,
+        changeOrigin: true,
+        secure: true,
+        rewrite: (requestPath) => requestPath.replace(/^\/chatkit-cdn/, ''),
+      },
+      '/assets/ck1': {
+        target: chatkitCdnOrigin,
+        changeOrigin: true,
+        secure: true,
+      },
+      '/cdn-cgi': {
+        target: chatkitCdnOrigin,
+        changeOrigin: true,
+        secure: true,
+      },
+    },
+  },
   optimizeDeps: {
     // Workspace and normalized runtime dependencies must remain pre-bundled.
     // Include their runtime fingerprint in Vite's optimizer plugin names so

@@ -185,15 +185,15 @@ test('linx ai connect smoke covers API-key provider shell-to-core writes', async
     assert.ok(model, `model row should be written for ${item.inputProvider}`)
     assert.equal(provider.baseUrl, item.baseUrl)
     assert.deepEqual(provider.hasModel, [
-      `/settings/providers/${item.providerId}.ttl#boundary-smoke-model`,
+      `settings/providers/${item.providerId}.ttl#boundary-smoke-model`,
     ])
-    assert.equal(credential.provider, `/settings/providers/${item.providerId}.ttl`)
+    assert.equal(credential.provider, `settings/providers/${item.providerId}.ttl`)
     assert.equal(credential.service, 'ai')
     assert.equal(credential.status, 'active')
     assert.equal(credential.apiKey, `sk-${item.providerId}-boundary`)
-    assert.equal(model.isProvidedBy, `/settings/providers/${item.providerId}.ttl`)
+    assert.equal(model.isProvidedBy, `settings/providers/${item.providerId}.ttl`)
     assert.equal(harness.syncResults.length, 1)
-    assert.equal(harness.syncResults[0].metadata.resourceBindings.provider.uri, `/settings/providers/${item.providerId}.ttl`)
+    assert.equal(harness.syncResults[0].metadata.resourceBindings.provider.uri, `settings/providers/${item.providerId}.ttl`)
   }
 })
 
