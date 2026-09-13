@@ -13,6 +13,7 @@ const mockToast = vi.fn()
 const mockUseChatStore = vi.fn()
 const mockUseEntity = vi.fn()
 const mockUseChatList = vi.fn()
+const mockAgentCollectionGet = vi.fn()
 
 vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
@@ -113,6 +114,8 @@ vi.mock('../store', () => ({
 
 vi.mock('../collections', () => ({
   LINX_DEFAULT_SECRETARY: {
+    agentId: 'agents/__secretary__/',
+    contactId: 'contacts/__secretary__',
     chatId: 'chat/__secretary__',
     title: 'AI Secretary',
   },
@@ -132,6 +135,12 @@ vi.mock('../collections', () => ({
       isPending: false,
     },
   }),
+}))
+
+vi.mock('../contacts-port', () => ({
+  agentCollection: {
+    get: (...args: unknown[]) => mockAgentCollectionGet(...args),
+  },
 }))
 
 vi.mock('../agent-runtime-location', () => ({
@@ -167,6 +176,7 @@ import { ChatHeader } from './ChatHeader'
 describe('ChatHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockAgentCollectionGet.mockReturnValue(undefined)
 
     mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
       selectedChatId: 'chat-1',
@@ -309,6 +319,33 @@ describe('ChatHeader', () => {
 
     expect(mockRefreshAgent).toHaveBeenCalled()
     expect(mockRefreshContact).toHaveBeenCalled()
+  })
+
+  it('uses the staged Secretary agent while its physical Agent Home is settling', async () => {
+    mockUseChatList.mockReturnValue({
+      data: [{ id: 'chat/__secretary__', title: 'AI Secretary', starred: false }],
+    })
+    mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedChatId: 'chat/__secretary__',
+      selectChat: mockSelectChat,
+      showRightSidebar: false,
+      toggleRightSidebar: mockToggleRightSidebar,
+    }))
+    mockUseEntity.mockReturnValue({ data: null, refresh: vi.fn().mockResolvedValue(undefined) })
+    mockAgentCollectionGet.mockReturnValue({
+      id: 'agents/__secretary__/',
+      name: 'LinX 主理人',
+      provider: 'undefineds',
+      model: 'linx-lite',
+    })
+
+    render(<ChatHeader />)
+
+    fireEvent.click(screen.getByText('linx-lite'))
+    expect(screen.getByText('模型设置')).toBeInTheDocument()
+    expect(mockToast).not.toHaveBeenCalledWith(expect.objectContaining({
+      title: '当前聊天没有可编辑的模型',
+    }))
   })
 
   it('updates the agent AI runtime location from the profile dialog', async () => {

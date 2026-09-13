@@ -21,7 +21,13 @@ import type { AIProvider } from '@/modules/model-services/domain/types'
 import { useToast } from '@/components/ui/use-toast'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
-import { useChatList, useChatMutations } from '../collections'
+import {
+  LINX_DEFAULT_SECRETARY,
+  isLinxDefaultSecretaryChat,
+  useChatList,
+  useChatMutations,
+} from '../collections'
+import { agentCollection } from '../contacts-port'
 import { useEntity } from '@/lib/data/use-entity'
 import {
   normalizeAIConfigProviderId,
@@ -103,12 +109,22 @@ export function ChatHeader() {
   const { data: contact, refresh: refreshContact } = useEntity(contactResource, contactUri)
   const agentUri = contact && isAgentContact(contact) ? contact.about : null
   const { data: agent, refresh: refreshAgent } = useEntity(agentResource, agentUri)
-  const agentId = typeof agent?.id === 'string' && agent.id.length > 0 ? agent.id : null
-  const contactId = typeof contact?.id === 'string' && contact.id.length > 0 ? contact.id : null
+  const stagedSecretaryAgent = isLinxDefaultSecretaryChat(chat)
+    ? agentCollection.get(LINX_DEFAULT_SECRETARY.agentId)
+    : null
+  const resolvedAgent = agent ?? stagedSecretaryAgent ?? null
+  const agentId = typeof resolvedAgent?.id === 'string' && resolvedAgent.id.length > 0
+    ? resolvedAgent.id
+    : null
+  const contactId = typeof contact?.id === 'string' && contact.id.length > 0
+    ? contact.id
+    : isLinxDefaultSecretaryChat(chat)
+      ? LINX_DEFAULT_SECRETARY.contactId
+      : null
 
-  const provider = normalizeAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : '') || LINX_PLATFORM_PROVIDER_ID
-  const model = normalizeChatModelId(normalizeAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : '') || DEFAULT_LINX_PLATFORM_MODEL_ID)
-  const agentAiRuntimeLocation = readAgentAiRuntimeLocation((agent as Record<string, unknown> | null | undefined)?.metadata)
+  const provider = normalizeAIConfigProviderId(typeof resolvedAgent?.provider === 'string' ? resolvedAgent.provider : '') || LINX_PLATFORM_PROVIDER_ID
+  const model = normalizeChatModelId(normalizeAIConfigResourceId(typeof resolvedAgent?.model === 'string' ? resolvedAgent.model : '') || DEFAULT_LINX_PLATFORM_MODEL_ID)
+  const agentAiRuntimeLocation = readAgentAiRuntimeLocation((resolvedAgent as Record<string, unknown> | null | undefined)?.metadata)
   const providerInfo = useMemo(() => {
     if (!provider) return null
     return getAgentProviderInfo(provider)
@@ -133,10 +149,10 @@ export function ChatHeader() {
 
   useEffect(() => {
     if (!isAgentDialogOpen) return
-    setAgentNameDraft((agent?.name as string) || chat?.title || '')
-    setInstructionsDraft((agent?.instructions as string) || '')
+    setAgentNameDraft((resolvedAgent?.name as string) || chat?.title || '')
+    setInstructionsDraft((resolvedAgent?.instructions as string) || '')
     setAiRuntimeLocationDraft(agentAiRuntimeLocation)
-  }, [agent?.instructions, agent?.name, agentAiRuntimeLocation, chat?.title, isAgentDialogOpen])
+  }, [resolvedAgent?.instructions, resolvedAgent?.name, agentAiRuntimeLocation, chat?.title, isAgentDialogOpen])
 
   useEffect(() => {
     if (!isModelDialogOpen) return
@@ -179,7 +195,7 @@ export function ChatHeader() {
     try {
       await mutations.updateAgentProfile.mutateAsync({
         agentId,
-        currentAgent: agent ?? undefined,
+        currentAgent: resolvedAgent ?? undefined,
         name: normalizedName,
         instructions: instructionsDraft,
         aiRuntimeLocation: aiRuntimeLocationDraft,
@@ -198,7 +214,7 @@ export function ChatHeader() {
       })
     }
   }, [
-    agent,
+    resolvedAgent,
     agentId,
     agentNameDraft,
     aiRuntimeLocationDraft,
@@ -242,7 +258,7 @@ export function ChatHeader() {
     try {
       await mutations.updateAgentModel.mutateAsync({
         agentId,
-        currentAgent: agent ?? undefined,
+        currentAgent: resolvedAgent ?? undefined,
         provider: nextProvider,
         model: normalizedModel,
         chatId: selectedChatId,
@@ -260,7 +276,7 @@ export function ChatHeader() {
       })
     }
   }, [
-    agent,
+    resolvedAgent,
     agentId,
     contactId,
     configuredProviders,
@@ -291,18 +307,18 @@ export function ChatHeader() {
             <>
               <button
                 type="button"
-                title={`编辑助手设置：${agent?.name || 'Assistant'}`}
+                title={`编辑助手设置：${resolvedAgent?.name || 'Assistant'}`}
                 className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50 shrink-0"
                 onClick={handleOpenAgentDialog}
               >
                 <Avatar className="h-8 w-8 border border-border/50 !rounded-sm">
-                  <AvatarImage src={agent?.avatarUrl} className="!rounded-sm object-cover" />
+                  <AvatarImage src={resolvedAgent?.avatarUrl} className="!rounded-sm object-cover" />
                   <AvatarFallback className="!rounded-sm bg-primary/10 text-primary text-xs">
-                    {agent?.name?.slice(0, 2).toUpperCase() || <Bot className="w-4 h-4" />}
+                    {resolvedAgent?.name?.slice(0, 2).toUpperCase() || <Bot className="w-4 h-4" />}
                   </AvatarFallback>
                 </Avatar>
                 <span className="max-w-[180px] truncate text-sm font-medium">
-                  {agent?.name || 'Assistant'}
+                  {resolvedAgent?.name || 'Assistant'}
                 </span>
               </button>
 
