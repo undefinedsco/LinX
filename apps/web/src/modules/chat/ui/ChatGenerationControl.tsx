@@ -1,4 +1,4 @@
-import { Square } from 'lucide-react'
+import { LoaderCircle, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export function ChatGenerationControl({ active, onStop }: {
@@ -8,7 +8,8 @@ export function ChatGenerationControl({ active, onStop }: {
   if (!active) return null
 
   return (
-    <div className="pointer-events-none absolute bottom-5 right-7 z-40 rounded-full bg-background p-1">
+    <div className="pointer-events-none absolute bottom-5 right-7 z-40 flex items-center gap-2 rounded-full bg-background p-1">
+      <LoaderCircle aria-label="正在生成回复" role="status" className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" />
       <Button
         type="button"
         size="icon"

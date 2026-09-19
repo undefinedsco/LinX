@@ -10,6 +10,7 @@ import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
   extractUserMessageText,
+  generateId,
   isStreamingReq,
   nowTimestamp,
   type ChatKitReq,
@@ -35,7 +36,7 @@ import {
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
-import { createAssistantTextDeltaEvent } from './thread-stream-events'
+import { createAssistantTextDeltaEvent, createWaitingToolbarEvent } from './thread-stream-events'
 import { normalizeToolCallArguments } from './tool-call-protocol'
 import {
   inferMarkdownLinkAnnotations,
@@ -936,6 +937,38 @@ export class LocalChatKitService {
   }
 
   private async *respond(
+    ...args: Parameters<LocalChatKitService['generateResponse']>
+  ): AsyncIterable<ThreadStreamEvent> {
+    const waitingItemId = generateId('waiting-toolbar')
+    yield createWaitingToolbarEvent(args[0].id, waitingItemId)
+    let waiting = true
+    let pendingAssistant: ThreadStreamEvent | undefined
+    for await (const event of this.generateResponse(...args)) {
+      // Keep the transient toolbar visible until the first content event.
+      if (event.type === 'thread.item.added' && (event.item as ThreadItem | undefined)?.type === 'assistant_message'
+        && !pendingAssistant) {
+        pendingAssistant = event
+        continue
+      }
+      if (waiting && event.type === 'progress_update') {
+        const updated = createWaitingToolbarEvent(args[0].id, waitingItemId, String(event.text ?? '处理中…'))
+        yield { ...updated, type: 'thread.item.replaced' }
+        continue
+      }
+      if (waiting) {
+        yield { type: 'thread.item.removed', item_id: waitingItemId }
+        waiting = false
+      }
+      if (pendingAssistant && event.type !== 'progress_update') {
+        yield pendingAssistant
+        pendingAssistant = undefined
+      }
+      yield event
+    }
+    if (waiting) yield { type: 'thread.item.removed', item_id: waitingItemId }
+  }
+
+  private async *generateResponse(
     thread: ThreadMetadata,
     userMessage: ThreadItem,
     context: StoreContext,

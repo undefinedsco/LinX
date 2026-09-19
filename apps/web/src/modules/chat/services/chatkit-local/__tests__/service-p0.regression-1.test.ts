@@ -20,6 +20,47 @@ afterEach(() => vi.unstubAllGlobals())
 // Found by /qa on 2026-08-02.
 // Report: .gstack/qa-reports/qa-report-linx-local-2026-08-02.md
 describe('LocalChatKitService P0 data and cancellation', () => {
+  it('keeps progress visible until the first streamed content, then preserves delta order', async () => {
+    const service = new LocalChatKitService({ store: createStore(), db, authFetch: vi.fn() as any }) as any
+    const added = { type: 'thread.item.added', item: { id: 'answer', type: 'assistant_message', content: [] } }
+    const delta = { type: 'thread.item.updated', item_id: 'answer', update: { delta: 'Hello' } }
+    const done = { type: 'thread.item.done', item: { ...added.item, status: 'completed' } }
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => { release = resolve })
+    service.generateResponse = async function* () {
+      yield added
+      await waiting
+      yield delta
+      yield done
+    }
+    const stream = service.respond({ id: 'thread-1' })
+    const toolbar = (await stream.next()).value
+    expect(toolbar.item.widget.children[1].children.slice(0, 4).every((button: any) => button.disabled)).toBe(true)
+    expect(toolbar.item.widget.children[1].children[4].onClickAction).toEqual({ type: 'linx.stop-generation', handler: 'client' })
+    let emitted = false
+    const next = stream.next().then((result: any) => { emitted = true; return result })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(emitted).toBe(false)
+    release()
+    expect((await next).value).toEqual({ type: 'thread.item.removed', item_id: toolbar.item.id })
+    expect((await stream.next()).value).toBe(added)
+    expect((await stream.next()).value).toBe(delta)
+    expect((await stream.next()).value).toBe(done)
+    expect((await stream.next()).done).toBe(true)
+  })
+
+  it('replaces waiting progress with an incomplete response on failure', async () => {
+    const service = new LocalChatKitService({ store: createStore(), db, authFetch: vi.fn() as any }) as any
+    const added = { type: 'thread.item.added', item: { id: 'answer', type: 'assistant_message', content: [] } }
+    const done = { type: 'thread.item.done', item: { ...added.item, status: 'incomplete' } }
+    service.generateResponse = async function* () { yield added; yield done }
+    const events = []
+    for await (const event of service.respond({ id: 'thread-1' })) events.push(event)
+    expect(events.map((event) => event.type)).toEqual(['thread.item.added', 'thread.item.removed', 'thread.item.added', 'thread.item.done'])
+    expect(events[3]).toBe(done)
+  })
+
   it('persists branch selection and filters sibling items on reload', async () => {
     const thread = { id: 'thread-1', status: { type: 'active' }, metadata: {} }
     const store = createStore({
@@ -303,6 +344,7 @@ describe('LocalChatKitService P0 data and cancellation', () => {
     const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any }) as any
     service.getRuntimeThread = vi.fn(async () => null)
     service.resolveThreadAgentConfig = vi.fn(async () => ({ provider: 'test', model: 'test-model' }))
+    service.resolveProviderCapabilities = vi.fn(async () => ['chat_completions'])
     service.resolvePlatformModel = vi.fn(() => null)
     service.streamFromProviderRuntime = async function* () {
       yield 'partial answer'

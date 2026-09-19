@@ -159,6 +159,11 @@ export function useChatKitSurface({
       },
     },
     threadItemActions: { feedback: true, retry: true },
+    widgets: {
+      onAction: async (action) => {
+        if (action.type === 'linx.stop-generation') interrupt()
+      },
+    },
     thread: { autoScroll: true },
     onReady: () => { restoredSurfaceRef.current = null; setReadyRevision((revision) => revision + 1) },
     // Explicit restoration below owns the user-facing readiness gate. Some
