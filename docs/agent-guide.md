@@ -33,6 +33,9 @@ Skill source of truth:
 
 ## Guide Routing
 
+- R6 产品/交互、导航、个人方法与模型生命周期 → 先读 [联合体验 Spec R6](../../homepage/docs/specs/personal-ai-product-experience-r6.md)，再读 `DESIGN.md`、`docs/desktop-product-strategy.md` 与对应模块。R6 采用工作/知识/我的 AI；不改共享模型、身份与领域协议权威。旧 Chat-first/四入口只保留明确兼容的历史语境。
+- 审批依据缺口：本轮检出缺少下方引用的 `docs/approval-grant-design.md`。auto 已有语义先遵从 `docs/secretary/auto-symphony-contract.md`；新增 grant/审批/撤回行为需领域 owner 补齐权威，不能依据 UI 文字自创政策。
+
 - LinX shell/core 建模、事实归属、壳层与共享 core 分工 → 先读 `docs/linx-shell-core-design.md`。这类原则文档只讲模型，不讲功能。
 - local-first runtime 接入共享 core、source/target/authority/plane 同步建模 → 先读 `docs/local-first-pod-sync.md`。这类原则文档只讲同步语言，不讲具体资源。
 - 具体产品功能、命令行为、状态机、验收和测试 → 写在该功能自己的文档，不回填到原则文档。
@@ -64,7 +67,7 @@ Feature contracts:
 - `docs/xpod-cli-spec.md` — xpod CLI 的 Pod 文件/RDF/jsonl/secret/approval 能力边界，与 `udfs` 建模 CLI 分工
 - `docs/dependency-guide.md` — 依赖升级、workspace/npm 版本、`xpod`/`models` 联动与 models 独立发布规则
 - `docs/external-project-watchlist.md` — 外部项目持续跟踪清单，记录观察状态、证据、复查信号和是否需要沉淀到功能文档
-- `docs/desktop-product-strategy.md` — 桌面端 Chat-first + AI-native 产品策略
+- `docs/desktop-product-strategy.md` — R6 工作/知识/我的 AI 产品策略，以及工作方法、auto 与权限边界
 - `docs/secretary/README.md` — AI Secretary 能力设计入口，包括存储建模、授权判断和用户请示边界
 - `docs/agent-collaboration-model.md` — Secretary 多工作现场、群聊、跨会话投递、auto 模式与 TUI 共用模型
 - `docs/scene-restoration-solid-modeling.md` — `favorites / inbox / audit / workspace` 的场景恢复与 Solid 建模约束

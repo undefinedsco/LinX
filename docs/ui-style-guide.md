@@ -2,14 +2,16 @@
 
 ## Design philosophy
 
-LinX uses a **macOS-native visual discipline** on top of a **desktop messaging interaction structure**.
+LinX uses **macOS-native visual discipline** for a personal AI workspace organized around **工作 / 知识 / 我的 AI**.
 
-The product should feel like a quiet, capable workspace: chat-first, low cognitive load, clear storage/runtime/AI work state, and restrained visual chrome. The interface borrows from familiar desktop chat products for structure, but the visual system should stay neutral, precise, and platform-native rather than decorative.
+Status: R6 target design, 2026-09-28. See the [joint experience spec](../../homepage/docs/specs/personal-ai-product-experience-r6.md). This is a design contract, not verification of the current app. LS-07/08/13/14 apply.
+
+The product should feel like a quiet, capable workspace: readable work and personal judgment, low cognitive load, clear storage/runtime/AI work state, and restrained visual chrome. The interface borrows from familiar desktop chat products for structure, but the visual system should stay neutral, precise, and platform-native rather than decorative.
 
 ### Core principles
 
 1. **Neutral foundation** — app chrome, panels, cards, and lists are built from neutral surfaces and text hierarchy.
-2. **Sparse accent** — linked-data taro purple is reserved for primary action, selection, focus, source lineage, and rare brand moments.
+2. **Sparse accent** — the selected ink purple is reserved for primary action, selection, focus, source lineage, and rare brand moments.
 3. **Border-led structure** — use borders, dividers, spacing, and surface steps before shadows.
 4. **Purposeful radius** — radius follows component role; dense rows stay compact, cards/dialogs get moderate rounding, pills are used only where the shape has semantic value.
 5. **Native typography** — use system fonts and measured weight steps; avoid marketing-sized type inside workflow chrome.
@@ -19,10 +21,10 @@ The product should feel like a quiet, capable workspace: chat-first, low cogniti
 
 ### Brand accent
 
-- Primary accent: linked-data taro purple (`#735FC4`, `hsl(252 46% 57%)`, exposed through `--primary` where possible) for decisive actions, selected state, focus, source lineage, and brand anchors.
+- Primary accent: ink purple `#563E84`, mapped through the existing shared semantic theme. Paper `#F7F4ED`, sunken `#F2EDE2`, raised `#FBFAF7`, text `#2B2621`, muted `#655D53` follow the [selected brand](../../homepage/DESIGN.md). This 2026-09-27 target supersedes the former `#735FC4`; it does not claim the implementation has migrated.
 - Accent usage must be sparse. If many things are purple, nothing is primary.
 - Do not use colored glow or colored shadow as a default accent treatment.
-- Do not use amber/orange/cream as brand warmth. Those colors are semantic warning/pending states only.
+- Use the selected paper neutrals without decorative textures. Do not add amber/orange accents for brand warmth; status must remain legible through text and shape. Task layouts and states follow R6; selected logos remain unchanged. LinX owns its workflow density independently of the marketing site and Xpod.
 
 ### Neutral surfaces
 
@@ -51,7 +53,7 @@ Recommended surface hierarchy:
 
 ## Typography
 
-- Font family: `-apple-system`, `BlinkMacSystemFont`, `SF Pro Text`, `Inter`, `Segoe UI`, `sans-serif`.
+- Font family: `-apple-system`, `BlinkMacSystemFont`, `SF Pro Text`, `Inter`, `Segoe UI`, `PingFang SC`, `Microsoft YaHei`, `sans-serif`.
 - Heading weight: 600.
 - Control weight: 500.
 - Body weight: 400.
@@ -70,10 +72,12 @@ Recommended desktop roles:
 ## Layout and spacing
 
 - Base rhythm: 4px/8px increments.
-- Desktop shell should prioritize scan speed: stable columns, predictable row heights, consistent gutters.
+- Choose columns by task: navigation plus content; add a real collection list only when useful, and open details on demand. Never reserve an empty third pane. Keep rows and gutters predictable within each page type.
 - Chat/list layouts may be dense; onboarding, login, and destructive actions need more breathing room.
 - Advanced settings belong behind explicit settings surfaces, not in the primary login path.
-- Audit, keys, models, diagnostics, and recovery/configuration screens are low-frequency surfaces; keep them contextual or in settings rather than primary navigation.
+- Audit, credentials, provider/base-model configuration and diagnostics are low-frequency surfaces. Personal methods, candidates, evaluations and current personal models belong to My AI and contextual work entrances.
+- Evidence, conditions, exceptions, versions and the current decision must remain readable; do not compress them into list metadata. Long comparisons use the main content surface.
+- Validate 1440/1180/768/390 CSS px and 200% text. Collapse optional panes before squeezing the main decision; narrow comparisons become sequential with explicit return and preserved selection.
 
 ## Files interaction
 
@@ -101,76 +105,29 @@ Do not use a single large radius everywhere as a brand marker.
 
 ## Elevation and shadows
 
-Use the lightest treatment that separates layers:
+Use border and surface contrast for normal panels; shallow shadow only for floating layers. Avoid colored shadows, glow, decorative gradients, heavy stacked shadows and default glass/blur.
 
-```css
-/* Panel/card default */
-border: 1px solid hsl(var(--border));
-box-shadow: none;
+## Component contracts
 
-/* Floating popover/dialog */
-box-shadow: 0 12px 32px rgba(0, 0, 0, 0.10);
+| Pattern | Visual and interaction contract |
+|---|---|
+| Panel | Quiet paper surface, readable boundary; not every property in a separate card |
+| Primary action | One dominant action for the current decision; secondary save/test/delete do not share equal emphasis |
+| Input | Persistent label, clear error association, visible solid focus outline; do not rely on a low-opacity purple glow |
+| Selected row | Background plus a marker/text/shape and programmatic selected state; purple alone is insufficient |
+| Status | Text with a meaningful shape; normal optional capability absence is not a warning |
+| Main navigation | Text labels by default; compact mode retains accessible names and a visible current location |
 
-/* Press/hover response */
-transform: none or translateY(-1px) only where it improves affordance;
-```
+LinX desktop pointer controls use a 36px minimum hit area as the normal design target; dense rows may be visually smaller only if actions remain reachable. Coarse-pointer and primary login targets use at least 44px. Body text remains 14–15px, with longer source and comparison reading allowed more room; do not reduce essential labels to metadata size to fit a fixed column.
 
-Avoid:
+## Accessibility acceptance
 
-- colored shadows;
-- glow effects;
-- broad decorative gradients;
-- heavy stacked shadows for normal cards;
-- default glass/blur effects in workflow chrome.
-
-## Component patterns
-
-### Surface panel
-
-```css
-.surface-panel {
-  @apply bg-card text-card-foreground border border-border rounded-xl;
-}
-```
-
-### Primary action
-
-```css
-.primary-action {
-  @apply bg-primary text-primary-foreground rounded-lg h-9 px-4 font-medium;
-  @apply transition-colors duration-150;
-}
-```
-
-### Input field
-
-```css
-.input-field {
-  @apply bg-background border border-input rounded-lg px-3 py-2;
-  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35;
-}
-```
-
-### Status badge
-
-```css
-.status-badge {
-  @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium;
-}
-```
-
-### Selection row
-
-```css
-.selection-row {
-  @apply flex items-center gap-3 border-b border-border px-3 py-2;
-  @apply hover:bg-muted/60;
-}
-
-.selection-row[data-selected="true"] {
-  @apply bg-primary/10 text-foreground;
-}
-```
+- Core desktop/web flows target WCAG 2.1 AA; conformance is not claimed until measured.
+- All actions use appropriate interactive semantics and keyboard operation. Nested row actions must not accidentally activate the row.
+- Focus is visible against both paper and dark surfaces, not clipped by overflow. Dialogs place/trap focus appropriately, close with Esc when safe, and restore focus to their trigger; unsaved decisions have save/discard/continue editing.
+- State and selection do not rely on color alone. Labels, errors and helper text remain readable at 200% text.
+- Announce meaningful run stages, waiting and errors; do not flood screen readers with every streamed token or tool log. Pending and disabled actions explain the blocking reason.
+- Contrast, focus order, long Chinese/English labels, keyboard-only navigation and reduced motion require actual implementation evidence; a token palette alone does not prove accessibility.
 
 ## Motion
 
@@ -225,8 +182,8 @@ When touching UI code:
 
 - Use neutral surfaces and subtle borders for structure.
 - Reserve purple for primary, selected, and focus semantics.
-- Show provider/storage/runtime state explicitly.
-- Keep chat-first workflows compact and scannable.
+- Show provider/storage/runtime state where it changes the current decision; keep normal chrome quiet.
+- Keep lists compact and decisions, sources and comparisons readable; use page type rather than a universal density.
 - Use screenshots for visual verification on desktop changes.
 
 ### Don't

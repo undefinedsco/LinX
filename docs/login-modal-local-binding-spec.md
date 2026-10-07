@@ -1,7 +1,7 @@
 # Login Modal and Local Binding Spec
 
 - Status: Draft for implementation
-- Last updated: 2026-07-02
+- Last updated: 2026-09-28 (R6 design alignment; implementation not verified)
 - Owner surface: LinX desktop/web login, remembered account card, Local startup handoff, Cloud account consent handoff
 - Related docs:
   - `DESIGN.md`
@@ -9,6 +9,8 @@
   - `docs/ui-component-architecture.md`
   - `docs/login-identity-storage-routing-model.md`
   - `docs/local-sp-domain-and-tunnel.md`
+
+R6 authority: [joint product experience](../../homepage/docs/specs/personal-ai-product-experience-r6.md); LS-09/10/11/13. Registration, Consent and explicit Pod creation follow the [Xpod login/host canonical](../../xpod/docs/superpowers/specs/2026-09-19-xpod-login-and-host-design.md), first part §0/§3.3 and second part §4.1–4.2; it supersedes this document’s former implicit-create sequence. This remains the compact login and binding contract. `login-experience-map.md` is a route index and historical record, not authority for three equal first-screen choices.
 
 ## 1. Purpose
 
@@ -27,8 +29,8 @@ The protocol goal is to keep identity and storage correct:
   choice.
 - A remembered account already has a WebID and storage binding; it must not ask
   the user to choose Cloud/Local again.
-- Local registration and first Pod creation are driven by a Cloud-signed
-  `provisionCode`, not by a client-supplied SP URL.
+- Registration creates only an Account. A user with no Pod can reach account/Pod management; login and Consent do not prepare or create a Pod.
+- Only explicit Local Pod creation uses the Cloud-signed `provisionCode` target proof; account login, a selected Local preference and a client-supplied SP URL are not creation authority.
 
 ## 2. Terms
 
@@ -38,7 +40,7 @@ The protocol goal is to keep identity and storage correct:
 | Data space | Where LinX stores data. Only `undefineds` supports choosing `Cloud` or `Local`. | Shown only before first undefineds login or when adding a new undefineds binding. |
 | Storage binding | The post-login binding between WebID and actual storage base. | Shown as a short label such as `undefineds · 本机空间`; not editable inline. |
 | Local SP | The local xpod storage provider. | Not named in login UI. Use `本机空间`. |
-| provisionCode | Cloud-signed proof that a Local SP is the intended Pod creation target. | Never shown in login UI. May appear only in diagnostics. |
+| provisionCode | Cloud-signed proof that a Local SP is the intended target of an explicit Pod creation operation. Not permission to create during login/Consent. | Never shown in login UI or logged in full; diagnostics show only presence/status. |
 
 ## 3. Product rules
 
@@ -98,46 +100,52 @@ Local checks are split into two levels:
 | --- | --- | --- |
 | App boot | Light probe remembered Local binding state. | Do not start xpod or block UI. Optional weak status only. |
 | User clicks remembered Local account | Ensure Local runtime, validate/relogin session, verify binding, check reachability. | Small loading state inside modal. |
-| First undefineds Local login | Prepare Local runtime and binding before Cloud auth. | Small `正在准备本机空间` state. |
+| First undefineds Local login | Preserve Local as intended storage target and complete Account login/registration; do not invoke Local prepare or create. | Account/Pod management if there is no usable Pod; an unavailable inventory is an error, not an empty list. |
+| Explicit Local Pod creation in management | User selects a manageable machine, validates conditions and explicitly starts the service if required, then confirms creation under the canonical lifecycle contract. | Creation/task state in management; it is not a login loading stage. |
 | Callback completed | Verify storage binding and reachability. | Enter app or show Local recovery. |
 | In-app runtime loss | Keep account session, show runtime connectivity problem. | Do not logout or silently switch to Cloud. |
 
-Local startup is a precondition for entering a Local binding; it is not a side effect of simply opening the login dialog.
+Using an existing Local binding requires its runtime to be reachable. Account login/registration and merely opening the dialog do not run Local provisioning prepare. Existing-binding runtime access and explicit Pod creation are separate operations.
 
-### 3.4 Consent and Pod creation
+### 3.4 Account, Consent and explicit Pod creation
 
-Local first-login and Local first-Pod flows are scoped by `provisionCode`.
-
-Flow:
+The Xpod canonical separates Account registration, WebID authorization and Pod readiness. Local selection in the compact modal records an intended target; it does not submit provisioning.
 
 ```text
 User chooses undefineds + Local
-  -> LinX starts/reuses local xpod
-  -> local xpod registers/refreshes node with Cloud
-  -> Cloud returns provisionCode
-  -> LinX opens Cloud account/OIDC flow with provisionCode
-  -> Cloud creates/selects Cloud WebID
-  -> Cloud PodCreator sees settings.provisionCode
-  -> ProvisionPodCreator decodes provisionCode
-  -> Cloud calls Local SP POST /provision/pods with serviceAccessToken
-  -> Local SP creates /<username>/ and writes local storage facts
-  -> Cloud WebID profile points solid:storage to Local SP Pod URL
+  -> Account login / registration (registration creates Account only)
+  -> Read authoritative Pod inventory / applicable bindings
+  -> Existing usable Pod: select/verify it and continue authorization
+  -> Confirmed no usable Pod: go to Account / Pod management
+       -> user explicitly chooses the Local target machine
+       -> validate management authority and storage conditions
+       -> if needed, user explicitly starts Xpod and health is checked
+       -> user confirms Create Pod
+       -> existing Local creation flow validates the Cloud-signed provisionCode
+       -> creation task submits to the selected Local SP
+       -> read authoritative owner / WebID / storage binding
+       -> resume the original valid authorization interaction
+  -> Callback validates the exact selected binding
 ```
 
 Rules:
 
-1. xpod does not infer that a user is "from local". The branch is
-   `settings.provisionCode` exists and validates.
-2. The frontend must not pass arbitrary `storageBaseUrl` as authority.
-3. Before the user is authenticated, the flow may know the Local node/root, but
-   must not invent `/<username>/` as a final Pod URL.
-4. After login, Cloud derives the concrete Pod URL from the authenticated WebID
-   and provision scope.
-5. If Local SP is unavailable during first Pod creation, Local registration
-   fails closed. Do not fall back to Cloud storage.
-6. For relogin of an existing Local binding, redirect callback can be received
-   by LinX runtime even if the Local data route is temporarily down, but entering
-   the app still requires binding/reachability handling.
+1. Registration, ordinary login, preflight, Consent, callback and entry into Pod management do not call Local prepare or submit Pod creation. Existing creation-task recovery is not a new submission.
+2. `provisionCode` remains the Cloud-signed selected-Local target proof. The explicit creation branch validates `settings.provisionCode` through the existing creation protocol; carrying the proof through an interaction never triggers creation. Arbitrary `storageBaseUrl`, a directory name or Account presence are not authority.
+3. Inventory failure is not “zero Pods”. Show unavailable/retry, do not offer an inferred empty-state creation as recovery or auto-create a replacement. Missing owner/conflicting binding has its own repair path under the canonical contract.
+4. Before authoritative creation/selection, do not invent a final `/<username>/` Pod URL. Read exact owner/WebID/storage facts after the explicit operation, then validate the selected binding before business access.
+5. Account registration success and Pod creation failure are separate results. A failed Local creation leaves the Account result intact, shows the original creation task and targeted recovery, and never falls back to Cloud storage.
+6. Timeout, lost callback or unknown creation result first queries the original task and authoritative inventory. Refresh, repeated click and cross-tab return must not submit another creation or roll back a server-side success.
+7. No usable Pod during application authorization offers “前往 Pod 管理” and “取消授权”. Preserve bounded continuation tied to the Account and original interaction; after return re-read bindings and health. Account change or expired interaction restarts authorization, never reuses the old identity or an unchecked return URL.
+8. Cancel waiting is not cancellation of a submitted task. Canceling authorization uses the existing protocol return path and does not undo Account registration or an already-created Pod.
+
+### 3.5 Advanced Standalone and configured providers
+
+The compact default stays provider-first with undefineds Cloud/Local choice. A visible secondary “其他登录方式” entrance exposes configured providers and “本机独立空间” when the deployed runtime supports Standalone. Standalone is not an automatic fallback after Local failure and is not a third equal default tab.
+
+Explain the difference before continuing: Local uses an undefineds Cloud identity and local storage; Standalone uses local identity, authorization and storage under its existing identity contract. Retain a clear return to the compact entrance. If this capability is unavailable in a release, identify the missing capability rather than displaying a working-looking login action.
+
+The existing provider-default branch and identity/storage routing authority govern the protocol; this product entrance does not invent a new `LoginIntent` variant or weaken binding checks. Any necessary mapping must be specified and tested by the identity owner before release.
 
 ## 4. Dialog size and visual constraints
 
@@ -149,10 +157,10 @@ Target desktop size:
 ```text
 Width: 360-400 px
 Default height: 420-500 px
-Max height: 560 px before internal scrolling
+Default max height: 560 px before internal scrolling; narrow/200% text layouts adapt to available viewport
 Corner radius: 18-20 px
 Padding: 28-32 px outer, 16-20 px internal groups
-Primary button height: 40-44 px
+Primary button hit area: at least 44 px
 ```
 
 Visual rules:
@@ -163,7 +171,7 @@ Visual rules:
 4. Avoid gradients, glow, emoji, large marketing titles, and dense technical
    tables.
 5. Use visible text status, not color-only dots.
-6. Advanced configuration belongs in Settings, not the login dialog.
+6. Advanced configuration belongs in Settings or the explicit advanced login path, not the primary decision. Standalone remains discoverable as specified in section 3.5.
 7. The dialog should never look like a dashboard.
 
 Information density rule:
@@ -192,30 +200,29 @@ Information density rule:
 │                                    │
 │        [ 继续 ]                    │
 │                                    │
-│        其他账号供应商               │
+│        其他登录方式                 │
 │                                    │
 └────────────────────────────────────┘
 ```
 
 Copy:
 
-- `云端`: `数据同步到云端`
-- `本机`: `数据保存在这台电脑`
+- `云端`: `资料保存在云端`
+- `本机`: `资料保存在这台电脑；使用 undefineds 账号登录`
 
-The copy can be shown as one muted line under the segment, not as two large
-cards.
+Show the copy as short helper text under the segment; allow two lines for Local identity/storage clarity instead of clipping it.
 
-### 5.2 Other account providers
+### 5.2 Other login methods
 
 The compact modal does not provide a default third-party provider catalog. It
-only lists providers already configured by the user and an advanced add action.
+lists configured providers and an advanced add action. The same secondary surface includes the supported Standalone entry from section 3.5, clearly separated from account providers.
 
 No default rows such as Google, GitHub, or enterprise SSO should appear unless
 the user has configured them.
 
 ```text
 ┌────────────────────────────────────┐
-│  其他账号供应商                     │
+│  其他登录方式                       │
 ├────────────────────────────────────┤
 │  undefineds                        │
 │  支持云端空间和本机空间              │
@@ -224,6 +231,7 @@ the user has configured them.
 │  已配置                             │
 │                                    │
 │  + 添加供应商                       │
+│  本机独立空间（可用时）               │
 │                                    │
 │  返回                               │
 └────────────────────────────────────┘
@@ -319,7 +327,7 @@ Rules:
 └────────────────────────────────────┘
 ```
 
-### 5.7 Local preparing
+### 5.7 Existing Local binding: runtime access
 
 ```text
 ┌────────────────────────────────────┐
@@ -339,7 +347,8 @@ Allowed detail line values:
 - `正在启动本机服务`
 - `正在准备登录授权`
 - `正在验证本机空间`
-- `正在创建本机空间`
+
+`正在创建本机空间` belongs only to an explicitly submitted creation task in Pod management. It is not a login/Consent detail line. This screen is for accessing an existing binding, not preparing a new Pod.
 
 Do not show raw logs, node IDs, ports, tokens, URLs, or stack traces here.
 
@@ -425,27 +434,24 @@ SELECT_PROVIDER non-undefineds
   -> ENTER_APP
 ```
 
-Undefineds Cloud:
+Undefineds Cloud or Local (page-flow labels, not new authentication states):
 
 ```text
-CONTINUE cloud
-  -> START_AUTH
+CONTINUE selected storage intent
+  -> ACCOUNT_LOGIN_OR_REGISTER
+  -> READ_AUTHORITATIVE_INVENTORY
+       -> unavailable: INVENTORY_RECOVERY (no prepare/create)
+       -> usable binding: SELECT_AND_VERIFY_BINDING -> CONTINUE_AUTHORIZATION
+       -> confirmed no usable Pod: ACCOUNT_POD_MANAGEMENT
+            -> explicit user Create Pod -> existing creation operation
+            -> read authoritative binding -> resume valid authorization
   -> WAIT_CALLBACK
-  -> VERIFY_CLOUD_BINDING
-  -> ENTER_APP
+  -> VERIFY_SELECTED_BINDING
+  -> CHECK_REACHABILITY
+  -> ENTER_APP | BINDING_RECOVERY
 ```
 
-Undefineds Local:
-
-```text
-CONTINUE local
-  -> PREPARE_LOCAL_RUNTIME_AND_PROVISION
-  -> START_AUTH_WITH_PROVISION_CODE
-  -> WAIT_CALLBACK
-  -> VERIFY_LOCAL_BINDING
-  -> CHECK_LOCAL_REACHABILITY
-  -> ENTER_APP | LOCAL_RECOVERY
-```
+Registration success can remain at Account/Pod management with zero Pods. A Pod-backed LinX work surface still requires the selected WebID/storage authorization. Cloud/Local selection does not auto-create or authorize machine control; Local `provisionCode` is consumed only by explicit creation under section 3.4. No new authentication state or creation protocol is defined here.
 
 ### 6.3 Remembered-account flow
 
@@ -470,7 +476,7 @@ For Local remembered bindings:
 ```text
 ENSURE_BINDING_RUNTIME_IF_NEEDED
   -> ensure local xpod process
-  -> refresh provision/status if needed
+  -> read existing runtime/binding status; do not run Local prepare or create
   -> do not change storage binding
 ```
 
@@ -478,13 +484,36 @@ ENSURE_BINDING_RUNTIME_IF_NEEDED
 
 | From | Action | Result |
 | --- | --- | --- |
-| Other providers | Back | First login screen |
-| Local preparing | Cancel | First login or remembered account screen; stop pending attempt if safe |
+| Other login methods | Back | Previous compact login screen |
+| Existing Local binding runtime check | Cancel | First login or remembered account screen; stop pending attempt if safe |
 | Auth window open | User closes window | Clear pending transaction; return to previous modal state |
-| Callback handling | Back | Not available; finish success or show error |
+| Callback handling | Back | Do not interrupt a binding mutation blindly; show the actual step, then success or bounded recovery. Unknown result is checked against the original attempt, not resubmitted |
 | Switch account | Back | Remembered account screen |
 | Local recovery | Switch account | Switch account list |
 | Local recovery | Open settings | Open settings, then return to recovery and refresh state |
+
+### 6.5 Enter app is not “everything ready”
+
+`ENTER_APP` follows a verified identity/storage binding. It does not assert Pod write readiness, successful Secretary initialization, a connected model or a trained personal model. If the selected space is unavailable, recovery may show account/repair controls and only previously authorized data allowed by the existing access/cache contract; it must not invent offline read authority.
+
+| Fact | User-visible effect | Recovery |
+|---|---|---|
+| Identity or binding unverified/mismatch | No business writes and no restored private content | Original account/binding recovery; never Cloud fallback |
+| Binding valid, space inaccessible | Specific space state and repair; do not label all data deleted | Retry the same space, preserve legal return |
+| Space readable, write not ready | Available reading remains usable; dependent saves explain why blocked | Refresh actual write capability; do not fake saved drafts |
+| Assistant bootstrap incomplete | Existing permitted resources remain available; AI start waits with a reason | Resume existing initialization, do not duplicate the assistant |
+| AI connection missing/failed | Show connection repair only when needed | Return to the same work; no silent provider rotation |
+| No personal model | Normal untrained state; methods and supported knowledge use remain available | No mandatory training step or global warning |
+
+First use with no context enters Work; returning users restore their last legal module/object under the verified identity and space. Login must not overwrite a saved source/method/evaluation context by forcing Chat.
+
+### 6.6 Switching, drafts and accessible recovery
+
+Before a deliberate switch/logout, unsaved method, material or evaluation edits offer save/discard/continue editing. Save failure preserves the edit. Once switching begins, hide old private content and stop its UI subscriptions; drafts and return points are isolated by identity and space. Late results never render in the next identity. See [Profile/Settings](prototype/module-profile-settings.md).
+
+Closing the auth window or canceling an existing Local binding runtime check cancels the pending UI attempt only to the extent confirmed by the controller; it does not assert that already submitted provisioning or other remote work stopped. Unknown outcomes query the original attempt before retrying. Callback handling has visible progress and a recoverable timeout/error state, never an indefinite disabled screen.
+
+All choices/actions support keyboard and clear focus; modals return focus to their trigger. Errors are associated with the affected action. At 390px and 200% text the modal can grow/scroll within the viewport without clipping the primary or recovery actions. Deterministic avatar fallback is display-name initial, then a neutral person icon, shared with Settings.
 
 ## 7. Data and protocol contracts
 
@@ -533,7 +562,7 @@ type StorageBinding =
 
 ### 7.3 Local provision handoff
 
-Before Cloud auth, Local flow may hold:
+An explicit Local creation operation may hold the existing selected-target proof below. Login may carry an already valid context for later continuation, but must not obtain it by running provisioning prepare as an automatic login precondition:
 
 ```ts
 type LocalProvisionIntent = {
@@ -543,10 +572,9 @@ type LocalProvisionIntent = {
 }
 ```
 
-It must not claim final user Pod URL until Cloud has authenticated the user and
-created/selected the Pod.
+This intent is not a creation request and does not identify a final user Pod. Only authoritative selection of an existing Pod or completion of a user-confirmed creation supplies the concrete owner/WebID/storage facts. A registration/Consent callback alone does not imply creation.
 
-After callback, the authoritative binding is:
+After authoritative binding selection/creation and authorization, callback validation uses the existing binding shape:
 
 ```ts
 type LocalStorageBinding = {
@@ -559,11 +587,12 @@ type LocalStorageBinding = {
 
 Validation rules:
 
-1. `provisionCode` must decode and verify.
-2. The Cloud/WebID storage discovered after login must match the expected Local
+1. The explicit Local creation path must decode and verify `provisionCode`; ordinary login/Consent does not require a new creation proof and does not call prepare/create.
+2. The Cloud/WebID storage discovered after authorization must match the expected Local
    storage root and selected binding.
 3. A mismatch is a blocking security error.
 4. Do not rewrite storage identity to localhost/LAN/tunnel access routes.
+5. Inventory unreadable, confirmed empty and binding conflict are distinct. Unknown creation results resume/query the original operation before any new submission; Account success is not reverted by storage failure.
 
 ### 7.4 Local access profile switching
 
@@ -630,13 +659,21 @@ text.
 - Avatar appears for all remembered accounts and switch-account rows, with a
   deterministic fallback.
 
+- Advanced Standalone is discoverable when supported, correctly distinguished from Local, and never selected as error fallback.
+- Space copy describes storage; “同步” is used only when an actual synchronization capability is being described.
+- Keyboard, focus return, 390px width and 200% text retain all main/recovery actions.
+- First use can proceed without a personal model; returning users resume the last legal context.
+- Partial readiness and targeted retry do not duplicate the default assistant or hide available permitted reading.
+- Account switch isolates drafts, references and late subscriptions; logout does not report remote tasks stopped.
+
 ### Protocol
 
-- Undefineds Local first-login obtains a valid `provisionCode` before Cloud auth.
-- Cloud Pod creation with Local intent sends `settings.provisionCode`.
-- `ProvisionPodCreator` branches only on valid `settings.provisionCode`.
-- Local SP creates the Pod and writes `solid:storage` for the Cloud WebID to the
-  Local Pod URL.
+- New Cloud/Local/Standalone accounts can complete Account registration with zero Pods. Registration/login/Consent/callback perform zero Local prepare and zero Pod-create calls.
+- A confirmed no-Pod state goes to Account/Pod management; merely entering management does not create. Inventory failure is not interpreted as empty and does not trigger creation.
+- Only explicit user-confirmed Local creation sends the existing `settings.provisionCode`; the creation branch validates it and writes authoritative owner/storage facts through the existing protocol. Possession of the code does not trigger the operation.
+- Account registration success remains success when Local creation fails; creation error and its original task are shown separately, without Cloud fallback.
+- A lost response or unknown result queries the original creation task and authoritative inventory first. Reload/repeated click/cross-tab return does not create duplicates.
+- After management, authorization resumes only for the still-valid Account/interaction; changed Account or expired interaction restarts authorization.
 - Login callback verifies the selected storage binding before app entry.
 - Remembered Local account continue does not ask the user to choose Cloud/Local.
 - Third-party provider continue does not display Cloud/Local selection.
@@ -646,13 +683,13 @@ text.
 - Unit/component tests for compact modal states and absence of technical terms.
 - State-machine tests for first login, remembered account, relogin, switch
   account, back/cancel, and Local failure.
-- Integration tests for Local registration: provision code -> Cloud Pod create ->
-  Local `/provision/pods` -> WebID `solid:storage`.
+- Integration tests split Account registration with zero Pods from explicit Pod management creation, and then authorization continuation. Assert zero prepare/create calls in login/registration/Consent and management entry.
+- Explicit Local creation tests verify the existing provision-code path, authoritative owner/storage, inventory unavailable vs empty, failure isolation and unknown-result recovery without duplicate submission.
 - Integration tests for storage mismatch fail-closed.
 
 ## 11. Resolved decisions
 
-No blocking product issue remains for the login modal.
+The compact provider/binding decisions below are settled. R6 does not claim runtime readiness. Standalone entrance mapping, partial-readiness facts, identity-isolated draft restoration and unknown-outcome recovery require implementation evidence under the existing identity contracts.
 
 1. Third-party provider catalog is intentionally not shipped in the compact
    modal; only existing configured providers and `添加供应商` appear.

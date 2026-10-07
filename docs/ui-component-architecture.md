@@ -1,121 +1,56 @@
 # UI 组件分层架构
 
-LinX 采用 **纯 UI / 逻辑 UI 分层**设计，明确数据流向。组件层只定义最小边界；模块级 domain/query/adapter 分层由对应 feature 文档和 architecture tests 约束。
+LinX 采用纯 UI / 逻辑 UI 分层。状态：R6 设计合同，2026-09-28；对应 LS-05–13，依[联合体验 Spec](../../homepage/docs/specs/personal-ai-product-experience-r6.md)。本文定义组件职责与交互契约，不提供未经运行验证的实现示例。
 
-## 架构图
+## 分层职责
 
-```
-┌─────────────────────────────────────────┐
-│  纯 UI 组件 (Presentational)            │
-│  - 只负责渲染                            │
-│  - 通过 props 接收数据和回调              │
-│  - 优先不读取模块 store                  │
-│  - 不知道 Collection 存在               │
-└─────────────────────────────────────────┘
-                    ↑ props / callbacks
-┌─────────────────────────────────────────┐
-│  逻辑 UI 组件 (Container)               │
-│  - 操作 Collections（CRUD + 业务逻辑）   │
-│  - 更新 Zustand 状态                     │
-│  - 组合纯 UI 组件                        │
-│  - 处理副作用（订阅、初始化等）            │
-└─────────────────────────────────────────┘
-                    ↓
-┌───────────────────────┬─────────────────┐
-│  Collections          │  Zustand Store  │
-│  (数据 + 业务逻辑)     │  (纯 UI 状态)    │
-└───────────────────────┴─────────────────┘
-```
+| 层 | 职责 | 边界 |
+|---|---|---|
+| 纯 UI | 渲染 props、语义结构、样式、焦点与局部开合；通过回调表达意图 | 不读取业务 Collection、模块 store，不解析 Solid profile，不判断授权或写 Pod |
+| 逻辑 UI / feature container | 组合查询、领域 use-case 和 UI 状态，将事实投影给纯 UI；订阅与副作用生命周期 | 不在组件里定义跨端 schema、审批政策或训练状态机 |
+| Collection / repository / shared use-case | 当前资源、查询、持久化与领域动作 | Pod 数据遵从 models + drizzle-solid；失败不能用 UI 假数据遮盖 |
+| Zustand / 局部状态 | 选择、筛选、面板、阅读位置等 UI 状态 | 不成为知识修订、Run、个人模型或 grant 的第二真相 |
 
-## 组件职责划分
+模块级 domain/query/adapter 边界继续依 feature 文档和 architecture tests。纯 UI 默认不访问 store；确需跨组件状态时优先提升至 container，仅 app-shell 视觉状态可有明确例外。
 
-| 组件类型 | 职责 | 可以访问 | 示例 |
-|---------|------|---------|------|
-| **纯 UI** | 渲染、样式、动画、局部开合状态 | props, callbacks, shared visual primitives | ContactCard, MessageBubble, Avatar |
-| **逻辑 UI** | 数据获取、操作、状态同步 | query hooks, collections, zustand UI 状态, domain 函数, 组合纯 UI | ContactListPane, ChatDetailPane |
+## 页面组织与复用
 
-纯 UI 组件默认不得读取模块 store。确实需要跨组件 UI 状态时，应先判断它是否已经是 feature container；只有 app-shell 级视觉状态可以例外。
+Shell 管三入口与合法上下文，不直接读写 chat/contact/file/favorite。工作、知识、我的 AI 根据任务组合列表、正文、编辑、比较和按需详情，不能由布局组件强制三/四栏。
 
-## 代码示例
+同一方法、来源、训练准备或评估从工作与我的 AI 打开同一领域对象和编辑控制器。Xpod 修复入口只传合法引用与目的；LinX 不复制 Xpod 运维面，Xpod 不再建日常知识/训练编辑器。
 
-### 纯 UI 组件
+沿用 `XxxPane` / `XxxContainer` 表示组合逻辑，`XxxCard` / `XxxItem` / `XxxForm` 表示展示控件。复用已有 React/Tailwind/primitives，不增加第二套组件库。
 
-只管渲染，通过 props 接收一切：
+## 公共状态契约
 
-```typescript
-// components/ContactCard.tsx
-interface ContactCardProps {
-  contact: UnifiedContact
-  isSelected: boolean
-  onSelect: () => void
-  onDelete: () => void
-}
+| 组件/控制器 | 必须消费的事实与动作 | 不允许的捷径 |
+|---|---|---|
+| 导航恢复 | 身份+空间、对象引用、合法性、返回位置 | 换身份沿用旧内容；标签更名生成新资源 |
+| 方法表单 | 默认/当前范围、继承与覆盖、草稿/保存失败、保存/放弃 | 保存方法隐式扩大 grant；并发变化最后写入覆盖 |
+| 来源/收藏 | 引用版本、可访问/无权限/删除/离线/修订 | “打不开”一律显示已删除；用缓存绕过撤权 |
+| 连接/模型摘要 | 配置、可服务、加载、Run 实际采用分别可知或未知 | 配置保存即宣称生效；默默换提供方 |
+| 初始化 | 身份、绑定、空间读写、助手、连接分别就绪 | 一个 ready 布尔值代表全部完成；重试重复建助手 |
+| 训练/评估 | 领域资源阶段、真实产物、同知识基线、发布资格、用户范围 | 收藏变授权；候选自动启用；缺接口演示成功 |
+| 长任务 | Run/RunStep、等待原因、停止请求和停止确认、结果未知 | 关页等于取消；重试重复副作用 |
+| 退出/切换 | 未保存草稿、隔离键、订阅取消、会话结果 | B 账号短暂看见 A；登出等于远端任务停止 |
 
-function ContactCard({ contact, isSelected, onSelect, onDelete }: ContactCardProps) {
-  return (
-    <div className={cn('p-3', isSelected && 'bg-accent')} onClick={onSelect}>
-      <Avatar src={contact.avatarUrl} />
-      <span>{contact.name}</span>
-      <Button onClick={(e) => { e.stopPropagation(); onDelete(); }}>删除</Button>
-    </div>
-  )
-}
-```
+这些是界面输入/输出要求，不是新接口或 schema。字段缺失由领域 owner 补合同，组件不得推测。
 
-### 逻辑 UI 组件
+## 焦点、编辑与恢复
 
-连接 Collection 和纯 UI：
+- 点击整行不替代正确按钮/链接/列表语义；行内操作不会同时打开/删除原对象。
+- 弹窗/抽屉进入、约束、关闭、返回焦点有确定规则；仅隐藏不清除未保存编辑。
+- 方法、材料、评估草稿按身份与空间隔离；保存失败保留编辑，冲突显示版本和选择。
+- 更新订阅、请求结果与导航恢复均核对当前身份/空间；旧请求晚到不得写入新身份的 UI。
+- 从 Xpod 返回重读对象/版本/权限；结果未知先查原任务，不仅重新执行回调。
 
-```typescript
-// components/ContactListPane.tsx
-function ContactListPane() {
-  // 1. 数据层 - 从 Collection 获取
-  const contacts = contactCollection.state.data ?? []
-  
-  // 2. UI 状态层 - 从 Zustand 获取
-  const { selectedId, select, search } = useContactStore()
-  
-  // 3. 过滤/转换（可选）
-  const filteredContacts = useMemo(() => 
-    contacts.filter(c => c.name.includes(search)),
-    [contacts, search]
-  )
-  
-  // 4. 操作处理 - 调用 Collection 方法
-  const handleDelete = useCallback((id: string) => {
-    contactCollection.delete(id)
-    if (selectedId === id) select(null)  // 同步更新 UI 状态
-  }, [selectedId, select])
-  
-  // 5. 组合纯 UI 组件
-  return (
-    <div>
-      {filteredContacts.map(contact => (
-        <ContactCard
-          key={contact.id}
-          contact={contact}
-          isSelected={selectedId === contact.id}
-          onSelect={() => select(contact.id)}
-          onDelete={() => handleDelete(contact.id)}
-        />
-      ))}
-    </div>
-  )
-}
-```
+## 验证要求
 
-## 命名规范
+| 层 | 需要证据 |
+|---|---|
+| 纯 UI | 状态展示、键盘/辅助技术语义、焦点返回、选中非颜色唯一、窄窗及 200% 文字 |
+| 逻辑 UI | 同资源多入口、保存/放弃/冲突、取消与结果未知、部分就绪、身份切换晚到结果隔离 |
+| 集成 | 涉及 Pod 登录/持久化/权限/通知必须自举 xpod + 真实 Pod；mock 仅验证展示分支，不能证明授权或写入正确 |
+| 架构 | 纯 UI 不 import query/store/data；domain 不 import React/data；feature 不直接 import Pod adapter；跨端事实仍由共享模型定义 |
 
-| 类型 | 命名模式 | 示例 |
-|------|---------|------|
-| 逻辑 UI | `XxxPane`, `XxxContainer` | ContactListPane, ChatDetailPane |
-| 纯 UI | `XxxCard`, `XxxItem`, `XxxForm` | ContactCard, MessageBubble, AgentForm |
-
-## 测试策略
-
-| 组件类型 | 测试方式 |
-|---------|---------|
-| **纯 UI** | 快照测试、Storybook、视觉回归 |
-| **逻辑 UI** | 集成测试、Mock Collection |
-
-涉及业务模块时，还需要 architecture test 保护 import 边界：纯 UI 不 import query/store/data，domain 不 import React/data，feature 不直接 import Pod adapter。
+本轮只修订文档，没有执行组件、浏览器或真实 Pod 测试。实施包须提供上述实际证据。

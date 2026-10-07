@@ -1,5 +1,7 @@
 # linx + xpod 设计文档
 
+> 历史背景修正（2026-09-27）：下文“LinX是唯一产品”“不再提供Xpod独立桌面版下载”“Edge用户数据永远不上云”的旧结论已失效。当前是LinX与Xpod两个产品，各有下载入口；数据保存位置与外部模型请求去向分开说明。对外定位、近期目标界面与交接以[联合Spec R4](../../homepage/docs/specs/product-showcase-and-experience-r4.md)和各产品现行规范为准；保留旧文用于追溯，不作为当前能力承诺。
+
 > xpod = 增强的 CSS + 个人 AI 平台；linx = 面向用户的 AI 应用
 
 > 术语约定：xpod/linx 是应用名；Pod 指 Solid Pod 资源。

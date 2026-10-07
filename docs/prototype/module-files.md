@@ -1,14 +1,32 @@
-# Module Spec: Files
+# Module Spec: 知识 / Files
 
-## 目标
+日期：2026-09-28。按 [产品体验 R6](../../../homepage/docs/specs/personal-ai-product-experience-r6.md) RD01/03/04/06/07/09、F01/02/04/06 修订，落实 [LW-02、04–06、10–12](../../../homepage/docs/reviews/product-r6-2026-09-28/linx-workflows.md)。实施目标不等于已运行验证；R4/R5 画板的旧导航和固定列数不再约束本模块。
 
-Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏览、resource 管理和 Personal Linked Context 的文件入口，用户心智接近 File Browser / Finder，但语义上是 Solid Pod resource browser。
+## 目标与入口
 
-`聊天文件` 不是一级模块，它和微信一样在窄侧栏底部菜单中直接出现：
+一级“知识”承接现有 Files 的 Pod 文件、resource、个人记录与知识能力，与“工作 / 我的 AI”共同构成日常导航。默认最近使用和查找，提供“全部资料 / 已确认知识 / 待整理 / 收藏”视图；视图不复制数据，也不新增知识数据库。旧 Files/资源/收藏深链定位同一对象，由壳层兼容映射新导航。
 
-```text
-窄侧栏底部菜单 -> 聊天文件
-```
+完整目录、普通文件预览/编辑、结构化原文件、权限和专业属性仍可达；不要求每个用户先理解 Pod 根路径、class 或 predicate。普通资料和经历有独立保留价值，不必被转成训练材料。
+
+“聊天文件”是工作内材料/成果及跨会话来源筛选，不占一级导航。它引用同一资源，不能取代全部资料浏览。收藏保存引用，取消收藏不删源，收藏不等于确认知识或入选训练。
+
+## 判断知识与个人模型入口
+
+- 从反馈、知识视图或搜索打开判断对象时，直接展示可读正文、状态、原话与系统提炼、条件/例外、来源和版本；不先要求打开 `.ttl` 或选择 schema。技术属性和元数据按需展开。
+- 仅此次判断、知识草稿、已确认知识、实际运行引用、训练授权分别成立。用户既定记录/整理范围内可发现候选并批量整理；沉默、执行批准和收藏不变成正例。
+- 修订同一对象时展示当前值、建议与范围，以一次提交承载关联修改；沿用既有 proposal/Inbox 权威。无法原子提交时显示部分结果与恢复，不假装整体成功。
+- 知识草稿、冲突、撤回、来源失效各有状态；同名不自动合并，不同项目相反判断保留条件。并发修订先展示差异，失败保留原版和编辑草稿。
+- 确认知识不授权训练。训练材料/模型版本从“我的 AI”或当前对象进入同一 Foundry 流程，资料选择与授权快照独立核对。未接通时标“个人模型训练：规划中”，不能以模拟成功提交。
+- 撤回知识、删除原记录、停止未来使用、排除后续训练、处置已有模型产物分别解释；不宣称旧权重已经遗忘。模型发布/评估/回退归 Foundry，Task/Run/RunStep 归既有任务契约。
+
+## 搜索、覆盖与再次使用
+
+1. 显示当前查询范围（当前对象/工作/选定空间等），扩大范围是显式选择，不把局部 Search 偷换为全 Pod 扫描。
+2. 结果显示对象类型、标题/匹配摘要、来源、条件摘要、确认/冲突状态及必要更新时间；摘要是派生层，不替代原记录。
+3. 用户查看来源和适用条件后可“用于这次工作”；创建真实资源/版本引用，不复制成新知识，不把命中当成模型已学习或无条件适用。
+4. 无命中、索引未覆盖、仍在处理、来源无权限/被删、离线/请求失败分别表达。失败不以空成功列表覆盖上次结果；允许单项重试。
+5. 返回保留 query、scope、筛选/排序、选中项与滚动位置。已撤回知识不在默认可用结果内；历史仅按当前权限读取。
+6. 语义搜索、跨资源范围及快照能力由 models/索引 owner 明确；缺能力时准确说明，不另建本地知识权威或用假结果兜底。
 
 ## 参考原则
 
@@ -20,10 +38,10 @@ Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏�
 
 ## Ingest 术语
 
-- `Ingest` 是用户可见和 product/domain 层的名字：把外部或 Pod source 进入 LinX Files，并转成可浏览、可编辑、可审批、可重新同步的 card、block、subject、predicate、vocab proposal 和 approval。
+- `Ingest` 保留为 product/domain 过程名；普通中文入口按任务称“导入/整理”，将外部或 Pod source 进入 LinX Files，并转成可浏览、可编辑、可审批、可重新同步的 card、block、subject、predicate、vocab proposal 和 approval。
 - OCR、PDF/DOC/PPT 抽取、byte-range fetch、authenticated fetch、ETag/If-Match、MIME/size/mtime、ACL/ACR、local cache 和 background scheduling 是 xpod/runtime 的底层能力，不在 UI 或领域 API 里叫 parser/index。
 - `Ingest record` / `Ingest 记录` 是用户可见的来源进度与同步状态 artifact；底层 RDF 可以继续有 `SourceIngestManifest` / `manifest.ttl` 等实现词。
-- 新 UI、新文档和新写入不暴露 parser/index 作为产品概念；旧 `index*` / `parser*` / `parsed*` 词只作为 legacy compatibility。
+- 普通导入入口不让用户选择底层 parser/index 实现。搜索处理、覆盖与专业诊断可准确使用“索引/尚未更新”等名称，不能因隐藏实现术语而隐去关键状态。既有 `index*` / `parser*` / `parsed*` 兼容字段不由界面文案改名。
 
 ## 范围
 
@@ -42,34 +60,36 @@ Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏�
 - 不在 Web 壳里假装能浏览本地 `linx://` 文件系统。
 - 不把首屏做成只面向技术用户的裸目录树。
 - 不替代系统 Finder 或完整本地文件管理器。
-- 不把一级文件模块做成聊天来源列表。
+- 不把全部资料浏览做成仅按聊天来源组织的列表。
 - 不新增平行 card/database authority；card 是 file/resource + RDF metadata 的 UI 投影。
 - 不从 assistant 文本、stdout、stderr、tool name 或本地路径正则猜文件。
 
-## 信息架构
+## 资源浏览子视图的信息架构
+
+下表仅用于用户进入目录或结构化原文件时，不是一级“知识”首页或判断卡的固定外框。判断阅读、搜索、冲突比较采用前述任务工作面；没有真实集合或未打开详情时不占辅助列。
 
 | 区域 | 内容 |
 | --- | --- |
 | 左侧树 | 普通文件夹树和文件选择，不按 Containers / Structured / Files 分组 |
 | Head | 文件名、路径/状态、少量窗口级按钮，约 48px 高 |
 | 内容区第一条 | Table / 当前视图 / `+ View`，以及筛选、排序、搜索 |
-| 中间列表 | subject table、Finder-like 文件夹列表/轻量预览，或普通可编辑文件的单文件 sheet/modal |
+| 中间列表 | subject table、Finder-like 文件夹列表/轻量预览，或普通可编辑文件的单文件编辑面 |
 | 右侧详情 | 当前 folder/file/structured resource 的 `.meta` inspector drawer，从 head 下沿覆盖 content 区，默认收起 |
 
-窄屏 / compact width 下，Files 必须优先保留当前 resource 内容可读性：进入 Files 后隐藏全局 rail，文件树通过 `Files` 抽屉按钮按需展开，选择 resource 后自动收起；不要同时常驻展示全局 rail、文件树和内容区。
+窄屏 / compact width 下，Files 必须优先保留当前 resource 内容可读性：进入知识资源内容后收起辅助导航，文件树通过“资料位置”抽屉按钮按需展开，选择 resource 后自动收起；不要同时常驻展示全局 rail、文件树和内容区。
 
 ## 结构化数据视图
 
-打开 `.ttl`、`.jsonld` 或其他 RDF 结构化资源时，默认进入数据工作区，而不是白板。
+显式打开 `.ttl`、`.jsonld` 或其他 RDF 结构化原文件时，默认进入结构化 Table，而不是白板；从反馈/搜索/知识视图进入判断对象则打开前述人类可读投影。两条路径引用同一资源，不复制真相。
 
 | 视图 | 默认性 | 用途 |
 | --- | --- | --- |
 | Table | 默认 | 一行一个 subject/resource；列是 predicate；`rdf:type` 作为 class scope |
-| `+ View` | 第一阶段 | Table 是默认视图；Kanban、Whiteboard、Raw 是同一 subject table 的轻量投影；Discover 是未来/实验视图 |
+| `+ View` | 按任务启用 | 结构化原文件默认 Table；Kanban、Whiteboard、Raw 仅在有实际任务时展示为同一资源投影；Discover 仍为未来/实验视图 |
 | Card | 显式行详情 | 展示一个 subject/resource 的标题、正文/摘要、properties、tags、relations、backlinks |
-| Kanban | 第一阶段 | 把 subject cards 按 status/class/owner 或自定义 predicate 分栏；改列走 structured cell proposal |
-| Whiteboard | 第一阶段 | 把选中的 subject cards 放入空间布局；布局写入 view metadata，不写回源 `.ttl` |
-| Raw / Projection Raw | 第一阶段 | 查看当前 class scope、过滤、隐藏 predicate 和 pending proposal 后的结构化投影文本；不是 canonical 源 `.ttl` |
+| Kanban | 有明确任务且能力已支持时开放 | 把 subject cards 按 status/class/owner 或自定义 predicate 分栏；改列走 structured cell proposal |
+| Whiteboard | 有明确任务且能力已支持时开放 | 把选中的 subject cards 放入空间布局；布局写入 view metadata，不写回源 `.ttl` |
+| Raw / Projection Raw | 专业查看入口 | 查看当前 class scope、过滤、隐藏 predicate 和 pending proposal 后的结构化投影文本；不是 canonical 源 `.ttl` |
 
 Table 规则：
 
@@ -107,7 +127,7 @@ Table 规则：
 
 普通文件：
 
-- 可编辑文本/Markdown 文件打开单文件 sheet/modal，包含 rich editor / raw source switch 和尾部 `.meta`。
+- 可编辑文本/Markdown 文件打开适合长度的单文件编辑面，短内容可用 sheet/modal，长文可占主工作面；包含 rich editor / raw source switch 和按需查看的 `.meta`，返回保留原上下文。
 - 图片等只读预览文件保持预览面，不因为点击预览而打开编辑详情弹窗。
 - 私有 Pod 图片必须通过 authenticated fetch 读取 blob 并生成 object URL，不能把私有 resource URI 直接放进 `<img src>`。
 - 普通文件仍然可以作为 file+meta card 被收藏、引用或加入后续 whiteboard，但不生成 subject table。
@@ -130,7 +150,7 @@ Subject 到文件：
 
 ## Chat files 边界
 
-`聊天文件` 是底部菜单里的二级入口，不出现在一级导航。
+`聊天文件` 从工作材料/成果入口及跨会话来源筛选重入，不出现在一级导航；旧底部菜单深链继续解析同一对象。
 
 它消费当前 chat/thread 的 message `richContent` file blocks 和明确的 runtime artifact containers：
 
@@ -153,9 +173,9 @@ artifacts / files / generatedFiles / outputs / resources / attachments
 - 当前 thread 没有 workspace URI 时，只展示已结构化引用的当前 Pod 文件，不递归扫描 Pod root。
 - `聊天引用` / `运行产物` 只作为 `sourceLabel` 展示，不能写入 `tags` 或进入 tag filter。
 
-## 一级文件模块
+## 全部资料与专业资源浏览
 
-一级 `文件` 模块面向完整 Pod 浏览：
+一级“知识”中的“全部资料”保留完整 Pod 浏览能力：
 
 - Pod 根目录。
 - 容器树。
@@ -167,7 +187,7 @@ artifacts / files / generatedFiles / outputs / resources / attachments
 - `/.data/workspaces/{workspaceId}/` Workspace 容器和 `.meta` 浏览。
 - `/.data/repositories/{repositoryId}.ttl` Repository 元信息浏览。
 
-Pod 浏览是真实能力，不是后续可选项。区别是 `聊天文件` 面向聊天来源组织，一级 `文件` 模块面向完整目录和 resource 浏览。
+完整 Pod 浏览属于必须保留的产品范围，是否已可用须由实现证据验证。`聊天文件` 按聊天来源组织，“全部资料”按目录和资源浏览，“已确认知识”等为同资源的任务视图。
 
 ## Agent / Workspace / Repository 文件视角
 
@@ -211,20 +231,35 @@ Workspace `.meta` 可展示：
 - Card 是 file/resource + RDF metadata 的 UI 投影，不新增平行 card authority。
 - Agent/Workspace/Repository 的 durable 语义由 `@undefineds.co/models` 负责，Files 只读取和展示。
 
-## 验收
+## 成果保存与合法回跳
+
+工作中成果卡、知识中文件和来源消息指向同一 artifact/resource。预览、消息归档、文件持久化、知识确认是不同事实。保存明确新建/更新/覆盖目标；失败保留草稿，重复点击/结果未知先恢复原请求，并发变化不静默覆盖。实际目标解析由既有存储计划/models owner 处理，不从助手文字猜文件路径。
+
+来源入口保留原消息、资源版本及界面位置；回跳前按当前身份验证每层权限。无权限不能回显已缓存正文或 snapshot；删除、失联和索引未覆盖分别说明。跨空间/身份跳转保留允许保留的草稿并说明目标，合法返回由原导航/身份合同提供；不能把秘密放进 URI 参数。详见 [场景恢复](../scene-restoration-solid-modeling.md)。
+
+## R6 工作流验收与依赖
+
+- 同一反馈可仅用于本次、保留草稿或确认知识；确认不授权训练，收藏不替代确认。
+- 用户无需操作 schema 即可从反馈读原话/条件、修订、处理冲突、返回原任务；Table 与可读视图指向同一资源。
+- 搜索范围/覆盖可辨；同名不同对象、不同项目相反知识、未索引但存在、来源撤回与权限变化分别测试。
+- 提案部分失败、另端修订、保存结果未知、重复点击与来源失效不丢草稿或伪造成功。
+- 普通文件、结构化表、长知识正文在1440/1180/768/390 CSS px、200%文字及键盘下可读，详情和目录不同时挤压主区。
+- R6 DEP01/02/03/07：知识资源/来源版本、聚合提案与冲突、索引覆盖/权限、训练快照和合法返回由领域 owner 提供；未定义不在此新增 schema/API。
+
+## 专业资源能力验收
 
 - 文件入口不展示假数据。
-- `聊天文件` 只作为底部菜单的二级入口出现。
-- 一级 `文件` 主导航保留。
+- `聊天文件` 从工作上下文和来源筛选进入，旧二级深链可用，不占一级导航。
+- 一级“知识”承接原 Files/收藏；工作、知识、我的 AI 三入口清楚，旧资源和深链不重建。
 - 能浏览 Pod 根目录和容器树。
 - 能打开 Pod resource 详情。
-- 文件主列表没有 `来源` 列，也不按聊天来源分组。
-- `.ttl` / `.jsonld` 默认以 Table 打开，支持在右上角 Class scope 和 Filter/Sort/Search 工具中按 class / predicate 筛选。
-- 除内容详情弹窗外，folder/file/`.ttl` 的 `.meta` 都通过右侧 inspector drawer 展示，默认收起；`.ttl` 不默认把右栏占用为某个 subject card。
+- 普通文件夹列表不强加聊天来源列；知识/搜索结果必须按任务显示来源，不能由此创建重复资源。
+- 显式打开结构化原文件默认 Table；判断对象从知识/反馈/搜索进入可读详情，不要求先操作 class/predicate；专业筛选仍可达。
+- 除内容详情弹窗外，folder/file/`.ttl` 的 `.meta` 都通过右侧 inspector drawer 展示，默认收起；结构化原文件不默认常驻 subject card，判断对象的可读详情不受此专业表格规则限制。
 - `+ Subject` 在 Table 最后一行；`+ Predicate` 在表头区域，并打开 predicate 类型选择/定义流程。
 - class 过滤默认收起在右上角 Class 控件下，Table 有明确筛选和排序按钮；class 不作为普通重复列。
 - predicate header 默认紧凑隐藏 namespace，并可用 `ns` switch 展开；predicate 列宽按 Excel 式表头分隔线拖拽调整。
-- 能打开至少一个非 `.ttl` 可编辑文件并直接进入富文本/源码编辑详情弹窗，`.meta` 位于弹窗尾部。主区域不内嵌可编辑文件正文 preview；只读预览文件不弹编辑详情。
+- 可编辑普通文件有富文本/源码编辑面，长文允许占主工作面，返回保留上下文；只读预览不无故弹编辑器。
 - 右侧 inspector 作为抽屉从 head 下沿覆盖 content 区，可折叠；folder/file/`.ttl` 共用该行为。
 - subject 行如果可解析为 Pod resource，单击先打开 Subject Peek，Enter、双击或显式打开进入对应 Files opening flow；fragment/card 走 term/card peek 和显式打开动作。
 - Whiteboard、Kanban、Raw 只作为显式 `+ View` projection 出现，不替代 Table 默认视图。

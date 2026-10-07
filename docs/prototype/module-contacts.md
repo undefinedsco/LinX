@@ -1,92 +1,48 @@
-# Module Spec: Contacts
+# Module Spec: Contacts / 协作对象
 
-## 目标
+状态：R6 目标设计，2026-09-28。对应 LS-01、03、06、12、14；[联合体验 Spec](../../../homepage/docs/specs/personal-ai-product-experience-r6.md)。
 
-Contacts 统一呈现人、Agent、群组。它回答“这个对象是谁、和我是什么关系、我能和它做什么”，不是模型配置页。
+## 目标与入口
 
-Contacts 展示的是 Contact 投影。它可以链接到 Person 或 Agent，但 Contact 本身不拥有 Agent runtime 文件系统。
+管理人与群组的关系，并提供 Agent 的可辨识协作入口。工作页保留固定“协作对象”，新建会话、参与者选择和全局搜索复用此目录。移出一级导航不删除通讯录或人际协作。
 
-## 范围
+## 对象与分组
 
-- 联系人列表。
-- Agent 列表。
-- 群组列表。
-- 对象详情。
-- 发起聊天。
-- 回到已有聊天。
-- Secretary 的详情展示。
-- Contact / Person / Agent 的关系提示。
+| 对象 | 详情首屏 | 主操作 | 边界 |
+|---|---|---|---|
+| 人 | 名称、头像、关系/来源、最近交流 | 发消息/回到会话 | 不显示 AI 方法或模型训练 |
+| 群组 | 名称、参与者、最近会话 | 进入群组 | 普通群聊不要求 Task/Issue |
+| Agent | 名称、AI 身份、来源、职责、当前协作关系 | 发消息/回到工作 | 方法与能力进入我的 AI 的同一 Agent；不把个人模型当联系人 |
 
-## 不做
+Contact 是关系投影，Agent 是能力与运行配置的资源根，POM 是真实个人模型产物，三者不能用同一个头像卡替代。临时 worker/Run 不自动写入通讯录；只有已有领域合同定义的可复用 Agent 才可进入对应分组。
 
-- 不在 Contacts 中直接编辑底层 RDF。
-- 不把 API Key、模型服务配置塞进联系人详情首屏。
-- 不给 Secretary 删除入口。
+## 默认助手与详情
 
-## 列表分组
+- Secretary 默认助手可置于 AI 助手分组首位，标注“默认助手”，保留不可删除规则和改名能力。
+- 头像、名称、类型 → 职责/关系 → 发消息 → 来源与最近互动 → 备注/头像等关系设置。
+- Agent 另有“方法与能力”次操作，显示当前工作继承默认方法还是覆盖，再进入对应编辑面。API Key 不出现在这里。
+- 改名同步已有 Chat 的展示名；底层 Agent home 和资源身份不随显示名变化。路径以共享模型/Agent 资源为准，不从名称拼接或迁移。
+- 使用“默认助手”“发消息”“编辑方法”等直接文案，不用“请赐名”或人格成长评分表达归属。
 
-| 分组 | 内容 |
-| --- | --- |
-| AI 助手 | AI Secretary、用户创建的 Agent |
-| 联系人 | 人 |
-| 群组 | 多人或多 Agent 会话 |
+## 发起与返回
 
-## Contact / Person / Agent 区分
+选择发消息时有明确的已有会话则进入；有多个合法会话则允许选择最近上下文或显式新建。没有会话才创建 Chat/Thread。只有用户实际提出执行任务、且领域流程需要时才进入任务合同；建立关系和普通消息不自动成为 Task/Issue。
 
-| 对象 | 用户心智 | 存储/实现边界 |
-| --- | --- | --- |
-| Contact | 通讯录卡片、关系、备注、最近互动 | 可链接到 Person 或 Agent |
-| Person | 人类身份、WebID/Profile | 不自动拥有 Agent home |
-| Agent | 可执行助手、能力根 | 必须有 `/agents/{agentId}/` |
+旧 Contacts 深链仍打开原详情。从收藏、搜索、群组参与者或工作进入后可回原位置。已删除、无权限、离线读取失败分别提示；只展示仍获准的摘要，不用历史快照绕过撤权。
 
-AI Secretary 同时有 Contact 投影和 Agent 身份：
+## 数据与授权边界
 
-```text
-Contact: /.data/contacts/ai-secretary.ttl
-Agent:   /agents/secretary/
-Home:    /agents/secretary/
-```
-
-联系人详情可以显示这些链接作为开发/高级信息，但首屏语言应是“默认助手”“发消息”“请赐名”，不要变成配置表单。
-
-## 详情页信息层级
-
-1. 头像、名称、类型。
-2. 简短描述。
-3. 主操作：发消息 / 回到聊天。
-4. 关系信息：来源、最近互动、共享上下文。
-5. 次要设置：备注、头像、说明。
-
-## Secretary 特殊规则
-
-- 默认显示在 AI 助手分组第一位。
-- badge：`默认助手`。
-- 禁用删除。
-- 支持改名。
-- 支持回到 Secretary 会话。
-- Contact 改名需要同步到 Chat 展示名；Agent home 不因改名而迁移路径。
-
-## 发起聊天
-
-点击 `发消息`：
-
-1. 如果已有 chat，跳转到该 chat。
-2. 如果没有 chat，创建 chat/thread。
-3. 跳转到 Chat 模块并选中。
-
-## 数据边界
-
-- Contact / Agent 语义来自 `@undefineds.co/models`。
-- Contact 是关系卡；Agent 是 runtime capability root。
-- Agent 的 rules、skills、MCP、backend、compaction、memory 都在 Agent home，不属于联系人详情首屏编辑项。
-- AI provider/model/credential 来自共享 AI config 池；联系人详情不展示 API Key。
-- UI state 如选中联系人、筛选分组走 Zustand 或局部 state。
-- 新增跨端字段前先进入 models。
+- Contact、Agent、群组与会话关系遵从 `@undefineds.co/models`；UI 只投影，不另建个人 AI 数据库。
+- Agent 的规则、skills、MCP、backend、compaction、memory 等依既有 Agent 合同管理；详情摘要与我的 AI 编辑器消费同一资源。
+- 工作方法是如何做，auto 是是否继续可允许的推进，grant/backend approval 决定能否执行。改名、添加联系人或调整方法都不自动授予资料/网络/外发/训练权限。
+- 提供方、凭据与基础模型来自共享 AI 配置池，在 AI 连接管理；联系人不会保存一份 Key。
+- 选择、筛选、开合属于 UI 状态；跨端字段由 models 先定义。
 
 ## 验收
 
-- Secretary 在联系人里可见且不可删除。
-- 从联系人可回到对应聊天。
-- Agent 改名能反映到 Chat。
-- AI Secretary 详情能看出 Contact 投影链接到 Agent，但没有删除和 API Key 入口。
-- 没有真实联系人时显示空状态，不展示假联系人。
+1. 人、群组、Agent 可辨，空目录不造假联系人；默认助手不可误删。
+2. 从工作最多两步到完整通讯录，旧联系人/群组链接和收藏能回原对象。
+3. 给人或群组发普通消息不强制创建 Task；多个会话不会悄悄进入错误上下文。
+4. 改名保留资源身份、历史消息与 Agent home；其他入口展示一致。
+5. Agent 方法入口与我的 AI 打开同一方法/范围；凭据、个人模型产物、临时 worker 不混为联系人。
+6. 撤权/删除/离线分别显示，键盘能选择、打开、返回和管理关系。

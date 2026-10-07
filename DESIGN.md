@@ -1,11 +1,15 @@
 # Design
 
+> 2026-09-28 R6 target contract: [LinX × Xpod product experience](../homepage/docs/specs/personal-ai-product-experience-r6.md) governs navigation, task surfaces, personal methods/model lifecycle, recovery and density. Primary navigation is 工作 / 知识 / 我的 AI. This replaces the former four-entry and universal Chat-first constraints; human conversations, groups, contacts, favorites and old resource links remain supported. R5 retains the product story “训练你的 AI，让它学会你的判断” / “You define your Jarvis”; target designs do not claim training has shipped.
+>
+> The [selected brand](../homepage/DESIGN.md), shared models, identity/storage contracts, Task/Run facts and Personal Model Foundry governance retain their authority. R6 changes the user-facing design, not those domain protocols. This pass reviewed documents only; implementation and usability verification remain delivery requirements.
+
 ## Source of truth
 
-- Status: Active
-- Last refreshed: 2026-07-06
+- Status: Active target design; implementation not verified by this document pass
+- Last refreshed: 2026-09-28
 - Primary product surfaces: Desktop/Web shell, chat, contacts, files, favorites, inbox, settings, login/onboarding, Local/Standalone/Cloud runtime status, Secretary/Symphony control surfaces.
-- Evidence reviewed: `docs/ui-style-guide.md`, `docs/ui-component-architecture.md`, `docs/desktop-product-strategy.md`, `docs/local-sp-domain-and-tunnel.md`, `docs/login-modal-local-binding-spec.md`, `docs/personal-linked-context.md`, `docs/prototype/module-files.md`, `docs/cli-status-line.md`, `apps/web/src/modules/login/LoginModal.tsx`, `apps/web/src/modules/login/LocalOnboardingCard.tsx`, `apps/web/src/modules/settings/components/SetupView.tsx`, `apps/web/src/modules/chat/components/ChatListPane.tsx`; Open Design reference slugs `apple`, `premium`, `wechat`, `linear-app`, `raycast`, `notion`, `github`, `openai`, `claude`.
+- Evidence reviewed this pass: joint R6 spec; `docs/desktop-product-strategy.md`, `docs/ui-style-guide.md`, `docs/ui-component-architecture.md`, Shell/Contacts/Favorites/Profile module specs, `docs/login-modal-local-binding-spec.md`, `docs/login-experience-map.md`, and `docs/secretary/auto-symphony-contract.md`. Earlier reference patterns are design references, not evidence of current implementation.
 
 This file is the design contract for LinX user-facing product work. It supersedes earlier local-only login guidance and earlier emotion-led brand language. Main owns the compact Local login contract: remembered accounts continue directly; first-time `undefineds` users choose `云端空间` or `本机空间`; third-party account providers do not expose a storage picker.
 
@@ -33,8 +37,8 @@ Reference roles:
 ## Product goals
 
 - Goals:
-  - Make chat the default workspace for human + AI collaboration.
-  - Keep WeChat-like desktop interaction structure: low cognitive load, object lists, current conversation, files/favorites/inbox as re-entry surfaces.
+  - Support daily human and AI collaboration in Work; restore the last valid context, with Work as the first-use starting point.
+  - Keep familiar conversation lists, groups, search, unread and re-entry; use full reading, editing and comparison surfaces when the decision needs them. Ordinary human conversation does not require a Task or Issue.
   - Keep macOS-native visual discipline: restrained chrome, neutral surfaces, sparse accent, border-led separation, system typography, subtle motion.
   - Make Pod/storage/runtime/approval/Secretary behavior understandable without requiring users to learn internal architecture first.
   - Make Files a resource-first Pod browser and Personal Linked Context surface: ordinary files stay file-primary, structured RDF resources become queryable/editable views, and long documents remain human-editable files linked from modeled resources.
@@ -44,14 +48,14 @@ Reference roles:
   - Building an Apple-branded interface or copying Apple proprietary assets.
   - Exposing every AI/runtime capability as a separate top-level product area.
   - Turning Local tunnel/network setup into a required login step.
-  - Treating audit, keys, models, diagnostics, or low-frequency recovery screens as primary navigation.
+  - Treating audit, credentials, provider/base-model configuration and diagnostics as primary navigation. Personal methods and personal model lifecycle belong to My AI, not this low-frequency bucket.
   - Duplicating modeled Pod resources in a parallel app-local card/table authority.
 - Success signals:
-  - A first-time user can start from chat without reading architecture docs.
+  - A first-time user can start work or human conversation without architecture knowledge or a trained personal model.
   - A returning user can identify where data is stored, what runtime/backend is active, and why the AI is waiting or retrying.
-  - Approval, inbox, favorites, files, and audit all return users to the original chat/workspace context.
+  - Approval, inbox, favorites, knowledge and audit return to the original legal object/context, including a human conversation, source, method or evaluation.
   - Visual review finds restrained, native-feeling UI rather than colorful SaaS decoration.
-  - Structured `.ttl` / `.jsonld` resources open as compact subject tables with class-scoped predicates, while ordinary files open with familiar file/detail behavior.
+  - Real structured collections support compact subject tables with class-scoped predicates; individual knowledge/source resources prioritize readable detail. Ordinary files retain file/detail behavior.
 
 ## Personas and jobs
 
@@ -71,29 +75,33 @@ Reference roles:
 
 ## Information architecture
 
-- Primary navigation:
-  - Chat is the primary stage.
-  - Contacts, files, favorites, and settings are supporting surfaces.
-  - Inbox is a right-side/global exception center, not a competing main app.
-  - Audit, keys, models, diagnostics, network reachability, and low-frequency recovery/configuration surfaces live in settings, slash commands, or contextual drawers rather than top-level app navigation.
-- Core routes/screens:
-  - Compact login modal, remembered-account continue, account-provider selection, and undefineds-only Cloud/Local data-space selection.
-  - Conversation list and chat content pane.
-  - Contact/agent/group detail.
-  - File/resource browser with folder tree, resource list/detail, `.meta` inspector, Access control, structured RDF Table, and first-phase Kanban/Whiteboard/Raw projections.
-  - Chat files projection from message `richContent` file/artifact records, not text/log guessing.
-  - Favorites/re-entry index.
-  - Inbox/approval queue.
-  - Settings for runtime, Local network, account, models/backends, keys, diagnostics, and advanced configuration.
-- Content hierarchy:
-  - First: current conversation and active object.
-  - Second: workspace/storage/runtime/backend context needed to understand the conversation.
-  - Third: approvals, source/provenance, model/schema, and permission details relevant to the current action.
-  - Fourth: global recovery surfaces and advanced configuration.
+| Primary entry | User job | Stable supporting entrances |
+|---|---|---|
+| 工作 / Work | Human and AI conversation, ongoing tasks, waiting decisions, outcomes | Conversation view; 协作对象 address book; current materials/results |
+| 知识 / Knowledge | Find materials, inspect sources, confirm and revise knowledge | Files/resource browser; confirmed/to-organize views; 已收藏 |
+| 我的 AI / My AI | Define methods and inspect personal models, materials, evaluation and use | Agent method details; current/candidate versions; scope and rollback |
+
+- Returning users restore the last legal identity/space/module/object/reading or editing context. First use starts in Work. Never turn every conversation into a Task/Issue.
+- Contacts remain reachable through Work's fixed address-book entrance, new conversation, participants and search. Humans/groups/Agents are distinct; a personal model or temporary worker is not another contact.
+- Favorites are reference indexes, not knowledge confirmation or training consent. Knowledge and training each have their own deliberate transition.
+- Inbox stays global. Account/settings/service/about and AI connections remain low-frequency entrances; a current blocker can deep-link to repair and return.
+- Old Chat/Contacts/Files/Favorites deep links resolve the same resource IDs/URIs through the new structure. Labels do not imply resource migrations or schema changes.
+- Long sources, methods, materials and evaluations can own the main content area. Conversation context survives entry and return; no permanent empty detail or training sidebar.
+
+Content priority: the active object and decision; its evidence, conditions and consequences; relevant source, permission and actual runtime/model state; then diagnostics. Known normal states stay quiet.
+
+## Personal methods and model boundaries
+
+- My AI exposes default methods and current-work overrides, with inheritance, scope, diff, save/discard and return. Changing method does not grant new tool/data/external-service/training permission.
+- `docs/secretary/auto-symphony-contract.md` defines a single auto switch for permitted progression. It does not change backend approval; do not invent manual/safe/container levels. One-time approval, persistent grant, method and model enablement remain distinct.
+- `docs/approval-grant-design.md` is missing in this checkout. New permission behavior requires the domain owner's authority; do not invent policy in a UI spec.
+- Personal models are executable artifacts, distinct from knowledge/RAG/prompts and provider credentials. Real candidates need same-knowledge baseline evaluation on held-out new tasks; no improvement can mean retaining the existing model. Candidate creation is not automatic enablement.
+- Foundry owns training/evaluation/release governance. LinX is the daily work and editing surface; Xpod owns assets and runtime management. Do not duplicate knowledge editors or training forms in both products.
+- Display configured, service-ready, client-loaded and Run-used model facts separately. Missing default configuration is a repair state, not permission to silently rotate providers. If a personal model is unavailable, say it is not applied; offer stop, repair or clearly identified base-model continuation within granted scope. Never claim the personal model was used.
 
 ## Design principles
 
-- Principle 1: **Interaction skeleton from desktop messaging.** Lists, conversation panes, search, object directness, and low setup burden should feel familiar.
+- Principle 1: **Familiar conversation, task-appropriate surfaces.** Lists, search, object directness and low setup burden remain familiar; source reading, method editing and evaluation do not have to fit inside chat.
 - Principle 2: **Visual discipline from macOS-native UI.** Chrome stays quiet; borders, typography, and spacing carry structure; accent is sparse and semantic.
 - Principle 3: **Semantics belong to LinX.** Secretary, Pod, workspace, runtime, approval, audit, Symphony, Personal Linked Context, vocab, and Ingest are product concepts, not copied from messaging or OS references.
 - Principle 4: **State must be legible.** If storage, auth, local reachability, runtime/backend state, access, proposal state, Ingest state, retry, timeout, or worker state matters, show it explicitly and locally.
@@ -101,7 +109,7 @@ Reference roles:
 - Principle 6: **File-primary plus modeled metadata.** Long reports, evidence, ideas, issues, and rich notes remain files; modeled RDF records provide queryable type/status/links/authority and point to those files.
 - Tradeoffs:
   - Prefer fewer visible modules over exposing half-finished capability.
-  - Prefer inline chat actions over sending users to system pages for current-work decisions.
+  - Keep current-work decisions close to their evidence; use the main reading/editing/comparison area when an inline control is too small.
   - Prefer neutral surfaces and restrained state colors over brand-heavy decoration.
   - Keep Files operational and dense enough for resource management; reserve card/whiteboard affordances for structured-resource workflows.
   - Prefer transparent waiting/error/approval state over a visually cleaner but silent AI experience.
@@ -110,13 +118,13 @@ Reference roles:
 
 - Files mental model: File Browser/Finder-like browsing for folders, files, selection, rename/move/copy, preview, keyboard expectations, and permission access; it remains a Pod/Solid resource browser, not a local Finder replacement.
 - Personal Linked Context: user-owned files, conversations, tasks, evidence, decisions, preferences, and memories become linked, AI-usable context. The Pod behaves like a model-defined semantic file system: human-readable files plus queryable RDF semantics.
-- Structured resources: `.ttl`, `.jsonld`, and RDF resources default to a subject table. One row represents one RDF subject/resource; `rdf:type` is surfaced as required class scope; predicates become compact columns.
+- Structured resources: real collections may use subject tables; each row represents one RDF subject/resource, with class scope and actual predicates. An individual source or knowledge card should open a readable detail, not become a table solely because it is RDF.
 - Card model: a card is a file/resource plus queryable RDF metadata. Do not introduce a parallel card database when the Pod resource can be the durable subject.
 - `.meta` / `.acl` / `.acr`: these are sidecars and built-in resource capabilities, not normal business metadata rows. `.meta` can hold file/container view metadata, source hints, checksums, title, or UI view state; business truth such as Issue/Task/Run/Report/Evidence belongs in modeled resources.
 - Vocab: user Pod vocabulary lives under `/.vocab/` with term, shape, and namespace resources. Table columns, validation, sorting, enum/select controls, and cell proposals use actual predicate URIs; local term records support labels, approval, descriptions, shapes, and provenance.
 - Structured editing: ordinary `.data` subject values may be edited from Files, but AI/user-suggested class, predicate, enum, shape, or cell changes stage proposals and Inbox approvals before canonical RDF is modified. Pending markers indicate unconfirmed definitions or values, not decoration.
 - Ingest: Ingest is the LinX product pipeline that turns source material into reviewable Files objects: cards, blocks, subjects, predicates, vocab proposals, approvals, and source-linked updates. Lower-level fetch/OCR/parser/extraction belongs to runtime/xpod; UI copy should not expose parser/index as the user-facing product concept.
-- Projections: Table is the default structured view. Kanban, Whiteboard, and Raw are projections over the same subject/resource data and view metadata, not separate durable authorities.
+- Projections: Table, Kanban, Whiteboard and Raw are task-appropriate projections over the same subject/resource data and view metadata, not separate durable authorities. A collection may default to Table; not every knowledge object is a collection.
 - Subject opening: table/Kanban/Whiteboard subject clicks preview first; Enter, double-click, or explicit open enters the Files resource opening flow only when the subject resolves to a Pod resource path. Fragment subjects and term targets stay in definition/peek flows unless the user explicitly opens the containing resource.
 - Chat files: the `聊天文件` scope consumes chat message `richContent` file blocks and explicit runtime artifact containers (`artifacts`, `files`, `generatedFiles`, `outputs`, `resources`, `attachments`). Files must not infer generated files by regexing stdout, assistant prose, tool names, or local workspace paths.
 
@@ -124,9 +132,9 @@ Reference roles:
 
 - Color:
   - Neutral surfaces are the foundation: light/dark app backgrounds, cards, panels, separators, and muted text.
-  - Linked-data taro purple (`#735FC4`, `hsl(252 46% 57%)`) is the shared Solid app family accent. Use it for primary action, selected state, focus ring, lineage/source-linked markers, and rare brand moments only.
+  - The selected 2026-09-27 brand uses ink purple `#563E84` on paper `#F7F4ED`, with `#F2EDE2` sunken and `#FBFAF7` raised surfaces; text is `#2B2621` and muted text `#655D53`. Use the accent sparingly for actions, selection, focus and source markers. This supersedes the former `#735FC4` target; shared theme mapping remains a later implementation task.
   - Success/warning/destructive colors are semantic and quiet. Do not create a broad secondary accent palette.
-  - Avoid decorative gradients, colored shadows, or emotion-led accent systems as brand identity. The taro accent should appear as data-family recognition, not decoration.
+  - Avoid decorative gradients, colored shadows, or emotion-led accent systems as brand identity. Ink purple marks relevant actions, selection, focus and source lineage; it is not a decorative wash.
 - Typography:
   - Use system fonts first: `-apple-system`, `BlinkMacSystemFont`, `SF Pro Text`, `Inter`, `Segoe UI`, `sans-serif`.
   - Use measured weight steps: 400 body, 500 controls, 600 headings/emphasis.
@@ -179,7 +187,7 @@ Reference roles:
 - Target standard: WCAG 2.1 AA for core desktop/web flows.
 - Keyboard/focus behavior:
   - All navigation, dialogs, provider choices, chat controls, file rows, table cells, drawers, and approval cards must be keyboard reachable.
-  - Focus states use a visible, restrained accent ring.
+  - Focus states use a clearly visible solid outline with sufficient contrast; selection has a marker/text/shape beyond color. Modal focus enters, stays appropriately constrained and returns to its trigger.
   - Back/cancel/switch-account actions must remain available during provider selection, Local preparation, and auth handoff.
   - Files table subjects support preview on selection and explicit open through Enter/double-click/open action.
   - Long-running AI work has an interrupt affordance and visible waiting state.
@@ -188,7 +196,7 @@ Reference roles:
   - Status must not rely on color alone.
 - Screen-reader semantics:
   - Buttons and icon-only controls need text labels or ARIA labels.
-  - Loading and error states should identify what is happening in user terms.
+  - Loading and error states identify what is happening in user terms. Announce meaningful stages and waits, not every streamed token/tool log.
   - Structured grids should expose row/column semantics where practical.
 - Reduced motion and sensory considerations:
   - Avoid looping decorative animation.
@@ -201,11 +209,12 @@ Reference roles:
   - Secondary: tablet/narrow browser support for review and settings.
   - Mobile is not the primary optimization target unless a feature explicitly states it.
 - Layout adaptations:
-  - Desktop uses split navigation/list/content panes.
+  - Start with navigation plus content. Add a real collection list when useful and details on demand; wide screens do not require three/four occupied columns.
   - Narrow layouts collapse supporting panes before reducing chat or table readability.
-  - Files compact width must not show global rail + file tree + resource content at the same time. Hide the global rail, put the file tree in an invoked drawer, and keep the active resource/table readable.
+  - Compact resource views do not show global rail, file tree and resource simultaneously. Collapse optional navigation/tree into invoked surfaces while keeping a visible way back and preserving selection.
   - Login and settings flows remain usable without exposing advanced configuration in the primary path.
   - Files right drawers collapse by default; focused editable sheets own their bottom metadata tail.
+  - Validate 1440/1180/768/390 CSS px and 200% text. Comparisons become sequential in narrow windows; never shrink all columns or require one section per viewport.
 - Touch/hover differences:
   - Do not hide essential actions behind hover-only affordances.
   - Keep touch targets large enough when desktop web is used on touch devices.
@@ -233,6 +242,14 @@ Reference roles:
   - Public route failures belong in reachability diagnostics, not as login blockers unless the selected flow requires public access.
   - Local network settings may record multiple access/tunnel profiles, but the runtime must show exactly one active profile; switching profiles is an explicit stop-old/start-new action followed by reachability validation.
 
+## Partial readiness, drafts and identity
+
+Authentication, verified space binding, Pod read/write, assistant bootstrap, model connection and personal model existence are separate facts. Missing optional training is normal. Show a local repair action for the failing dependency; do not block already permitted reading or silently switch storage. Retry reuses the existing resource identity.
+
+Method/material/evaluation drafts have save/discard/continue-editing behavior and identity+space isolation. Beginning logout/switch hides old content and ends old UI subscriptions; late results cannot appear under the new identity. Returning restores only that identity's legal context. Logout or closing a page is not confirmation that a remote Run or training job stopped.
+
+Source deletion, access revocation, offline failure and revision are distinct. Cross-product repair returns to the original object and rereads authority/version facts; unknown results are queried before retrying side effects. Details follow the profile/settings and login specs.
+
 ## Content voice
 
 - Tone: Direct, concise, operational, calm.
@@ -252,7 +269,7 @@ Reference roles:
 - Framework/styling system: React + Tailwind + existing shadcn-style primitives.
 - Design-token constraints:
   - Do not add a parallel design-system dependency for this direction.
-  - Extend existing CSS variables/tokens toward neutral surfaces, sparse linked-data taro accent, border-led containment, and semantic state colors.
+  - Extend existing CSS variables/tokens toward neutral surfaces, sparse ink-purple accent, border-led containment, and semantic state colors.
 - Performance constraints:
   - Desktop startup and login must avoid unnecessary runtime restarts and repeated downloads.
   - Network/reachability probes should be explicit or tied to visible status surfaces, not hidden polling loops.

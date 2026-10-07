@@ -1,140 +1,58 @@
-# LinX 登录路径与部署配置
+# LinX 登录路径索引与历史决策
 
-这份文档只描述产品入口、用户流程和验收口径，不再重复 IDP/SP 模型。
-IDP/SP、`solid:storage`、Local canonical URL 和 tunnel 语义分别以
-`docs/login-identity-storage-routing-model.md` 和
-`docs/local-sp-domain-and-tunnel.md` 为准。
+状态：2026-09-28 R6 对齐。本文是入口索引及历史记录，**不再是三入口首页或单账号恢复的实施依据**。当前 UI 权威为[紧凑登录与绑定 Spec](login-modal-local-binding-spec.md)，产品恢复规则为[联合体验 R6](../../homepage/docs/specs/personal-ai-product-experience-r6.md)。对应 LS-09、10、11。
 
-权威来源：
+## 当前权威与分工
 
-- IDP/SP、注册、`solid:storage`、业务写入：`docs/login-identity-storage-routing-model.md`
-- Local canonical domain 策略、tunnel、localhost/LAN：`docs/local-sp-domain-and-tunnel.md`
-- 多地址探测和 same-node 访问优化：`docs/multi-channel-access.md`
+| 内容 | 权威 |
+|---|---|
+| 注册/登录/Consent 不创建、管理页显式创建与续接 | [Xpod 登录与宿主 canonical 第一部分 §0、第二部分 §4.1–4.2](../../xpod/docs/superpowers/specs/2026-09-19-xpod-login-and-host-design.md) |
+| 紧凑登录、记住账号、undefineds Cloud/Local、部分就绪与退出恢复 | [登录主 Spec](login-modal-local-binding-spec.md) |
+| IDP/SP、注册、solid:storage、业务写入位置 | [身份与存储路由](login-identity-storage-routing-model.md) |
+| Local canonical domain、tunnel、localhost/LAN | [Local 域名与通道](local-sp-domain-and-tunnel.md) |
+| 多地址探测与 same-node 访问优化 | [多渠道访问](multi-channel-access.md) |
+| 草稿、账号切换、服务设置 | [Profile/Settings](prototype/module-profile-settings.md) |
 
-## 产品入口
+## 当前入口与选择
 
-LinX 普通登录卡展示三个产品入口：
+| 情况 | 用户看到什么 | 必须保留的边界 |
+|---|---|---|
+| 记住的账号/空间绑定 | 账号头像、空间标签、继续/重新登录/切换账号 | 不再要求选 Cloud/Local；更改绑定要重新授权 |
+| 首次 undefineds | 云端空间/本机空间，之后继续登录 | Local 是 Cloud 身份+本机存储；Cloud 是云端存储，不凭此声称同步 |
+| 其他已配置 provider | provider 自己的登录与默认绑定 | 不展示 undefineds 空间选择，不在首屏列品牌目录 |
+| Standalone | “其他登录方式”中的本机独立空间，运行时支持才可继续 | 本机身份+授权+存储；不是 Local 失败降级，不与云端/本机并排做三个主选项 |
 
-| 入口 | 用户看到的选择 | 说明 |
-| --- | --- | --- |
-| Cloud | 托管空间 | 默认云端账号和数据空间。 |
-| Local | 本机数据空间 | 数据空间在本机 xpod；身份和 storage 绑定规则见主文档。 |
-| Standalone | 本机独立空间 | 账号、授权和数据都在本机 xpod；不走 Cloud provisioning。 |
+账号来源、存储身份与访问渠道分开。Local 的本机/LAN/tunnel 不是三个空间；换渠道不改 canonical storage 或 WebID。不能从 Cloud WebID origin、issuer、localhost/LAN 地址推导业务写入位置。
 
-次级入口：
+## 关键路径与失败恢复
 
-| 路径 | 说明 |
-| --- | --- |
-| Custom | 第三方 Solid provider，一次填写一个 URL；作为“连接其他 Solid 账号”的次级入口。 |
+- Cloud：完成 Account 登录/注册（注册只建 Account）→ 读取权威 Pod 清单；已有可用 Pod 则选择/验证并续接授权，无 Pod 则进入 Account/Pod 管理。明确点击创建才提交；完成授权并验证绑定后恢复 LinX 合法上下文。不启动本机 xpod。
+- 首次 Local：保留本机目标意图 → 完成 Account 登录/注册 → 读取权威 Pod 清单。无可用 Pod 则前往管理页；用户选定有管理权的本机目标、按需明确启动服务并确认创建后，才走既有 Local prepare/provisionCode/创建任务。完成后读取权威 owner/solid:storage，续接仍有效的原授权，再验证绑定和访问。登录、注册、Consent、callback 和进入管理页不 prepare、不创建；provisionCode 只是选定 Local 目标的签发证明，不是自动创建触发器。
+- 记住的 Local：用户点继续才 ensure runtime，复用或重登 session，核对原绑定；打开登录弹窗只做轻量探测。
+- Standalone：依本机身份合同完成 Account 登录/注册与独立的显式 Pod 管理，再完成所需授权；零 Pod 不阻塞 Account 成功，不走 Cloud provisioning。入口能力检查和路由映射由身份负责人落实，不从名称猜接口。
+- 第三方 provider：依其已配置身份/存储合同验证；不沿用旧稿“所有 issuer 和 storage 必须同一 URL”的泛化限制。
 
-规则：
+清单读取失败与确认无 Pod 分开，失败时不当成零 Pod、不触发创建。注册成功和 Pod 创建失败分别反馈，后者不抹掉 Account 成功。绑定不明或冲突时阻断业务写入，返回原账号/空间恢复，不静默迁移或回退 Cloud。渠道故障与身份故障分别提示。创建超时/结果未知先查询原任务和权威清单，不能重放已提交创建。
 
-- 具体的 OIDC issuer / Storage Provider 语义、Local canonical URL、tunnel 和访问渠道边界，见两份主文档。
-- Custom 只让用户填写一个 Solid provider URL，不拆成两次选择。
-- Local 是“当前本地节点/SP”的入口，不代表可以枚举同一个 Cloud 账号
-  authority 下的所有 SP。未来其他本地/集群空间需要通过 membership/invite
-  进入列表。
-- Local 的本机/LAN/tunnel 只是访问渠道，不是新的账号或 storage 语义。
+授权无可用 Pod 提供“前往 Pod 管理”和“取消授权”；进入管理不等于同意创建。返回时核对 Account、原 interaction 的时限和健康；换号/过期重新授权。取消等待不撤销已提交任务，取消授权不撤销 Account 注册。
 
-## 用户流程
+## 登录后不是全局 ready
 
-### Cloud
+已登录、空间读写、助手初始化、模型连接、个人模型各自有状态；缺个人模型是正常状态。可合法读取的内容不因 AI 连接失败消失；无权限时也不能展示旧缓存。初始化重试复用已有资源。
 
-```text
-选择 Cloud
-  -> 跳转 Cloud 账号页
-  -> 注册或登录
-  -> Cloud 创建或选择 Cloud Pod
-  -> 授权 LinX
-  -> 回调进入 LinX
-```
+首次无上下文进入工作；返回用户恢复同一身份/空间下最后合法的会话、知识、方法或评估。人际聊天不要求任务对象。切换账号前处理草稿，切换开始后隔离旧内容/订阅；退出不等于停止远端 Run。
 
-验收：不启动本地 xpod，Solid DB Pod URL 在 Cloud SP 下。
+## 历史决策：不用于新实现
 
-### Local
+下列内容保留为背景，已被紧凑登录主 Spec 和 R6 替代：
 
-```text
-选择 Local
-  -> LinX 启动本地 xpod
-  -> LinX 向 Cloud 注册 Local SP，拿到 selected canonical SP URL
-  -> LinX 携带 provision scope 打开 Cloud 账号/OIDC 表面
-  -> Cloud 完成登录 / 注册，但 consent / Pod picker 按 selected Local SP scope 过滤
-  -> Cloud 账号流只展示 selected Local SP 下的 Pod
-  -> WebID profile 的 solid:storage 绑定到 selected Local SP Pod
-  -> 回调进入 LinX
-```
+- 旧稿把 Cloud / Local / Standalone 列为三个平级主入口；现改为 provider-first、undefineds 两种存储选择、高级 Standalone。
+- 旧稿“当前 MVP 单账号恢复，多账号记忆为后续增强”不再约束设计；现以记住账号绑定与明确切换为合同。
+- 旧稿以登录后进入 `/chat` 作为完成；现以绑定正确、分项就绪和恢复合法上下文判断。
+- 旧稿将 Custom 的 issuer 与 storage 统一断言为同一个 URL；现在依身份/存储路由主文档核验，界面不自造约束。
 
-验收：Cloud WebID 可以保持 `https://id.undefineds.co/...`，但 Solid DB Pod URL、首个业务写入、后续 update/delete 都必须在 selected Local SP Pod URL 下。
+历史记录记载 2026-05-10 增加 Cloud 回归、2026-05-11 Cloud 与 Local tunnel 路径通过，以及 2026-05-06 临时 tunnel 验证。这些是当时记录，**本轮没有重跑，不能证明当前版本、Standalone 或 R6 新状态已经可用**。旧临时域名和历史启动命令不作为当前操作指南。
 
-Local 交互验收：
+## 实施验收入口
 
-- 如果本地 xpod 已 ready，选择 Local 后不要出现一帧无意义的“正在进入”
-  中间页，应直接打开携带 selected Local SP scope 的 Cloud 登录/consent 流。
-- 登录窗口、等待态、错误态都必须能返回空间选择。
-- 如果 provision scope 缺失、过期、不可解析或 scoped lookup 失败，展示
-  Local 绑定/重试/创建当前空间，而不是展示 Cloud Pod。
-- 已登录且 session 可复用时，优先复用；不能每次强制重新输入账号密码。
-
-### Standalone
-
-```text
-选择 Standalone
-  -> LinX 启动本地 xpod
-  -> 打开本地账号页
-  -> 注册或登录本地账号
-  -> 创建本地 Pod / consent
-  -> 回调进入 LinX
-```
-
-验收：不走 Cloud provisioning；WebID、issuer 和 storage 都在本地 xpod。
-
-### Custom
-
-```text
-选择 Custom
-  -> 输入第三方 Solid provider URL
-  -> 跳转第三方 provider 登录 / consent
-  -> 回调进入 LinX
-```
-
-验收：OIDC provider 和 Storage Provider 是同一个用户输入 URL；如果 profile storage 不在该 provider 下，阻断进入。
-
-## 切换账号
-
-```text
-主界面账号入口
-  -> 登出当前 session
-  -> 回到入口选择
-  -> 重新选择 Cloud / Local / Standalone / Custom
-```
-
-当前 MVP 仍以单账号恢复为主；多账号记忆和切换列表是后续增强。
-
-## 实现验收口径
-
-- Cloud：登录后 `storedAccount.storageProviderLabel` 为 `Cloud`，Pod URL 不依赖本机地址。
-- Local：登录后 `storedAccount.storageProviderLabel` 为 `Local`，Solid DB Pod URL 必须以 selected Local SP canonical URL 开头。
-- Local：Inrupt 的 OIDC entry 必须是 Cloud account/OIDC surface，并携带
-  selected Local SP 的 provision scope；不能把 selected Local SP 当成
-  OIDC issuer，也不能直接打开无 scope 的 Cloud consent。
-- Local：`/.data/*` bootstrap、chat/message、inbox、Agent Home、runtime session ref、AI 配置、Secretary 初始化数据和内置 runtime API 都必须从 Solid DB 当前 Pod URL 推导。
-- Local：不能从 Cloud WebID origin、issuer URL、profile URL、localhost 或 LAN 地址推导业务写入位置。
-- Local：Cloud provision 回调创建 Pod 时，Local SP 必须创建 Pod root 和结构化 root metadata；`HEAD /<pod>/` 必须返回存在。
-- Local：选择/创建 Pod 前后都不能显示 Cloud Pod。没有 Local Pod 时展示
-  first-Pod 创建入口；不是把 Cloud Pod 当作候选项。
-- Standalone：不要求公网 URL，不走 Cloud provisioning；必须能完成本机/局域网登录验证。
-- Custom：只使用用户输入的 provider URL，不做 Cloud/Local 特例。
-
-## 错误边界
-
-- Local canonical URL 暂不可达时，可以启动本地 xpod 做本机/LAN 连通性检查，但不能把本机/LAN 地址写入 Cloud WebID profile，也不能自动降级成 Standalone。
-- Local 缺少 SP-scoped provision、WebID profile 缺少 `solid:storage`、或 `solid:storage` 指向 Cloud/旧 Local 节点时，必须阻断进入。
-- 隧道 token 缺失或失效只影响访问渠道；不能改变 selected SP 或 fallback 到 Cloud Pod。
-- StorageConflict 的处理策略仍是阻断并提示用户返回正确空间或创建当前空间的新 Pod；MVP 不做静默迁移。
-
-## 回归记录
-
-- 2026-05-10 新增 Cloud account authority + Cloud SP 真实回归：`yarn workspace @linx/e2e test:real-cloud`。
-- 2026-05-11 Cloud+Cloud 现网回归已通过：生产 Cloud 注册、授权、进入 `/chat`，且 Solid DB ready。
-- 2026-05-11 Cloud account authority + Local SP 隧道路径已通过：`https://node-0000.undefineds.co/ -> localhost:5737`，使用 Cloudflare tunnel token。
-- 2026-05-06 验证通过 Cloud account authority + Local SP 隧道路径：`https://prot-reprint-setup-civic.trycloudflare.com/ -> localhost:5737`。
+逐项使用登录主 Spec 第 10 节，并覆盖：记住绑定继续、首次 Cloud/Local、支持/不支持 Standalone、注册零 Pod 且无 prepare/create、清单失败不当零 Pod、显式创建/未知结果恢复、注册成功与创建失败隔离、管理后授权续接、过期 scope、绑定冲突、空间不可达、读写分离、助手部分就绪、无模型、退出草稿、跨身份晚到结果和原上下文恢复。提供实际状态与写入目标证据；本索引不替代协议测试。
