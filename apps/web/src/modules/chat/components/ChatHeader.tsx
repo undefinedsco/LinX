@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
-import { Bot, ChevronRight, PanelRightClose, PanelRightOpen, Star } from 'lucide-react'
+import { useSession } from '@/providers/solid-session-context'
+import { Bot, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -15,11 +15,19 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ModelSelector } from '@/components/ui/model-selector'
+import type { ModelOption } from '@/components/ui/model-selector'
+import { useModelServices } from '@/modules/model-services/data/use-model-services'
+import type { AIProvider } from '@/modules/model-services/domain/types'
 import { useToast } from '@/components/ui/use-toast'
-import { InboxBellButton } from '@/modules/inbox/components/InboxBellButton'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
-import { useChatList, useChatMutations } from '../collections'
+import {
+  LINX_DEFAULT_SECRETARY,
+  isLinxDefaultSecretaryChat,
+  useChatList,
+  useChatMutations,
+} from '../collections'
+import { agentCollection } from '../contacts-port'
 import { useEntity } from '@/lib/data/use-entity'
 import {
   normalizeAIConfigProviderId,
@@ -36,12 +44,51 @@ import {
   type AgentAiRuntimeLocation,
 } from '../agent-runtime-location'
 
+export function buildChatModelOptions(
+  configuredProviders: Record<string, AIProvider>,
+  activeProvider: string,
+  activeModel: string,
+): ModelOption[] {
+  const options = Object.values(configuredProviders).flatMap((configuredProvider) =>
+    configuredProvider.enabled ? configuredProvider.models
+      .filter((configuredModel) => configuredModel.enabled)
+      .map((configuredModel) => ({
+        id: `${configuredProvider.id}/${configuredModel.id}`,
+        name: configuredModel.name,
+        providerId: configuredProvider.id,
+        providerName: configuredProvider.name,
+        capabilities: configuredModel.capabilities as ModelOption['capabilities'],
+      }))
+      : []
+  )
+
+  const normalizedProvider = activeProvider.trim()
+  const normalizedModel = activeModel.trim()
+  const activeId = normalizedProvider && normalizedModel
+    ? `${normalizedProvider}/${normalizedModel}`
+    : ''
+  if (!activeId || options.some((option) => option.id === activeId)) return options
+
+  const configuredProvider = configuredProviders[normalizedProvider]
+  const configuredModel = configuredProvider?.models.find((candidate) => candidate.id === normalizedModel)
+  const providerInfo = getAgentProviderInfo(normalizedProvider)
+  return [
+    ...options,
+    {
+      id: activeId,
+      name: configuredModel?.name || normalizedModel,
+      providerId: normalizedProvider,
+      providerName: configuredProvider?.name || providerInfo?.displayName || normalizedProvider,
+      capabilities: (configuredModel?.capabilities ?? []) as ModelOption['capabilities'],
+    },
+  ]
+}
+
 export function ChatHeader() {
   const { session } = useSession()
   const { toast } = useToast()
   const selectedChatId = useChatStore((state) => state.selectedChatId)
-  const showRightSidebar = useChatStore((state) => state.showRightSidebar)
-  const toggleRightSidebar = useChatStore((state) => state.toggleRightSidebar)
+  const selectChat = useChatStore((state) => state.selectChat)
   const [isAgentDialogOpen, setIsAgentDialogOpen] = useState(false)
   const [isModelDialogOpen, setIsModelDialogOpen] = useState(false)
   const [agentNameDraft, setAgentNameDraft] = useState('')
@@ -51,6 +98,7 @@ export function ChatHeader() {
 
   const { data: chats } = useChatList()
   const mutations = useChatMutations()
+  const { providers: configuredProviders } = useModelServices()
 
   const chat = useMemo(
     () => chats?.find((c) => c.id === selectedChatId) ?? null,
@@ -61,47 +109,55 @@ export function ChatHeader() {
   const { data: contact, refresh: refreshContact } = useEntity(contactResource, contactUri)
   const agentUri = contact && isAgentContact(contact) ? contact.about : null
   const { data: agent, refresh: refreshAgent } = useEntity(agentResource, agentUri)
-  const agentId = typeof agent?.id === 'string' && agent.id.length > 0 ? agent.id : null
-  const contactId = typeof contact?.id === 'string' && contact.id.length > 0 ? contact.id : null
+  const stagedSecretaryAgent = isLinxDefaultSecretaryChat(chat)
+    ? agentCollection.get(LINX_DEFAULT_SECRETARY.agentId)
+    : null
+  const resolvedAgent = agent ?? stagedSecretaryAgent ?? null
+  const agentId = typeof resolvedAgent?.id === 'string' && resolvedAgent.id.length > 0
+    ? resolvedAgent.id
+    : null
+  const contactId = typeof contact?.id === 'string' && contact.id.length > 0
+    ? contact.id
+    : isLinxDefaultSecretaryChat(chat)
+      ? LINX_DEFAULT_SECRETARY.contactId
+      : null
 
-  const provider = normalizeAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : '') || LINX_PLATFORM_PROVIDER_ID
-  const model = normalizeChatModelId(normalizeAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : '') || DEFAULT_LINX_PLATFORM_MODEL_ID)
-  const agentAiRuntimeLocation = readAgentAiRuntimeLocation((agent as Record<string, unknown> | null | undefined)?.metadata)
+  const provider = normalizeAIConfigProviderId(typeof resolvedAgent?.provider === 'string' ? resolvedAgent.provider : '') || LINX_PLATFORM_PROVIDER_ID
+  const model = normalizeChatModelId(normalizeAIConfigResourceId(typeof resolvedAgent?.model === 'string' ? resolvedAgent.model : '') || DEFAULT_LINX_PLATFORM_MODEL_ID)
+  const agentAiRuntimeLocation = readAgentAiRuntimeLocation((resolvedAgent as Record<string, unknown> | null | undefined)?.metadata)
   const providerInfo = useMemo(() => {
     if (!provider) return null
     return getAgentProviderInfo(provider)
   }, [provider])
-  const draftProvider = useMemo(() => {
-    const providerSlug = findAgentProviderForModel(modelDraft)
-    return providerSlug ? getAgentProviderInfo(providerSlug) : null
-  }, [modelDraft])
+  const configuredModelOptions = useMemo(
+    () => buildChatModelOptions(configuredProviders, provider, model),
+    [configuredProviders, model, provider],
+  )
+  const selectedDraftProviderId = useMemo(() => {
+    const separator = modelDraft.indexOf('/')
+    if (separator > 0) {
+      const candidate = modelDraft.slice(0, separator)
+      if (configuredProviders[candidate] || getAgentProviderInfo(candidate)) return candidate
+    }
+    return findAgentProviderForModel(modelDraft)
+  }, [configuredProviders, modelDraft])
+  const draftProviderName = selectedDraftProviderId
+    ? configuredProviders[selectedDraftProviderId]?.name || getAgentProviderInfo(selectedDraftProviderId)?.displayName
+    : null
   const isSavingAgentProfile = mutations.updateAgentProfile.isPending
   const isSavingModel = mutations.updateAgentModel.isPending
 
-  const handleToggleStar = useCallback(async () => {
-    if (!chat || !selectedChatId) return
-    const currentStarred = (chat as any).starred ?? false
-    try {
-      await mutations.updateChat.mutateAsync({
-        id: selectedChatId,
-        starred: !currentStarred,
-      })
-    } catch (e) {
-      console.error('Toggle star failed', e)
-    }
-  }, [chat, selectedChatId, mutations])
-
   useEffect(() => {
     if (!isAgentDialogOpen) return
-    setAgentNameDraft((agent?.name as string) || chat?.title || '')
-    setInstructionsDraft((agent?.instructions as string) || '')
+    setAgentNameDraft((resolvedAgent?.name as string) || chat?.title || '')
+    setInstructionsDraft((resolvedAgent?.instructions as string) || '')
     setAiRuntimeLocationDraft(agentAiRuntimeLocation)
-  }, [agent?.instructions, agent?.name, agentAiRuntimeLocation, chat?.title, isAgentDialogOpen])
+  }, [resolvedAgent?.instructions, resolvedAgent?.name, agentAiRuntimeLocation, chat?.title, isAgentDialogOpen])
 
   useEffect(() => {
     if (!isModelDialogOpen) return
-    setModelDraft(model)
-  }, [isModelDialogOpen, model])
+    setModelDraft(`${provider}/${model}`)
+  }, [isModelDialogOpen, model, provider])
 
   const handleOpenAgentDialog = useCallback(() => {
     if (!agentId || !selectedChatId) {
@@ -139,6 +195,7 @@ export function ChatHeader() {
     try {
       await mutations.updateAgentProfile.mutateAsync({
         agentId,
+        currentAgent: resolvedAgent ?? undefined,
         name: normalizedName,
         instructions: instructionsDraft,
         aiRuntimeLocation: aiRuntimeLocationDraft,
@@ -157,6 +214,7 @@ export function ChatHeader() {
       })
     }
   }, [
+    resolvedAgent,
     agentId,
     agentNameDraft,
     aiRuntimeLocationDraft,
@@ -172,15 +230,23 @@ export function ChatHeader() {
   const handleSaveModel = useCallback(async () => {
     if (!agentId || !selectedChatId) return
 
-    const normalizedModel = modelDraft.trim()
-    if (!normalizedModel) {
+    const selectedModel = modelDraft.trim()
+    if (!selectedModel) {
       toast({
         title: '请先选择模型',
       })
       return
     }
 
-    const nextProvider = findAgentProviderForModel(normalizedModel)
+    const separator = selectedModel.indexOf('/')
+    const explicitProvider = separator > 0 ? selectedModel.slice(0, separator) : ''
+    const knownProvider = explicitProvider && (configuredProviders[explicitProvider] || getAgentProviderInfo(explicitProvider))
+    const normalizedModel = knownProvider
+      ? selectedModel.slice(separator + 1)
+      : selectedModel
+    const nextProvider = knownProvider
+      ? explicitProvider
+      : findAgentProviderForModel(normalizedModel)
     if (!nextProvider) {
       toast({
         title: '无法识别模型提供方',
@@ -192,6 +258,7 @@ export function ChatHeader() {
     try {
       await mutations.updateAgentModel.mutateAsync({
         agentId,
+        currentAgent: resolvedAgent ?? undefined,
         provider: nextProvider,
         model: normalizedModel,
         chatId: selectedChatId,
@@ -209,8 +276,10 @@ export function ChatHeader() {
       })
     }
   }, [
+    resolvedAgent,
     agentId,
     contactId,
+    configuredProviders,
     modelDraft,
     mutations.updateAgentModel,
     refreshAgent,
@@ -224,20 +293,32 @@ export function ChatHeader() {
       <div className="flex h-full w-full items-center px-4">
         <div className="flex-1 flex items-center min-w-0">
           {chat ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mr-1 h-8 w-8 shrink-0 md:hidden"
+              aria-label="返回聊天列表"
+              onClick={() => selectChat(null)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          ) : null}
+          {chat ? (
             <>
               <button
                 type="button"
+                title={`编辑助手设置：${resolvedAgent?.name || 'Assistant'}`}
                 className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50 shrink-0"
                 onClick={handleOpenAgentDialog}
               >
                 <Avatar className="h-8 w-8 border border-border/50 !rounded-sm">
-                  <AvatarImage src={agent?.avatarUrl} className="!rounded-sm object-cover" />
+                  <AvatarImage src={resolvedAgent?.avatarUrl} className="!rounded-sm object-cover" />
                   <AvatarFallback className="!rounded-sm bg-primary/10 text-primary text-xs">
-                    {agent?.name?.slice(0, 2).toUpperCase() || <Bot className="w-4 h-4" />}
+                    {resolvedAgent?.name?.slice(0, 2).toUpperCase() || <Bot className="w-4 h-4" />}
                   </AvatarFallback>
                 </Avatar>
                 <span className="max-w-[180px] truncate text-sm font-medium">
-                  {agent?.name || 'Assistant'}
+                  {resolvedAgent?.name || 'Assistant'}
                 </span>
               </button>
 
@@ -245,6 +326,7 @@ export function ChatHeader() {
 
               <button
                 type="button"
+                title={`切换模型：${model || '未选择'}`}
                 className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50"
                 onClick={handleOpenModelDialog}
               >
@@ -263,34 +345,6 @@ export function ChatHeader() {
             <span className="text-sm font-medium text-muted-foreground">聊天</span>
           )}
         </div>
-
-        {chat && (
-          <div className="flex items-center gap-1 shrink-0 ml-2">
-            <InboxBellButton />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-foreground"
-              onClick={handleToggleStar}
-              title={(chat as any).starred ? '取消收藏' : '收藏'}
-            >
-              <Star className={`w-5 h-5 ${(chat as any).starred ? 'text-amber-500 fill-amber-500' : ''}`} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-foreground"
-              onClick={toggleRightSidebar}
-              title={showRightSidebar ? '隐藏设置' : '显示设置'}
-            >
-              {showRightSidebar ? (
-                <PanelRightClose className="w-5 h-5" />
-              ) : (
-                <PanelRightOpen className="w-5 h-5" />
-              )}
-            </Button>
-          </div>
-        )}
       </div>
 
       <Dialog open={isAgentDialogOpen} onOpenChange={setIsAgentDialogOpen}>
@@ -364,13 +418,14 @@ export function ChatHeader() {
                 type="chat"
                 value={modelDraft}
                 onChange={setModelDraft}
+                models={configuredModelOptions}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground"
               />
             </div>
             <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
               <div className="text-xs text-muted-foreground">Provider</div>
               <div className="mt-1 text-sm font-medium text-foreground">
-                {draftProvider?.displayName || '未识别'}
+                {draftProviderName || '未识别'}
               </div>
             </div>
           </div>

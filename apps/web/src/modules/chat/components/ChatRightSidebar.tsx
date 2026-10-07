@@ -9,7 +9,7 @@
  */
 
 import { useState, useMemo, type FC } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { 
   User, 
   MessageCircle, 
@@ -19,8 +19,11 @@ import {
   ChevronRight,
   Plus,
   Search,
+  Check,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -50,7 +53,7 @@ interface RoleSettingsCardProps {
 }
 
 const RoleSettingsCard: FC<RoleSettingsCardProps> = ({ systemPrompt, onEdit }) => {
-  const [isOpen, setIsOpen] = useState(true)
+  const [isOpen, setIsOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingPrompt, setEditingPrompt] = useState(systemPrompt)
 
@@ -147,6 +150,7 @@ interface ThreadListCardProps {
   selectedThreadId: string | null
   onSelectThread: (id: string) => void
   onStarThread: (id: string) => void
+  onRenameThread: (id: string, title: string) => Promise<void>
   onCreateThread: () => void
 }
 
@@ -155,9 +159,10 @@ const ThreadListCard: FC<ThreadListCardProps> = ({
   selectedThreadId,
   onSelectThread,
   onStarThread,
+  onRenameThread,
   onCreateThread,
 }) => {
-  const [isOpen, setIsOpen] = useState(true)
+  const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
 
   // 排序并过滤
@@ -237,6 +242,7 @@ const ThreadListCard: FC<ThreadListCardProps> = ({
                       isSelected={thread.id === selectedThreadId}
                       onSelect={() => onSelectThread(thread.id)}
                       onStar={() => onStarThread(thread.id)}
+                      onRename={(title) => onRenameThread(thread.id, title)}
                     />
                   ))}
                 </div>
@@ -254,6 +260,7 @@ interface ThreadItemProps {
   isSelected: boolean
   onSelect: () => void
   onStar: () => void
+  onRename: (title: string) => Promise<void>
 }
 
 const ThreadItem: FC<ThreadItemProps> = ({
@@ -261,7 +268,28 @@ const ThreadItem: FC<ThreadItemProps> = ({
   isSelected,
   onSelect,
   onStar,
+  onRename,
 }) => {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(thread.title)
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    const title = draft.trim()
+    if (!title || title === thread.title) {
+      setDraft(thread.title)
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    try {
+      await onRename(title)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div
       onClick={onSelect}
@@ -282,14 +310,26 @@ const ThreadItem: FC<ThreadItemProps> = ({
           className={cn(
             'w-3.5 h-3.5',
             thread.starred
-              ? 'text-amber-500 fill-amber-500'
-              : 'text-muted-foreground/50 hover:text-amber-500'
+              ? 'fill-primary text-primary'
+              : 'text-muted-foreground/50 hover:text-primary'
           )}
         />
       </button>
 
       {/* 标题 */}
-      <span className="flex-1 text-sm truncate">{thread.title}</span>
+      {editing ? (
+        <div className="flex min-w-0 flex-1 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <Input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') { setDraft(thread.title); setEditing(false) } }}
+            className="h-7 min-w-0 text-sm" disabled={saving} />
+          <button type="button" aria-label="保存话题名称" onClick={() => void save()} disabled={saving}><Check className="h-4 w-4" /></button>
+          <button type="button" aria-label="取消重命名" onClick={() => { setDraft(thread.title); setEditing(false) }} disabled={saving}><X className="h-4 w-4" /></button>
+        </div>
+      ) : (
+        <button type="button" className="min-w-0 flex-1 truncate text-left text-sm" onDoubleClick={(e) => { e.stopPropagation(); setDraft(thread.title); setEditing(true) }} title="双击重命名">
+          {thread.title}
+        </button>
+      )}
     </div>
   )
 }
@@ -339,6 +379,12 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
     }))
   }, [rawThreads])
 
+  // 当前 Thread 工作现场（基准 page-mindset-ascii：右栏展示当前 Thread，而非仅话题列表导航）
+  const currentThread = useMemo(
+    () => threads.find((thread) => thread.id === selectedThreadId) ?? null,
+    [threads, selectedThreadId],
+  )
+
   // 处理编辑系统提示词 - 更新 Agent.instructions
   const handleEditSystemPrompt = async (newPrompt: string) => {
     if (!agentId) {
@@ -372,6 +418,11 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
     }
   }
 
+  const handleRenameThread = async (threadId: string, title: string) => {
+    if (!selectedChatId) return
+    await mutations.updateThread.mutateAsync({ id: threadId, chatId: selectedChatId, title })
+  }
+
   // 处理新建话题 - 使用 chatOps
   const handleCreateThread = async () => {
     if (!selectedChatId) return
@@ -398,14 +449,39 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
 
   return (
     <div className="h-full flex flex-col bg-card/50">
-      {/* Header - WeChat Style Height (64px) */}
-      <div className="h-16 px-4 flex items-center border-b border-border/50 shrink-0">
-        <h3 className="text-sm font-medium">设置</h3>
+      {/* Header - 48px shell boundary; 标题反映当前对象，而非“设置”页 */}
+      <div className="h-12 px-4 flex items-center border-b border-border/50 shrink-0">
+        <h3 className="text-sm font-medium truncate">{contact?.name || agent?.name || '工作现场'}</h3>
       </div>
 
       {/* Content */}
       <ScrollArea className="flex-1 p-3">
         <div className="space-y-3">
+          {/* 工作现场：当前对象 + 当前话题（基准：右栏是工作现场，不是说明书/配置页） */}
+          <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-2">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">工作现场</p>
+            {contact || agent ? (
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-bold text-primary">
+                  {(contact?.name || agent?.name || '?').slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{contact?.name || agent?.name}</p>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {contact && isAgentContact(contact) ? 'Agent' : '联系人'}
+                    {agent?.provider ? ` · ${agent.provider}` : ''}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            {currentThread ? (
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="shrink-0 text-muted-foreground/70">当前话题</span>
+                <span className="truncate text-foreground/80" title={currentThread.title}>{currentThread.title}</span>
+              </div>
+            ) : null}
+          </div>
+
           {/* 角色设定 */}
           <RoleSettingsCard
             systemPrompt={(agent?.instructions as string) || ''}
@@ -418,6 +494,7 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
             selectedThreadId={selectedThreadId}
             onSelectThread={selectThread}
             onStarThread={handleStarThread}
+            onRenameThread={handleRenameThread}
             onCreateThread={handleCreateThread}
           />
 

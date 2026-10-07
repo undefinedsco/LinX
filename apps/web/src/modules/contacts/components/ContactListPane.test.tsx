@@ -1,13 +1,14 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
 
 // --- Mock data (must be inline in factory) ---
 
-// Mock contactOps - factory function can't reference external variables
-vi.mock('../collections', () => {
-  const mockContacts = [
+const { mockSubscribeToPod, mockUseLiveQuery, mockContacts } = vi.hoisted(() => ({
+  mockSubscribeToPod: vi.fn(() => Promise.resolve(() => {})),
+  mockUseLiveQuery: vi.fn(),
+  mockContacts: [
     {
       id: 'mock-agent-1',
       name: '智能翻译官',
@@ -39,9 +40,23 @@ vi.mock('../collections', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     },
-  ]
-  
+  ],
+}))
+
+vi.mock('@tanstack/react-db', () => ({
+  useLiveQuery: mockUseLiveQuery,
+}))
+
+vi.mock('@/providers/solid-session-context', () => ({
+  useSession: () => ({ session: { info: { isLoggedIn: true } } }),
+}))
+
+// Mock contactOps - factory function can't reference external variables
+vi.mock('../data/collections', () => {
   return {
+    contactCollection: {
+      startSyncImmediate: vi.fn(),
+    },
     contactOps: {
       getAll: vi.fn(() => mockContacts),
       search: vi.fn((query: string) => {
@@ -51,16 +66,20 @@ vi.mock('../collections', () => {
           (c.alias && c.alias.toLowerCase().includes(q))
         )
       }),
-      subscribeToPod: vi.fn(() => Promise.resolve(() => {})),
+      subscribeToPod: mockSubscribeToPod,
+      fetch: vi.fn(async () => mockContacts),
     },
     initializeContactCollections: vi.fn(),
   }
 })
 
 // Mock solid database provider
-vi.mock('@/providers/solid-database-provider', () => ({
-  useSolidDatabase: () => ({ db: { mockDb: true }, status: 'ready' }),
-}))
+vi.mock('@/providers/solid-database-provider', () => {
+  const db = { mockDb: true }
+  return {
+    useSolidDatabase: () => ({ db, status: 'ready' }),
+  }
+})
 
 // Mock store state - will be updated in tests
 let mockStoreState = {
@@ -74,13 +93,13 @@ let mockStoreState = {
   setListFilter: vi.fn(),
 }
 
-vi.mock('../store', () => ({
+vi.mock('../app/store', () => ({
   useContactStore: (selector: (state: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
 // Import after mocks
 import { ContactListPane } from './ContactListPane'
-import { contactOps } from '../collections'
+import { contactOps } from '../data/collections'
 
 // Wrapper for React Query
 const createWrapper = () => {
@@ -95,6 +114,12 @@ const createWrapper = () => {
 describe('ContactListPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSubscribeToPod.mockImplementation(() => Promise.resolve(() => {}))
+    mockUseLiveQuery.mockReturnValue({
+      data: mockContacts,
+      isLoading: false,
+      isError: false,
+    })
     
     // Reset store state
     mockStoreState = {
@@ -136,13 +161,45 @@ describe('ContactListPane', () => {
       expect(await screen.findByText('Alice')).toBeInTheDocument()
       expect(await screen.findByText('老王')).toBeInTheDocument()
     })
+
+    it('keeps query errors distinct from the empty state', async () => {
+      mockUseLiveQuery.mockReturnValueOnce({
+        data: [],
+        isLoading: false,
+        isError: true,
+      })
+
+      render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('联系人加载失败')
+      expect(screen.queryByText('暂无联系人')).not.toBeInTheDocument()
+    })
+
+    it('disposes a Pod subscription that resolves after unmount', async () => {
+      let resolveSubscription!: (unsubscribe: () => void) => void
+      const unsubscribe = vi.fn()
+      mockSubscribeToPod.mockReturnValueOnce(new Promise((resolve) => {
+        resolveSubscription = resolve
+      }))
+
+      const { unmount } = render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
+      await waitFor(() => expect(mockSubscribeToPod).toHaveBeenCalledOnce())
+      unmount()
+
+      await act(async () => {
+        resolveSubscription(unsubscribe)
+        await Promise.resolve()
+      })
+
+      expect(unsubscribe).toHaveBeenCalledOnce()
+    })
   })
 
   describe('Search Functionality', () => {
     it('filters contacts by search term', async () => {
       mockStoreState.search = 'alice'
       // Override mock for this test
-      vi.mocked(contactOps.search).mockReturnValue([
+      vi.mocked(contactOps.search).mockResolvedValue([
         {
           id: 'mock-solid-1',
           name: 'Alice',
@@ -163,7 +220,7 @@ describe('ContactListPane', () => {
 
     it('hides new friends entry when searching', async () => {
       mockStoreState.search = 'alice'
-      vi.mocked(contactOps.search).mockReturnValue([
+      vi.mocked(contactOps.search).mockResolvedValue([
         {
           id: 'mock-solid-1',
           name: 'Alice',
@@ -185,7 +242,7 @@ describe('ContactListPane', () => {
 
     it('shows empty state when no matches', async () => {
       mockStoreState.search = 'xyz-nonexistent'
-      vi.mocked(contactOps.search).mockReturnValue([])
+      vi.mocked(contactOps.search).mockResolvedValue([])
       
       render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
       

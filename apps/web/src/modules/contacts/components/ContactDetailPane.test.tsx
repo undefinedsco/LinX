@@ -1,14 +1,13 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
-import { ContactType } from '@undefineds.co/models'
+import { ContactType, contactResource } from '@undefineds.co/models'
 
 const {
   mockNavigate,
   mockToast,
   mockStoreState,
-  mockContactState,
   mockAboutByRef,
   mockAboutError,
   mockSelectChat,
@@ -31,7 +30,6 @@ const {
     openInviteMemberDialog: vi.fn(),
     closeInviteMemberDialog: vi.fn(),
   },
-  mockContactState: new Map<string, any>(),
   mockAboutByRef: new Map<string, any>(),
   mockAboutError: { current: null as Error | null },
   mockSelectChat: vi.fn(),
@@ -41,11 +39,55 @@ const {
   mockUpdateAgent: vi.fn(),
 }))
 
+const { mockContactCollection, mockChatCollection, mockLiveQueryErrors } = vi.hoisted(() => {
+  const createCollection = () => {
+    let version = 0
+    const listeners = new Set<() => void>()
+    const state = new Map<string, any>()
+    return {
+      state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+      getVersion: () => version,
+      replace: (id: string, row: any) => {
+        state.set(id, row)
+        version += 1
+        listeners.forEach((listener) => listener())
+      },
+      fetch: vi.fn(async () => Array.from(state.values())),
+    }
+  }
+  return {
+    mockContactCollection: createCollection(),
+    mockChatCollection: createCollection(),
+    mockLiveQueryErrors: { contact: false, chat: false },
+  }
+})
+const mockContactState = mockContactCollection.state
+
+vi.mock('@tanstack/react-db', async () => {
+  const { useSyncExternalStore } = await import('react')
+  return {
+    useLiveQuery: (collection: typeof mockContactCollection) => {
+      useSyncExternalStore(collection.subscribe, collection.getVersion, collection.getVersion)
+      return {
+        data: Array.from(collection.state.values()),
+        isError: collection === mockContactCollection
+          ? mockLiveQueryErrors.contact
+          : mockLiveQueryErrors.chat,
+        isLoading: false,
+      }
+    },
+  }
+})
+
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {
@@ -79,18 +121,22 @@ vi.mock('@/components/ui/model-selector', () => ({
   ModelSelector: ({ value }: { value: string }) => <div data-testid="model-selector">{value}</div>,
 }))
 
+vi.mock('@/modules/model-services/data/use-model-services', () => ({
+  useModelServices: () => ({ providers: {} }),
+}))
+
 vi.mock('./CreateGroupDialog', () => ({
   CreateGroupDialog: ({ open }: { open: boolean }) => open ? <div data-testid="group-dialog" /> : null,
 }))
 
-vi.mock('../store', () => ({
+vi.mock('../app/store', () => ({
   useContactStore: (selector: (state: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
-vi.mock('../collections', () => ({
-  contactCollection: {
-    state: mockContactState,
-  },
+vi.mock('../data/collections', () => ({
+  contactCollection: mockContactCollection,
+  getContactsChatCollection: () => mockChatCollection,
+  useContactsChatSelection: () => mockSelectChat,
   contactOps: {
     findOrCreateChat: (...args: unknown[]) => mockFindOrCreateChat(...args),
     getLastSyncedText: (...args: unknown[]) => mockGetLastSyncedText(...args),
@@ -140,6 +186,9 @@ describe('ContactDetailPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockContactState.clear()
+    mockChatCollection.state.clear()
+    mockLiveQueryErrors.contact = false
+    mockLiveQueryErrors.chat = false
     mockAboutByRef.clear()
     mockAboutError.current = null
     Object.assign(mockStoreState, {
@@ -197,6 +246,76 @@ describe('ContactDetailPane', () => {
     expect(screen.queryByText('标签')).not.toBeInTheDocument()
   })
 
+  it('hides the delete action for the default secretary contact (no delete pressure)', async () => {
+    const secretaryId = contactResource.buildId({ id: '__secretary__' })
+    const contact = makeContact({ id: secretaryId, name: 'LinX 主理人', contactType: ContactType.AGENT })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    // 头部 button 顺序：[分享, 更多菜单触发器, ...]；Radix 下拉由 pointerdown 打开
+    fireEvent.pointerDown(screen.getAllByRole('button')[1], { button: 0 })
+    await waitFor(() => {
+      // 证明菜单确实打开，而非整体未渲染
+      expect(screen.getByRole('menuitem', { name: /设为星标|取消星标/ })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('menuitem', { name: /删除联系人/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the delete action for ordinary contacts', async () => {
+    const contact = makeContact({ id: 'contact-ordinary-1', name: 'Bob' })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    fireEvent.pointerDown(screen.getAllByRole('button')[1], { button: 0 })
+    await waitFor(() => {
+      expect(screen.getByRole('menuitem', { name: /删除联系人/ })).toBeInTheDocument()
+    })
+  })
+
+  it('reacts when the selected Contact row changes in the live collection', async () => {
+    const contact = makeContact({
+      id: 'contact-solid-1',
+      name: 'Alice Smith',
+      alias: 'Alice',
+      about: 'https://alice.solidcommunity.net/profile/card#me',
+    })
+
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Alice')
+
+    act(() => {
+      mockContactCollection.replace(contact.id, { ...contact, alias: 'Alicia' })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Alicia')
+    })
+  })
+
+  it('shows a retryable error instead of a loading state when detail queries fail', async () => {
+    const contact = makeContact({ id: 'contact-solid-1', name: 'Alice Smith' })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+    mockLiveQueryErrors.contact = true
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    expect(screen.getByRole('alert')).toHaveTextContent('联系人详情加载失败，请重试。')
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+
+    await waitFor(() => {
+      expect(mockContactCollection.fetch).toHaveBeenCalledOnce()
+      expect(mockChatCollection.fetch).toHaveBeenCalledOnce()
+    })
+  })
+
   it('does not expose internal sync errors in the contact details', () => {
     const contact = makeContact({
       id: 'contact-solid-1',
@@ -210,7 +329,7 @@ describe('ContactDetailPane', () => {
 
     render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
 
-    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|读取资源头信息失败|alice\.example/i)).not.toBeInTheDocument()
   })
 
@@ -236,6 +355,18 @@ describe('ContactDetailPane', () => {
       to: '/$microAppId',
       params: { microAppId: 'chat' },
     })
+  })
+
+  it('shows chat, voice, and video as the primary contact actions', () => {
+    const contact = makeContact({ id: 'contact-solid-1', name: 'Alice' })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    expect(screen.getByRole('button', { name: '聊天' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '语音' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '视频' })).toBeInTheDocument()
   })
 
   it('renders local agent configuration and allows opening tools editor', async () => {

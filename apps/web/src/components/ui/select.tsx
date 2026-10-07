@@ -19,14 +19,13 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      // 温暖守护者风格：玻璃态 + 圆角
-      'flex h-10 w-full items-center justify-between rounded-xl',
-      'border border-border/40 bg-muted/30 backdrop-blur-sm',
-      'px-4 py-2 text-sm',
+      'flex h-9 w-full items-center justify-between rounded-md',
+      'border border-border/50 bg-background',
+      'px-3 py-2 text-sm',
       'ring-offset-background placeholder:text-muted-foreground/60',
-      'transition-all duration-200',
-      'focus:outline-none focus:ring-2 focus:ring-ring/50 focus:ring-offset-1',
-      'focus:bg-background focus:border-primary/50',
+      'transition-colors duration-150',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1',
+      'focus-visible:border-primary/50',
       'disabled:cursor-not-allowed disabled:opacity-50',
       className,
     )}
@@ -48,11 +47,10 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        // 温暖守护者风格：玻璃态 + 大圆角 + 紫色阴影
         'relative z-50 min-w-[8rem] overflow-hidden',
-        'rounded-xl border border-border/30 bg-popover/95 backdrop-blur-md',
+        'rounded-lg border border-border/50 bg-popover',
         'text-popover-foreground',
-        'shadow-[0_20px_60px_-12px_rgba(124,58,237,0.15)]',
+        'shadow-lg',
         'animate-in fade-in-80',
         position === 'popper' && 'translate-y-1',
         className,
@@ -89,9 +87,8 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      // 温暖守护者风格：圆角 + 平滑过渡
       'relative flex w-full cursor-default select-none items-center',
-      'rounded-lg py-2 pl-8 pr-2 text-sm outline-none',
+      'rounded-md py-2 pl-8 pr-2 text-sm outline-none',
       'transition-colors duration-150',
       'focus:bg-muted/50 focus:text-foreground',
       'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',

@@ -1482,7 +1482,11 @@ test('pi runtime adapter silently refreshes stored auth when chat completion rej
 
 test('pi runtime adapter clears startup auth prompt after a successful browser login refresh', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
-  t.after(() => cleanup())
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-auth-prompt-'))
+  t.after(() => {
+    cleanup()
+    rmSync(agentDir, { recursive: true, force: true })
+  })
 
   let loginCalls = 0
   const adapter = module.createPiRuntimeAdapter({
@@ -1517,7 +1521,7 @@ test('pi runtime adapter clears startup auth prompt after a successful browser l
 
   const runtime = await adapter.createRuntime({
     cwd: cliRoot,
-    agentDir: join(cliRoot, '.tmp-pi-auth-prompt'),
+    agentDir,
     sessionManager: (await import('@earendil-works/pi-coding-agent')).SessionManager.inMemory(cliRoot),
   })
 

@@ -64,49 +64,6 @@ test.describe('Chat Module', () => {
     })
   })
 
-  test.describe('API 密钥配置提示', () => {
-    
-    test('未配置密钥时显示配置卡片', async ({ page }) => {
-      // 查找配置 API 密钥的提示卡片
-      const configCard = page.getByText(/配置.*API.*密钥/i).or(
-        page.getByText(/Configure.*API.*Key/i)
-      ).or(
-        page.locator('[data-testid="api-key-prompt"]')
-      )
-      
-      // 等待页面加载完成
-      await page.waitForLoadState('networkidle')
-      await page.waitForTimeout(1000)
-      
-      // 检查是否有配置提示（可能已配置则不显示）
-      const isVisible = await configCard.isVisible().catch(() => false)
-      
-      if (isVisible) {
-        // 验证有"前往配置"按钮
-        const configButton = page.getByRole('button', { name: /配置|前往|Configure/i })
-        await expect(configButton.first()).toBeVisible()
-      }
-    })
-
-    test('点击配置按钮跳转到 credentials 页面', async ({ page }) => {
-      await page.waitForLoadState('networkidle')
-      
-      // 查找配置按钮
-      const configButton = page.getByRole('button', { name: /前往配置密钥/i }).or(
-        page.getByRole('button', { name: /Configure/i })
-      )
-      
-      const buttonVisible = await configButton.isVisible().catch(() => false)
-      
-      if (buttonVisible) {
-        await configButton.click()
-        
-        // 验证跳转到 credentials 页面
-        await expect(page).toHaveURL(/credentials/, { timeout: 5000 })
-      }
-    })
-  })
-
   test.describe('消息输入', () => {
     
     test('消息输入框存在且可用', async ({ page }) => {
@@ -174,34 +131,9 @@ test.describe('Chat Module', () => {
   })
 })
 
-test.describe('Credentials Module', () => {
-  
-  test('Credentials 页面正确加载', async ({ page }) => {
-    await page.goto('/credentials')
-    
-    await expect(page).toHaveURL(/credentials/)
-    await page.waitForLoadState('networkidle')
-  })
-
-  test('显示供应商列表', async ({ page }) => {
-    await page.goto('/credentials')
-    await page.waitForLoadState('networkidle')
-    
-    // 查找供应商相关内容
-    const providerContent = page.getByText(/OpenAI|Anthropic|DeepSeek|Claude/i)
-    
-    // 等待内容加载
-    await page.waitForTimeout(1000)
-    
-    const count = await providerContent.count()
-    // 供应商列表应该有内容（至少显示可选的供应商）
-    expect(count).toBeGreaterThanOrEqual(0)
-  })
-})
-
 test.describe('Navigation', () => {
   
-  test('可以在 Chat 和 Credentials 之间导航', async ({ page }) => {
+  test('可以导航到 Chat', async ({ page }) => {
     // 从首页开始
     await page.goto('/')
     await page.waitForLoadState('networkidle')
@@ -219,17 +151,5 @@ test.describe('Navigation', () => {
       await expect(page).toHaveURL(/chat/)
     }
     
-    // 查找 Credentials 导航项
-    const credNav = page.getByRole('link', { name: /credentials|密钥|凭证/i }).or(
-      page.locator('[data-nav="credentials"]')
-    ).or(
-      page.locator('a[href*="credentials"]')
-    )
-    
-    const credNavCount = await credNav.count()
-    if (credNavCount > 0) {
-      await credNav.first().click()
-      await expect(page).toHaveURL(/credentials/)
-    }
   })
 })

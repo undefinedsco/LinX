@@ -1,5 +1,7 @@
 # UI Style Guide
 
+`DESIGN.md` is the active source of truth for LinX product design. This guide turns that contract into compact visual and styling rules for implementation review.
+
 ## Design philosophy
 
 LinX uses **macOS-native visual discipline** for a personal AI workspace organized around **工作 / 知识 / 我的 AI**.
@@ -7,6 +9,8 @@ LinX uses **macOS-native visual discipline** for a personal AI workspace organiz
 Status: R6 target design, 2026-09-28. See the [joint experience spec](../../homepage/docs/specs/personal-ai-product-experience-r6.md). This is a design contract, not verification of the current app. LS-07/08/13/14 apply.
 
 The product should feel like a quiet, capable workspace: readable work and personal judgment, low cognitive load, clear storage/runtime/AI work state, and restrained visual chrome. The interface borrows from familiar desktop chat products for structure, but the visual system should stay neutral, precise, and platform-native rather than decorative.
+
+Do not revive the earlier emotion-led brand direction, decorative amber/orange palette, playful reassurance, oversized radius-as-brand, colored shadows, glow, or broad purple SaaS styling.
 
 ### Core principles
 
@@ -81,13 +85,17 @@ Recommended desktop roles:
 
 ## Files interaction
 
-Files is a compact Pod resource browser with structured-resource tools, not a decorative card wall.
+Files is a compact Pod resource browser with structured-resource tools, not a decorative card wall. These interaction rules complement the R6 design target; they do not assert that every current surface has passed validation. Implementation boundaries follow [Frontend Module Abstraction](frontend-module-abstraction.md), with production evidence tracked in [Files interaction audit](files-production-interaction-audit.md).
 
 - Folder/file rows use familiar desktop density, neutral selection, clear icons, and predictable secondary metadata.
+- The Files head stays narrow, roughly 48px. Search belongs in list/table headers. Primary view controls stay as compact icons, menus, segmented controls, or `+ View`, not large explanatory buttons.
 - Breadcrumbs, tree selection, file list selection, preview/detail, and `.meta` sidecar use restrained chrome and border-led separation.
+- Right `.meta` drawers are collapsed by default and cover content from below the head when opened. Editable file/card sheets put `.meta` in the bottom tail instead of opening a competing right inspector.
+- Folder detail is Finder-like list/column/icon browsing with local selection and lightweight preview; do not render folder contents as a wall of cards.
 - Structured tables prioritize scan speed: compact headers, stable column widths, visible resize affordances, quiet focus, and semantic pending markers.
+- Structured table cells should use type-specific whole-cell interactions: inline text/date/code edit, checkbox toggle, relation/URL open/link affordances, and enum/select popovers with selected chips, search, and create in one surface.
 - Subject peek, access control, Ingest state, pending proposals, locked vocab, and read-only state appear near the relevant row/cell/detail surface.
-- Card, Kanban, and Whiteboard projections may use larger surfaces only when the structured-resource workflow needs them.
+- Card, Kanban, and Whiteboard projections may use larger surfaces only when the structured-resource workflow needs them. Their controls should follow the same low-chrome scheme as the table, with advanced controls tucked into local menus.
 
 ## Shape and radius
 
@@ -96,9 +104,9 @@ Radius is tiered by function:
 | Component | Radius guidance |
 | --- | --- |
 | Dense list rows | 0-8px depending on selection treatment |
-| Buttons / inputs | 8-12px |
-| Cards / panels | 12-16px |
-| Dialogs / sheets | 16-20px |
+| Buttons / inputs | 6-8px |
+| Cards / panels | 8-12px |
+| Dialogs / sheets | 12-16px |
 | Chips / badges / compact status | Pill only when the compact capsule communicates grouping/status |
 
 Do not use a single large radius everywhere as a brand marker.

@@ -128,12 +128,12 @@ export const spacingPresets = {
  */
 export const borderRadius = {
   none: 'rounded-none',           // 0px
-  sm: 'rounded-sm',               // 2px
-  md: 'rounded-md',               // 6px
-  lg: 'rounded-lg',               // 8px ⭐ 小圆角
-  xl: 'rounded-xl',               // 12px ⭐ 标准圆角
+  sm: 'rounded-sm',               // 4px
+  md: 'rounded-md',               // 8px
+  lg: 'rounded-lg',               // 12px ⭐ 小圆角
+  xl: 'rounded-xl',               // 16px ⭐ 标准圆角
   '2xl': 'rounded-2xl',           // 16px - 大圆角
-  '3xl': 'rounded-3xl',           // 24px
+  '3xl': 'rounded-3xl',           // 16px - 封顶，避免装饰性大圆角
   full: 'rounded-full',           // 完全圆形
 } as const
 
@@ -147,10 +147,6 @@ export const shadows = {
   lg: 'shadow-lg',                // 深阴影 ⭐
   xl: 'shadow-xl',                // 超深阴影
   '2xl': 'shadow-2xl',            // 玻璃态阴影
-  
-  // 带颜色的阴影（用于按钮高亮）
-  primary: 'shadow-lg shadow-primary/30',  // 主色发光
-  primarySubtle: 'shadow-md shadow-primary/20',
 } as const
 
 /**
@@ -243,7 +239,6 @@ export const linxLayout = {
     borderRadius: 12,   // 统一圆角 (rounded-xl)
   },
 } as const
-
 
 
 

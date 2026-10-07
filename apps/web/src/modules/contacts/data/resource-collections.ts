@@ -1,0 +1,79 @@
+import {
+  agentResource,
+  contactResource,
+  type AgentInsert,
+  type AgentRow,
+  type ContactInsert,
+  type ContactRow,
+  type SolidDatabase,
+} from '@undefineds.co/models'
+import { createPodCollection } from '@/lib/data/pod-collection'
+import { rebindPodCollections } from '@/lib/data/pod-collection-rebind'
+import { queryClient } from '@/providers/query-provider'
+
+let databaseGetter: (() => SolidDatabase | null) | null = null
+let activeDatabase: SolidDatabase | null | undefined
+const contactQueryKey = ['contacts']
+const agentQueryKey = ['agents']
+
+export function setContactsDatabaseGetter(getter: () => SolidDatabase | null): void {
+  databaseGetter = getter
+}
+
+export function getContactsDatabase(): SolidDatabase | null {
+  return databaseGetter?.() ?? null
+}
+
+export const contactCollection = createPodCollection<typeof contactResource, ContactRow, ContactInsert>({
+  resource: contactResource,
+  queryKey: contactQueryKey,
+  queryClient,
+  getDb: getContactsDatabase,
+  orderBy: { column: 'name', direction: 'asc' },
+  window: {
+    limit: 100,
+    orderBy: [{ column: 'name', direction: 'asc' }],
+    maxResidentPages: 3,
+  },
+  getKey: (item) => {
+    if (!item.id) throw new Error('Contact record is missing id')
+    return item.id
+  },
+})
+
+export const agentCollection = createPodCollection<typeof agentResource, AgentRow, AgentInsert>({
+  resource: agentResource,
+  queryKey: agentQueryKey,
+  queryClient,
+  getDb: getContactsDatabase,
+  orderBy: { column: 'name', direction: 'asc' },
+  getKey: (item) => {
+    if (!item.id) throw new Error('Agent record is missing id')
+    return item.id
+  },
+})
+
+export async function initializeContactCollections(db: SolidDatabase | null): Promise<void> {
+  if (activeDatabase === db) return
+
+  activeDatabase = db
+  setContactsDatabaseGetter(() => db)
+
+  try {
+    await rebindPodCollections([
+      {
+        collection: contactCollection,
+        cancelInFlight: () => queryClient.cancelQueries({ queryKey: contactQueryKey, exact: true }),
+      },
+      {
+        collection: agentCollection,
+        cancelInFlight: () => queryClient.cancelQueries({ queryKey: agentQueryKey, exact: true }),
+      },
+    ], Boolean(db))
+  } catch (error) {
+    if (activeDatabase === db) {
+      activeDatabase = undefined
+    }
+    throw error
+  }
+}

@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 
 const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, './package.json'), 'utf8')) as {
   version?: string
@@ -11,10 +12,48 @@ const releaseRepo = String(process.env.VITE_RELEASE_REPO ?? 'undefinedsco/LinX')
 const assetBase = process.env.LINX_VITE_BASE ?? '/'
 const outputDir = process.env.LINX_VITE_OUT_DIR ?? 'dist'
 const repoRoot = path.resolve(__dirname, '../..')
+const drizzleRuntime = path.resolve(
+  repoRoot,
+  'node_modules/@undefineds.co/drizzle-solid/dist/esm/core/execution/ldp-executor.js',
+)
+const modelsRuntime = path.resolve(repoRoot, 'node_modules/@undefineds.co/models/dist/ai-config/index.js')
+const modelsEntryRuntime = path.resolve(repoRoot, 'node_modules/@undefineds.co/models/dist/index.js')
+const modelsChatProjectRuntime = path.resolve(
+  repoRoot,
+  'node_modules/@undefineds.co/models/dist/chat-project.repository.js',
+)
+const aiConnectionsRuntime = path.resolve(repoRoot, 'vendor/ai-connections/dist/index.js')
+const aiConnectionsClientRuntime = path.resolve(
+  repoRoot,
+  'vendor/ai-connections/dist/ai-connections-client.js',
+)
+const aiConnectionsMainRuntime = path.resolve(repoRoot, 'vendor/ai-connections/dist/AiConnectionsMain.js')
+const aiConnectionsPanelRuntime = path.resolve(repoRoot, 'vendor/ai-connections/dist/AiConnectionsPanel.js')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
 )
+
+function fingerprintFiles(paths: string[]): string {
+  const hash = createHash('sha256')
+  for (const file of paths) {
+    hash.update(file)
+    hash.update(existsSync(file) ? readFileSync(file) : 'missing')
+  }
+  return hash.digest('hex').slice(0, 12)
+}
+
+const dependencyRuntimeFingerprint = fingerprintFiles([
+  drizzleRuntime,
+  modelsRuntime,
+  modelsEntryRuntime,
+  modelsChatProjectRuntime,
+  aiConnectionsRuntime,
+  aiConnectionsClientRuntime,
+  aiConnectionsMainRuntime,
+  aiConnectionsPanelRuntime,
+])
+const chatkitCdnOrigin = 'https://cdn.platform.openai.com'
 
 function getPackageName(id: string): string | null {
   const marker = '/node_modules/'
@@ -88,7 +127,33 @@ function resolveVendorChunk(id: string): string | undefined {
 export default defineConfig({
   base: assetBase,
   plugins: [react()],
+  server: {
+    proxy: {
+      '/chatkit-cdn': {
+        target: chatkitCdnOrigin,
+        changeOrigin: true,
+        secure: true,
+        rewrite: (requestPath) => requestPath.replace(/^\/chatkit-cdn/, ''),
+      },
+      '/assets/ck1': {
+        target: chatkitCdnOrigin,
+        changeOrigin: true,
+        secure: true,
+      },
+      '/cdn-cgi': {
+        target: chatkitCdnOrigin,
+        changeOrigin: true,
+        secure: true,
+      },
+    },
+  },
   optimizeDeps: {
+    // Workspace and normalized runtime dependencies must remain pre-bundled.
+    // Include their runtime fingerprint in Vite's optimizer plugin names so
+    // browsers cannot reuse an immutable bundle after local package changes.
+    rolldownOptions: {
+      plugins: [{ name: `linx-dependency-runtime-${dependencyRuntimeFingerprint}` }],
+    },
     exclude: [
       '@linx/stores',
       '@linx/stores/login',
@@ -104,8 +169,13 @@ export default defineConfig({
     // Keep workspace-linked packages under this app's node_modules tree so their
     // peer dependencies resolve to the patched app-level installs.
     preserveSymlinks: true,
+    // Pod schemas and collections must share one drizzle-solid runtime. Besides
+    // avoiding split class identities, this invalidates Vite's optimized graph
+    // when either shared runtime changes.
+    dedupe: ['@undefineds.co/drizzle-solid', '@undefineds.co/models'],
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@linx/agent-runtime': path.resolve(repoRoot, 'packages/agent-runtime/src'),
       '@linx/agent-runtime/pod-resource-identity': path.resolve(
         repoRoot,
         'packages/agent-runtime/src/pod-resource-identity.ts',

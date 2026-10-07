@@ -39,6 +39,19 @@ function createSseResponse(events: unknown[]) {
   })
 }
 
+function createRawSseResponse(payload: string) {
+  const encoder = new TextEncoder()
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(payload))
+      controller.close()
+    },
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  })
+}
+
 async function collectStreamEvents(result: Awaited<ReturnType<LocalChatKitService['process']>>) {
   expect(result.type).toBe('streaming')
   if (result.type !== 'streaming') {
@@ -144,10 +157,13 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
       }
 
       if (url === '/api/runtime/threads/runtime-1/events') {
-        return createSseResponse([
-          { type: 'assistant_delta', ts: 1, threadId: 'runtime-1', text: '继续处理 ' },
-          { type: 'assistant_done', ts: 2, threadId: 'runtime-1', text: '继续处理 完成' },
-        ])
+        // The SSE specification dispatches a pending data event at EOF. Keep
+        // the final event unterminated and omit the optional space after `data:`
+        // to cover runtime disconnects that close immediately after completion.
+        return createRawSseResponse([
+          `data: ${JSON.stringify({ type: 'assistant_delta', ts: 1, threadId: 'runtime-1', text: '继续处理 ' })}\r\n\r\n`,
+          `data:${JSON.stringify({ type: 'assistant_done', ts: 2, threadId: 'runtime-1', text: '继续处理 完成' })}`,
+        ].join(''))
       }
 
       if (url === '/api/runtime/threads/runtime-1/tool-calls/call-1/respond') {
@@ -200,6 +216,57 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
       'thread.item.updated',
       'thread.item.done',
     ])
+  })
+
+  it('preserves generated file artifacts on completed runtime tool output items', async () => {
+    const store = createMockStore()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+
+      if (url === '/api/runtime/threads?threadId=thread-1') {
+        return new Response(JSON.stringify({
+          items: [],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: {} as any,
+      webId: 'https://alice.example/profile/card#me',
+      authFetch: vi.fn() as any,
+    })
+    const output = JSON.stringify({
+      artifacts: [{
+        type: 'artifact',
+        name: 'summary.md',
+        resourceUri: 'https://pod.example/.data/workspaces/thread-1/summary.md',
+        contentType: 'text/markdown',
+      }],
+    })
+
+    const result = await service.process(JSON.stringify({
+      type: 'threads.add_client_tool_output',
+      params: {
+        thread_id: 'thread-1',
+        item_id: 'tool-item-1',
+        output,
+      },
+    }), {})
+
+    const events = await collectStreamEvents(result)
+
+    expect(store.saveItem).toHaveBeenCalledWith('thread-1', expect.objectContaining({
+      id: 'tool-item-1',
+      type: 'client_tool_call',
+      status: 'completed',
+      output,
+    }), {})
+    expect(events.map((event) => event.type)).toEqual(['thread.item.done'])
   })
 
   it('re-enters inbox when runtime emits another tool_call', async () => {
@@ -261,6 +328,7 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
       type: 'client_tool_call',
       call_id: 'call-2',
       name: 'open_url',
+      arguments: { url: 'https://example.com/auth' },
       status: 'pending',
     }), {})
     expect(store.saveItem).toHaveBeenLastCalledWith('thread-1', expect.objectContaining({
@@ -269,6 +337,11 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
       content: [expect.objectContaining({ text: expect.stringContaining('已转入收件箱等待处理') })],
     }), {})
     expect(events.map((event) => event.type)).toContain('thread.item.added')
+    expect(events).toContainEqual({
+      type: 'progress_update',
+      icon: 'document',
+      text: '正在读取工作区内容…',
+    })
     expect(mocked.persistRuntimeEvent).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'runtime-1' }),
       expect.objectContaining({ type: 'tool_call', requestId: 'call-2' }),

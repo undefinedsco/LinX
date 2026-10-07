@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinX 产品设计走查（自顶向下）· 2026-07-17</title>
+<style>
+:root {
+  --background: hsl(240 6% 98.5%);
+  --foreground: hsl(240 10% 14%);
+  --card: hsl(0 0% 100%);
+  --muted: hsl(240 5% 95.5%);
+  --muted-foreground: hsl(240 4% 46%);
+  --border: hsl(240 6% 90%);
+  --input: hsl(240 6% 84%);
+  --primary: #735FC4;
+  --primary-soft: hsl(252 46% 57% / 0.10);
+  --ring: hsl(252 46% 57% / 0.35);
+  --destructive: hsl(0 62% 47%);
+  --destructive-soft: hsl(0 62% 47% / 0.08);
+  --warning: hsl(32 78% 40%);
+  --warning-soft: hsl(32 78% 40% / 0.10);
+  --success: hsl(152 48% 34%);
+  --success-soft: hsl(152 48% 34% / 0.10);
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.10);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font); font-size: 14px; line-height: 1.6; color: var(--foreground); background: var(--background); -webkit-font-smoothing: antialiased; }
+code { font-family: var(--mono); font-size: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+.shell { display: flex; min-height: 100vh; }
+.rail { position: sticky; top: 0; align-self: flex-start; width: 232px; height: 100vh; flex-shrink: 0; border-right: 1px solid var(--border); background: hsl(240 6% 97%); padding: 20px 12px; overflow-y: auto; }
+.rail .brand { display: flex; align-items: center; gap: 8px; padding: 0 8px 14px; }
+.rail .brand-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--primary); color: #fff; display: grid; place-items: center; font-weight: 600; font-size: 13px; }
+.rail .brand b { font-size: 13.5px; font-weight: 600; display: block; }
+.rail .brand small { color: var(--muted-foreground); font-size: 11px; }
+.rail nav { display: flex; flex-direction: column; gap: 1px; }
+.rail nav a { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; color: var(--muted-foreground); font-size: 13px; font-weight: 500; text-decoration: none; transition: background 150ms ease-out, color 150ms ease-out; }
+.rail nav a:hover { background: var(--muted); color: var(--foreground); }
+.rail nav a .n { color: hsl(240 4% 62%); font-size: 11px; font-family: var(--mono); width: 18px; }
+.rail .rail-foot { margin-top: 18px; padding: 10px 8px 0; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 11.5px; line-height: 1.5; }
+.main { flex: 1; min-width: 0; padding: 28px 36px 96px; max-width: 1120px; }
+h1 { font-size: 21px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 16.5px; font-weight: 600; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+h3 { font-size: 14.5px; font-weight: 600; margin: 0; }
+.lede { color: var(--muted-foreground); font-size: 13.5px; margin: 0 0 20px; }
+.section { margin-top: 44px; }
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; border-radius: 999px; border: 1px solid; padding: 1px 8px; white-space: nowrap; }
+.badge.ok { color: var(--success); background: var(--success-soft); border-color: hsl(152 48% 34% / 0.3); }
+.badge.warn { color: var(--warning); background: var(--warning-soft); border-color: hsl(32 78% 40% / 0.3); }
+.badge.bad { color: var(--destructive); background: var(--destructive-soft); border-color: hsl(0 62% 47% / 0.3); }
+.badge.neutral { color: var(--muted-foreground); background: var(--muted); border-color: var(--border); }
+.badge.acc { color: var(--primary); background: var(--primary-soft); border-color: hsl(252 46% 57% / 0.25); }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 16px 18px; margin-bottom: 14px; }
+.card > header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.card .tags { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.card p { margin: 8px 0; font-size: 13.5px; }
+.card p b, .card li b { font-weight: 600; }
+.card ul { margin: 8px 0; padding-left: 20px; }
+.card li { margin: 4px 0; font-size: 13.5px; }
+/* 截图对照 */
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 960px) { .compare { grid-template-columns: 1fr; } }
+.shot { border: 1px solid var(--border); border-radius: var(--radius-control); overflow: hidden; background: var(--background); }
+.shot .shot-label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.shot.prod .shot-label { color: var(--destructive); background: var(--destructive-soft); }
+.shot.prod-ok .shot-label { color: var(--success); background: var(--success-soft); }
+.shot.proto .shot-label { color: var(--primary); background: var(--primary-soft); }
+.shot.contract .shot-label { color: var(--foreground); background: var(--muted); }
+.shot .shot-label::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.shot img { display: block; width: 100%; height: auto; }
+.shot .shot-note { margin: 0; padding: 8px 12px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--muted-foreground); line-height: 1.55; }
+.shot .shot-note b { color: var(--foreground); font-weight: 500; }
+.shot.single { max-width: 640px; }
+table.report { border-collapse: collapse; width: 100%; font-size: 12.5px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+table.report th { text-align: left; font-weight: 500; color: var(--muted-foreground); font-size: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: hsl(240 6% 97.5%); }
+table.report td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.55; }
+table.report tr:last-child td { border-bottom: none; }
+.plan { display: flex; flex-direction: column; gap: 10px; }
+.plan-step { display: flex; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 12px 16px; align-items: flex-start; }
+.plan-step .p-tag { flex-shrink: 0; min-width: 72px; height: 24px; border-radius: 999px; display: grid; place-items: center; font-size: 11.5px; font-weight: 600; margin-top: 1px; padding: 0 10px; }
+.plan-step.l1 .p-tag { background: var(--destructive-soft); color: var(--destructive); }
+.plan-step.l2 .p-tag { background: var(--warning-soft); color: var(--warning); }
+.plan-step.l3 .p-tag { background: hsl(210 60% 45% / 0.08); color: hsl(210 60% 42%); }
+.plan-step.l4 .p-tag { background: var(--muted); color: var(--muted-foreground); }
+.plan-step b { font-weight: 600; font-size: 13.5px; }
+.plan-step p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted-foreground); }
+.verdict { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.verdict.ok { background: var(--success-soft); color: var(--success); }
+.verdict.warn { background: var(--warning-soft); color: var(--warning); }
+.verdict.bad { background: var(--destructive-soft); color: var(--destructive); }
+.footer-note { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 12px; }
+.kicker { font-size: 12px; font-weight: 600; color: var(--primary); letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 2px; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <span class="brand-mark">L</span>
+      <div><b>设计走查 · 自顶向下</b><small>产品 → 框架 → 布局 → 模块</small></div>
+    </div>
+    <nav>
+      <a href="#verdict"><span class="n">0</span>总评</a>
+      <a href="#product"><span class="n">1</span>产品层 · 首屏叙事</a>
+      <a href="#ia"><span class="n">2</span>框架层 · 信息架构</a>
+      <a href="#layout"><span class="n">3</span>布局层 · 结构契约</a>
+      <a href="#modules"><span class="n">4</span>模块层 · 形态差距</a>
+      <a href="#tone"><span class="n">5</span>设计气质评估</a>
+      <a href="#plan"><span class="n">6</span>结论与修复顺序</a>
+    </nav>
+    <div class="rail-foot">
+      走查对象：apps/web 生产版（真实 xpod Pod 登录）+ apps/prototype（设计意图参照）。<br><br>
+      契约基准：DESIGN.md。截图：.review-shots/topdown/。<br><br>
+      交互细节层（150+ 项）见 frontend-interaction-review.html。
+    </div>
+  </aside>
+
+  <main class="main">
+    <h1>LinX 产品设计走查（自顶向下）</h1>
+    <p class="lede">从产品定位出发，逐层对照 DESIGN.md 契约：产品叙事 → 信息架构 → 布局结构 → 模块形态 → 视觉气质。所有判断附真实截图证据（生产版 = 本地 xpod Pod 真实登录后走查；prototype = 设计意图参照）。</p>
+
+    <!-- ============ 总评 ============ -->
+    <section class="section" id="verdict" style="margin-top:8px">
+      <h2>§0 总评：框架方向正确，坍塌在"产品叙事落地"</h2>
+      <table class="report" style="margin-top:12px">
+        <thead><tr><th style="width:150px">层级</th><th style="width:80px">状态</th><th>核心判断</th></tr></thead>
+        <tbody>
+          <tr><td><b>产品层</b><br><span style="color:var(--muted-foreground)">首屏叙事</span></td><td><span class="verdict bad">✗</span></td><td>登录后第一眼是<b>完全空白</b>：无 Secretary welcome、无 composer、无存储/runtime 状态。chat-first 与"状态显式"两大产品承诺在首屏同时缺席。</td></tr>
+          <tr><td><b>框架层</b><br><span style="color:var(--muted-foreground)">信息架构</span></td><td><span class="verdict ok">✓</span></td><td>做得最好的一层：rail 四模块 + 设置菜单、Inbox 收敛为铃铛异常中心、keys/models 收进设置——与 DESIGN.md IA 一致。缺"当前空间/工作现场"的全局可见性。</td></tr>
+          <tr><td><b>布局层</b><br><span style="color:var(--muted-foreground)">结构契约</span></td><td><span class="verdict warn">⚠</span></td><td>两栏纪律与 48px head 统一；但 <b>Files 布局与契约相反</b>（常驻树占据 list pane）、无面包屑/返回、空态不 actionable、compact 破损。</td></tr>
+          <tr><td><b>模块层</b><br><span style="color:var(--muted-foreground)">形态差距</span></td><td><span class="verdict warn">⚠</span></td><td>settings / inbox 完整；files / contacts 半成品；<b>chat 与 prototype 设计意图差距最大</b>——设计是清楚的，生产没跟上。</td></tr>
+          <tr><td><b>气质层</b><br><span style="color:var(--muted-foreground)">视觉纪律</span></td><td><span class="verdict ok">✓</span></td><td>生产版整体符合 macOS-native 克制气质（中性面、稀疏紫、border-led）。断裂点：死按钮外露、原始 URL/ID 外露、登录跳转 xpod 营销页。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ §1 产品层 ============ -->
+    <section class="section" id="product">
+      <p class="kicker">Layer 1 · Product</p>
+      <h2>§1 产品层：用户第一眼理解到的，不是产品想传达的</h2>
+      <p class="lede">DESIGN.md 的产品承诺：chat 是主舞台；Secretary 是不可变第一会话与首次入口；信任信号（存储位置 / provider / runtime / 审批状态）在使用点显式可见；"Useful before persistence settles"——本地确定性 UI 先于远端就绪。</p>
+
+      <div class="card">
+        <header><span class="badge bad">坍塌</span><h3>P1 · 登录后首屏 = 完全空白：无 welcome、无 composer、无任何"能做什么"</h3></header>
+        <div class="tags"><span class="badge acc">契约 · Empty Secretary thread shows the product welcome and starter actions above an available composer</span></div>
+        <p>真实走查：种子 Pod 登录成功 → 落在 <code>/chat</code> → 列表里有"LinX 主理人"会话 → 内容区<b>整片空白</b>。点击进入会话后依然空白（等待 6s+）。没有 Secretary welcome、没有输入框、没有错误说明、没有"去配置 AI Key"的引导。</p>
+        <p><b>根因（代码证据）</b>：<code>ChatContentPane.tsx:846</code> 的 <code>isStagedSecretaryWelcome = isSecretary && !activeThread</code> —— welcome 只在"无选中 thread"时渲染；但 <code>:856-870</code> 的 effect 会<b>自动选中第一个 thread</b>，于是路径变成 ChatKitPanel，而 ChatKit 在无 runtime/AI key 时渲染为空白。<b>welcome 被自己绕过了。</b></p>
+        <div class="compare">
+          <div class="shot prod">
+            <div class="shot-label">生产版 · 登录后首屏（18-web-home-chat.png）</div>
+            <img src="../.review-shots/topdown/18-web-home-chat.png" alt="生产版首屏空白">
+            <p class="shot-note">列表有 Secretary（"暂无消息"），内容区空白。<b>用户第一次打开产品，看到的是"什么都没有"。</b></p>
+          </div>
+          <div class="shot proto">
+            <div class="shot-label">设计意图 · prototype chat（01-chat-default.png）</div>
+            <img src="../.review-shots/topdown/01-chat-default.png" alt="prototype chat">
+            <p class="shot-note">设计意图是清楚的：welcome 卡（工作现场就绪）、审批卡（批准/拒绝/查看 Inbox）、右侧"当前工作现场 + Agent 能力 + 快捷入口"、底部 composer。<b>设计没有缺失，是生产没落地。</b></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <header><span class="badge bad">坍塌</span><h3>P2 · 信任信号在主路径全程缺席："我的数据在哪"无从得知</h3></header>
+        <div class="tags"><span class="badge acc">契约 · Trust signals: storage location, provider, runtime readiness… explicit at the point where the user needs them</span></div>
+        <p>走查全程（chat / contacts / files / favorites 四个主模块），界面上<b>没有任何位置</b>显示：当前存储空间（本机/云端）、Pod 地址、runtime 是否就绪、数据是否已同步。唯一的状态信号藏在"设置 → 运行环境"里的两个徽标（Web / Solid Pod 登录）——而信任信号契约要求它出现在<b>用户需要它的使用点</b>，不是低频设置页。</p>
+        <p>对比 prototype：chat 头部有"当前 Thread · 默认助手 · <b>Pod 已同步</b>"，右侧栏有"当前工作现场 Thread/Workspace/Repository"。生产版头部只有"Assistant › linx–lite"。</p>
+      </div>
+
+      <div class="card">
+        <header><span class="badge warn">偏差</span><h3>P3 · Secretary 身份叙事分裂：同一对象三个名字</h3></header>
+        <div class="tags"><span class="badge acc">契约 · Secretary is a product-owned fixed conversation: render it first, select it on first entry</span></div>
+        <ul>
+          <li>会话列表：<b>LinX 主理人</b></li>
+          <li>内容头部（未选中）：<b>Assistant</b></li>
+          <li>内容头部（选中后）：<b>LinX 主理人 › linx–lite</b>（linx–lite 是模型名，出现在面包屑层级里）</li>
+          <li>联系人详情：<b>LinX 主理人</b>，ID 显示 <code>__secretary__</code></li>
+        </ul>
+        <p>用户无法建立"Secretary = 我的默认助手"这一核心心智。DESIGN.md 术语契约要求产品内统一 Secretary 叙事（prototype 统一为 "AI Secretary · 默认 Agent · 不可删除"）。</p>
+      </div>
+
+      <div class="card">
+        <header><span class="badge warn">偏差</span><h3>P4 · 登录路径气质断裂：克制弹窗 → xpod 营销页</h3></header>
+        <p>LinX 登录弹窗是克制的产品语言（"数据保存位置 / 云端空间 / 本机空间"）；点"继续"后跳到 xpod OIDC 页——"Simplify Life with Your AI Secretary" 营销大字 + 紫色 SaaS 风。这恰好是 DESIGN.md Avoid 清单里的风格。虽然该页面属于 xpod 运行时，但<b>用户把它当作 LinX 产品体验的一部分</b>。</p>
+        <div class="compare">
+          <div class="shot prod-ok">
+            <div class="shot-label">LinX 登录弹窗 · 克制、操作式（11-web-providers.png）</div>
+            <img src="../.review-shots/topdown/11-web-providers.png" alt="LinX 登录">
+            <p class="shot-note">符合 spec：紧凑、无高级配置、数据位置前置。</p>
+          </div>
+          <div class="shot prod">
+            <div class="shot-label">xpod OIDC 页 · 营销风（14-web-oidc.png）</div>
+            <img src="../.review-shots/topdown/14-web-oidc.png" alt="xpod OIDC">
+            <p class="shot-note">"Personal Messages Platform" 定位语与 LinX 也不一致。建议：自定义该页面（xpod 支持静态资源定制），至少改为操作式文案与中性视觉。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ §2 框架层 ============ -->
+    <section class="section" id="ia">
+      <p class="kicker">Layer 2 · Information Architecture</p>
+      <h2>§2 框架层：收敛正确，是做得最好的一层</h2>
+      <p class="lede">DESIGN.md IA 契约：Chat 主舞台；Contacts/Files/Favorites 支撑面；Inbox 是异常中心而非主 app；audit/keys/models/diagnostics 进 settings；Files 在 rail 只出现一次。</p>
+
+      <div class="card">
+        <header><span class="badge ok">符合</span><h3>IA1 · 全局导航：rail 四模块 + 设置菜单，与契约一致</h3></header>
+        <ul>
+          <li><b>rail</b>：聊天 / 联系人 / 文件 / 收藏 + 底部设置菜单（通用设置 / 模型服务 / 服务管理 / 关于 / 退出登录）——<code>PrimaryLayout.tsx:56</code> <code>primaryNavIds = ['chat','contacts','files','favorites']</code>，模型服务收进设置菜单 ✓</li>
+          <li><b>Inbox</b>：不占 rail，以头部铃铛 + 弹层存在（统一收件箱：全部/待处理/审计 + 打开收件箱）——符合 "exception center, not a competing main app" ✓</li>
+          <li><b>Files 只出现一次</b> ✓；默认模块 chat ✓</li>
+          <li>prototype 曾把"聊天文件 / 聊天记录管理 / 密钥 / 模型"都放上 rail（9 个入口），生产版已收敛——<b>这正是 DESIGN.md "Prefer fewer visible modules" 的正面实践</b>。</li>
+        </ul>
+        <div class="compare">
+          <div class="shot prod-ok">
+            <div class="shot-label">生产版 · Inbox 铃铛弹层（20-web-inbox.png）</div>
+            <img src="../.review-shots/topdown/20-web-inbox.png" alt="inbox popover">
+            <p class="shot-note">全局异常中心的正确形态：就地可见数量、可进入完整收件箱。</p>
+          </div>
+          <div class="shot prod-ok">
+            <div class="shot-label">生产版 · 设置承载低频面（22-web-settings.png）</div>
+            <img src="../.review-shots/topdown/22-web-settings.png" alt="settings">
+            <p class="shot-note">通用 / 版本更新 / 运行环境 / 本地网络——低频配置正确地藏进设置。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <header><span class="badge warn">缺口</span><h3>IA2 · "当前空间 / 工作现场"在框架层没有位置</h3></header>
+        <p>框架没有任何全局槽位呈现"当前存储空间 + 工作现场"。prototype 的解法是 chat 右侧栏（当前工作现场：Thread / Workspace / Repository）；生产版 <code>useChatLayoutConfig</code> 有 rightSidebar 能力但 <code>showRightSidebar</code> 默认 false，且非 chat 模块没有等价物。<b>建议：</b>把"空间徽标"提升为框架级元素（如 rail 头像旁 / 内容头部左侧），而不是某个模块的侧栏内容——它是跨模块信任信号，不是 chat 的局部信息。</p>
+      </div>
+
+      <div class="card">
+        <header><span class="badge warn">外露</span><h3>IA3 · 调试/测试页面注册在生产路由表，任何用户可直接访问</h3></header>
+        <p><code>router.tsx</code> 中注册了 <code>/debug/search-select</code>、<code>/debug/chat</code>、<code>/inrupt-test</code>、<code>/test/solid-ui-react</code>、<code>/test/inrupt-simple</code>、<code>/app/demo</code> 等调试与试验页面。它们不在任何导航里，但通过 URL 直接可达——与 IA 收敛"fewer visible modules"同原则：<b>调试面不应存在于生产构建</b>。建议：按 <code>import.meta.env.DEV</code> 条件注册，或集中到 <code>/debug/*</code> 并在生产构建中剔除。</p>
+      </div>
+    </section>
+
+    <!-- ============ §3 布局层 ============ -->
+    <section class="section" id="layout">
+      <p class="kicker">Layer 3 · Layout</p>
+      <h2>§3 布局层：统一的两栏纪律做对了，Files 的结构与契约相反</h2>
+      <p class="lede">契约：全应用统一 rail + list + content；48px head；Files 恰好两个常驻 pane（当前文件夹列表 + 资源 workspace），树从列表头唤起；空态必须 actionable；compact 隐藏 rail 并保证可读。</p>
+
+      <div class="card">
+        <header><span class="badge ok">符合</span><h3>L1 · 统一框架：rail + list + content + 48px head，全部模块一致</h3></header>
+        <p>生产版所有模块共享同一壳层（<code>PrimaryLayout</code> + <code>ResizablePanelGroup</code>），head 高 48px（<code>h-12</code>），选中态浅紫、border-led 分离。布局纪律本身是好的——问题在模块怎么使用这个壳。</p>
+      </div>
+
+      <div class="card">
+        <header><span class="badge bad">相反</span><h3>L2 · Files：常驻树占据 list pane，"当前文件夹浏览"被挤到 workspace</h3></header>
+        <div class="tags"><span class="badge acc">契约 · Files has exactly two persistent panes: a current-folder browser/list and a resource workspace. Folder tree is an invoked popover or drawer from the browser head.</span></div>
+        <p>生产版左栏是<b>常驻文件夹树</b>（agents / profile / README）。点文件夹 → 右侧 workspace 变成文件夹列表；点文件 → 同一 workspace 变成文件详情。于是：<b>"浏览文件夹"和"查看资源"共用一块区域，树永远占据左栏</b>——与契约的"左=当前文件夹浏览、右=资源 workspace、树按需唤起"恰好相反。契约还明确警告："Do not compose a Shell list pane around another list/detail split."</p>
+        <div class="compare">
+          <div class="shot prod">
+            <div class="shot-label">生产版 · 树常驻左栏（19-web-files.png）</div>
+            <img src="../.review-shots/topdown/19-web-files.png" alt="files 树常驻">
+            <p class="shot-note">左栏=树；右侧空态"选择一个文件查看详情"——<b>不是 folder overview，也不是 actionable 空态</b>（契约：不得是 unexplained blank pane）。</p>
+          </div>
+          <div class="shot prod">
+            <div class="shot-label">生产版 · 进入文件夹后（33-web-files-profile.png）</div>
+            <img src="../.review-shots/topdown/33-web-files-profile.png" alt="进入文件夹">
+            <p class="shot-note">文件夹列表出现在右侧 workspace；头部只有标题"profile"，<b>无路径、无返回按钮</b>（契约：visible back action + current path）。"修改/大小"列全是 "—"。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <header><span class="badge warn">偏差</span><h3>L3 · 文件详情是"占位 + 跳转按钮"，不是 preview-first</h3></header>
+        <div class="tags"><span class="badge acc">契约 · readonly resources stay preview/detail-first；folder details with local selection and lightweight preview</span></div>
+        <div class="compare">
+          <div class="shot prod">
+            <div class="shot-label">生产版 · 选中 README（31-web-files-readme.png）</div>
+            <img src="../.review-shots/topdown/31-web-files-readme.png" alt="文件占位详情">
+            <p class="shot-note">内容区只有元信息 + 紫色大按钮"打开文件详情"，正文是一句"完整内容将在弹出的文件详情中读取"。<b>预览不是预览。</b></p>
+          </div>
+          <div class="shot proto">
+            <div class="shot-label">设计意图 · prototype 文件 sheet（42-proto-md-file.png）</div>
+            <img src="../.review-shots/topdown/42-proto-md-file.png" alt="prototype md sheet">
+            <p class="shot-note">设计意图：内容渲染 + Properties（reviewStatus/tags chips）+ Meta 尾栏（path/kind/format/size/modified）——正是契约说的 "focused sheet with `.meta` in the bottom tail"。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <header><span class="badge warn">偏差</span><h3>L4 · 联系人详情：技术标识外露 + 布局残留 bug</h3></header>
+        <div class="compare">
+          <div class="shot prod">
+            <div class="shot-label">生产版 · 联系人详情（34-web-contact-detail.png）</div>
+            <img src="../.review-shots/topdown/34-web-contact-detail.png" alt="联系人详情">
+            <p class="shot-note">①"聊天模型"显示完整 URL <code>http://localhost:3000/settings/providers/undefineds.ttl#linx–lite</code>——应显示模型名（copy 契约：advanced terms 留在设置）；②左栏右缘残留一个"AI"字符（渲染 bug）；③语音/视频死按钮占据 C 位。</p>
+          </div>
+          <div class="shot proto">
+            <div class="shot-label">设计意图 · prototype 联系人（02-module-联系人.png）</div>
+            <img src="../.review-shots/topdown/02-module-联系人.png" alt="prototype 联系人">
+            <p class="shot-note">设计意图有信息分层：关系边界（Contact/Person/Agent）+ 共享上下文（Chat/Workspace/Artifacts）——生产版退化为一张大表单。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <header><span class="badge bad">破损</span><h3>L5 · Compact（480px）：rail 未隐藏、列表消失且无返回路径、内容溢出</h3></header>
+        <div class="tags"><span class="badge acc">契约 · Narrow layouts collapse supporting panes；Files compact: hide the global rail, one head, keep the active resource readable</span></div>
+        <div class="shot prod single">
+          <div class="shot-label">生产版 · 480px 联系人详情（36-web-compact.png）</div>
+          <img src="../.review-shots/topdown/36-web-compact.png" alt="compact 480px" style="max-width:300px">
+          <p class="shot-note">① rail 仍占 64px（契约要求 compact 隐藏）；② list pane 消失后<b>没有任何返回列表的入口</b>（头部只有"联系人"三个字）；③"聊天模型" URL 横向溢出屏幕；④语音/视频按钮被挤出可视区。mobile 非首要目标，但契约明确 tablet/narrow 要可用于 review——当前窄屏是死路。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ §4 模块层 ============ -->
+    <section class="section" id="modules">
+      <p class="kicker">Layer 4 · Modules</p>
+      <h2>§4 模块层：生产 vs 设计意图的形态差距</h2>
+      <p class="lede">prototype 代表经过设计思考的目标形态。逐模块对照，差距本身就是 backlog。</p>
+      <table class="report">
+        <thead><tr><th style="width:90px">模块</th><th style="width:90px">状态</th><th>生产现状</th><th>设计意图（prototype / DESIGN.md）</th><th>关键差距</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>chat</b></td><td><span class="verdict bad">✗</span></td>
+            <td>内容区空白；无 welcome / composer / 右侧栏；命名分裂</td>
+            <td>Secretary welcome 卡 + 审批卡 + 工作现场侧栏 + composer + "Pod 已同步"状态</td>
+            <td><b>主舞台不可用</b>。welcome 被自动选 thread 绕过；无 runtime/key 时零状态说明</td>
+          </tr>
+          <tr>
+            <td><b>files</b></td><td><span class="verdict warn">⚠</span></td>
+            <td>常驻树 + 占位详情；无面包屑；空态不 actionable；无结构化表格/视图切换的实际内容（本 Pod 无 .ttl，但视图控件已存在）</td>
+            <td>两栏浏览 + 轻量预览 + 结构化表格/Kanban/Whiteboard + 文件 sheet + meta tail</td>
+            <td>布局结构相反；preview-first 未实现；folder overview 缺失</td>
+          </tr>
+          <tr>
+            <td><b>contacts</b></td><td><span class="verdict warn">⚠</span></td>
+            <td>列表分组（AI 助手）✓；详情为大表单；URL 外露；死按钮；"AI"残留</td>
+            <td>关系边界（Contact/Person/Agent 分层）+ 共享上下文 + 规则/说明可读化</td>
+            <td>信息分层缺失；技术标识外露；半成品按钮外露</td>
+          </tr>
+          <tr>
+            <td><b>favorites</b></td><td><span class="verdict warn">⚠</span></td>
+            <td>空态双栏（"暂无收藏" + "选择一个收藏项查看详情"）</td>
+            <td>按时间分组 + 类型分段（Msg/File/Link/Contact）+ "Go back to" 回到原处</td>
+            <td>空态没有引导（"去聊天/文件里标星"）；"回到原场景"这一核心价值未见</td>
+          </tr>
+          <tr>
+            <td><b>inbox</b></td><td><span class="verdict ok">✓</span></td>
+            <td>铃铛弹层：全部/待处理/审计 + 打开收件箱/查看审计/查看全部</td>
+            <td>右侧/全局异常中心</td>
+            <td>形态正确；审批处理细节问题见交互审查</td>
+          </tr>
+          <tr>
+            <td><b>settings</b></td><td><span class="verdict ok">✓</span></td>
+            <td>最完整模块：通用/版本更新/运行环境/本地网络；运行环境有 Web + Solid Pod 徽标</td>
+            <td>低频配置承载面</td>
+            <td>运行环境徽标是信任信号的正确雏形——<b>应该上浮到主路径</b></td>
+          </tr>
+          <tr>
+            <td><b>model-services</b></td><td><span class="verdict ok">✓</span></td>
+            <td>收在设置菜单 ✓；提供商/模型两栏管理（截图 23 未取，代码结构完整）</td>
+            <td>models 进 settings，不占主导航</td>
+            <td>正确承载；细节问题见交互审查</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="card" style="margin-top:14px">
+        <header><span class="badge warn">提示</span><h3>prototype 自身也有完成度问题（设计意图层）</h3></header>
+        <ul>
+          <li>结构化表格 <code>.vocab/terms.ttl</code>：多行 Term 列与 Kind 列<b>文字重叠</b>（如 "udfs:reviewStatusPublished" 与 "Enum" 叠印）；Range 列枚举值溢出截断（<code>active | paused | arc…</code>）——见 02-module-文件.png。</li>
+          <li>favorites 三栏：左列表与中间宽列表内容重复，"三栏"里两栏是同一信息的不同密度——生产版收敛为双栏是合理的，prototype 这个探索方向不必跟随。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ §5 气质评估 ============ -->
+    <section class="section" id="tone">
+      <p class="kicker">Layer 5 · Visual Tone</p>
+      <h2>§5 设计气质：底盘是对的，破坏点集中在"外露"</h2>
+      <div class="card">
+        <header><span class="badge ok">符合</span><h3>生产版视觉纪律整体达标</h3></header>
+        <p>中性灰底 + 白色面板、1px border 承载结构、紫色仅用于当前模块/选中行/主按钮、系统字体、无渐变无 glow 无彩色阴影——与 DESIGN.md "restrained chrome, neutral surfaces, sparse accent, border-led separation" 一致。<b>气质问题不在视觉系统，在内容外露：</b></p>
+        <table class="report">
+          <thead><tr><th style="width:200px">断裂点</th><th>违反的气质契约</th></tr></thead>
+          <tbody>
+            <tr><td>语音/视频死按钮占据联系人详情 C 位</td><td>"Prefer fewer visible modules over half-finished capability"——半成品不外露</td></tr>
+            <tr><td>聊天模型显示原始 URL、ID 显示 <code>__secretary__</code>、文件详情显示 URI 行</td><td>"Keep advanced terms in settings/diagnostics"——技术标识不该出现在主路径</td></tr>
+            <tr><td>登录跳转 xpod 营销页（"Simplify Life with Your AI Secretary"）</td><td>Avoid: "broad purple SaaS styling"、"emotion-led accent"——第三方页面也是产品体验</td></tr>
+            <tr><td>首屏空白（无状态说明）</td><td>"Prefer transparent waiting/error state over a visually cleaner but silent experience"</td></tr>
+            <tr><td>"AI"残留字符、表格列文字重叠（prototype）</td><td>完成度即气质：渲染 bug 比配色问题更伤"precise, trustworthy"</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ §6 结论 ============ -->
+    <section class="section" id="plan">
+      <p class="kicker">Conclusion</p>
+      <h2>§6 结论与修复顺序（自顶向下）</h2>
+      <p class="lede">一句话结论：<b>框架（IA）已经收敛到正确形态；坍塌发生在"产品叙事落地"——chat 主舞台空白、信任信号缺席、Files 从资源浏览器退化为树+跳转按钮。</b>设计意图（DESIGN.md / prototype）是清楚的，不需要重新设计，需要按层级把生产实现拉回契约。</p>
+      <div class="plan">
+        <div class="plan-step l1">
+          <span class="p-tag">① 产品层</span>
+          <div><b>先救首屏：Secretary welcome 真实渲染 + 主路径信任信号</b>
+          <p>welcome 不被自动选 thread 绕过（空 thread 也先显示 welcome + 可用 composer）；无 runtime/AI key 时显示明确状态与"前往设置"动作（宁要透明的等待，不要安静的空白）；头部或 rail 增加"当前空间"徽标（本机/云端 + 同步状态），从设置页"运行环境"上浮。</p></div>
+        </div>
+        <div class="plan-step l2">
+          <span class="p-tag">② 框架层</span>
+          <div><b>统一 Secretary 叙事 + 工作现场可见性</b>
+          <p>列表/头部/面包屑/联系人统一为同一名字与身份（"主理人 · 默认助手"，模型名不进面包屑）；工作现场（Thread/Workspace）以框架级槽位呈现，而不是 chat 私有侧栏。</p></div>
+        </div>
+        <div class="plan-step l3">
+          <span class="p-tag">③ 布局层</span>
+          <div><b>Files 结构拉回契约 + compact 修复</b>
+          <p>list pane 改为"当前文件夹浏览"，树改为从列表头唤起的 popover/drawer；头部加面包屑+返回；workspace 空态改为 folder overview / actionable 引导；文件 preview-first（内容渲染 + meta tail），"打开文件详情"降级为编辑入口；compact 隐藏 rail、提供返回、修复溢出。</p></div>
+        </div>
+        <div class="plan-step l4">
+          <span class="p-tag">④ 模块层</span>
+          <div><b>联系人/收藏补齐信息分层，下线半成品</b>
+          <p>联系人详情：URL→模型名、引入"关系边界/共享上下文"分层、语音/视频按钮下线或置灰标注；收藏空态加引导（"在聊天/文件中点星标，在这里回到它们"）。</p></div>
+        </div>
+        <div class="plan-step l4">
+          <span class="p-tag">⑤ 细节层</span>
+          <div><b>150+ 交互细节项</b>
+          <p>见 <code>frontend-interaction-review.html</code>（含 P0：审批失败草稿丢失 / AI 状态伪装消息 / 本机静默回退云端 / toast 系统调试值）。建议与 ①-④ 按模块合并排期，避免同一文件两次开工。</p></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <header><span class="badge ok">保持</span><h3>做对了、应该保持的方向</h3></header>
+        <ul>
+          <li><b>IA 收敛</b>：从 prototype 的 9 个 rail 入口收敛到 4 + 设置菜单 + 铃铛——"fewer visible modules" 的正确实践</li>
+          <li><b>设置模块</b>：完整度最高，"运行环境"徽标是信任信号的正确雏形</li>
+          <li><b>Inbox 弹层</b>：异常中心的正确形态</li>
+          <li><b>统一壳层</b>：rail + list + content + 48px head 的框架纪律</li>
+          <li><b>视觉底盘</b>：macOS-native 克制气质达标，无 SaaS 化装饰</li>
+        </ul>
+      </div>
+    </section>
+
+    <p class="footer-note">
+      走查环境：apps/web（Vite dev）+ 本地 xpod 种子 Pod（review@linx.local）真实 OIDC 登录；apps/prototype 作设计意图参照。截图存于 .review-shots/topdown/（Playwright 自动走查拍摄）。<br>
+      交互细节层报告：docs/frontend-interaction-review.html（150+ 项，含代码定位）。<br>
+      LinX 设计走查 · 2026-07-17
+    </p>
+  </main>
+</div>
+</body>
+</html>

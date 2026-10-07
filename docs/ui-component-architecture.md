@@ -11,7 +11,9 @@ LinX 采用纯 UI / 逻辑 UI 分层。状态：R6 设计合同，2026-09-28；�
 | Collection / repository / shared use-case | 当前资源、查询、持久化与领域动作 | Pod 数据遵从 models + drizzle-solid；失败不能用 UI 假数据遮盖 |
 | Zustand / 局部状态 | 选择、筛选、面板、阅读位置等 UI 状态 | 不成为知识修订、Run、个人模型或 grant 的第二真相 |
 
-模块级 domain/query/adapter 边界继续依 feature 文档和 architecture tests。纯 UI 默认不访问 store；确需跨组件状态时优先提升至 container，仅 app-shell 视觉状态可有明确例外。
+模块级 `ui / features / domain / data / app` 边界以 [Frontend Module Abstraction](frontend-module-abstraction.md) 为准；具体 feature 的 domain/query/adapter 边界由对应文档和 architecture tests 约束。纯 UI 默认不访问 store；确需跨组件状态时优先提升至 container，仅 app-shell 视觉状态可有明确例外。
+
+Files 等复杂模块必须把可复用、无数据依赖的 shell/primitives 与 Files/Pod 业务感知的 feature container 分开维护。feature 通过 `data/queries` hooks、`app/store` 命名动作和 domain 函数编排；Pod 读写、乐观更新、订阅刷新与失败回滚由 `data/collections` + `data/cache` 等数据层 owner 实现，不能由 UI 直接操作 adapter、Collection internals 或 query cache。纯 UI 只消费投影与回调，不承担这些工作流。
 
 ## 页面组织与复用
 
@@ -53,4 +55,4 @@ Shell 管三入口与合法上下文，不直接读写 chat/contact/file/favorit
 | 集成 | 涉及 Pod 登录/持久化/权限/通知必须自举 xpod + 真实 Pod；mock 仅验证展示分支，不能证明授权或写入正确 |
 | 架构 | 纯 UI 不 import query/store/data；domain 不 import React/data；feature 不直接 import Pod adapter；跨端事实仍由共享模型定义 |
 
-本轮只修订文档，没有执行组件、浏览器或真实 Pod 测试。实施包须提供上述实际证据。
+本轮只修订文档，没有执行组件、浏览器或真实 Pod 测试。实施包须提供上述实际证据；Files 的 architecture、类型、真实 Pod 与生产交互验收 gate 见 [模块抽象规范](frontend-module-abstraction.md)，截图或 mock 测试不替代集成证据。

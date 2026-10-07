@@ -249,11 +249,11 @@ CLI session 的底部输入栏用于向 CLI session 注入指令，而非与 AI 
 
 | 文件 | 变更类型 | 说明 |
 |------|---------|------|
-| `chat/components/ChatContentPane.tsx` | 修改 | 根据 chatType 切换 variant='cli' |
-| `chat/components/SessionControlBar.tsx` | 新增 | Session 控制栏组件 |
-| `chat/components/Messages/Blocks/DiffPreview.tsx` | 新增 | Diff 预览组件 |
-| `chat/components/Messages/MessageList.tsx` | 修改 | 支持 variant='cli' 渲染逻辑 |
-| `chat/components/Inputbar/SessionInputbar.tsx` | 新增 | CLI session 专用输入栏 |
+| `chat/components/ChatContentPane.tsx` | 修改 | 只编排工作台入口与页面状态 |
+| `chat/features/runtime/RuntimeSessionToolbar.tsx` | 新增 | Session 控制与运行详情容器 |
+| ChatKit `client_tool_call` 投影 | 修改 | Diff 与工具运行状态通过统一消息协议展示 |
+| `chat/features/chatkit/ChatKitPanel.tsx` | 修改 | CLI 与普通聊天共用唯一消息视图 |
+| `ConversationSurfacePort` / `WorkbenchCommandBus` | 修改 | Session 指令通过统一 Composer 与命令总线注入 |
 | `chat/components/ChatListPane.tsx` | 修改 | CLI session 列表项渲染 |
 
 ---

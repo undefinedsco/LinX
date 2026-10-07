@@ -61,8 +61,8 @@ export function UserProfileCard({
         <div className="flex-1 min-w-0">
           <h3 className="text-lg font-semibold truncate flex items-center gap-1.5">
             {name}
-            {gender === 'male' && <span className="text-blue-500 text-xs">♂</span>}
-            {gender === 'female' && <span className="text-pink-500 text-xs">♀</span>}
+            {gender === 'male' && <span aria-label="男" className="text-xs text-muted-foreground">♂</span>}
+            {gender === 'female' && <span aria-label="女" className="text-xs text-muted-foreground">♀</span>}
           </h3>
           <p className="text-xs text-muted-foreground truncate opacity-80 font-mono" title={webId}>
             {shortId}

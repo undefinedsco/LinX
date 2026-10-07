@@ -91,7 +91,7 @@ vi.mock('@undefineds.co/drizzle-solid', async (importOriginal) => {
 // ============================================================================
 
 import { chatOps } from '@/modules/chat/collections'
-import { contactOps } from '@/modules/contacts/collections'
+import { contactOps } from '@/modules/contacts/data/collections'
 
 // ============================================================================
 // Tests

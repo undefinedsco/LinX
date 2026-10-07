@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { solidProfileResource } from '@undefineds.co/models'
-import { createLinxSolidDatabase, createTransportRewriteSession } from './linx-solid-database'
+import {
+  createFreshSparqlSession,
+  createLinxSolidDatabase,
+  createTransportRewriteSession,
+} from './linx-solid-database'
 
 const drizzleMock = vi.fn()
 const initializeLinxPodStorageMock = vi.fn()
@@ -35,6 +39,9 @@ describe('createLinxSolidDatabase', () => {
 
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
+      notifications: {
+        preferredChannels: ['streaming-http', 'websocket'],
+      },
       podUrl: undefined,
       resourcePreparation: 'best-effort',
       schema: { chat: 'schema' },
@@ -59,10 +66,36 @@ describe('createLinxSolidDatabase', () => {
 
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
+      notifications: {
+        preferredChannels: ['streaming-http', 'websocket'],
+      },
       podUrl: 'https://pod.example.com/',
       resourcePreparation: 'best-effort',
       schema: { chat: 'schema' },
     })
+  })
+
+  it('disables collection subscriptions for a plain-HTTP local Pod', async () => {
+    const session = { info: { webId: 'http://localhost:5737/alice/profile/card#me' } }
+    const dialect = {
+      config: { preferredChannels: ['streaming-http', 'websocket'] },
+      getPodUrl: () => 'http://localhost:5737/alice/',
+    }
+    const subscribe = vi.fn()
+    const db = {
+      getDialect: vi.fn(() => dialect),
+      subscribe,
+    }
+    drizzleMock.mockReturnValue(db)
+    initializeLinxPodStorageMock.mockResolvedValue(undefined)
+
+    const result = await createLinxSolidDatabase(session, {
+      podUrl: 'http://localhost:5737/alice/',
+    })
+
+    expect(dialect.config.preferredChannels).toEqual([])
+    expect((result as any).subscribe).toBeUndefined()
+    expect(subscribe).not.toHaveBeenCalled()
   })
 
   it('wraps authenticated fetch for local transport while preserving canonical Pod URLs', async () => {
@@ -95,6 +128,9 @@ describe('createLinxSolidDatabase', () => {
     expect(originalFetch).toHaveBeenCalledWith('http://localhost:5737/alice/agents/__secretary__/profile/card', undefined)
     expect(drizzleMock).toHaveBeenCalledWith(expect.any(Object), {
       disableInteropDiscovery: true,
+      notifications: {
+        preferredChannels: ['streaming-http', 'websocket'],
+      },
       podUrl: 'https://node.example/alice/',
       resourcePreparation: 'best-effort',
       schema: { chat: 'schema' },
@@ -118,6 +154,28 @@ describe('createLinxSolidDatabase', () => {
     expect(wrapped.events).toBe(session.events)
     await wrapped.fetch(new URL('https://node.example/alice/.data/chat/index.ttl'))
     expect(originalFetch.mock.calls[0]?.[0]?.toString()).toBe('http://localhost:5737/alice/.data/chat/index.ttl')
+  })
+
+  it('bypasses browser caches only for Pod SPARQL reads', async () => {
+    const originalFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('ok'))
+    const session = {
+      info: { webId: 'https://id.example/alice#me' },
+      fetch: originalFetch,
+    }
+    const wrapped = createFreshSparqlSession(session) as typeof session
+
+    await wrapped.fetch('https://pod.example/alice/.data/chat/-/sparql?query=SELECT')
+    await wrapped.fetch('https://pod.example/alice/.data/chat/thread.ttl')
+
+    expect(originalFetch).toHaveBeenNthCalledWith(1,
+      'https://pod.example/alice/.data/chat/-/sparql?query=SELECT',
+      { cache: 'no-store' },
+    )
+    expect(originalFetch).toHaveBeenNthCalledWith(2,
+      'https://pod.example/alice/.data/chat/thread.ttl',
+      undefined,
+    )
+    expect(wrapped.info).toBe(session.info)
   })
 
   it('overrides the dialect runtime when drizzle-solid does not forward podUrl yet', async () => {

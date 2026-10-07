@@ -16,7 +16,8 @@ import { ChatHeader } from '../components/ChatHeader'
 export const useChatLayoutConfig = () => {
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const showRightSidebar = useChatStore((state) => state.showRightSidebar)
-  
+  const toggleRightSidebar = useChatStore((state) => state.toggleRightSidebar)
+
   // Use new collection-based hook
   const { data: chats } = useChatList()
 
@@ -30,9 +31,16 @@ export const useChatLayoutConfig = () => {
       header: <ChatHeader />,
       mainTitle: activeChat?.title ?? '聊天',
       subtitle: activeChat?.description ?? '与 AI 助手协作',
-      rightSidebar: showRightSidebar ? <ChatRightSidebar /> : null,
+      rightSidebar: activeChat && showRightSidebar ? <ChatRightSidebar /> : null,
       rightSidebarWidth: 320,
+      rightSidebarToggle: activeChat
+        ? {
+            label: '会话详情',
+            open: showRightSidebar,
+            onToggle: toggleRightSidebar,
+          }
+        : undefined,
     }),
-    [activeChat?.description, activeChat?.title, showRightSidebar],
+    [activeChat, showRightSidebar, toggleRightSidebar],
   )
 }

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { agentResourceId } from '@/lib/data/resource-identity'
-import { buildAgentHomePath, ensureAgentHome } from './agent-home'
+import { buildAgentHomePath, ensureAgentHome, updateAgentHomeMetadata } from './agent-home'
 
 describe('agent-home', () => {
   it('creates default Agent Home files at canonical Agent Home paths', async () => {
-    const fetchMock = vi.fn(async () => new Response('', { status: 201 }))
+    const fetchMock = vi.fn(async (_input, init) => new Response('', { status: init?.method === 'HEAD' ? 404 : 201 }))
     const db = {
       getDialect: () => ({
         getPodUrl: () => 'https://alice.example/',
@@ -86,10 +86,81 @@ describe('agent-home', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('updates directory-backed agents through the .meta sidecar', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 200 }))
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    await updateAgentHomeMetadata(db, agentResourceId('agent-1'), {
+      name: 'Updated Agent',
+      metadata: { linx: { aiRuntimeLocation: 'server' } },
+      updatedAt: new Date('2026-08-07T00:00:00.000Z'),
+    }, {
+      name: 'Previous Agent',
+      metadata: { linx: { aiRuntimeLocation: 'client' } },
+      updatedAt: new Date('2026-08-06T00:00:00.000Z'),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls.every(([target, init]) =>
+      String(target) === 'https://alice.example/agents/agent-1/.meta' && init?.method === 'PATCH'
+    )).toBe(true)
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body)
+    expect(body).toContain('DELETE {')
+    expect(body).toContain('INSERT DATA')
+    expect(body).toContain('?previousValue')
+    expect(body).toContain('<https://alice.example/agents/agent-1/>')
+    expect(body).toContain('aiRuntimeLocation')
+    expect(body).toContain('XMLSchema#json')
+  })
+
+  it('updates provider, model, and tools atomically using their schema RDF terms', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 200 }))
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    await updateAgentHomeMetadata(db, agentResourceId('agent-1'), {
+      provider: 'openai',
+      model: 'gpt-5',
+      tools: ['web-search', 'filesystem'],
+    }, {
+      provider: 'undefineds',
+      model: 'linx-lite',
+      tools: ['web-search'],
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body)
+    expect(body).toContain('DELETE {')
+    expect(body).toContain('INSERT DATA')
+    expect(body).toContain('https://undefineds.co/ns#provider')
+    expect(body).toContain('https://undefineds.co/ns#model')
+    expect(body).toContain('https://undefineds.co/ns#tools')
+    expect(body).toContain('"filesystem"')
+    expect(body).toContain('BASE <https://alice.example/>')
+    expect(body).toContain('DELETE {')
+    expect(body).toContain('WHERE {')
+    expect(body).toContain('?previousValue')
+  })
+
   it('treats existing Agent Home files as initialized', async () => {
     const fetchMock = vi.fn(async (_input, init) => {
       if (init?.method === 'HEAD') return new Response('', { status: 200 })
-      return new Response('', { status: init?.method === 'PATCH' ? 200 : 412 })
+      if (!init?.method) {
+        return new Response([
+          '<https://alice.example/agents/agent-1/> a <http://xmlns.com/foaf/0.1/Agent> .',
+          '<https://alice.example/agents/agent-1/> a <https://undefineds.co/ns#AgentConfig> .',
+        ].join('\n'), { status: 200 })
+      }
+      return new Response('', { status: 200 })
     })
     const db = {
       getDialect: () => ({
@@ -106,6 +177,6 @@ describe('agent-home', () => {
     })).resolves.toBeUndefined()
 
     const writeCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT' || init?.method === 'PATCH')
-    expect(writeCalls).toHaveLength(3)
+    expect(writeCalls).toHaveLength(0)
   })
 })

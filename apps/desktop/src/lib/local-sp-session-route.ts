@@ -3,7 +3,9 @@ import { net, session, type ClientRequest, type ProtocolRequest, type ProtocolRe
 import type { LocalOnboardingSnapshot } from './local-onboarding';
 import type { XpodStatus } from './xpod-manager';
 
-const AUTH_SESSION_PARTITION = 'persist:linx-auth';
+// Persist the provider's browser session across app relaunches. This is
+// Chromium profile storage, not macOS Keychain storage.
+export const AUTH_SESSION_PARTITION = 'persist:linx-auth';
 
 export interface LocalSpSessionRoute {
   canonicalBaseUrl: string;

@@ -45,7 +45,7 @@ describe('chatOps storage routing', () => {
     expect((messageInsert?.metadata as any)?.reconciler?.latest?.eventType).toBe('message.appended')
     expect((messageInsert?.metadata as any)?.reconciler?.latest?.wakeJobs?.[0]?.targetRole).toBe('primary-agent')
     expect((messageInsert?.metadata as any)?.reconciler?.latest?.wakeJobs?.[0]?.sourceResource).toBe(`${SELECTED_SP_POD_URL}.data/${message.id}`)
-    expect(updates.find((entry) => entry.resource === chatResource)?.id).toBe(chatId)
+    expect(updates.find((entry) => entry.resource === chatResource)?.id).toBe(`${chatId}/index.ttl#this`)
 
     const persisted = JSON.stringify({
       inserts: inserts.map((entry) => entry.values),
@@ -53,6 +53,29 @@ describe('chatOps storage routing', () => {
     })
     expect(persisted).toContain(SELECTED_SP_POD_URL)
     expect(persisted).not.toContain(CLOUD_DATA_PREFIX)
+  })
+
+  it('updates the persisted chat resource after appending a message with a created thread id', async () => {
+    const chatId = `chat-message-resource-id-${Date.now()}`
+    const { db, inserts, updates } = createSelectedSpDb(chatId)
+    initializeChatCollections(db as any)
+
+    const thread = await chatOps.createThread(chatId, 'Resource id thread', { threadId: 'thread-resource-id' })
+    const message = await chatOps.createAssistantMessage(
+      chatId,
+      thread.id,
+      'assistant message with resource thread id',
+      CLOUD_WEB_ID,
+      JSON.stringify({ items: [] }),
+      { messageId: 'message-resource-id' },
+    )
+
+    const messageInsert = inserts.find((entry) => entry.resource === messageResource)?.values
+
+    expect(thread.id).toBe(`chat/${chatId}/index.ttl#thread-resource-id`)
+    expect(message.thread).toBe(`${SELECTED_SP_POD_URL}.data/chat/${chatId}/index.ttl#thread-resource-id`)
+    expect(messageInsert?.thread).toBe(message.thread)
+    expect(updates.find((entry) => entry.resource === chatResource)?.id).toBe(`${chatId}/index.ttl#this`)
   })
 })
 

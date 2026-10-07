@@ -1,4 +1,4 @@
-import { lazy, useEffect, type ComponentType, type ReactNode } from 'react'
+import { lazy, type ComponentType, type PropsWithChildren, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   MessageSquare,
@@ -22,9 +22,12 @@ export const microAppIds = [
 
 export type MicroAppId = (typeof microAppIds)[number]
 export type ThemeMode = 'light' | 'dark'
+export type MicroAppNavigationIntent = 'default' | 'chat-files'
 
 export interface MicroAppPaneProps {
   theme: ThemeMode
+  compact?: boolean
+  compactNavigation?: ReactNode
 }
 
 export type MicroAppListPane = ComponentType<MicroAppPaneProps>
@@ -42,8 +45,18 @@ export interface MicroAppLayoutConfig {
   mainTitle?: ReactNode
   subtitle?: string
   topActions?: ReactNode
+  listPanel?: {
+    defaultWidth?: number
+    minWidth?: number
+    maxWidth?: number
+  }
   rightSidebar?: ReactNode
   rightSidebarWidth?: number
+  rightSidebarToggle?: {
+    label?: string
+    open: boolean
+    onToggle: () => void
+  }
   hideIcon?: boolean
   hideHeader?: boolean
 }
@@ -62,6 +75,9 @@ export interface MicroAppDefinition {
   ListPane: MicroAppListPane
   ContentPane: MicroAppContentPane
   LayoutConfigBridge?: MicroAppLayoutConfigBridge
+  Provider?: ComponentType<PropsWithChildren>
+  hidePrimaryRailOnCompact?: boolean
+  hideContentHeaderOnCompact?: boolean
 }
 
 function lazyPane<T extends ComponentType<any>>(
@@ -89,10 +105,10 @@ const InboxContentPane = lazyPane(() =>
   import('@/modules/inbox/components/InboxContentPane').then((mod) => ({ default: mod.InboxContentPane })),
 )
 const ContactListPane = lazyPane(() =>
-  import('@/modules/contacts/components/ContactListPane').then((mod) => ({ default: mod.ContactListPane })),
+  import('@/modules/contacts/features/list/ContactListPane').then((mod) => ({ default: mod.ContactListPane })),
 )
 const ContactDetailPane = lazyPane(() =>
-  import('@/modules/contacts/components/ContactDetailPane').then((mod) => ({ default: mod.ContactDetailPane })),
+  import('@/modules/contacts/features/detail/ContactDetailPane').then((mod) => ({ default: mod.ContactDetailPane })),
 )
 const FavoriteListPane = lazyPane(() =>
   import('@/modules/favorites/components/FavoriteListPane').then((mod) => ({ default: mod.FavoriteListPane })),
@@ -100,46 +116,36 @@ const FavoriteListPane = lazyPane(() =>
 const FavoriteContentPane = lazyPane(() =>
   import('@/modules/favorites/components/FavoriteContentPane').then((mod) => ({ default: mod.FavoriteContentPane })),
 )
-const FilesTreePane = lazyPane(() =>
-  import('@/modules/files/components/FilesTreePane').then((mod) => ({ default: mod.FilesTreePane })),
-)
 const FilesListPane = lazyPane(() =>
-  import('@/modules/files/components/FilesListPane').then((mod) => ({ default: mod.FilesListPane })),
+  import('@/modules/files/features/tree/FilesTreePane').then((mod) => ({ default: mod.FilesTreePane })),
 )
-const FileDetailPane = lazyPane(() =>
-  import('@/modules/files/components/FileDetailPane').then((mod) => ({ default: mod.FileDetailPane })),
+const FilesWorkspacePane = lazyPane(() =>
+  import('@/modules/files/app/FilesWorkspacePane').then((mod) => ({ default: mod.FilesWorkspacePane })),
 )
 const ModelServicesListPane = lazyPane(() =>
-  import('@/modules/model-services/ModelServicesListPane').then((mod) => ({ default: mod.ModelServicesListPane })),
+  import('@/modules/model-services/features/list/ModelServicesListPane').then((mod) => ({ default: mod.ModelServicesListPane })),
 )
 const ModelServicesContentPane = lazyPane(() =>
-  import('@/modules/model-services/ModelServicesContentPane').then((mod) => ({ default: mod.ModelServicesContentPane })),
+  import('@/modules/model-services/features/detail/ModelServicesContentPane').then((mod) => ({ default: mod.ModelServicesContentPane })),
 )
 const SettingsListPane = lazyPane(() =>
-  import('@/modules/settings/components/SettingsListPane').then((mod) => ({ default: mod.SettingsListPane })),
+  import('@/modules/settings/features/list/SettingsListPane').then((mod) => ({ default: mod.SettingsListPane })),
 )
 const SettingsContentPane = lazyPane(() =>
-  import('@/modules/settings/components/SettingsContentPane').then((mod) => ({ default: mod.SettingsContentPane })),
+  import('@/modules/settings/features/content/SettingsContentPane').then((mod) => ({ default: mod.SettingsContentPane })),
 )
 const ChatLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/chat/layout/ChatLayoutConfigBridge').then((mod) => ({ default: mod.ChatLayoutConfigBridge })),
 )
 const ModelServicesLayoutConfigBridge = lazyBridge(() =>
-  import('@/modules/model-services/ModelServicesLayoutConfigBridge').then((mod) => ({ default: mod.ModelServicesLayoutConfigBridge })),
+  import('@/modules/model-services/app/ModelServicesLayoutConfigBridge').then((mod) => ({ default: mod.ModelServicesLayoutConfigBridge })),
 )
-
-function FilesLayoutConfigBridge({
-  onConfigChange,
-}: MicroAppLayoutConfigBridgeProps) {
-  useEffect(() => {
-    onConfigChange({
-      rightSidebar: <FileDetailPane />,
-      rightSidebarWidth: 320,
-    })
-  }, [onConfigChange])
-
-  return null
-}
+const ModelServicesProvider = lazyBridge(() =>
+  import('@/modules/model-services/xpod/ModelServicesProvider').then((mod) => ({ default: mod.ModelServicesProvider })),
+)
+const FilesLayoutConfigBridge = lazyBridge(() =>
+  import('@/modules/files/app/FilesLayoutConfigBridge').then((mod) => ({ default: mod.FilesLayoutConfigBridge })),
+)
 
 export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
   chat: {
@@ -188,13 +194,15 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: FolderOpen,
     header: {
       moduleTitle: '文件',
-      moduleSubtitle: '当前话题资产与 Pod 容器',
+      moduleSubtitle: 'Pod 资源与文件夹',
       itemTitle: '文件预览',
       itemSubtitle: '打开、复制、收藏',
     },
-    ListPane: FilesTreePane,
-    ContentPane: FilesListPane,
+    ListPane: FilesListPane,
+    ContentPane: FilesWorkspacePane,
     LayoutConfigBridge: FilesLayoutConfigBridge,
+    hidePrimaryRailOnCompact: true,
+    hideContentHeaderOnCompact: true,
   },
   favorites: {
     id: 'favorites',
@@ -235,6 +243,7 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     ListPane: ModelServicesListPane,
     ContentPane: ModelServicesContentPane,
     LayoutConfigBridge: ModelServicesLayoutConfigBridge,
+    Provider: ModelServicesProvider,
   },
 }
 

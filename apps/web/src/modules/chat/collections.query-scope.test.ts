@@ -1,0 +1,57 @@
+import { QueryClient } from '@tanstack/react-query'
+import { describe, expect, it } from 'vitest'
+import {
+  buildChatListQueryKey,
+  buildMessageListQueryKey,
+  buildThreadIndexQueryKey,
+  buildThreadListQueryKey,
+  messageRowMatchesThread,
+} from './collections'
+
+describe('chat query account scope', () => {
+  it('does not expose cached chat rows from a previous account scope', () => {
+    const queryClient = new QueryClient()
+    const aliceKey = buildChatListQueryKey('account:alice', '')
+    const bobKey = buildChatListQueryKey('account:bob', '')
+    queryClient.setQueryData(aliceKey, [{ id: 'alice-chat' }])
+
+    expect(bobKey).not.toEqual(aliceKey)
+    expect(queryClient.getQueryData(bobKey)).toBeUndefined()
+  })
+
+  it('isolates the same chat id thread cache by database scope', () => {
+    expect(buildThreadListQueryKey('database:a', 'chat-1'))
+      .not.toEqual(buildThreadListQueryKey('database:b', 'chat-1'))
+  })
+
+  it('keeps scoped thread rows reachable by existing chat mutation invalidation', async () => {
+    const queryClient = new QueryClient()
+    const scopedKey = buildThreadListQueryKey('database:a', 'chat-1')
+    queryClient.setQueryData(scopedKey, [{ id: 'thread-1' }])
+
+    await queryClient.invalidateQueries({ queryKey: ['chats', 'chat-1', 'threads'] })
+
+    expect(queryClient.getQueryState(scopedKey)?.isInvalidated).toBe(true)
+  })
+
+  it('isolates the runtime thread index by account scope', () => {
+    expect(buildThreadIndexQueryKey('account:alice'))
+      .not.toEqual(buildThreadIndexQueryKey('account:bob'))
+  })
+
+  it('isolates message caches even when chat and thread ids are reused', () => {
+    expect(buildMessageListQueryKey('account:alice', 'chat-1', 'thread-1'))
+      .not.toEqual(buildMessageListQueryKey('account:bob', 'chat-1', 'thread-1'))
+  })
+
+  it('matches message thread fragments against complete selected thread resource ids', () => {
+    expect(messageRowMatchesThread(
+      'http://localhost:5737/alice/.data/chat/demo/index.ttl#thread-1',
+      'chat/demo/index.ttl#thread-1',
+    )).toBe(true)
+    expect(messageRowMatchesThread(
+      'http://localhost:5737/alice/.data/chat/demo/index.ttl#thread-2',
+      'chat/demo/index.ttl#thread-1',
+    )).toBe(false)
+  })
+})

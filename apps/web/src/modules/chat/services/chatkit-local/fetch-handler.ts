@@ -10,23 +10,128 @@
  */
 
 import type { SolidDatabase } from '@undefineds.co/models'
+import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/client'
+import {
+  addUrl,
+  buildThing,
+  createThing,
+  getSolidDataset,
+  getThingAll,
+  getUrlAll,
+  saveSolidDatasetAt,
+  solidDatasetAsTurtle,
+  setThing,
+  universalAccess,
+} from '@inrupt/solid-client'
+import { nowTimestamp, type Attachment, type ThreadItem, type ThreadMetadata } from '@/lib/vendor/xpod-chatkit'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
+import { getLocalChatKitRuntimeCache } from './runtime-cache'
+
+const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+const ACP = 'http://www.w3.org/ns/solid/acp#'
+const ACL = 'http://www.w3.org/ns/auth/acl#'
+const ACP_ACCESS_CONTROL_RESOURCE = `${ACP}AccessControlResource`
+const ACP_ACCESS_CONTROL_LINK = `${ACP}accessControl`
+const ACP_MEMBER_ACCESS_CONTROL = `${ACP}memberAccessControl`
+const ACP_ACCESS_CONTROL = `${ACP}AccessControl`
+const ACP_APPLY = `${ACP}apply`
+const ACP_POLICY = `${ACP}Policy`
+const ACP_ALLOW = `${ACP}allow`
+const ACP_ANY_OF = `${ACP}anyOf`
+const ACP_MATCHER = `${ACP}Matcher`
+const ACP_AGENT = `${ACP}agent`
+const ACL_READ = `${ACL}Read`
+const ACL_APPEND = `${ACL}Append`
+const ACL_WRITE = `${ACL}Write`
 
 export interface LocalChatKitFetchOptions {
   db: SolidDatabase
   webId: string
   authFetch: typeof fetch
+  initialThread?: ThreadMetadata
+  isAvailable?: () => boolean
+  onAttachmentsChange?: (attachments: Attachment[]) => void
+  onStreamingChange?: (state: { active: boolean; abort?: () => void }) => void
+  onThreadItemsChange?: (items: ThreadItem[]) => void
+  onRequestError?: (message: string) => void
+  onServiceAccessRequired?: () => void
+  onServiceAccessRecovered?: () => void
+  onChatSummaryChange?: (summary: {
+    chatId: string
+    messageId: string
+    content: string
+    createdAt: Date
+  }) => Promise<void> | void
 }
 
-export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): typeof fetch {
-  const { db, webId, authFetch } = options
-  const store = new LocalChatKitStore(db, webId, authFetch)
-  const service = new LocalChatKitService({ store, db, webId, authFetch })
+export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): LocalChatKitFetch {
+  const {
+    db,
+    webId,
+    authFetch,
+    initialThread,
+    isAvailable = () => true,
+    onAttachmentsChange,
+    onStreamingChange,
+    onThreadItemsChange,
+    onRequestError,
+    onServiceAccessRequired,
+    onServiceAccessRecovered,
+    onChatSummaryChange,
+  } = options
+  const store = new LocalChatKitStore(
+    db,
+    webId,
+    authFetch,
+    initialThread,
+    onAttachmentsChange,
+    onChatSummaryChange,
+    onThreadItemsChange,
+  )
+  const runtimeCache = getLocalChatKitRuntimeCache(db, webId)
+  const service = new LocalChatKitService({
+    store,
+    db,
+    webId,
+    authFetch,
+    attachmentThreadId: initialThread?.id,
+    onServiceAccessRequired: () => {
+      runtimeCache.aiServiceAccessBlocked = true
+      onServiceAccessRequired?.()
+    },
+  })
+  const activeStreamingControllers = new Set<AbortController>()
+  const interruptActiveStreams = () => {
+    const reason = new DOMException('Generation stopped by user', 'AbortError')
+    for (const controller of activeStreamingControllers) controller.abort(reason)
+  }
+  const notifyStreamingChange = () => onStreamingChange?.({
+    active: activeStreamingControllers.size > 0,
+    ...(activeStreamingControllers.size > 0 ? { abort: interruptActiveStreams } : {}),
+  })
 
-  return async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const localFetch = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (!isAvailable()) {
+      return unavailableResponse()
+    }
+
     try {
+      const inputUrl = typeof _input === 'string' ? _input : _input.toString()
+      const attachmentMatch = inputUrl.match(/^local:\/\/chatkit\/attachments\/([^/?#]+)$/)
+      if (attachmentMatch && init?.method?.toUpperCase() === 'PUT') {
+        if (!init.body) throw new Error('Attachment upload body is missing')
+        const attachment = await service.uploadAttachment(
+          decodeURIComponent(attachmentMatch[1]),
+          init.body,
+          new Headers(init.headers).get('Content-Type') ?? undefined,
+          init.signal ?? undefined,
+        )
+        return Response.json(attachment)
+      }
+
       // Read request body
       let body: string
       if (init?.body instanceof ReadableStream) {
@@ -53,20 +158,34 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
         body = '{}'
       }
 
-      const context = {}
+      const requestController = onStreamingChange ? new AbortController() : null
+      const abortFromCaller = () => requestController?.abort(init?.signal?.reason)
+      if (requestController) {
+        init?.signal?.addEventListener('abort', abortFromCaller, { once: true })
+        if (init?.signal?.aborted) abortFromCaller()
+      }
+
+      const context = { signal: requestController?.signal ?? init?.signal }
       const result = await service.process(body, context)
 
       if (result.type === 'streaming') {
+        if (requestController) activeStreamingControllers.add(requestController)
+        notifyStreamingChange()
         // Build a ReadableStream from the async generator
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
             try {
               for await (const chunk of result.stream()) {
+                onServiceAccessRecovered?.()
                 controller.enqueue(chunk)
               }
               controller.close()
             } catch (err) {
               controller.error(err)
+            } finally {
+              init?.signal?.removeEventListener('abort', abortFromCaller)
+              if (requestController) activeStreamingControllers.delete(requestController)
+              notifyStreamingChange()
             }
           },
         })
@@ -81,6 +200,8 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
         })
       }
 
+      init?.signal?.removeEventListener('abort', abortFromCaller)
+
       // Non-streaming
       return new Response(result.json, {
         status: 200,
@@ -89,10 +210,390 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
     } catch (error: any) {
       console.error('[LocalChatKitFetch] Error:', error)
       const message = formatErrorForUser(error, '聊天服务暂时不可用。请稍后重试。')
+      // ChatKit renders a fixed generic toast for failed requests, so surface
+      // the formatted reason through the host app as well.
+      onRequestError?.(message)
       return new Response(
         JSON.stringify({ error: { code: 'local_error', message } }),
         { status: 500, headers: { 'Content-Type': 'application/json' } },
       )
     }
   }
+  localFetch.refreshThreadItems = async (threadId: string) => {
+    await store.refreshThreadItems(threadId, {})
+  }
+  localFetch.interrupt = interruptActiveStreams
+  localFetch.ensureAiServiceAccess = async () => {
+    const podBaseUrl = resolveCurrentPodBaseUrl(db)
+    if (!podBaseUrl) throw new Error('无法确定当前空间地址。')
+    await ensureAiServiceAccessForSession({ podBaseUrl, webId, authFetch })
+    runtimeCache.aiServiceAccessBlocked = false
+  }
+  localFetch.loadAttachmentObjectUrl = (attachmentId: string) => store.loadAttachmentObjectUrl(attachmentId)
+  localFetch.prepareAttachmentForReuse = async (attachment: Attachment) => {
+    await store.saveAttachment({ ...attachment, upload_descriptor: null }, {})
+    const objectUrl = await store.loadAttachmentObjectUrl(attachment.id)
+    return {
+      ...attachment,
+      upload_descriptor: null,
+      ...(attachment.type === 'image' ? { preview_url: objectUrl } : {}),
+      download_url: objectUrl,
+    }
+  }
+  localFetch.saveArtifactVersion = async (input: Parameters<LocalChatKitFetch['saveArtifactVersion']>[0]) => {
+    const sourceUrl = new URL(input.uri)
+    const sourceName = sourceUrl.pathname.split('/').pop() || input.name
+    const extensionIndex = sourceName.lastIndexOf('.')
+    const stem = extensionIndex > 0 ? sourceName.slice(0, extensionIndex) : sourceName
+    const extension = extensionIndex > 0 ? sourceName.slice(extensionIndex) : ''
+    const versionName = `${stem}.v-${Date.now()}${extension}`
+    sourceUrl.pathname = `${sourceUrl.pathname.slice(0, sourceUrl.pathname.lastIndexOf('/') + 1)}${encodeURIComponent(versionName)}`
+    const contentType = input.mimeType || 'text/plain; charset=utf-8'
+    const response = await authFetch(sourceUrl.href, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: input.content,
+    })
+    if (!response.ok) throw new Error(`Artifact version write failed with HTTP ${response.status}`)
+    const createdAt = nowTimestamp()
+    const thread = await store.loadThread(input.threadId, {})
+    const item = {
+      id: store.generateItemId('assistant_message', thread, {}),
+      thread_id: input.threadId,
+      type: 'assistant_message',
+      content: [{ type: 'output_text', text: `已将「${input.name}」保存为新版本 ${versionName}。` }],
+      status: 'completed',
+      created_at: createdAt,
+      artifacts: [{
+        type: 'artifact',
+        name: input.name,
+        fileName: input.name,
+        resourceUri: sourceUrl.href,
+        contentType,
+        fileSize: new TextEncoder().encode(input.content).byteLength,
+      }],
+    } as ThreadItem & { artifacts: unknown[] }
+    try {
+      await store.addThreadItem(input.threadId, item, {})
+    } catch (error) {
+      await authFetch(sourceUrl.href, { method: 'DELETE' }).catch(() => undefined)
+      throw error
+    }
+    return { uri: sourceUrl.href, name: versionName, createdAt }
+  }
+  localFetch.dispose = () => {
+    interruptActiveStreams()
+    store.dispose()
+  }
+  return localFetch
+}
+
+export async function ensureAiServiceAccessForSession(input: {
+  podBaseUrl: string
+  webId: string
+  authFetch: typeof fetch
+}): Promise<void> {
+  const runtimeBaseUrl = resolveLinxRuntimeApiBaseUrlForIssuerUrl(new URL(input.podBaseUrl).origin)
+  const descriptorUrl = new URL('/api/applets/service-access/ai-connections', runtimeBaseUrl).href
+  const response = await input.authFetch(descriptorUrl, { headers: { Accept: 'application/json' } })
+  if (!response.ok) throw new Error(`读取 Xpod AI 授权信息失败（HTTP ${response.status}）。`)
+  const payload = await response.json()
+  // Interactive Xpod requests can run as the authenticated Pod owner. There
+  // is no separate principal to grant in that case; creating ACLs (or empty
+  // credential documents) would be unnecessary and can corrupt JSON assets.
+  // Keep the strict resource validation for actual delegation below.
+  if (payload?.appletId === 'co.undefineds.ai-connections'
+    && payload?.service?.webId === input.webId) return
+  const descriptor = validateAiServiceAccessDescriptor(payload, input.podBaseUrl)
+  for (const resource of descriptor.resources) {
+    const granted = await grantAiServiceResourceAccess({
+      resource,
+      ownerWebId: input.webId,
+      serviceWebId: descriptor.service.webId,
+      members: resource.members === true,
+      authFetch: input.authFetch,
+    })
+    if (!granted?.read || !granted.append || !granted.write) {
+      throw new Error(`未能完成 ${resource.id} 的 AI 服务授权。`)
+    }
+  }
+}
+
+export async function grantAiServiceResourceAccess(input: {
+  resource: {
+    id: string
+    url: string
+    access: { read: true; append: true; write: true }
+    members?: true
+  }
+  ownerWebId: string
+  serviceWebId: string
+  members: boolean
+  authFetch: typeof fetch
+}): Promise<{ read?: boolean; append?: boolean; write?: boolean } | null> {
+  // Resource write access does not grant creation rights on its parent.
+  // Initialize as the owner; never overwrite existing or concurrent data.
+  const info = await input.authFetch(input.resource.url, { method: 'HEAD' })
+  if (info.status === 404) {
+    const initialized = await input.authFetch(input.resource.url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'text/turtle',
+        'If-None-Match': '*',
+        ...(input.members ? { Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"' } : {}),
+      },
+      body: '',
+    })
+    if (!initialized.ok && initialized.status !== 412) {
+      throw new Error(`初始化 ${input.resource.id} 失败（HTTP ${initialized.status}）。`)
+    }
+  } else if (!info.ok) {
+    throw new Error(`读取 ${input.resource.id} 失败（HTTP ${info.status}）。`)
+  }
+  const options = { fetch: input.authFetch }
+  if (input.members) {
+    return grantXpodAcrAccess(input)
+  }
+  const existing = await universalAccess.setAgentAccess(
+    input.resource.url,
+    input.serviceWebId,
+    input.resource.access,
+    options,
+  ).catch(() => null)
+  if (existing?.read && existing.append && existing.write) return existing
+
+  // Xpod advertises a per-resource ACR even before that ACR exists. Inrupt's
+  // universal helper interprets the missing ACR as WAC and returns null. Create
+  // the initial ACP document once; subsequent grants keep using the library so
+  // existing policies are preserved.
+  const acr = await discoverXpodAcr(input.resource.url, input.authFetch)
+  if (acr.exists) return grantXpodAcrAccess(input)
+  const initialized = await input.authFetch(acr.url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/turtle' },
+    body: createInitialServiceAcr({
+      resourceUrl: input.resource.url,
+      ownerWebId: input.ownerWebId,
+      serviceWebId: input.serviceWebId,
+      members: input.members,
+    }),
+  })
+  if (initialized.ok) return input.resource.access
+  if (initialized.status !== 409 && initialized.status !== 412) {
+    throw new Error(`创建 ${input.resource.id} 的 Xpod 访问控制失败（HTTP ${initialized.status}）。`)
+  }
+
+  return universalAccess.setAgentAccess(
+    input.resource.url,
+    input.serviceWebId,
+    input.resource.access,
+    options,
+  )
+}
+
+async function grantXpodAcrAccess(input: {
+  resource: {
+    id: string
+    url: string
+    access: { read: true; append: true; write: true }
+    members?: true
+  }
+  ownerWebId: string
+  serviceWebId: string
+  members: boolean
+  authFetch: typeof fetch
+}): Promise<{ read: true; append: true; write: true }> {
+  const state = await discoverXpodAcr(input.resource.url, input.authFetch)
+  if (!state.exists) {
+    const initialized = await input.authFetch(state.url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/turtle' },
+      body: createInitialServiceAcr({
+        resourceUrl: input.resource.url,
+        ownerWebId: input.ownerWebId,
+        serviceWebId: input.serviceWebId,
+        members: true,
+      }),
+    })
+    if (!initialized.ok) {
+      throw new Error(`创建 ${input.resource.id} 的 Xpod 访问控制失败（HTTP ${initialized.status}）。`)
+    }
+    return input.resource.access
+  }
+
+  let acr = await getSolidDataset(state.url, { fetch: input.authFetch })
+  const root = getThingAll(acr).find((thing) => getUrlAll(thing, RDF_TYPE).includes(ACP_ACCESS_CONTROL_RESOURCE))
+  if (!root) throw new Error('Xpod 访问控制文档缺少根资源。')
+  const suffix = input.members ? 'Member' : ''
+  const controlUrl = `${state.url}#linxService${suffix}Access`
+  const policyUrl = `${state.url}#linxService${suffix}Policy`
+  const matcherUrl = `${state.url}#linxService${suffix}Matcher`
+  acr = setThing(acr, addUrl(root, input.members ? ACP_MEMBER_ACCESS_CONTROL : ACP_ACCESS_CONTROL_LINK, controlUrl))
+  acr = setThing(acr, buildThing(createThing({ url: controlUrl }))
+    .addUrl(RDF_TYPE, ACP_ACCESS_CONTROL)
+    .addUrl(ACP_APPLY, policyUrl)
+    .build())
+  acr = setThing(acr, buildThing(createThing({ url: policyUrl }))
+    .addUrl(RDF_TYPE, ACP_POLICY)
+    .addUrl(ACP_ALLOW, ACL_READ)
+    .addUrl(ACP_ALLOW, ACL_APPEND)
+    .addUrl(ACP_ALLOW, ACL_WRITE)
+    .addUrl(ACP_ANY_OF, matcherUrl)
+    .build())
+  acr = setThing(acr, buildThing(createThing({ url: matcherUrl }))
+    .addUrl(RDF_TYPE, ACP_MATCHER)
+    .addUrl(ACP_AGENT, input.serviceWebId)
+    .build())
+  try {
+    await saveSolidDatasetAt(state.url, acr, { fetch: input.authFetch })
+  } catch {
+    // Xpod stores ACP documents as Turtle but does not support the N3 Patch
+    // emitted by solid-client for an existing ACR. Preserve the complete
+    // dataset and replace it atomically instead of dropping owner policies.
+    const updated = await input.authFetch(state.url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/turtle' },
+      body: await solidDatasetAsTurtle(acr),
+    })
+    if (!updated.ok) {
+      throw new Error(`更新 ${input.resource.id} 的 Xpod 访问控制失败（HTTP ${updated.status}）。`)
+    }
+  }
+  return input.resource.access
+}
+
+async function discoverXpodAcr(resourceUrl: string, authFetch: typeof fetch): Promise<{ url: string; exists: boolean }> {
+  const info = await authFetch(resourceUrl, { method: 'HEAD' })
+  if (info.status !== 200 && info.status !== 404) {
+    throw new Error(`读取 Xpod 资源授权信息失败（HTTP ${info.status}）。`)
+  }
+  const match = info.headers.get('Link')?.match(/<([^>]+)>\s*;\s*rel=["']acl["']/iu)
+  if (!match?.[1]) throw new Error('Xpod 资源没有提供访问控制地址。')
+
+  const discovered = new URL(match[1], resourceUrl)
+  const expected = new URL(`${resourceUrl}.acr`)
+  if (discovered.href !== expected.href) {
+    throw new Error('Xpod 返回了越界的访问控制地址。')
+  }
+  const current = await authFetch(discovered.href, { headers: { Accept: 'text/turtle' } })
+  if (current.status !== 404 && !current.ok) {
+    throw new Error(`读取 Xpod 访问控制文档失败（HTTP ${current.status}）。`)
+  }
+  return { url: discovered.href, exists: current.ok }
+}
+
+function createInitialServiceAcr(input: {
+  resourceUrl: string
+  ownerWebId: string
+  serviceWebId: string
+  members: boolean
+}): string {
+  const iri = (value: string) => `<${value.replace(/>/gu, '%3E')}>`
+  return [
+    '@prefix acp: <http://www.w3.org/ns/solid/acp#>.',
+    '@prefix acl: <http://www.w3.org/ns/auth/acl#>.',
+    '@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.',
+    '',
+    '<#acr> a acp:AccessControlResource;',
+    `  acp:resource ${iri(input.resourceUrl)};`,
+    `  acp:accessControl <#owner>, <#service>${input.members ? ';\n  acp:memberAccessControl <#owner>, <#service>' : ''}.`,
+    '<#owner> a acp:AccessControl; acp:apply <#ownerPolicy>.',
+    '<#ownerPolicy> a acp:Policy;',
+    '  acp:allow acl:Read, acl:Write, acl:Control; acp:anyOf <#ownerMatcher>.',
+    `<#ownerMatcher> a acp:Matcher; acp:agent ${iri(input.ownerWebId)}.`,
+    '<#service> a acp:AccessControl; acp:apply <#servicePolicy>.',
+    '<#servicePolicy> a acp:Policy;',
+    '  acp:allow acl:Read, acl:Append, acl:Write; acp:anyOf <#serviceMatcher>.',
+    `<#serviceMatcher> a acp:Matcher; acp:agent ${iri(input.serviceWebId)}.`,
+    '',
+  ].join('\n')
+}
+
+export type LocalChatKitFetch = typeof fetch & {
+  interrupt: () => void
+  refreshThreadItems: (threadId: string) => Promise<void>
+  ensureAiServiceAccess: () => Promise<void>
+  loadAttachmentObjectUrl: (attachmentId: string) => Promise<string>
+  prepareAttachmentForReuse: (attachment: Attachment) => Promise<Attachment>
+  saveArtifactVersion: (input: {
+    threadId: string
+    uri: string
+    name: string
+    mimeType?: string | null
+    content: string
+  }) => Promise<{ uri: string; name: string; createdAt: number }>
+  dispose: () => void
+}
+
+const AI_SERVICE_RESOURCE_IDS = new Set([
+  'providerCredentials',
+  'providerDefinitions',
+  'gatewayAccessKeys',
+  'quotaSnapshots',
+])
+
+function validateAiServiceAccessDescriptor(value: unknown, podBaseUrl: string): {
+  service: { webId: string }
+  resources: Array<{
+    id: string
+    url: string
+    access: { read: true; append: true; write: true }
+    members?: true
+  }>
+} {
+  const descriptor = value as Record<string, any>
+  const serviceWebId = descriptor?.service?.webId
+  const resources = descriptor?.resources
+  const podRoot = `${podBaseUrl.replace(/\/$/u, '')}/`
+  const podRootUrl = new URL(podRoot)
+  if (descriptor?.appletId !== 'co.undefineds.ai-connections'
+    || typeof serviceWebId !== 'string'
+    || !/^https?:\/\//u.test(serviceWebId)
+    || !Array.isArray(resources)
+    || resources.length !== AI_SERVICE_RESOURCE_IDS.size) {
+    throw new Error('Xpod 返回了无效的 AI 服务授权信息。')
+  }
+  const seen = new Set<string>()
+  for (const resource of resources) {
+    const access = resource?.access
+    let resourceUrl: URL | null = null
+    try {
+      resourceUrl = new URL(resource?.url)
+    } catch {
+      // Rejected by the shared validation branch below.
+    }
+    if (!AI_SERVICE_RESOURCE_IDS.has(resource?.id)
+      || seen.has(resource.id)
+      || typeof resource?.url !== 'string'
+      || !resourceUrl
+      || resourceUrl.href !== resource.url
+      || resourceUrl.origin !== podRootUrl.origin
+      || !resourceUrl.pathname.startsWith(podRootUrl.pathname)
+      || resourceUrl.search !== ''
+      || resourceUrl.hash !== ''
+      || ((resource.id === 'providerDefinitions') !== resourceUrl.pathname.endsWith('/'))
+      || /%2f|%5c|\\/iu.test(resourceUrl.pathname)
+      || access?.read !== true
+      || access?.append !== true
+      || access?.write !== true) {
+      throw new Error('Xpod 返回了越界或不完整的 AI 服务授权信息。')
+    }
+    if ((resource.id === 'providerDefinitions') !== (resource.members === true)) {
+      throw new Error('Xpod 返回了越界或不完整的 AI 服务授权信息。')
+    }
+    seen.add(resource.id)
+  }
+  return descriptor as ReturnType<typeof validateAiServiceAccessDescriptor>
+}
+
+export function unavailableResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        code: 'space_unavailable',
+        message: '当前空间连接尚未恢复，请稍后重试。',
+      },
+    }),
+    { status: 503, headers: { 'Content-Type': 'application/json' } },
+  )
 }

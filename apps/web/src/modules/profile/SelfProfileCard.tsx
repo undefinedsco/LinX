@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSession } from "@inrupt/solid-ui-react";
+import { useSession } from "@/providers/solid-session-context";
 import { useQuery } from "@tanstack/react-query";
 import {
-  solidProfileResource,
   type SolidProfileRow,
   type SolidProfileUpdate,
 } from "@undefineds.co/models";
@@ -14,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatErrorForUser } from "@/lib/user-facing-errors";
 import { useSolidDatabase } from "@/providers/solid-database-provider";
+import { readProfile } from "./collections";
 import { useLoginStore } from "@linx/stores/login";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -21,9 +21,9 @@ import { useLoginStore } from "@linx/stores/login";
 type ProfileFieldKey = Extract<keyof SolidProfileUpdate, string>;
 
 const genderOptions: Record<string, { label: string; icon: string; className: string }> = {
-  male:       { label: "男", icon: "♂", className: "text-blue-500 font-bold" },
-  female:     { label: "女", icon: "♀", className: "text-pink-500 font-bold" },
-  "non-binary": { label: "非二元", icon: "⚧", className: "text-purple-500 font-bold" },
+  male:       { label: "男", icon: "♂", className: "text-muted-foreground font-medium" },
+  female:     { label: "女", icon: "♀", className: "text-muted-foreground font-medium" },
+  "non-binary": { label: "非二元", icon: "⚧", className: "text-muted-foreground font-medium" },
 };
 
 const readField = (record: SolidProfileRow | null, field: ProfileFieldKey): string => {
@@ -82,7 +82,7 @@ type SpaceMarkerKind = "local" | "standalone";
 function resolveSpaceMarkerKind(storageProviderLabel?: string, storageProviderUrl?: string): SpaceMarkerKind | null {
   const label = storageProviderLabel?.trim().toLowerCase();
   if (label === "standalone") return "standalone";
-  if (label === "local" || label === "本地空间") return "local";
+  if (label === "local" || label === "本机空间" || label === "本地空间") return "local";
   if (!storageProviderUrl) return null;
 
   try {
@@ -185,8 +185,7 @@ export function SelfProfileCard() {
     queryKey: ["profile", webId],
     queryFn: async () => {
       if (!db || !webId) return null;
-      const record = await (db as any).findByIri(solidProfileResource, webId);
-      return record as SolidProfileRow | null;
+      return await readProfile(db, webId);
     },
     enabled: !!db && !!webId,
   });
@@ -304,7 +303,7 @@ export function SelfProfileCard() {
     if (dataUpdatedAt) {
       return (
         <>
-          <CheckCircle2 className="w-3 h-3 text-green-500/60" />
+          <CheckCircle2 className="w-3 h-3 text-success/60" />
           <span>已同步 · {formatRelativeTime(dataUpdatedAt)}</span>
         </>
       );

@@ -22,7 +22,20 @@ export const MessageStatus = {
 } as const
 
 export interface Attachment {
-  attachment_id: string
+  id: string
+  type: 'file' | 'image'
+  name: string
+  mime_type: string
+  preview_url?: string
+  /** Authenticated Pod resource used internally to reload the binary. */
+  pod_url?: string
+  /** Browser-safe object URL used by LinX for opening or downloading. */
+  download_url?: string
+  upload_descriptor?: {
+    url: string
+    method: 'POST' | 'PUT'
+    headers?: Record<string, string>
+  } | null
   [key: string]: unknown
 }
 
@@ -47,7 +60,16 @@ export interface InputTextContentPart {
 export interface OutputTextContentPart {
   type: 'output_text'
   text: string
-  annotations?: unknown[]
+  annotations?: Array<{
+    index: number
+    source: {
+      type: 'url' | 'file'
+      url?: string
+      filename?: string
+      title?: string
+      description?: string
+    }
+  }>
 }
 
 export interface ClientToolCallItem {
@@ -55,10 +77,10 @@ export interface ClientToolCallItem {
   thread_id: string
   type: 'client_tool_call'
   name: string
-  arguments: string
+  arguments: Record<string, unknown>
   call_id: string
   status?: string
-  output?: string
+  output?: unknown
   created_at: number
 }
 
@@ -68,6 +90,8 @@ export interface UserMessageItem {
   type: 'user_message'
   content: InputTextContentPart[]
   attachments?: Attachment[]
+  /** Per-message routing used to reproduce the same request on retry. */
+  inference_options?: Record<string, unknown>
   created_at: number
 }
 
@@ -81,7 +105,20 @@ export interface AssistantMessageItem {
   created_at: number
 }
 
-export type ThreadItem = UserMessageItem | AssistantMessageItem | ClientToolCallItem
+export interface GeneratedImageItem {
+  id: string
+  thread_id: string
+  type: 'generated_image'
+  image: {
+    id: string
+    url: string
+  } | null
+  /** LinX persistence metadata used to restore the authenticated Pod binary. */
+  attachment?: Attachment
+  created_at: number
+}
+
+export type ThreadItem = UserMessageItem | AssistantMessageItem | ClientToolCallItem | GeneratedImageItem
 
 export type StoreItemType = ThreadItem['type']
 
@@ -127,7 +164,7 @@ export interface ThreadItemUpdatedEvent {
   item_id: string
   update: {
     type: string
-    part_index?: number
+    content_index?: number
     delta?: string
     [key: string]: unknown
   }

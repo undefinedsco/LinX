@@ -10,11 +10,11 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('../collections', () => ({
+vi.mock('../data/collections', () => ({
   useInboxSummary: () => mockUseInboxSummary(),
 }))
 
-vi.mock('../store', () => ({
+vi.mock('../app/store', () => ({
   useInboxStore: (selector: (state: unknown) => unknown) => selector({
     setFilter: mockSetFilter,
     selectItem: mockSelectItem,

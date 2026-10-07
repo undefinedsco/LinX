@@ -69,8 +69,8 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('本地空间')
-    expect(getProviderInfoText(provider, false)).toBe('使用云端账号登录，数据写入这台电脑上的本地空间。')
+    expect(getProviderSubtitle(provider, false)).toBe('本机空间')
+    expect(getProviderInfoText(provider, false)).toBe('使用云端账号登录，数据写入这台电脑上的本机空间。')
   })
 
   it('uses onboarding state for resumable Local setup', () => {
@@ -88,7 +88,7 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('本机空间')
   })
 
   it('uses onboarding state for Local repair flow', () => {
@@ -106,7 +106,7 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('本机空间')
   })
 
   it('falls back to runtime status when onboarding state is unavailable', () => {
@@ -119,7 +119,7 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('本机空间')
   })
 })
 

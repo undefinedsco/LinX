@@ -16,10 +16,12 @@
  * - 右键: 上下文菜单 (置顶、静音、标记未读、删除)
  * - 悬停: 显示更多操作按钮
  */
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
+import type { KeyboardEvent } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
 import {
+  LINX_DEFAULT_SECRETARY,
   isLinxDefaultSecretaryChat,
   useChatList,
   useChatMutations,
@@ -27,6 +29,14 @@ import {
   useThreadIndex,
   useLinxDefaultSecretaryBootstrapSettling,
 } from '../collections'
+import {
+  orderChatItems,
+  projectSecretaryListCapabilities,
+} from '../domain/secretary-entry-model'
+import {
+  projectChatListFolderSections,
+  type ChatListFolderFilter,
+} from '../domain/chat-list-folder-model'
 import { resolveThreadChatId } from '@/lib/data/resource-identity'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
@@ -48,6 +58,8 @@ import {
   Users,
   User,
   Terminal,
+  ListFilter,
+  Check,
 } from 'lucide-react'
 import { AddChatDialog } from './AddChatDialog'
 import { Button } from '@/components/ui/button'
@@ -119,7 +131,9 @@ interface ChatItemData {
   runtimeThreadId?: string
   pendingInboxCount?: number
   pendingInboxVariant?: 'approval' | 'auth_required'
-  isProtected?: boolean
+  isProtected: boolean
+  canTogglePin: boolean
+  canDelete: boolean
 }
 
 // ============================================
@@ -142,14 +156,15 @@ const formatTimestamp = (value?: unknown): string => {
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
-/** Workspace status → preview text + color mapping */
+/** Workspace status → preview text + color mapping.
+ * 状态以中文标签 + 语义色 token 表达，不使用 emoji 作为核心状态语义（DESIGN §29/§131-135）。 */
 const WORKSPACE_STATUS_MAP: Record<WorkspaceStatus, { text: string; color: string }> = {
-  idle:               { text: '⏳ 待启动',   color: 'text-muted-foreground' },
-  active:             { text: '🟢 运行中',   color: 'text-green-600' },
-  waiting_approval:   { text: '⚠️ 等待确认', color: 'text-yellow-600' },
-  paused:             { text: '⏸ 已暂停',    color: 'text-muted-foreground' },
-  completed:          { text: '✅ 已完成',   color: 'text-green-600' },
-  error:              { text: '❌ 错误',     color: 'text-red-600' },
+  idle:               { text: '待启动',   color: 'text-muted-foreground' },
+  active:             { text: '运行中',   color: 'text-success' },
+  waiting_approval:   { text: '等待确认', color: 'text-warning' },
+  paused:             { text: '已暂停',    color: 'text-muted-foreground' },
+  completed:          { text: '已完成',   color: 'text-success' },
+  error:              { text: '错误',     color: 'text-destructive' },
 }
 
 const WORKSPACE_STATUS_PREVIEW: Record<WorkspaceStatus, string> = Object.fromEntries(
@@ -172,10 +187,10 @@ function getChatIcon(chat: Pick<ChatItemData, 'conversationKind' | 'threadMode'>
 /** Resolve preview text: workspace threads use status mapping, groups prefix sender name */
 function resolvePreview(chat: ChatItemData): string {
   if (chat.pendingInboxVariant === 'auth_required') {
-    return '🔐 等待认证'
+    return '等待认证'
   }
   if (chat.pendingInboxVariant === 'approval') {
-    return `⚠️ 待处理授权${chat.pendingInboxCount && chat.pendingInboxCount > 1 ? ` · ${chat.pendingInboxCount} 条` : ''}`
+    return `待处理授权${chat.pendingInboxCount && chat.pendingInboxCount > 1 ? ` · ${chat.pendingInboxCount} 条` : ''}`
   }
   if (chat.threadMode === 'workspace' && chat.workspaceStatus) {
     return WORKSPACE_STATUS_PREVIEW[chat.workspaceStatus]
@@ -192,8 +207,8 @@ function getWorkspaceStatusColor(status?: WorkspaceStatus): string | undefined {
 }
 
 function getInboxPreviewColor(variant?: ChatItemData['pendingInboxVariant']): string | undefined {
-  if (variant === 'approval') return 'text-yellow-600'
-  if (variant === 'auth_required') return 'text-blue-600'
+  if (variant === 'approval') return 'text-warning'
+  if (variant === 'auth_required') return 'text-boundary'
   return undefined
 }
 
@@ -210,6 +225,9 @@ function compareRuntimeSessions(left: RuntimeSessionRecord, right: RuntimeSessio
 interface ChatItemProps {
   chat: ChatItemData
   isActive: boolean
+  tabIndex: number
+  itemRef: (node: HTMLDivElement | null) => void
+  onRovingKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
   onClick: () => void
   onStar: () => void
   onMute: () => void
@@ -221,6 +239,9 @@ interface ChatItemProps {
 function ChatItem({
   chat,
   isActive,
+  tabIndex,
+  itemRef,
+  onRovingKeyDown,
   onClick,
   onStar,
   onMute,
@@ -229,7 +250,7 @@ function ChatItem({
   onDelete
 }: ChatItemProps) {
   const [isHovering, setIsHovering] = useState(false)
-  const canDelete = !chat.isProtected
+  const canDelete = chat.canDelete
   const hasSecondaryContextActions = chat.threadMode === 'workspace' || chat.conversationKind === 'group' || canDelete
 
   const previewColorClass = chat.threadMode === 'workspace'
@@ -240,14 +261,28 @@ function ChatItem({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          ref={itemRef}
           data-testid="chat-list-item"
           data-chat-id={chat.id}
+          role="option"
+          aria-label={chat.title}
+          aria-selected={isActive}
+          tabIndex={tabIndex}
           onClick={onClick}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              onClick()
+              return
+            }
+            onRovingKeyDown(event)
+          }}
           onMouseEnter={() => setIsHovering(true)}
           onMouseLeave={() => setIsHovering(false)}
           className={cn(
             // WeChat Desktop: 64px 高度, 无圆角, 紧凑间距
-            'group relative flex items-center gap-3 h-16 px-3 cursor-pointer select-none',
+            'group relative flex items-center gap-3 h-16 px-3 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
             'transition-colors duration-150',
             // 选中状态
             isActive
@@ -277,7 +312,7 @@ function ChatItem({
               <Avatar className="h-12 w-12 border border-border/30 rounded-sm">
                 <AvatarImage src={chat.providerLogo} className="rounded-sm object-cover" />
                 <AvatarFallback className="rounded-sm bg-primary/10 text-primary text-sm">
-                  {chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatIcon(chat)}
+                  {chat.isProtected ? <Bot strokeWidth={1.5} className="h-5 w-5" /> : chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatIcon(chat)}
                 </AvatarFallback>
               </Avatar>
             )}
@@ -285,7 +320,7 @@ function ChatItem({
             {chat.conversationKind === 'one' && chat.threadMode === 'chat' && chat.onlineStatus && (
               <span className={cn(
                 'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background',
-                chat.onlineStatus === 'online' ? 'bg-green-500' : 'bg-muted-foreground/40'
+                chat.onlineStatus === 'online' ? 'bg-success' : 'bg-muted-foreground/40'
               )} />
             )}
 
@@ -294,7 +329,7 @@ function ChatItem({
               <div className={cn(
                 'absolute -top-1 -right-1 flex items-center justify-center',
                 'min-w-[18px] h-[18px] px-1 rounded-full',
-                'bg-wechat-unread text-white text-[10px] font-medium',
+                'bg-destructive text-destructive-foreground text-[10px] font-medium',
                 'border-2 border-background'
               )}>
                 {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
@@ -314,15 +349,17 @@ function ChatItem({
               <div className="absolute right-0 top-0 h-full flex items-center justify-end gap-1 z-10">
                 {isHovering ? (
                   <div className="flex items-center gap-0.5 animate-in fade-in zoom-in-95 duration-150">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10"
-                      onClick={(e) => { e.stopPropagation(); onStar(); }}
-                      title={chat.starred ? '取消标星' : '标星'}
-                    >
-                      <Star strokeWidth={1.5} className={cn("w-4 h-4", chat.starred && "fill-amber-500 text-amber-500")} />
-                    </Button>
+                    {chat.canTogglePin && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                        onClick={(e) => { e.stopPropagation(); onStar(); }}
+                        title={chat.starred ? '取消标星' : '标星'}
+                      >
+                        <Star strokeWidth={1.5} className={cn("w-4 h-4", chat.starred && "fill-primary text-primary")} />
+                      </Button>
+                    )}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -336,7 +373,7 @@ function ChatItem({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-40">
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMute() }}>
-                          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
+                          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-muted-foreground')} />
                           {chat.muted ? '取消静音' : '静音'}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMarkUnread() }}>
@@ -378,7 +415,7 @@ function ChatItem({
                   </span>
                 )}
                 {chat.muted && (
-                  <BellOff strokeWidth={1.5} className="w-3 h-3 text-wechat-muted" />
+                  <BellOff strokeWidth={1.5} className="w-3 h-3 text-muted-foreground" />
                 )}
               </div>
             </div>
@@ -388,12 +425,14 @@ function ChatItem({
 
       {/* Context Menu — conversation/thread differentiated */}
       <ContextMenuContent className="w-40">
-        <ContextMenuItem onClick={onStar}>
-          <Star className={cn('mr-2 h-4 w-4', chat.starred && 'text-amber-500 fill-amber-500')} />
-          {chat.starred ? '取消标星' : '标星'}
-        </ContextMenuItem>
+        {chat.canTogglePin && (
+          <ContextMenuItem onClick={onStar}>
+            <Star className={cn('mr-2 h-4 w-4', chat.starred && 'fill-primary text-primary')} />
+            {chat.starred ? '取消标星' : '标星'}
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onClick={onMute}>
-          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
+          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-muted-foreground')} />
           {chat.muted ? '取消静音' : '静音'}
         </ContextMenuItem>
         {chat.threadMode !== 'workspace' && (
@@ -442,6 +481,7 @@ interface ListHeaderProps {
   onAddGroup?: () => void
   addButtonLabel?: string
   variant?: 'search' | 'title'
+  filterControl?: React.ReactNode
 }
 
 function ListHeader({ 
@@ -452,7 +492,8 @@ function ListHeader({
   onAddFriend,
   onAddGroup,
   addButtonLabel,
-  variant = 'title'
+  variant = 'title',
+  filterControl,
 }: ListHeaderProps) {
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
 
@@ -464,7 +505,7 @@ function ListHeader({
   // Persistent Search Mode (WeChat Style)
   if (variant === 'search') {
     return (
-      <div className="h-16 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
+      <div data-testid="chat-list-header" className="h-12 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
         <div className="relative flex-1 min-w-0">
           <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground">
             <Search strokeWidth={1.5} className="h-3.5 w-3.5" />
@@ -484,6 +525,7 @@ function ListHeader({
             </button>
           )}
         </div>
+        {filterControl}
         {onAddClick && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -518,7 +560,7 @@ function ListHeader({
 
   // Title Mode (with expandable search)
   return (
-    <div className="h-16 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
+    <div data-testid="chat-list-header" className="h-12 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
       {isSearchExpanded ? (
         <>
           <div className="relative flex-1 min-w-0">
@@ -594,9 +636,19 @@ export function ChatListPane(_props: ChatListPaneProps) {
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectChat = useChatStore((state) => state.selectChat)
   const openAddDialog = useChatStore((state) => state.openAddDialog)
+  const [folderFilter, setFolderFilter] = useState<ChatListFolderFilter>('all')
+  const [debouncedSearch, setDebouncedSearch] = useState(search)
+  const optionRefs = useRef<Array<HTMLDivElement | null>>([])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 120)
+    return () => window.clearTimeout(timer)
+  }, [search])
 
   // Use new collection-based hooks
-  const { data: rawChats, isLoading: isChatsLoading } = useChatList(search ? { search } : undefined)
+  const { data: rawChats, isLoading: isChatsLoading } = useChatList(
+    debouncedSearch ? { search: debouncedSearch } : undefined,
+  )
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const runtimeMode = isRuntimeSessionMode()
   const { data: threads = [] } = useThreadIndex({ enabled: runtimeMode })
@@ -612,7 +664,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   // 格式化 Chat 列表 - 添加标星排序
   const chats: ChatItemData[] = useMemo(() => {
-    if (!rawChats) return []
+    const sourceChats = rawChats ?? []
 
     const threadsByChatId = new Map<string, string[]>()
     const workspaceBackedChatIds = new Set<string>()
@@ -636,8 +688,9 @@ export function ChatListPane(_props: ChatListPaneProps) {
       }
     }
 
-    const formatted = rawChats.map((chat): ChatItemData => {
+    const projectedChats = orderChatItems(sourceChats).map((chat): ChatItemData => {
       const id = chat.id ?? 'unknown'
+      const capabilities = projectSecretaryListCapabilities(chat)
       const pendingItems = inboxItems.filter((item) => item.chatId === id)
       const hasPendingApproval = pendingItems.some((item) => item.kind === 'approval' && item.status === 'pending')
       const hasAuthRequired = pendingItems.some((item) => item.category === 'auth_required')
@@ -654,10 +707,10 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
       return {
         id,
-        title: chat.title ?? '未命名聊天',
+        title: capabilities.isProtected ? LINX_DEFAULT_SECRETARY.title : chat.title ?? '未命名聊天',
         preview: chat.lastMessagePreview ?? '暂无消息',
         timestamp: formatTimestamp(chat.lastActiveAt ?? chat.updatedAt),
-        starred: chat.starred ?? false,
+        starred: capabilities.isPinned,
         muted: chat.muted ?? false,
         unreadCount: chat.unreadCount ?? 0,
         providerLogo: chat.avatarUrl ?? undefined,
@@ -670,17 +723,65 @@ export function ChatListPane(_props: ChatListPaneProps) {
         runtimeThreadId: runtimeSession?.threadId,
         pendingInboxCount,
         pendingInboxVariant,
-        isProtected: isLinxDefaultSecretaryChat(chat),
+        isProtected: capabilities.isProtected,
+        canTogglePin: capabilities.canTogglePin,
+        canDelete: capabilities.canDelete,
       }
     })
-    
-    // 标星的排在前面
-    return formatted.sort((a, b) => {
-      if (a.starred && !b.starred) return -1
-      if (!a.starred && b.starred) return 1
-      return 0
-    })
-  }, [inboxItems, rawChats, runtimeSessions, threads])
+
+    const hasSecretary = sourceChats.some((chat) => (
+      chat.id === LINX_DEFAULT_SECRETARY.chatId || isLinxDefaultSecretaryChat(chat)
+    ))
+    const normalizedSearch = search.trim().toLocaleLowerCase()
+    const matchesSecretary = normalizedSearch.length === 0
+      || LINX_DEFAULT_SECRETARY.title.toLocaleLowerCase().includes(normalizedSearch)
+
+    if (hasSecretary || !matchesSecretary) return projectedChats
+
+    // The Secretary is a built-in entry point. Keep it visible while Pod bootstrap
+    // or a remote refresh is pending; persistence remains owned by collections.
+    return [{
+      id: LINX_DEFAULT_SECRETARY.chatId,
+      title: LINX_DEFAULT_SECRETARY.title,
+      preview: '暂无消息',
+      timestamp: '',
+      starred: true,
+      muted: false,
+      unreadCount: 0,
+      conversationKind: 'one',
+      threadMode: 'chat',
+      isProtected: true,
+      canTogglePin: false,
+      canDelete: false,
+    }, ...projectedChats]
+  }, [inboxItems, rawChats, runtimeSessions, search, threads])
+
+  const chatListSections = useMemo(
+    () => projectChatListFolderSections(chats, folderFilter),
+    [chats, folderFilter],
+  )
+
+  const visibleChats = useMemo(
+    () => [...chatListSections.pinned, ...chatListSections.unpinned],
+    [chatListSections],
+  )
+  const selectedIndex = visibleChats.findIndex((c) => c.id === selectedChatId)
+
+  const registerItemRef = useCallback((index: number, node: HTMLDivElement | null) => {
+    optionRefs.current[index] = node
+  }, [])
+
+  const onItemKeyDown = useCallback((index: number, event: KeyboardEvent<HTMLDivElement>) => {
+    let nextIndex: number
+    if (event.key === 'ArrowDown') nextIndex = Math.min(index + 1, visibleChats.length - 1)
+    else if (event.key === 'ArrowUp') nextIndex = Math.max(index - 1, 0)
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = visibleChats.length - 1
+    else return
+    event.preventDefault()
+    selectChat(visibleChats[nextIndex].id)
+    optionRefs.current[nextIndex]?.focus()
+  }, [visibleChats, selectChat])
 
   // Handlers
   const handleAddChat = useCallback(() => {
@@ -703,7 +804,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   const handleStarChat = useCallback(async (chatId: string) => {
     const chat = chats.find(c => c.id === chatId)
-    if (!chat) return
+    if (!chat?.canTogglePin) return
     try {
       await mutations.updateChat.mutateAsync({
         id: chatId,
@@ -740,7 +841,8 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   const handleDeleteChat = useCallback(async (chatId: string) => {
     const chat = chats.find(c => c.id === chatId)
-    if (chat?.isProtected) {
+    if (!chat) return
+    if (!chat.canDelete || chat.isProtected) {
       toast({ description: '默认助手不能删除。' })
       return
     }
@@ -779,6 +881,26 @@ export function ChatListPane(_props: ChatListPaneProps) {
     }
   }, [chats, toast])
 
+  const renderChatItem = (chat: ChatItemData, flatIndex: number) => {
+    const tabbable = selectedChatId === chat.id || (selectedIndex < 0 && flatIndex === 0)
+    return (
+      <ChatItem
+        key={chat.id}
+        chat={chat}
+        isActive={selectedChatId === chat.id}
+        tabIndex={tabbable ? 0 : -1}
+        itemRef={(node) => registerItemRef(flatIndex, node)}
+        onRovingKeyDown={(event) => onItemKeyDown(flatIndex, event)}
+        onClick={() => handleChatClick(chat.id)}
+        onStar={() => handleStarChat(chat.id)}
+        onMute={() => handleMuteChat(chat.id)}
+        onMarkUnread={() => handleMarkAsUnread(chat.id)}
+        onCopyLog={() => handleCopyLog(chat.id)}
+        onDelete={() => handleDeleteChat(chat.id)}
+      />
+    )
+  }
+
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
       <ListHeader
@@ -790,10 +912,38 @@ export function ChatListPane(_props: ChatListPaneProps) {
         onAddGroup={handleAddGroup}
         addButtonLabel="新建聊天"
         variant="search"
+        filterControl={(
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className={cn(
+                  'h-8 w-8 shrink-0 rounded-sm',
+                  folderFilter !== 'all' ? 'bg-primary/10 text-primary' : 'bg-muted/50 hover:bg-muted/80 text-muted-foreground',
+                )}
+                title="筛选会话"
+                aria-label="筛选会话"
+              >
+                <ListFilter strokeWidth={1.5} className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-32">
+              <DropdownMenuItem onClick={() => setFolderFilter('all')}>
+                <Check strokeWidth={1.5} className={cn('mr-2 h-4 w-4', folderFilter === 'all' ? 'opacity-100' : 'opacity-0')} />
+                <span>全部</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFolderFilter('unread')}>
+                <Check strokeWidth={1.5} className={cn('mr-2 h-4 w-4', folderFilter === 'unread' ? 'opacity-100' : 'opacity-0')} />
+                <span>未读</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       />
       
       <ScrollArea className="flex-1">
-        {isChatsLoading ? (
+        {isChatsLoading && chats.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...
@@ -803,20 +953,25 @@ export function ChatListPane(_props: ChatListPaneProps) {
             暂无聊天
           </div>
         ) : (
-          <div className="divide-y divide-border/30 animate-fade-in">
-            {chats.map((chat) => (
-              <ChatItem
-                key={chat.id}
-                chat={chat}
-                isActive={selectedChatId === chat.id}
-                onClick={() => handleChatClick(chat.id)}
-                onStar={() => handleStarChat(chat.id)}
-                onMute={() => handleMuteChat(chat.id)}
-                onMarkUnread={() => handleMarkAsUnread(chat.id)}
-                onCopyLog={() => handleCopyLog(chat.id)}
-                onDelete={() => handleDeleteChat(chat.id)}
-              />
-            ))}
+          <div role="listbox" aria-label="聊天" aria-orientation="vertical" className="animate-fade-in">
+            {chatListSections.pinned.length > 0 ? (
+              <div role="group" aria-label="置顶" className="divide-y divide-border/30">
+                {chatListSections.pinned.map((chat, i) => renderChatItem(chat, i))}
+              </div>
+            ) : null}
+            {chatListSections.pinned.length > 0 && chatListSections.unpinned.length > 0 ? (
+              <div role="presentation" className="border-t border-border/60" />
+            ) : null}
+            {chatListSections.unpinned.length > 0 ? (
+              <div role="group" aria-label={folderFilter === 'unread' ? '未读会话' : '会话'} className="divide-y divide-border/30">
+                {chatListSections.unpinned.map((chat, i) => renderChatItem(chat, chatListSections.pinned.length + i))}
+              </div>
+            ) : null}
+            {chatListSections.pinned.length === 0 && chatListSections.unpinned.length === 0 ? (
+              <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
+                该筛选下暂无会话
+              </div>
+            ) : null}
           </div>
         )}
       </ScrollArea>

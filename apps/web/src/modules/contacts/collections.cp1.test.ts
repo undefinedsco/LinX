@@ -122,7 +122,30 @@ vi.stubGlobal('crypto', {
 })
 
 // Import after mocks
-import { contactOps, setContactsDatabaseGetter } from './collections'
+import {
+  configureContactsChatPort,
+  contactOps,
+  setContactsDatabaseGetter,
+} from './collections'
+import {
+  createMatrixGroupRoom,
+  loadMatrixChatRow,
+  loadMatrixThreadRow,
+} from '@/modules/chat/matrix-service'
+
+configureContactsChatPort({
+  chatCollection: {
+    state: mockChatState,
+    insert: mockInsert,
+    update: mockUpdate,
+    delete: mockDelete,
+  },
+  threadCollection: { state: new Map() },
+  useSelectChat: () => vi.fn(),
+  createMatrixGroupRoom,
+  loadMatrixChatRow,
+  loadMatrixThreadRow,
+})
 
 function seedGroupContact(groupId = 'group-1', chatId = 'chat-1') {
   mockCollectionState.set(groupId, {

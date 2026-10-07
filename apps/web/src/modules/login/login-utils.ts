@@ -9,9 +9,15 @@ import {
 
 const POST_LOGIN_MICRO_APP_KEY = 'linx-post-login-micro-app'
 const PENDING_LOGIN_ATTEMPT_KEY = 'linx-pending-login-attempt'
+const PENDING_LOGIN_MAX_AGE_MS = 15 * 60 * 1000
 const CALLBACK_ERROR_KEY = 'linx-pending-callback-error'
 const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
 const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
+const SECURE_SOLID_SESSION_PREFIX = 'solidClientAuthn:secure:'
+const REMEMBERED_ACCOUNT_KEY = 'linx-remembered-account'
+const LOGIN_STORE_KEY = 'linx-login'
+const LOGIN_CLIENT_SCHEMA_KEY = 'linx-login-client-schema'
+const LOGIN_CLIENT_SCHEMA_VERSION = '3'
 
 export interface PendingLoginAttempt {
   /** OIDC entry URL passed to Inrupt. For Local+Cloud this is the Cloud issuer. */
@@ -24,7 +30,7 @@ export interface PendingLoginAttempt {
   storageProviderUrl?: string
   storageProviderLabel?: string
   authorizationQuery?: Record<string, string>
-  prompt?: 'none' | 'consent'
+  prompt?: 'none' | 'consent' | 'login'
   strictDiscovery?: boolean
 }
 
@@ -54,6 +60,33 @@ export interface StoredSolidSessionInfo {
 }
 
 /**
+ * Login state is only a restore hint, never an authority. When its contract
+ * changes, discard the previous browser-side identity binding and let the
+ * current Xpod/provider capabilities drive a fresh login. Pod data is not
+ * touched by this migration.
+ */
+export function reconcileLoginClientSchema(): boolean {
+  if (typeof window === 'undefined') return false
+  if (window.localStorage.getItem(LOGIN_CLIENT_SCHEMA_KEY) === LOGIN_CLIENT_SCHEMA_VERSION) {
+    return false
+  }
+
+  clearSolidAuthClientState()
+  window.localStorage.removeItem(REMEMBERED_ACCOUNT_KEY)
+  window.localStorage.removeItem(LOGIN_STORE_KEY)
+  clearPendingPostLoginMicroAppId()
+  clearPendingLoginAttempt()
+  clearPendingCallbackError()
+  markLoginClientSchemaCurrent()
+  return true
+}
+
+export function markLoginClientSchemaCurrent(): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(LOGIN_CLIENT_SCHEMA_KEY, LOGIN_CLIENT_SCHEMA_VERSION)
+}
+
+/**
  * 检查是否有有效的存储会话
  */
 export const hasStoredSolidSession = (_storageKey?: string) => {
@@ -72,7 +105,10 @@ export function getStoredSolidSession(): StoredSolidSessionInfo | null {
   if (!raw) return null
 
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const insecure = JSON.parse(raw) as Record<string, unknown>
+    const secureRaw = window.localStorage.getItem(`${SECURE_SOLID_SESSION_PREFIX}${SOLID_SESSION_PREFIX}${sessionId}`)
+    const secure = secureRaw ? JSON.parse(secureRaw) as Record<string, unknown> : {}
+    const parsed = { ...insecure, ...secure }
     if (!hasRestorableSessionMetadata(parsed)) return null
 
     return {
@@ -93,21 +129,38 @@ function hasRestorableSessionMetadata(parsed: Record<string, unknown>): boolean 
     || parsed.isLoggedIn === true
     || typeof parsed.webId === 'string'
     || typeof parsed.refreshToken === 'string'
+    || (
+      typeof parsed.issuer === 'string'
+      && typeof parsed.redirectUrl === 'string'
+      && typeof parsed.clientId === 'string'
+      && (
+        parsed.dpop === 'true'
+        || parsed.dpop === true
+        || parsed.keepAlive === 'true'
+        || parsed.keepAlive === true
+      )
+    )
 }
 
-export function clearUnrestorableSolidAuthState(): boolean {
+function isSolidAuthStorageKey(key: string): boolean {
+  return key.startsWith('solidClientAuthenticationUser:')
+    || key.startsWith('solidClientAuthn:')
+    || key.startsWith('oidc.')
+}
+
+function storageKeys(storage: Storage): string[] {
+  return Array.from({ length: storage.length }, (_, index) => storage.key(index))
+    .filter((key): key is string => key !== null)
+}
+
+export function clearSolidAuthClientState(): boolean {
   if (typeof window === 'undefined') return false
-  if (getStoredSolidSession()) return false
 
   let removed = false
-  const keys = Object.keys(localStorage)
+  const keys = storageKeys(window.localStorage)
   for (const key of keys) {
-    if (
-      key.startsWith('solidClientAuthenticationUser:')
-      || key.startsWith('solidClientAuthn:')
-      || key.startsWith('oidc.')
-    ) {
-      localStorage.removeItem(key)
+    if (isSolidAuthStorageKey(key)) {
+      window.localStorage.removeItem(key)
       removed = true
     }
   }
@@ -115,16 +168,33 @@ export function clearUnrestorableSolidAuthState(): boolean {
   return removed
 }
 
+export function clearUnrestorableSolidAuthState(): boolean {
+  if (typeof window === 'undefined') return false
+  if (getStoredSolidSession()) return false
+  return clearSolidAuthClientState()
+}
+
+/**
+ * 判断错误是否源于 OIDC 客户端失效：动态注册的 client 在服务端被清除或不兼容，
+ * 服务端会返回 unknown client / invalid_client / unauthorized_client。
+ * 这类错误无法靠重试解决，必须清除本地陈旧会话后重新登录。
+ */
+export function isInvalidClientError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return /unknown client|unknown_client|invalid_client|invalid client|unauthorized_client/i.test(message)
+}
+
+export function isInvalidClientErrorCode(errorCode: string | null | undefined): boolean {
+  if (!errorCode) return false
+  return /unknown_client|invalid_client|unknown client|invalid client|unauthorized_client/i.test(errorCode)
+}
+
 export const clearStoredSolidSession = (_storageKey?: string) => {
   if (typeof window === 'undefined') return
-  const keys = Object.keys(localStorage)
+  const keys = storageKeys(window.localStorage)
   for (const key of keys) {
-    if (
-      key.startsWith('solidClientAuthenticationUser:')
-      || key.startsWith('solidClientAuthn:')
-      || key.startsWith('oidc.')
-    ) {
-      localStorage.removeItem(key)
+    if (isSolidAuthStorageKey(key)) {
+      window.localStorage.removeItem(key)
     }
   }
   clearPendingPostLoginMicroAppId()
@@ -148,6 +218,11 @@ export function getPendingPostLoginMicroAppId(): MicroAppId | null {
 export function ensurePendingPostLoginMicroAppId(microAppId: MicroAppId) {
   if (typeof window === 'undefined') return
   if (getPendingPostLoginMicroAppId()) return
+  window.sessionStorage.setItem(POST_LOGIN_MICRO_APP_KEY, microAppId)
+}
+
+export function setPendingPostLoginMicroAppId(microAppId: MicroAppId) {
+  if (typeof window === 'undefined') return
   window.sessionStorage.setItem(POST_LOGIN_MICRO_APP_KEY, microAppId)
 }
 
@@ -242,7 +317,7 @@ export function setPendingLoginAttempt(attempt: PendingLoginAttempt, loginTransa
   if (authorizationQuery) {
     persisted.authorizationQuery = authorizationQuery
   }
-  if (attempt.prompt === 'none' || attempt.prompt === 'consent') {
+  if (attempt.prompt === 'none' || attempt.prompt === 'consent' || attempt.prompt === 'login') {
     persisted.prompt = attempt.prompt
   }
   if (attempt.strictDiscovery === true) {
@@ -282,6 +357,34 @@ export function consumePendingLoginAttempt(): PendingLoginAttempt | null {
 export function clearPendingLoginAttempt() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(PENDING_LOGIN_ATTEMPT_KEY)
+}
+
+export function cleanupExpiredLoginTransaction(
+  now = Date.now(),
+  maxAgeMs = PENDING_LOGIN_MAX_AGE_MS,
+): boolean {
+  if (typeof window === 'undefined') return false
+  const raw = window.sessionStorage.getItem(PENDING_LOGIN_ATTEMPT_KEY)
+  if (!raw) return false
+
+  try {
+    const parsed = JSON.parse(raw) as PendingLoginPayload
+    const transactionPayload = parsed.loginTransaction ?? parsed.transaction
+    const createdAt = transactionPayload
+      && typeof transactionPayload === 'object'
+      && !Array.isArray(transactionPayload)
+      && typeof (transactionPayload as { createdAt?: unknown }).createdAt === 'number'
+        ? (transactionPayload as { createdAt: number }).createdAt
+        : typeof parsed.createdAt === 'number' ? parsed.createdAt : null
+    if (createdAt && createdAt <= now && now - createdAt <= maxAgeMs) {
+      return false
+    }
+  } catch {
+    // Malformed transient auth state is never useful for a future login.
+  }
+
+  clearPendingLoginAttempt()
+  return true
 }
 
 function normalizeStoredUrl(url?: string | null): string | null {
@@ -324,7 +427,7 @@ function normalizePendingLoginAttemptPayload(parsed: PendingLoginPayload): Pendi
   if (authorizationQuery) {
     attempt.authorizationQuery = authorizationQuery
   }
-  if (parsed.prompt === 'none' || parsed.prompt === 'consent') {
+  if (parsed.prompt === 'none' || parsed.prompt === 'consent' || parsed.prompt === 'login') {
     attempt.prompt = parsed.prompt
   }
   if (parsed.strictDiscovery === true) {
@@ -406,8 +509,14 @@ export async function performSignOut(
 }
 
 export const SIGN_OUT_EVENT = 'linx:sign-out'
+export const SESSION_RECOVERY_EVENT = 'linx:session-recovery-required'
 
 export function requestSignOut() {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(SIGN_OUT_EVENT))
+}
+
+export function requestSessionRecovery() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(SESSION_RECOVERY_EVENT))
 }

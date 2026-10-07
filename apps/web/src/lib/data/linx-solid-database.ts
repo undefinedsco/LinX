@@ -69,9 +69,23 @@ async function createLinxSolidDatabaseUncached(
   report({ stage: 'database:create:start' })
   installBrowserSparqlEngine()
 
-  const runtimeSession = createTransportRewriteSession(session, options.transportUrlRewrite)
+  const runtimeSession = createFreshSparqlSession(
+    createTransportRewriteSession(session, options.transportUrlRewrite),
+  )
   const instance = drizzle(runtimeSession as any, {
     disableInteropDiscovery: true,
+    notifications: {
+      // SSE first: the server advertises updatesViaStreamingHttp2023 and SSE
+      // connects directly without a subscription POST, while wss connections
+      // fail on current deployments and leak a server-side channel per attempt.
+      // Plain-HTTP pods (local xpod over HTTP/1.1) get no channels at all:
+      // every streaming subscription pins one browser connection, Chromium
+      // allows only six per host, and a dozen collections would starve all
+      // other Pod traffic. HTTPS deployments multiplex over HTTP/2.
+      preferredChannels: isPlainHttpPodUrl(options.podUrl)
+        ? []
+        : ['streaming-http', 'websocket'],
+    },
     podUrl: normalizePodUrl(options.podUrl),
     resourcePreparation: 'best-effort',
     schema: solidSchema,
@@ -102,6 +116,11 @@ async function createLinxSolidDatabaseUncached(
   }
 
   assertExplicitPodUrlApplied(instance, options.podUrl, 'after Pod initialization')
+
+  const effectivePodUrl = options.podUrl ?? readDialectPodUrl(instance)
+  if (isPlainHttpPodUrl(effectivePodUrl)) {
+    disableStreamingNotificationChannels(instance)
+  }
   report({ stage: 'database:init:done' })
 
   return instance
@@ -138,6 +157,47 @@ export function createTransportRewriteSession(
 
   return {
     fetch: rewrittenFetch,
+  }
+}
+
+/**
+ * Pod SPARQL results are authorization- and revision-scoped. Explicitly bypass
+ * the browser HTTP cache so a reload cannot reuse an older result produced
+ * before the most recent Pod write (or before Xpod started returning no-store).
+ */
+export function createFreshSparqlSession(session: unknown): unknown {
+  const sourceSession = session as { fetch?: typeof fetch } | null | undefined
+  if (typeof sourceSession?.fetch !== 'function') {
+    return session
+  }
+
+  const freshFetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const requestUrl = getRequestUrl(input)
+    const nextInit = requestUrl && isSparqlEndpoint(requestUrl)
+      ? { ...init, cache: 'no-store' as RequestCache }
+      : init
+    return sourceSession.fetch!(input, nextInit)
+  }
+
+  if (typeof session === 'object' && session !== null) {
+    return new Proxy(session, {
+      get(target, property, receiver) {
+        if (property === 'fetch') {
+          return freshFetch
+        }
+        return Reflect.get(target, property, receiver)
+      },
+    })
+  }
+
+  return { fetch: freshFetch }
+}
+
+function isSparqlEndpoint(requestUrl: string): boolean {
+  try {
+    return new URL(requestUrl).pathname.includes('/-/sparql')
+  } catch {
+    return false
   }
 }
 
@@ -366,6 +426,31 @@ function assertExplicitPodUrlApplied(db: SolidDatabase, podUrl: string | null | 
   }
 
   throw new Error(`Selected SP Pod URL was not applied ${phase}: expected ${expected}, got ${actual ?? 'unavailable'}`)
+}
+
+function isPlainHttpPodUrl(podUrl?: string | null): boolean {
+  return typeof podUrl === 'string' && podUrl.trim().toLowerCase().startsWith('http:')
+}
+
+function readDialectPodUrl(db: SolidDatabase): string | null {
+  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
+  return typeof podUrl === 'string' ? podUrl : null
+}
+
+// A plain-HTTP Pod cannot multiplex the many long-lived collection streams
+// used by LinX. Disable subscription at the database boundary so callers do
+// not instantiate NotificationsClient with an empty preference list and emit
+// one "No supported notification channels" error per collection.
+function disableStreamingNotificationChannels(db: SolidDatabase): void {
+  const dialect = (db as any).getDialect?.()
+  if (dialect?.config) {
+    dialect.config.preferredChannels = []
+  }
+  Object.defineProperty(db as object, 'subscribe', {
+    configurable: true,
+    value: undefined,
+    writable: true,
+  })
 }
 
 function normalizePodUrl(podUrl?: string | null): string | undefined {

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync as rawExecFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,6 +9,14 @@ import { fileURLToPath } from 'node:url'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
+
+function execFileSync(command, args, options) {
+  return rawExecFileSync(
+    command,
+    command === 'tsc' && args[0] !== '--ignoreConfig' ? ['--ignoreConfig', ...args] : args,
+    options,
+  )
+}
 
 test('compiled cli default --print accepts a prompt argument and starts the pi path', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-pi-print-'))

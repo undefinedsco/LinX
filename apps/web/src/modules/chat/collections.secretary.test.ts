@@ -3,10 +3,12 @@ import { agentResource, chatResource, contactResource, threadResource } from '@u
 import { agentResourceId } from '@/lib/data/resource-identity'
 
 const {
+  collectionOptions,
   collectionStates,
   createCollectionMock,
   invalidateQueriesMock,
 } = vi.hoisted(() => {
+  const collectionOptions = new Map<string, any>()
   const collectionStates = new Map<string, Map<string, Record<string, unknown>>>()
   const invalidateQueriesMock = vi.fn()
 
@@ -22,6 +24,7 @@ const {
     } | null
   }) {
     const key = options.queryKey?.join('/') || `collection-${collectionStates.size}`
+    collectionOptions.set(key, options)
     const state = new Map<string, Record<string, unknown>>()
     collectionStates.set(key, state)
 
@@ -35,6 +38,7 @@ const {
         size: 0,
       },
       get: vi.fn((id: string) => state.get(id)),
+      keys: vi.fn(() => state.keys()),
       isReady: vi.fn(() => true),
       preload: vi.fn(async () => undefined),
       insert: vi.fn((row: Record<string, unknown>) => {
@@ -69,6 +73,11 @@ const {
       fetch: vi.fn(async () => Array.from(state.values())),
       subscribeToPod: vi.fn(async () => () => undefined),
       utils: {
+        refetch: vi.fn(async () => Array.from(state.values())),
+        writeDelete: vi.fn((ids: string | string[]) => {
+          const keys = Array.isArray(ids) ? ids : [ids]
+          keys.forEach((id) => state.delete(id))
+        }),
         writeUpsert: vi.fn((row: Record<string, unknown>) => {
           if (typeof row.id === 'string') {
             state.set(row.id, row)
@@ -78,7 +87,7 @@ const {
     }
   }
 
-  return { collectionStates, createCollectionMock, invalidateQueriesMock }
+  return { collectionOptions, collectionStates, createCollectionMock, invalidateQueriesMock }
 })
 
 vi.mock('@/lib/data/pod-collection', () => ({
@@ -87,6 +96,7 @@ vi.mock('@/lib/data/pod-collection', () => ({
 
 vi.mock('@/providers/query-provider', () => ({
   queryClient: {
+    cancelQueries: vi.fn(async () => undefined),
     invalidateQueries: invalidateQueriesMock,
   },
 }))
@@ -95,7 +105,128 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: null }),
 }))
 
-import { chatOps, initializeChatCollections, LINX_DEFAULT_SECRETARY } from './collections'
+import {
+  chatCollection,
+  chatOps,
+  configureChatContactsPort,
+  initializeChatCollections,
+  isLinxDefaultSecretaryBootstrapSettling,
+  LINX_DEFAULT_SECRETARY,
+  messageCollection,
+  SECRETARY_BOOTSTRAP_TIMEOUT_MS,
+  threadCollection,
+} from './collections'
+
+configureChatContactsPort({
+  agentCollection: createCollectionMock({ queryKey: ['agents'] }) as any,
+  contactCollection: createCollectionMock({ queryKey: ['contacts'] }) as any,
+})
+
+describe('chatOps collection subscriptions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    collectionStates.forEach((state) => state.clear())
+  })
+
+  afterEach(() => {
+    initializeChatCollections(null)
+  })
+
+  it('returns a no-op subscription when no database is available', async () => {
+    initializeChatCollections(null)
+
+    const unsubscribe = await chatOps.subscribeToPod()
+
+    expect(unsubscribe).toBeTypeOf('function')
+    expect(chatCollection.subscribeToPod).not.toHaveBeenCalled()
+    expect(threadCollection.subscribeToPod).not.toHaveBeenCalled()
+    expect(messageCollection.subscribeToPod).not.toHaveBeenCalled()
+  })
+
+  it('subscribes to chat, thread, and message collections and disposes all subscriptions', async () => {
+    const db = { name: 'chat-db' }
+    const unsubscribeChat = vi.fn()
+    const unsubscribeThread = vi.fn()
+    const unsubscribeMessage = vi.fn()
+    vi.mocked(chatCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeChat)
+    vi.mocked(threadCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeThread)
+    vi.mocked(messageCollection.subscribeToPod).mockResolvedValueOnce(unsubscribeMessage)
+    await initializeChatCollections(db as any)
+
+    const unsubscribe = await chatOps.subscribeToPod()
+    unsubscribe()
+
+    expect(chatCollection.subscribeToPod).toHaveBeenCalledWith(db)
+    expect(threadCollection.subscribeToPod).toHaveBeenCalledWith(db)
+    expect(messageCollection.subscribeToPod).toHaveBeenCalledWith(db)
+    expect(unsubscribeChat).toHaveBeenCalledTimes(1)
+    expect(unsubscribeThread).toHaveBeenCalledTimes(1)
+    expect(unsubscribeMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('legacy thread metadata repair', () => {
+  it('keeps the latest updatedAt value for each loaded thread subject', async () => {
+    const resourceUrl = 'https://node-0000.undefineds.co/alice/.data/chat/chat-1/index.ttl'
+    const threadIri = `${resourceUrl}#thread-1`
+    const authenticatedFetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method || init.method === 'GET') {
+        return new Response(`
+          @prefix dcterms: <http://purl.org/dc/terms/> .
+          @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+          @prefix sioc: <http://rdfs.org/sioc/ns#> .
+          <${threadIri}> rdf:type sioc:Thread ; dcterms:modified
+            "2026-06-02T01:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>,
+            "2026-06-02T03:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+        `, { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+      }
+      return new Response(null, { status: 205 })
+    })
+    const transformRows = collectionOptions.get('threads')?.transformRows
+
+    await expect(transformRows?.([
+      { id: 'thread-1', parent: `${resourceUrl}#this` },
+    ], {
+      getDialect: () => ({ getAuthenticatedFetch: () => authenticatedFetchMock }),
+      resolveRowIri: () => threadIri,
+    })).resolves.toEqual([{ id: 'thread-1', parent: `${resourceUrl}#this` }])
+
+    const patchCall = authenticatedFetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(patchCall).toBeDefined()
+    expect(String(patchCall?.[1]?.body)).toContain(
+      `<${threadIri}> <http://purl.org/dc/terms/modified> "2026-06-02T03:00:00.000Z"`,
+    )
+    expect(String(patchCall?.[1]?.body)).not.toContain('sioc/ns#has_parent')
+  })
+
+  it('discovers orphaned thread subjects inside a chat resource', async () => {
+    const resourceUrl = 'https://node-0000.undefineds.co/alice/.data/chat/chat-1/index.ttl'
+    const chatIri = `${resourceUrl}#this`
+    const orphanThreadIri = `${resourceUrl}#orphan-thread`
+    const authenticatedFetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method || init.method === 'GET') {
+        return new Response(`
+          @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+          @prefix sioc: <http://rdfs.org/sioc/ns#> .
+          <${chatIri}> rdf:type <http://www.w3.org/ns/pim/meeting#LongChat> .
+          <${orphanThreadIri}> rdf:type sioc:Thread .
+        `, { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+      }
+      return new Response(null, { status: 205 })
+    })
+    const transformRows = collectionOptions.get('chats')?.transformRows
+
+    await transformRows?.([{ id: 'chat-1', participants: [] }], {
+      getDialect: () => ({ getAuthenticatedFetch: () => authenticatedFetchMock }),
+      resolveRowIri: () => chatIri,
+    })
+
+    const patchCall = authenticatedFetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(String(patchCall?.[1]?.body)).toContain(
+      `<${orphanThreadIri}> <http://rdfs.org/sioc/ns#has_parent> <${chatIri}>`,
+    )
+  })
+})
 
 describe('AI Secretary bootstrap', () => {
   beforeEach(() => {
@@ -158,6 +289,9 @@ describe('AI Secretary bootstrap', () => {
     chatSelectError?: Error
     existingResources?: boolean
     hangExactReads?: boolean
+    existingPodDocuments?: boolean
+    podDocumentError?: Error
+    legacySingletonTurtle?: string
   } = {}) {
     const rows = options.rows ?? createSecretaryRows()
     const insertedRows: Array<{ resource: unknown; row: Record<string, unknown> }> = []
@@ -190,11 +324,26 @@ describe('AI Secretary bootstrap', () => {
         }
       },
     }))
+    const authenticatedFetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method || init.method === 'GET') {
+        if (options.podDocumentError) {
+          throw options.podDocumentError
+        }
+        if (options.legacySingletonTurtle) {
+          return new Response(options.legacySingletonTurtle, {
+            status: 200,
+            headers: { 'Content-Type': 'text/turtle' },
+          })
+        }
+        return new Response('', { status: options.existingPodDocuments ? 200 : 404 })
+      }
+      return new Response('', { status: 201 })
+    })
     const db = {
       getDialect: () => ({
         getPodUrl: () => rows.podBase,
         getWebId: () => rows.webId,
-        getAuthenticatedFetch: () => vi.fn(async () => new Response('', { status: 201 })),
+        getAuthenticatedFetch: () => authenticatedFetchMock,
       }),
       findById: findByIdMock,
       resolveRowIri: vi.fn((resource: unknown, row: Record<string, unknown>) => {
@@ -231,13 +380,13 @@ describe('AI Secretary bootstrap', () => {
       })),
     }
 
-    return { db, findByIdMock, insertMock, insertedRows, rows }
+    return { db, findByIdMock, insertMock, insertedRows, rows, authenticatedFetchMock }
   }
 
   it('writes Secretary contact and chat resources after bounded exact misses', async () => {
     const { db, findByIdMock, insertedRows, rows } = createSecretaryDb()
 
-    initializeChatCollections(db as any)
+    await initializeChatCollections(db as any)
 
     await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toEqual({
       chatId: LINX_DEFAULT_SECRETARY.chatId,
@@ -290,6 +439,42 @@ describe('AI Secretary bootstrap', () => {
     })
   })
 
+  it('normalizes legacy Secretary labels in the local projection', () => {
+    const { db, rows } = createSecretaryDb()
+    initializeChatCollections(db as any)
+    collectionStates.get('chats')?.set(LINX_DEFAULT_SECRETARY.chatId, {
+      ...rows.chatRow,
+      title: 'AI Secretary',
+    })
+    collectionStates.get('contacts')?.set(LINX_DEFAULT_SECRETARY.contactId, {
+      ...rows.contactRow,
+      name: 'AI Secretary',
+    })
+
+    chatOps.stageLinxDefaultSecretary(db as any)
+
+    expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
+      title: LINX_DEFAULT_SECRETARY.title,
+    })
+    expect(collectionStates.get('contacts')?.get(LINX_DEFAULT_SECRETARY.contactId)).toMatchObject({
+      name: LINX_DEFAULT_SECRETARY.title,
+    })
+  })
+
+  it('stages the Secretary contact when a persisted chat exists before contacts sync', () => {
+    const { db, rows } = createSecretaryDb()
+    initializeChatCollections(db as any)
+    collectionStates.get('chats')?.set(LINX_DEFAULT_SECRETARY.chatId, rows.chatRow)
+
+    chatOps.stageLinxDefaultSecretary(db as any)
+
+    expect(collectionStates.get('contacts')?.get(LINX_DEFAULT_SECRETARY.contactId)).toMatchObject({
+      id: LINX_DEFAULT_SECRETARY.contactId,
+      name: LINX_DEFAULT_SECRETARY.title,
+      '@id': rows.contactIri,
+    })
+  })
+
   it('does not require full chat collection queries when Secretary resources already exist', async () => {
     const { db, insertedRows } = createSecretaryDb({
       chatSelectError: new Error('SPARQL unavailable'),
@@ -303,6 +488,42 @@ describe('AI Secretary bootstrap', () => {
     })
     expect(db.select).not.toHaveBeenCalled()
     expect(insertedRows).toEqual([])
+  })
+
+  it('repairs legacy duplicate Secretary timestamps with canonical values', async () => {
+    const rows = createSecretaryRows()
+    const { db, authenticatedFetchMock } = createSecretaryDb({
+      rows,
+      existingResources: true,
+      legacySingletonTurtle: `
+        @prefix dcterms: <http://purl.org/dc/terms/> .
+        @prefix udfs: <https://undefineds.co/ns#> .
+        <${rows.chatIri}>
+          dcterms:title "LinX 主理人" ;
+          dcterms:created "2026-06-02T00:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+          dcterms:modified "2026-06-02T01:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>,
+            "2026-06-02T03:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+          udfs:lastActiveAt "2026-06-02T02:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>,
+            "2026-06-02T04:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+      `,
+    })
+    initializeChatCollections(db as any)
+
+    await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toMatchObject({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: false,
+    })
+
+    const patchCall = authenticatedFetchMock.mock.calls.find(([, init]) => (
+      init?.method === 'PATCH' && String(init.body).includes(rows.chatIri)
+    ))
+    expect(patchCall).toBeDefined()
+    expect(String(patchCall?.[1]?.body)).toContain(
+      `<${rows.chatIri}> <http://purl.org/dc/terms/modified> "2026-06-02T03:00:00.000Z"`,
+    )
+    expect(String(patchCall?.[1]?.body)).toContain(
+      `<${rows.chatIri}> <https://undefineds.co/ns#lastActiveAt> "2026-06-02T04:00:00.000Z"`,
+    )
   })
 
   it('continues bootstrap when missing exact reads hang', async () => {
@@ -324,6 +545,230 @@ describe('AI Secretary bootstrap', () => {
       chatResource,
     ])
     vi.useRealTimers()
+  })
+
+  it('does not repeat inserts when exact reads hang but Pod documents already exist', async () => {
+    vi.useFakeTimers()
+    const { db, insertedRows, authenticatedFetchMock } = createSecretaryDb({
+      hangExactReads: true,
+      existingPodDocuments: true,
+    })
+    initializeChatCollections(db as any)
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    await vi.advanceTimersByTimeAsync(6_000)
+
+    await expect(resultPromise).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: false,
+    })
+    expect(authenticatedFetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/.data/contacts/__secretary__.ttl'),
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(authenticatedFetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/.data/chat/__secretary__/index.ttl'),
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(insertedRows).toEqual([])
+  })
+
+  it('does not create duplicate Secretary rows when both existence reads are indeterminate', async () => {
+    vi.useFakeTimers()
+    const { db, insertedRows } = createSecretaryDb({
+      hangExactReads: true,
+      podDocumentError: new Error('temporary network failure'),
+    })
+    initializeChatCollections(db as any)
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    await vi.advanceTimersByTimeAsync(6_000)
+
+    await expect(resultPromise).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: false,
+    })
+    expect(insertedRows).toEqual([])
+  })
+
+  it('times out never-settling persistence without dropping the local Secretary projection', async () => {
+    vi.useFakeTimers()
+    const { db, rows } = createSecretaryDb({
+      chatSelectError: new Error('Collection queries over plain LDP are not supported'),
+    })
+    db.insert = vi.fn(() => ({
+      values() {
+        return {
+          execute: vi.fn(async () => new Promise(() => {})),
+        }
+      },
+    }))
+    await initializeChatCollections(db as any)
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    const timeoutResult = expect(resultPromise).rejects.toMatchObject({
+      kind: 'timeout',
+      name: 'SecretaryBootstrapTimeoutError',
+      recoverable: true,
+    })
+
+    expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(true)
+    await expect(chatCollection.fetch()).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': rows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+    ])
+
+    await vi.advanceTimersByTimeAsync(SECRETARY_BOOTSTRAP_TIMEOUT_MS)
+
+    await timeoutResult
+    expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(false)
+    await expect(chatCollection.fetch()).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': rows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+    ])
+  })
+
+  it('returns the staged Secretary after timeout when the Pod chat query succeeds empty', async () => {
+    vi.useFakeTimers()
+    const { db, rows } = createSecretaryDb()
+    db.insert = vi.fn(() => ({
+      values() {
+        return {
+          execute: vi.fn(async () => new Promise(() => {})),
+        }
+      },
+    }))
+    db.select = vi.fn(() => ({
+      from() {
+        const query = {
+          orderBy: vi.fn(() => query),
+          execute: vi.fn(async () => []),
+        }
+        return query
+      },
+    }))
+    await initializeChatCollections(db as any)
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    const timeoutResult = expect(resultPromise).rejects.toMatchObject({
+      kind: 'timeout',
+      recoverable: true,
+    })
+    await vi.advanceTimersByTimeAsync(SECRETARY_BOOTSTRAP_TIMEOUT_MS)
+    await timeoutResult
+
+    expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(false)
+    await expect(chatCollection.fetch()).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': rows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+    ])
+    expect(db.select).not.toHaveBeenCalled()
+  })
+
+  it('does not publish an older account bootstrap after a new database is active', async () => {
+    const firstRows = createSecretaryRows({
+      podBase: 'https://node-0000.undefineds.co/alice/',
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+    })
+    const secondRows = createSecretaryRows({
+      podBase: 'https://node-0000.undefineds.co/bob/',
+      webId: 'https://id.undefineds.co/bob/profile/card#me',
+    })
+    const { db: firstDb } = createSecretaryDb({ rows: firstRows })
+    const { db: secondDb } = createSecretaryDb({ rows: secondRows })
+    let resolveFirstContact: (() => void) | undefined
+    let resolveFirstChat: (() => void) | undefined
+    firstDb.insert = vi.fn((resource: unknown) => ({
+      values(row: Record<string, unknown>) {
+        return {
+          execute: vi.fn(async () => new Promise((resolve) => {
+            const complete = () => resolve([{ ...row }])
+            if (resource === contactResource) {
+              resolveFirstContact = complete
+            } else if (resource === chatResource) {
+              resolveFirstChat = complete
+            }
+          })),
+        }
+      },
+    }))
+
+    initializeChatCollections(firstDb as any)
+    const firstBootstrap = chatOps.ensureLinxWelcome({ force: true })
+    await vi.waitFor(() => {
+      expect(resolveFirstContact).toBeTypeOf('function')
+      expect(resolveFirstChat).toBeTypeOf('function')
+    })
+
+    initializeChatCollections(secondDb as any)
+    await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: true,
+    })
+    expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
+      '@id': secondRows.chatIri,
+    })
+
+    resolveFirstContact?.()
+    resolveFirstChat?.()
+    await expect(firstBootstrap).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: true,
+    })
+    expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
+      '@id': secondRows.chatIri,
+    })
+  })
+
+  it('evicts a completed account Secretary cache before staging the next account', async () => {
+    vi.useFakeTimers()
+    const firstRows = createSecretaryRows({
+      podBase: 'https://node-0000.undefineds.co/alice/',
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+    })
+    const secondRows = createSecretaryRows({
+      podBase: 'https://node-0000.undefineds.co/bob/',
+      webId: 'https://id.undefineds.co/bob/profile/card#me',
+    })
+    const { db: firstDb } = createSecretaryDb({ rows: firstRows })
+    const { db: secondDb } = createSecretaryDb({ rows: secondRows })
+
+    initializeChatCollections(firstDb as any)
+    await expect(chatOps.ensureLinxWelcome({ force: true })).resolves.toEqual({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: true,
+    })
+    expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
+      '@id': firstRows.chatIri,
+    })
+
+    secondDb.insert = vi.fn(() => ({
+      values() {
+        return {
+          execute: vi.fn(async () => new Promise(() => {})),
+        }
+      },
+    }))
+    initializeChatCollections(secondDb as any)
+    const secondBootstrap = chatOps.ensureLinxWelcome({ force: true })
+    void secondBootstrap.catch(() => undefined)
+
+    await expect(chatCollection.fetch()).resolves.toEqual([
+      expect.objectContaining({
+        id: LINX_DEFAULT_SECRETARY.chatId,
+        '@id': secondRows.chatIri,
+        title: LINX_DEFAULT_SECRETARY.title,
+      }),
+    ])
   })
 
   it('returns the staged Secretary chat while remote persistence is in flight', async () => {
@@ -354,7 +799,7 @@ describe('AI Secretary bootstrap', () => {
     initializeChatCollections(db as any)
     const bootstrapPromise = chatOps.ensureLinxWelcome({ force: true })
 
-    await expect(chatOps.fetchChats()).resolves.toEqual([
+    await expect(chatCollection.fetch()).resolves.toEqual([
       expect.objectContaining({
         id: LINX_DEFAULT_SECRETARY.chatId,
         '@id': rows.chatIri,
@@ -366,9 +811,8 @@ describe('AI Secretary bootstrap', () => {
     expect(bootstrapPromise).toBeInstanceOf(Promise)
   })
 
-  it('keeps the staged Secretary chat when an older remote chat query resolves empty', async () => {
+  it('reads the staged Secretary without starting a parallel remote chat query', async () => {
     const { db, rows } = createSecretaryDb()
-    let resolveChatSelect: ((rows: unknown[]) => void) | null = null
     let resolveContactInsert: (() => void) | null = null
     let resolveChatInsert: (() => void) | null = null
 
@@ -388,24 +832,10 @@ describe('AI Secretary bootstrap', () => {
         }
       },
     }))
-    db.select = vi.fn(() => ({
-      from() {
-        const query = {
-          orderBy: vi.fn(() => query),
-          where: vi.fn(() => query),
-          execute: vi.fn(async () => new Promise((resolve) => {
-            resolveChatSelect = resolve
-          })),
-        }
-        return query
-      },
-    }))
-
     initializeChatCollections(db as any)
-    const initialFetch = chatOps.fetchChats()
     const bootstrapPromise = chatOps.ensureLinxWelcome({ force: true })
+    const initialFetch = chatCollection.fetch()
 
-    resolveChatSelect?.([])
     await expect(initialFetch).resolves.toEqual([
       expect.objectContaining({
         id: LINX_DEFAULT_SECRETARY.chatId,
@@ -413,7 +843,12 @@ describe('AI Secretary bootstrap', () => {
         title: LINX_DEFAULT_SECRETARY.title,
       }),
     ])
+    expect(db.select).not.toHaveBeenCalled()
 
+    await vi.waitFor(() => {
+      expect(resolveContactInsert).toBeTypeOf('function')
+      expect(resolveChatInsert).toBeTypeOf('function')
+    })
     resolveContactInsert?.()
     resolveChatInsert?.()
     await expect(bootstrapPromise).resolves.toEqual({

@@ -175,7 +175,7 @@ test('resolveXpodLaunchTarget resolves nvm Bun when GUI PATH omits nvm', () => {
         || filePath === `${sourceRoot}/src/identity/oidc/ScopedPickWebIdHandler.ts`
         || filePath === `${sourceRoot}/src/runtime/css-process.ts`
         || filePath === `${sourceRoot}/config/xpod.base.json`
-        || fs.existsSync(filePath)
+        || filePath === bunBinary
       ),
       readFileSync: readValidRuntimeFile,
     })

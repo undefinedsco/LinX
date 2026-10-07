@@ -54,6 +54,10 @@ export interface XpodStatus {
   pid?: number
 }
 
+export function usesExternalXpod(env: Record<string, string>): boolean {
+  return env.LINX_EXTERNAL_XPOD?.trim().toLowerCase() === 'true'
+}
+
 interface XpodRuntime {
   source: string
   cwd: string
@@ -322,6 +326,7 @@ export function getBindHost(baseUrl: string): string {
 export class XpodModule {
   private process: ChildProcess | null = null
   private embedded: EmbeddedRuntimeHandle | null = null
+  private external = false
   private ready = false
 
   private checkNodeVersion(): void {
@@ -462,10 +467,24 @@ export class XpodModule {
     const configPath = path.join(runtime.packageDir, 'config', 'local.json')
     const apiMain = path.join(runtime.packageDir, 'dist', 'api', 'main.js')
 
-    const cssRuntimeConfig = createEmbeddedCssRuntimeConfig({
+    // Reuse the xpod runtime's own config generator: it rewrites the override
+    // layer (local.json) together with the base config chain (main.json /
+    // xpod.base.json) and the auth-mode imports. The previous in-service
+    // generator imported local.json alone, which left default components like
+    // urn:solid-server:default:MetadataStrategy undefined and CSS crashed.
+    const cssProcessModule = require(path.join(runtime.packageDir, 'dist', 'runtime', 'css-process.js')) as {
+      createCssChildRuntimeConfig: (options: {
+        configPath: string
+        runtimeRoot: string
+        externalOidcIssuer?: string
+        baseEnv?: Record<string, string>
+      }) => { configPath: string; cwd?: string }
+    }
+    const cssRuntimeConfig = cssProcessModule.createCssChildRuntimeConfig({
       configPath,
       runtimeRoot: path.join(resolveLinxUserDataDir(), 'xpod-css-runtime'),
-      oidcIssuer,
+      externalOidcIssuer: oidcIssuer,
+      baseEnv: env,
     })
     const cssArgs = buildEmbeddedCssArgs({
       cssBinary,
@@ -475,9 +494,14 @@ export class XpodModule {
       hostBaseUrl,
     })
 
+    // Under Electron, process.execPath is the Electron binary whose embedded
+    // Node version may not match the xpod runtime's supported range. Allow an
+    // explicit Node binary override for the child runtimes.
+    const childNodeBinary = process.env.XPOD_NODE_BINARY ?? process.execPath
+
     supervisor.register({
       name: 'css',
-      command: process.execPath,
+      command: childNodeBinary,
       args: cssArgs,
       cwd: cssRuntimeConfig.cwd ?? runtime.packageDir,
       env: buildCssRuntimeEnv(env, {
@@ -488,7 +512,7 @@ export class XpodModule {
 
     supervisor.register({
       name: 'api',
-      command: process.execPath,
+      command: childNodeBinary,
       args: [apiMain],
       cwd: runtime.packageDir,
       env: buildRuntimeEnv(env, {
@@ -572,7 +596,7 @@ export class XpodModule {
   }
 
   async start(): Promise<void> {
-    if (this.process || this.embedded) {
+    if (this.process || this.embedded || this.external) {
       console.log('[Xpod] Already running')
       return
     }
@@ -585,6 +609,15 @@ export class XpodModule {
     }
 
     const env = parseEnvFile(envPath)
+    if (usesExternalXpod(env)) {
+      const port = parseInt(env.CSS_PORT || '5737', 10)
+      await this.waitForReady(port)
+      this.external = true
+      this.ready = true
+      console.log(`[Xpod] Reusing external runtime on port ${port}`)
+      return
+    }
+
     const dataDir = env.CSS_ROOT_FILE_PATH || path.join(resolveLinxUserDataDir(), 'pod')
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true })
@@ -611,6 +644,12 @@ export class XpodModule {
   }
 
   async stop(): Promise<void> {
+    if (this.external) {
+      this.external = false
+      this.ready = false
+      return
+    }
+
     if (this.embedded) {
       const runtime = this.embedded
       this.embedded = null
@@ -667,6 +706,15 @@ export class XpodModule {
         baseUrl: this.embedded.baseUrl,
         publicUrl: this.embedded.publicUrl,
         pid: process.pid,
+      }
+    }
+
+    if (this.external && this.ready) {
+      return {
+        running: true,
+        port,
+        baseUrl,
+        publicUrl,
       }
     }
 

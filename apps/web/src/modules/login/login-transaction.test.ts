@@ -85,6 +85,7 @@ describe('login-transaction', () => {
       returnToMicroAppId: 'chat',
       storageProviderUrl: 'http://localhost:5737/',
       storageProviderLabel: 'Standalone',
+      prompt: 'login',
       createdAt: 3,
       id: 'standalone-login',
     })
@@ -97,6 +98,7 @@ describe('login-transaction', () => {
       accountIssuerUrl: 'http://localhost:5737',
       storageProviderUrl: 'http://localhost:5737',
       storageProviderLabel: 'Standalone',
+      prompt: 'login',
     })
     expect(isLocalLoginTransaction(transaction)).toBe(true)
     expect(isSplitLocalLoginTransaction(transaction)).toBe(false)

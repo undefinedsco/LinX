@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useSession } from '@/providers/solid-session-context'
 import { useNavigate } from '@tanstack/react-router'
-import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { defaultMicroAppId } from '@/modules/layout/micro-app-registry'
 import { isLocalAccessUrl } from '@/lib/local-access-url'
 import { getRememberedAccount, useLoginStore, type StoredAccount } from '@linx/stores/login'
@@ -14,12 +13,16 @@ import {
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
   clearStoredSolidSession,
+  clearUnrestorableSolidAuthState,
   consumePendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
   getPendingLoginAttempt,
   getPendingLoginTransaction,
   getStoredSolidSession,
   getPendingCallbackError,
+  isInvalidClientError,
+  isInvalidClientErrorCode,
+  markLoginClientSchemaCurrent,
   resolvePostLoginMicroAppId,
   SIGN_OUT_EVENT,
 } from './login-utils'
@@ -35,6 +38,13 @@ import {
   resolveLoginProviderSource,
 } from './provider-model'
 import { formatLoginErrorForUser } from './error-messages'
+import {
+  createInitialLoginFlowState,
+  loginFlowReducer,
+  selectLoginFlowVisibleError,
+  type LoginErrorScope,
+} from './login-flow'
+import { LINQ_OFFICIAL_ISSUER } from './constants'
 
 const LOCAL_RESTORE_TIMEOUT_MS = 5000
 function normalizeUrl(url: string): string {
@@ -56,18 +66,46 @@ function restoreStoredSolidSession(session: ReturnType<typeof useSession>['sessi
 export function useLoginController() {
   const { session, logout, sessionRequestInProgress } = useSession()
   const navigate = useNavigate()
-  const [view, setView] = useState<'default' | 'local'>('default')
 
   const {
-    state,
-    error,
+    state: legacyState,
+    error: storeError,
     storedAccount,
-    setState,
-    setError,
+    preferredSpace,
+    setState: setLegacyState,
+    setError: setStoreError,
     setStoredAccount,
-    loginSuccess,
-    reset,
+    setPreferredSpace,
+    loginSuccess: legacyLoginSuccess,
+    reset: legacyReset,
   } = useLoginStore()
+  const [flow, dispatchFlow] = useReducer(loginFlowReducer, legacyState, createInitialLoginFlowState)
+  const state = flow.phase
+  const setState = useCallback((nextState: typeof legacyState) => {
+    dispatchFlow({ type: 'set-phase', phase: nextState })
+    setLegacyState(nextState)
+  }, [setLegacyState])
+  const loginSuccess = useCallback((account: StoredAccount) => {
+    markLoginClientSchemaCurrent()
+    dispatchFlow({ type: 'set-phase', phase: 'authenticated' })
+    legacyLoginSuccess(account)
+  }, [legacyLoginSuccess])
+  const reset = useCallback(() => {
+    dispatchFlow({ type: 'reset-default' })
+    legacyReset()
+  }, [legacyReset])
+  const view = flow.view
+  const setView = useCallback((nextView: 'default' | 'local') => {
+    dispatchFlow({ type: 'set-view', view: nextView })
+  }, [])
+  const setError = useCallback((message: string | null, scope: LoginErrorScope = 'global') => {
+    if (message) {
+      dispatchFlow({ type: 'set-error', scope, message })
+    } else {
+      dispatchFlow({ type: 'clear-error' })
+    }
+    setStoreError(message)
+  }, [setStoreError])
 
   const initRef = useRef(false)
   const suppressAutoLoginRef = useRef(false)
@@ -75,6 +113,9 @@ export function useLoginController() {
   const desktopAuthPendingRef = useRef(false)
   const desktopAuthSurfaceOpenedRef = useRef(false)
   const silentLocalFallbackStartedRef = useRef(false)
+  const desktopAutoRestoreAttemptedRef = useRef(false)
+  const webSilentRestoreAttemptedRef = useRef(false)
+  const desktopRememberedAccountHydratedRef = useRef(false)
   const loginFinalizeGenerationRef = useRef(0)
   const restore = useSessionRestore()
   const oidc = useOidcConnect()
@@ -86,10 +127,27 @@ export function useLoginController() {
     localOnboarding,
     startLocal,
   } = useProviders()
-  const [localLoginActive, setLocalLoginActive] = useState(false)
-  const [activeLocalProviderSource, setActiveLocalProviderSource] = useState<LocalLoginProviderSource>('local')
-  const [storageConflict, setStorageConflict] = useState<StorageConflict | null>(null)
-  const [connectingProvider, setConnectingProvider] = useState<ConnectingProviderInfo | null>(null)
+  const localLoginActive = flow.localLoginActive
+  const activeLocalProviderSource = flow.localProviderSource
+  const storageConflict = flow.storageConflict
+  const connectingProvider = flow.connectingProvider
+  const setLocalLoginActive = useCallback((active: boolean) => {
+    dispatchFlow({ type: 'set-local-login-active', active })
+  }, [])
+  const setActiveLocalProviderSource = useCallback((source: LocalLoginProviderSource) => {
+    dispatchFlow({ type: 'set-local-provider-source', source })
+  }, [])
+  const setStorageConflict = useCallback((conflict: StorageConflict | null) => {
+    dispatchFlow({ type: 'set-storage-conflict', conflict })
+  }, [])
+  const setConnectingProvider = useCallback((provider: ConnectingProviderInfo | null) => {
+    dispatchFlow({ type: 'set-connecting-provider', provider })
+  }, [])
+  const error = selectLoginFlowVisibleError({
+    flow,
+    storeError,
+    localOnboarding,
+  })
   const isDesktop = typeof window !== 'undefined' && Boolean(window.xpodDesktop?.auth)
   const resetDesktopAuthState = useCallback((): void => {
     desktopAuthPendingRef.current = false
@@ -99,7 +157,7 @@ export function useLoginController() {
   const connectReadyLocalSnapshot = useCallback(async (
     snapshot: LocalOnboardingSnapshot,
     source: LocalLoginProviderSource,
-    options?: { restoreAccount?: StoredAccount | null },
+    options?: { restoreAccount?: StoredAccount | null; isInvalidClientRetry?: boolean },
   ) => {
     const storedSolidSession = getStoredSolidSession()
     const accountForReuse = options?.restoreAccount ?? storedAccount
@@ -119,16 +177,16 @@ export function useLoginController() {
     if (!localProviderUrl) {
       setError(isStandalone
         ? '独立空间已启动，但本机登录入口尚未准备好。请稍后重试。'
-        : '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+        : '本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。')
       return
     }
 
     const accountIssuerUrl = isStandalone
       ? localProviderUrl
-      : normalizeRememberedUrl(snapshot.cloudIdentityUrl) ?? LINX_CLOUD_IDENTITY_ORIGIN
+      : normalizeRememberedUrl(snapshot.cloudIdentityUrl) ?? LINQ_OFFICIAL_ISSUER
 
     if (!isStandalone && !snapshot.provisionCode) {
-      setError('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+      setError('本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。')
       return
     }
 
@@ -155,7 +213,7 @@ export function useLoginController() {
     })
 
     const connectOptions = {
-      authorizationSurface: 'embedded',
+      authorizationSurface: isDesktop ? 'embedded' : 'window',
       route: source,
       accountIssuerUrl,
       accountIssuerLabel: isStandalone ? 'Standalone' : 'Cloud',
@@ -165,7 +223,9 @@ export function useLoginController() {
       authorizationQuery: isStandalone
         ? undefined
         : { provisionCode: snapshot.provisionCode },
-      ...(shouldTrySilentDesktopAuth ? { prompt: 'none' as const } : {}),
+      ...(shouldTrySilentDesktopAuth
+        ? { prompt: 'none' as const }
+        : {}),
       ...(isStandalone ? { strictDiscovery: true as const } : {}),
       nodeId: snapshot.nodeId ?? undefined,
     } as const
@@ -175,9 +235,19 @@ export function useLoginController() {
     } catch (error: any) {
       resetDesktopAuthState()
       localConnectKeyRef.current = null
+      if (isInvalidClientError(error) && !options?.isInvalidClientRetry) {
+        // Local pods keep dynamic client registrations in memory; a pod restart
+        // invalidates the stored client. Purge it and retry once — the next
+        // login() performs a fresh registration without user involvement.
+        clearStoredSolidSession()
+        return connectReadyLocalSnapshot(snapshot, source, { ...options, isInvalidClientRetry: true })
+      }
       setConnectingProvider(null)
       setState('idle')
-      setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回空间选择页重试。'))
+      if (isInvalidClientError(error)) {
+        clearStoredSolidSession()
+      }
+      setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回登录方式页重试。'))
     }
   }, [
     isDesktop,
@@ -186,7 +256,9 @@ export function useLoginController() {
     resetDesktopAuthState,
     session.info.isLoggedIn,
     session.info.webId,
+    setConnectingProvider,
     setError,
+    setLocalLoginActive,
     setState,
     storedAccount,
   ])
@@ -207,11 +279,25 @@ export function useLoginController() {
   }, [isDesktop, restore.hasStoredSession, session.info.isLoggedIn, setState])
 
   useEffect(() => {
-    if (storedAccount || session.info.isLoggedIn) return
+    if (session.info.isLoggedIn) return
+
+    if (storedAccount) {
+      const isLocalAccount = storedAccount.issuerLabel === 'Local'
+        || storedAccount.issuerLabel === 'Standalone'
+        || storedAccount.storageProviderLabel === 'Local'
+        || storedAccount.storageProviderLabel === 'Standalone'
+        || isLocalAccessUrl(storedAccount.issuerUrl)
+        || isLocalAccessUrl(storedAccount.storageProviderUrl)
+      // Cloud accounts can resume directly from the persisted Zustand store.
+      // Local accounts must go through their startup/conflict checks first.
+      desktopRememberedAccountHydratedRef.current = !isLocalAccount
+      return
+    }
 
     const rememberedAccount = getRememberedAccount()
     if (!rememberedAccount) return
 
+    desktopRememberedAccountHydratedRef.current = true
     setStoredAccount(rememberedAccount)
   }, [session.info.isLoggedIn, setStoredAccount, storedAccount])
 
@@ -227,6 +313,26 @@ export function useLoginController() {
     const pendingAttempt = getPendingLoginAttempt()
     const pendingTransaction = getPendingLoginTransaction()
     const callbackError = getPendingCallbackError()
+    if (callbackError && isInvalidClientErrorCode(callbackError.error)) {
+      // The provider rejected a stale/invalid OIDC client on the callback.
+      // Purge the cached session and send the user back to re-login.
+      clearStoredSolidSession()
+      clearPendingLoginAttempt()
+      clearPendingPostLoginMicroAppId()
+      setConnectingProvider(null)
+      setError(formatLoginErrorForUser(
+        callbackError.description ?? callbackError.error,
+        '登录凭据已失效（OIDC 客户端未注册），请重新登录。',
+      ))
+      navigate({
+        to: '/$microAppId',
+        params: { microAppId: defaultMicroAppId },
+        replace: true,
+      })
+      setState('idle')
+      return
+    }
+
     if (
       pendingAttempt?.prompt === 'none'
       && callbackError?.error
@@ -285,6 +391,7 @@ export function useLoginController() {
     resetDesktopAuthState,
     restore.restoreComplete,
     restore.restoreFailed,
+    setConnectingProvider,
     setError,
     setState,
     state,
@@ -333,8 +440,13 @@ export function useLoginController() {
     oidc,
     setError,
     resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
     setState,
     setStoredAccount,
+    setLocalLoginActive,
+    setStorageConflict,
+    setView,
     state,
     view,
   ])
@@ -378,7 +490,7 @@ export function useLoginController() {
         localPublicUrl: localOnboarding?.publicUrl,
       })
       if (storageProviderLabel === 'Local' && !storageProviderPublicUrl) {
-        throw new Error('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+        throw new Error('本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。')
       }
       const conflict = await detectStorageConflict({
         webId: session.info.webId ?? '',
@@ -398,6 +510,7 @@ export function useLoginController() {
         setStorageConflict(resolveStorageConflictAction(conflict, {
           storageProviderLabel,
           provisionCode: localOnboarding?.provisionCode,
+          provisionUrl: localOnboarding?.provisionUrl,
         }))
         setStoredAccount(account)
         setView('default')
@@ -471,6 +584,8 @@ export function useLoginController() {
       cancelled = true
     }
   }, [
+    localOnboarding?.provisionCode,
+    localOnboarding?.provisionUrl,
     localOnboarding?.publicUrl,
     loginSuccess,
     logout,
@@ -479,9 +594,15 @@ export function useLoginController() {
     sessionRequestInProgress,
     session.info.isLoggedIn,
     session.info.webId,
+    session.fetch,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
     setError,
+    setLocalLoginActive,
     setState,
     setStoredAccount,
+    setStorageConflict,
+    setView,
     storageConflict,
     state,
     storedAccount,
@@ -528,18 +649,25 @@ export function useLoginController() {
 
       const snapshot = await startLocal(source)
 
-      if (snapshot?.state === 'error') {
+      if (!snapshot) {
+        setView('default')
         setLocalLoginActive(false)
-        setError(formatLoginErrorForUser(snapshot.message, '本地空间启动失败。请稍后重试。'))
+        setError('未检测到可连接的本机空间。请先启动 xpod 后重试。')
         return
       }
 
-      if (snapshot?.state === 'repair_required') {
+      if (snapshot.state === 'error') {
+        setLocalLoginActive(false)
+        setError(formatLoginErrorForUser(snapshot.message, '本机空间启动失败。请稍后重试。'))
+        return
+      }
+
+      if (snapshot.state === 'repair_required') {
         setLocalLoginActive(false)
         return
       }
 
-      if (canRestoreLocalSession && snapshot?.state === 'ready') {
+      if (canRestoreLocalSession && snapshot.state === 'ready') {
         if (session.info.isLoggedIn) {
           setState('restoring')
           return
@@ -563,7 +691,7 @@ export function useLoginController() {
         }
       }
 
-      if (snapshot?.state === 'ready') {
+      if (snapshot.state === 'ready') {
         await connectReadyLocalSnapshot(snapshot, source, {
           restoreAccount: options?.restoreAccount ?? storedAccount,
         })
@@ -573,11 +701,27 @@ export function useLoginController() {
       setLocalLoginActive(isLocalStartupSnapshot(snapshot))
     } catch (error: any) {
       setLocalLoginActive(false)
-      setError(formatLoginErrorForUser(error, '本地空间启动失败。请稍后重试。'))
+      setError(formatLoginErrorForUser(error, '本机空间启动失败。请稍后重试。'))
     }
-  }, [connectReadyLocalSnapshot, isDesktop, logout, providers, resetDesktopAuthState, session, setError, setState, startLocal, storedAccount])
+  }, [
+    connectReadyLocalSnapshot,
+    isDesktop,
+    logout,
+    providers,
+    resetDesktopAuthState,
+    session,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setView,
+    startLocal,
+    storedAccount,
+  ])
 
-  const connect = useCallback(async (providerKey: string) => {
+  const connect = useCallback(async (providerKey: string, options?: { prompt?: 'none' | 'consent' | 'login'; isInvalidClientRetry?: boolean }) => {
     loginFinalizeGenerationRef.current += 1
     suppressAutoLoginRef.current = false
     setStorageConflict(null)
@@ -604,6 +748,12 @@ export function useLoginController() {
     })
 
     try {
+      // A previous interrupted/expired browser session can leave orphaned
+      // Inrupt keys without a currentSession pointer. In that state login()
+      // resolves without navigating, so the UI eventually reports a timeout.
+      // Remove only unrestorable auth metadata before starting a fresh flow;
+      // a complete restorable session is preserved.
+      clearUnrestorableSolidAuthState()
       const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
       const surface = desktopApi ? 'embedded' : 'window'
       if (desktopApi) {
@@ -616,16 +766,44 @@ export function useLoginController() {
         storageProviderUrl,
         storageProviderLabel: provider?.storageProvider?.label ?? provider?.label,
         issuerLabel: provider?.oidcProvider?.label ?? resolveProviderDisplayName(provider, issuerUrl),
+        ...(options?.prompt ? { prompt: options.prompt } : {}),
       })
     } catch (err: any) {
+      if (options?.prompt === 'none' && isSilentAuthFailure(err)) {
+        // A remembered account can still require first-party consent (for
+        // example after the IdP or dynamic client was recreated). Retry once
+        // interactively instead of leaving the user on a timed-out spinner.
+        return connect(providerKey, { ...options, prompt: 'consent' })
+      }
+      if (isInvalidClientError(err) && !options?.isInvalidClientRetry) {
+        // The provider forgot our dynamic client registration (server restart or
+        // registration expiry). Purge the stale registration and retry once —
+        // the next login() performs a fresh DCR without user involvement.
+        clearStoredSolidSession()
+        return connect(providerKey, { ...options, isInvalidClientRetry: true })
+      }
       resetDesktopAuthState()
       setConnectingProvider(null)
+      if (isInvalidClientError(err)) {
+        clearStoredSolidSession()
+      }
       setError(formatLoginErrorForUser(err, '连接失败。请检查网络后重试。'))
       setState('idle')
     }
-  }, [oidc, providers, resetDesktopAuthState, setError, setState, startLocalLogin, storedAccount])
+  }, [
+    oidc,
+    providers,
+    resetDesktopAuthState,
+    setConnectingProvider,
+    setError,
+    setState,
+    setStorageConflict,
+    setView,
+    startLocalLogin,
+    storedAccount,
+  ])
 
-  const continueStoredAccount = useCallback(() => {
+  const continueStoredAccount = useCallback(async () => {
     suppressAutoLoginRef.current = false
     setStorageConflict(null)
     setError(null)
@@ -658,7 +836,30 @@ export function useLoginController() {
       return
     }
 
-    const storedSolidSession = getStoredSolidSession()
+    let storedSolidSession = getStoredSolidSession()
+    if (isDesktop && storedSolidSession) {
+      setState('restoring')
+      try {
+        const restored = await restoreStoredSolidSession(session)
+        if (restored?.isLoggedIn || session.info.isLoggedIn) {
+          return
+        }
+      } catch (restoreError) {
+        if (isInvalidClientError(restoreError)) {
+          clearStoredSolidSession()
+          storedSolidSession = null
+        }
+      }
+    }
+
+    const isRememberedCloudAccount = Boolean(storedAccount?.webId)
+      && !isLocalAccessUrl(targetStorageProviderUrl)
+      && storedAccount?.issuerLabel !== 'Local'
+      && storedAccount?.issuerLabel !== 'Standalone'
+    const shouldTrySilentDesktopAuth = isDesktop
+      && (isRememberedCloudAccount
+        || hasRestorableSessionForStoredAccount(storedAccount, session.info.webId, storedSolidSession))
+    const connectOptions = shouldTrySilentDesktopAuth ? { prompt: 'none' as const } : undefined
     if (!isDesktop && storedSolidSession) {
       setState('restoring')
       void session.handleIncomingRedirect({
@@ -678,7 +879,7 @@ export function useLoginController() {
             void startLocalLogin(matchedSource)
             return
           }
-          void connect(matched.id)
+          void connect(matched.id, connectOptions)
           return
         }
 
@@ -687,8 +888,12 @@ export function useLoginController() {
           return
         }
 
-        void connect(targetStorageProviderUrl)
-      }).catch(() => {
+        void connect(targetStorageProviderUrl, connectOptions)
+      }).catch((restoreError) => {
+        if (isInvalidClientError(restoreError)) {
+          clearStoredSolidSession()
+          setError(formatLoginErrorForUser(restoreError, '登录凭据已失效（OIDC 客户端未注册），请重新登录。'))
+        }
         setState('idle')
       })
       return
@@ -700,7 +905,7 @@ export function useLoginController() {
         void startLocalLogin(matchedSource)
         return
       }
-      void connect(matched.id)
+      void connect(matched.id, connectOptions)
       return
     }
 
@@ -709,8 +914,54 @@ export function useLoginController() {
       return
     }
 
-    void connect(targetStorageProviderUrl)
-  }, [connect, isDesktop, providers, session, setState, startLocalLogin, storedAccount])
+    void connect(targetStorageProviderUrl, connectOptions)
+  }, [connect, isDesktop, providers, session, setError, setState, setStorageConflict, startLocalLogin, storedAccount])
+
+  // Desktop cannot rely on the SessionProvider iframe restore path because
+  // the identity provider callback must return through Electron's loopback
+  // window. Re-enter the existing top-level restore flow once after the
+  // remembered account has been hydrated instead.
+  useEffect(() => {
+    if (!isDesktop || desktopAutoRestoreAttemptedRef.current) return
+    if (!desktopRememberedAccountHydratedRef.current) return
+    if (!storedAccount || session.info.isLoggedIn || sessionRequestInProgress) return
+
+    desktopAutoRestoreAttemptedRef.current = true
+    continueStoredAccount()
+  }, [continueStoredAccount, isDesktop, session.info.isLoggedIn, sessionRequestInProgress, storedAccount])
+
+  // Browser session restore uses a cross-site hidden iframe. Modern browsers
+  // may withhold the IdP account cookie there even while its first-party SSO
+  // session is still valid. Retry once as a normal top-level authorization
+  // flow: remembered consent completes silently, while missing consent opens
+  // the provider page instead of returning another consent_required loop.
+  useEffect(() => {
+    if (isDesktop || !restore.restoreFailed || webSilentRestoreAttemptedRef.current) return
+    if (!storedAccount || session.info.isLoggedIn || sessionRequestInProgress) return
+    if (window.location.pathname.startsWith('/auth/callback')) return
+    if (
+      storedAccount.issuerLabel === 'Local'
+      || storedAccount.issuerLabel === 'Standalone'
+      || isLocalAccessUrl(storedAccount.issuerUrl)
+    ) {
+      return
+    }
+
+    const issuerUrl = normalizeRememberedUrl(storedAccount.issuerUrl)
+    if (!issuerUrl) return
+
+    webSilentRestoreAttemptedRef.current = true
+    const provider = resolveProviderByKey(issuerUrl, providers)
+    void connect(provider?.id ?? issuerUrl)
+  }, [
+    connect,
+    isDesktop,
+    providers,
+    restore.restoreFailed,
+    session.info.isLoggedIn,
+    sessionRequestInProgress,
+    storedAccount,
+  ])
 
   const signInLocalOnboarding = useCallback(async () => {
     if (!localOnboarding || localOnboarding.state !== 'ready') {
@@ -755,12 +1006,12 @@ export function useLoginController() {
     } finally {
       setLocalLoginActive(false)
     }
-  }, [setError])
+  }, [setError, setLocalLoginActive])
 
   const testLocalConnectivity = useCallback(async () => {
     const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
     if (!desktopApi?.localOnboarding?.testConnectivity) {
-      setError('当前桌面端不支持测试本地空间连接。')
+      setError('当前桌面端不支持测试本机空间连接。')
       return
     }
 
@@ -769,11 +1020,11 @@ export function useLoginController() {
     try {
       await desktopApi.localOnboarding.testConnectivity()
     } catch (error: any) {
-      setError(formatLoginErrorForUser(error, '测试本地空间连接失败。请稍后重试。'))
+      setError(formatLoginErrorForUser(error, '测试本机空间连接失败。请稍后重试。'))
     } finally {
       setLocalLoginActive(false)
     }
-  }, [setError])
+  }, [setError, setLocalLoginActive])
 
   const backFromLocal = useCallback(() => {
     oidc.cancel()
@@ -791,7 +1042,19 @@ export function useLoginController() {
     setState('idle')
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
-  }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
+  }, [
+    embeddedAuthorization,
+    oidc,
+    resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setStoredAccount,
+    setView,
+  ])
 
   const cancelConnecting = useCallback(() => {
     oidc.cancel()
@@ -812,7 +1075,20 @@ export function useLoginController() {
       setState('idle')
     }
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
-  }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount, state])
+  }, [
+    embeddedAuthorization,
+    oidc,
+    resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setStoredAccount,
+    setView,
+    state,
+  ])
 
   const switchAccount = useCallback(async () => {
     oidc.cancel()
@@ -836,7 +1112,20 @@ export function useLoginController() {
     localConnectKeyRef.current = null
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
-  }, [embeddedAuthorization, logout, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
+  }, [
+    embeddedAuthorization,
+    logout,
+    oidc,
+    resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setStoredAccount,
+    setView,
+  ])
 
   const signOut = useCallback(async () => {
     oidc.cancel()
@@ -858,7 +1147,18 @@ export function useLoginController() {
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
     reset()
-  }, [embeddedAuthorization, logout, oidc, reset, resetDesktopAuthState])
+  }, [
+    embeddedAuthorization,
+    logout,
+    oidc,
+    reset,
+    resetDesktopAuthState,
+    setActiveLocalProviderSource,
+    setConnectingProvider,
+    setLocalLoginActive,
+    setStorageConflict,
+    setView,
+  ])
 
   // Listen for sign-out events from other components (e.g. PrimaryLayout)
   useEffect(() => {
@@ -880,7 +1180,18 @@ export function useLoginController() {
     localConnectKeyRef.current = null
     resetDesktopAuthState()
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
-  }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
+  }, [
+    embeddedAuthorization,
+    oidc,
+    resetDesktopAuthState,
+    setConnectingProvider,
+    setError,
+    setLocalLoginActive,
+    setState,
+    setStorageConflict,
+    setStoredAccount,
+    setView,
+  ])
   const openCurrentSpacePodSetup = useCallback(() => {
     const setupUrl = storageConflict?.setupUrl ?? storageConflict?.managementUrl
     if (!setupUrl || typeof window === 'undefined') {
@@ -922,7 +1233,7 @@ export function useLoginController() {
     localLoginStatus: {
       active: localStartupStatusActive,
       message: localStartupStatusActive
-        ? (localOnboarding?.message ?? (activeLocalProviderSource === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…'))
+        ? (localOnboarding?.message ?? (activeLocalProviderSource === 'standalone' ? '正在启动独立空间…' : '正在启动本机空间…'))
         : null,
     },
     authWindowStatus: {
@@ -932,6 +1243,8 @@ export function useLoginController() {
     },
     connectingProvider,
     isRestoring: restore.isRestoring,
+    preferredSpace,
+    selectSpace: setPreferredSpace,
     connect,
     continueStoredAccount,
     continueLocalLogin: signInLocalOnboarding,
@@ -964,11 +1277,24 @@ function isSilentAuthError(error: string): boolean {
     || error === 'account_selection_required'
 }
 
+function isSilentAuthFailure(error: unknown): boolean {
+  const candidate = error as { code?: unknown; error?: unknown; message?: unknown } | null
+  const values = [candidate?.code, candidate?.error, candidate?.message, error]
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.toLowerCase())
+
+  return values.some((value) =>
+    isSilentAuthError(value)
+    || /requested scopes not granted|consent required|login required|interaction required/.test(value),
+  )
+}
+
 function resolveStorageConflictAction(
   conflict: StorageConflict,
   input: {
     storageProviderLabel?: string
     provisionCode?: string | null
+    provisionUrl?: string | null
   },
 ): StorageConflict {
   if (input.storageProviderLabel !== 'Local' || !input.provisionCode) {
@@ -979,7 +1305,7 @@ function resolveStorageConflictAction(
     }
   }
 
-  const createPodUrl = buildLocalScopedCreatePodUrl(conflict.storageProviderUrl, input.provisionCode)
+  const createPodUrl = normalizeRememberedUrl(input.provisionUrl)
   if (!createPodUrl) {
     return {
       ...conflict,
@@ -992,26 +1318,6 @@ function resolveStorageConflictAction(
     ...conflict,
     setupUrl: createPodUrl,
     setupKind: 'create-pod',
-  }
-}
-
-function buildLocalScopedCreatePodUrl(
-  storageProviderUrl: string | null | undefined,
-  provisionCode: string,
-): string | null {
-  const normalizedStorageProviderUrl = normalizeRememberedUrl(storageProviderUrl)
-  if (!normalizedStorageProviderUrl) {
-    return null
-  }
-
-  try {
-    const url = new URL('/.account/create-pod/', normalizedStorageProviderUrl.endsWith('/')
-      ? normalizedStorageProviderUrl
-      : `${normalizedStorageProviderUrl}/`)
-    url.searchParams.set('provisionCode', provisionCode)
-    return url.toString()
-  } catch {
-    return null
   }
 }
 

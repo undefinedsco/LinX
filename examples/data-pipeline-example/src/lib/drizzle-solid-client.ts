@@ -103,6 +103,7 @@ class DrizzleSolidClient {
                 lastMessageAt: null,
                 status: 'active',
                 ...data,
+                description: data.description ?? null,
               }
 
               console.log('✅ 创建成功:', newChat.id)

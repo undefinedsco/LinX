@@ -1,6 +1,7 @@
 import { useRouterState } from '@tanstack/react-router'
 import { useLoginController } from './controller'
 import { LoginModal } from './LoginModal'
+import { useSession } from '@/providers/solid-session-provider'
 
 export function LoginOverlay() {
   const pathname = useRouterState({
@@ -16,6 +17,7 @@ export function LoginOverlay() {
 
 function LoginOverlayContent({ hidden = false }: { hidden?: boolean }) {
   const controller = useLoginController()
+  const { session } = useSession()
 
   if (hidden) {
     return null
@@ -24,7 +26,9 @@ function LoginOverlayContent({ hidden = false }: { hidden?: boolean }) {
   return (
     <LoginModal
       view={controller.view}
-      state={controller.state}
+      state={session.info.isLoggedIn || controller.state !== 'authenticated'
+        ? controller.state
+        : 'idle'}
       error={controller.error}
       storedAccount={controller.storedAccount}
       storageConflict={controller.storageConflict}
@@ -47,6 +51,8 @@ function LoginOverlayContent({ hidden = false }: { hidden?: boolean }) {
       localLoginStatus={controller.localLoginStatus}
       authWindowStatus={controller.authWindowStatus}
       connectingProvider={controller.connectingProvider}
+      preferredSpace={controller.preferredSpace}
+      onSelectSpace={controller.selectSpace}
     />
   )
 }

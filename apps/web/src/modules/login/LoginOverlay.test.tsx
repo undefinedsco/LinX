@@ -25,6 +25,9 @@ const controllerMock = {
   openCurrentSpacePodSetup: vi.fn(),
 }
 const useLoginControllerMock = vi.fn(() => controllerMock)
+const sessionState = {
+  session: { info: { isLoggedIn: false } },
+}
 
 vi.mock('@tanstack/react-router', async () => {
   const actual = await vi.importActual<typeof import('@tanstack/react-router')>('@tanstack/react-router')
@@ -40,7 +43,11 @@ vi.mock('./controller', () => ({
 }))
 
 vi.mock('./LoginModal', () => ({
-  LoginModal: () => <div>login modal</div>,
+  LoginModal: ({ state }: { state: string }) => <div>login modal:{state}</div>,
+}))
+
+vi.mock('@/providers/solid-session-provider', () => ({
+  useSession: () => sessionState,
 }))
 
 import { LoginOverlay } from './LoginOverlay'
@@ -48,6 +55,8 @@ import { LoginOverlay } from './LoginOverlay'
 describe('LoginOverlay', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    controllerMock.state = 'idle'
+    sessionState.session.info.isLoggedIn = false
     useRouterStateMock.mockImplementation(({ select }) =>
       select({ location: { pathname: '/chat' } }),
     )
@@ -55,7 +64,7 @@ describe('LoginOverlay', () => {
 
   it('renders the login modal on regular routes', () => {
     render(<LoginOverlay />)
-    expect(screen.getByText('login modal')).toBeTruthy()
+    expect(screen.getByText('login modal:idle')).toBeTruthy()
     expect(useLoginControllerMock).toHaveBeenCalledTimes(1)
   })
 
@@ -77,5 +86,13 @@ describe('LoginOverlay', () => {
     const { container } = render(<LoginOverlay />)
     expect(container.innerHTML).toBe('')
     expect(useLoginControllerMock).not.toHaveBeenCalled()
+  })
+
+  it('does not trust a stale authenticated UI state when the Solid session is logged out', () => {
+    controllerMock.state = 'authenticated' as const
+
+    render(<LoginOverlay />)
+
+    expect(screen.getByText('login modal:idle')).toBeTruthy()
   })
 })

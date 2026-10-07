@@ -5,11 +5,11 @@ const mockUseInboxStore = vi.fn()
 const mockUseInboxItems = vi.fn()
 const mockUseInboxSummary = vi.fn()
 
-vi.mock('../../store', () => ({
+vi.mock('../../app/store', () => ({
   useInboxStore: (selector: (state: unknown) => unknown) => mockUseInboxStore(selector),
 }))
 
-vi.mock('../../collections', () => ({
+vi.mock('../../data/collections', () => ({
   useInboxItems: () => mockUseInboxItems(),
   useInboxSummary: () => mockUseInboxSummary(),
 }))
@@ -86,7 +86,7 @@ describe('InboxListPane', () => {
 
     expect(screen.getByText('待认证')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /认证请求 · oauth2/i }))
+    fireEvent.click(screen.getByRole('option', { name: /认证请求 · oauth2/i }))
 
     expect(selectItem).toHaveBeenCalledWith('audit:pending-auth')
   })
@@ -111,5 +111,35 @@ describe('InboxListPane', () => {
 
     expect(screen.getByText('已完成')).toBeInTheDocument()
     expect(screen.getByText('运行时已完成')).toBeInTheDocument()
+  })
+
+  it('shows approval targets so same-tool requests can be distinguished', () => {
+    const target = 'https://pod.example/.data/proposals/source/source-refresh.ttl#proposal'
+    mockUseInboxItems.mockReturnValue({
+      data: [
+        {
+          id: 'approval:source-refresh',
+          kind: 'approval',
+          category: 'approval',
+          title: 'files.source.proposal',
+          description: '等待授权 · medium 风险',
+          timestamp: '2026-03-12T12:00:00.000Z',
+          status: 'pending',
+          approval: {
+            id: 'source-refresh',
+            status: 'pending',
+            toolName: 'files.source.proposal',
+            risk: 'medium',
+            target,
+            createdAt: '2026-03-12T12:00:00.000Z',
+          },
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<InboxListPane />)
+
+    expect(screen.getByText(target)).toBeInTheDocument()
   })
 })

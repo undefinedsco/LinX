@@ -77,12 +77,12 @@ class MockSolidDatabase {
 
   async select() {
     return {
-      from: (resource: any) => ({
+      from: (_resource: any) => ({
         execute: async (): Promise<ChatRow[]> => {
           await this.delay(200) // 模拟网络延迟
           return [...this.mockChats]
         },
-        where: (condition: any) => ({
+        where: (_condition: any) => ({
           execute: async (): Promise<ChatRow[]> => {
             await this.delay(150)
             // 简单模拟 where 查询，实际应该解析 condition
@@ -93,7 +93,7 @@ class MockSolidDatabase {
     }
   }
 
-  async insert(resource: any) {
+  async insert(_resource: any) {
     return {
       values: (data: ChatInsert) => ({
         returning: () => ({
@@ -123,7 +123,7 @@ class MockSolidDatabase {
     }
   }
 
-  async update(resource: any) {
+  async update(_resource: any) {
     return {
       set: (data: Partial<ChatRow>) => ({
         where: (condition: any) => ({

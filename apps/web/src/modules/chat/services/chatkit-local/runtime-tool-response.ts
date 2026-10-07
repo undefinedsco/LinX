@@ -61,10 +61,17 @@ export async function continueRuntimeToolCallFromInbox(options: ContinueRuntimeT
     authFetch: options.authFetch,
   })
 
-  const items = await store.loadThreadItems(options.threadId, undefined, 500, 'asc', context)
-  const toolItem = [...items.data]
-    .reverse()
-    .find((item) => isClientToolCallItem(item, options.toolCallId))
+  let after: string | undefined
+  let toolItem: Extract<ThreadItem, { type: 'client_tool_call' }> | undefined
+  do {
+    const page = await store.loadThreadItems(options.threadId, after, 250, 'desc', context)
+    toolItem = page.data.find((item) => isClientToolCallItem(item, options.toolCallId))
+    if (toolItem || !page.has_more) break
+    if (!page.last_id || page.last_id === after) {
+      throw new Error(`Thread pagination did not advance for ${options.threadId}`)
+    }
+    after = page.last_id
+  } while (!toolItem)
 
   if (!toolItem) {
     throw new Error(`Client tool call item not found for ${options.toolCallId}`)

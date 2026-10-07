@@ -12,8 +12,8 @@ export function LoginCardShell({
   cardSize?: 'compact' | 'auto'
 }) {
   const baseCardClassName = cardSize === 'auto'
-    ? 'w-compact-modal warm-card overflow-hidden rounded-xl flex flex-col'
-    : 'w-compact-modal h-compact-modal warm-card overflow-hidden rounded-xl flex flex-col'
+    ? 'w-compact-modal overflow-hidden rounded-xl border border-border/50 bg-card flex flex-col'
+    : 'w-compact-modal h-compact-modal overflow-hidden rounded-xl border border-border/50 bg-card flex flex-col'
 
   return (
     <div className={['fixed inset-0 z-[999] flex items-center justify-center bg-black/50', overlayClassName]
@@ -21,6 +21,9 @@ export function LoginCardShell({
       .join(' ')}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="登录 LinX"
         data-login-card-size={cardSize}
         className={[baseCardClassName, cardClassName]
         .filter(Boolean)

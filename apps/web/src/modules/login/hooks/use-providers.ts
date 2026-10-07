@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLoginStore, getAllProviders } from '@linx/stores/login'
 import { isLocalAccessHostname } from '@/lib/local-access-url'
+import { LINQ_OFFICIAL_ISSUER } from '../constants'
 import type { LoginProviderOption } from '../types'
 import type { LocalSpaceKind, LocalOnboardingSnapshot, SolidProvider } from '@/types/electron-api'
 
-const CLOUD_IDENTITY_URL = 'https://id.undefineds.co'
 const LOCAL_POD_LABEL = 'Local'
 const STANDALONE_POD_LABEL = 'Standalone'
 const REFRESH_INTERVAL = 4000
 const SERVICE_LOCAL_POLL_INTERVAL = 500
 const SERVICE_LOCAL_POLL_ATTEMPTS = 20
+const BROWSER_LOCAL_URL = 'http://localhost:5737/'
+const BROWSER_LOCAL_PROBE_TIMEOUT_MS = 1500
+const LOCAL_ONBOARDING_CONTRACT = 'linx-local-onboarding/v1'
 
 interface ServiceStatusResponse {
   pod?: {
@@ -43,6 +46,11 @@ interface ServiceStatusResponse {
 interface SetupConfigResponse {
   port?: number
   spaceKind?: LocalSpaceKind
+}
+
+interface LocalCapabilitiesResponse {
+  contract?: string
+  baseUrl?: string
 }
 
 function normalizeUrl(url: string): string {
@@ -157,20 +165,25 @@ export function useProviders() {
   const providers = useMemo<LoginProviderOption[]>(() => {
     // Cloud and Custom providers are combined Solid providers: one URL is both
     // the OIDC issuer and the storage provider.
-    const cloud = getAllProviders(customProviders).map<LoginProviderOption>((p) => ({
-      ...p,
-      source: p.isDefault ? 'cloud' : 'custom',
-      oidcProvider: {
-        kind: p.isDefault ? 'cloud' : 'custom',
-        url: normalizeUrl(p.url),
-        label: p.isDefault ? 'Cloud' : p.label,
-      },
-      storageProvider: {
-        kind: p.isDefault ? 'cloud' : 'custom',
-        url: normalizeUrl(p.url),
-        label: p.isDefault ? 'Cloud' : p.label,
-      },
-    }))
+    const cloud = getAllProviders(customProviders).map<LoginProviderOption>((p) => {
+      const providerUrl = normalizeUrl(p.isDefault ? LINQ_OFFICIAL_ISSUER : p.url)
+
+      return {
+        ...p,
+        url: providerUrl,
+        source: p.isDefault ? 'cloud' : 'custom',
+        oidcProvider: {
+          kind: p.isDefault ? 'cloud' : 'custom',
+          url: providerUrl,
+          label: p.isDefault ? 'Cloud' : p.label,
+        },
+        storageProvider: {
+          kind: p.isDefault ? 'cloud' : 'custom',
+          url: providerUrl,
+          label: p.isDefault ? 'Cloud' : p.label,
+        },
+      }
+    })
 
     // Local and Standalone are product-level local entries. Do not collapse
     // them into device-only/remote-ready runtime states.
@@ -235,6 +248,16 @@ export function useProviders() {
           },
         })
       }
+    } else {
+      const providerSnapshot = projectLocalOnboardingForSource(localOnboarding, 'standalone')
+      local.push(createLocalLoginProvider({
+        id: 'standalone',
+        source: 'standalone',
+        label: STANDALONE_POD_LABEL,
+        storageUrl: providerSnapshot?.localUrl ?? providerSnapshot?.baseUrl ?? BROWSER_LOCAL_URL,
+        runtimeStatus: resolveRuntimeStatus(providerSnapshot),
+        localOnboarding: providerSnapshot,
+      }))
     }
 
     // Merge: Cloud first, then Local, then custom
@@ -286,17 +309,21 @@ export function useProviders() {
       return next
     }
 
-    if (!isServiceMode) return null
+    if (!isServiceMode) {
+      const snapshot = await connectBrowserLocalSpace(spaceKind)
+      publishLocalOnboarding(snapshot)
+      return snapshot
+    }
 
     setLocalOnboarding((current) => current
       ? {
           ...current,
           spaceKind,
           state: 'starting',
-          message: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…',
+          message: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本机空间…',
           progress: {
             phase: 'spawn',
-            label: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…',
+            label: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本机空间…',
             detail: null,
           },
           errorCode: null,
@@ -314,10 +341,10 @@ export function useProviders() {
           provisionCode: null,
           provisionUrl: null,
           nodeId: null,
-          message: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…',
+          message: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本机空间…',
           progress: {
             phase: 'spawn',
-            label: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…',
+            label: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本机空间…',
             detail: null,
           },
           errorCode: null,
@@ -357,7 +384,7 @@ export function useProviders() {
       await new Promise((resolve) => window.setTimeout(resolve, SERVICE_LOCAL_POLL_INTERVAL))
     }
 
-    throw new Error('本地空间启动超时，请稍后重试。')
+    throw new Error('本机空间启动超时，请稍后重试。')
   }, [desktopApi, isServiceMode, localOnboarding, publishLocalOnboarding, refreshProviders])
 
   return {
@@ -367,6 +394,108 @@ export function useProviders() {
     refreshProviders,
     localOnboarding,
     startLocal,
+  }
+}
+
+async function connectBrowserLocalSpace(spaceKind: LocalSpaceKind): Promise<LocalOnboardingSnapshot> {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), BROWSER_LOCAL_PROBE_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(new URL('/api/linx/capabilities', BROWSER_LOCAL_URL).toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const capabilities = await response.json() as LocalCapabilitiesResponse
+    const baseUrl = normalizeLocalBaseUrl(capabilities.baseUrl)
+    if (capabilities.contract !== LOCAL_ONBOARDING_CONTRACT || !baseUrl) {
+      throw new Error('capabilities contract mismatch')
+    }
+
+    if (spaceKind === 'local') {
+      return createBrowserLocalSnapshot({
+        state: 'repair_required',
+        spaceKind,
+        baseUrl,
+        publicUrl: isLocalAccessHostname(new URL(baseUrl).hostname) ? null : baseUrl,
+        message: '网页端已检测到本机 xpod，但缺少 Local 云端绑定信息。请通过 LinX Desktop 或 LinX Service 完成本机空间配置。',
+        errorCode: 'BROWSER_LOCAL_BINDING_REQUIRED',
+      })
+    }
+
+    if (!isLocalAccessHostname(new URL(baseUrl).hostname)) {
+      return createBrowserLocalSnapshot({
+        state: 'repair_required',
+        spaceKind,
+        baseUrl,
+        publicUrl: baseUrl,
+        message: '检测到的 xpod 已绑定为本机空间，不能作为独立空间登录。请改用本机空间入口。',
+        errorCode: 'BROWSER_SPACE_KIND_MISMATCH',
+      })
+    }
+
+    return createBrowserLocalSnapshot({
+      state: 'ready',
+      spaceKind,
+      baseUrl,
+      publicUrl: null,
+      message: '已连接正在运行的独立空间，接下来会打开本机登录页。',
+      errorCode: null,
+    })
+  } catch {
+    return createBrowserLocalSnapshot({
+      state: 'error',
+      spaceKind,
+      baseUrl: BROWSER_LOCAL_URL,
+      publicUrl: null,
+      message: '未检测到可连接的本机空间。请先启动 xpod 后重试。',
+      errorCode: 'BROWSER_LOCAL_UNREACHABLE',
+    })
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
+function createBrowserLocalSnapshot(input: {
+  state: LocalOnboardingSnapshot['state']
+  spaceKind: LocalSpaceKind
+  baseUrl: string
+  publicUrl: string | null
+  message: string
+  errorCode: string | null
+}): LocalOnboardingSnapshot {
+  return {
+    state: input.state,
+    spaceKind: input.spaceKind,
+    localUrl: BROWSER_LOCAL_URL,
+    baseUrl: input.baseUrl,
+    publicUrl: input.publicUrl,
+    tunnel: null,
+    connectivity: null,
+    capabilities: null,
+    cloudIdentityUrl: null,
+    provisionCode: null,
+    provisionUrl: null,
+    nodeId: null,
+    message: input.message,
+    progress: null,
+    errorCode: input.errorCode,
+    canRetry: true,
+    canOpenSettings: false,
+  }
+}
+
+function normalizeLocalBaseUrl(url?: string): string | null {
+  if (!url) return null
+  try {
+    return ensureTrailingSlash(new URL(url).toString())
+  } catch {
+    return null
   }
 }
 
@@ -389,7 +518,7 @@ function createLocalLoginProvider(input: {
     source: input.source,
     oidcProvider: {
       kind: isStandalone ? 'local' : 'cloud',
-      url: isStandalone ? normalizedStorageUrl : CLOUD_IDENTITY_URL,
+      url: isStandalone ? normalizedStorageUrl : LINQ_OFFICIAL_ISSUER,
       label: isStandalone ? STANDALONE_POD_LABEL : 'Cloud',
     },
     storageProvider: {
@@ -514,9 +643,9 @@ function buildServiceLocalSnapshot(
     nodeId: status.provisioning?.nodeId ?? null,
     message: running
       ? spaceKind === 'local'
-        ? '本地空间已准备好，接下来会通过云端账号登录，数据会写入这台电脑。'
+        ? '本机空间已准备好，接下来会通过云端账号登录，数据会写入这台电脑。'
         : '独立空间已准备好，接下来会打开本机登录页。'
-      : '本地空间尚未运行。选择后会自动启动。',
+      : '本机空间尚未运行。选择后会自动启动。',
     progress: null,
     errorCode: null,
     canRetry: true,
@@ -540,8 +669,8 @@ function projectLocalOnboardingForSource(
       spaceKind: source,
       publicUrl: source === 'local' ? snapshot.publicUrl : null,
       message: source === 'local'
-        ? '当前启动的是独立空间。要使用本地空间，请返回空间选择页切换。'
-        : '当前启动的是本地空间。要使用独立空间，请返回空间选择页切换。',
+        ? '当前启动的是独立空间。要使用本机空间，请返回登录方式页切换。'
+        : '当前启动的是本机空间。要使用独立空间，请返回登录方式页切换。',
       errorCode: 'SERVICE_MODE_MISMATCH',
       canRetry: false,
       canOpenSettings: true,
@@ -558,7 +687,7 @@ function projectLocalOnboardingForSource(
       state: 'repair_required',
       spaceKind: 'local',
       publicUrl: snapshot.publicUrl,
-      message: '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。',
+      message: '本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。',
       errorCode: 'LOCAL_CLOUD_BINDING_REQUIRED',
       canRetry: true,
       canOpenSettings: true,
@@ -579,13 +708,13 @@ function resolveLocalProviderMessage(
 ): string | null {
   if (snapshot.state === 'ready') {
     return source === 'local'
-      ? '本地空间已准备好，接下来会通过云端账号登录，数据会写入这台电脑。'
+      ? '本机空间已准备好，接下来会通过云端账号登录，数据会写入这台电脑。'
       : '独立空间已准备好，接下来会打开本机登录页。'
   }
 
   if (snapshot.state === 'idle') {
     return source === 'local'
-      ? '本地空间尚未运行。选择后会用云端账号进入这台电脑。'
+      ? '本机空间尚未运行。选择后会用云端账号进入这台电脑。'
       : '独立空间尚未运行。选择后账号和数据都留在这台电脑。'
   }
 

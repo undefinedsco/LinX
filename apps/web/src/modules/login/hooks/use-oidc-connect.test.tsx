@@ -6,18 +6,27 @@ import {
   getPendingLoginAttempt,
   getPendingLoginTransaction,
 } from '../login-utils'
+import * as loginUtils from '../login-utils'
 import { useOidcConnect } from './use-oidc-connect'
 
 const loginMock = vi.fn()
 const fetchMock = vi.fn()
 const openAuthorizationWindowMock = vi.fn()
 const openEmbeddedAuthorizationMock = vi.fn()
+const openExternalMock = vi.fn()
 const prepareLoopbackRedirectMock = vi.fn()
 const resolveDesktopOidcIssuerMock = vi.fn()
+const sessionInfoMock: { current: { isLoggedIn: boolean } } = {
+  current: { isLoggedIn: false },
+}
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     login: loginMock,
+    session: {
+      login: loginMock,
+      info: sessionInfoMock.current,
+    },
   }),
 }))
 
@@ -25,7 +34,7 @@ function TestComponent() {
   const { connect } = useOidcConnect()
 
   return (
-    <button onClick={() => void connect('http://localhost:5737/')}>
+    <button onClick={() => { void connect('http://localhost:5737/').catch(() => undefined) }}>
       connect
     </button>
   )
@@ -37,6 +46,16 @@ function CloudTestComponent() {
   return (
     <button onClick={() => void connect('https://id.undefineds.co/')}>
       connect cloud
+    </button>
+  )
+}
+
+function SilentWebTestComponent() {
+  const { connect } = useOidcConnect()
+
+  return (
+    <button onClick={() => void connect('https://id.undefineds.co/', { prompt: 'none' })}>
+      restore cloud
     </button>
   )
 }
@@ -147,6 +166,7 @@ function CancelableTestComponent() {
 describe('useOidcConnect', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    sessionInfoMock.current = { isLoggedIn: false }
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ issuer: 'http://127.0.0.1:5737/' }),
@@ -155,6 +175,7 @@ describe('useOidcConnect', () => {
     prepareLoopbackRedirectMock.mockResolvedValue('http://127.0.0.1:43123/auth/callback')
     openAuthorizationWindowMock.mockResolvedValue(undefined)
     openEmbeddedAuthorizationMock.mockResolvedValue(undefined)
+    openExternalMock.mockResolvedValue(undefined)
     resolveDesktopOidcIssuerMock.mockReset()
     window.xpodDesktop = {
       auth: {
@@ -166,12 +187,16 @@ describe('useOidcConnect', () => {
         onEmbeddedAuthorizationState: vi.fn(() => () => {}),
         onRedirect: vi.fn(() => () => {}),
       },
+      app: {
+        openExternal: openExternalMock,
+      },
     } as any
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
     delete window.xpodDesktop
+    window.localStorage.clear()
     window.sessionStorage.clear()
     window.history.replaceState({}, '', '/')
   })
@@ -523,7 +548,7 @@ describe('useOidcConnect', () => {
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
   })
 
-  it('clears unrestorable Solid auth storage before starting a fresh login', async () => {
+  it('preserves the registered client when starting a fresh login', async () => {
     window.localStorage.setItem('solidClientAuthn:currentSession', 'pending-session')
     window.localStorage.setItem(
       'solidClientAuthenticationUser:pending-session',
@@ -541,7 +566,182 @@ describe('useOidcConnect', () => {
     await waitFor(() => {
       expect(loginMock).toHaveBeenCalledTimes(1)
     })
-    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
-    expect(window.localStorage.getItem('solidClientAuthenticationUser:pending-session')).toBeNull()
+    // Keeping the client registration lets the provider honor
+    // "Remember this client" across logins.
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('pending-session')
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:pending-session')).not.toBeNull()
+  })
+
+  it('preserves restorable Solid client metadata when starting a fresh login', async () => {
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'stale-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:stale-session',
+      JSON.stringify({
+        issuer: 'http://localhost:5737/',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+        clientId: 'stale-client-id',
+        isLoggedIn: true,
+        webId: 'http://localhost:5737/alice/profile/card#me',
+      }),
+    )
+
+    render(<TestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('stale-session')
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:stale-session')).not.toBeNull()
+  })
+
+  it('preserves the registered client while attempting a silent Web restore', async () => {
+    delete window.xpodDesktop
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'remembered-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:remembered-session',
+      JSON.stringify({
+        issuer: 'https://id.undefineds.co/',
+        redirectUrl: 'http://127.0.0.1:5173/auth/callback',
+        clientId: 'remembered-client-id',
+        isLoggedIn: true,
+        webId: 'https://id.undefineds.co/gcloud/profile/card#me',
+      }),
+    )
+
+    render(<SilentWebTestComponent />)
+    fireEvent.click(screen.getByRole('button', { name: 'restore cloud' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+    expect(loginMock.mock.calls[0][0]).toMatchObject({ prompt: 'none' })
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('remembered-session')
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:remembered-session')).not.toBeNull()
+  })
+
+  it('preserves Solid client metadata on fresh login even when the Inrupt session reports logged in', async () => {
+    sessionInfoMock.current = { isLoggedIn: true }
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'active-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:active-session',
+      JSON.stringify({
+        issuer: 'http://localhost:5737/',
+        redirectUrl: 'http://127.0.0.1:43123/auth/callback',
+        clientId: 'active-client-id',
+        isLoggedIn: true,
+        webId: 'http://localhost:5737/alice/profile/card#me',
+      }),
+    )
+
+    render(<TestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+    // A session reported as logged in may still be backed by a stale,
+    // server-side deleted client; that case self-heals via the
+    // invalid_client retry instead of an upfront purge, so remembered
+    // consent survives whenever the client is still valid.
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('active-session')
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:active-session')).not.toBeNull()
+  })
+
+  it('registers a fresh client and retries once when the provider rejects the stored client', async () => {
+    const clearStoredSolidSessionSpy = vi.spyOn(loginUtils, 'clearStoredSolidSession')
+    loginMock.mockRejectedValueOnce(new Error('Authenticating with unknown client'))
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'rejected-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:rejected-session',
+      JSON.stringify({
+        issuer: 'http://localhost:5737/',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+        clientId: 'deleted-client-id',
+      }),
+    )
+
+    render(<TestComponent />)
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(2)
+    })
+    // The rejected client state was purged before the retry.
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:rejected-session')).toBeNull()
+    clearStoredSolidSessionSpy.mockRestore()
+  })
+
+  it('purges the cached Solid session when the provider keeps rejecting the client', async () => {
+    const clearStoredSolidSessionSpy = vi.spyOn(loginUtils, 'clearStoredSolidSession')
+    loginMock.mockRejectedValue(new Error('Authenticating with unknown client'))
+
+    function LocalComponent() {
+      const { connect } = useOidcConnect()
+      return (
+        <button onClick={() => { void connect('http://localhost:5737/').catch(() => undefined) }}>
+          connect-catch
+        </button>
+      )
+    }
+
+    render(<LocalComponent />)
+    fireEvent.click(screen.getByRole('button', { name: 'connect-catch' }))
+
+    await waitFor(() => {
+      expect(clearStoredSolidSessionSpy).toHaveBeenCalled()
+    })
+    expect(loginMock).toHaveBeenCalledTimes(2)
+    clearStoredSolidSessionSpy.mockRestore()
+  })
+
+  it('falls back to the system browser when embedded authorization fails', async () => {
+    openEmbeddedAuthorizationMock.mockRejectedValueOnce(new Error('embedded failed'))
+    loginMock.mockImplementationOnce(async (options) => {
+      await options.handleRedirect('https://idp.example.com/authorize')
+      return new Promise(() => {})
+    })
+    render(<EmbeddedTestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect embedded' }))
+
+    await waitFor(() => {
+      expect(openExternalMock).toHaveBeenCalledWith(
+        'https://idp.example.com/authorize?provisionCode=pc-123',
+      )
+    })
+  })
+
+  it('rejects browser login setup when Inrupt resolves but the page does not leave the app', async () => {
+    vi.useFakeTimers()
+    try {
+      delete window.xpodDesktop
+      loginMock.mockResolvedValueOnce(undefined)
+      render(<ErrorHandledTestComponent />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'connect safely' }))
+
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(loginMock).toHaveBeenCalledTimes(1)
+      expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+      expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not silently accept a duplicate login while the first setup is pending', async () => {
+    loginMock.mockImplementationOnce(() => new Promise<void>(() => {}))
+    render(<TestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => expect(loginMock).toHaveBeenCalledTimes(1))
   })
 })

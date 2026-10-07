@@ -1,16 +1,18 @@
 /**
  * CP1 Component Tests: ContactListPane filtering
  *
- * Tests the filter tabs and contactType filtering behavior.
+ * Tests contactType filtering without restoring the removed filter-tab row.
  */
 
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
 import { ContactClass } from '@undefineds.co/models'
 
-// Mock contacts data with mixed types
+const { mockUseLiveQuery } = vi.hoisted(() => ({
+  mockUseLiveQuery: vi.fn(),
+}))
 const mockContacts = [
   { id: 's-1', name: 'Alice', rdfType: ContactClass.PERSON, contactType: 'solid', starred: false, avatarUrl: null, about: 'https://alice.example/profile/card#me' },
   { id: 's-2', name: 'Bob', rdfType: ContactClass.PERSON, contactType: 'solid', starred: true, avatarUrl: null, about: 'https://bob.example/profile/card#me' },
@@ -18,11 +20,19 @@ const mockContacts = [
   { id: 'g-1', name: 'Dev Team', rdfType: ContactClass.GROUP, contactType: 'solid', starred: false, avatarUrl: null, about: '/.data/contacts/g-1.ttl' },
 ]
 
-vi.mock('../collections', () => ({
+vi.mock('@tanstack/react-db', () => ({
+  useLiveQuery: mockUseLiveQuery,
+}))
+
+vi.mock('../data/collections', () => ({
+  contactCollection: {
+    startSyncImmediate: vi.fn(),
+  },
   contactOps: {
     getAll: vi.fn(() => mockContacts),
     search: vi.fn(() => []),
     subscribeToPod: vi.fn(() => Promise.resolve(() => {})),
+    fetch: vi.fn(async () => mockContacts),
     getGroupDisplayInfo: vi.fn(() => ({
       memberCount: 2,
       isOwner: true,
@@ -36,7 +46,7 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: { mockDb: true }, status: 'ready' }),
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {
@@ -58,7 +68,7 @@ let mockStoreState = {
   setListFilter: vi.fn(),
 }
 
-vi.mock('../store', () => ({
+vi.mock('../app/store', () => ({
   useContactStore: (selector: (s: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
@@ -74,6 +84,11 @@ const createWrapper = () => {
 describe('ContactListPane CP1 Filtering', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockUseLiveQuery.mockReturnValue({
+      data: mockContacts,
+      isLoading: false,
+      isError: false,
+    })
     mockStoreState = {
       search: '',
       setSearch: vi.fn(),
@@ -86,13 +101,14 @@ describe('ContactListPane CP1 Filtering', () => {
     }
   })
 
-  it('renders filter tabs when CP1 enabled', async () => {
+  it('keeps the list header compact without a filter-tab row', async () => {
     render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
 
-    expect(screen.getByText('全部')).toBeInTheDocument()
-    expect(screen.getByText('个人')).toBeInTheDocument()
-    expect(screen.getByText('AI')).toBeInTheDocument()
-    expect(screen.getByText('群组')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('搜索联系人')).toBeInTheDocument()
+    expect(screen.queryByText('全部')).not.toBeInTheDocument()
+    expect(screen.queryByText('个人')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'AI' })).not.toBeInTheDocument()
+    expect(screen.queryByText('群组')).not.toBeInTheDocument()
   })
 
   it('renders all contacts when filter is "all"', async () => {
@@ -101,13 +117,6 @@ describe('ContactListPane CP1 Filtering', () => {
     expect(await screen.findByText('Alice')).toBeInTheDocument()
     expect(screen.getByText('GPT Helper')).toBeInTheDocument()
     expect(screen.getByText('Dev Team')).toBeInTheDocument()
-  })
-
-  it('calls setListFilter when a tab is clicked', async () => {
-    render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
-
-    fireEvent.click(screen.getByText('群组'))
-    expect(mockStoreState.setListFilter).toHaveBeenCalledWith('groups')
   })
 
   it('filters to only groups when listFilter is "groups"', async () => {

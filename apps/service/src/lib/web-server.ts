@@ -10,6 +10,7 @@ import express, { Express, Request, Response } from 'express'
 import { Server } from 'http'
 import { getXpodModule } from './xpod'
 import { getRuntimeThreadsModule } from './runtime-threads'
+import type { RuntimeThreadEvent } from './runtime-runner'
 import { resolveLinxDefaultWorkspaceDir, resolveLinxUserDataDir } from './linx-paths'
 
 const OFFICIAL_CLOUD_IDENTITY_ORIGIN = 'https://id.undefineds.co'
@@ -954,8 +955,20 @@ export class WebServerModule {
         })
 
         res.status(upstream.status)
+        const decodedBodyHeaders = new Set([
+          'connection',
+          'content-encoding',
+          'content-length',
+          'keep-alive',
+          'proxy-authenticate',
+          'proxy-authorization',
+          'te',
+          'trailer',
+          'transfer-encoding',
+          'upgrade',
+        ])
         upstream.headers.forEach((value, key) => {
-          if (key.toLowerCase() === 'content-length') return
+          if (decodedBodyHeaders.has(key.toLowerCase())) return
           res.setHeader(key, value)
         })
 
@@ -980,6 +993,51 @@ export class WebServerModule {
       } catch (error) {
         console.error('[WebServer] Failed to proxy server-originated AI request:', error)
         sendUserError(res, 500, '服务端 AI 请求失败。请稍后重试，或切回客户端运行。', error)
+      }
+    })
+
+    this.app.post('/api/ai/responses', async (req: Request, res: Response) => {
+      try {
+        const xpodStatus = getXpodModule().getStatus()
+        if (!xpodStatus.running) {
+          sendUserError(res, 503, '本地空间还没有启动。请先启动本地空间后再使用联网搜索。')
+          return
+        }
+
+        const baseUrl = ensureTrailingSlash(xpodStatus.baseUrl || `http://localhost:${xpodStatus.port || 5737}`)
+        const endpoint = new URL('/v1/responses', baseUrl).toString()
+        const authorization = typeof req.headers.authorization === 'string' ? req.headers.authorization : undefined
+        const upstream = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            ...(authorization ? { Authorization: authorization } : {}),
+          },
+          body: JSON.stringify(req.body ?? {}),
+        })
+
+        res.status(upstream.status)
+        const decodedBodyHeaders = new Set([
+          'connection',
+          'content-encoding',
+          'content-length',
+          'keep-alive',
+          'proxy-authenticate',
+          'proxy-authorization',
+          'te',
+          'trailer',
+          'transfer-encoding',
+          'upgrade',
+        ])
+        upstream.headers.forEach((value, key) => {
+          if (decodedBodyHeaders.has(key.toLowerCase())) return
+          res.setHeader(key, value)
+        })
+        res.end(await upstream.text())
+      } catch (error) {
+        console.error('[WebServer] Failed to proxy server-originated Responses request:', error)
+        sendUserError(res, 500, '联网搜索请求失败。请稍后重试，或切回客户端运行。', error)
       }
     })
 
@@ -1127,11 +1185,32 @@ export class WebServerModule {
       res.setHeader('Connection', 'keep-alive')
       res.flushHeaders?.()
 
-      const unsubscribe = runtimeSessions.subscribeSession(sessionId, (event) => {
+      const writeEvent = (event: RuntimeThreadEvent) => {
+        res.write(`id: ${event.ts}\n`)
         res.write(`data: ${JSON.stringify(event)}\n\n`)
+      }
+      let replaying = true
+      const liveDuringReplay: RuntimeThreadEvent[] = []
+      const unsubscribe = runtimeSessions.subscribeSession(sessionId, (event) => {
+        if (replaying) {
+          liveDuringReplay.push(event)
+          return
+        }
+        writeEvent(event)
       })
 
-      res.write(`data: ${JSON.stringify({ type: 'status', ts: Date.now(), threadId: session.id, status: session.status })}\n\n`)
+      const after = Number(req.query.after)
+      if (Number.isFinite(after) && after >= 0) {
+        for (const event of runtimeSessions.getSessionEventsSince(sessionId, after)) {
+          writeEvent(event)
+        }
+      }
+      replaying = false
+      for (const event of liveDuringReplay.sort((a, b) => a.ts - b.ts)) {
+        writeEvent(event)
+      }
+
+      writeEvent({ type: 'status', ts: Date.now(), threadId: session.id, status: session.status })
 
       req.on('close', () => {
         unsubscribe()

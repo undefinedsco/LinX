@@ -1,11 +1,32 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const GUANGZHOU_WEB_URL = 'https://undefineds-gz.sealosgzg.site'
+const GUANGZHOU_IDENTITY_URL = 'https://undefineds-gz-id.sealosgzg.site'
+const target = process.env.LINX_E2E_TARGET?.trim().toLowerCase() ?? 'local'
+const baseURL = process.env.LINX_E2E_BASE_URL
+  ?? (target === 'guangzhou' ? GUANGZHOU_WEB_URL : 'http://localhost:5173')
+const baseUrlObject = new URL(baseURL)
+const isLocalBase = baseUrlObject.hostname === 'localhost'
+  || baseUrlObject.hostname === '127.0.0.1'
+const cloudIdentityUrl = process.env.LINX_E2E_CLOUD_IDENTITY_URL
+  ?? (target === 'guangzhou' ? GUANGZHOU_IDENTITY_URL : undefined)
+const storageState = process.env.LINX_E2E_STORAGE_STATE?.trim()
+const reuseExistingServer = process.env.LINX_E2E_REUSE_SERVER === undefined
+  ? true
+  : process.env.LINX_E2E_REUSE_SERVER === '1'
+
 /**
  * Playwright E2E Test Configuration
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
   testDir: './specs',
+
+  metadata: {
+    target,
+    baseURL,
+    cloudIdentityUrl: cloudIdentityUrl ?? null,
+  },
   
   /* Run tests in files in parallel */
   fullyParallel: true,
@@ -32,7 +53,9 @@ export default defineConfig({
   /* Shared settings for all the projects below */
   use: {
     /* Base URL to use in actions like `await page.goto('/')` */
-    baseURL: 'http://localhost:5173',
+    baseURL,
+
+    ...(storageState ? { storageState } : {}),
 
     /* Collect trace when retrying the failed test */
     trace: 'on-first-retry',
@@ -59,12 +82,16 @@ export default defineConfig({
   ],
 
   /* Run your local dev server before starting the tests */
-  webServer: {
-    command: 'cd ../../ && yarn dev:web',
-    url: 'http://localhost:5173',
-    reuseExistingServer: true,
-    timeout: 120 * 1000,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  },
+  ...(isLocalBase
+    ? {
+        webServer: {
+          command: `cd ../../ && yarn workspace @linx/web dev --host ${baseUrlObject.hostname} --port ${baseUrlObject.port || '5173'} --strictPort`,
+          url: baseURL,
+          reuseExistingServer,
+          timeout: 120 * 1000,
+          stdout: 'pipe' as const,
+          stderr: 'pipe' as const,
+        },
+      }
+    : {}),
 })

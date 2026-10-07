@@ -10,7 +10,7 @@ export function getProviderDisplayLabel(provider: LoginProviderOption): string {
   const source = resolveLoginProviderSource(provider)
 
   if (source === 'local') {
-    return '本地空间'
+    return '本机空间'
   }
 
   if (source === 'standalone') {
@@ -29,7 +29,7 @@ export function getProviderSourceLabel(provider: LoginProviderOption): string {
     case 'cloud':
       return '云端'
     case 'local':
-      return '本地'
+      return '本机'
     case 'standalone':
       return '独立'
     default:
@@ -49,15 +49,15 @@ export function getProviderSubtitle(provider: LoginProviderOption, isFailed: boo
   }
 
   if (source === 'local') {
-    return '本地空间'
-  }
-
-  if (source === 'standalone') {
     return '本机空间'
   }
 
+  if (source === 'standalone') {
+    return '独立空间'
+  }
+
   if (provider.runtime?.kind === 'local-pod') {
-    return '本地空间'
+    return '本机空间'
   }
 
   return new URL(provider.url).hostname
@@ -75,7 +75,7 @@ export function getProviderInfoText(provider: LoginProviderOption, isFailed: boo
   }
 
   if (source === 'local') {
-    return '使用云端账号登录，数据写入这台电脑上的本地空间。'
+    return '使用云端账号登录，数据写入这台电脑上的本机空间。'
   }
 
   if (source === 'standalone') {

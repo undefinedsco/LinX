@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import {
   chatResource,
   aiProviderResource,
@@ -12,7 +12,20 @@ import {
   getDefaultAIConfigCredentialId,
 } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
-import { chatOps, initializeChatCollections, LINX_DEFAULT_SECRETARY } from './collections'
+import {
+  chatCollection,
+  chatOps,
+  configureChatContactsPort,
+  initializeChatCollections,
+  LINX_DEFAULT_SECRETARY,
+  messageCollection,
+  threadCollection,
+} from './collections'
+import {
+  agentCollection,
+  contactCollection,
+  initializeContactCollections,
+} from '@/modules/contacts/data/collections'
 
 let context: XpodIntegrationContext<typeof solidSchema> | null = null
 
@@ -26,6 +39,8 @@ async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>>
     schema: solidSchema,
     resources: [chatResource, threadResource, messageResource, aiProviderResource, credentialResource],
   })
+  initializeContactCollections(context.db)
+  configureChatContactsPort({ agentCollection, contactCollection })
   initializeChatCollections(context.db)
   return context
 }
@@ -76,7 +91,7 @@ describe('chat collections integration', () => {
       metadata,
     }).execute()
 
-    const chats = await chatOps.fetchChats()
+    const chats = await chatCollection.fetch({ refetch: true })
     const roundTripped = chats.find((row) => row.id === id || extractChatIdFromChatRef(row.id) === id)
     expect(roundTripped).toBeDefined()
     expect(roundTripped?.participants).toEqual(expect.arrayContaining([assistantUri]))
@@ -99,6 +114,16 @@ describe('chat collections integration', () => {
     const thread = await chatOps.createThread(chatId, 'Thread One')
     expect(thread).toBeDefined()
 
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const threadRows = await threadCollection.fetch({ refetch: true })
+    expect(consoleError.mock.calls.flat().join(' ')).not.toContain('Unable to resolve column reference')
+    consoleError.mockRestore()
+    const roundTrippedThread = threadRows.find((row) => row.id === thread.id)
+    expect(roundTrippedThread).toMatchObject({
+      id: thread.id,
+      parent: expect.stringContaining(`/.data/chat/${chatId}/index.ttl#this`),
+    })
+
     const message = await chatOps.createUserMessage(
       chatId,
       thread.id,
@@ -107,7 +132,8 @@ describe('chat collections integration', () => {
     )
     expect(message).toBeDefined()
 
-    const msgRows = await chatOps.fetchMessages(thread.id, chatId)
+    const msgRows = (await messageCollection.fetch({ refetch: true }))
+      .filter((row) => row.thread === thread.id || row.thread?.includes(thread.id))
     const messageIri = (message as Record<string, unknown>)['@id']
     const roundTripped = msgRows.find((row) => row.id === message.id || (row as Record<string, unknown>)['@id'] === messageIri)
     expect(roundTripped).toBeDefined()

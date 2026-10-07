@@ -39,9 +39,9 @@ describe('continueRuntimeToolCallFromInbox', () => {
   it('finds the latest matching client_tool_call and forwards it to local ChatKit', async () => {
     mocked.loadThreadItems.mockResolvedValue({
       data: [
-        { id: 'tool-old', type: 'client_tool_call', call_id: 'call-1' },
-        { id: 'other', type: 'assistant_message' },
         { id: 'tool-latest', type: 'client_tool_call', call_id: 'call-1' },
+        { id: 'other', type: 'assistant_message' },
+        { id: 'tool-old', type: 'client_tool_call', call_id: 'call-1' },
       ],
       has_more: false,
     })
@@ -58,7 +58,7 @@ describe('continueRuntimeToolCallFromInbox', () => {
       output: '{"decision":"approved"}',
     })
 
-    expect(mocked.loadThreadItems).toHaveBeenCalledWith('thread-1', undefined, 500, 'asc', {})
+    expect(mocked.loadThreadItems).toHaveBeenCalledWith('thread-1', undefined, 250, 'desc', {})
     expect(mocked.process).toHaveBeenCalledWith(JSON.stringify({
       type: 'threads.add_client_tool_output',
       params: {

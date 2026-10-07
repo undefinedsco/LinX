@@ -480,17 +480,19 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.ok(providerInsert)
   assert.ok(credentialInsert)
   assert.ok(modelInsert)
-  assert.equal(providerInsert.row.id, 'anthropic')
+  assert.equal(providerInsert.row.id, 'anthropic.ttl')
   assert.equal(providerInsert.row.baseUrl, 'https://api.anthropic.com/v1')
-  assert.equal(providerInsert.row.hasModel, '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514')
-  assert.equal(credentialInsert.row.id, 'anthropic-default')
-  assert.equal(credentialInsert.row.provider, '/settings/providers/anthropic.ttl')
+  assert.deepEqual(providerInsert.row.hasModel, [
+    'settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
+  ])
+  assert.equal(credentialInsert.row.id, 'credentials.ttl#anthropic-default')
+  assert.equal(credentialInsert.row.provider, 'settings/providers/anthropic.ttl')
   assert.equal(credentialInsert.row.service, 'ai')
   assert.equal(credentialInsert.row.apiKey, 'sk-ant-test-key')
   assert.equal(credentialInsert.row.defaultModel, undefined)
   assert.equal(modelInsert.row.id, 'anthropic.ttl#claude-sonnet-4-20250514')
   assert.equal(modelInsert.row.displayName, 'claude-sonnet-4-20250514')
-  assert.equal(modelInsert.row.isProvidedBy, '/settings/providers/anthropic.ttl')
+  assert.equal(modelInsert.row.isProvidedBy, 'settings/providers/anthropic.ttl')
   assert.equal(harness.syncResults.length, 1)
   assert.deepEqual(harness.syncResults[0], {
     source: 'cli-ai-command',
@@ -510,11 +512,11 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
       action: 'ai.connect',
       resourceBindings: {
         provider: {
-          uri: '/settings/providers/anthropic.ttl',
+          uri: 'settings/providers/anthropic.ttl',
           local: 'anthropic',
         },
         model: {
-          uri: '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
+          uri: 'settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
           local: 'claude-sonnet-4-20250514',
         },
       },
@@ -579,7 +581,7 @@ test('linx ai disconnect removes provider credential config from Pod', async (t)
       action: 'ai.disconnect',
       resourceBindings: {
         provider: {
-          uri: '/settings/providers/anthropic.ttl',
+          uri: 'settings/providers/anthropic.ttl',
           local: 'anthropic',
         },
       },
@@ -651,7 +653,7 @@ test('linx ai status reads explicit provider config without provider/model colle
                 throw new Error(`unexpected collection scan: ${resourceName(resource)}`)
               }
               return [{
-                id: 'openai-default',
+                id: 'credentials.ttl#openai-default',
                 provider: '/settings/providers/openai.ttl',
                 service: 'ai',
                 status: 'active',
@@ -664,9 +666,9 @@ test('linx ai status reads explicit provider config without provider/model colle
     },
     async findById(resource, id) {
       findByIds.push([resourceName(resource), id])
-      if (resourceName(resource) === 'aiProvider' && id === 'openai') {
+      if (resourceName(resource) === 'aiProvider' && id === 'openai.ttl') {
         return {
-          id: 'openai',
+          id: 'openai.ttl',
           baseUrl: 'https://api.openai.com/v1',
           hasModel: '/settings/providers/openai.ttl#gpt-5.5',
         }
@@ -704,7 +706,7 @@ test('linx ai status reads explicit provider config without provider/model colle
 
   assert.deepEqual(selectResources, ['credential'])
   assert.deepEqual(findByIds, [
-    ['aiProvider', 'openai'],
+    ['aiProvider', 'openai.ttl'],
     ['aiModel', 'openai.ttl#gpt-5.5'],
   ])
   assert.match(output.join(''), /provider: openai/)
@@ -778,6 +780,6 @@ test('linx ai connect uses the resolved Pod context before ORM writes', async (t
   assert.ok(harness.operations.some((item) =>
     item.op === 'insert'
     && item.resource === 'credential'
-    && item.row.provider === '/settings/providers/openai.ttl'
+    && item.row.provider === 'settings/providers/openai.ttl'
     && item.row.apiKey === 'sk-openai-test-key'))
 })

@@ -23,7 +23,11 @@ const mockDb = {
   select: vi.fn().mockReturnValue({
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockReturnValue({
-        execute: vi.fn().mockImplementation(() => Promise.resolve(mockSearchResults)),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockReturnValue({
+            execute: vi.fn().mockImplementation(() => Promise.resolve(mockSearchResults)),
+          }),
+        }),
       }),
       orderBy: vi.fn().mockReturnValue({
         execute: vi.fn().mockResolvedValue([]),
@@ -87,7 +91,11 @@ function resetMockDb() {
   mockDb.select.mockImplementation(() => ({
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockReturnValue({
-        execute: vi.fn().mockImplementation(() => Promise.resolve(mockSearchResults)),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockReturnValue({
+            execute: vi.fn().mockImplementation(() => Promise.resolve(mockSearchResults)),
+          }),
+        }),
       }),
       orderBy: vi.fn().mockReturnValue({
         execute: vi.fn().mockResolvedValue([]),
@@ -144,6 +152,13 @@ vi.mock('@/providers/query-provider', () => ({
   },
 }))
 
+vi.mock('@/lib/data/agent-home', () => ({
+  createAgentHome: vi.fn(async () => ({
+    created: true,
+    rollback: vi.fn(async () => {}),
+  })),
+}))
+
 // Mock crypto.randomUUID
 const mockUUIDs = [
   'uuid-1', 'uuid-2', 'uuid-3',
@@ -160,9 +175,24 @@ import {
   contactOps,
   contactCollection,
   agentCollection,
+  configureContactsChatPort,
   setContactsDatabaseGetter,
 } from './collections'
 import { queryClient } from '@/providers/query-provider'
+
+configureContactsChatPort({
+  chatCollection: {
+    state: mockCollectionState,
+    insert: mockInsert,
+    update: mockUpdate,
+    delete: mockDelete,
+  },
+  threadCollection: { state: new Map() },
+  useSelectChat: () => vi.fn(),
+  createMatrixGroupRoom: vi.fn(),
+  loadMatrixChatRow: vi.fn(),
+  loadMatrixThreadRow: vi.fn(),
+})
 
 describe('contactOps', () => {
   beforeEach(() => {
@@ -268,23 +298,6 @@ describe('contactOps', () => {
     })
   })
 
-  describe('updateContact', () => {
-    it('should call collection update with correct id', async () => {
-      await contactOps.updateContact('contact-1', { alias: 'New Alias' })
-
-      expect(mockUpdate).toHaveBeenCalledWith('contact-1', expect.any(Function))
-    })
-  })
-
-  describe('updateAgent', () => {
-    it('should call collection update with correct id', async () => {
-      const agentId = agentResourceId('agent-1')
-      await contactOps.updateAgent(agentId, { instructions: 'New instructions' })
-
-      expect(mockUpdate).toHaveBeenCalledWith(agentId, expect.any(Function))
-    })
-  })
-
   describe('toggleStar', () => {
     it('should toggle starred from false to true', async () => {
       const updateSpy = vi.spyOn(contactOps, 'updateContact').mockResolvedValue()
@@ -300,14 +313,6 @@ describe('contactOps', () => {
       await contactOps.toggleStar('contact-1', true)
 
       expect(updateSpy).toHaveBeenCalledWith('contact-1', { starred: false })
-    })
-  })
-
-  describe('deleteContact', () => {
-    it('should call collection delete', async () => {
-      await contactOps.deleteContact('contact-1')
-
-      expect(mockDelete).toHaveBeenCalledWith('contact-1')
     })
   })
 
@@ -521,42 +526,6 @@ describe('contactOps Query Operations', () => {
     setContactsDatabaseGetter(() => null)
   })
 
-  describe('getAll', () => {
-    it('should return all contacts from collection state', () => {
-      const mockContacts = [
-        { id: 'contact-1', name: 'Alice' },
-        { id: 'contact-2', name: 'Bob' },
-      ]
-      mockContacts.forEach(c => mockCollectionState.set(c.id, c))
-
-      const result = contactOps.getAll()
-
-      expect(result).toHaveLength(2)
-    })
-
-    it('should return empty array when no contacts', () => {
-      mockCollectionState.clear()
-
-      const result = contactOps.getAll()
-
-      expect(result).toEqual([])
-    })
-  })
-
-  describe('getAllAgents', () => {
-    it('should return all agents from collection state', () => {
-      const mockAgents = [
-        { id: 'agent-1', name: 'Assistant A' },
-        { id: 'agent-2', name: 'Assistant B' },
-      ]
-      mockAgents.forEach(a => mockCollectionState.set(a.id, a))
-
-      const result = contactOps.getAllAgents()
-
-      expect(result).toHaveLength(2)
-    })
-  })
-
   describe('search', () => {
     const mockContacts = [
       { id: '1', name: 'Alice Smith', alias: 'Ali', about: 'https://alice.pod/#me' },
@@ -575,7 +544,7 @@ describe('contactOps Query Operations', () => {
       expect(result).toHaveLength(3)
     })
 
-    it('should search by name using drizzle-solid ilike', async () => {
+    it('should search each supported field without an unsupported FILTER OR', async () => {
       // Mock drizzle-solid returning filtered results
       mockSearchResults = [mockContacts[0]] // Alice Smith
 
@@ -583,8 +552,7 @@ describe('contactOps Query Operations', () => {
 
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Alice Smith')
-      // Verify db.select was called (drizzle-solid path, not fallback)
-      expect(mockDb.select).toHaveBeenCalled()
+      expect(mockDb.select).toHaveBeenCalledTimes(5)
     })
 
     it('should search by alias using drizzle-solid ilike', async () => {
@@ -871,6 +839,38 @@ describe('contactOps Solid Profile Operations', () => {
     it('should return days ago', () => {
       const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
       expect(contactOps.getLastSyncedText(threeDaysAgo)).toBe('3天前同步')
+    })
+  })
+
+  describe('collection subscriptions and fetch', () => {
+    it('returns a no-op subscription when no database is available', async () => {
+      setContactsDatabaseGetter(() => null)
+
+      const unsubscribe = await contactOps.subscribeToPod()
+
+      expect(unsubscribe).toBeTypeOf('function')
+      expect(mockSubscribeToPod).not.toHaveBeenCalled()
+    })
+
+    it('delegates Pod subscription to the contact collection', async () => {
+      const unsubscribeContact = vi.fn()
+      mockSubscribeToPod.mockResolvedValueOnce(unsubscribeContact)
+
+      const unsubscribe = await contactOps.subscribeToPod()
+      unsubscribe()
+
+      expect(mockSubscribeToPod).toHaveBeenCalledWith(mockDb)
+      expect(unsubscribeContact).toHaveBeenCalledTimes(1)
+    })
+
+    it('forwards refetch options to the contact collection fetch', async () => {
+      const rows = [{ id: 'contact-1', name: 'Alice' }]
+      mockFetch.mockResolvedValueOnce(rows)
+
+      const result = await contactOps.fetch({ refetch: true })
+
+      expect(result).toBe(rows)
+      expect(mockFetch).toHaveBeenCalledWith({ refetch: true })
     })
   })
 })

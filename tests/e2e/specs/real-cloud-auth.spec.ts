@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { expectSecretaryPersisted, expectSecretaryVisible } from '../helpers/secretary-bootstrap'
+import { expectLoginDialog, selectLoginSpace } from '../helpers/login-ui'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -173,13 +174,8 @@ test.describe('Cloud IDP + Cloud SP auth flow', () => {
     })
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
-
-    const cloudButton = page.getByRole('button', { name: /云端空间[\s\S]*登录|Cloud[\s\S]*Login/i }).first()
-    if (!await cloudButton.isVisible({ timeout: 15_000 }).catch(() => false)) {
-      throw new Error(`Cloud provider button not found\n${JSON.stringify(await readPageState(page), null, 2)}`)
-    }
-    await cloudButton.click()
+    await expectLoginDialog(page)
+    await selectLoginSpace(page, 'cloud')
     await page.waitForURL(/id\.undefineds\.co|\/\.account\//, { timeout: 90_000 })
 
     const registerResult = await registerOnProductionCloud(page, runtime)

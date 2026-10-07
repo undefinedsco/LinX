@@ -5,7 +5,7 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/main.js",
+    "start": "electron dist/main.js",
     "dev": "tsx watch src/main.ts",
     "dev:setup": "tsx src/setup/server.ts"
   },

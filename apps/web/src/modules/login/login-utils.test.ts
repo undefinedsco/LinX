@@ -14,8 +14,12 @@ import {
   getPendingLoginAttempt,
   getPendingLoginTransaction,
   hasStoredSolidSession,
+  isInvalidClientError,
+  isInvalidClientErrorCode,
+  reconcileLoginClientSchema,
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
+  setPendingPostLoginMicroAppId,
 } from './login-utils'
 import { getRememberedAccount } from '@linx/stores/login'
 
@@ -26,12 +30,35 @@ describe('login-utils post-login target helpers', () => {
     clearPendingPostLoginMicroAppId()
     clearStoredSolidSession()
     window.localStorage.removeItem('linx-remembered-account')
+    window.localStorage.removeItem('linx-login-client-schema')
     window.history.replaceState({}, '', '/')
   })
 
   it('resolves current micro app from pathname', () => {
     window.history.replaceState({}, '', '/files')
     expect(resolvePostLoginMicroAppId()).toBe('files')
+  })
+
+  it('drops obsolete browser identity state without touching application data', () => {
+    window.localStorage.setItem('linx-remembered-account', JSON.stringify({ displayName: 'Old account' }))
+    window.localStorage.setItem('linx-login', JSON.stringify({ state: { storedAccount: { displayName: 'Old account' } } }))
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'old-session')
+    window.localStorage.setItem('solidClientAuthenticationUser:old-session', '{}')
+    window.localStorage.setItem('linx-chat-draft', 'keep me')
+    setPendingLoginAttempt({
+      issuerUrl: 'https://old.example.com',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    })
+
+    expect(reconcileLoginClientSchema()).toBe(true)
+    expect(window.localStorage.getItem('linx-remembered-account')).toBeNull()
+    expect(window.localStorage.getItem('linx-login')).toBeNull()
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:old-session')).toBeNull()
+    expect(getPendingLoginAttempt()).toBeNull()
+    expect(window.localStorage.getItem('linx-chat-draft')).toBe('keep me')
+    expect(reconcileLoginClientSchema()).toBe(false)
   })
 
   it('falls back to chat for non-micro-app routes', () => {
@@ -53,6 +80,13 @@ describe('login-utils post-login target helpers', () => {
     ensurePendingPostLoginMicroAppId('files')
 
     expect(consumePendingPostLoginMicroAppId()).toBe('favorites')
+  })
+
+  it('can replace the pending target with the current route target', () => {
+    ensurePendingPostLoginMicroAppId('chat')
+    setPendingPostLoginMicroAppId('files')
+
+    expect(consumePendingPostLoginMicroAppId()).toBe('files')
   })
 
   it('stores and consumes the pending login attempt', () => {
@@ -250,6 +284,32 @@ describe('login-utils post-login target helpers', () => {
     })
   })
 
+  it('merges secure Inrupt session identity into the stored session metadata', () => {
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'linx-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:linx-session',
+      JSON.stringify({
+        issuer: 'http://localhost:5737/',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+        clientId: 'dynamic-client',
+        keepAlive: 'true',
+      }),
+    )
+    window.localStorage.setItem(
+      'solidClientAuthn:secure:solidClientAuthenticationUser:linx-session',
+      JSON.stringify({
+        isLoggedIn: 'true',
+        webId: 'http://localhost:5737/alice/profile/card#me',
+      }),
+    )
+
+    expect(getStoredSolidSession()).toMatchObject({
+      sessionId: 'linx-session',
+      issuerUrl: 'http://localhost:5737/',
+      webId: 'http://localhost:5737/alice/profile/card#me',
+    })
+  })
+
   it('clears unrestorable auth state before a fresh login attempt', () => {
     window.localStorage.setItem('solidClientAuthn:currentSession', 'pending-session')
     window.localStorage.setItem(
@@ -321,6 +381,24 @@ describe('login-utils post-login target helpers', () => {
     expect(clearUnrestorableSolidAuthState()).toBe(false)
     expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('linx-session')
     expect(window.localStorage.getItem('solidClientAuthenticationUser:linx-session')).not.toBeNull()
+  })
+
+  describe('invalid-client detection', () => {
+    it('detects unknown/invalid client errors from thrown errors', () => {
+      expect(isInvalidClientError(new Error('Authenticating with unknown client'))).toBe(true)
+      expect(isInvalidClientError(new Error('invalid_client: client not registered'))).toBe(true)
+      expect(isInvalidClientError(new Error('unauthorized_client'))).toBe(true)
+      expect(isInvalidClientError(new Error('network error, please retry'))).toBe(false)
+      expect(isInvalidClientError('plain string about login')).toBe(false)
+      expect(isInvalidClientError(null)).toBe(false)
+    })
+
+    it('detects invalid-client callback error codes', () => {
+      expect(isInvalidClientErrorCode('unknown_client')).toBe(true)
+      expect(isInvalidClientErrorCode('invalid_client')).toBe(true)
+      expect(isInvalidClientErrorCode('access_denied')).toBe(false)
+      expect(isInvalidClientErrorCode(null)).toBe(false)
+    })
   })
 
   it('does not delete pending OIDC callback context while checking stored sessions', () => {

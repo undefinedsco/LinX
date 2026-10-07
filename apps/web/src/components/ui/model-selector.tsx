@@ -28,6 +28,7 @@ interface ModelSelectorProps {
   value?: string
   onChange?: (value: string) => void
   type?: 'chat' | 'voice' | 'video'
+  models?: ModelOption[]
   placeholder?: string
   className?: string
 }
@@ -100,13 +101,16 @@ const ProviderIcon = ({ name }: { name: string }) => {
   )
 }
 
-export function ModelSelector({ value, onChange, type = 'chat', placeholder, className }: ModelSelectorProps) {
+export function ModelSelector({ value, onChange, type = 'chat', models: suppliedModels, placeholder, className }: ModelSelectorProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const [selectedTags, setSelectedTags] = React.useState<ModelCapability[]>([])
   
-  const models = React.useMemo(() => MOCK_MODELS[type] || [], [type])
-  const selectedValue = React.useMemo(() => normalizeChatModelId(value ?? ""), [value])
+  const models = React.useMemo(() => suppliedModels ?? (MOCK_MODELS[type] || []), [suppliedModels, type])
+  const selectedValue = React.useMemo(
+    () => suppliedModels ? (value ?? '').trim() : normalizeChatModelId(value ?? ""),
+    [suppliedModels, value],
+  )
   const selectedModel = React.useMemo(() => models.find(m => m.id === selectedValue), [models, selectedValue])
 
   const availableTags = React.useMemo(() => {
@@ -158,7 +162,7 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
         </Button>
       </PopoverTrigger>
       
-      <PopoverContent className="flex max-h-[500px] min-h-0 w-[400px] flex-col overflow-hidden p-0" align="start">
+      {open && <PopoverContent portalled={false} className="flex max-h-[500px] min-h-0 w-[400px] flex-col overflow-hidden p-0" align="start">
         {/* Header: Search + Tags */}
         <div className="p-3 pb-2 border-b border-border/40 space-y-2 bg-background">
           <div className="relative">
@@ -207,7 +211,14 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
                   {items.map((model) => (
                     <div
                       key={model.id}
-                      onClick={() => { onChange?.(model.id); setOpen(false); }}
+                      onClick={(event) => {
+                        // The selector is also used inside dialogs opened from a
+                        // dropdown menu. Do not let an option click bubble back
+                        // to that menu item and reopen/reset the parent form.
+                        event.stopPropagation()
+                        onChange?.(model.id)
+                        setOpen(false)
+                      }}
                       className={cn(
                         "relative flex items-center justify-between px-2 py-2 rounded-lg border border-transparent transition-all cursor-pointer group",
                         selectedValue === model.id 
@@ -239,7 +250,7 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
             )}
           </div>
         </ScrollArea>
-      </PopoverContent>
+      </PopoverContent>}
     </Popover>
   )
 }

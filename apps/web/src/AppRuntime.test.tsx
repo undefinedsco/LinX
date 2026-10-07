@@ -8,6 +8,17 @@ vi.mock('./providers/solid-session-provider', () => ({
   SolidSessionProvider: (props: unknown) => solidSessionProviderMock(props),
 }))
 
+vi.mock('./providers/solid-session-context', () => ({
+  useSession: () => ({
+    session: {
+      info: { isLoggedIn: false, webId: null },
+      fetch: vi.fn(),
+      events: { on: vi.fn(), off: vi.fn() },
+    },
+    sessionRequestInProgress: false,
+  }),
+}))
+
 vi.mock('./providers/solid-database-provider', () => ({
   SolidDatabaseProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
@@ -16,7 +27,7 @@ vi.mock('./providers/pod-collections-bootstrap', () => ({
   PodCollectionsBootstrap: () => null,
 }))
 
-vi.mock('./lib/telemetry/telemetry-context', () => ({
+vi.mock('./lib/telemetry/telemetry-provider', () => ({
   TelemetryProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
@@ -32,6 +43,7 @@ describe('AppRuntime', () => {
   afterEach(() => {
     vi.clearAllMocks()
     delete window.xpodDesktop
+    delete window.__LINX_SERVICE__
     window.history.replaceState({}, '', '/')
   })
 
@@ -43,9 +55,8 @@ describe('AppRuntime', () => {
     )
   })
 
-
-  it('keeps web-style desktop test stubs on normal web callback restore', () => {
-    window.xpodDesktop = { auth: { openEmbeddedAuthorization: vi.fn() } } as any
+  it('restores persisted sessions when Web is served by the local LinX service', () => {
+    window.__LINX_SERVICE__ = true
 
     render(<AppRuntime />)
 
@@ -54,7 +65,27 @@ describe('AppRuntime', () => {
     )
   })
 
-  it('disables Inrupt silent restore in Electron desktop runtime', () => {
+  it('restores persisted sessions when only the local onboarding bridge is present', () => {
+    window.xpodDesktop = { localOnboarding: {} } as any
+
+    render(<AppRuntime />)
+
+    expect(solidSessionProviderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ restorePreviousSession: true }),
+    )
+  })
+
+  it('disables iframe session restore in desktop runtime', () => {
+    window.xpodDesktop = { auth: { openEmbeddedAuthorization: vi.fn() } } as any
+
+    render(<AppRuntime />)
+
+    expect(solidSessionProviderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ restorePreviousSession: false }),
+    )
+  })
+
+  it('disables persisted session restore in Electron desktop runtime', () => {
     window.xpodDesktop = { auth: { prepareLoopbackRedirect: vi.fn(), consumePendingRedirect: vi.fn() } } as any
 
     render(<AppRuntime />)
@@ -64,7 +95,7 @@ describe('AppRuntime', () => {
     )
   })
 
-  it('keeps Electron callback restore owned by the callback page', () => {
+  it('keeps the provider from restoring an Electron callback page through an iframe', () => {
     window.xpodDesktop = { auth: { prepareLoopbackRedirect: vi.fn(), consumePendingRedirect: vi.fn() } } as any
     window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
 

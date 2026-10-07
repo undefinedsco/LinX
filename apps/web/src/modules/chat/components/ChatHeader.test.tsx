@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockToggleRightSidebar = vi.fn()
+const mockSelectChat = vi.fn()
 const mockUpdateChat = vi.fn()
 const mockUpdateAgentProfile = vi.fn()
 const mockUpdateAgentModel = vi.fn()
@@ -12,8 +13,9 @@ const mockToast = vi.fn()
 const mockUseChatStore = vi.fn()
 const mockUseEntity = vi.fn()
 const mockUseChatList = vi.fn()
+const mockAgentCollectionGet = vi.fn()
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
     session: {
       info: {
@@ -52,6 +54,31 @@ vi.mock('@/components/ui/model-selector', () => ({
   ),
 }))
 
+vi.mock('@/modules/model-services/data/use-model-services', () => ({
+  useModelServices: () => ({
+    providers: {
+      undefineds: {
+        id: 'undefineds',
+        name: 'LinX Platform',
+        enabled: true,
+        models: [{ id: 'linx-lite', name: 'LinX Lite', enabled: true, capabilities: [] }],
+      },
+      openai: {
+        id: 'openai',
+        name: 'OpenAI',
+        enabled: true,
+        models: [{ id: 'gpt-4o-mini', name: 'GPT-4o mini', enabled: true, capabilities: [] }],
+      },
+      anthropic: {
+        id: 'anthropic',
+        name: 'Anthropic',
+        enabled: true,
+        models: [{ id: 'claude-3-5-sonnet-latest', name: 'Claude', enabled: true, capabilities: [] }],
+      },
+    },
+  }),
+}))
+
 vi.mock('@/lib/agent-providers', () => ({
   DEFAULT_LINX_PLATFORM_MODEL_ID: 'linx-lite',
   LINX_PLATFORM_PROVIDER_ID: 'undefineds',
@@ -86,6 +113,13 @@ vi.mock('../store', () => ({
 }))
 
 vi.mock('../collections', () => ({
+  LINX_DEFAULT_SECRETARY: {
+    agentId: 'agents/__secretary__/',
+    contactId: 'contacts/__secretary__',
+    chatId: 'chat/__secretary__',
+    title: 'AI Secretary',
+  },
+  isLinxDefaultSecretaryChat: (chat: { title?: string } | null | undefined) => chat?.title === 'AI Secretary',
   useChatList: () => mockUseChatList(),
   useChatMutations: () => ({
     updateChat: {
@@ -101,6 +135,12 @@ vi.mock('../collections', () => ({
       isPending: false,
     },
   }),
+}))
+
+vi.mock('../contacts-port', () => ({
+  agentCollection: {
+    get: (...args: unknown[]) => mockAgentCollectionGet(...args),
+  },
 }))
 
 vi.mock('../agent-runtime-location', () => ({
@@ -136,9 +176,11 @@ import { ChatHeader } from './ChatHeader'
 describe('ChatHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockAgentCollectionGet.mockReturnValue(undefined)
 
     mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
       selectedChatId: 'chat-1',
+      selectChat: mockSelectChat,
       showRightSidebar: false,
       toggleRightSidebar: mockToggleRightSidebar,
     }))
@@ -191,6 +233,48 @@ describe('ChatHeader', () => {
     })
   })
 
+  it('returns to the chat list from the compact header', () => {
+    render(<ChatHeader />)
+
+    fireEvent.click(screen.getByRole('button', { name: '返回聊天列表' }))
+
+    expect(mockSelectChat).toHaveBeenCalledWith(null)
+  })
+
+  it('does not expose or execute the star action for AI Secretary', () => {
+    mockUseChatList.mockReturnValue({
+      data: [
+        {
+          id: 'chat-1',
+          title: 'AI Secretary',
+          starred: false,
+        },
+      ],
+    })
+
+    render(<ChatHeader />)
+
+    const starButton = screen.queryByTitle('收藏')
+    if (starButton) fireEvent.click(starButton)
+
+    expect({
+      hasStarButton: Boolean(starButton),
+      mutationCalls: mockUpdateChat.mock.calls,
+    }).toEqual({
+      hasStarButton: false,
+      mutationCalls: [],
+    })
+  })
+
+  it('leaves the right sidebar toggle to the shared page header', () => {
+    render(<ChatHeader />)
+
+    expect(screen.queryByTitle('显示设置')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('隐藏设置')).not.toBeInTheDocument()
+    expect(screen.getByTitle('编辑助手设置：助手A')).toBeInTheDocument()
+    expect(screen.getByTitle('切换模型：gpt-4o-mini')).toBeInTheDocument()
+  })
+
   it('updates agent profile from the header dialog', async () => {
     render(<ChatHeader />)
 
@@ -202,6 +286,7 @@ describe('ChatHeader', () => {
     await waitFor(() => {
       expect(mockUpdateAgentProfile).toHaveBeenCalledWith({
         agentId: 'agent-1',
+        currentAgent: expect.objectContaining({ id: 'agent-1' }),
         name: '新的助手名',
         instructions: '新的提示词',
         aiRuntimeLocation: 'client',
@@ -224,6 +309,7 @@ describe('ChatHeader', () => {
     await waitFor(() => {
       expect(mockUpdateAgentModel).toHaveBeenCalledWith({
         agentId: 'agent-1',
+        currentAgent: expect.objectContaining({ id: 'agent-1' }),
         provider: 'anthropic',
         model: 'claude-3-5-sonnet-latest',
         chatId: 'chat-1',
@@ -233,6 +319,33 @@ describe('ChatHeader', () => {
 
     expect(mockRefreshAgent).toHaveBeenCalled()
     expect(mockRefreshContact).toHaveBeenCalled()
+  })
+
+  it('uses the staged Secretary agent while its physical Agent Home is settling', async () => {
+    mockUseChatList.mockReturnValue({
+      data: [{ id: 'chat/__secretary__', title: 'AI Secretary', starred: false }],
+    })
+    mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedChatId: 'chat/__secretary__',
+      selectChat: mockSelectChat,
+      showRightSidebar: false,
+      toggleRightSidebar: mockToggleRightSidebar,
+    }))
+    mockUseEntity.mockReturnValue({ data: null, refresh: vi.fn().mockResolvedValue(undefined) })
+    mockAgentCollectionGet.mockReturnValue({
+      id: 'agents/__secretary__/',
+      name: 'LinX 主理人',
+      provider: 'undefineds',
+      model: 'linx-lite',
+    })
+
+    render(<ChatHeader />)
+
+    fireEvent.click(screen.getByText('linx-lite'))
+    expect(screen.getByText('模型设置')).toBeInTheDocument()
+    expect(mockToast).not.toHaveBeenCalledWith(expect.objectContaining({
+      title: '当前聊天没有可编辑的模型',
+    }))
   })
 
   it('updates the agent AI runtime location from the profile dialog', async () => {

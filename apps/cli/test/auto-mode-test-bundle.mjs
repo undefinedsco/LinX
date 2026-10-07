@@ -212,6 +212,7 @@ async function buildAutoModeBundle(entryRelative) {
       ],
       skipLibCheck: true,
       verbatimModuleSyntax: false,
+      ignoreDeprecations: '6.0',
       baseUrl: sourceRoot,
       paths: {
         '@undefineds.co/models': [join(modelsDistRoot, 'index.d.ts')],
@@ -291,6 +292,7 @@ async function buildAutoModeBundle(entryRelative) {
       './thread-reconciler-controller': './dist/thread-reconciler-controller.js',
       './turn-controller': './dist/turn-controller.js',
       './wake-scheduler': './dist/wake-scheduler.js',
+      './workspace': './dist/workspace.js',
     },
   }, null, 2))
   symlinkSync(storesDistRoot, join(storesPackageDir, 'dist'), 'dir')

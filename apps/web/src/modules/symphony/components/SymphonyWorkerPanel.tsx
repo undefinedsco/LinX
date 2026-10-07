@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import { Bot, ChevronDown, ChevronRight, Loader2, Play, RefreshCw } from 'lucide-react'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/modules/chat/store'
 import { runAndPersistWebSymphonyWorkerGoal, type RunAndPersistWebSymphonyWorkerGoalInput } from '../service'
-import { symphonyControlOps } from '../collections'
+import { symphonyControlOps, useSymphonyControlSnapshot } from '../collections'
 
 type Snapshot = Awaited<ReturnType<typeof symphonyControlOps.fetchSnapshot>>
 type RunWorker = (input: RunAndPersistWebSymphonyWorkerGoalInput) => Promise<unknown>
@@ -34,15 +34,16 @@ const runningStatuses = new Set(['planned', 'running', 'active', 'pending'])
 
 export function SymphonyWorkerPanel({
   runWorker = runAndPersistWebSymphonyWorkerGoal,
-  fetchSnapshot = symphonyControlOps.fetchSnapshot,
+  fetchSnapshot,
   defaultWorkspacePath = '',
 }: SymphonyWorkerPanelProps) {
   const { session } = useSession()
   const { db, status: dbStatus } = useSolidDatabase()
+  const liveSnapshot = useSymphonyControlSnapshot()
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectedThreadId = useChatStore((state) => state.selectedThreadId)
   const [isOpen, setIsOpen] = useState(false)
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [requestedSnapshot, setRequestedSnapshot] = useState<Snapshot | null>(null)
   const [objective, setObjective] = useState('')
   const [workspacePath, setWorkspacePath] = useState(defaultWorkspacePath)
   const [backend, setBackend] = useState<'codex' | 'claude' | 'codebuddy'>('codex')
@@ -54,6 +55,7 @@ export function SymphonyWorkerPanel({
     setWorkspacePath((current) => current || defaultWorkspacePath)
   }, [defaultWorkspacePath])
 
+  const snapshot = fetchSnapshot ? requestedSnapshot : liveSnapshot.data
   const workers = useMemo(() => summarizeWorkers(snapshot), [snapshot])
   const activeCount = workers.filter((worker) => runningStatuses.has(worker.status)).length
 
@@ -61,7 +63,11 @@ export function SymphonyWorkerPanel({
     setIsRefreshing(true)
     setError(null)
     try {
-      setSnapshot(await fetchSnapshot())
+      if (fetchSnapshot) {
+        setRequestedSnapshot(await fetchSnapshot())
+      } else {
+        await symphonyControlOps.fetchSnapshot({ refetch: true })
+      }
     } catch (refreshError) {
       setError(formatError(refreshError, '无法读取 worker 状态。'))
     } finally {
@@ -70,7 +76,7 @@ export function SymphonyWorkerPanel({
   }
 
   useEffect(() => {
-    if (dbStatus === 'ready') {
+    if (dbStatus === 'ready' && fetchSnapshot) {
       void refresh()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

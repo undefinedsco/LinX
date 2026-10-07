@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "yarn@1.22.22",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.0.0 <23.0.0"
   },
   "workspaces": [
     "apps/*",
@@ -48,7 +48,10 @@
     "lint": "yarn lint:web",
     "typecheck": "yarn typecheck:web",
     "test:unit": "yarn workspace @linx/web test --run && yarn test:cli",
+    "test:integration:web": "yarn workspace @linx/web test:integration --run",
+    "test:integration:web:perf": "yarn workspace @linx/web test:integration:perf --run",
     "verify:symphony-skills": "node scripts/verify-symphony-skills.mjs",
+    "verify:web-deploy": "node scripts/verify-web-static-deploy.mjs",
     "verify:symphony-dual-role": "node scripts/pack-symphony-dual-role-fixtures.mjs --check",
     "pack:symphony-dual-role": "node scripts/pack-symphony-dual-role-fixtures.mjs",
     "test:e2e": "yarn workspace @linx/e2e test",
@@ -58,12 +61,11 @@
   "dependencies": {
     "@inrupt/solid-client": "^3.0.0",
     "@inrupt/solid-client-authn-browser": "^4.0.0",
-    "@inrupt/solid-ui-react": "^3.0.0",
     "@inrupt/vocab-common-rdf": "^1.0.5",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
-    "@undefineds.co/drizzle-solid": "0.3.17",
+    "@undefineds.co/drizzle-solid": "0.3.20",
     "@undefineds.co/xpod": "0.3.52",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -88,9 +90,15 @@
     "vite": "^8.0.14"
   },
   "resolutions": {
+    "**/@radix-ui/react-dismissable-layer": "1.1.15",
     "**/drizzle-orm": "^0.45.2",
-    "**/@undefineds.co/drizzle-solid": "0.3.17",
-    "**/@undefineds.co/models": "0.2.45",
+    "**/@undefineds.co/drizzle-solid": "0.3.20",
+    "**/@undefineds.co/models": "0.2.54",
+    "**/@tiptap/core": "3.27.1",
+    "**/@tiptap/extensions": "3.27.1",
+    "**/@tiptap/pm": "3.27.1",
+    "**/@tiptap/react": "3.27.1",
+    "**/@tiptap/starter-kit": "3.27.1",
     "**/react": "19.2.6",
     "**/react-dom": "19.2.6",
     "**/@inrupt/solid-client": "^3.0.0",

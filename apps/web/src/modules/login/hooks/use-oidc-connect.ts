@@ -1,11 +1,13 @@
 import { useCallback, useRef } from 'react'
-import { useSession } from '@inrupt/solid-ui-react'
+import { useSession } from '@/providers/solid-session-context'
 import {
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
-  clearUnrestorableSolidAuthState,
+  clearSolidAuthClientState,
+  clearStoredSolidSession,
   getPendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
+  isInvalidClientError,
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
 } from '../login-utils'
@@ -34,7 +36,7 @@ interface OidcConnectOptions {
   storageProviderLabel?: string
   issuerLabel?: string
   authorizationQuery?: Record<string, string | null | undefined>
-  prompt?: 'none' | 'consent'
+  prompt?: 'none' | 'consent' | 'login'
   strictDiscovery?: boolean
   nodeId?: string
 }
@@ -92,13 +94,19 @@ export function useOidcConnect() {
   }, [])
 
   const connect = useCallback(async (issuerUrl: string, options?: OidcConnectOptions) => {
-    if (connectingRef.current) return
+    if (connectingRef.current) {
+      throw new Error('登录流程仍在进行。请稍后重试。')
+    }
     connectingRef.current = true
     const generation = ++generationRef.current
 
     try {
-      clearUnrestorableSolidAuthState()
-
+      // Keep the previously registered client for every flow (explicit login
+      // included) so the provider can honor "Remember this client" across
+      // logins. A client that was deleted server-side is rejected with
+      // invalid_client/unknown_client: purge and register fresh once below.
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
       const requestedEntryUrl = issuerUrl.replace(/\/$/, '')
       const explicitAccountIssuerUrl = normalizeLoginUrl(options?.accountIssuerUrl)
       const explicitStorageProviderUrl = normalizeLoginUrl(options?.storageProviderUrl)
@@ -179,27 +187,35 @@ export function useOidcConnect() {
       if (redirectUrlResult === CANCELLED) return
       const redirectUrl = redirectUrlResult
 
+      const externalRedirectHandler = desktopApi?.app?.openExternal
+        ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, authorizationQuery))
+        : undefined
       const redirectHandler =
         authorizationSurface === 'embedded' && desktopApi?.auth?.openEmbeddedAuthorization
-          ? (url: string) => desktopApi.auth.openEmbeddedAuthorization(appendAuthorizationQuery(url, authorizationQuery), {
-              providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
-            })
+          ? async (url: string) => {
+              const authorizationUrl = appendAuthorizationQuery(url, authorizationQuery)
+              try {
+                await desktopApi.auth.openEmbeddedAuthorization(authorizationUrl, {
+                  providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
+                })
+              } catch (error) {
+                if (!externalRedirectHandler) throw error
+                await externalRedirectHandler(url)
+              }
+            }
         : authorizationSurface === 'external'
-          ? desktopApi?.app?.openExternal
-            ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, authorizationQuery))
-            : undefined
+          ? externalRedirectHandler
         : desktopApi?.auth?.openAuthorizationWindow
           ? (url: string) => desktopApi.auth.openAuthorizationWindow(appendAuthorizationQuery(url, authorizationQuery), {
               providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
             })
-        : desktopApi?.app?.openExternal
-          ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, authorizationQuery))
-          : undefined
+        : externalRedirectHandler
       const redirectStarted = redirectHandler ? createDeferred<void>() : null
       const handleRedirect = redirectHandler
         ? (url: string) => {
             try {
               if (generationRef.current !== generation) {
+                console.warn('[oidc-connect] handleRedirect dropped: stale generation', { generation, current: generationRef.current })
                 redirectStarted?.resolve()
                 return undefined
               }
@@ -233,8 +249,17 @@ export function useOidcConnect() {
         handleRedirect,
       } satisfies Parameters<typeof login>[0]
       if (options?.prompt) {
-        ;(loginOptions as Parameters<typeof login>[0] & { prompt: 'none' | 'consent' }).prompt = options.prompt
+        ;(loginOptions as Parameters<typeof login>[0] & { prompt: 'none' | 'consent' | 'login' }).prompt = options.prompt
       }
+      console.info('[login] oidc login setup', {
+        oidcIssuer: loginOptions.oidcIssuer,
+        redirectUrl: loginOptions.redirectUrl,
+        authorizationSurface,
+        hasHandleRedirect: Boolean(handleRedirect),
+        route: transaction?.route ?? options?.route,
+        storageProviderUrl: transaction?.storageProviderUrl ?? options?.storageProviderUrl,
+        prompt: options?.prompt,
+      })
 
       await runLoginSetupWithRetry({
         login: () => login(loginOptions),
@@ -244,10 +269,24 @@ export function useOidcConnect() {
           ? '登录窗口打开超时，请重试。'
           : '登录跳转超时，请重试。',
       })
-    } catch (error) {
-      clearPendingLoginAttempt()
-      clearPendingPostLoginMicroAppId()
-      throw error
+          return
+        } catch (error) {
+          if (attempt === 1 && isInvalidClientError(error)) {
+            // The stored client was deleted server-side. Purge it and retry
+            // once with a fresh dynamic registration.
+            clearSolidAuthClientState()
+            continue
+          }
+          clearPendingLoginAttempt()
+          clearPendingPostLoginMicroAppId()
+          if (isInvalidClientError(error)) {
+            // The provider rejected a stale/invalid client. Drop the cached Solid
+            // session so the next login attempt registers a fresh client.
+            clearStoredSolidSession()
+          }
+          throw error
+        }
+      }
     } finally {
       if (generationRef.current === generation) {
         connectingRef.current = false
@@ -379,8 +418,18 @@ async function runLoginSetupOnce(input: {
     ])
   }
 
+  const loginFailureOnly = loginPromise.then<never>(
+    () => new Promise<never>(() => {
+      // In browser-window auth, a successful login setup should leave this page.
+      // If the page is still alive, wait for the timeout so the UI can recover.
+    }),
+    (error) => {
+      throw error
+    },
+  )
+
   return Promise.race<void | typeof CANCELLED>([
-    loginPromise,
+    loginFailureOnly,
     timeout(LOGIN_SETUP_TIMEOUT_MS, input.timeoutMessage),
     input.cancelPromise,
   ])

@@ -49,6 +49,15 @@ test('service xpod resolves external IdP from canonical oidcIssuer config', (t) 
   assert.equal(resolveExternalOidcIssuer({}), undefined)
 })
 
+test('service xpod recognizes an explicitly managed external runtime', (t) => {
+  const { usesExternalXpod } = loadXpodWithStubs(t)
+
+  assert.equal(usesExternalXpod({ LINX_EXTERNAL_XPOD: 'true' }), true)
+  assert.equal(usesExternalXpod({ LINX_EXTERNAL_XPOD: ' TRUE ' }), true)
+  assert.equal(usesExternalXpod({ LINX_EXTERNAL_XPOD: 'false' }), false)
+  assert.equal(usesExternalXpod({}), false)
+})
+
 test('service xpod runtime env removes inherited OIDC env before applying explicit env', (t) => {
   const { buildRuntimeEnv } = loadXpodWithStubs(t)
   const pollutionKey = ['OIDC', 'ISSUER'].join('_')

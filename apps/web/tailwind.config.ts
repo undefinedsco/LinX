@@ -63,12 +63,6 @@ const config: Config = {
           "list-selected": "hsl(var(--layout-list-selected))",
           content: "hsl(var(--layout-content))"
         },
-        // WeChat 风格的状态颜色
-        wechat: {
-          unread: "#F95C5C",               // 未读红点
-          pinned: "#07C160",               // 置顶绿色
-          muted: "#B2B2B2"                 // 静音灰色
-        },
         popover: {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))"
@@ -87,8 +81,8 @@ const config: Config = {
         md: "var(--radius-md)",
         lg: "var(--radius-lg)",
         xl: "var(--radius-xl)",
-        "2xl": "calc(var(--radius-xl) + 4px)",
-        "3xl": "calc(var(--radius-xl) + 8px)",
+        "2xl": "var(--radius-2xl)",
+        "3xl": "var(--radius-3xl)",
         full: "9999px"
       },
       keyframes: {

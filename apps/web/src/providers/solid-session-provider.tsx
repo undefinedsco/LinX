@@ -1,14 +1,13 @@
 import {
+  Session,
   EVENTS,
 } from '@inrupt/solid-client-authn-browser'
-import {
-  SessionContext,
-  SessionProvider as InruptSessionProvider,
-  useSession,
-} from '@inrupt/solid-ui-react'
 import type { ReactNode } from 'react'
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { capturePendingCallbackError } from '@/modules/login/login-utils'
+import { getPersistentBrowserStorage, PersistentSessionStorage } from './persistent-session-storage'
+import { SessionContext, useSession } from './solid-session-context'
+import { waitForSessionRestore } from './session-restore-timeout'
 
 interface SolidSessionProviderProps {
   children: ReactNode
@@ -27,18 +26,84 @@ export function SolidSessionProvider({
 }: SolidSessionProviderProps) {
   capturePendingCallbackError()
 
+  const browserStorage = useMemo(() => getPersistentBrowserStorage(), [])
+  const session = useMemo(() => new Session({
+    secureStorage: new PersistentSessionStorage(browserStorage, 'secure'),
+    insecureStorage: new PersistentSessionStorage(browserStorage, 'insecure'),
+  }, sessionId), [browserStorage, sessionId])
+  const restoreSession = restorePreviousSession || typeof onSessionRestore !== 'undefined'
+  const [sessionRequestInProgress, setSessionRequestInProgress] = useState(
+    !session.info.isLoggedIn,
+  )
+  const [profile, setProfile] = useState<undefined>(undefined)
+
+  useEffect(() => {
+    let active = true
+    const handleSessionRestore = (url: string) => onSessionRestore?.(url)
+    session.events.on(EVENTS.SESSION_RESTORED, handleSessionRestore)
+
+    void waitForSessionRestore(
+      session.handleIncomingRedirect({
+        url: window.location.href,
+        restorePreviousSession: restoreSession,
+      }),
+    )
+      .catch((error) => {
+        onError?.(error instanceof Error ? error : new Error(String(error)))
+      })
+      .finally(() => {
+        if (active) {
+          setSessionRequestInProgress(false)
+        }
+      })
+
+    return () => {
+      active = false
+      session.events.off(EVENTS.SESSION_RESTORED, handleSessionRestore)
+    }
+  }, [onError, onSessionRestore, restoreSession, session])
+
+  const login = useCallback(async (options: Parameters<Session['login']>[0]) => {
+    setSessionRequestInProgress(true)
+    try {
+      await session.login(options)
+    } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error))
+      onError?.(normalizedError)
+      // Callers own the login state machine and need the rejection to decide
+      // whether to retry a silent request interactively. Swallowing it leaves
+      // the UI waiting for a redirect that will never happen.
+      throw normalizedError
+    } finally {
+      setSessionRequestInProgress(false)
+    }
+  }, [onError, session])
+
+  const logout = useCallback(async (options?: Parameters<Session['logout']>[0]) => {
+    try {
+      await session.logout(options)
+      setProfile(undefined)
+    } catch (error) {
+      onError?.(error instanceof Error ? error : new Error(String(error)))
+    }
+  }, [onError, session])
+
+  const contextValue = useMemo(() => ({
+    session,
+    login,
+    logout,
+    sessionRequestInProgress,
+    setSessionRequestInProgress,
+    fetch: session.fetch,
+    profile,
+  }), [login, logout, profile, session, sessionRequestInProgress])
+
   return (
-    <InruptSessionProvider
-      sessionId={sessionId}
-      restorePreviousSession={restorePreviousSession}
-      skipLoadingProfile
-      onError={onError}
-      onSessionRestore={onSessionRestore}
-    >
+    <SessionContext.Provider value={contextValue}>
       <SessionEventBridge onError={onError}>
         {children}
       </SessionEventBridge>
-    </InruptSessionProvider>
+    </SessionContext.Provider>
   )
 }
 
@@ -49,7 +114,7 @@ function SessionEventBridge({
   children: ReactNode
   onError?: (error: Error) => void
 }) {
-  const context = useContext(SessionContext)
+  const context = useSession()
   const { session, setSessionRequestInProgress } = context
   const [version, setVersion] = useState(0)
   const bumpVersion = useCallback(() => setVersion((current) => current + 1), [])
@@ -93,7 +158,10 @@ function SessionEventBridge({
     }
   }, [bumpVersion, onError, session.events, setSessionRequestInProgress])
 
-  const value = useMemo(() => ({ ...context }), [context, version])
+  const value = useMemo(() => {
+    void version
+    return { ...context }
+  }, [context, version])
 
   return (
     <SessionContext.Provider value={value}>

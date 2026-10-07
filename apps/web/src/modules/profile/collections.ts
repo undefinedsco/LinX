@@ -39,6 +39,13 @@ function getWebId(): string | null {
   return webIdGetter?.() ?? null
 }
 
+export async function readProfile(
+  db: SolidDatabase,
+  webId: string,
+): Promise<SolidProfileRow | null> {
+  return await db.findByIri(solidProfileResource, webId) as SolidProfileRow | null
+}
+
 // ============================================================================
 // Profile Operations (Business Logic)
 // ============================================================================
@@ -62,8 +69,7 @@ export const profileOps = {
     }
     
     try {
-      const record = await db.findByIri(solidProfileResource, webId)
-      return record as SolidProfileRow | null
+      return await readProfile(db, webId)
     } catch (error) {
       console.error('[profileOps] Failed to fetch profile:', error)
       return null

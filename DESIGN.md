@@ -17,6 +17,7 @@ Reference roles:
 
 - Apple / Premium: visual discipline, native-feeling restraint, typography, spacing, and surface hierarchy; do not copy brand identity or assets.
 - WeChat: desktop chat interaction skeleton only: low setup burden, object lists, current conversation, and familiar re-entry surfaces.
+- Heptabase: structured resource interactions only: card as file/resource + metadata, tag/class scope, predicate fields, subject notes, table/kanban/whiteboard projections, and low-chrome editing. Do not turn the whole Files module into a Heptabase clone.
 - Linear / Raycast: command clarity, state legibility, keyboardable operations, and fast work recovery.
 - Notion: linked context and document organization patterns, without turning LinX into a generic document editor.
 - GitHub: issue/review/audit trail discipline for approvals, evidence, and changes.
@@ -99,6 +100,8 @@ Content priority: the active object and decision; its evidence, conditions and c
 - Foundry owns training/evaluation/release governance. LinX is the daily work and editing surface; Xpod owns assets and runtime management. Do not duplicate knowledge editors or training forms in both products.
 - Display configured, service-ready, client-loaded and Run-used model facts separately. Missing default configuration is a repair state, not permission to silently rotate providers. If a personal model is unavailable, say it is not applied; offer stop, repair or clearly identified base-model continuation within granted scope. Never claim the personal model was used.
 
+Within Work, Secretary remains the protected first conversation. Knowledge exposes one Files/resource browser; chat-derived files are a contextual scope of that browser, not a duplicate global entry. Files combines an inline tree/list with a resource workspace; compact surfaces use one module head and an invoked tree drawer.
+
 ## Design principles
 
 - Principle 1: **Familiar conversation, task-appropriate surfaces.** Lists, search, object directness and low setup burden remain familiar; source reading, method editing and evaluation do not have to fit inside chat.
@@ -107,6 +110,7 @@ Content priority: the active object and decision; its evidence, conditions and c
 - Principle 4: **State must be legible.** If storage, auth, local reachability, runtime/backend state, access, proposal state, Ingest state, retry, timeout, or worker state matters, show it explicitly and locally.
 - Principle 5: **Files is resource-first.** Finder/File Browser familiarity is used for browsing and opening resources; card/predicate/table/whiteboard patterns appear only where structured resources justify them.
 - Principle 6: **File-primary plus modeled metadata.** Long reports, evidence, ideas, issues, and rich notes remain files; modeled RDF records provide queryable type/status/links/authority and point to those files.
+- Principle 7: **Useful before persistence settles.** Secretary welcome and browser structure render from deterministic local product state first; Pod persistence and subscriptions reconcile in the background and expose failures without replacing usable UI with indefinite loading.
 - Tradeoffs:
   - Prefer fewer visible modules over exposing half-finished capability.
   - Keep current-work decisions close to their evidence; use the main reading/editing/comparison area when an inline control is too small.
@@ -117,16 +121,29 @@ Content priority: the active object and decision; its evidence, conditions and c
 ## Files and Personal Linked Context
 
 - Files mental model: File Browser/Finder-like browsing for folders, files, selection, rename/move/copy, preview, keyboard expectations, and permission access; it remains a Pod/Solid resource browser, not a local Finder replacement.
+- Files desktop layout: after the global navigation rail, Files has an inline resource tree/list pane and a resource workspace. The tree supports lazy children, search, metadata states, roving keyboard focus, and a visible current path; it is not a third persistent pane. Compact surfaces may present the same tree in a drawer. Do not compose a Shell list pane around another list/detail split.
+- Files visual pass: use Apple/macOS as a restraint lens, not as identity. Keep the head near 48px, search in list/tool headers, right drawers collapsed by default, and controls tucked into icon/menu affordances until the user invokes them.
+- Files navigation: the tree owns hierarchical navigation and expansion; there is no back button. The workspace head shows the selected resource's current path. With no child resource selected, the workspace shows the current folder overview or an actionable empty state; it must not become an unexplained blank pane.
+- Files creation/import: the current path is the explicit destination. The add menu uses user-facing operations: create document, create folder, upload files, upload folder, and add web page. Desktop uses the native picker where available; folder upload preserves hierarchy. `Ingest` may describe background/source status in details, but the creation command is `添加网页`, never `创建 Ingest 卡片`.
+- Finder scanning: narrow resource lists keep one dominant name column but retain a compact secondary line for kind/MIME, size, and modified time. Do not offer sorting by facts that are invisible everywhere in the row.
 - Personal Linked Context: user-owned files, conversations, tasks, evidence, decisions, preferences, and memories become linked, AI-usable context. The Pod behaves like a model-defined semantic file system: human-readable files plus queryable RDF semantics.
 - Structured resources: real collections may use subject tables; each row represents one RDF subject/resource, with class scope and actual predicates. An individual source or knowledge card should open a readable detail, not become a table solely because it is RDF.
+- Structured table contract: class scope is required and selected from the table head; different classes do not mix in one table. Header order is `subject`, predicate columns, then `+ Predicate`; `+ Subject` is the final row. Predicate headers hide namespace by default, expose it through one `ns` switch, and resize via header dividers. Default widths remain compact enough to keep `subject` and `+ Predicate` fully discoverable in the standard two-pane desktop layout; only the inner table may scroll horizontally, never the whole detail surface.
+- Predicate creation: `+ Predicate` opens with search and reusable existing predicates first. The term/type/description/shape definition form stays collapsed until the user explicitly chooses the create row; selecting an existing predicate must not force users through definition fields.
+- Predicate interaction: predicate definitions drive cell rendering and operation. Text/code/date edit inline; enum/select and multi-select use a selected-chip + search/create popover; relation/URL cells expose open/link; booleans toggle in place. Cell clicks should enter the natural type-specific interaction without a separate confirm button.
 - Card model: a card is a file/resource plus queryable RDF metadata. Do not introduce a parallel card database when the Pod resource can be the durable subject.
-- `.meta` / `.acl` / `.acr`: these are sidecars and built-in resource capabilities, not normal business metadata rows. `.meta` can hold file/container view metadata, source hints, checksums, title, or UI view state; business truth such as Issue/Task/Run/Report/Evidence belongs in modeled resources.
-- Vocab: user Pod vocabulary lives under `/.vocab/` with term, shape, and namespace resources. Table columns, validation, sorting, enum/select controls, and cell proposals use actual predicate URIs; local term records support labels, approval, descriptions, shapes, and provenance.
+- `.meta` / `.acl` / `.acr`: these are sidecars and built-in resource capabilities, not normal business metadata rows. `.meta` can hold file/container view metadata, source hints, checksums, title, or UI view state; business truth such as Issue/Task/Run/Report/Evidence belongs in modeled resources. The drawer shows human metadata and semantic links such as vocab/shape/source before a collapsed technical section; HTTP status, ETag, raw Turtle, and policy transport details are diagnostic, not the primary preview.
+- Vocab: user Pod vocabulary lives under `/.vocab/` with sibling `terms.ttl`, `shapes.ttl`, and `namespaces.ttl` resources. Class, predicate, and enum option are term kinds; shape is constraint metadata. Table columns, validation, sorting, enum/select controls, and cell proposals use actual predicate URIs; local term records support labels, approval, descriptions, shapes, and provenance.
+- RDF identity projection: card/title/label selection uses explicit approved predicate identifiers or vocab metadata. A coincidental local name such as `name` on an unrelated namespace must never redefine a subject's display identity.
 - Structured editing: ordinary `.data` subject values may be edited from Files, but AI/user-suggested class, predicate, enum, shape, or cell changes stage proposals and Inbox approvals before canonical RDF is modified. Pending markers indicate unconfirmed definitions or values, not decoration.
 - Ingest: Ingest is the LinX product pipeline that turns source material into reviewable Files objects: cards, blocks, subjects, predicates, vocab proposals, approvals, and source-linked updates. Lower-level fetch/OCR/parser/extraction belongs to runtime/xpod; UI copy should not expose parser/index as the user-facing product concept.
 - Projections: Table, Kanban, Whiteboard and Raw are task-appropriate projections over the same subject/resource data and view metadata, not separate durable authorities. A collection may default to Table; not every knowledge object is a collection.
 - Subject opening: table/Kanban/Whiteboard subject clicks preview first; Enter, double-click, or explicit open enters the Files resource opening flow only when the subject resolves to a Pod resource path. Fragment subjects and term targets stay in definition/peek flows unless the user explicitly opens the containing resource.
 - Chat files: the `聊天文件` scope consumes chat message `richContent` file blocks and explicit runtime artifact containers (`artifacts`, `files`, `generatedFiles`, `outputs`, `resources`, `attachments`). Files must not infer generated files by regexing stdout, assistant prose, tool names, or local workspace paths.
+- Projection implementation: structured tables should use TanStack Table for headless row/column/sort/filter/size/visibility state with LinX-owned UI primitives. Kanban may use dnd-kit for sortable/droppable lanes; Whiteboard starts as a subject-card/relation projection and can evaluate tldraw only when freeform canvas editing becomes a real requirement.
+- Folder and file detail: folder details offer a sortable `Table` projection and a Finder-style borderless `Grid` projection over the current folder, not a card wall; the add affordance is the final row or last tile. Editable Markdown/text files open a focused sheet/modal only through an explicit edit/open action, with Tiptap/ProseMirror rich editing, raw source switch, and `.meta` in the bottom tail; folder/file/structured page context keeps `.meta` in a right sidebar that is collapsed by default.
+- Editor session safety: the rich editor exposes one content H1; file identity stays in sheet chrome and metadata stays in the bottom tail. Formatting chrome is hidden until focus/selection. Rich and raw modes share one dirty/saving/discard session, so close or mode switches cannot silently drop drafts or race an in-flight save.
+- Access hierarchy: current effective access and the active ACL/ACR source appear before the change request. Full policy URIs, candidates, and maintenance actions remain in collapsed technical details.
 
 ## Visual language
 
@@ -168,8 +185,12 @@ Content priority: the active object and decision; its evidence, conditions and c
   - Treat earlier emotion-led utility classes/comments as implementation cleanup targets, not design guidance.
   - Provider/status components must show storage space and runtime state consistently across login, consent, settings, and account card.
   - AI runtime components must show backend/model/tool/wait/retry/timeout/interrupt/approval state without leaking internal prompt wrappers.
+  - Secretary is a product-owned fixed conversation: render it first, select it on first entry, and project a LinX-owned welcome surface before remote Chat/Thread/message persistence settles. Protection alone is not pinning.
+  - Chat list and content heads share the same 48px geometry. Tests compare their rendered bounds; independent utility-class assertions are insufficient.
   - Files table work should use headless table state and LinX-owned table UI primitives instead of growing page-level handcrafted table state.
   - Editable file/card sheets should use a rich editor surface only where editing is required; readonly resources should stay preview/detail-first.
+  - Generic layout components accept module definitions, navigation intents, and render slots; they must not import Files stores, route types, or data queries. Files-specific entry scopes are interpreted only at the composition/router boundary.
+  - Persisted message `richContent` uses the `@undefineds.co/models` block contract. App UI may decorate parsed blocks with render context but must not create an app-local parallel item schema or serializer.
 - Variants and states:
   - Loading/checking/starting/waiting/retrying/interrupting.
   - Ready/connected/local-only/offline.
@@ -189,7 +210,7 @@ Content priority: the active object and decision; its evidence, conditions and c
   - All navigation, dialogs, provider choices, chat controls, file rows, table cells, drawers, and approval cards must be keyboard reachable.
   - Focus states use a clearly visible solid outline with sufficient contrast; selection has a marker/text/shape beyond color. Modal focus enters, stays appropriately constrained and returns to its trigger.
   - Back/cancel/switch-account actions must remain available during provider selection, Local preparation, and auth handoff.
-  - Files table subjects support preview on selection and explicit open through Enter/double-click/open action.
+  - Files explorer rows use roving focus: Arrow keys move selection and DOM focus, Enter opens, Space selects, and Escape clears selection. Table subjects support read-only preview first and explicit open through Enter/double-click/open action.
   - Long-running AI work has an interrupt affordance and visible waiting state.
 - Contrast/readability:
   - Text and status indicators must meet contrast requirements in light and dark modes.
@@ -212,6 +233,7 @@ Content priority: the active object and decision; its evidence, conditions and c
   - Start with navigation plus content. Add a real collection list when useful and details on demand; wide screens do not require three/four occupied columns.
   - Narrow layouts collapse supporting panes before reducing chat or table readability.
   - Compact resource views do not show global rail, file tree and resource simultaneously. Collapse optional navigation/tree into invoked surfaces while keeping a visible way back and preserving selection.
+  - Compact Files has one head only. The Shell supplies one compact module-navigation slot; Files supplies tree/list/resource controls and must force the invoked tree drawer into a readable expanded state.
   - Login and settings flows remain usable without exposing advanced configuration in the primary path.
   - Files right drawers collapse by default; focused editable sheets own their bottom metadata tail.
   - Validate 1440/1180/768/390 CSS px and 200% text. Comparisons become sequential in narrow windows; never shrink all columns or require one section per viewport.
@@ -225,12 +247,16 @@ Content priority: the active object and decision; its evidence, conditions and c
   - State text must name the operation: starting Local service, checking runtime, verifying identity, syncing WebID, preparing Secretary, creating Pod, loading file metadata, preparing Ingest, waiting for backend, calling tool, retrying, or dispatching worker.
   - If a service is already ready, do not flash startup screens.
   - Streaming/waiting indicators must not become regular assistant messages or stale chat content.
+  - A remote request must not own an indefinite spinner. Reads and writes use abort/timeout boundaries; after the boundary, retain useful local structure and show an operation-specific error with retry.
+  - Files root navigation is progressive: return stable root/current-folder structure first, then load Recent counts, optional control containers, and metadata independently. A recursive Pod scan must never gate the initial browser.
 - Empty:
   - Empty chat, no Pod, no local public URL, no files, no structured rows, no chat file records, and no favorites each need a specific next action.
+  - An empty Secretary thread shows the product welcome and starter actions above an available composer; it is not a blank ChatKit surface.
 - Error:
   - Explain the user-facing problem first, then include technical detail where useful.
   - Never silently fall back from Local/Standalone to Cloud data.
   - Query or Pod failures should fix repository/schema/permissions/SPARQL paths rather than hiding the problem behind fake UI fallback.
+  - Authentication success and authorization failure are distinct. A verified DPoP identity with a 403 must be shown as a space-permission failure; do not clear tokens or browser storage as a generic repair.
   - AI request failures must identify whether the visible problem is auth, gateway/platform, model request validation, timeout, retry exhaustion, no-content response, or local interrupt.
 - Success:
   - Confirm what changed and where it was stored.
@@ -275,6 +301,8 @@ Source deletion, access revocation, offline failure and revision are distinct. C
   - Network/reachability probes should be explicit or tied to visible status surfaces, not hidden polling loops.
   - Files Ingest is lazy and progressive; opening an unchanged source-linked subject must not force a new full ingest.
   - AI waiting/retry/status rendering should be lightweight and must not block input recovery.
+  - Secretary shell/welcome must be visible without waiting for Pod writes. Pod resource creation, thread provisioning, subscriptions, and welcome persistence reconcile asynchronously.
+  - Files initial browser state must not await full-Pod recursion or serial metadata `HEAD` requests. Transport work must accept cancellation and a bounded timeout.
 - Compatibility constraints:
   - Local canonical URL and storage identity must stay aligned with `docs/local-sp-domain-and-tunnel.md` and Solid semantics.
   - Pod data access must follow `docs/pod-interaction-layering.md` and shared models contracts.
@@ -285,7 +313,11 @@ Source deletion, access revocation, offline failure and revision are distinct. C
   - Use Electron debugger / Playwright screenshots for desktop visual verification when UI changes are made.
   - Add or update tests for login/provider/storage behavior when those flows change.
   - Files changes should include focused tests for structured table behavior, pending proposal hydration, source-linked card/Ingest record handling, and access/meta drawer behavior when those areas change.
+  - Frontend lint/typecheck gates must include every production `src/**/*.ts` and `src/**/*.tsx` file. Architecture assertions and visual checks complement behavioral tests; they do not replace production-source type coverage.
   - AI work-state changes should cover no-content, retry, timeout, interrupt, approval, and Symphony worker handoff states.
+  - Desktop startup coverage must prove Secretary is first, selected, and useful before persistence settles; a test that skips while “正在准备话题” is visible is not a passing interaction test.
+  - Files desktop coverage must prove one global Files entry, exactly two persistent Files panes, folder enter/back/path behavior, nonblank current-folder workspace, explicit upload destination, native/local file and folder import, and `添加网页` copy without exposing `创建 Ingest 卡片`.
+  - Real-Pod coverage must fail on indefinite loading and must distinguish 401, 403, timeout, and empty data. The xpod owner path must include an authenticated read/write regression that normalizes CSS permission vocabulary to ACP/ACL modes.
 
 ## Open questions
 

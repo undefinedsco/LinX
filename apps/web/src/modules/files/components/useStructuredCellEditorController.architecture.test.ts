@@ -1,0 +1,86 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+
+const projectionTablePath = 'src/modules/files/features/structured/StructuredProjectionTable.tsx'
+const cellEditWorkflowControllerPath = 'src/modules/files/features/structured/useStructuredCellEditWorkflowController.ts'
+const cellEditWorkflowModelPath = 'src/modules/files/features/structured/structured-cell-edit-workflow-model.ts'
+const editorControllerPath = 'src/modules/files/features/structured/useStructuredCellEditorController.ts'
+
+describe('Structured cell editor controller architecture boundary', () => {
+  it('keeps active cell editor state transitions out of the projection table renderer', () => {
+    const projectionTableSource = readFileSync(projectionTablePath, 'utf8')
+
+    expect(existsSync(cellEditWorkflowControllerPath)).toBe(true)
+    expect(existsSync(cellEditWorkflowModelPath)).toBe(true)
+    expect(existsSync(editorControllerPath)).toBe(true)
+    if (!existsSync(cellEditWorkflowControllerPath) || !existsSync(cellEditWorkflowModelPath) || !existsSync(editorControllerPath)) return
+
+    const cellEditWorkflowControllerSource = readFileSync(cellEditWorkflowControllerPath, 'utf8')
+    const cellEditWorkflowModelSource = readFileSync(cellEditWorkflowModelPath, 'utf8')
+    const controllerSource = readFileSync(editorControllerPath, 'utf8')
+
+    expect(projectionTableSource).toContain("from './useStructuredCellEditWorkflowController'")
+    expect(projectionTableSource).toContain('onCellKeyDown={handleCellKeyDown}')
+    expect(projectionTableSource).not.toContain('onCellKeyDown={(event, row, columnId) =>')
+    expect(projectionTableSource).not.toContain("from './useStructuredCellEditorController'")
+    expect(projectionTableSource).not.toContain('setActiveTextCell')
+    expect(projectionTableSource).not.toContain('setActiveEnumCell')
+    expect(projectionTableSource).not.toContain('setActiveRelationCell')
+    expect(projectionTableSource).not.toContain('setEnumSearch')
+    expect(projectionTableSource).not.toContain('activeTextCell?.subject === row.subject')
+    expect(projectionTableSource).not.toMatch(/useState<\(ActiveCell/)
+    expect(projectionTableSource).not.toMatch(/useState<ActiveCell/)
+    expect(projectionTableSource).not.toContain('type ActiveCell =')
+    expect(projectionTableSource).not.toContain('type ActiveRelationCell =')
+
+    expect(cellEditWorkflowControllerSource).toContain("from './useStructuredCellEditorController'")
+    expect(cellEditWorkflowControllerSource).toContain("from './structured-cell-edit-workflow-model'")
+    expect(cellEditWorkflowControllerSource).toContain('useStructuredCellEditorController')
+    expect(cellEditWorkflowControllerSource).toContain('handleCellKeyDown')
+    expect(cellEditWorkflowControllerSource).toContain('activeTextCell')
+    expect(cellEditWorkflowControllerSource).toContain('activeEnumCell')
+    expect(cellEditWorkflowControllerSource).toContain('activeRelationCell')
+    expect(cellEditWorkflowControllerSource).toContain('planStructuredCellKeyDownAction')
+    expect(cellEditWorkflowControllerSource).toContain('planStructuredCellOutsidePointerAction')
+    expect(cellEditWorkflowControllerSource).not.toContain("event.key === 'Enter'")
+    expect(cellEditWorkflowControllerSource).not.toContain("event.key === 'Escape'")
+    expect(cellEditWorkflowControllerSource).not.toContain("event.key === ' '")
+    expect(cellEditWorkflowControllerSource).not.toContain('activeTextCell?.subject ===')
+    expect(cellEditWorkflowControllerSource).not.toContain('useReactTable')
+    expect(cellEditWorkflowControllerSource).not.toContain('CompactTableShell')
+    expect(cellEditWorkflowModelSource).toContain('export function planStructuredCellActivationEffect')
+    expect(cellEditWorkflowModelSource).toContain('export function planStructuredCellKeyDownAction')
+    expect(cellEditWorkflowModelSource).toContain('export function planStructuredCellOutsidePointerAction')
+    expect(cellEditWorkflowModelSource).toContain('export function projectStructuredActiveCellValue')
+    expect(cellEditWorkflowModelSource).toContain('export function projectStructuredActiveCellClearedForTarget')
+    expect(cellEditWorkflowModelSource).toContain('export type StructuredCellEditorState')
+    expect(cellEditWorkflowModelSource).toContain('export function createStructuredCellEditorState')
+    expect(cellEditWorkflowModelSource).toContain('export function projectStructuredCellEditorState')
+
+    expect(controllerSource).toContain('export function useStructuredCellEditorController')
+    expect(controllerSource).toContain('activeTextCell')
+    expect(controllerSource).toContain('activeEnumCell')
+    expect(controllerSource).toContain('activeRelationCell')
+    expect(controllerSource).toContain('enumSearch')
+    expect(controllerSource).toContain('openEnumCell')
+    expect(controllerSource).toContain('openRelationCell')
+    expect(controllerSource).toContain('openTextCell')
+    expect(controllerSource).toContain('createStructuredCellEditorState')
+    expect(controllerSource).toContain('projectStructuredCellEditorState')
+    expect(controllerSource).toMatch(/\n\s*const \[editorState, setEditorState\]/)
+    expect(controllerSource).not.toContain('projectStructuredActiveCellValue')
+    expect(controllerSource).not.toContain('projectStructuredActiveCellClearedForTarget')
+    expect(controllerSource).not.toMatch(/\n\s*const \[activeTextCell, setActiveTextCell\]/)
+    expect(controllerSource).not.toMatch(/\n\s*const \[activeEnumCell, setActiveEnumCell\]/)
+    expect(controllerSource).not.toMatch(/\n\s*const \[activeRelationCell, setActiveRelationCell\]/)
+    expect(controllerSource).not.toMatch(/\n\s*const \[enumSearch, setEnumSearch\]/)
+    expect(controllerSource).not.toContain('setActiveTextCell(')
+    expect(controllerSource).not.toContain('setActiveEnumCell(')
+    expect(controllerSource).not.toContain('setActiveRelationCell(')
+    expect(controllerSource).not.toContain('setEnumSearch(')
+    expect(controllerSource).not.toContain('{ ...current, value }')
+    expect(controllerSource).not.toContain('sameActiveCell')
+    expect(controllerSource).not.toContain('useReactTable')
+    expect(controllerSource).not.toContain('CompactTableShell')
+  })
+})

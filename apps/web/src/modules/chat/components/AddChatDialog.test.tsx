@@ -111,14 +111,11 @@ vi.mock('../runtime-client', () => ({
   resolveLocalContainer: vi.fn(async () => 'linx://device-123/repo/linx'),
 }))
 
-vi.mock('@/modules/contacts/collections', () => ({
+vi.mock('@/modules/contacts', () => ({
   contactOps: {
     fetchSolidProfile: (webId: string) => mockFetchSolidProfile(webId),
     addFriend: (input: unknown) => mockAddFriend(input),
   },
-}))
-
-vi.mock('@/modules/contacts/components/CreateGroupDialog', () => ({
   CreateGroupDialog: (props: unknown) => {
     mockCreateGroupDialog(props)
     const { onCreated } = props as { onCreated?: (contactId: string, chatId: string) => void }
@@ -208,6 +205,9 @@ describe('AddChatDialog', () => {
 
     expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
     expect(mockSelectThread).toHaveBeenCalledWith('thread-1')
+    expect(mockSelectChat.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSelectThread.mock.invocationCallOrder[0],
+    )
     expect(mockCloseAddDialog).toHaveBeenCalled()
     expect(onCreated).toHaveBeenCalledWith('chat-1')
     expect(mockToast).not.toHaveBeenCalled()
@@ -300,7 +300,7 @@ describe('AddChatDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '添加为好友' }))
 
-    expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|Pod container|node\.example|\.data/i)).not.toBeInTheDocument()
   })
 

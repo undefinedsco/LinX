@@ -1,5 +1,6 @@
 import {
   getBuiltinModels as getSharedBuiltinModels,
+  type ModelMetadata,
 } from '@undefineds.co/models/discovery'
 
 import {
@@ -81,7 +82,6 @@ import {
   type IssueInsert,
   type MessageRow,
   type MessageInsert,
-  type ModelMetadata,
   type ReportInsert,
   type RunInsert,
   type RunStepInsert,

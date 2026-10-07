@@ -13,7 +13,7 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: solidDbState.db, status: solidDbState.status, error: null }),
 }))
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({ session: { info: { webId: sessionState.webId } } }),
 }))
 

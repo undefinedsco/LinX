@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Wrench } from 'lucide-react'
-import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { Button } from '@/components/ui/button'
 import { LoginCardShell } from './LoginCardShell'
+import { LINQ_OFFICIAL_ISSUER } from './constants'
 import { useConfigWindowState } from './hooks/use-config-window-state'
 import { useLocalOnboarding } from './hooks/use-local-onboarding'
 import { useOidcConnect } from './hooks/use-oidc-connect'
@@ -54,6 +54,9 @@ export function LocalOnboardingCard({
     ? localIssuerUrl
     : snapshot.publicUrl
   const previousConfigOpen = useRef(configWindow.open)
+  const authorizationSurface = typeof window !== 'undefined' && window.xpodDesktop?.auth
+    ? 'embedded' as const
+    : 'window' as const
 
   const handleBack = useCallback(() => {
     setAuthError(null)
@@ -65,11 +68,11 @@ export function LocalOnboardingCard({
     if (!localProviderUrl) {
       setAuthError(snapshot.spaceKind === 'standalone'
         ? '独立空间还没有准备好。请稍后重试。'
-        : '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+        : '本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。')
       return
     }
     if (snapshot.spaceKind !== 'standalone' && !snapshot.provisionCode) {
-      setAuthError('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+      setAuthError('本机空间还没有完成准备。请回到登录方式页，再点一次“本机空间”。')
       return
     }
 
@@ -79,7 +82,7 @@ export function LocalOnboardingCard({
     try {
       if (snapshot.spaceKind === 'standalone') {
         await oidc.connect(localProviderUrl, {
-          authorizationSurface: 'embedded',
+          authorizationSurface,
           route: 'standalone',
           storageProviderUrl: localProviderUrl,
           storageProviderLabel: 'Standalone',
@@ -88,10 +91,11 @@ export function LocalOnboardingCard({
           nodeId: snapshot.nodeId ?? undefined,
         })
       } else {
-        await oidc.connect(snapshot.cloudIdentityUrl ?? LINX_CLOUD_IDENTITY_ORIGIN, {
-          authorizationSurface: 'embedded',
+        const accountIssuerUrl = snapshot.cloudIdentityUrl ?? LINQ_OFFICIAL_ISSUER
+        await oidc.connect(accountIssuerUrl, {
+          authorizationSurface,
           route: 'local',
-          accountIssuerUrl: snapshot.cloudIdentityUrl ?? LINX_CLOUD_IDENTITY_ORIGIN,
+          accountIssuerUrl,
           accountIssuerLabel: 'Cloud',
           storageProviderUrl: localProviderUrl,
           storageProviderLabel: 'Local',
@@ -103,11 +107,11 @@ export function LocalOnboardingCard({
         })
       }
     } catch (error: any) {
-      setAuthError(formatLoginErrorForUser(error, '登录页没有打开。请返回空间选择页重试。'))
+      setAuthError(formatLoginErrorForUser(error, '登录页没有打开。请返回登录方式页重试。'))
     } finally {
       setLaunchingAuth(false)
     }
-  }, [localProviderUrl, oidc, snapshot.cloudIdentityUrl, snapshot.spaceKind, snapshot.provisionCode])
+  }, [authorizationSurface, localProviderUrl, oidc, snapshot.cloudIdentityUrl, snapshot.nodeId, snapshot.spaceKind, snapshot.provisionCode])
 
   const handleOpenAdvancedSettings = useCallback(async () => {
     setActionError(null)
@@ -115,7 +119,7 @@ export function LocalOnboardingCard({
     try {
       await openAdvancedSettings()
     } catch (error: any) {
-      setActionError(formatLoginErrorForUser(error, '本地空间设置没有打开。请稍后重试。'))
+      setActionError(formatLoginErrorForUser(error, '本机空间设置没有打开。请稍后重试。'))
     }
   }, [openAdvancedSettings])
 
@@ -156,7 +160,7 @@ export function LocalOnboardingCard({
         }
         await continueLocal()
       } catch (error: any) {
-        setActionError(formatLoginErrorForUser(error, '本地空间启动失败。请稍后重试。'))
+        setActionError(formatLoginErrorForUser(error, '本机空间启动失败。请稍后重试。'))
       }
     })()
   }, [
@@ -183,7 +187,7 @@ export function LocalOnboardingCard({
 
     autoProbeKeyRef.current = probeKey
     void Promise.resolve(testConnectivity()).catch((error: any) => {
-      setActionError(formatLoginErrorForUser(error, '本地空间连接检测失败。'))
+      setActionError(formatLoginErrorForUser(error, '本机空间连接检测失败。'))
     })
   }, [
     acting,
@@ -195,7 +199,7 @@ export function LocalOnboardingCard({
     snapshot.state,
     testConnectivity,
   ])
-  const productLabel = snapshot.spaceKind === 'standalone' ? '独立空间' : '本地空间'
+  const productLabel = snapshot.spaceKind === 'standalone' ? '独立空间' : '本机空间'
 
   return (
     <>
@@ -208,17 +212,17 @@ export function LocalOnboardingCard({
 
       <div className="px-6 pb-6">
         {loading ? (
-          <LoadingCard label="正在检查本地空间…" />
+          <LoadingCard label="正在检查本机空间…" />
         ) : snapshot.state === 'space_required' || snapshot.state === 'idle' ? (
           <div className="space-y-4">
-            <LoadingCard label="正在启动本地空间…" />
+            <LoadingCard label="正在启动本机空间…" />
             <Button variant="ghost" className="w-full" onClick={handleBack}>
               {backLabel}
             </Button>
           </div>
         ) : snapshot.state === 'starting' || snapshot.state === 'checking' ? (
           <LoadingCard
-            label={formatLocalCardMessage(snapshot.message, '正在启动本地空间…')}
+            label={formatLocalCardMessage(snapshot.message, '正在启动本机空间…')}
             detail={formatLocalCardDetail(snapshot.localUrl ?? snapshot.baseUrl ?? undefined)}
           />
         ) : snapshot.state === 'repair_required' || snapshot.state === 'error' ? (
@@ -237,7 +241,7 @@ export function LocalOnboardingCard({
           />
         ) : (
           <ReadyCard
-            message={formatLocalCardMessage(snapshot.message, '本地空间已准备好。')}
+            message={formatLocalCardMessage(snapshot.message, '本机空间已准备好。')}
             spaceKind={snapshot.spaceKind}
             detail={snapshot.spaceKind === 'local'
               ? undefined
@@ -294,9 +298,9 @@ function RepairCard({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5">
+      <div className="rounded-2xl border border-warning/30 bg-warning/5 p-5">
         <div className="flex items-start gap-3">
-          <Wrench className="mt-0.5 h-5 w-5 text-amber-600" />
+          <Wrench className="mt-0.5 h-5 w-5 text-warning" />
           <div>
             <p className="text-sm font-medium">{title}</p>
             <p className="mt-2 text-sm text-muted-foreground leading-6">{message}</p>
@@ -308,7 +312,7 @@ function RepairCard({
       <div className="flex flex-col gap-3">
         {onAdvancedSettings ? (
           <Button onClick={onAdvancedSettings}>
-            {settingsLabel ?? '打开本地空间设置'}
+            {settingsLabel ?? '打开本机空间设置'}
           </Button>
         ) : null}
         <Button variant={onAdvancedSettings ? 'outline' : 'default'} disabled={busy} onClick={onRetry}>
@@ -321,7 +325,7 @@ function RepairCard({
 
       {error ? (
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          {formatLoginErrorForUser(error, '操作失败。请返回空间选择页重试。')}
+          {formatLoginErrorForUser(error, '操作失败。请返回登录方式页重试。')}
         </div>
       ) : null}
     </div>
@@ -351,8 +355,8 @@ function ReadyCard({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5">
-        <p className="text-sm font-medium">{spaceKind === 'standalone' ? '独立空间已准备好' : '本地空间已准备好'}</p>
+      <div className="rounded-2xl border border-success/30 bg-success/5 p-5">
+        <p className="text-sm font-medium">{spaceKind === 'standalone' ? '独立空间已准备好' : '本机空间已准备好'}</p>
         <p className="mt-2 text-sm text-muted-foreground leading-6">{message}</p>
         <p className="mt-2 text-xs text-muted-foreground">
           {spaceKind === 'standalone'
@@ -367,7 +371,7 @@ function ReadyCard({
 
       {error ? (
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          {formatLoginErrorForUser(error, '登录失败。请返回空间选择页重试。')}
+          {formatLoginErrorForUser(error, '登录失败。请返回登录方式页重试。')}
         </div>
       ) : null}
 
@@ -392,27 +396,27 @@ function getRepairContent(snapshot: {
 }) {
   if (snapshot.errorCode === 'LOCAL_REMOTE_READY_REQUIRES_SETUP') {
     return {
-      title: '还差一步让其他设备接入本地空间',
+      title: '还差一步让其他设备接入本机空间',
       message: '你当前选择了多设备接入。要让手机或其他电脑也能访问，需要先给这台电脑配置一个固定可访问地址。',
       detail: '如果只想账号和数据都留在本机，请返回空间选择并选择独立空间。',
       retryLabel: '完成后重新检查',
-      settingsLabel: '去完成本地空间设置',
+      settingsLabel: '去完成本机空间设置',
     }
   }
 
   if (snapshot.errorCode === 'LOCAL_START_FAILED') {
     return {
-      title: '本地空间启动失败',
-      message: formatLocalCardMessage(snapshot.message, '本地空间启动失败。'),
-      detail: '你可以重新检查，或打开本地空间设置确认当前环境。',
+      title: '本机空间启动失败',
+      message: formatLocalCardMessage(snapshot.message, '本机空间启动失败。'),
+      detail: '你可以重新检查，或打开本机空间设置确认当前环境。',
       retryLabel: '重新检查',
       settingsLabel: '配置启动',
     }
   }
 
   return {
-    title: snapshot.state === 'repair_required' ? '本地空间还需要处理' : '本地空间暂时无法继续',
-    message: formatLocalCardMessage(snapshot.message, '本地空间还没有准备好。'),
+    title: snapshot.state === 'repair_required' ? '本机空间还需要处理' : '本机空间暂时无法继续',
+    message: formatLocalCardMessage(snapshot.message, '本机空间还没有准备好。'),
     detail: null,
     retryLabel: '重新检查',
     settingsLabel: '配置启动',

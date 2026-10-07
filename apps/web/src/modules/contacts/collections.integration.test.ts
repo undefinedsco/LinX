@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
 import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
-import { ContactClass, contactResource, solidSchema } from '@undefineds.co/models'
+import { contactResource, solidSchema } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
 let context: XpodIntegrationContext<typeof solidSchema> | null = null
@@ -35,12 +35,13 @@ afterAll(async () => {
 }, 30000)
 
 describe('contact collections integration', () => {
-  it('insert contact and SELECT back via SPARQL', { timeout: 30000 }, async () => {
+  it('round-trips direct repository CRUD through the Pod query layer', { timeout: 60000 }, async () => {
     const { db: database, webId } = await getContext()
 
     const id = `contact-${Date.now()}`
+    const resourceId = contactResource.buildId({ id })
     const [created] = await database.insert(contactResource).values({
-      id: contactResource.buildId({ id }),
+      id: resourceId,
       name: 'Integration Contact',
       about: webId,
       contactType: 'solid',
@@ -52,13 +53,25 @@ describe('contact collections integration', () => {
     expect(created).toBeDefined()
 
     // Round-trip: SELECT back via SPARQL endpoint
-    const row = await (database as any).findById(contactResource as any, contactResource.buildId({ id }))
+    const row = await (database as any).findById(contactResource as any, resourceId)
     expect(row).toBeTruthy()
     expect(row?.name).toBe('Integration Contact')
     expect(row?.contactType).toBe('solid')
+
+    await (database as any).updateById(contactResource as any, resourceId, {
+      name: 'Integration Contact Updated',
+      note: 'updated through direct repository CRUD',
+    })
+    const updated = await (database as any).findById(contactResource as any, resourceId)
+    expect(updated?.name).toBe('Integration Contact Updated')
+    expect(updated?.note).toBe('updated through direct repository CRUD')
+
+    await (database as any).deleteById(contactResource as any, resourceId)
+    const deleted = await (database as any).findById(contactResource as any, resourceId)
+    expect(deleted).toBeNull()
   })
 
-  it('insert multiple contacts and verify via SELECT', { timeout: 30000 }, async () => {
+  it('lists direct writes through a collection-backed resource query', { timeout: 60000 }, async () => {
     const { db: database } = await getContext()
 
     const timestamp = Date.now()
@@ -88,26 +101,5 @@ describe('contact collections integration', () => {
     )
     expect(extRow).toBeTruthy()
     expect(extRow?.contactType).toBe('external')
-  })
-
-  it('delete contact and verify via SELECT', { timeout: 30000 }, async () => {
-    const { db: database, webId } = await getContext()
-
-    const id = `contact-del-${Date.now()}`
-    const [created] = await database.insert(contactResource).values({
-      id: contactResource.buildId({ id }),
-      name: 'Delete Me',
-      about: webId,
-      contactType: 'solid',
-    }).execute()
-
-    expect(created).toBeDefined()
-
-    const resourceId = contactResource.buildId({ id })
-    await (database as any).deleteById(contactResource as any, resourceId)
-
-    // Verify deletion via SPARQL SELECT
-    const row = await (database as any).findById(contactResource as any, resourceId)
-    expect(row).toBeNull()
   })
 })

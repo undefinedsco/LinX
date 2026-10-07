@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLoginStore } from '@linx/stores/login'
 import { clearLocalAccessRoutesForTests } from '@/lib/local-access-route'
@@ -25,7 +25,7 @@ const sessionState = {
   sessionRequestInProgress: false,
 }
 
-vi.mock('@inrupt/solid-ui-react', () => ({
+vi.mock('./solid-session-context', () => ({
   useSession: () => sessionState,
 }))
 
@@ -61,11 +61,17 @@ vi.mock('@undefineds.co/models', () => ({
 }))
 
 function Probe() {
-  const { status, db } = useSolidDatabase()
+  const database = useSolidDatabase() as ReturnType<typeof useSolidDatabase> & {
+    retry?: () => void
+    scopeKey?: string
+  }
+  const { status, db } = database
   return (
     <div>
       <div data-testid="status">{status}</div>
       <div data-testid="has-db">{String(Boolean(db))}</div>
+      <div data-testid="scope-key">{database.scopeKey ?? ''}</div>
+      <button type="button" onClick={database.retry}>Retry database</button>
     </div>
   )
 }
@@ -146,6 +152,7 @@ describe('SolidDatabaseProvider', () => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
     delete (window as any).__SOLID_DB__
+    delete (window as any).__LINX_DB_DIAGNOSTICS__
     delete (window as any).__LINX_ACCESS_ROUTE__
     delete window.xpodDesktop
     window.sessionStorage.clear()
@@ -182,6 +189,26 @@ describe('SolidDatabaseProvider', () => {
     expect((window as any).__SOLID_DB__).toBe(db)
   })
 
+  it('initializes when a restored session already has a WebID even if redirect progress is stale', async () => {
+    const db = {}
+    sessionState.sessionRequestInProgress = true
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('status').textContent).toBe('ready')
+    expect(screen.getByTestId('has-db').textContent).toBe('true')
+  })
+
   it('uses WebID profile storage when there is no pending login transaction', async () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
@@ -204,6 +231,71 @@ describe('SolidDatabaseProvider', () => {
       initTimeoutMs: 90_000,
       podUrl: 'https://id.example.com/alice/',
     })
+  })
+
+  it('restores the remembered Local storage provider after a desktop restart', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+    sessionState.session.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+    mockSessionProfileStorage('https://node-0000.undefineds.co/alice/')
+    useLoginStore.setState({
+      state: 'authenticated',
+      error: null,
+      storedAccount: {
+        displayName: 'Alice',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://node-0000.undefineds.co/',
+        storageProviderLabel: 'Local',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      },
+      customProviders: [],
+    })
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
+      initTimeoutMs: 90_000,
+      podUrl: 'https://node-0000.undefineds.co/alice/',
+    })
+  })
+
+  it('fails closed when restored Local storage does not match the authenticated profile', async () => {
+    createLinxSolidDatabaseMock.mockResolvedValue({})
+    sessionState.session.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+    mockSessionProfileStorage('https://id.undefineds.co/alice/')
+    useLoginStore.setState({
+      state: 'authenticated',
+      error: null,
+      storedAccount: {
+        displayName: 'Alice',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://node-0000.undefineds.co/',
+        storageProviderLabel: 'Local',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      },
+      customProviders: [],
+    })
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('status').textContent).toBe('error')
+    expect(screen.getByTestId('has-db').textContent).toBe('false')
+    expect((window as any).__SOLID_DB_ERROR__).toContain('账号和当前空间不匹配')
   })
 
   it('does not reuse a remembered Local SP while a Cloud login attempt is pending', async () => {
@@ -420,7 +512,7 @@ describe('SolidDatabaseProvider', () => {
     expect(createLinxSolidDatabaseMock).not.toHaveBeenCalled()
     expect(screen.getByTestId('status').textContent).toBe('error')
     expect(screen.getByTestId('has-db').textContent).toBe('false')
-    expect((window as any).__SOLID_DB_ERROR__).toContain('本地空间还没有完成准备')
+    expect((window as any).__SOLID_DB_ERROR__).toContain('本机空间还没有完成准备')
   })
 
   it('fails closed when a Local login points storage back at the Cloud issuer', async () => {
@@ -447,7 +539,7 @@ describe('SolidDatabaseProvider', () => {
     expect(createLinxSolidDatabaseMock).not.toHaveBeenCalled()
     expect(screen.getByTestId('status').textContent).toBe('error')
     expect(screen.getByTestId('has-db').textContent).toBe('false')
-    expect((window as any).__SOLID_DB_ERROR__).toContain('本地空间还没有完成准备')
+    expect((window as any).__SOLID_DB_ERROR__).toContain('本机空间还没有完成准备')
   })
 
   it('uses a split SP provider URL even when the provider label is missing', async () => {
@@ -1030,6 +1122,51 @@ describe('SolidDatabaseProvider', () => {
     expect(screen.getByTestId('status').textContent).toBe('error')
     expect(screen.getByTestId('has-db').textContent).toBe('false')
     expect((window as any).__SOLID_DB__).toBeUndefined()
+  })
+
+  it('retries database initialization after a recoverable failure', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock
+      .mockRejectedValueOnce(new Error('Pod init timed out'))
+      .mockResolvedValueOnce(db)
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+    expect(screen.getByTestId('status').textContent).toBe('error')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry database' }))
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('status').textContent).toBe('ready')
+    expect(screen.getByTestId('has-db').textContent).toBe('true')
+  })
+
+  it('changes the exposed database scope when the active account changes', async () => {
+    createLinxSolidDatabaseMock.mockResolvedValue({})
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+    await flushAsyncWork()
+    const aliceScope = screen.getByTestId('scope-key').textContent
+    expect(aliceScope).not.toBe('')
+
+    sessionState.session.info.sessionId = 'session-2'
+    sessionState.session.info.webId = 'https://id.example.com/bob/profile/card#me'
+    await act(async () => {
+      vi.advanceTimersByTime(250)
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+
+    expect(screen.getByTestId('scope-key').textContent).not.toBe(aliceScope)
   })
 
   it('does not drop an in-flight database initialization when a login event rerenders the same session', async () => {

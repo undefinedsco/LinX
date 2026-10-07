@@ -16,9 +16,7 @@ import { deleteExactRecord, findExactRecord, updateExactRecord } from './exact-r
 export interface SolidCollectionOptions<
   TResource extends PodResourceSchema<any>,
   TRow extends Record<string, unknown> = InferTableData<TResource>,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _TInsert = InferInsertData<TResource>,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _TUpdate = InferUpdateData<TResource>,
 > {
   /** The drizzle-solid resource schema */

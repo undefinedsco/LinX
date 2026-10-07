@@ -1,10 +1,24 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo } from 'react'
 import { createRouter, createRootRoute, createRoute, Outlet, redirect, createHashHistory } from '@tanstack/react-router'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { PrimaryLayout } from './modules/layout/PrimaryLayout'
-import { defaultMicroAppId, isValidMicroAppId, MicroAppId } from './modules/layout/micro-app-registry'
+import {
+  defaultMicroAppId,
+  isValidMicroAppId,
+  MicroAppId,
+  type MicroAppNavigationIntent,
+} from './modules/layout/micro-app-registry'
 import { SolidLoginOverlay } from './modules/login'
 import { formatLoginErrorForUser } from './modules/login/error-messages'
+import { consumePendingPostLoginMicroAppId, setPendingPostLoginMicroAppId } from './modules/login/login-utils'
+import {
+  validateFilesRouteSearch,
+  withStructuredSubjectRouteSearch,
+  type FilesStructuredSubjectRouteState,
+  type FilesRouteSearch,
+} from './modules/files/route-state'
+import { FilesRouteBridgeProvider } from './modules/files/app/FilesRouteContext'
+import { useFilesStore } from './modules/files/app/store'
 
 const SolidAuthCallback = lazy(() => import('./components/AuthCallback'))
 const DebugSearchableSelect = lazy(() =>
@@ -134,29 +148,76 @@ const setupRoute = createRoute({
   ),
 })
 
+function AuthCallbackRouteComponent() {
+  const navigate = useNavigate()
+
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      <SolidAuthCallback
+        onSuccess={() => navigate({ to: '/$microAppId', params: { microAppId: consumePendingPostLoginMicroAppId() }, replace: true })}
+        onError={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId }, replace: true })}
+      />
+    </Suspense>
+  )
+}
+
 // Auth callback route
 const callbackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/auth/callback',
-  component: () => {
-    const navigate = useNavigate()
-    return (
-      <Suspense fallback={<RouteFallback />}>
-        <SolidAuthCallback
-          onSuccess={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId }, replace: true })}
-          onError={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId }, replace: true })}
-        />
-      </Suspense>
-    )
-  },
+  component: AuthCallbackRouteComponent,
 })
 
 const microAppRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/$microAppId',
+  validateSearch: validateFilesRouteSearch,
+  beforeLoad: ({ params }) => {
+    if (!isValidMicroAppId(params.microAppId)) {
+      throw redirect({
+        to: '/$microAppId',
+        params: { microAppId: defaultMicroAppId },
+      })
+    }
+  },
   component: function MicroAppRouteComponent() {
-    const { microAppId } = useParams({ from: microAppRoute.id })
-    return <PrimaryLayout microAppId={microAppId as MicroAppId} />
+    const { microAppId: routeMicroAppId } = useParams({ from: microAppRoute.id })
+    const microAppId = isValidMicroAppId(routeMicroAppId) ? routeMicroAppId : defaultMicroAppId
+    const navigate = useNavigate({ from: microAppRoute.id })
+    const search = useSearch({ from: microAppRoute.id }) as FilesRouteSearch
+    useEffect(() => {
+      setPendingPostLoginMicroAppId(microAppId)
+    }, [microAppId])
+
+    const filesRouteBridge = useMemo(() => ({
+      search,
+      pushStructuredSubjectRoute: (route: FilesStructuredSubjectRouteState) => {
+        void navigate({
+          search: (current) => withStructuredSubjectRouteSearch(current as Record<string, unknown>, route),
+        })
+      },
+      clearStructuredSubjectRoute: () => {
+        void navigate({
+          replace: true,
+          search: (current) => withStructuredSubjectRouteSearch(current as Record<string, unknown>, null),
+        })
+      },
+    }), [navigate, search])
+
+    const handleMicroAppNavigation = useCallback((id: MicroAppId, intent: MicroAppNavigationIntent) => {
+      if (id !== 'files') return
+      if (intent === 'chat-files') {
+        useFilesStore.getState().openChatFilesScope()
+        return
+      }
+      useFilesStore.getState().openAllFilesScope()
+    }, [])
+
+    return (
+      <FilesRouteBridgeProvider bridge={filesRouteBridge}>
+        <PrimaryLayout microAppId={microAppId as MicroAppId} onNavigate={handleMicroAppNavigation} />
+      </FilesRouteBridgeProvider>
+    )
   },
 })
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocked = vi.hoisted(() => ({
   chatResource: { name: 'chat', buildId: ({ id }: { id: string }) => `${id}/index.ttl#this` },
@@ -7,6 +7,7 @@ const mocked = vi.hoisted(() => ({
   agentResource: { name: 'agent' },
   credentialResource: { name: 'credential', buildId: ({ id }: { id: string }) => `credentials.ttl#${id}` },
   aiProviderResource: { name: 'ai_provider', buildId: ({ id }: { id: string }) => `${id}.ttl` },
+  readChatProjectContext: vi.fn(),
 }))
 
 vi.mock('@undefineds.co/models/client', () => ({
@@ -17,6 +18,15 @@ vi.mock('@undefineds.co/models/client', () => ({
 }))
 
 vi.mock('@undefineds.co/models', () => ({
+  AIConfigRuntimeCapability: {
+    chatCompletions: 'chat_completions',
+    responses: 'responses',
+    responsesWebSearch: 'responses_web_search',
+    imageInput: 'image_input',
+    imageGeneration: 'image_generation',
+    imageEditing: 'image_editing',
+    toolCalls: 'tool_calls',
+  },
   agentResource: mocked.agentResource,
   aiProviderResource: mocked.aiProviderResource,
   chatResource: mocked.chatResource,
@@ -39,6 +49,15 @@ vi.mock('@undefineds.co/models', () => ({
     return (tail ?? value).replace(/\.ttl$/, '').toLowerCase()
   },
   getDefaultAIConfigCredentialId: (providerId: string) => `${providerId}-default`,
+  getAIConfigProviderCapabilities: (providerId: string, explicit?: unknown) => {
+    if (Array.isArray(explicit)) return explicit
+    if (providerId === 'undefineds') {
+      return ['chat_completions', 'responses', 'responses_web_search', 'image_input', 'image_generation', 'image_editing', 'tool_calls']
+    }
+    return ['chat_completions']
+  },
+  emptyChatProjectContext: (workspace: string) => ({ workspace, instructions: '', memoryEnabled: true, memories: [], updatedAt: new Date(0).toISOString() }),
+  readChatProjectContext: mocked.readChatProjectContext,
   normalizeAIConfigResourceId: (value?: string | null) => {
     if (!value) return ''
     if (value.startsWith('undefineds/')) return value
@@ -78,7 +97,8 @@ vi.mock('@/lib/vendor/xpod-chatkit', () => ({
     .map((part) => part.text ?? '')
     .join('\n'),
   generateId: (prefix: string) => `${prefix}-generated`,
-  isStreamingReq: (request: { type?: string }) => request.type === 'threads.add_user_message',
+  isStreamingReq: (request: { type?: string }) => request.type === 'threads.add_user_message'
+    || request.type === 'threads.retry_after_item',
   nowTimestamp: () => 1,
 }))
 
@@ -90,6 +110,23 @@ function createSseResponse(chunks: string[]) {
     start(controller) {
       for (const chunk of chunks) {
         controller.enqueue(encoder.encode(chunk))
+      }
+      controller.close()
+    },
+  })
+
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  })
+}
+
+function createByteChunkedSseResponse(payload: string, chunkBytes = 17) {
+  const encoded = new TextEncoder().encode(payload)
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let offset = 0; offset < encoded.byteLength; offset += chunkBytes) {
+        controller.enqueue(encoded.slice(offset, offset + chunkBytes))
       }
       controller.close()
     },
@@ -137,7 +174,7 @@ async function collectStreamEvents(result: Awaited<ReturnType<LocalChatKitServic
   return events
 }
 
-function createMockStore() {
+function createMockStore(initialItems: any[] = []) {
   const thread = {
     id: 'thread-1',
     status: { type: 'active' as const },
@@ -145,7 +182,10 @@ function createMockStore() {
     updated_at: 1,
     metadata: { chat_id: 'chat-1' },
   }
-  const items: any[] = []
+  const items: any[] = initialItems.map((item, itemIndex) => ({
+    ...item,
+    created_at: item.created_at ?? itemIndex + 1,
+  }))
   let index = 0
 
   return {
@@ -155,7 +195,22 @@ function createMockStore() {
     saveThread: vi.fn(async () => undefined),
     loadThreads: vi.fn(async () => ({ data: [thread], has_more: false })),
     deleteThread: vi.fn(async () => undefined),
-    loadThreadItems: vi.fn(async () => ({ data: [...items], has_more: false })),
+    loadThreadItems: vi.fn(async (
+      _threadId: string,
+      after?: string,
+      limit = 50,
+      order = 'asc',
+    ) => {
+      const ordered = order === 'desc' ? [...items].reverse() : [...items]
+      const start = after ? Math.max(0, ordered.findIndex((item) => item.id === after) + 1) : 0
+      const data = ordered.slice(start, start + limit)
+      return {
+        data,
+        has_more: start + limit < ordered.length,
+        first_id: data[0]?.id,
+        last_id: data.at(-1)?.id,
+      }
+    }),
     addThreadItem: vi.fn(async (_threadId: string, item: any) => {
       items.push(item)
     }),
@@ -176,17 +231,21 @@ function createMockStore() {
 }
 
 function createMockDb(
-  agent: { provider: string; model: string; metadata?: Record<string, unknown> },
+  agent: { provider: string; model: string; metadata?: Record<string, unknown>; contextRound?: number },
   credentialRows: Array<Record<string, unknown>> = [],
   options: {
+    exactCredentialRow?: Record<string, unknown>
     findByIdError?: Error
     contactAbout?: string
+    participantRef?: string
+    providerCapabilities?: string[]
     selectError?: Error
   } = {},
 ) {
+  const participantRef = options.participantRef ?? 'contact-1'
   const chat = {
-    id: 'chat-1',
-    participants: ['contact-1'],
+    id: 'chat-1/index.ttl#this',
+    participants: [participantRef],
   }
   const contact = {
     id: 'contact-1',
@@ -198,6 +257,7 @@ function createMockDb(
     provider: agent.provider,
     model: agent.model,
     metadata: agent.metadata,
+    contextRound: agent.contextRound,
   }
 
   return {
@@ -214,17 +274,23 @@ function createMockDb(
       if (options.findByIdError) {
         throw options.findByIdError
       }
-      if (resource === mocked.chatResource) return chat
+      if (resource === mocked.chatResource && id === chat.id) return chat
+      if (resource === mocked.contactResource && id === contact.id) return contact
       if (resource === mocked.agentResource && id === agentRow.id) return agentRow
       if (resource === mocked.aiProviderResource) {
         return {
           id,
           baseUrl: id === 'openai.ttl' ? 'https://openrouter.ai/api/v1' : undefined,
+          capabilities: options.providerCapabilities,
         }
       }
+      if (resource === mocked.credentialResource) return options.exactCredentialRow ?? null
       return null
     }),
     findByIri: vi.fn(async (resource: unknown, iri?: string) => {
+      if (resource === mocked.contactResource && iri === participantRef) {
+        return contact
+      }
       if (resource === mocked.agentResource && iri === 'https://node-0000.undefineds.co/alice/agents/agent-1/') {
         return agentRow
       }
@@ -265,6 +331,25 @@ function createMockDbWithPodUrl(
   }
 }
 
+function createMockDbWithoutAgent(podUrl: string) {
+  const db = createMockDbWithPodUrl({ provider: 'undefineds', model: 'linx-lite' }, podUrl)
+  db.findById.mockImplementation(async (resource: unknown) => {
+    if (resource === mocked.chatResource) {
+      return { id: 'chat-1', participants: [] }
+    }
+    return null
+  })
+  db.select.mockImplementation(() => ({
+    from: (resource: unknown) => ({
+      execute: async () => resource === mocked.chatResource
+        ? [{ id: 'chat-1', participants: [] }]
+        : [],
+      where: () => ({ execute: async () => [] }),
+    }),
+  }) as any)
+  return db
+}
+
 function findAssistantDone(events: Array<Record<string, any>>) {
   return events.find((event) => event.type === 'thread.item.done' && event.item?.type === 'assistant_message')
 }
@@ -285,7 +370,18 @@ async function sendMessage(service: LocalChatKitService, inferenceOptions?: Reco
 describe('LocalChatKitService platform runtime routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocked.readChatProjectContext.mockResolvedValue({
+      workspace: '',
+      instructions: '',
+      memoryEnabled: true,
+      memories: [],
+      updatedAt: new Date(0).toISOString(),
+    })
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = false
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('does not stream raw implementation errors to the user', async () => {
@@ -311,7 +407,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       type: 'error',
       error: expect.objectContaining({
         code: 'internal_error',
-        message: '本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。',
+        message: '本机空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本机空间设置修复。',
       }),
     }))
     expect(JSON.stringify(events)).not.toMatch(/jsonld|Require stack|Application Support|\/Users|xpod/i)
@@ -346,6 +442,707 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(body.model).toBe('linx-lite')
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '可以')).toBe(true)
     expect(findAssistantDone(events)?.item?.status).toBe('completed')
+  })
+
+  it('preserves streamed URL citations as ChatKit annotations and Pod history', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"有来源的回答","annotations":[{"type":"url_citation","url_citation":{"url":"https://example.com/report","title":"Example report","end_index":6}}]}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+    const completed = findAssistantDone(events)?.item
+
+    expect(completed?.content?.[0]).toEqual({
+      type: 'output_text',
+      text: '有来源的回答',
+      annotations: [{
+        index: 6,
+        source: {
+          type: 'url',
+          url: 'https://example.com/report',
+          title: 'Example report',
+        },
+      }],
+    })
+    expect(store.saveItem).toHaveBeenCalledWith(
+      'thread-1',
+      expect.objectContaining({ content: completed.content }),
+      expect.anything(),
+    )
+  })
+
+  it('positions streamed citations without explicit indexes after all preceding text', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"第一段"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"第二段","annotations":[{"type":"url_citation","url":"https://example.com/stream","title":"Stream source"}]}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+    const completed = findAssistantDone(events)?.item
+
+    expect(completed?.content?.[0]).toEqual({
+      type: 'output_text',
+      text: '第一段第二段',
+      annotations: [{
+        index: 6,
+        source: {
+          type: 'url',
+          url: 'https://example.com/stream',
+          title: 'Stream source',
+        },
+      }],
+    })
+  })
+
+  it('runs the selected web search tool through Responses and persists clickable sources', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'linx-lite',
+    }, 'http://localhost:5737/')
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      id: 'resp-1',
+      status: 'completed',
+      output: [{
+        type: 'message',
+        role: 'assistant',
+        content: [{
+          type: 'output_text',
+          text: '今日结果',
+          annotations: [{
+            type: 'url_citation',
+            url: 'https://example.com/today',
+            title: 'Today report',
+            end_index: 4,
+          }],
+        }],
+      }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'http://localhost:5737/v1/responses',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body).toEqual(expect.objectContaining({
+      model: 'linx-lite',
+      tools: [{ type: 'web_search' }],
+      tool_choice: 'auto',
+    }))
+    expect(body).not.toHaveProperty('temperature')
+    expect(events).toContainEqual({
+      type: 'progress_update',
+      icon: 'search',
+      text: '正在搜索网络并整理来源…',
+    })
+    expect(findAssistantDone(events)?.item?.content?.[0]).toEqual({
+      type: 'output_text',
+      text: '今日结果',
+      annotations: [{
+        index: 4,
+        source: {
+          type: 'url',
+          url: 'https://example.com/today',
+          title: 'Today report',
+        },
+      }],
+    })
+  })
+
+  it('routes explicit web search ahead of an existing coding runtime session', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'linx-lite',
+    }, 'http://localhost:5737/')
+    const browserFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/api/runtime/threads')) {
+        return new Response(JSON.stringify({
+          items: [{ id: 'runtime-1', threadId: 'thread-1', status: 'active' }],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', browserFetch)
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      output: [{
+        type: 'message',
+        content: [{
+          type: 'output_text',
+          text: '搜索结果 [官方来源](https://example.com/search)',
+          annotations: [],
+        }],
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'http://localhost:5737/v1/responses',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(browserFetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/messages'),
+      expect.anything(),
+    )
+    expect(findAssistantDone(events)?.item?.content?.[0]).toEqual(expect.objectContaining({
+      text: '搜索结果 [官方来源](https://example.com/search)',
+      annotations: [expect.objectContaining({
+        source: expect.objectContaining({
+          type: 'url',
+          url: 'https://example.com/search',
+          title: '官方来源',
+        }),
+      })],
+    }))
+  })
+
+  it('uses LinX Lite search when a legacy chat has no resolvable Agent config', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithoutAgent('http://localhost:5737/')
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '平台搜索', annotations: [] }] }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body.model).toBe('linx-lite')
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('平台搜索')
+  })
+
+  it('finishes the search activity with actionable copy when xpod search fails', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({ provider: 'undefineds', model: 'linx-lite' }, 'http://localhost:5737/')
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      error: 'upstream TLS details that should not be shown',
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    expect(events).toContainEqual({
+      type: 'progress_update',
+      icon: 'search',
+      text: '联网搜索失败',
+    })
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'incomplete',
+      content: [expect.objectContaining({
+        text: '联网搜索暂不可用。请检查本地 xpod 的 AI 上游配置后重试。',
+      })],
+    }))
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'error' }))
+    expect(JSON.stringify(events)).not.toContain('TLS details')
+  })
+
+  it('routes custom OpenAI-compatible provider web search through Xpod Responses', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+    }, [{
+      id: 'openai-default',
+      provider: 'openai',
+      apiKey: 'test-key',
+      baseUrl: 'https://openrouter.ai/api/v1',
+    }], {
+      providerCapabilities: ['chat_completions', 'responses', 'responses_web_search'],
+    })
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      output: [{
+        type: 'message',
+        content: [{
+          type: 'output_text',
+          text: '自定义搜索结果',
+          annotations: [{
+            type: 'url_citation',
+            url: 'https://example.com/custom-source',
+            title: 'Custom source',
+            end_index: 7,
+          }],
+        }],
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/responses',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body).toMatchObject({
+      model: 'openai/gpt-4o-mini',
+      tools: [{ type: 'web_search' }],
+    })
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'completed',
+      content: [expect.objectContaining({
+        text: '自定义搜索结果',
+        annotations: [expect.objectContaining({
+          source: expect.objectContaining({ url: 'https://example.com/custom-source' }),
+        })],
+      })],
+    }))
+  })
+
+  it('rejects web search before the network when a legacy provider only supports Chat Completions', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'timecc', model: 'chat-model' })
+    const authFetch = vi.fn()
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
+
+    expect(authFetch).not.toHaveBeenCalled()
+    expect(events).toContainEqual({
+      type: 'progress_update',
+      icon: 'search',
+      text: '联网搜索失败',
+    })
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'incomplete',
+      content: [expect.objectContaining({
+        text: expect.stringContaining('未声明 Responses API 能力'),
+      })],
+    }))
+  })
+
+  it('uses Responses for normal generation when Chat Completions is not declared', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
+      providerCapabilities: ['responses'],
+    })
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      output: [{
+        type: 'message',
+        content: [{ type: 'output_text', text: 'Responses 普通回复', annotations: [] }],
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/responses',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body).toMatchObject({ model: 'responses-only/reasoning-model' })
+    expect(body).not.toHaveProperty('tools')
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'completed',
+      content: [expect.objectContaining({ text: 'Responses 普通回复' })],
+    }))
+  })
+
+  it('allows a text-only turn when only historical messages contain images', async () => {
+    const store = createMockStore([{
+      id: 'historical-image-message',
+      thread_id: 'thread-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: '以前上传过图片' }],
+      attachments: [{
+        id: 'historical-image',
+        type: 'image',
+        name: 'old.png',
+        mime_type: 'image/png',
+      }],
+    }]) as ReturnType<typeof createMockStore> & {
+      readAttachmentBytes: ReturnType<typeof vi.fn>
+    }
+    store.readAttachmentBytes = vi.fn(async () => new Uint8Array([1, 2, 3]))
+    const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
+      providerCapabilities: ['responses'],
+    })
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      output: [{
+        type: 'message',
+        content: [{ type: 'output_text', text: '你好', annotations: [] }],
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(JSON.stringify(body.input)).not.toContain('image_url')
+    expect(JSON.stringify(body.input)).toContain('以前上传过图片')
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'completed',
+      content: [expect.objectContaining({ text: '你好' })],
+    }))
+  })
+
+  it('still prompts before sending when the current turn contains an unsupported image', async () => {
+    const store = createMockStore()
+    store.loadAttachment.mockResolvedValue({
+      id: 'current-image',
+      type: 'image',
+      name: 'current.png',
+      mime_type: 'image/png',
+    })
+    const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
+      providerCapabilities: ['responses'],
+    })
+    const authFetch = vi.fn()
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await collectStreamEvents(await service.process(JSON.stringify({
+      type: 'threads.add_user_message',
+      params: {
+        thread_id: 'thread-1',
+        input: {
+          content: [{ type: 'input_text', text: '看看这张图' }],
+          attachments: ['current-image'],
+        },
+      },
+    }), {}))
+
+    expect(authFetch).not.toHaveBeenCalled()
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'incomplete',
+      content: [expect.objectContaining({ text: expect.stringContaining('未声明 图片输入 能力') })],
+    }))
+  })
+
+  it('rejects an image as soon as it is attached when the current model does not support image input', async () => {
+    const store = createMockStore()
+    store.createAttachment = vi.fn()
+    const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
+      providerCapabilities: ['responses'],
+    })
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: vi.fn() as any,
+      attachmentThreadId: 'thread-1',
+    })
+
+    await expect(service.process(JSON.stringify({
+      type: 'attachments.create',
+      params: { name: 'pasted.png', size: 3, mime_type: 'image/png' },
+    }), {})).rejects.toThrow('此模型不支持图像输入。请尝试其他模型')
+    expect(store.createAttachment).not.toHaveBeenCalled()
+  })
+
+  it('accepts image attachments when the gateway declares image input through modalities', async () => {
+    const store = createMockStore()
+    store.createAttachment = vi.fn(() => ({
+      id: 'image-attachment',
+      type: 'image',
+      name: 'photo.png',
+      mime_type: 'image/png',
+    }))
+    const db = createMockDb({ provider: 'custom', model: 'gpt-5.5' })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({
+          data: [{
+            id: 'gpt-5.5',
+            owned_by: 'custom',
+            custom: true,
+            modalities: { input: ['image'] },
+          }],
+        })
+      }
+      return new Response('', { status: 404 })
+    })
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+      attachmentThreadId: 'thread-1',
+    })
+
+    await service.process(JSON.stringify({
+      type: 'attachments.create',
+      params: { name: 'photo.png', size: 3, mime_type: 'image/png' },
+    }), {})
+
+    expect(store.createAttachment).toHaveBeenCalledOnce()
+  })
+
+  it('checks image input against the selected model, not the whole provider', async () => {
+    const modelsPayload = {
+      data: [
+        { id: 'vision-model', owned_by: 'custom', custom: true, modalities: { input: ['image'] } },
+        { id: 'text-only-model', owned_by: 'custom', custom: true },
+      ],
+    }
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) return Response.json(modelsPayload)
+      return new Response('', { status: 404 })
+    })
+    const runCreate = async (model: string) => {
+      const store = createMockStore()
+      store.createAttachment = vi.fn(() => ({
+        id: 'image-attachment',
+        type: 'image',
+        name: 'photo.png',
+        mime_type: 'image/png',
+      }))
+      const service = new LocalChatKitService({
+        store: store as any,
+        db: createMockDb({ provider: 'custom', model }) as any,
+        webId: 'https://id.undefineds.co/profile/card#me',
+        authFetch: authFetch as any,
+        attachmentThreadId: 'thread-1',
+      })
+      await service.process(JSON.stringify({
+        type: 'attachments.create',
+        params: { name: 'photo.png', size: 3, mime_type: 'image/png' },
+      }), {})
+      return store.createAttachment
+    }
+
+    await expect(runCreate('text-only-model')).rejects.toThrow('此模型不支持图像输入。请尝试其他模型')
+    await expect(runCreate('vision-model')).resolves.toHaveBeenCalledOnce()
+  })
+
+  it('serves persisted image attachments with session object URLs when listing items', async () => {
+    const store = createMockStore([{
+      id: 'item-1',
+      type: 'user_message',
+      content: [{ type: 'input_text', text: '看图' }],
+      attachments: [{
+        id: 'attach-1',
+        type: 'image',
+        name: 'a.png',
+        mime_type: 'image/png',
+        pod_url: 'https://pod.example/chat-attachments/a.png',
+        preview_url: 'https://pod.example/chat-attachments/a.png',
+      }],
+    }])
+    store.loadAttachmentObjectUrl = vi.fn(async () => 'blob:preview-a')
+    const db = createMockDb({ provider: 'custom', model: 'gpt-5.5' })
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: vi.fn() as any,
+    })
+
+    const result = await service.process(JSON.stringify({
+      type: 'items.list',
+      params: { thread_id: 'thread-1' },
+    }), {}) as { type: string; json: string }
+    const page = JSON.parse(result.json)
+    const attachment = page.data[0].attachments[0]
+    expect(attachment.preview_url).toBe('blob:preview-a')
+    expect(attachment.download_url).toBe('blob:preview-a')
+    expect(store.loadAttachmentObjectUrl).toHaveBeenCalledWith('attach-1')
+  })
+
+  it('still accepts non-image attachments for a model without image input', async () => {
+    const store = createMockStore()
+    store.createAttachment = vi.fn(() => ({
+      id: 'document-attachment',
+      type: 'file',
+      name: 'brief.pdf',
+      mime_type: 'application/pdf',
+    }))
+    const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
+      providerCapabilities: ['responses'],
+    })
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: vi.fn() as any,
+      attachmentThreadId: 'thread-1',
+    })
+
+    const result = await service.process(JSON.stringify({
+      type: 'attachments.create',
+      params: { name: 'brief.pdf', size: 3, mime_type: 'application/pdf' },
+    }), {})
+
+    expect(result.type).toBe('non_streaming')
+    expect(store.createAttachment).toHaveBeenCalledOnce()
+  })
+
+  it('streams a long Responses Markdown answer across arbitrary byte boundaries and merges final citations', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
+      providerCapabilities: ['responses'],
+    })
+    const sections = Array.from({ length: 240 }, (_, index) => (
+      `## Section ${index + 1}\n\n| key | value |\n| --- | --- |\n| row | 中文-${index + 1} |\n\n`
+    ))
+    sections.push('```ts\nexport const finished = true\n```\n\n[Source](https://example.com/long-report)')
+    const expectedText = sections.join('')
+    const streamPayload = [
+      'data: {"type":"response.created","response":{"id":"resp-long"}}\n\n',
+      ...sections.map((delta) => `data: ${JSON.stringify({ type: 'response.output_text.delta', delta })}\n\n`),
+      `data: ${JSON.stringify({
+        type: 'response.content_part.done',
+        part: {
+          type: 'output_text',
+          text: expectedText,
+          annotations: [{
+            type: 'url_citation',
+            url: 'https://example.com/long-report',
+            title: 'Long report',
+            end_index: expectedText.length,
+          }],
+        },
+      })}\r\n\r\n`,
+      'data: [DONE]',
+    ].join('')
+    const authFetch = vi.fn(async () => createByteChunkedSseResponse(streamPayload, 13))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+    const completed = findAssistantDone(events)?.item
+    const request = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+
+    expect(request).toMatchObject({
+      model: 'responses-only/reasoning-model',
+      stream: true,
+    })
+    expect((authFetch.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({
+      Accept: 'text/event-stream, application/json',
+    })
+    expect(events.filter((event) => (
+      event.type === 'thread.item.updated' && typeof event.update?.delta === 'string'
+    ))).toHaveLength(sections.length)
+    expect(completed?.content?.[0]).toEqual({
+      type: 'output_text',
+      text: expectedText,
+      annotations: [{
+        index: expectedText.length,
+        source: {
+          type: 'url',
+          url: 'https://example.com/long-report',
+          title: 'Long report',
+        },
+      }],
+    })
+    expect(store.saveItem).toHaveBeenCalledWith(
+      'thread-1',
+      expect.objectContaining({ status: 'completed', content: completed.content }),
+      expect.anything(),
+    )
+  })
+
+  it.each(['responses', 'chat_completions'])('ends an errored %s stream as incomplete without exposing provider diagnostics', async (protocol) => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'responses-only', model: 'reasoning-model' }, [], {
+      providerCapabilities: [protocol],
+    })
+    const authFetch = vi.fn(async () => createByteChunkedSseResponse([
+      `data: ${JSON.stringify(protocol === 'responses'
+        ? { type: 'response.output_text.delta', delta: '已生成部分。' }
+        : { choices: [{ delta: { content: '已生成部分。' } }] })}\n\n`,
+      `data: ${JSON.stringify({ error: { code: 'provider_error', message: 'private stack /Users/provider/secret.ts:42' } })}\n\n`,
+      'data: [DONE]\n\n',
+    ].join(''), 7))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+    const completed = findAssistantDone(events)?.item
+
+    expect(completed).toEqual(expect.objectContaining({
+      status: 'incomplete',
+      content: [expect.objectContaining({ text: '已生成部分。' })],
+    }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({ message: '消息生成失败。请稍后重试。' }),
+    }))
+    expect(JSON.stringify(events)).not.toMatch(/private stack|\/Users|secret\.ts/iu)
   })
 
   it('routes Matrix group user messages through Matrix send without local duplicate persistence', async () => {
@@ -420,6 +1217,35 @@ describe('LocalChatKitService platform runtime routing', () => {
       }),
     )
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地可聊')).toBe(true)
+  })
+
+  it('marks an empty platform runtime response incomplete instead of persisting a blank reply', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: '/settings/providers/undefineds.ttl',
+      model: 'undefineds/linx-lite',
+    })
+    const authFetch = vi.fn(async () => createSseResponse(['data: [DONE]\n\n']))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'http://localhost:5737/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
+      status: 'incomplete',
+      content: [expect.objectContaining({
+        text: expect.stringContaining('服务没有返回内容'),
+      })],
+    }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({ code: 'generation_error' }),
+    }))
   })
 
   it('defaults platform runtime calls to client-originated Pod access', async () => {
@@ -531,9 +1357,84 @@ describe('LocalChatKitService platform runtime routing', () => {
       type: 'error',
       error: expect.objectContaining({
         code: 'generation_error',
-        message: '服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本地空间。',
+        message: '服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本机空间。',
       }),
     }))
+  })
+
+  it('fails a retryable provider request once without deferring it', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { model: 'linx-lite' })
+
+    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text)
+      .toBe('网络或 AI 上游暂不可用，请稍后重试。')
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+  })
+
+  it('does not queue a permanently invalid credential row', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'internal_error',
+        message: 'Invalid credential row: Credential row is missing encrypted secret payload',
+      },
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { model: 'linx-lite' })
+
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text)
+      .toBe('当前模型密钥不可用，请在“模型服务”中重新验证。')
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({
+        message: '当前模型密钥不可用，请在“模型服务”中重新验证。',
+      }),
+    }))
+  })
+
+  it('requests explicit Xpod service access without queueing the generation', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'service_access_missing',
+        message: 'Pod service access is missing or has been revoked',
+        status: 403,
+      },
+    }), { status: 403, headers: { 'Content-Type': 'application/json' } }))
+    const onServiceAccessRequired = vi.fn()
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+      onServiceAccessRequired,
+    })
+
+    const events = await sendMessage(service, { model: 'linx-lite' })
+
+    expect(onServiceAccessRequired).toHaveBeenCalledOnce()
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toContain('授权后请重新发送')
+    expect(events.some((event) => event.type === 'error')).toBe(false)
   })
 
   it('lets ChatKit platform model selection override the default LinX Lite model', async () => {
@@ -559,6 +1460,325 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(body.model).toBe('linx')
   })
 
+  it('injects transparent workspace instructions and enabled memories into the system context', async () => {
+    const store = createMockStore()
+    store.loadThread.mockResolvedValue({
+      id: 'thread-1',
+      status: { type: 'active' },
+      metadata: { chat_id: 'chat-1', workspace: 'https://pod.example/workspaces/project/' },
+    })
+    const db = createMockDbWithPodUrl({ provider: 'undefineds', model: 'linx-lite' }, 'https://pod.example/')
+    mocked.readChatProjectContext.mockResolvedValue({
+      workspace: 'https://pod.example/workspaces/project/',
+      instructions: 'Always cite project decisions.',
+      memoryEnabled: true,
+      memories: [{ id: 'm1.ttl', text: 'Release is Friday.', createdAt: '2026-08-11T00:00:00Z' }],
+      updatedAt: '2026-08-11T00:00:00Z',
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+        'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    await sendMessage(service)
+
+    const runtimeCall = authFetch.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'POST')
+    const body = JSON.parse((runtimeCall?.[1] as RequestInit).body as string)
+    expect(body.messages[0].content).toContain('Always cite project decisions.')
+    expect(body.messages[0].content).toContain('Release is Friday.')
+  })
+
+  it('routes the image-generation composer tool through the explicit capability and stores the result as a Pod attachment', async () => {
+    const store = createMockStore() as any
+    store.createAttachment = vi.fn(() => ({
+      id: 'generated-attachment',
+      type: 'image',
+      name: 'generated.png',
+      mime_type: 'image/png',
+    }))
+    store.uploadAttachment = vi.fn(async (_id: string, _body: BodyInit, mimeType: string) => ({
+      id: 'generated-attachment',
+      type: 'image',
+      name: 'generated.png',
+      mime_type: mimeType,
+      preview_url: 'blob:generated',
+    }))
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({ data: [{ id: 'image-model', owned_by: 'undefineds', capabilities: { imageGeneration: true } }] })
+      }
+      if (String(input).endsWith('/images/generations')) {
+        return Response.json({ data: [{ b64_json: btoa('png-bytes') }] })
+      }
+      return new Response('', { status: 404 })
+    })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+
+    const events = await sendMessage(service, {
+      model: 'linx-lite',
+      tool_choice: { id: 'image_generation' },
+    })
+
+    expect(authFetch).toHaveBeenCalledWith(expect.stringMatching(/\/images\/generations$/u), expect.objectContaining({ method: 'POST' }))
+    const generateCall = authFetch.mock.calls.find(([input]) => String(input).endsWith('/images/generations'))
+    expect(JSON.parse((generateCall?.[1] as RequestInit).body as string).model).toBe('undefineds/image-model')
+    expect(store.uploadAttachment).toHaveBeenCalledWith('generated-attachment', expect.any(Blob), 'image/png', undefined)
+    expect(findAssistantDone(events)?.item?.attachments).toEqual([expect.objectContaining({ id: 'generated-attachment' })])
+    const generatedImageDone = events.find(event => (
+      event.type === 'thread.item.done' && (event as any).item?.type === 'generated_image'
+    )) as any
+    expect(generatedImageDone?.item).toEqual(expect.objectContaining({
+      image: { id: 'generated-attachment', url: expect.stringMatching(/^data:image\/png;base64,/u) },
+      attachment: expect.objectContaining({ id: 'generated-attachment' }),
+    }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'thread.item.updated',
+      update: expect.objectContaining({ type: 'generated_image.updated', progress: 1 }),
+    }))
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+  })
+
+  it('routes a selected image-only model to image generation without requiring a composer tool choice', async () => {
+    const store = createMockStore() as any
+    store.createAttachment = vi.fn(() => ({
+      id: 'generated-attachment',
+      type: 'image',
+      name: 'generated.png',
+      mime_type: 'image/png',
+    }))
+    store.uploadAttachment = vi.fn(async (_id: string, _body: BodyInit, mimeType: string) => ({
+      id: 'generated-attachment',
+      type: 'image',
+      name: 'generated.png',
+      mime_type: mimeType,
+      preview_url: 'blob:generated',
+    }))
+    const db = createMockDb(
+      { provider: 'openai', model: 'gpt-5.6-sol' },
+      [],
+      { providerCapabilities: ['chat_completions', 'image_generation'] },
+    )
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({ data: [{ id: 'gpt-image-1', owned_by: 'openai' }] })
+      }
+      if (String(input).endsWith('/images/generations')) {
+        return Response.json({ data: [{ b64_json: btoa('png-bytes') }] })
+      }
+      return new Response('', { status: 404 })
+    })
+    const service = new LocalChatKitService({
+      store,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, { model: 'gpt-image-1' })
+
+    expect(authFetch.mock.calls.some(([input]) => String(input).endsWith('/chat/completions'))).toBe(false)
+    expect(authFetch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/images\/generations$/u),
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(findAssistantDone(events)?.item?.status).toBe('completed')
+  })
+
+  it('retries once when Chat Completions succeeds without returning any content', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'openai', model: 'gpt-5.6-terra' })
+    const authFetch = vi.fn()
+      .mockResolvedValueOnce(createSseResponse(['data: [DONE]\n\n']))
+      .mockResolvedValueOnce(createSseResponse([
+        'data: {"choices":[{"delta":{"content":"第二次返回正常"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(authFetch).toHaveBeenCalledTimes(2)
+    expect(events).toContainEqual({
+      type: 'progress_update',
+      icon: 'refresh',
+      text: '服务暂未返回内容，正在重试…',
+    })
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('第二次返回正常')
+    expect(findAssistantDone(events)?.item?.status).toBe('completed')
+  })
+
+  it('rejects insecure provider-hosted image URLs before downloading them', async () => {
+    const store = createMockStore() as any
+    store.createAttachment = vi.fn()
+    store.uploadAttachment = vi.fn()
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({ data: [{ id: 'image-model', owned_by: 'undefineds', capabilities: { imageGeneration: true } }] })
+      }
+      if (String(input).endsWith('/images/generations')) {
+        return Response.json({ data: [{ url: 'http://attacker.example/generated.png' }] })
+      }
+      return new Response('', { status: 404 })
+    })
+    const downloadFetch = vi.spyOn(globalThis, 'fetch')
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+
+    const events = await sendMessage(service, {
+      model: 'linx-lite',
+      tool_choice: { id: 'image_generation' },
+    })
+
+    expect(downloadFetch).not.toHaveBeenCalled()
+    expect(store.uploadAttachment).not.toHaveBeenCalled()
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'error',
+        error: expect.objectContaining({ message: '消息生成失败。请稍后重试。' }),
+      }),
+    ]))
+  })
+
+  it.each([
+    'https://localhost/generated.png',
+    'https://127.0.0.1/generated.png',
+    'https://169.254.169.254/latest/meta-data',
+    'https://[::1]/generated.png',
+    'https://[fd00::1]/generated.png',
+  ])('rejects provider image URLs targeting private networks: %s', async (imageUrl) => {
+    const store = createMockStore() as any
+    store.createAttachment = vi.fn()
+    store.uploadAttachment = vi.fn()
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({ data: [{ id: 'image-model', owned_by: 'undefineds', capabilities: { imageGeneration: true } }] })
+      }
+      if (String(input).endsWith('/images/generations')) {
+        return Response.json({ data: [{ url: imageUrl }] })
+      }
+      return new Response('', { status: 404 })
+    })
+    const downloadFetch = vi.spyOn(globalThis, 'fetch')
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+
+    await sendMessage(service, {
+      model: 'linx-lite',
+      tool_choice: { id: 'image_generation' },
+    })
+
+    expect(downloadFetch).not.toHaveBeenCalled()
+    expect(store.uploadAttachment).not.toHaveBeenCalled()
+  })
+
+  it('refuses image generation when the selected provider exposes no capable image model', async () => {
+    const store = createMockStore() as any
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({
+          data: [
+            { id: 'linx-lite', owned_by: 'undefineds', capabilities: { chatCompletions: true } },
+            { id: 'foreign-image', owned_by: 'another-provider', capabilities: { imageGeneration: true } },
+          ],
+        })
+      }
+      return new Response('', { status: 404 })
+    })
+    const service = new LocalChatKitService({
+      store,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service, {
+      model: 'linx-lite',
+      tool_choice: { id: 'image_generation' },
+    })
+
+    expect(authFetch.mock.calls.some(([input]) => String(input).endsWith('/images/generations'))).toBe(false)
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'error',
+        error: expect.objectContaining({ message: expect.stringContaining('可用的图片生成模型') }),
+      }),
+    ]))
+  })
+
+  it('routes an attached source image through the explicit image-editing capability', async () => {
+    const store = createMockStore() as any
+    store.loadAttachment.mockResolvedValue({
+      id: 'source-1',
+      type: 'image',
+      name: 'source.png',
+      mime_type: 'image/png',
+      preview_url: 'blob:source',
+    })
+    store.readAttachmentBytes = vi.fn(async () => new TextEncoder().encode('source-image'))
+    store.createAttachment = vi.fn(() => ({
+      id: 'edited-attachment',
+      type: 'image',
+      name: 'edited.png',
+      mime_type: 'image/png',
+    }))
+    store.uploadAttachment = vi.fn(async (_id: string, _body: BodyInit, mimeType: string) => ({
+      id: 'edited-attachment',
+      type: 'image',
+      name: 'edited.png',
+      mime_type: mimeType,
+      preview_url: 'blob:edited',
+    }))
+    const db = createMockDb({ provider: 'undefineds', model: 'linx-lite' })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/models')) {
+        return Response.json({ data: [{ id: 'image-edit-model', owned_by: 'undefineds', custom_capabilities: ['image_editing'] }] })
+      }
+      if (String(input).endsWith('/images/edits')) {
+        return Response.json({ data: [{ b64_json: btoa('edited-bytes') }] })
+      }
+      return new Response('', { status: 404 })
+    })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+
+    const events = await collectStreamEvents(await service.process(JSON.stringify({
+      type: 'threads.add_user_message',
+      params: {
+        thread_id: 'thread-1',
+        input: {
+          content: [{ type: 'input_text', text: '把背景改成蓝色' }],
+          attachments: [{ id: 'source-1', type: 'image', name: 'source.png', mime_type: 'image/png', preview_url: 'blob:source' }],
+          inference_options: { model: 'linx-lite', tool_choice: { id: 'image_generation' } },
+        },
+      },
+    }), {}))
+
+    const editCall = authFetch.mock.calls.find(([input]) => String(input).endsWith('/images/edits'))
+    expect(editCall).toBeDefined()
+    const body = JSON.parse((editCall?.[1] as RequestInit).body as string)
+    expect(body).toMatchObject({
+      model: 'undefineds/image-edit-model',
+      prompt: '把背景改成蓝色',
+      image: { name: 'source.png', mime_type: 'image/png' },
+    })
+    expect(atob(body.image.data)).toBe('source-image')
+    expect(store.readAttachmentBytes).toHaveBeenCalledWith('source-1')
+    expect(store.uploadAttachment).toHaveBeenCalledWith('edited-attachment', expect.any(Blob), 'image/png', undefined)
+    expect(findAssistantDone(events)?.item?.content[0]?.text).toContain('已编辑图片')
+  })
+
 
   it('routes platform runtime calls through the selected Local SP, not the Cloud WebID origin', async () => {
     const store = createMockStore()
@@ -567,7 +1787,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       model: 'undefineds/linx-lite',
     }, 'https://node-0000.undefineds.co/alice/')
     const authFetch = vi.fn(async () => createSseResponse([
-      'data: {"choices":[{"delta":{"content":"本地空间"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"本机空间"}}]}\n\n',
       'data: [DONE]\n\n',
     ]))
     const service = new LocalChatKitService({
@@ -589,7 +1809,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       'https://api.undefineds.co/v1/chat/completions',
       expect.anything(),
     )
-    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地空间')).toBe(true)
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本机空间')).toBe(true)
   })
 
   it('resolves an Agent contact about IRI with findByIri instead of deriving a row id from the IRI', async () => {
@@ -625,7 +1845,130 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === 'IRI OK')).toBe(true)
   })
 
-  it('keeps non-platform providers on the user API key path', async () => {
+  it('routes non-platform providers through the authenticated Pod runtime', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'timecc',
+      model: 'codex-auto-review',
+    }, [{
+      id: 'credentials.ttl#timecc-default',
+      provider: '/settings/providers/timecc.ttl',
+      service: 'ai',
+      status: 'active',
+      apiKey: 'sk-test',
+      baseUrl: 'https://timicc.example/v1',
+    }], {
+      participantRef: 'https://node-0000.undefineds.co/alice/.data/contacts/contact-1.ttl',
+      contactAbout: 'https://node-0000.undefineds.co/alice/agents/agent-1/',
+    })
+    const providerFetch = vi.fn()
+    vi.stubGlobal('fetch', providerFetch)
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"用户模型"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    )
+    expect(providerFetch).not.toHaveBeenCalled()
+    const gatewayCall = authFetch.mock.calls.find(([url, init]) => (
+      url === 'https://api.undefineds.co/v1/chat/completions'
+      && (init as RequestInit | undefined)?.method === 'POST'
+    ))
+    expect(gatewayCall).toBeDefined()
+    const requestBody = JSON.parse((gatewayCall?.[1] as RequestInit).body as string)
+    expect(requestBody.provider).toBe('timecc')
+    expect(requestBody.model).toBe('timecc/codex-auto-review')
+    expect(db.findByIri).toHaveBeenCalledWith(
+      mocked.contactResource,
+      'https://node-0000.undefineds.co/alice/.data/contacts/contact-1.ttl',
+    )
+    expect(db.findByIri).toHaveBeenCalledWith(
+      mocked.agentResource,
+      'https://node-0000.undefineds.co/alice/agents/agent-1/',
+    )
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '用户模型')).toBe(true)
+  })
+
+  it('limits provider history to the agent context rounds without starting on an assistant message', async () => {
+    const store = createMockStore([
+      { id: 'user-1', type: 'user_message', content: [{ type: 'input_text', text: 'old user' }] },
+      { id: 'assistant-1', type: 'assistant_message', content: [{ type: 'output_text', text: 'old assistant' }] },
+      { id: 'user-2', type: 'user_message', content: [{ type: 'input_text', text: 'recent user' }] },
+      { id: 'assistant-2', type: 'assistant_message', content: [{ type: 'output_text', text: 'recent assistant' }] },
+    ])
+    const db = createMockDb({
+      provider: 'timecc',
+      model: 'codex-auto-review',
+      contextRound: 2,
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"OK"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    await sendMessage(service)
+
+    const requestBody = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(requestBody.messages).toEqual([
+      expect.objectContaining({ role: 'system' }),
+      { role: 'user', content: 'recent user' },
+      { role: 'assistant', content: 'recent assistant' },
+      { role: 'user', content: '你好' },
+    ])
+  })
+
+  it('keeps the anchored user prompt when retry branch projection temporarily hides history', async () => {
+    const store = createMockStore()
+    const originalLoadItems = store.loadThreadItems
+    const db = createMockDb({ provider: 'timecc', model: 'codex-auto-review', contextRound: 2 })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"OK"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+    await sendMessage(service)
+    const persistedItems = (await originalLoadItems()).data
+    const assistant = persistedItems.find((item: any) => item.type === 'assistant_message')
+    store.loadThreadItems
+      .mockResolvedValueOnce({ data: persistedItems, has_more: false })
+      .mockResolvedValueOnce({ data: [], has_more: false })
+
+    await collectStreamEvents(await service.process(JSON.stringify({
+      type: 'threads.retry_after_item',
+      params: { thread_id: 'thread-1', item_id: assistant.id },
+    }), {}))
+
+    const retryBody = JSON.parse((authFetch.mock.calls.at(-1)?.[1] as RequestInit).body as string)
+    expect(retryBody.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: '你好' }),
+    ]))
+  })
+
+  it('falls back to the scoped credential collection when the exact cached row is partial', async () => {
     const store = createMockStore()
     const db = createMockDb({
       provider: 'openai',
@@ -637,13 +1980,20 @@ describe('LocalChatKitService platform runtime routing', () => {
       status: 'active',
       apiKey: 'sk-test',
       baseUrl: 'https://api.openai.example/v1',
-    }])
-    const providerFetch = vi.fn(async () => createSseResponse([
-      'data: {"choices":[{"delta":{"content":"用户模型"}}]}\n\n',
+    }], {
+      exactCredentialRow: {
+        id: 'credentials.ttl#openai-default',
+        provider: '/settings/providers/openai.ttl',
+        service: 'ai',
+        status: 'active',
+      },
+    })
+    const providerFetch = vi.fn()
+    vi.stubGlobal('fetch', providerFetch)
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"缓存恢复"}}]}\n\n',
       'data: [DONE]\n\n',
     ]))
-    vi.stubGlobal('fetch', providerFetch)
-    const authFetch = vi.fn(async () => new Response('', { status: 404 }))
     const service = new LocalChatKitService({
       store: store as any,
       db: db as any,
@@ -653,18 +2003,12 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     const events = await sendMessage(service)
 
-    expect(authFetch).not.toHaveBeenCalledWith(
+    expect(authFetch).toHaveBeenCalledWith(
       'https://api.undefineds.co/v1/chat/completions',
-      expect.anything(),
+      expect.objectContaining({ method: 'POST' }),
     )
-    expect(providerFetch).toHaveBeenCalledWith(
-      'https://api.openai.example/v1/chat/completions',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: 'Bearer sk-test' }),
-      }),
-    )
-    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '用户模型')).toBe(true)
+    expect(providerFetch).not.toHaveBeenCalled()
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '缓存恢复')).toBe(true)
   })
 
   it('does not raw-fetch credentials.ttl when shared credential lookup has no match', async () => {
@@ -675,7 +2019,9 @@ describe('LocalChatKitService platform runtime routing', () => {
     })
     const providerFetch = vi.fn()
     vi.stubGlobal('fetch', providerFetch)
-    const authFetch = vi.fn(async () => new Response('', { status: 404 }))
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      error: { code: 'model_not_configured', message: 'No AI provider configured.' },
+    }), { status: 400 }))
     const service = new LocalChatKitService({
       store: store as any,
       db: db as any,
@@ -685,9 +2031,12 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     const events = await sendMessage(service)
 
-    expect(authFetch).not.toHaveBeenCalled()
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    )
     expect(providerFetch).not.toHaveBeenCalled()
-    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('请先在设置中配置 AI API Key。')
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('消息生成失败。请稍后重试。')
   })
 
   it('surfaces shared credential query failures instead of pretending the API key is missing', async () => {

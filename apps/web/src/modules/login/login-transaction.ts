@@ -15,7 +15,7 @@ export interface LoginTransaction {
   storageProviderUrl: string
   storageProviderLabel?: string
   authorizationQuery?: Record<string, string>
-  prompt?: 'none' | 'consent'
+  prompt?: 'none' | 'consent' | 'login'
   strictDiscovery?: boolean
   nodeId?: string
   createdAt: number
@@ -35,7 +35,7 @@ export interface LoginTransactionInput {
   storageProviderLabel?: string | null
   providerLabel?: string | null
   authorizationQuery?: unknown
-  prompt?: 'none' | 'consent' | string | null
+  prompt?: 'none' | 'consent' | 'login' | string | null
   strictDiscovery?: boolean | null
   nodeId?: string | null
   id?: string | null
@@ -84,7 +84,9 @@ export function createLoginTransaction(input: LoginTransactionInput): LoginTrans
     ? input.createdAt
     : Date.now()
   const id = normalizeLabel(input.id) ?? createLoginTransactionId(createdAt)
-  const prompt = input.prompt === 'none' || input.prompt === 'consent' ? input.prompt : undefined
+  const prompt = input.prompt === 'none' || input.prompt === 'consent' || input.prompt === 'login'
+    ? input.prompt
+    : undefined
   const nodeId = normalizeLabel(input.nodeId)
 
   return {

@@ -68,7 +68,7 @@
 CLI Collector 解析后写入 `messageTable.richContent` 的 JSON 格式：
 
 ```typescript
-// Block 类型枚举（与 Web 展示层 message-blocks.ts 对齐）
+// Block 类型枚举（与 models message.richContent 合同及 ChatKit local service 适配层对齐）
 type CLIBlockType = 'thinking' | 'text' | 'tool' | 'tool_approval' | 'error'
 
 interface CLIBlock {
@@ -97,8 +97,8 @@ interface CLIBlock {
 }
 ```
 
-> **约束**：此 JSON schema 必须与 `apps/web/src/modules/chat/components/Messages/message-blocks.ts` 的展示层 block 定义，以及 `@undefineds.co/models` 的 `message.richContent` 合同保持一致。
-> CLI Collector 是 richContent 的主要生产者，UI 层是消费者。
+> **约束**：此 JSON schema 必须与 `@undefineds.co/models` 的 `message.richContent` 合同、`chat/domain/conversation-message.ts` 以及 ChatKit local service 的协议投影保持一致。
+> CLI Collector 是 richContent 的主要生产者，ChatKit adapter 是 UI 消费边界；不得再引入独立的消息渲染栈。
 
 ### 6A.3 CLI 输出 → Pod 写入流程
 
