@@ -1,6 +1,6 @@
 # LinX R6 交互稿
 
-R6 改版的交互稿。2026-10-11 定稿，后续开发以这里为准。
+R6 改版的交互稿。2026-10-11 定稿，后续开发以这里为准。实现规格见 [`docs/superpowers/specs/2026-10-11-linx-r6-interaction-implementation.md`](../../superpowers/specs/2026-10-11-linx-r6-interaction-implementation.md)。
 
 - 在线画布：https://claude.ai/artifact/1rrsHcapkxSu5eosy2P37y（私有，需要 owner 分享）。
 - `canvas.json`：画布结构，包括页面、画板坐标和标题，以及每个画板旁的说明便签。便签里的“已定 / 默认（待确认）”就是这次评审的决定。

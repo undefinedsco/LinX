@@ -67,6 +67,7 @@ Feature contracts:
 - `docs/xpod-cli-spec.md` — xpod CLI 的 Pod 文件/RDF/jsonl/secret/approval 能力边界，与 `udfs` 建模 CLI 分工
 - `docs/dependency-guide.md` — 依赖升级、workspace/npm 版本、`xpod`/`models` 联动与 models 独立发布规则
 - `docs/external-project-watchlist.md` — 外部项目持续跟踪清单，记录观察状态、证据、复查信号和是否需要沉淀到功能文档
+- `docs/superpowers/specs/2026-10-11-linx-r6-interaction-implementation.md` — R6 定稿交互稿（`docs/design/r6-interaction-canvas/`）的落地规格：跨模块规则、AG-UI/A2UI 协议、数据位置与并行分工
 - `docs/desktop-product-strategy.md` — R6 工作/知识/我的 AI 产品策略，以及工作方法、auto 与权限边界
 - `docs/secretary/README.md` — AI Secretary 能力设计入口，包括存储建模、授权判断和用户请示边界
 - `docs/agent-collaboration-model.md` — Secretary 多工作现场、群聊、跨会话投递、auto 模式与 TUI 共用模型
