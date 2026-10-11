@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>解析只给 AI 用</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin:0 0 8px}
+.box{border:1px solid #DFDBD5;border-radius:12px;background:#F7F4ED;padding:14px;display:flex;flex-direction:column;gap:10px}
+.msg{display:flex;gap:8px;align-items:flex-start}
+.av{width:30px;height:30px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;background:#563E84;color:#F7F4ED}
+.ai{background:#FBFAF7;padding:8px 12px;border-radius:8px;border:1px solid #DFDBD5;font-size:13px}
+.cite{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:5px;background:#F2EDE2;border:1px solid #DFDBD5;font-size:12px;color:#2B2621;text-decoration:none}
+.proc{display:flex;align-items:center;gap:8px;min-height:30px;padding:4px 10px;border-radius:999px;background:#E4DDDA;font-size:12px;align-self:flex-start}
+.row{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px;background:#FBFAF7}
+.row:last-child{border-bottom:0}
+.s{font-size:12px;color:#655D53}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-content: start">
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <h2 class="lbl">用户看到的：AI 回答带出处，点了跳到原处</h2>
+    <div class="box">
+      <div class="msg"><span class="av">AI</span><div style="display: flex; flex-direction: column; gap: 6px">
+        <div class="ai">押金 500 元，签约时付，活动后 7 天内退。周禾在讲座里也提过要签约时交。</div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap">
+          <a class="cite" href="Source.dc.html">场地合同.pdf · 第 3 页 ›</a>
+          <a class="cite" href="FileStates.dc.html">讲座录音 · 03:40 ›</a>
+          <a class="cite" href="Library.dc.html">活动预算.xlsx · 预算表 第 4 行 ›</a>
+        </div>
+      </div></div>
+    </div>
+    <div class="s" style="line-height: 1.7">点出处 = 打开普通预览，翻到那一页 / 那一刻 / 那一行，并把那段亮出来（K5）。</div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <h2 class="lbl">各种文件的预览：普通预览就够</h2>
+    <div style="border: 1px solid #DFDBD5; border-radius: 10px; overflow: hidden">
+      <div class="row"><span style="flex: 1">PDF</span><span class="s">翻页，亮出引用的那段</span></div>
+      <div class="row"><span style="flex: 1">Word / Markdown</span><span class="s">文档，能直接改</span></div>
+      <div class="row"><span style="flex: 1">Excel / CSV</span><span class="s">只读表格，按工作表切换</span></div>
+      <div class="row"><span style="flex: 1">PPT</span><span class="s">一页一页看</span></div>
+      <div class="row"><span style="flex: 1">录音 / 视频</span><span class="s">播放器，从引用的那一刻播</span></div>
+      <div class="row"><span style="flex: 1">图片</span><span class="s">看图，可放大</span></div>
+      <div class="row"><span style="flex: 1">其他</span><span class="s">下载 / 用其他应用打开</span></div>
+    </div>
+    <div class="s">选中一段：问 LinX、做成卡片、复制链接。</div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <h2 class="lbl">AI 读文件时：只在聊天的过程条里说一句</h2>
+    <div class="box">
+      <span class="proc">读了 场地合同.pdf 第 2–3 页</span>
+      <span class="proc">正在听 讲座录音（58 分钟）· 第一次要几分钟</span>
+      <span class="proc">讲座录音之前听过，直接用</span>
+      <div class="msg"><span class="av">AI</span><div class="ai">这份 PDF 有密码，我读不了。你把密码发我，或者换一份。</div></div>
+      <div class="msg"><span class="av">AI</span><div class="ai">这种文件我还读不了，你可以说说里面写了什么。</div></div>
+    </div>
+    <div class="s" style="line-height: 1.7">用到才解析：问到哪份、哪几页就读哪些，读过的存在文件旁边，下次直接用；文件改了才重读。用户界面里不出现“解析”“已解析”。</div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

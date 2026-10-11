@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>个人卡片状态与空间设置</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.cap{font-size:13px;font-weight:600;margin:0 0 8px}
+.muted{color:#655D53}
+.av{width:38px;height:38px;border-radius:6px;background:#F7F4ED;box-shadow:inset 0 0 0 1px #87837D;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;position:relative}
+.chipcell{display:flex;flex-direction:column;align-items:center;gap:4px;width:64px;padding:12px 0;background:#E4DDDA;border-radius:8px}
+.lbl{font-size:10px;color:#655D53;line-height:1}
+.card{width:100%;background:#FBFAF7;border:1px solid #DFDBD5;border-radius:12px;overflow:hidden}
+.top{display:flex;gap:12px;padding:16px}
+.big{width:48px;height:48px;border-radius:8px;background:#E0DBDE;display:inline-flex;align-items:center;justify-content:center;font-size:19px;font-weight:600;flex:none}
+.alert{display:flex;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid #DFDBD5;font-size:13px;background:#F2EDE2}
+.alert a{margin-left:auto;font-weight:600;text-decoration:none;white-space:nowrap}
+.grp{background:#FBFAF7;border-radius:10px;overflow:hidden}
+.gr{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border-bottom:1px solid #DFDBD5;font-size:14px}
+.gr:last-child{border-bottom:0}
+.gl{padding:16px 14px 6px;font-size:12px;color:#655D53}
+.v{color:#655D53;font-size:13px}
+.chev{color:#87837D}
+.dot{position:absolute;right:-4px;top:-4px;width:14px;height:14px;border-radius:50%;background:#563E84;color:#F7F4ED;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: flex; gap: 40px; flex-wrap: wrap">
+  <div style="flex: 999 1 760px; min-width: 0; display: flex; flex-direction: column; gap: 28px">
+    <section>
+      <h2 class="cap">rail 头像：正常时不加任何字，有问题时右上角一个标记</h2>
+      <div style="display: flex; gap: 16px; flex-wrap: wrap">
+        <div class="chipcell"><span class="av">林</span><span class="lbl">正常</span></div>
+        <div class="chipcell"><span class="av">林<span class="dot" aria-label="需要处理">!</span></span><span class="lbl">需处理</span></div>
+        <div class="chipcell"><span class="av" style="color: #655D53; opacity: .7">林</span><span class="lbl">没网</span></div>
+      </div>
+      <div class="muted" style="font-size: 12px; margin-top: 6px">下面的标签只是画布说明，界面上没有；名称靠悬停提示和读屏</div>
+    </section>
+
+    <section>
+      <h2 class="cap">个人卡片：正常时只有身份；有问题时多一行，只给一个动作</h2>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px">
+        <div>
+          <div class="muted" style="font-size: 12px; margin-bottom: 6px">AI 还没连接</div>
+          <div class="card">
+            <div class="top"><span class="big">林</span><div><div style="font-weight: 600; font-size: 16px">林舟</div><div class="muted" style="font-size: 12px">linzhou@undefineds.co<br>空间：本机</div></div></div>
+            <div class="alert">AI 还没连接<a href="NotApplied.dc.html">去连接</a></div>
+          </div>
+        </div>
+        <div>
+          <div class="muted" style="font-size: 12px; margin-bottom: 6px">没有网络</div>
+          <div class="card">
+            <div class="top"><span class="big">林</span><div><div style="font-weight: 600; font-size: 16px">林舟</div><div class="muted" style="font-size: 12px">linzhou@undefineds.co<br>空间：云端</div></div></div>
+            <div class="alert">没有网络，修改会在恢复后保存</div>
+          </div>
+        </div>
+        <div>
+          <div class="muted" style="font-size: 12px; margin-bottom: 6px">暂时不能保存</div>
+          <div class="card">
+            <div class="top"><span class="big">林</span><div><div style="font-weight: 600; font-size: 16px">林舟</div><div class="muted" style="font-size: 12px">linzhou@undefineds.co<br>空间：本机</div></div></div>
+            <div class="alert">暂时不能保存到空间<a href="SpaceStates.dc.html">查看</a></div>
+          </div>
+        </div>
+        <div>
+          <div class="muted" style="font-size: 12px; margin-bottom: 6px">本机空间没有启动</div>
+          <div class="card">
+            <div class="top"><span class="big">林</span><div><div style="font-weight: 600; font-size: 16px">林舟</div><div class="muted" style="font-size: 12px">linzhou@undefineds.co<br>空间：本机</div></div></div>
+            <div class="alert">本机空间没有启动<a href="SpaceStates.dc.html">启动</a></div>
+          </div>
+        </div>
+        <div>
+          <div class="muted" style="font-size: 12px; margin-bottom: 6px">还没有空间（新账号）</div>
+          <div class="card">
+            <div class="top"><span class="big">林</span><div><div style="font-weight: 600; font-size: 16px">林舟</div><div class="muted" style="font-size: 12px">linzhou@undefineds.co<br>空间：还没有</div></div></div>
+            <div class="alert">创建空间后才能保存<a href="SpaceStates.dc.html">创建</a></div>
+          </div>
+        </div>
+        <div>
+          <div class="muted" style="font-size: 12px; margin-bottom: 6px">读不到空间列表</div>
+          <div class="card">
+            <div class="top"><span class="big">林</span><div><div style="font-weight: 600; font-size: 16px">林舟</div><div class="muted" style="font-size: 12px">linzhou@undefineds.co<br>空间：未知</div></div></div>
+            <div class="alert">没读到你的空间，不代表没有<a href="SpaceStates.dc.html">重试</a></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="cap">在聊天里遇到时：一条系统提示，修好回到原处</h2>
+      <div style="display: flex; flex-direction: column; gap: 10px; max-width: 560px; padding: 16px; border: 1px solid #DFDBD5; border-radius: 10px">
+        <div style="align-self: flex-end; background: #E0DBDE; padding: 8px 12px; border-radius: 8px; font-size: 13px">把三场活动的报名名单合并一下</div>
+        <div style="align-self: center; font-size: 12px; color: #655D53">AI 还没连接，这条消息没有发给助手 · <a href="NotApplied.dc.html">去连接</a></div>
+      </div>
+    </section>
+  </div>
+
+  <section aria-label="设置：空间与服务" style="flex: 1 1 360px; max-width: 420px; background: #F2EDE2; border-radius: 12px; padding: 0 16px 20px">
+    <div style="height: 56px; display: flex; align-items: center; font-weight: 600; border-bottom: 1px solid #DFDBD5; margin: 0 -16px; padding: 0 16px">设置 › 空间与服务</div>
+    <div class="muted" style="font-size: 12px; padding: 12px 2px 0">详细状态只放在这里</div>
+    <div class="gl">账号</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1">账号</span><span class="v">linzhou@undefineds.co</span></div>
+      <div class="gr"><span style="flex: 1">登录状态</span><span class="v">正常</span></div>
+    </div>
+    <div class="gl">空间</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1">数据保存在</span><span class="v">本机</span><span class="chev">›</span></div>
+      <div class="gr"><span style="flex: 1">可以保存</span><span class="v">是</span></div>
+      <div class="gr"><span style="flex: 1">外部访问</span><span class="v">未开启</span><span class="chev">›</span></div>
+    </div>
+    <div class="gl">AI</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1">模型连接</span><span class="v">未连接</span><span class="chev">›</span></div>
+      <div class="gr"><span style="flex: 1">LinX 助手</span><span class="v">已准备</span></div>
+    </div>
+    <div class="gl">本机服务</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1">运行状态</span><span class="v">运行中</span><span class="chev">›</span></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

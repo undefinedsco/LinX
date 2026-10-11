@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>卡片弹窗（从表格）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+table{border-collapse:collapse;font-size:13px;min-width:100%}
+th{font-size:12px;color:#655D53;font-weight:500;text-align:left;padding:0 12px;height:36px;border-bottom:1px solid #DFDBD5;background:#F2EDE2;white-space:nowrap}
+td{padding:0 12px;height:40px;border-bottom:1px solid #EAE5DC;white-space:nowrap}
+.ib{width:30px;height:30px;border:0;border-radius:6px;background:transparent;color:#655D53;display:inline-flex;align-items:center;justify-content:center;padding:0;text-decoration:none}
+.pr{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;min-height:32px;font-size:13px}
+.pk{color:#655D53;display:flex;align-items:center;gap:6px}
+.pill{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:4px;background:#E0DBDE;font-size:12px;margin-right:4px}
+.v{color:#655D53}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="files" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="FilesNav" selected="cards" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：卡片表格" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px; position: relative">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid #DFDBD5">
+      <span class="v" style="font-size: 13px">LinX 助手 /</span>
+      <h1 style="margin: 0; font-size: 15px; font-weight: 600">记住的</h1>
+      <span class="v" style="font-size: 12px">12 条 · 你在消息上点“记住”的都写在 LinX 自己的文件夹里</span>
+    </header>
+    <div aria-hidden="true" style="overflow: hidden">
+      <table>
+        <thead><tr><th>名称</th><th>什么时候用</th><th>来自</th><th>修改</th></tr></thead>
+        <tbody>
+          <tr style="background: #E4DDDA"><td style="font-weight: 500">维护成本</td><td>小团队、低频活动</td><td># 秋季读书会报名</td><td>9月30日</td></tr>
+          <tr><td style="font-weight: 500">排班不设最低次数</td><td>志愿者排班</td><td># 排班规则</td><td>今天</td></tr>
+          <tr><td style="font-weight: 500">报名截止设在活动前 2 天</td><td>报名</td><td># 秋季读书会报名</td><td>周二</td></tr>
+          <tr><td style="font-weight: 500">海报先给周禾过目</td><td>对外物料</td><td>书店活动组</td><td>9月20日</td></tr>
+          <tr><td style="font-weight: 500; color: #655D53">排班至少 2 次</td><td style="color: #655D53">已替换</td><td>—</td><td>9月12日</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="position: absolute; inset: 56px 0 0 0; background: rgb(43 38 33 / .22); display: flex; justify-content: center; align-items: flex-start; padding-top: 28px">
+      <div role="dialog" aria-labelledby="card-title" style="width: 960px; max-width: calc(100% - 48px); max-height: 820px; overflow: auto; background: #FBFAF7; border-radius: 12px; box-shadow: 0 20px 48px rgb(43 38 33 / .22); display: flex; flex-direction: column">
+        <div style="display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid #EAE5DC">
+          <button class="ib" aria-label="上一张">‹</button><button class="ib" aria-label="下一张">›</button>
+          <span class="v" style="font-size: 12px">1 / 12 · 自动保存</span>
+          <span style="flex: 1"></span>
+          <a class="ib" href="CardStates.dc.html" aria-label="展开成整页"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></a>
+          <button class="ib" aria-label="更多"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg></button>
+          <button class="ib" aria-label="关闭"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+        </div>
+        <div style="padding: 28px 72px 32px; display: flex; flex-direction: column; gap: 14px">
+          <h2 id="card-title" style="margin: 0; font-size: 24px; font-weight: 600">维护成本</h2>
+          <div style="font-size: 15px; line-height: 1.75; display: flex; flex-direction: column; gap: 10px">
+            <p style="margin: 0">小团队不为一次活动承担长期维护负担。现成工具能满足必要需求时，优先用现成的。</p>
+            <blockquote style="margin: 0; padding: 2px 0 2px 14px; box-shadow: inset 2px 0 0 #563E84">“我们就两个人，搭个报名系统以后谁来维护？用现成的表单就行。”<div class="v" style="font-size: 12px">你在聊天里说的 · 9月30日</div></blockquote>
+            <p style="margin: 0; font-weight: 600">例外</p>
+            <ul style="margin: 0; padding-left: 22px"><li>有必须满足的要求、现成工具做不到时，重新评估</li></ul>
+            <p class="v" style="margin: 0; font-size: 13px">输入 / 插入标题、列表、引用、卡片链接</p>
+          </div>
+          <div style="display: flex; flex-direction: column; border-top: 1px solid #EAE5DC; padding: 8px 0 0">
+            <div class="v" style="font-size: 12px; padding-bottom: 4px">属性</div>
+            <div class="pr"><span class="pk">谁记的</span><span>你点了“记住” <span class="v">· 9月30日</span></span></div>
+            <div class="pr"><span class="pk">什么时候用</span><span>小团队、低频活动、现成工具够用</span></div>
+            <div class="pr"><span class="pk">来源</span><span><a href="Conversation.dc.html">LinX 助手 · # 秋季读书会报名</a></span></div>
+            <div class="pr"><span class="pk">在白板上</span><span><a href="Board.dc.html">志愿者排班</a></span></div>
+            <div class="pr"><span class="pk" style="color: #563E84">+ 属性</span><span></span></div>
+          </div>
+          <div style="border-top: 1px solid #EAE5DC; padding-top: 12px; font-size: 13px" class="v">被 3 处引用 · 用过它的工作 4 次 <a href="CardStates.dc.html" style="margin-left: 6px">看全部</a></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1167 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-10T09:00:00Z"
+  },
+  "title": "LinX R6 交互稿",
+  "launch": {
+    "view": "canvas",
+    "page": "shell"
+  },
+  "pages": [
+    {
+      "id": "shell",
+      "name": "全局"
+    },
+    {
+      "id": "work",
+      "name": "聊天与工作"
+    },
+    {
+      "id": "knowledge",
+      "name": "文件与收藏"
+    },
+    {
+      "id": "myai",
+      "name": "我的 AI（先不做）"
+    }
+  ],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "S1 聊天首页（四栏框架）",
+      "page": "shell",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Nav.dc.html": {
+      "x": -144,
+      "y": 0,
+      "w": 64,
+      "h": 900,
+      "title": "S0 Rail",
+      "page": "shell",
+      "is_interactive": true
+    },
+    "Search.dc.html": {
+      "x": 0,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "S2 全局查找",
+      "page": "shell",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Space.dc.html": {
+      "x": 0,
+      "y": 2040,
+      "w": 1440,
+      "h": 900,
+      "title": "S3 个人卡片",
+      "page": "shell",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "SignOut.dc.html": {
+      "x": 0,
+      "y": 3060,
+      "w": 1440,
+      "h": 900,
+      "title": "S4 退出登录",
+      "page": "shell",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ChatList.dc.html": {
+      "x": -504,
+      "y": 1020,
+      "w": 280,
+      "h": 900,
+      "title": "S0b 会话列表组件",
+      "page": "shell",
+      "is_interactive": true
+    },
+    "ListMenus.dc.html": {
+      "x": 2160,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "S1b 列表交互细节",
+      "page": "shell",
+      "expand": "fill"
+    },
+    "ListStates.dc.html": {
+      "x": 3680,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "S1c 列表与会话状态",
+      "page": "shell",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "SpaceStates.dc.html": {
+      "x": 2160,
+      "y": 2040,
+      "w": 1440,
+      "h": 900,
+      "title": "S3b 个人卡片状态与空间设置",
+      "page": "shell",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Narrow.dc.html": {
+      "x": 0,
+      "y": 4080,
+      "w": 390,
+      "h": 844,
+      "title": "S5 窄窗任务切面 390",
+      "page": "shell"
+    },
+    "Conversation.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "W1 AI 工作会话",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ConversationStates.dc.html": {
+      "x": 2160,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "W1b 过程条与消息状态",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Decision.dc.html": {
+      "x": 0,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "W2 会话内审批与输入",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "DecisionStates.dc.html": {
+      "x": 2160,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "W2b 审批与输入卡状态",
+      "page": "work",
+      "expand": "fill"
+    },
+    "Correction.dc.html": {
+      "x": 0,
+      "y": 2040,
+      "w": 1440,
+      "h": 900,
+      "title": "W3 纠正：消息上的“记住”",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "CorrectionStates.dc.html": {
+      "x": 2160,
+      "y": 2040,
+      "w": 1440,
+      "h": 900,
+      "title": "W3b 记住与记忆",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Artifact.dc.html": {
+      "x": 0,
+      "y": 3060,
+      "w": 1440,
+      "h": 900,
+      "title": "W4 干完了发文件",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ArtifactStates.dc.html": {
+      "x": 2160,
+      "y": 3060,
+      "w": 1440,
+      "h": 900,
+      "title": "W4b 文件消息状态",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "People.dc.html": {
+      "x": 0,
+      "y": 4080,
+      "w": 1440,
+      "h": 900,
+      "title": "W5 联系人",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "PeopleStates.dc.html": {
+      "x": 2160,
+      "y": 4080,
+      "w": 1440,
+      "h": 900,
+      "title": "W5b 助手、群、新朋友与状态",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Welcome.dc.html": {
+      "x": 0,
+      "y": -1520,
+      "w": 1440,
+      "h": 900,
+      "title": "W0 第一次打开：LinX 先打招呼",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "WelcomeStates.dc.html": {
+      "x": 2160,
+      "y": -1520,
+      "w": 1440,
+      "h": 900,
+      "title": "W0b 欢迎之后",
+      "page": "work",
+      "expand": "fill"
+    },
+    "InboxAudit.dc.html": {
+      "x": 3680,
+      "y": 6120,
+      "w": 1440,
+      "h": 900,
+      "title": "W7c LinX 自动通过的：拿出来复查",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "CardCatalog.dc.html": {
+      "x": 3680,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "W2c 消息里的卡片：A2UI × RDF",
+      "page": "work",
+      "expand": "fill"
+    },
+    "PeopleSolid.dc.html": {
+      "x": 3680,
+      "y": 4080,
+      "w": 1440,
+      "h": 900,
+      "title": "W5c AI 助手、通话与空间权限",
+      "page": "work",
+      "expand": "fill"
+    },
+    "Tasks.dc.html": {
+      "x": 0,
+      "y": 5100,
+      "w": 1440,
+      "h": 900,
+      "title": "W6 持续任务与运行",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "TasksStates.dc.html": {
+      "x": 2160,
+      "y": 5100,
+      "w": 1440,
+      "h": 900,
+      "title": "W6b 持续任务状态",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Inbox.dc.html": {
+      "x": 0,
+      "y": 6120,
+      "w": 1440,
+      "h": 900,
+      "title": "W7 收件箱",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "InboxStates.dc.html": {
+      "x": 2160,
+      "y": 6120,
+      "w": 1440,
+      "h": 900,
+      "title": "W7b 收件箱状态与活动记录",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "FilesNav.dc.html": {
+      "x": -360,
+      "y": 0,
+      "w": 280,
+      "h": 900,
+      "title": "K0 文件左边栏：搜索 + 文件夹树",
+      "page": "knowledge",
+      "is_interactive": true
+    },
+    "Library.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "K1 文件首页 = 文件夹（表格视图）",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "LibraryStates.dc.html": {
+      "x": 2160,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "K1b 新建、上传、空、没网与共享",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Card.dc.html": {
+      "x": 0,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "K2 卡片弹窗（从表格）",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "CardStates.dc.html": {
+      "x": 2160,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "K2b 卡片状态（改动、版本、撤回）",
+      "page": "knowledge",
+      "expand": "fill"
+    },
+    "SearchScope.dc.html": {
+      "x": 0,
+      "y": 2040,
+      "w": 1440,
+      "h": 900,
+      "title": "K3 文件里的搜索",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "SearchStates.dc.html": {
+      "x": 2160,
+      "y": 2040,
+      "w": 1440,
+      "h": 900,
+      "title": "K3b 搜索状态",
+      "page": "knowledge",
+      "expand": "fill"
+    },
+    "Board.dc.html": {
+      "x": 0,
+      "y": 3060,
+      "w": 1440,
+      "h": 900,
+      "title": "K4 白板视图（Heptabase 式）",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "BoardStates.dc.html": {
+      "x": 2160,
+      "y": 3060,
+      "w": 1440,
+      "h": 900,
+      "title": "K4b 白板状态",
+      "page": "knowledge",
+      "expand": "fill"
+    },
+    "Source.dc.html": {
+      "x": 0,
+      "y": 4080,
+      "w": 1440,
+      "h": 900,
+      "title": "K5 AI 引用：弹出预览，跳到那一段",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "SourceStates.dc.html": {
+      "x": 2160,
+      "y": 4080,
+      "w": 1440,
+      "h": 900,
+      "title": "K5b 解析只给 AI 用",
+      "page": "knowledge",
+      "expand": "fill"
+    },
+    "TagTable.dc.html": {
+      "x": 0,
+      "y": 5100,
+      "w": 1440,
+      "h": 900,
+      "title": "K6 表格视图：表头就是属性",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "TagStates.dc.html": {
+      "x": 2160,
+      "y": 5100,
+      "w": 1440,
+      "h": 900,
+      "title": "K6b 加行、加列、加表",
+      "page": "knowledge",
+      "expand": "fill"
+    },
+    "TagMore.dc.html": {
+      "x": 5200,
+      "y": 5100,
+      "w": 1440,
+      "h": 900,
+      "title": "K6d 看板视图、表头菜单与保存状态",
+      "page": "knowledge",
+      "expand": "fill"
+    },
+    "Vocab.dc.html": {
+      "x": 3680,
+      "y": 5100,
+      "w": 1440,
+      "h": 900,
+      "title": "K6c 词表文件夹：属性 / 类型 / 命名空间",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Favorites.dc.html": {
+      "x": 0,
+      "y": 6120,
+      "w": 1440,
+      "h": 900,
+      "title": "K7 收藏",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "FavoritesStates.dc.html": {
+      "x": 2160,
+      "y": 6120,
+      "w": 1440,
+      "h": 900,
+      "title": "K7b 收藏状态",
+      "page": "knowledge",
+      "expand": "fill"
+    },
+    "AINav.dc.html": {
+      "x": -360,
+      "y": 0,
+      "w": 280,
+      "h": 900,
+      "title": "A0 我的 AI 左边栏组件",
+      "page": "myai",
+      "is_interactive": true
+    },
+    "MyAI.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "A1 我的 AI 概览",
+      "page": "myai",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "MyAIStates.dc.html": {
+      "x": 2160,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "A1b 概览状态",
+      "page": "myai",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Method.dc.html": {
+      "x": 0,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "A2 做事的方法",
+      "page": "myai",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "MethodStates.dc.html": {
+      "x": 2160,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "A2b 方法保存、范围与冲突",
+      "page": "myai",
+      "expand": "fill"
+    },
+    "Model.dc.html": {
+      "x": 0,
+      "y": 2040,
+      "w": 1440,
+      "h": 900,
+      "title": "A3 个人模型（现在：准备材料）",
+      "page": "myai",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ModelStates.dc.html": {
+      "x": 2160,
+      "y": 2040,
+      "w": 1440,
+      "h": 900,
+      "title": "A3b 个人模型（接通后）",
+      "page": "myai",
+      "expand": "fill"
+    },
+    "NotApplied.dc.html": {
+      "x": 0,
+      "y": 3060,
+      "w": 1440,
+      "h": 900,
+      "title": "A4 本次未使用个人模型",
+      "page": "myai",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "NotAppliedStates.dc.html": {
+      "x": 2160,
+      "y": 3060,
+      "w": 1440,
+      "h": 900,
+      "title": "A4b 执行条件与模型连接",
+      "page": "myai",
+      "expand": "fill"
+    },
+    "Grants.dc.html": {
+      "x": 0,
+      "y": 10200,
+      "w": 1440,
+      "h": 900,
+      "title": "K11 授权：哪些事 LinX 自己判断",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Profile.dc.html": {
+      "x": 2160,
+      "y": 3060,
+      "w": 1440,
+      "h": 900,
+      "title": "S3c 编辑个人资料",
+      "page": "shell",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "NarrowMore.dc.html": {
+      "x": 2160,
+      "y": 4080,
+      "w": 1760,
+      "h": 920,
+      "title": "S5b 窄窗其他页（390）",
+      "page": "shell",
+      "is_interactive": true
+    },
+    "Medium1180.dc.html": {
+      "x": 0,
+      "y": 5120,
+      "w": 1180,
+      "h": 800,
+      "title": "S5c 中等宽度 1180",
+      "page": "shell",
+      "is_interactive": true
+    },
+    "Medium768.dc.html": {
+      "x": 1260,
+      "y": 5120,
+      "w": 768,
+      "h": 1024,
+      "title": "S5d 中等宽度 768",
+      "page": "shell",
+      "is_interactive": true
+    },
+    "Login.dc.html": {
+      "x": 0,
+      "y": 6264,
+      "w": 1440,
+      "h": 900,
+      "title": "S6 登录：先选数据放哪",
+      "page": "shell",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "LoginStates.dc.html": {
+      "x": 2160,
+      "y": 6264,
+      "w": 1440,
+      "h": 900,
+      "title": "S6b 登录与空间准备状态",
+      "page": "shell",
+      "expand": "fill"
+    },
+    "Settings.dc.html": {
+      "x": 0,
+      "y": 7284,
+      "w": 1440,
+      "h": 900,
+      "title": "S7 设置",
+      "page": "shell",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "SettingsStates.dc.html": {
+      "x": 2160,
+      "y": 7284,
+      "w": 1440,
+      "h": 900,
+      "title": "S7b 本机服务、外部访问与更新",
+      "page": "shell",
+      "expand": "fill"
+    },
+    "GroupChat.dc.html": {
+      "x": 0,
+      "y": 7140,
+      "w": 1440,
+      "h": 900,
+      "title": "W8 群聊",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "GroupChatStates.dc.html": {
+      "x": 2160,
+      "y": 7140,
+      "w": 1440,
+      "h": 900,
+      "title": "W8b 群聊、私聊与助手在群里",
+      "page": "work",
+      "expand": "fill"
+    },
+    "NewChat.dc.html": {
+      "x": 0,
+      "y": 8160,
+      "w": 1440,
+      "h": 900,
+      "title": "W9 新建：找人聊天、发起群聊、新的 AI 工作",
+      "page": "work",
+      "expand": "fill"
+    },
+    "Coding.dc.html": {
+      "x": 0,
+      "y": 9180,
+      "w": 1440,
+      "h": 900,
+      "title": "W10 让编程工具在文件夹里干活",
+      "page": "work",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "CodingStates.dc.html": {
+      "x": 2160,
+      "y": 9180,
+      "w": 1440,
+      "h": 900,
+      "title": "W10b 编程工具状态",
+      "page": "work",
+      "expand": "fill"
+    },
+    "FileOpen.dc.html": {
+      "x": 0,
+      "y": 7140,
+      "w": 1440,
+      "h": 900,
+      "title": "K8 卡片弹窗（从文件夹）",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "FileStates.dc.html": {
+      "x": 2160,
+      "y": 7140,
+      "w": 1440,
+      "h": 900,
+      "title": "K8b 打开方式、媒体卡片、操作与状态",
+      "page": "knowledge",
+      "expand": "fill"
+    },
+    "Share.dc.html": {
+      "x": 0,
+      "y": 8160,
+      "w": 1440,
+      "h": 900,
+      "title": "K9 共享",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ShareStates.dc.html": {
+      "x": 2160,
+      "y": 8160,
+      "w": 1440,
+      "h": 900,
+      "title": "K9b 共享状态",
+      "page": "knowledge",
+      "expand": "fill"
+    },
+    "Proposal.dc.html": {
+      "x": 0,
+      "y": 9180,
+      "w": 1440,
+      "h": 900,
+      "title": "K10 AI 改的：未确认草稿",
+      "page": "knowledge",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ProposalStates.dc.html": {
+      "x": 2160,
+      "y": 9180,
+      "w": 1440,
+      "h": 900,
+      "title": "K10b AI 改动：保留、撤销、表格",
+      "page": "knowledge",
+      "expand": "fill"
+    }
+  },
+  "order": [
+    "Nav.dc.html",
+    "ChatList.dc.html",
+    "Main.dc.html",
+    "ListMenus.dc.html",
+    "ListStates.dc.html",
+    "Search.dc.html",
+    "Space.dc.html",
+    "SpaceStates.dc.html",
+    "SignOut.dc.html",
+    "Narrow.dc.html",
+    "Conversation.dc.html",
+    "ConversationStates.dc.html",
+    "Decision.dc.html",
+    "DecisionStates.dc.html",
+    "Correction.dc.html",
+    "CorrectionStates.dc.html",
+    "Artifact.dc.html",
+    "ArtifactStates.dc.html",
+    "People.dc.html",
+    "PeopleStates.dc.html",
+    "Tasks.dc.html",
+    "TasksStates.dc.html",
+    "Inbox.dc.html",
+    "InboxStates.dc.html",
+    "FilesNav.dc.html",
+    "Library.dc.html",
+    "LibraryStates.dc.html",
+    "Card.dc.html",
+    "CardStates.dc.html",
+    "SearchScope.dc.html",
+    "SearchStates.dc.html",
+    "Board.dc.html",
+    "BoardStates.dc.html",
+    "Source.dc.html",
+    "SourceStates.dc.html",
+    "TagTable.dc.html",
+    "TagStates.dc.html",
+    "Favorites.dc.html",
+    "FavoritesStates.dc.html",
+    "AINav.dc.html",
+    "MyAI.dc.html",
+    "MyAIStates.dc.html",
+    "Method.dc.html",
+    "MethodStates.dc.html",
+    "Model.dc.html",
+    "ModelStates.dc.html",
+    "NotApplied.dc.html",
+    "NotAppliedStates.dc.html",
+    "Grants.dc.html",
+    "Profile.dc.html",
+    "NarrowMore.dc.html",
+    "Medium1180.dc.html",
+    "Medium768.dc.html",
+    "Login.dc.html",
+    "LoginStates.dc.html",
+    "Settings.dc.html",
+    "SettingsStates.dc.html",
+    "Welcome.dc.html",
+    "WelcomeStates.dc.html",
+    "InboxAudit.dc.html",
+    "CardCatalog.dc.html",
+    "PeopleSolid.dc.html",
+    "GroupChat.dc.html",
+    "GroupChatStates.dc.html",
+    "NewChat.dc.html",
+    "Coding.dc.html",
+    "CodingStates.dc.html",
+    "Vocab.dc.html",
+    "TagMore.dc.html",
+    "FileOpen.dc.html",
+    "FileStates.dc.html",
+    "Share.dc.html",
+    "ShareStates.dc.html",
+    "Proposal.dc.html",
+    "ProposalStates.dc.html"
+  ],
+  "notes": {
+    "tShell": {
+      "x": 0,
+      "y": -300,
+      "text": "全局：rail、查找、身份、登录与设置",
+      "kind": "title1",
+      "maxW": 2080,
+      "page": "shell"
+    },
+    "tWork": {
+      "x": 0,
+      "y": -1820,
+      "text": "聊天与工作：欢迎、会话、群聊、决定、联系人与任务",
+      "kind": "title1",
+      "maxW": 2080,
+      "page": "work"
+    },
+    "tKnowledge": {
+      "x": 0,
+      "y": -300,
+      "text": "文件与收藏：搜索 + 文件夹树；表格、看板、白板都是视图（Heptabase × Solid）",
+      "kind": "title1",
+      "maxW": 2080,
+      "page": "knowledge"
+    },
+    "tMyAI": {
+      "x": 0,
+      "y": -300,
+      "text": "我的 AI：方法与个人模型",
+      "kind": "title1",
+      "maxW": 2080,
+      "page": "myai",
+      "title1": "我的 AI：先不做（2026-10-11）"
+    },
+    "nS0": {
+      "x": -440,
+      "y": 0,
+      "w": 260,
+      "size": "s",
+      "page": "shell",
+      "text": "S0 Rail（公共组件，对齐微信）\n· 头像在最上；正常时不加字，有问题时右上角一个标记\n· 上半部分：聊天 / 联系人 / 文件 / 收藏\n· 下半部分：收件箱（待决定数）/ 设置\n· 只有图标，名称靠悬停提示和读屏标签\n· 搜索在左边栏顶部\n已定：不要文字。\n已定：“我的 AI”先不做（2026-10-11），下半部分只有收件箱和设置。"
+    },
+    "nS1": {
+      "x": 1520,
+      "y": 0,
+      "w": 560,
+      "size": "m",
+      "page": "shell",
+      "text": "S1 聊天首页（四栏框架）\n· 四栏：rail / 左边栏 / 内容栏 / 右边栏，三栏的头统一 56px，底边对齐\n· 列表是微信式扁平行（64px），不用卡片；选中 = 底色 + 左侧细线\n· 一个身份一个入口：每个助手、每个人、每个群在列表里只占一行；同一个助手的不同工作是它下面的话题\n· 话题不进列表：标题旁“# 话题 ▾”切换（任何宽度都能用，修复审查 B4）\n· 右边栏 = 聊天信息（同微信）：助手、做事的方法、执行条件、查找聊天记录（含文件、图片）、标星、免打扰、删除会话；持续任务、编程工具在跑时多一组\n· 右边不放话题列表：话题在标题旁“# 话题 ▾”切换，带搜索和状态\n· 交互细节见 S1b，空/加载/离线/失败/删除/无权限见 S1c\n依据：§3.1、AC01、RD11\n已定：聊天信息默认收起，点标题栏按钮打开，记住上次；窄于 1280 时浮在内容上。这张画的是打开时的样子。\n已定：持续任务就是 LinX 下的一个话题，没有单独入口，跟 LinX 说就行，它回一张计划卡确认（W6）。"
+    },
+    "nS2": {
+      "x": 1520,
+      "y": 1020,
+      "w": 560,
+      "size": "m",
+      "page": "shell",
+      "text": "S2 搜索（左边栏搜索框展开）\n· 点左边栏搜索框，在原位置展开成搜索面板，同微信；⌘K 也能打开\n· 分组：会话 / 联系人与群 / 文件与卡片，每组几条，“查看全部”进文件里的范围搜索\n· 覆盖不全时底部一行说明（例如文件正文还在建索引）\n· 组件：cmdk（已在依赖中，现在没用上）\n依据：AC01、F02\n默认（待确认）：包含文件正文；xpod 索引没建好的部分只搜标题，并在底部一行说明。"
+    },
+    "nS3": {
+      "x": 1520,
+      "y": 2040,
+      "w": 560,
+      "size": "m",
+      "page": "shell",
+      "text": "S3 个人卡片（点 rail 头像，对齐微信）\n· 只放头像、名字、账号、空间在哪、签名 + 编辑个人资料 / 设置 / 切换账号 / 退出\n· 运维状态不放这里：正常时不显示；有问题时卡片多一行，只给一个动作（见 S3b）\n· 详细状态收进 设置 › 空间与服务\n· 替换现在固定写“已连接”的徽标\n依据：LS09、RD12、§3.4\n默认（待确认）：头像下不显示“本机”等字，和 rail 去文字一致；空间在哪写在卡片里，有问题时头像右上角加标记。"
+    },
+    "nS4": {
+      "x": 1520,
+      "y": 3060,
+      "w": 560,
+      "size": "m",
+      "page": "shell",
+      "text": "S4 退出登录（苹果式确认框）\n· 只说两件事：草稿会保留（只有你能看到）、正在运行的任务会继续\n· 默认保留草稿；“放弃草稿并退出”是次要链接\n· 没有草稿也没有运行中的任务时，直接简单确认\n· 确认后立即隐藏私密内容\n依据：LS11、RD10、§3.4\n默认（待确认）：保留草稿。"
+    },
+    "nS5": {
+      "x": 1520,
+      "y": 4080,
+      "w": 560,
+      "size": "m",
+      "page": "shell",
+      "text": "S5 窄窗（390）任务切面\n· 不压缩所有列：一次只显示一层，顶部明确返回\n· 底部四项同微信：聊天 / 联系人 / 文件 / 我（收藏、设置在“我”里）\n· 收件箱在头部\n· 只代表窄窗适配，不是独立手机版\n· 会话列表、联系人、文件、“我”这几页见 S5b\n依据：§6 窄窗规则、AC02\n默认（待确认）：第四项用“我”，收藏、设置在里面（同微信手机版）；窄窗底栏保留文字，和微信手机版一致。"
+    },
+    "nW1": {
+      "x": 1520,
+      "y": 0,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W1 AI 工作会话\n· 微信式气泡：我在右、助手在左，都带头像\n· AI 的过程收成一行“正在对比三种工具 · 第 2 步”，点开看步骤；详细记录再点一层\n· 附件像微信文件条：读不了的就地“重试 / ×”，不挡发送\n· 进行中可“停止”；聊天信息默认收起（见 S1）\n· 干完了直接在会话里发文件（W4）\n· 所有状态见 W1b（等你决定、失败、停止中、已停止、连接中断、完成、没用个人模型、消息发送失败、分支、右键菜单、收藏）\n依据：F01、LW01、LW02、RD03\n默认（待确认）：进行中展开步骤，完成后自动收起成一行。"
+    },
+    "nW2": {
+      "x": 1520,
+      "y": 1020,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W2 会话内审批与输入\n· 审批卡只有：一句问题、一句后果、拒绝 / 批准；收件人等放进“详情”\n· 等待输入：卡里直接选或填，提交后回到同一次运行（修复审查 B2）\n· 也可以直接打字回答\n· 同一请求在收件箱长得一样，处理一处两边同步\n· 等你判断的：拒绝 / 批准这一次，可勾“以后这类交给 LinX 判断”（授权，K11）；没有过期自动通过\n· LinX 有授权的：按把握留判断时间（高 10 分钟、中 2 小时、低不自动），到点没人管就自动批准；之前可以现在批准、拒绝或“我来判断”\n· 消息里的卡片怎么做（A2UI，数据绑定 Pod 里的 RDF 资源）见 W2c\n· 12 种状态见 W2b（展开、提交中、已批准、已拒绝、另一处已处理、过期、撤回、提交失败、执行失败、已回答、私密输入、外部登录）\n依据：F05、RD05、AC05、AC08\n默认（待确认）：拒绝后继续不依赖这一步的部分，过程条写明“没发邀请”。"
+    },
+    "nW3": {
+      "x": 1520,
+      "y": 2040,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W3 纠正：改完就用，记住靠消息上的按钮\n· 你改了 AI 的结果，LinX 改好这次，什么都不弹\n· 想让以后都这样：在那条消息上点“记住”（悬停工具条：复制 / 记住 / 收藏 / ⋯）\n· 记住的写进 LinX 自己的文件夹（文件 › LinX 助手 › 记住的），以后的工作会用；和记过的相反就替换，旧的标“已替换”\n· 点赞、没回复、批准执行都不算记住，也不进训练\n· 状态见 W3b（记住了、替换、记过了、没记住、群聊里、记忆表）\n依据：F01、RD04、AC03\n已定：记录无感，只在消息上给一个“记住”按钮。"
+    },
+    "nW4": {
+      "x": 1520,
+      "y": 3060,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W4 干完了发文件（同微信发文件）\n· AI 写长东西时直接写成文件，干完在会话里发一条文件消息\n· 文件就在 文件 › 聊天文件 › 这个会话；点开是文件页（K8），左上回到对话\n· 没有“草稿 / 保存 / 版本”这些额外状态；想放到别处就“移到…”\n· 让 AI 再改就引用文件说，改的是同一个文件\n· 短回答还是消息，不变成文件\n· 正在写、多个文件、没写成、右键菜单、被删、群里发见 W4b\n依据：RD03、LW10（按你的决定简化）\n已定：成果就是文件，干完发出来；界面不出现“成果”这个词。\n已定：AI 改它自己在这次对话写的文件直接改；你改过之后再改，先当未确认的草稿，你保留或撤销（K10）。"
+    },
+    "nW5": {
+      "x": 1520,
+      "y": 4080,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W5 联系人（对齐微信通讯录）\n· 助手当人看：和人在同一个列表里按名字排，不分页、不打标签，只有头像不同（墨紫底“AI”）；上面是新的朋友、群聊\n· 详情（人和助手一样）：发消息 / 语音通话 / 视频通话；助手多“做事的方法、执行条件”两行\n· 添加朋友：先粘贴对方的 WebID，按名字搜索以后再做\n· “TA 的空间与权限”一组（Solid）：账号地址、资料来自 TA 的公开资料（可刷新）、TA 共享给我的、我共享给 TA 的、TA 在我空间里能做什么、在我的公开资料里显示 TA\n· 删除联系人时可以一并收回共享\n· 联系人页没有右边栏（没内容就不占位）\n· 助手、群详情、新朋友、添加朋友、创建助手、读不到资料见 W5b；AI 助手列表、别人的助手、权限、通话、删除见 W5c\n· 助手改名、换模型都不改身份和记录\n依据：AC01、LS03、§3.1、Solid 访问控制\n已定：助手当人看，只靠头像区分；通话服务没接通前按钮照常显示，点了如实说“暂时不能打”。"
+    },
+    "nW6": {
+      "x": 1520,
+      "y": 5100,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W6 持续任务（就是一个会定时运行的话题）\n· 标题旁“每周一 9:00”；每次运行在会话里一段，进行中可“停止这一次”\n· 右边栏：重复、下一次、“以后自动运行”开关、最近运行\n· 开关只管以后，不停正在跑的这次；停止这次也不影响以后\n· 没有单独的任务入口：跟 LinX 说“每周一 9 点…”，它回一张计划卡（A2UI，绑计划资源）确认，就成了 LinX 下的一个话题\n· 状态见 W6b（等你、停止中、已停止、没成功、结果不确定、已暂停、错过、重叠、不支持的重复方式、编辑计划、计划卡）\n· 替换现在面向开发者的 worker 面板\n依据：F05、AC08、DEP05\n默认（待确认）：错过和重叠的规则由任务 owner 定，界面只显示，不自己补跑。"
+    },
+    "nW7": {
+      "x": 1520,
+      "y": 6120,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W7 收件箱（rail 下半部分）\n· 左边栏只有“待处理 / 已处理”两页；每行写清要你做什么：批准 / 回答 / 登录（AI 改文件不进收件箱，在文件里当未确认草稿，K10）\n· 下面一组“LinX 会自动通过”：有授权的请求，写着多久后自动通过，可以提前批准、拒绝或改成我来判断；不算进待处理数\n· 内容栏就是同一张卡片放大（拒绝 / 批准这一次 / 勾“以后这类交给 LinX 判断”），处理后会话里同步\n· 所有审批都在这里；已处理里写清是你批的还是 LinX 替你批的\n· LinX 替你批的可以单独拿出来复查（W7c）：为什么批（引用做事的方法）、做了什么、没问题 / 以后这类都问我\n· 审计不进待办，放到左边栏底部“活动记录”\n· 状态见 W7b（空、已处理、别处已处理、过期、没网、活动记录）\n依据：§3.4、LW08、AC05、AC08；审查 B2\n已定（随 W3）：“记下来”直接生效，没有待整理，所以不进收件箱。"
+    },
+    "nK1": {
+      "x": 1520,
+      "y": 0,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K1 文件首页 = 文件夹（列表视图）\n· 左边栏只有两样：搜索 + 文件夹树（K0），和现在的代码一致；“词表”“共享给我”也在树里\n· 打开文件夹是 Finder 式列表：名称、类型、修改、谁能看\n· 右上是视图：表格 / 白板 / + 视图；文件夹的表格就是文件当行、属性当列（不再单独有“列表”）；看板、白板都只是同一份东西的不同视图，存在你的空间里\n· 空间里的东西都是卡片：文件是卡片，表格的每一行也是卡片；没有单独的“卡片”文件夹。空间里的东西就是你和 LinX 共同的记忆\n· 每个助手有自己的文件夹（LinX 助手）：授权、记住的都在里面，也能当表格看\n· 单击选中、右边预览；双击打开卡片弹窗（K8），要整页点“展开”；左边树只放文件夹和表格\n· 新建、上传、空、没网、共享权限变化见 K1b\n依据：§3.2、RD07；审查 §3\n已定：第一视图是搜索 + 文件夹树。"
+    },
+    "nK2": {
+      "x": 1520,
+      "y": 1020,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K2 卡片弹窗（从表格打开，Heptabase 式）\n· 表格里点一行的“打开”，弹出卡片，不离开表格；‹ › 翻上一张、下一张\n· 先是富文本正文（BlockNote），属性放在正文后面（就是这张表的列，可直接改，可“+ 属性”）\n· 判断卡的原话、例外写在正文里；底部是被引用、用过它的工作\n· 弹窗默认大：几乎占满内容栏（约 960 宽），右上“展开”变整页；改动自动保存\n· 改已确认的卡片、版本、相反判断、多设备冲突、撤回见 K2b\n依据：F02、RD07、LW05\n已定：卡片用弹窗 + 富文本编辑框。"
+    },
+    "nK3": {
+      "x": 1520,
+      "y": 2040,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K3 文件里的搜索\n· 标题栏：搜索框 + “范围：我的空间 ▾”\n· 覆盖不全时只多一行灰字说明；结果是扁平列表，右边栏说明为什么匹配\n· 没权限的只给数量；共享给我的要你点才搜\n· 范围菜单、这里没有、没建索引、看不了、没网、出错见 K3b\n· 已加载范围用 Orama 或 MiniSearch；全空间复用 xpod 索引\n依据：F02、AC04、LW06\n默认（待确认）：不包含，点一下才搜。"
+    },
+    "nK4": {
+      "x": 1520,
+      "y": 3060,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K4 白板视图（Heptabase 式）\n· 白板是文件夹或表格的一个视图，不是单独的对象；里面的东西就是卡片\n· 卡片在白板上直接显示正文，能拖大小，双击就改；空格弹出完整卡片\n· 左边竖着的工具条：选择、卡片、放文件、连线、文字、区块、找、更多（思维导图、便签）\n· 区块顶上是彩色标题签、同色浅底；右下是小地图和缩放\n· 右上开关打开“卡片库”：搜卡片、文件、某几行，拖到白板上；AI 按选中的卡片推荐相关的\n· 从卡片边上的点拉线；线是什么由词表里的关系属性决定（支持 / 反对 / 替代 / 其他），只画线就只留在这个视图\n· 位置和大小存在你的空间（修复审查 B3）；连成关系的线写成卡片之间的属性\n依据：RD07、F07\n已定：组件换成 React Flow（MIT）做卡片和连线，卡片里放 BlockNote，布局按 JSON Canvas 存。"
+    },
+    "nK5": {
+      "x": 1520,
+      "y": 4080,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K5 打开文件就是预览\n· PDF、Word、Excel、PPT、录音、视频、图片：都是普通预览，不显示解析出来的文字\n· AI 在聊天里引用某处（第 3 页 / 03:40 / 第 4 行），点出处就在会话上弹出预览，翻到那里并把那段亮出来；关掉回到对话\n· 选中一段：问 LinX、做成卡片、复制链接\n· 解析只给 AI 用：问到哪份、哪几页才读，读过的存在文件旁边下次直接用，文件改了才重读；只在聊天的过程条里说一句（K5b）\n· 底层是现在的 Ingest（分块、hash、版本），界面不出现\n依据：RD07、LS14、F02\n已定：不向用户暴露解析，用到才解析并缓存。\n打开规则：卡片一律在弹窗里打开，要整页点“展开”；左边树只放文件夹和表格。"
+    },
+    "nK6": {
+      "x": 1520,
+      "y": 5100,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K6 表格视图（Heptabase 式，贴合 Solid）\n· 一行是一张卡片（RDF 里的一个 subject），表头就是属性（predicate），带类型图标\n· 视图在标题下左边一排（表格 / 按时段 / + 视图）；右边撤销、重做、筛选、排序、搜索、+ 卡片\n· 悬停一行：拖动柄、勾选、“打开”（弹出卡片 K2）；选项用浅色小标签\n· “+”加属性：从词表里挑，或新建（K6b）；新建的属性进“词表 › 属性”，所有表格共用\n· 词表就是一个普通文件夹（K6c）：属性、类型、命名空间三份数据，都用同一个表格视图看，不做专门页面\n· 加行、加列、加表、LinX 加属性见 K6b；看板、表头菜单、保存状态见 K6d\n· 组件：TanStack Table + dnd-kit（已在用）\n依据：RD11、LW05\n已定：LinX 改格子、加行直接写（小紫点可撤销）；加列没交给它时先当“未确认”列，交给它时直接加并记进收件箱可复查；删列、改名一定问你。"
+    },
+    "nK7": {
+      "x": 1520,
+      "y": 6120,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K7 收藏（对齐微信收藏）\n· 左边栏按类型分：消息 / 会话 / 文件 / 卡片 / 联系人\n· 内容栏扁平列表；右边栏预览 + “在会话中查看” + 取消收藏\n· 可以收藏单条消息（现在不能）\n· 取消收藏不弹确认，给“撤销”；不删原内容\n· 收藏 ≠ 记下来：不变成知识，也不进训练\n· 原消息删除、没权限、没网、空见 K7b\n依据：§3.2、LS04、LS12\n已定：原消息删除后不展示收藏时的内容。"
+    },
+    "nA1": {
+      "x": 1520,
+      "y": 0,
+      "w": 560,
+      "size": "m",
+      "page": "myai",
+      "text": "A1 我的 AI 概览（rail 下半部分）\n· 左边栏像苹果设置：概览 / 做事的方法 / 知识与模型 / 模型连接（A0）\n· 概览三组：方法、参与工作的知识、个人模型；每行一句话说清现状\n· 个人模型如实写“还没有训练，现在用云端基础模型”，不放仪表盘、计数、催促\n· 右边栏：最近哪些工作用了哪个方法和卡片\n· 项目记忆转卡片、新用户、未连接、有模型、模型连不上见 A1b\n依据：§3.3、LS01、AC10\n默认（待确认）：给一次性“转成卡片”入口，不自动转；原项目记忆保留到你删除。"
+    },
+    "nA2": {
+      "x": 1520,
+      "y": 1020,
+      "w": 560,
+      "size": "m",
+      "page": "myai",
+      "text": "A2 做事的方法（合并现在三处“系统提示词”）\n· 五块：目标、判断标准、能用的能力、自己推进、例外；像苹果设置页一样分组\n· 标题旁：默认方法 · 用在 5 项工作；有改动时“放弃 / 保存…”\n· 保存先看改动和影响（A2b）；正在运行的那次仍按旧版本\n· 写明：对外发送、花钱、删除在方法里关不掉，只能在“授权”里单独确认（A5）；改方法不加权限\n· 在工作里改时先问“只改这项工作 / 改默认”；冲突、恢复默认、保存失败见 A2b\n· 差异用 jsdiff\n依据：F03、RD05、LW03、LS06\n默认（待确认）：“自己推进”开关放在方法里。"
+    },
+    "nA3": {
+      "x": 1520,
+      "y": 2040,
+      "w": 560,
+      "size": "m",
+      "page": "myai",
+      "text": "A3 个人模型\n· 四步：准备材料 → 训练 → 比较 → 启用；现在只能做第一步\n· 材料默认：已确认卡片 + 你明确改过的结果；聊天记录默认不选（含别人的话）\n· 自动留出几个任务不参加训练，用来比较\n· “开始训练”不可点，旁边写原因：训练服务还没接通（不假成功）\n· 接通后的状态见 A3b：外发确认、训练中、停止、失败、看不出新旧的比较、没有改善、启用范围、退回\n依据：F04、RD08、DEP02、DEP03、AC06、AC07\n已定：第一批只做“准备材料”。"
+    },
+    "nA4": {
+      "x": 1520,
+      "y": 3060,
+      "w": 560,
+      "size": "m",
+      "page": "myai",
+      "text": "A4 本次未使用个人模型\n· 在会话里一张卡片：个人模型这次用不了 → 用基础模型继续这一次 / 去修复，修好回来 / 先不做了\n· 右边栏写清“设定用 / 这次实际”；不会悄悄换成别家模型\n· 执行条件（模型、用不了时怎么办、在哪里运行）单独一个小窗，不和方法混\n· 模型连接、密钥只在 设置 里\n· 结果标注、修好回来、能力不支持、执行条件、模型连接见 A4b\n依据：F04、DEP04、LS05\n默认（待确认）：用不了时“每次问我”。"
+    },
+    "nW0": {
+      "x": 1520,
+      "y": -1520,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W0 第一次打开：LinX 先打招呼\n· LinX 助手默认就在列表里，并且默认选中；第一次打开时它先说话\n· 一段话介绍能做什么：把事做完并发文件、记住你的做法、按时帮你、拉进群一起用；数据都在你自己的空间\n· 接着一张起名字卡（A2UI，绑助手本身）：起好就用新名字，不起就叫 LinX 助手；以后在聊天信息里也能改\n· 起好名字后给几个开始的建议，点一个就开一个新话题\n· 不起名、AI 没连接、第二次打开、换设备、重名见 W0b\n依据：AC01（新用户不训练即可开始）、§3.3\n已定：欢迎只出现一次，记在你的空间里（换设备也不再出现）。"
+    },
+    "nS3c": {
+      "x": 3680,
+      "y": 3060,
+      "w": 560,
+      "size": "m",
+      "page": "shell",
+      "text": "S3c 编辑个人资料（单独一页，存进 Pod 的个人资料 profile/card）\n· 从个人卡片点“编辑个人资料”进来；每一行点一下就地改，回车或点别处就保存，Esc 放弃\n· 名片：头像、名字、昵称、签名、地区、性别；联系方式：邮箱、电话\n· 都写进 profile/card#me：vcard:hasPhoto、vcard:fn、foaf:nick、vcard:note、vcard:region、vcard:hasGender、vcard:hasEmail、vcard:hasTelephone（代码里 solidProfileResource 已有这些列，现在页面只读）\n· profile/card 是公开文件：分组旁写“所有人可见”，底下写明不想公开就别填\n· 右边实时预览别人在联系人里看到的你；公开显示的联系人、共享出去的文件也放右边\n· 右上“在文件里打开”：profile/card 也是一张卡片\n· 账号、数据保存在哪里只读；账号可一键复制完整地址\n· 保存中、没保存成功、头像太大、没网、别的应用改过，都在页内一行提示\n依据：LS09、§3.4、Solid 公开资料\n已定：个人资料有单独的编辑页，存进 Pod 的 profile/card。\n已定：改了立即保存，没有“保存”按钮；电话、邮箱先不做“只给朋友看”。"
+    },
+    "nS5c": {
+      "x": 2108,
+      "y": 5120,
+      "w": 560,
+      "size": "m",
+      "page": "shell",
+      "text": "S5c / S5d 中等宽度（1180、768）\n· 1180：rail + 左边栏 + 内容栏；右边栏收起，点“详情”从右侧浮出覆盖，不挤内容\n· 768：左边栏变窄到 240，右边栏同样浮出；内容栏至少 460，气泡宽度按内容栏算\n· 话题切换始终在标题旁，不依赖右边栏（审查 B4）\n· 再窄（< 700）切到 S5 的一次一层\n依据：§6、AC02\n默认（待确认）：断点 1280 / 700；768 时左边栏保留，不折叠成图标。"
+    },
+    "nS6": {
+      "x": 1520,
+      "y": 6264,
+      "w": 560,
+      "size": "m",
+      "page": "shell",
+      "text": "S6 登录：先选数据放哪\n· 居中一张小卡，三种空间各一句人话：云端空间 / 本机空间（云端账号，数据在这台电脑）/ 独立空间（账号和数据都只在这台电脑）\n· 选了就打开登录窗口；完成后自动回到 LinX 上次的位置\n· 其他 Solid 空间地址收进“使用其他空间…”\n· 不会悄悄创建空间：需要创建时明确问（S6b）\n· 等登录窗口、准备本机空间、各种失败见 S6b；每种失败只给一个主要动作，技术细节收进“详情”\n依据：§3.4、LS09；审查 2.1（登录区分状态，保留）\n已定：网页版也能选本机空间和独立空间（检测到本机服务时可用）。"
+    },
+    "nS7": {
+      "x": 1520,
+      "y": 7284,
+      "w": 560,
+      "size": "m",
+      "page": "shell",
+      "text": "S7 设置（低频，苹果系统设置式）\n· 左边栏分组：空间与服务 / 通用 / 模型连接 / 本机服务 / 外部访问 / 版本更新 / 关于\n· 通用只放：外观、启动时打开、通知、语言\n· 运维状态、密钥、域名、隧道只在这里出现，聊天里没有\n· “运行环境”“本地网络”改名为“本机服务”“外部访问”；canonical、token 等词收进“高级”\n· 本机服务、外部访问、版本更新、首次配置见 S7b\n依据：RD12、LS09、LS14\n默认（待确认）：通知分三项开关——新消息 / 等你决定 / 持续任务没成功，免打扰的会话不通知。"
+    },
+    "nW8": {
+      "x": 1520,
+      "y": 7140,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W8 群聊（人和人，助手也可以在里面）\n· 和私聊一样的微信式气泡；群里每条消息带发言人名字\n· 谁都能 @LinX 助手；不 @ 它，需要时它也会接话；回答所有人都能看到，下面一行写“只用了这个群里的消息”\n· 右边栏是群详情：成员（含助手）、邀请、群名称、标星、免打扰、群里的文件、助手在这个群里、退出群聊\n· @ 提及、私聊送达、邀请、退出 / 解散、被移出、让助手一起、助手设置见 W8b\n依据：§3.1、AC01（人际路径不退化）、LS03\n已定：群里谁都能叫助手；不 @ 它，需要时它也会接话（由 Reconciler 判断）。它只用这个群里的消息；要用你的卡片或文件时先私下问你。"
+    },
+    "nW9": {
+      "x": 1520,
+      "y": 8160,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W9 新建（列表顶部“+”）\n· 找人聊天：一个搜索选择器，朋友 / 助手 / 群分组；找不到时“添加朋友…”\n· 发起群聊：勾选成员，上方显示已选；群名称可以不填，先用成员名字\n· 新的 AI 工作：在助手下开一个新话题，光标在输入框；有多个助手时输入框上方选一个，默认 LinX 助手\n· 选择器用 cmdk（已在用）\n依据：§3.1、AC01\n默认（待确认）：新的 AI 工作不先问名字，第一句话发出后自动起标题，可以改。"
+    },
+    "nW10": {
+      "x": 1520,
+      "y": 9180,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W10 让编程工具在文件夹里干活（Claude Code / Codex / CodeBuddy）\n· 还是 LinX 助手下的一个话题：助手把活交给编程工具，标题下一行写清哪个工具、哪个文件夹、在干什么，旁边暂停 / 停止\n· 要运行命令或碰文件夹外的东西时，就地一张卡：拒绝 / 允许这一次 / 以后交给 LinX 判断\n· 改了哪些文件就地列出，点开看改动\n· 右边栏：这次运行（工具、文件夹、用时、用量）、这次允许过的命令（可撤回）、改动的文件、复制日志\n· 替换现在右边栏的 worker 面板和会话控制条\n依据：F05、RD05、LW07；ACP 权限请求\n已定：许可卡上是“允许这一次”或“以后交给 LinX 判断”，和 LinX 自己推进是同一套规则；对外发送、花钱、删除要单独授权，授权时再确认一次（K11）。"
+    },
+    "nK8": {
+      "x": 1520,
+      "y": 7140,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K8 卡片弹窗（从文件夹打开）\n· 文件夹里双击文档，弹出和 K2 一样的卡片：先是富文本正文，属性在后面，自动保存\n· 文件也能加属性（存在它旁边的说明里），所以文件夹也能用表格视图看\n· 弹窗右上：共享…、展开成整页、⋯（重命名、移到、复制一份、复制链接、删除）\n· 打开规则、媒体卡片、操作和状态见 K8b\n· 编辑器：BlockNote（已在用）\n依据：§3.2、RD07\n已定：卡片一律弹窗打开，要整页点“展开”。"
+    },
+    "nK9": {
+      "x": 1520,
+      "y": 8160,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K9 共享（Solid 访问权限，说人话）\n· 文件夹、文件、卡片、白板都能“共享…”；小窗里加人，选“可以查看 / 可以编辑”\n· 现在谁能看一目了然；收回立即生效，对方那边显示“共享已被收回”（K1b）\n· “知道链接的人”默认关，打开时写清后果\n· 共享卡片时提醒原话可能来自私聊；共享白板时提示有几张卡片对方看不到\n· 对方不支持、加人失败、收回、跟随上层文件夹见 K9b\n依据：Solid 访问控制、LS12、§3.2\n已定：新文件跟随所在文件夹的共享；单独改过的文件写“和文件夹不同”。"
+    },
+    "nK10": {
+      "x": 1520,
+      "y": 9180,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K10 AI 改的：先当未确认草稿（轻）\n· LinX 改你的文件，改动直接出现在文件里，浅紫底标出；原版本一直保留，不静默覆盖（RD07）\n· 顶上一行：“LinX 改了 3 处，还没确认”，只有 撤销 / 保留；你接着改就算保留；悬停某处可单独撤销\n· 聊天里的文件消息上也能直接保留或撤销，不用打开\n· 交给 LinX 判断时直接保留（仍可撤销），记进收件箱“LinX 替你做的”\n· 别人在你保留之前看到的还是原版本\n· 表格：改格子、加行直接写，小紫点可撤销；加列先当“未确认”列（K10b）\n· 不进收件箱待处理、不弹窗逐处审批\n依据：RD07、F05\n已定：AI 改动就是未确认草稿，有权限时直接保留。"
+    },
+    "nW2p": {
+      "x": 5200,
+      "y": 1020,
+      "w": 560,
+      "size": "m",
+      "page": "work",
+      "text": "W2p 协议：聊天组件接什么\n· 聊天组件只接一种接口：AG-UI 事件流（开源，MIT）。文字流、思考、工具调用、状态同步、历史快照、子任务、等你决定（interrupt）都有现成事件\n· 卡片：A2UI v0.9 放在 AG-UI 的 activity 事件里；surfaceId = RDF 资源地址，卡片数据从 Pod 读\n· 点卡片按钮 = 直接写 Pod 里的资源；运行时盯着资源，变了就让那次运行接着走。会话、收件箱、LinX 自动通过走同一条路\n· 编程工具（Codex / Claude Code / CodeBuddy）用 ACP 接进 LinX 运行时，再转成 AG-UI；ACP 的“允许一次 / 总是允许”对上“允许这一次 / 以后交给 LinX 判断”。界面不直接接 ACP\n· 组件用 assistant-ui（MIT）：自带 AG-UI 适配和 A2UI 渲染；消息从我们自己的存储（Pod）来，气泡、文件消息、记住按钮都用我们自己的组件\n· 换掉 ChatKit：脚本从 OpenAI 的 CDN 加载，卡片格式是它自己的，绑不了 RDF；Mermaid、草稿、反馈状态都卡在它的边界上\n· 约定：threadId = 话题地址，runId = 运行地址，interrupt id = 审批 / 输入请求的地址；回答格式从 shapes.ttl 生成\n依据：W2c、W10、docs/chat-module-alignment.md 里记下的 ChatKit 边界\n建议（待确认）：按上面定；先在聊天里并行做一版，验收后再删 ChatKit。"
+    },
+    "nK11": {
+      "x": 1520,
+      "y": 10200,
+      "w": 560,
+      "size": "m",
+      "page": "knowledge",
+      "text": "K11 授权（文件 › LinX 助手 › 授权）\n· 列出交给 LinX 判断的事：哪类事、拿不准时怎么办、谁什么时候授权的、用过几次，每条都能收回\n· 授权从哪来：批准时勾“以后这类交给 LinX 判断”，或编程工具许可卡上的“以后交给 LinX 判断”\n· 自动通过前等多久按把握定：高 10 分钟、中 2 小时、低不自动（可改）\n· 等的时候在收件箱“LinX 会自动通过”里；自动通过的在收件箱可复查（W7c）\n· 没授权过的一直等你判断，不会过期自动通过\n依据：RD05（一次批准 ≠ 授权，两者分开记）\n已定：花钱、删除、对外发送也能授权，但授权前再确认一次；没授权就每次问你。"
+    },
+    "nA00": {
+      "x": 0,
+      "y": -220,
+      "w": 1440,
+      "size": "m",
+      "page": "myai",
+      "text": "“我的 AI”先不做（2026-10-11），这页只留作以后参考，不进这一轮开发\n· rail 上去掉“我的 AI”，窄窗“我”里也去掉\n· 授权 → 文件 › LinX 助手 › 授权（K11）；记住的 → 文件 › LinX 助手 › 记住的（K2）\n· 做事的方法、执行条件 → 从助手的聊天信息打开，先保持现有能力；A2 新方法页以后再做\n· 模型连接 → 设置（S7）；个人模型（A3）和本次未使用个人模型（A4）以后再说"
+    }
+  },
+  "designSystems": []
+}

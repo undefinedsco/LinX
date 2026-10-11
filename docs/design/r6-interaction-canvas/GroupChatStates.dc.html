@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>群聊、私聊与助手在群里</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin:0 0 8px}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:16px;display:flex;flex-direction:column;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.v{color:#655D53;font-size:12px}
+.av{width:30px;height:30px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;background:#E0DBDE}
+.aiav{background:#563E84;color:#F7F4ED;font-size:11px}
+.opt{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;border-bottom:1px solid #DFDBD5;font-size:13px}
+.opt:last-child{border-bottom:0}
+.box{background:#F7F4ED;border:1px solid #DFDBD5;border-radius:10px;overflow:hidden}
+.bubble{background:#E0DBDE;padding:8px 12px;border-radius:8px;font-size:13px}
+.sys{font-size:12px;color:#655D53;text-align:center}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:#E4DDDA;font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:999px;background:#E4DDDA;font-size:12px}
+.chk{width:16px;height:16px;border-radius:4px;border:1px solid #87837D;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+.chk.on{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.mark{width:18px;height:18px;border-radius:50%;background:#2B2621;color:#F7F4ED;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex:none}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-content: start">
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">输入 @：先列助手，再列成员</h2>
+      <div class="sheet" style="padding: 6px; gap: 0" role="listbox" aria-label="提到谁">
+        <div class="opt" style="background: #E4DDDA; border-radius: 6px; border-bottom: 0"><span class="av aiav">AI</span><span style="flex: 1">LinX 助手</span><span class="v">你的助手</span></div>
+        <div class="opt" style="border-bottom: 0"><span class="av">周</span><span style="flex: 1">周禾</span></div>
+        <div class="opt" style="border-bottom: 0"><span class="av">陈</span><span style="flex: 1">陈一</span></div>
+        <div class="opt" style="border-bottom: 0"><span class="av">许</span><span style="flex: 1">许安</span></div>
+      </div>
+      <div class="box" style="margin-top: 8px; padding: 10px 12px; font-size: 13px">@<span style="border-right: 1px solid #2B2621">&nbsp;</span></div>
+    </div>
+
+    <div>
+      <h2 class="lbl">助手在这个群里（右边栏进入）</h2>
+      <div class="sheet" role="dialog" aria-label="助手在这个群里">
+        <div class="v">什么时候说话（群里谁都能叫它）</div>
+        <div class="box">
+          <label class="opt"><input type="radio" name="who" checked style="accent-color: #563E84">有人叫它，或它觉得该接话时</label>
+          <label class="opt"><input type="radio" name="who" style="accent-color: #563E84">只在有人 @ 它时</label>
+        </div>
+        <div class="v">它能用什么</div>
+        <div class="box">
+          <label class="opt"><input type="radio" name="use" checked style="accent-color: #563E84">只用这个群里的消息</label>
+          <label class="opt"><input type="radio" name="use" style="accent-color: #563E84">也能用我的卡片和文件（用前先私下问我）</label>
+        </div>
+        <div class="v">它的回答群里所有人都能看到。不想让它在这个群里，可以把它移出。</div>
+        <div style="display: flex; justify-content: space-between; gap: 8px"><span class="btn">移出群聊</span><span class="btn primary">完成</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">私聊：对方暂时收不到</h2>
+      <div class="box" style="padding: 12px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 6px"><span class="v">等对方上线</span><span class="bubble">周五对一下报名名单？</span></div>
+        <div class="sys">周禾的空间暂时连不上，消息会在连上后送达</div>
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 6px"><button class="mark" aria-label="没发出去，点一下重发" style="border: 0; padding: 0">!</button><span class="bubble">名单我放共享盘了</span></div>
+        <div class="v" style="text-align: right">没发出去的点 ! 重发，不会重复</div>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="lbl">在和周禾的私聊里点“让助手一起”</h2>
+      <div class="sheet" role="alertdialog" style="text-align: center">
+        <div style="font-weight: 600">让 LinX 助手 加进来？</div>
+        <div class="v" style="font-size: 13px">会新建一个群：你、周禾、LinX 助手。原来的私聊不变，周禾会看到助手的回答。</div>
+        <div style="display: flex; gap: 8px"><span class="btn" style="flex: 1">取消</span><span class="btn primary" style="flex: 1">新建群聊</span></div>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="lbl">邀请成员</h2>
+      <div class="sheet" role="dialog" aria-label="邀请成员">
+        <div style="display: flex; gap: 6px; flex-wrap: wrap"><span class="chip">陆川 ×</span><span class="chip">程远 ×</span></div>
+        <div class="box" style="height: 32px; display: flex; align-items: center; padding: 0 10px; font-size: 13px; color: #655D53">搜索联系人</div>
+        <div class="box">
+          <div class="opt"><span class="chk on" aria-hidden="true">✓</span><span class="av">陆</span><span style="flex: 1">陆川</span></div>
+          <div class="opt"><span class="chk on" aria-hidden="true">✓</span><span class="av">程</span><span style="flex: 1">程远</span></div>
+          <div class="opt" style="color: #655D53"><span class="chk" aria-hidden="true"></span><span class="av">周</span><span style="flex: 1">周禾</span><span class="v">已在群里</span></div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">邀请 2 人</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">退出群聊（成员）</h2>
+      <div class="sheet" role="alertdialog" style="text-align: center">
+        <div style="font-weight: 600">退出“书店活动组”？</div>
+        <div class="v" style="font-size: 13px">退出后不再收到这个群的消息。以前的聊天记录还在你的空间，可以另外删除。</div>
+        <div style="display: flex; gap: 8px"><span class="btn" style="flex: 1">取消</span><span class="btn" style="flex: 1; border-color: #2B2621; font-weight: 600">退出</span></div>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="lbl">退出群聊（你是群主）</h2>
+      <div class="sheet" role="alertdialog" style="text-align: center">
+        <div style="font-weight: 600">你是这个群的群主</div>
+        <div class="v" style="font-size: 13px">先把群主交给别人再退出；或者解散这个群，所有人都不能再发消息。</div>
+        <div style="display: flex; gap: 8px"><span class="btn" style="flex: 1">转让群主…</span><span class="btn" style="flex: 1">解散群聊…</span></div>
+        <span class="btn" style="border: 0; background: transparent; color: #655D53">取消</span>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="lbl">被移出 / 群已解散（会话里一行，输入框变灰）</h2>
+      <div class="box" style="padding: 12px; display: flex; flex-direction: column; gap: 8px">
+        <div class="sys">周禾 把你移出了群聊</div>
+        <div class="bar"><span style="flex: 1">你已不在这个群里，以前的记录还能看</span><span class="btn">删除聊天</span></div>
+        <div class="sys" style="margin-top: 6px">群主解散了这个群</div>
+        <div class="bar"><span style="flex: 1">这个群已解散，不能再发消息</span></div>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="lbl">改群名称</h2>
+      <div class="sheet" role="dialog" aria-label="群名称">
+        <label class="v" for="gn">群名称（所有成员都能看到）</label>
+        <input id="gn" value="书店活动组" style="height: 32px; border: 1px solid #563E84; border-radius: 6px; background: #F7F4ED; padding: 0 10px; font: inherit">
+        <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">保存</span></div>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

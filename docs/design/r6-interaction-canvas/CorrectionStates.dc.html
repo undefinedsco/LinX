@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>记住与记忆</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:12px;color:#655D53;margin-bottom:8px}
+.cell{padding:18px;border:1px solid #DFDBD5;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px;min-height:110px;justify-content:center}
+.toast{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;background:#2B2621;color:#F7F4ED;font-size:13px}
+.toast a{color:#E0DBDE;font-weight:600;text-decoration:none;white-space:nowrap}
+.muted{color:#655D53}
+table{border-collapse:collapse;width:100%;font-size:13px;background:#FBFAF7;border:1px solid #DFDBD5}
+th,td{border-bottom:1px solid #EAE5DC;padding:0 10px;height:36px;text-align:left;white-space:nowrap}
+th{font-size:12px;color:#655D53;font-weight:400}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px">
+  <h2 style="margin: 0 0 6px; font-size: 15px; font-weight: 600">记住：无感，只在消息上有一个按钮</h2>
+  <p class="muted" style="margin: 0 0 18px; font-size: 13px">改了 AI 的结果，不会弹任何东西。想让 LinX 以后都这样，在那条消息上点“记住”。</p>
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px">
+    <div><div class="lbl">① 点了“记住”</div><div class="cell"><div class="toast">记住了：排班不设最低次数<a href="Card.dc.html">查看</a><a href="CorrectionStates.dc.html">撤销</a></div><div class="muted" style="font-size: 12px">几秒后自己消失</div></div></div>
+    <div><div class="lbl">② 和记过的相反</div><div class="cell"><div class="toast">已更新：排班不设最低次数（原来是“至少 2 次”）<a href="CorrectionStates.dc.html">撤销</a></div><div class="muted" style="font-size: 12px">新的替换旧的，旧的留着标“已替换”</div></div></div>
+    <div><div class="lbl">③ 已经记过一样的</div><div class="cell"><div class="toast">已经记过了<a href="Card.dc.html">查看</a></div></div></div>
+    <div><div class="lbl">④ 没记住</div><div class="cell"><div class="toast">没记住，这次的修改不受影响<a href="CorrectionStates.dc.html">重试</a></div></div></div>
+    <div><div class="lbl">⑤ 群聊、私聊里</div><div class="cell"><div class="muted" style="font-size: 13px; text-align: center">消息上也有“记住”，写进你的 LinX 的文件夹，群里别人看不到</div></div></div>
+    <div><div class="lbl">⑥ 点赞、批准、没回复</div><div class="cell"><div class="muted" style="font-size: 13px; text-align: center">都不算“记住”，也不进训练</div></div></div>
+  </div>
+
+  <h2 style="margin: 30px 0 10px; font-size: 15px; font-weight: 600">记住的写在 LinX 自己的文件夹里（文件 › LinX 助手 › 记住的）</h2>
+  <table>
+    <thead><tr><th>名称</th><th>什么时候用</th><th>谁记的</th><th>来自</th><th>修改</th></tr></thead>
+    <tbody>
+      <tr><td>排班不设最低次数</td><td>志愿者排班</td><td>你点了“记住”</td><td><a href="Correction.dc.html">LinX 助手 · # 排班规则</a></td><td>今天</td></tr>
+      <tr><td>优先用现成工具</td><td>小团队、低频活动</td><td>你点了“记住”</td><td><a href="Conversation.dc.html">LinX 助手 · # 秋季读书会报名</a></td><td>9月30日</td></tr>
+      <tr><td class="muted">排班至少 2 次</td><td class="muted">志愿者排班</td><td class="muted">已替换</td><td class="muted">—</td><td class="muted">9月12日</td></tr>
+    </tbody>
+  </table>
+  <div class="muted" style="font-size: 12px; margin-top: 8px">点一行就是卡片弹窗（K2），可以补什么时候用、例外，也可以删掉。</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

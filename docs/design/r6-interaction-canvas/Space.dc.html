@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>个人卡片</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.muted{color:#655D53}
+.mi{display:flex;align-items:center;height:40px;padding:0 16px;font-size:14px;text-decoration:none;color:#2B2621;border-top:1px solid #DFDBD5}
+.mi:hover{background:#E9E4E4}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED; position: relative">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="chat" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="ChatList" selected="volunteer" variant="normal" hint-size="280px,900px"></dc-import>
+  </div>
+  <div aria-hidden="true" style="flex: 999 1 480px; min-width: 0; min-height: 900px">
+    <div style="height: 56px; border-bottom: 1px solid #DFDBD5"></div>
+  </div>
+  <div aria-hidden="true" style="flex: 0 0 300px; background: #F2EDE2; border-left: 1px solid #DFDBD5"></div>
+
+  <div role="dialog" aria-label="我的卡片" style="position: absolute; left: 60px; top: 24px; width: 300px; background: #FBFAF7; border-radius: 12px; border: 1px solid #DFDBD5; box-shadow: 0 1px 2px rgb(43 38 33 / .06), 0 8px 24px rgb(43 38 33 / .08); overflow: hidden">
+    <div style="display: flex; gap: 14px; padding: 20px 16px 18px">
+      <span style="width: 56px; height: 56px; border-radius: 8px; background: #E0DBDE; display: inline-flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 600; flex: none">林</span>
+      <div style="display: flex; flex-direction: column; gap: 2px; padding-top: 2px">
+        <div style="font-size: 17px; font-weight: 600">林舟</div>
+        <div class="muted" style="font-size: 13px">linzhou@undefineds.co</div>
+        <div class="muted" style="font-size: 13px">空间：本机</div>
+        <div style="font-size: 13px; margin-top: 4px">周末在书店做读书会</div>
+      </div>
+    </div>
+    <nav aria-label="账号菜单">
+      <a class="mi" href="Profile.dc.html">编辑个人资料</a>
+      <a class="mi" href="Settings.dc.html">设置</a>
+      <a class="mi" href="Login.dc.html">切换账号</a>
+      <a class="mi" href="SignOut.dc.html">退出登录</a>
+    </nav>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

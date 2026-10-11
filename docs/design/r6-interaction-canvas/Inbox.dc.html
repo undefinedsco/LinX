@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>收件箱</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.row{height:64px;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:0 12px;text-decoration:none;color:#2B2621}
+.row:hover{background:#E9E4E4}
+.ic{width:36px;height:36px;border-radius:6px;background:#E0DBDE;flex:none;display:inline-flex;align-items:center;justify-content:center;color:#2B2621}
+.t{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s{font-size:12px;color:#655D53;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 18px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.grp{background:#FBFAF7;border-radius:10px;overflow:hidden;margin:0 12px}
+.gr{display:flex;align-items:center;gap:8px;min-height:42px;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px;text-decoration:none;color:#2B2621}
+.gr:last-child{border-bottom:0}
+.gl{padding:16px 24px 6px;font-size:12px;color:#655D53}
+.v{color:#655D53}
+.chev{color:#87837D}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="inbox" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+
+  <aside aria-label="左边栏：待你决定" style="flex: 0 0 280px; box-sizing: border-box; background: #F2EDE2; border-right: 1px solid #DFDBD5; display: flex; flex-direction: column; min-height: 900px">
+    <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #DFDBD5">
+      <div role="tablist" aria-label="收件箱" style="flex: 1; display: flex; padding: 2px; background: #E4DDDA; border-radius: 8px">
+        <button role="tab" aria-selected="true" style="flex: 1; height: 26px; border: 0; border-radius: 6px; background: #FBFAF7; font: inherit; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgb(43 38 33 / .1)">待处理 3</button>
+        <button role="tab" aria-selected="false" style="flex: 1; height: 26px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: 13px; color: #655D53">已处理</button>
+      </div>
+    </div>
+    <a class="row" href="Inbox.dc.html" aria-current="true" style="background: #E4DDDA; box-shadow: inset 2px 0 0 #563E84">
+      <span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>
+      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="display: flex; gap: 6px"><span class="t" style="flex: 1">发送排班日历邀请？</span><span class="s">10:42</span></span><span class="s">批准 · 志愿者排班方案</span></span>
+    </a>
+    <a class="row" href="Decision.dc.html">
+      <span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6M12 17h.01"></path></svg></span>
+      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="display: flex; gap: 6px"><span class="t" style="flex: 1">周日下午几点开始？</span><span class="s">10:42</span></span><span class="s">回答 · 志愿者排班方案</span></span>
+    </a>
+    <a class="row" href="DecisionStates.dc.html">
+      <span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"></path></svg></span>
+      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="display: flex; gap: 6px"><span class="t" style="flex: 1">需要登录书店日历</span><span class="s">09:01</span></span><span class="s">登录 · 每周排班提醒</span></span>
+    </a>
+    <div style="padding: 14px 12px 4px; font-size: 12px; color: #655D53">LinX 会自动通过 · 2</div>
+    <a class="row" href="DecisionStates.dc.html">
+      <span class="ic" style="border: 1px dashed #87837D; background: transparent">⏱</span>
+      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="display: flex; gap: 6px"><span class="t" style="flex: 1">读取 去年排班表.pdf</span><span class="s">9 分钟后</span></span><span class="s">把握高 · 志愿者排班方案</span></span>
+    </a>
+    <a class="row" href="DecisionStates.dc.html">
+      <span class="ic" style="border: 1px dashed #87837D; background: transparent">⏱</span>
+      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="display: flex; gap: 6px"><span class="t" style="flex: 1">运行 npm test</span><span class="s">1 小时后</span></span><span class="s">把握中 · 书店网站改版</span></span>
+    </a>
+    <div style="flex: 1"></div>
+    <a href="InboxAudit.dc.html" style="padding: 12px; font-size: 12px; color: #655D53; text-decoration: none; border-top: 1px solid #DFDBD5">LinX 自动通过的 · 3 ›</a>
+    <a href="InboxStates.dc.html" style="padding: 12px; font-size: 12px; color: #655D53; text-decoration: none; border-top: 1px solid #DFDBD5">活动记录 ›</a>
+  </aside>
+
+  <main aria-label="内容栏" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 20px; border-bottom: 1px solid #DFDBD5">
+      <span style="font-size: 13px; color: #655D53">来自</span>
+      <a href="Decision.dc.html" style="margin-left: 6px; font-size: 13px">志愿者排班方案 ›</a>
+    </header>
+    <div style="flex: 1; display: flex; justify-content: center; padding: 64px 24px">
+      <section aria-labelledby="ib-t" style="width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 16px; text-align: center">
+        <span class="ic" style="width: 48px; height: 48px; border-radius: 10px; align-self: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>
+        <h1 id="ib-t" style="margin: 0; font-size: 20px; font-weight: 600">发送排班日历邀请？</h1>
+        <p style="margin: 0; color: #655D53">发给 6 位志愿者，邮件发出后不能撤回</p>
+        <div style="background: #FBFAF7; border-radius: 10px; text-align: left; font-size: 13px">
+          <div style="display: flex; padding: 10px 14px; border-bottom: 1px solid #DFDBD5"><span class="v" style="width: 64px">收件人</span><span>周禾、陈一、许安、白露、陆川、宋青</span></div>
+          <div style="display: flex; padding: 10px 14px; border-bottom: 1px solid #DFDBD5"><span class="v" style="width: 64px">日程</span><span>周六、周日各两个时段</span></div>
+          <div style="display: flex; padding: 10px 14px"><span class="v" style="width: 64px">日历</span><span>书店日历</span></div>
+        </div>
+        <div style="display: flex; gap: 10px">
+          <button class="btn" style="flex: 1">拒绝</button>
+          <button class="btn primary" style="flex: 1">批准这一次</button>
+        </div>
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px"><input type="checkbox" style="accent-color: #563E84">以后这类交给 LinX 判断（授权）</label>
+        <span class="v" style="font-size: 12px">处理后会话里同步显示</span>
+      </section>
+    </div>
+  </main>
+
+  <aside aria-label="右边栏：详情" style="flex: 0 0 300px; box-sizing: border-box; background: #F2EDE2; border-left: 1px solid #DFDBD5; min-height: 900px">
+    <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #DFDBD5; font-weight: 600">详情</div>
+    <div class="gl">这次运行</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1">读取名单</span><span class="v">完成</span></div>
+      <div class="gr"><span style="flex: 1">生成对比表</span><span class="v">完成</span></div>
+      <div class="gr" style="font-weight: 600"><span style="flex: 1">发送邀请</span><span style="color: #563E84">等你</span></div>
+    </div>
+    <div class="gl">请求</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1">谁发起的</span><span class="v">LinX 助手</span></div>
+      <div class="gr"><span style="flex: 1">时间</span><span class="v">今天 10:42</span></div>
+    </div>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

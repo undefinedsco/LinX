@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI 助手、通话与空间权限</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin:0 0 8px}
+.panel{border:1px solid #DFDBD5;border-radius:12px;background:#F2EDE2;overflow:hidden}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:16px;display:flex;flex-direction:column;gap:10px}
+.av{width:36px;height:36px;border-radius:6px;background:#E0DBDE;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+.aiav{background:#563E84;color:#F7F4ED;font-size:12px}
+.sec{padding:10px 12px 4px;font-size:12px;color:#655D53}
+.row{height:56px;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:0 12px;font-size:14px}
+.grp{background:#FBFAF7;border-radius:10px;overflow:hidden;border:1px solid #DFDBD5}
+.gr{display:flex;align-items:center;gap:8px;min-height:42px;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px}
+.gr:last-child{border-bottom:0}
+.v{color:#655D53;font-size:12px}
+.chev{color:#87837D}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap;text-decoration:none}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.sw{width:30px;height:18px;border-radius:999px;position:relative;flex:none;display:inline-block}
+.knob{position:absolute;top:2px;width:14px;height:14px;border-radius:50%;background:#F7F4ED}
+.seg{display:flex;padding:2px;border-radius:8px;background:#E4DDDA;gap:2px;margin:8px 12px 4px}
+.seg span{flex:1;height:26px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:#E4DDDA;font-size:13px}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-content: start">
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">助手和人排在同一个列表里，不分页、不打标签</h2>
+      <div class="panel">
+        <div class="sec">H</div>
+        <div class="row"><span class="av aiav">AI</span><span style="flex: 1">活动小助手</span></div>
+        <div class="sec">L</div>
+        <div class="row" style="background: #E4DDDA; box-shadow: inset 2px 0 0 #563E84"><span class="av aiav">AI</span><span style="flex: 1">LinX 助手</span></div>
+        <div class="row"><span class="av">陆</span><span style="flex: 1">陆川</span></div>
+        <div class="sec">P</div>
+        <div class="row"><span class="av aiav" style="background: #E9E4E4; color: #563E84">AI</span><span style="flex: 1">排版助手<br><span class="v">周禾的助手</span></span></div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">别人共享的助手（详情）</h2>
+      <div class="sheet">
+        <div style="display: flex; gap: 12px; align-items: center"><span class="av aiav" style="width: 48px; height: 48px; background: #E9E4E4; color: #563E84">AI</span><span><span style="font-weight: 600; font-size: 16px">排版助手</span><br><span class="v">周禾的助手 · 周禾共享给你</span></span></div>
+        <div class="grp">
+          <div class="gr"><span style="flex: 1">它能看你的什么</span><span class="v">只看你发给它的</span></div>
+          <div class="gr"><span style="flex: 1">做事的方法</span><span class="v">由周禾管理，你看不到</span></div>
+        </div>
+        <span class="btn primary" style="align-self: flex-start">发消息</span>
+      </div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">TA 在我空间里能做什么（人）</h2>
+      <div class="sheet" role="dialog" aria-label="周禾在我空间里的权限">
+        <div style="font-weight: 600">周禾 在你空间里能做什么</div>
+        <div class="grp">
+          <div class="gr"><span style="flex: 1">给我发消息</span><span class="sw" role="switch" aria-checked="true" aria-label="给我发消息" style="background: #563E84"><span class="knob" style="right: 2px"></span></span></div>
+          <div class="gr"><span style="flex: 1">看我的公开资料</span><span class="v">所有人都能</span></div>
+        </div>
+        <div class="v">我共享给 TA 的</div>
+        <div class="grp">
+          <div class="gr"><span style="flex: 1">活动 <span class="v">文件夹</span></span><span class="v">可以编辑</span><span class="chev">›</span></div>
+          <div class="gr"><span style="flex: 1">维护成本 <span class="v">卡片</span></span><span class="v">可以查看</span><span class="chev">›</span></div>
+          <div class="gr"><span style="flex: 1">志愿者排班 <span class="v">白板</span></span><span class="v">可以查看</span><span class="chev">›</span></div>
+        </div>
+        <div style="display: flex; justify-content: space-between"><span class="btn">全部收回…</span><span class="btn primary">完成</span></div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">助手在你空间里的权限（AI）</h2>
+      <div class="sheet" role="dialog" aria-label="LinX 助手的权限">
+        <div style="font-weight: 600">LinX 助手 在你空间里</div>
+        <div class="grp">
+          <div class="gr"><span style="flex: 1">能看</span><span class="v">活动、志愿者、联系人名字</span><span class="chev">›</span></div>
+          <div class="gr"><span style="flex: 1">能改</span><span class="v">聊天文件</span><span class="chev">›</span></div>
+          <div class="gr"><span style="flex: 1">它的账号</span><span class="v">linx@linzhou.undefineds.co</span><span class="btn">复制地址</span></div>
+        </div>
+        <div class="v">对外发送、花钱、删除：没单独授权就每次问你。改做事的方法不会改变这里。</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">语音 / 视频通话</h2>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div class="sheet" style="align-items: center; text-align: center; gap: 8px"><span class="av" style="width: 56px; height: 56px; font-size: 20px">周</span><div style="font-weight: 600">正在呼叫 周禾…</div><span class="btn">取消</span></div>
+        <div class="bar"><span style="flex: 1">通话中 03:12 · 周禾</span><span class="btn">静音</span><span class="btn primary">挂断</span></div>
+        <div class="bar"><span style="flex: 1">周禾 没有接</span><span class="btn">发消息</span></div>
+        <div class="bar"><span style="flex: 1">周禾 用的应用不支持通话</span></div>
+        <div class="bar"><span style="flex: 1">通话服务还没接通，暂时不能打</span></div>
+        <div class="v">通话结束后在聊天里留一行：“语音通话 03:12”</div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">删除联系人</h2>
+      <div class="sheet" role="alertdialog" style="text-align: center">
+        <div style="font-weight: 600">删除 周禾？</div>
+        <div class="v" style="font-size: 13px">聊天记录还在。删除后 TA 仍能看到你的公开资料。</div>
+        <label style="display: flex; gap: 8px; align-items: center; justify-content: center; font-size: 13px"><input type="checkbox" checked style="accent-color: #563E84">同时收回我共享给 TA 的 3 项</label>
+        <div style="display: flex; gap: 8px"><span class="btn" style="flex: 1">取消</span><span class="btn" style="flex: 1; border-color: #2B2621; font-weight: 600">删除</span></div>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

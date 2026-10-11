@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>窄窗其他页</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:15px;line-height:1.45}
+.cap{font-size:13px;font-weight:600;margin:0 0 10px;color:#2B2621}
+.phone{width:390px;height:844px;box-sizing:border-box;display:flex;flex-direction:column;background:#F7F4ED;border:1px solid #DFDBD5;border-radius:16px;overflow:hidden}
+.hd{height:52px;box-sizing:border-box;display:flex;align-items:center;gap:4px;padding:0 8px 0 16px;border-bottom:1px solid #DFDBD5}
+.hd h2{margin:0;flex:1;font-size:17px;font-weight:600}
+.hb{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;color:#2B2621;position:relative;text-decoration:none}
+.badge{position:absolute;top:6px;right:6px;min-width:16px;height:16px;border-radius:999px;background:#563E84;color:#F7F4ED;font-size:10px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;box-sizing:border-box}
+.search{margin:8px 12px;height:36px;border-radius:8px;background:#E4DDDA;display:flex;align-items:center;gap:6px;padding:0 10px;color:#655D53;font-size:14px}
+.body{flex:1;overflow:hidden}
+.row{height:68px;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:0 16px;text-decoration:none;color:#2B2621;border-bottom:1px solid #EAE5DC}
+.av{width:44px;height:44px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:600}
+.sec{padding:8px 16px 4px;font-size:12px;color:#655D53;background:#F2EDE2}
+.gl{padding:16px 20px 6px;font-size:12px;color:#655D53}
+.grp{background:#FBFAF7;border-radius:10px;overflow:hidden;margin:0 12px}
+.gr{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 14px;border-bottom:1px solid #DFDBD5;font-size:15px;text-decoration:none;color:#2B2621}
+.gr:last-child{border-bottom:0}
+.v{color:#655D53;font-size:13px}
+.chev{color:#87837D}
+.tabs{display:flex;border-top:1px solid #DFDBD5;background:#F2EDE2}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:56px;text-decoration:none;color:#655D53;font-size:11px}
+.tab.on{color:#563E84;font-weight:600;box-shadow:inset 0 3px 0 #563E84}
+</style>
+</helmet>
+<div class="root" style="width: 1760px; height: 920px; box-sizing: border-box; padding: 24px 40px; display: flex; gap: 40px; background: #F7F4ED">
+
+  <section>
+    <h1 class="cap">聊天（收件箱在右上角）</h1>
+    <div class="phone">
+      <div class="hd"><h2>聊天</h2>
+        <a class="hb" href="Inbox.dc.html" aria-label="收件箱，3 项待决定"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg><span class="badge">3</span></a>
+        <a class="hb" href="NewChat.dc.html" aria-label="新建"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></a>
+      </div>
+      <a class="search" href="Search.dc.html" style="text-decoration: none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>搜索</a>
+      <div class="body">
+        <sc-for list="{{chats}}" as="c" hint-placeholder-count="7">
+          <a class="row" href="{{c.href}}">
+            <span class="av" style="{{c.avStyle}}">{{c.av}}</span>
+            <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+              <span style="display: flex; gap: 6px"><span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500">{{c.name}}</span><span style="font-size: 11px; color: #655D53">{{c.time}}</span></span>
+              <span style="{{c.prevStyle}}">{{c.preview}}</span>
+            </span>
+          </a>
+        </sc-for>
+      </div>
+      <nav class="tabs" aria-label="主导航">
+        <a class="tab on" href="NarrowMore.dc.html" aria-current="page">聊天</a>
+        <a class="tab" href="NarrowMore.dc.html">联系人</a>
+        <a class="tab" href="NarrowMore.dc.html">文件</a>
+        <a class="tab" href="NarrowMore.dc.html">我</a>
+      </nav>
+    </div>
+  </section>
+
+  <section>
+    <h1 class="cap">联系人</h1>
+    <div class="phone">
+      <div class="hd"><h2>联系人</h2>
+        <a class="hb" href="PeopleStates.dc.html" aria-label="添加朋友或创建助手"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M19 8v6M16 11h6"></path></svg></a>
+      </div>
+      <div class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>搜索</div>
+      <div class="body">
+        <a class="row" href="PeopleStates.dc.html" style="height: 56px"><span class="av" style="width: 36px; height: 36px; background: #E4DDDA">+</span><span style="flex: 1">新的朋友</span><span class="badge" style="position: static">1</span></a>
+        <a class="row" href="GroupChat.dc.html" style="height: 56px"><span class="av" style="width: 36px; height: 36px; background: #E4DDDA">群</span><span style="flex: 1">群聊</span><span class="v">3</span></a>
+        <sc-for list="{{people}}" as="p" hint-placeholder-count="6">
+          <sc-if value="{{p.hasLetter}}" hint-placeholder-val="{{ true }}"><div class="sec">{{p.letter}}</div></sc-if>
+          <a class="row" href="{{p.href}}" style="height: 56px"><span class="av" style="{{p.avStyle}}">{{p.av}}</span><span>{{p.name}}</span></a>
+        </sc-for>
+      </div>
+      <nav class="tabs" aria-label="主导航">
+        <a class="tab" href="NarrowMore.dc.html">聊天</a>
+        <a class="tab on" href="NarrowMore.dc.html" aria-current="page">联系人</a>
+        <a class="tab" href="NarrowMore.dc.html">文件</a>
+        <a class="tab" href="NarrowMore.dc.html">我</a>
+      </nav>
+    </div>
+  </section>
+
+  <section>
+    <h1 class="cap">文件（左边栏变成第一层）</h1>
+    <div class="phone">
+      <div class="hd"><h2>文件</h2>
+        <a class="hb" href="SearchScope.dc.html" aria-label="搜索文件和卡片"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></a>
+        <a class="hb" href="LibraryStates.dc.html" aria-label="新建"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></a>
+      </div>
+      <div class="body" style="background: #F2EDE2">
+        <div class="gl">卡片</div>
+        <div class="grp">
+          <a class="gr" href="Library.dc.html"><span style="flex: 1">全部卡片</span><span class="v">86</span><span class="chev">›</span></a>
+          <a class="gr" href="LibraryStates.dc.html"><span style="flex: 1">来自聊天</span><span class="chev">›</span></a>
+        </div>
+        <div class="gl">白板</div>
+        <div class="grp">
+          <a class="gr" href="Board.dc.html"><span style="flex: 1">志愿者排班</span><span class="chev">›</span></a>
+          <a class="gr" href="Board.dc.html"><span style="flex: 1">秋季读书会</span><span class="chev">›</span></a>
+        </div>
+        <div class="gl">标签</div>
+        <div class="grp">
+          <a class="gr" href="TagTable.dc.html"><span style="flex: 1"># 志愿者</span><span class="v">12</span><span class="chev">›</span></a>
+          <a class="gr" href="TagTable.dc.html"><span style="flex: 1"># 活动</span><span class="v">9</span><span class="chev">›</span></a>
+        </div>
+        <div class="gl">文件夹</div>
+        <div class="grp">
+          <a class="gr" href="FileOpen.dc.html"><span style="flex: 1">活动</span><span class="chev">›</span></a>
+          <a class="gr" href="LibraryStates.dc.html"><span style="flex: 1">共享给我</span><span class="chev">›</span></a>
+        </div>
+        <div class="v" style="padding: 12px 20px; font-size: 12px">窄窗不显示白板编辑，只能查看和移动卡片</div>
+      </div>
+      <nav class="tabs" aria-label="主导航">
+        <a class="tab" href="NarrowMore.dc.html">聊天</a>
+        <a class="tab" href="NarrowMore.dc.html">联系人</a>
+        <a class="tab on" href="NarrowMore.dc.html" aria-current="page">文件</a>
+        <a class="tab" href="NarrowMore.dc.html">我</a>
+      </nav>
+    </div>
+  </section>
+
+  <section>
+    <h1 class="cap">我（收藏、设置都在这里）</h1>
+    <div class="phone">
+      <div class="hd"><h2>我</h2></div>
+      <div class="body" style="background: #F2EDE2">
+        <a href="Profile.dc.html" style="display: flex; align-items: center; gap: 14px; margin: 12px; padding: 16px; background: #FBFAF7; border-radius: 10px; text-decoration: none; color: #2B2621">
+          <span class="av" style="width: 56px; height: 56px; font-size: 20px; background: #E0DBDE">林</span>
+          <span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 17px; font-weight: 600">林舟</span><span class="v">linzhou@undefineds.co</span></span>
+          <span class="chev">›</span>
+        </a>
+        <div class="grp" style="margin-top: 4px">
+          <a class="gr" href="Favorites.dc.html"><span style="flex: 1">收藏</span><span class="chev">›</span></a>
+        </div>
+        <div class="grp" style="margin-top: 16px">
+          <a class="gr" href="Settings.dc.html"><span style="flex: 1">设置</span><span class="chev">›</span></a>
+        </div>
+        <div class="grp" style="margin-top: 16px">
+          <a class="gr" href="Login.dc.html" style="justify-content: center">切换账号</a>
+          <a class="gr" href="SignOut.dc.html" style="justify-content: center">退出登录</a>
+        </div>
+        <div class="grp" style="margin-top: 16px">
+          <div class="gr" style="background: #F7F4ED; font-size: 13px"><span style="flex: 1">AI 还没连接</span><a href="NotAppliedStates.dc.html" style="font-weight: 600; text-decoration: none">去连接</a></div>
+        </div>
+        <div class="v" style="padding: 6px 20px; font-size: 12px">有问题时才出现上面这一行（同 S3b）</div>
+      </div>
+      <nav class="tabs" aria-label="主导航">
+        <a class="tab" href="NarrowMore.dc.html">聊天</a>
+        <a class="tab" href="NarrowMore.dc.html">联系人</a>
+        <a class="tab" href="NarrowMore.dc.html">文件</a>
+        <a class="tab on" href="NarrowMore.dc.html" aria-current="page">我</a>
+      </nav>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1760,"height":920}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ai = 'background: #563E84; color: #F7F4ED; font-size: 13px;';
+    const human = 'background: #E0DBDE; color: #2B2621;';
+    const muted = 'font-size: 13px; color: #655D53; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+    const accent = 'font-size: 13px; color: #563E84; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+    const chats = [
+      { href: 'Narrow.dc.html', av: 'AI', ai: true, name: 'LinX 助手', time: '10:42', preview: '# 志愿者排班方案 · 等你决定', hot: true },
+      { href: 'GroupChat.dc.html', av: '书', name: '书店活动组', time: '09:15', preview: '周禾：签到表放共享盘了' },
+      { href: 'People.dc.html', av: '周', name: '周禾', time: '昨天', preview: '好，周五对一下报名名单' },
+      { href: 'PeopleSolid.dc.html', av: 'AI', ai: true, name: '活动小助手', time: '周二', preview: '海报文案初稿发你了' },
+      { href: 'GroupChat.dc.html', av: '作', name: '作者见面会筹备', time: '9月28日', preview: '你：场地确认了，周日下午' },
+      { href: 'People.dc.html', av: '陈', name: '陈一', time: '9月25日', preview: '收到，谢谢' },
+    ].map((c) => ({ ...c, avStyle: c.ai ? ai : human, prevStyle: c.hot ? accent : muted }));
+    const pAi = 'width: 36px; height: 36px; background: #563E84; color: #F7F4ED; font-size: 12px;';
+    const pHuman = 'width: 36px; height: 36px; background: #E0DBDE;';
+    const people = [
+      { letter: 'C', av: '陈', name: '陈一' },
+      { letter: 'H', av: 'AI', name: '活动小助手', ai: true },
+      { letter: 'L', av: 'AI', name: 'LinX 助手', ai: true },
+      { letter: '', av: '陆', name: '陆川' },
+      { letter: 'S', av: '宋', name: '宋青' },
+      { letter: 'Z', av: '周', name: '周禾' },
+    ].map((p) => ({ ...p, hasLetter: Boolean(p.letter), avStyle: p.ai ? pAi : pHuman, href: p.ai ? 'PeopleStates.dc.html' : 'People.dc.html' }));
+    return { chats, people };
+  }
+}
+</script>
+</body>
+</html>

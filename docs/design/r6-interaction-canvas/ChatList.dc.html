@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>会话列表</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<aside aria-label="会话列表" style="width: 280px; min-height: 900px; box-sizing: border-box; display: flex; flex-direction: column; background: #F2EDE2; border-right: 1px solid #DFDBD5; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif; color: #2B2621; font-size: 14px; line-height: 1.4">
+  <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid #DFDBD5">
+    <a href="Search.dc.html" style="flex: 1; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; background: #E4DDDA; color: #655D53; font-size: 12px; text-decoration: none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      搜索
+    </a>
+    <button aria-label="新建：AI 工作、找人聊天、发起群聊" style="width: 28px; height: 28px; border-radius: 6px; border: 0; background: #E4DDDA; display: inline-flex; align-items: center; justify-content: center; color: #2B2621; padding: 0; cursor: pointer">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    </button>
+  </div>
+
+  <sc-if value="{{showOffline}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: #E4DDDA; font-size: 12px; color: #2B2621">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01M3 3l18 18"></path></svg>
+      网络不可用，显示的是上次的内容
+    </div>
+  </sc-if>
+  <sc-if value="{{showError}}" hint-placeholder-val="{{ false }}">
+    <div role="alert" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: #E4DDDA; font-size: 12px">
+      <span style="flex: 1">会话列表没有更新成功</span>
+      <button style="border: 0; background: transparent; color: #563E84; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; padding: 0">重试</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{showRows}}" hint-placeholder-val="{{ true }}">
+    <div role="listbox" aria-label="会话" style="display: flex; flex-direction: column">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="7">
+        <a href="{{r.href}}" role="option" aria-selected="{{r.ariaSel}}" style="{{r.rowStyle}}">
+          <span style="{{r.avStyle}}">{{r.av}}</span>
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+            <span style="display: flex; align-items: baseline; gap: 6px">
+              <span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: 500">{{r.name}}</span>
+              <span style="font-size: 11px; color: #655D53; flex: none">{{r.time}}</span>
+            </span>
+            <span style="display: flex; align-items: center; gap: 6px">
+              <span style="{{r.prevStyle}}">{{r.preview}}</span>
+              <sc-if value="{{r.hasBadge}}" hint-placeholder-val="{{ false }}">
+                <span style="min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: #563E84; color: #F7F4ED; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex: none">{{r.badge}}</span>
+              </sc-if>
+              <sc-if value="{{r.muted}}" hint-placeholder-val="{{ false }}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#655D53" stroke-width="2" stroke-linecap="round" aria-label="免打扰" role="img"><path d="M13.7 21a2 2 0 0 1-3.4 0M18.6 13A17 17 0 0 1 18 8M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14M3 3l18 18M18 8a6 6 0 0 0-9.3-5"></path></svg>
+              </sc-if>
+            </span>
+          </span>
+        </a>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{showLoading}}" hint-placeholder-val="{{ false }}">
+    <div aria-busy="true" aria-label="正在读取会话" style="display: flex; flex-direction: column">
+      <sc-for list="{{skeleton}}" as="s" hint-placeholder-count="6">
+        <div style="height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 12px">
+          <span style="width: 40px; height: 40px; border-radius: 6px; background: #E4DDDA; flex: none"></span>
+          <span style="flex: 1; display: flex; flex-direction: column; gap: 8px">
+            <span style="height: 10px; width: 60%; border-radius: 3px; background: #E4DDDA"></span>
+            <span style="height: 8px; width: 85%; border-radius: 3px; background: #E9E4E4"></span>
+          </span>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{showEmpty}}" hint-placeholder-val="{{ false }}">
+    <a href="Welcome.dc.html" aria-selected="true" style="height: 64px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 12px; text-decoration: none; color: #2B2621; background: #E4DDDA; box-shadow: inset 2px 0 0 #563E84">
+      <span style="width: 40px; height: 40px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; background: #563E84; color: #F7F4ED">AI</span>
+      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+        <span style="display: flex; gap: 6px"><span style="flex: 1; font-size: 14px; font-weight: 500">LinX 助手</span><span style="font-size: 11px; color: #655D53">刚刚</span></span>
+        <span style="font-size: 12px; color: #563E84; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">你好，我是你的助手</span>
+      </span>
+    </a>
+    <div style="padding: 16px 12px; font-size: 12px; color: #655D53">加朋友、建群：右上角“+”</div>
+  </sc-if>
+</aside>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"selected":{"editor":"enum","options":["volunteer","group","zhou","helper","autumn","accounts","coding","author","none"],"default":"volunteer"},"variant":{"editor":"enum","options":["normal","empty","loading","offline","error"],"default":"normal"},"$preview":{"width":280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const raw = this.props.selected ?? 'volunteer';
+    const sel = ['volunteer', 'autumn', 'accounts', 'coding'].includes(raw) ? 'linx' : raw;
+    const linxPreview = { accounts: '# 每周排班提醒 · 运行中', coding: '# 书店网站改版 · Claude Code 在改', autumn: '# 秋季读书会报名 · 报名方案.md' }[raw] || '# 志愿者排班方案 · 等你决定';
+    const variant = this.props.variant ?? 'normal';
+    const data = [
+      { id: 'linx', href: 'Conversation.dc.html', av: 'AI', ai: true, strong: true, name: 'LinX 助手', time: '10:42', preview: linxPreview, accent: true },
+      { id: 'group', href: 'GroupChat.dc.html', av: '书', name: '书店活动组', time: '09:15', preview: '周禾：签到表放共享盘了', badge: 2 },
+      { id: 'zhou', href: 'People.dc.html', av: '周', name: '周禾', time: '昨天', preview: '好，周五对一下报名名单' },
+      { id: 'helper', href: 'PeopleSolid.dc.html', av: 'AI', ai: true, name: '活动小助手', time: '周二', preview: '海报文案初稿发你了' },
+      { id: 'author', href: 'GroupChat.dc.html', av: '作', name: '作者见面会筹备', time: '9月28日', preview: '你：场地确认了，周日下午', muted: true },
+      { id: 'chen', href: 'People.dc.html', av: '陈', name: '陈一', time: '9月25日', preview: '收到，谢谢' },
+    ];
+    const rows = data.map((r) => {
+      const on = r.id === sel;
+      return {
+        ...r,
+        hasBadge: Boolean(r.badge),
+        muted: Boolean(r.muted),
+        ariaSel: on ? 'true' : 'false',
+        rowStyle: 'height: 64px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 12px; text-decoration: none; color: #2B2621; ' + (on ? 'background: #E4DDDA; box-shadow: inset 2px 0 0 #563E84;' : ''),
+        avStyle: 'width: 40px; height: 40px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; ' + (r.ai ? 'background: #563E84; color: #F7F4ED;' : 'background: #E0DBDE; color: #2B2621;'),
+        prevStyle: 'flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; ' + (r.accent ? 'color: #563E84; font-weight: 500;' : 'color: #655D53;'),
+      };
+    });
+    return {
+      rows,
+      skeleton: [1, 2, 3, 4, 5, 6],
+      showRows: variant === 'normal' || variant === 'offline' || variant === 'error',
+      showOffline: variant === 'offline',
+      showError: variant === 'error',
+      showLoading: variant === 'loading',
+      showEmpty: variant === 'empty',
+    };
+  }
+}
+</script>
+</body>
+</html>

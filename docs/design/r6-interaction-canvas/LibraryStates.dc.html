@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件：待整理、文件夹与状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.frame{border:1px solid #DFDBD5;border-radius:12px;overflow:hidden;background:#F7F4ED;display:flex;flex-direction:column;min-height:340px}
+.hd{height:48px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid #DFDBD5;font-size:14px;font-weight:600}
+.r{display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 14px;border-bottom:1px solid #DFDBD5;font-size:13px}
+.s{font-size:12px;color:#655D53}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:20px}
+.menu{background:#FBFAF7;border-radius:10px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:6px;width:200px}
+.mi{height:32px;display:flex;align-items:center;padding:0 10px;border-radius:6px;font-size:13px}
+.sep{height:1px;background:#DFDBD5;margin:4px 6px}
+.muted{color:#655D53}
+.bar{height:4px;border-radius:2px;background:#E4DDDA;overflow:hidden;width:100px}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px">
+  <section>
+    <div class="lbl">消息上点“记住”的写进 LinX 自己的文件夹</div>
+    <div class="frame">
+      <div class="hd"><span style="flex: 1">LinX 助手 › 记住的</span></div>
+      <div class="r"><span style="flex: 1">志愿者排班不设最低次数<br><span class="s">志愿者排班方案 · 今天</span></span><span class="btn">补充条件</span></div>
+      <div class="r"><span style="flex: 1">报名截止设在活动前 2 天<br><span class="s">秋季读书会报名 · 周二</span></span><span class="btn">补充条件</span></div>
+      <div class="r"><span style="flex: 1">海报先给周禾过目<br><span class="s">和已有卡片很像</span></span><a class="btn" href="Card.dc.html">合并…</a></div>
+      <div class="s" style="padding: 10px 14px">记下来就会用于以后的工作；不想用了，在卡片里撤回</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">文件夹：上传中、上传失败</div>
+    <div class="frame">
+      <div class="hd"><span class="muted" style="font-weight: 400">文件夹 ›</span> 活动</div>
+      <div class="r"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#655D53" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg><span style="flex: 1">报名方案.md</span><span class="s">9月16日</span></div>
+      <div class="r"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#655D53" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg><span style="flex: 1">三种工具对比表.md</span><span class="s">今天</span></div>
+      <div class="r"><span style="flex: 1">活动照片（5 个）<br><span class="s">上传中 3 / 5</span></span><span class="bar"><span style="display: block; width: 60%; height: 100%; background: #563E84"></span></span></div>
+      <div class="r"><span style="flex: 1">场地合同.pdf<br><span class="s">没上传成功：文件太大（上限 50 MB）</span></span><span class="btn">知道了</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">新建（左边栏“+”，或文件夹里右键）</div>
+    <div class="frame" style="align-items: flex-start; padding: 16px; background: #F2EDE2">
+      <div class="menu" role="menu">
+        <div class="mi" role="menuitem">新文档</div>
+        <div class="mi" role="menuitem">新表格…</div>
+        <div class="mi" role="menuitem">新文件夹</div>
+        <div class="sep"></div>
+        <div class="mi" role="menuitem">上传文件…</div>
+        <div class="mi" role="menuitem">添加网页…</div>
+      </div>
+      <div class="s" style="margin-top: 10px">白板不是单独的东西：任何文件夹或表格都可以加一个“白板”视图（K4）。</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">空文件夹</div>
+    <div class="frame">
+      <div class="hd">活动</div>
+      <div class="center"><div style="font-weight: 500">这里还是空的</div><div class="s">把文件拖进来，或者新建文档、表格</div><span class="btn primary">新建…</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">没有网络</div>
+    <div class="frame">
+      <div class="hd">全部卡片</div>
+      <div style="padding: 8px 14px; background: #E4DDDA; font-size: 12px">没有网络，显示的是上次的内容；修改会在恢复后保存</div>
+      <div class="r"><span style="flex: 1">维护成本</span><span class="s">已确认</span></div>
+      <div class="r"><span style="flex: 1">志愿者排班不设最低次数</span><span class="s">已确认</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">共享给我：权限变化</div>
+    <div class="frame">
+      <div class="hd"><span class="muted" style="font-weight: 400">文件夹 ›</span> 共享给我</div>
+      <div class="r"><span style="flex: 1">书店年度预算.xlsx<br><span class="s">周禾 共享 · 可以查看</span></span></div>
+      <div class="r" style="color: #655D53"><span style="flex: 1">供应商名单.xlsx<br><span class="s">共享已被收回，内容不再显示</span></span></div>
+      <div class="r" style="color: #655D53"><span style="flex: 1">活动预算草稿.md<br><span class="s">对方的空间暂时连不上</span></span><span class="btn">重试</span></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

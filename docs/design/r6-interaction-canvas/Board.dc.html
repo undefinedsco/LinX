@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>白板视图</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.ib{width:30px;height:30px;border:0;border-radius:6px;background:transparent;color:#655D53;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.vt{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 4px;font-size:13px;color:#655D53;text-decoration:none;border-bottom:2px solid transparent}
+.vt.on{color:#2B2621;font-weight:600;border-bottom-color:#2B2621}
+.sec{position:absolute;border-radius:12px}
+.pill{position:absolute;display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:7px;font-size:15px;font-weight:700;white-space:nowrap}
+.dots{font-weight:400;font-size:13px;opacity:.6}
+.wc{position:absolute;background:#FBFAF7;border:1px solid #DFDBD5;border-radius:8px;padding:9px 11px;font-size:12px;line-height:1.55;box-shadow:0 1px 3px rgb(43 38 33 / .08);box-sizing:border-box}
+.wc h3{margin:0 0 4px;font-size:13px;font-weight:600}
+.wc p{margin:0 0 3px;color:#2B2621}
+.ln{height:4px;border-radius:2px;background:#E4DDDA;margin:4px 0}
+.s{font-size:11px;color:#655D53}
+.vbar{position:absolute;left:16px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:2px;padding:6px;border-radius:12px;background:#FBFAF7;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10)}
+.vbar button{width:36px;height:36px;border:0;border-radius:8px;background:transparent;color:#2B2621;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.pop{position:absolute;background:#FBFAF7;border:1px solid #DFDBD5;border-radius:10px;box-shadow:0 12px 32px rgb(43 38 33 / .14);padding:6px;width:190px;font-size:13px}
+.mi{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:6px}
+.mi.on{background:#E4DDDA;font-weight:600}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="files" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="FilesNav" selected="plan" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：白板" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 20px">
+      <span class="s" style="font-size: 13px">活动 /</span>
+      <h1 style="margin: 0; font-size: 16px; font-weight: 600">志愿者排班</h1>
+      <span class="s" style="font-size: 12px">已保存到你的空间</span>
+      <span style="flex: 1"></span>
+      <span style="font-size: 13px; color: #2B2621">共享</span>
+      <button class="ib" aria-label="更多"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg></button>
+      <button class="ib" aria-label="打开卡片库" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></svg></button>
+    </header>
+    <div style="display: flex; align-items: center; gap: 16px; padding: 0 12px 0 20px; border-bottom: 1px solid #DFDBD5">
+      <a class="vt" href="TagTable.dc.html">表格</a>
+      <a class="vt on" href="Board.dc.html" aria-current="page">白板</a>
+      <a class="vt" href="TagStates.dc.html">+ 视图</a>
+    </div>
+
+    <div style="flex: 1; position: relative; overflow: hidden; background: #EFEBE3; min-height: 806px">
+      <svg aria-hidden="true" width="100%" height="100%" style="position: absolute; inset: 0">
+        <path d="M 196 290 L 270 290" fill="none" stroke="#8FB3D9" stroke-width="1.5"></path>
+        <path d="M 520 300 C 560 300, 560 210, 600 210" fill="none" stroke="#8FB3D9" stroke-width="1.5"></path>
+        <path d="M 400 420 L 400 520" fill="none" stroke="#8FB3D9" stroke-width="1.5"></path>
+        <path d="M 700 360 L 700 520" fill="none" stroke="#8FB3D9" stroke-width="1.5"></path>
+        <path d="M 830 210 C 870 210, 870 330, 900 330" fill="none" stroke="#563E84" stroke-width="2"></path>
+        <path d="M 893 326 L 901 330 L 893 334" fill="none" stroke="#563E84" stroke-width="2"></path>
+      </svg>
+      <div style="position: absolute; left: 842px; top: 256px; padding: 1px 8px; border-radius: 999px; background: #563E84; color: #F7F4ED; font-size: 11px">支持</div>
+
+      <div class="wc" style="left: 110px; top: 250px; width: 90px; background: #F6E7AE; border-color: #E6D28A; font-size: 11px">先把规则定下来，再挑工具</div>
+
+      <span class="pill" style="left: 270px; top: 160px; background: #F0D98C">排班规则 <span class="dots">···</span></span>
+      <div class="sec" style="left: 270px; top: 196px; width: 250px; height: 224px; background: rgba(240, 217, 140, .22); border: 1px solid #E8D49A"></div>
+      <div class="wc" style="left: 284px; top: 210px; width: 222px"><h3>志愿者排班不设最低次数</h3><p>只设每月上限，不给志愿者压力。</p></div>
+      <div class="wc" style="left: 284px; top: 300px; width: 222px"><h3>请假提前 24 小时</h3><p>在群里说，方便找人补位。</p><div class="ln" style="width: 70%"></div></div>
+
+      <span class="pill" style="left: 600px; top: 112px; background: #BFD3EA">工具对比 <span class="dots">···</span></span>
+      <div class="sec" style="left: 600px; top: 148px; width: 230px; height: 212px; background: rgba(191, 211, 234, .30); border: 1px solid #A9C2DE"></div>
+      <div class="wc" style="left: 614px; top: 162px; width: 202px; box-shadow: 0 0 0 2px #563E84"><h3>三种工具对比表</h3><p class="s">文档 · 活动</p><div class="ln"></div><div class="ln" style="width: 85%"></div><div class="ln" style="width: 60%"></div></div>
+      <div class="wc" style="left: 614px; top: 262px; width: 202px"><h3>维护成本</h3><p>小团队不为一次活动承担长期维护负担。</p></div>
+
+      <span class="pill" style="left: 900px; top: 290px; background: #BFDDBF">场地与押金 <span class="dots">···</span></span>
+      <div class="sec" style="left: 900px; top: 326px; width: 170px; height: 170px; background: rgba(191, 221, 191, .30); border: 1px solid #A9CDA9"></div>
+      <div class="wc" style="left: 912px; top: 340px; width: 146px; border-left: 3px solid #563E84"><p class="s">场地合同.pdf · 第 3 页</p><p>签约时付押金 500 元，7 日内退还。</p></div>
+
+      <span class="pill" style="left: 290px; top: 520px; background: #D9D3CC">志愿者 <span class="dots">···</span></span>
+      <div class="sec" style="left: 290px; top: 556px; width: 470px; height: 120px; background: rgba(217, 211, 204, .35); border: 1px solid #CFC8C2"></div>
+      <div class="wc" style="left: 304px; top: 570px; width: 140px"><h3>周禾</h3><p class="s">周六上午 · 周日下午</p></div>
+      <div class="wc" style="left: 454px; top: 570px; width: 140px"><h3>陈一</h3><p class="s">周六下午</p></div>
+      <div class="wc" style="left: 604px; top: 570px; width: 140px"><h3>陆川</h3><p class="s">周日下午</p></div>
+
+      <div class="pop" role="dialog" aria-label="这条线是什么关系" style="left: 880px; top: 120px">
+        <div class="s" style="padding: 4px 10px">这条线是</div>
+        <div class="mi">只画一条线</div>
+        <div class="mi on">支持<span class="s" style="margin-left: auto">词表</span></div>
+        <div class="mi">反对</div>
+        <div class="mi">替代</div>
+        <div class="mi" style="color: #563E84">其他属性…</div>
+      </div>
+
+      <div class="vbar" role="toolbar" aria-label="白板工具">
+        <button aria-label="选择" aria-pressed="true" style="background: #E4DDDA"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 4 7 17 2.5-7.5L21 11z"></path></svg></button>
+        <button aria-label="新卡片"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6M8 13h8M8 17h5"></path></svg></button>
+        <button aria-label="放文件"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"></path><path d="M12 10v6M9 13l3-3 3 3"></path></svg></button>
+        <button aria-label="连线"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M5 19 19 5M12 5h7v7"></path></svg></button>
+        <button aria-label="文字"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M5 6V4h14v2M12 4v16M9 20h6"></path></svg></button>
+        <button aria-label="区块"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="2"></rect><path d="M3 6V4h8v2"></path></svg></button>
+        <button aria-label="在白板里找"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></button>
+        <button aria-label="更多：思维导图、便签"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg></button>
+      </div>
+
+      <div aria-label="小地图" style="position: absolute; right: 16px; bottom: 58px; width: 200px; height: 120px; border-radius: 10px; background: #FBFAF7; border: 1px solid #DFDBD5; box-shadow: 0 8px 24px rgb(43 38 33 / .10); overflow: hidden">
+        <div style="position: absolute; left: 30px; top: 40px; width: 30px; height: 26px; border-radius: 3px; background: #F0D98C"></div>
+        <div style="position: absolute; left: 70px; top: 26px; width: 28px; height: 26px; border-radius: 3px; background: #BFD3EA"></div>
+        <div style="position: absolute; left: 110px; top: 54px; width: 22px; height: 22px; border-radius: 3px; background: #BFDDBF"></div>
+        <div style="position: absolute; left: 36px; top: 82px; width: 60px; height: 16px; border-radius: 3px; background: #D9D3CC"></div>
+        <div style="position: absolute; left: 20px; top: 16px; width: 130px; height: 90px; border: 1.5px solid #563E84; border-radius: 4px"></div>
+      </div>
+      <div style="position: absolute; right: 16px; bottom: 14px; display: flex; align-items: center; gap: 2px; padding: 2px 6px; border-radius: 10px; background: #FBFAF7; border: 1px solid #DFDBD5; font-size: 12px; color: #655D53">
+        <button class="ib" aria-label="适合窗口">⤢</button><button class="ib" aria-label="缩小">−</button><span style="min-width: 40px; text-align: center">60%</span><button class="ib" aria-label="放大">+</button>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件夹</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.seg{display:inline-flex;padding:2px;border-radius:8px;background:#E4DDDA;gap:2px}
+.seg a{height:26px;padding:0 10px;border-radius:6px;display:inline-flex;align-items:center;font-size:12px;text-decoration:none;color:#2B2621}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{font-size:12px;color:#655D53;font-weight:500;text-align:left;padding:8px 12px;border-bottom:1px solid #DFDBD5}
+td{padding:0 12px;height:40px;border-bottom:1px solid #EAE5DC;white-space:nowrap}
+tr.on td{background:#E4DDDA}
+.nm{display:flex;align-items:center;gap:8px}
+.v{color:#655D53}
+.st{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:4px;background:#E9E4E4;font-size:11px;color:#655D53}
+.gl{padding:16px 16px 6px;font-size:12px;color:#655D53}
+.grp{background:#FBFAF7;border-radius:10px;overflow:hidden;margin:0 12px}
+.gr{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px;text-decoration:none;color:#2B2621}
+.gr:last-child{border-bottom:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 14px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:13px;font-weight:500;white-space:nowrap;text-decoration:none}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="files" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="FilesNav" selected="f1" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：文件夹" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 16px 0 20px; border-bottom: 1px solid #DFDBD5">
+      <span class="v" style="font-size: 13px">我的空间 /</span>
+      <h1 style="margin: 0; font-size: 15px; font-weight: 600">活动</h1>
+      <span style="flex: 1"></span>
+      <nav class="seg" aria-label="视图">
+        <a href="Library.dc.html" aria-current="page" style="background: #FBFAF7; font-weight: 600">表格</a>
+        <a href="Board.dc.html">白板</a>
+        <a href="TagStates.dc.html" aria-label="加一个视图">+</a>
+      </nav>
+    </header>
+    <div style="overflow-x: auto">
+      <table>
+        <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">修改</th><th scope="col">谁能看</th><th scope="col" style="color: #563E84; width: 40px" aria-label="加属性">+</th></tr></thead>
+        <tbody>
+          <tr><td><span class="nm">活动照片</span></td><td class="v">文件夹 · 5 项</td><td class="v">9月20日</td><td class="v">你、周禾</td></tr>
+          <tr><td><a class="nm" href="FileOpen.dc.html" style="color: #2B2621; text-decoration: none">报名方案.md</a></td><td class="v">文档</td><td class="v">9月16日</td><td class="v">你、周禾</td></tr>
+          <tr><td><span class="nm">三种工具对比表.md</span></td><td class="v">文档 · LinX 助手写的</td><td class="v">今天</td><td class="v">只有你</td></tr>
+          <tr class="on"><td><a class="nm" href="Source.dc.html" style="color: #2B2621; text-decoration: none">场地合同.pdf</a></td><td class="v">PDF</td><td class="v">9月12日</td><td class="v">你、周禾</td></tr>
+          <tr><td><span class="nm">活动预算.xlsx</span></td><td class="v">表格文件</td><td class="v">9月10日</td><td class="v">只有你</td></tr>
+          <tr><td><span class="nm">讲座录音.m4a</span></td><td class="v">音频 · 58 分钟</td><td class="v">9月8日</td><td class="v">你、周禾</td></tr>
+          <tr><td><a class="nm" href="Board.dc.html" style="color: #2B2621; text-decoration: none">志愿者排班</a></td><td class="v">数据 · 白板视图</td><td class="v">今天</td><td class="v">你、周禾</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="v" style="padding: 12px 20px; font-size: 12px">单击看右边预览，双击打开卡片（弹窗）；拖文件进来就上传</div>
+  </main>
+
+  <aside aria-label="右边栏：预览" style="flex: 0 0 300px; box-sizing: border-box; background: #F2EDE2; border-left: 1px solid #DFDBD5; min-height: 900px">
+    <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #DFDBD5; font-weight: 600; font-size: 14px">场地合同.pdf</div>
+    <div style="margin: 14px 12px 0; height: 180px; border-radius: 8px; background: #FBFAF7; border: 1px solid #DFDBD5; display: flex; align-items: center; justify-content: center" role="img" aria-label="第一页缩略图"><span class="v" style="font-size: 12px">第 1 页</span></div>
+    <div style="display: flex; gap: 8px; padding: 12px"><a class="btn primary" href="Source.dc.html" style="flex: 1">打开</a><a class="btn" href="Share.dc.html">共享…</a></div>
+    <div class="gl">信息</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1">大小</span><span class="v">1.2 MB</span></div>
+      <div class="gr"><span style="flex: 1">修改</span><span class="v">你 · 9月12日</span></div>
+      <a class="gr" href="Share.dc.html"><span style="flex: 1">谁能看</span><span class="v">你、周禾</span><span style="color: #87837D">›</span></a>
+    </div>
+    <div class="gl">从这里摘出的卡片</div>
+    <div class="grp"><a class="gr" href="Card.dc.html"><span style="flex: 1">押金在活动后 7 天退还</span><span style="color: #87837D">›</span></a></div>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

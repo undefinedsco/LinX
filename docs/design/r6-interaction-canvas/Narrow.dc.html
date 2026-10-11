@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>窄窗工作切面</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:15px;line-height:1.55}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:44px;padding:0 16px;border-radius:8px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:14px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;box-sizing:border-box}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.muted{color:#655D53}
+.small{font-size:12px}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:56px;text-decoration:none;color:#655D53;font-size:11px}
+</style>
+</helmet>
+<div class="root" style="width: 390px; height: 844px; box-sizing: border-box; display: flex; flex-direction: column; background: #F7F4ED; overflow: hidden">
+  <header style="display: flex; align-items: center; gap: 4px; padding: 8px 8px; border-bottom: 1px solid #DFDBD5; background: #F7F4ED">
+    <a href="Main.dc.html" aria-label="返回工作列表" style="width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: #2B2621">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+    </a>
+    <div style="flex: 1; min-width: 0">
+      <div style="font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">LinX 助手</div>
+      <button style="border: 0; background: transparent; padding: 0; font: inherit; font-size: 12px; color: #655D53; display: inline-flex; align-items: center; gap: 2px; cursor: pointer"># 志愿者排班方案
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+      </button>
+    </div>
+    <a href="Inbox.dc.html" aria-label="收件箱，3 项待决定" style="position: relative; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: #2B2621">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+      <span style="position: absolute; top: 6px; right: 6px; min-width: 16px; height: 16px; border-radius: 999px; background: #563E84; color: #F7F4ED; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">3</span>
+    </a>
+  </header>
+
+  <div style="flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: flex-start">
+      <div style="max-width: 75%; background: #E0DBDE; padding: 9px 12px; border-radius: 8px; font-size: 14px">帮我比较共享日历、排班小程序和自己搭一个表单。</div>
+      <span style="width: 34px; height: 34px; border-radius: 6px; background: #E0DBDE; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex: none">林</span>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: flex-start">
+      <span style="width: 34px; height: 34px; border-radius: 6px; background: #563E84; color: #F7F4ED; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex: none">AI</span>
+      <div style="display: flex; flex-direction: column; gap: 4px; max-width: 75%">
+        <div style="background: #FBFAF7; border: 1px solid #DFDBD5; padding: 9px 12px; border-radius: 8px; font-size: 14px">建议先用<strong>共享日历加提醒</strong>：维护最省，志愿者都有日历账号。</div>
+        <a href="Card.dc.html" style="font-size: 12px; color: #655D53; text-decoration: none">依据：维护成本 ›</a>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: flex-start">
+      <span style="width: 34px; height: 34px; border-radius: 6px; background: #563E84; color: #F7F4ED; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex: none">AI</span>
+      <div style="flex: 1; max-width: 75%; background: #FBFAF7; border: 1px solid #DFDBD5; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+        <div style="font-weight: 600; font-size: 14px">发送排班日历邀请？</div>
+        <div class="small muted">发给 6 位志愿者</div>
+        <a class="btn primary" href="Decision.dc.html" style="height: 40px">查看并决定</a>
+      </div>
+    </div>
+  </div>
+
+  <footer style="padding: 8px 12px; border-top: 1px solid #DFDBD5; background: #F7F4ED">
+    <div style="display: flex; align-items: flex-end; gap: 8px; border: 1px solid #87837D; border-radius: 10px; background: #FBFAF7; padding: 6px 6px 6px 12px">
+      <label for="nm" style="position: absolute; left: -9999px">消息</label>
+      <textarea id="nm" rows="1" style="flex: 1; border: 0; outline: none; resize: none; background: transparent; font: inherit; font-size: 14px; padding: 8px 0; color: #2B2621">共享日历先试两周</textarea>
+      <button class="btn primary" style="height: 36px; padding: 0 12px">发送</button>
+    </div>
+  </footer>
+
+  <nav aria-label="主导航" style="display: flex; border-top: 1px solid #DFDBD5; background: #F2EDE2">
+    <a class="tab" href="Main.dc.html" aria-current="page" style="color: #563E84; font-weight: 600; box-shadow: inset 0 3px 0 #563E84">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+      聊天
+    </a>
+    <a class="tab" href="People.dc.html">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+      联系人
+    </a>
+    <a class="tab" href="Library.dc.html">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"></path></svg>
+      文件
+    </a>
+    <a class="tab" href="MyAI.dc.html">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+      我
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

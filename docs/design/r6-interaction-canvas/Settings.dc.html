@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>设置</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.nav{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:6px;text-decoration:none;color:#2B2621;font-size:13px}
+.nav:hover{background:#E9E4E4}
+.ni{width:22px;height:22px;border-radius:5px;background:#E4DDDA;display:inline-flex;align-items:center;justify-content:center;flex:none;color:#2B2621}
+.gl{padding:20px 4px 6px;font-size:12px;color:#655D53}
+.grp{background:#FBFAF7;border-radius:10px;overflow:hidden;border:1px solid #DFDBD5}
+.gr{display:flex;align-items:center;gap:10px;min-height:46px;padding:0 14px;border-bottom:1px solid #DFDBD5;font-size:14px;color:#2B2621;text-decoration:none}
+.gr:last-child{border-bottom:0}
+.v{color:#655D53;font-size:13px}
+.chev{color:#87837D}
+.foot{padding:6px 4px 0;font-size:12px;color:#655D53}
+.sw{width:34px;height:20px;border-radius:999px;position:relative;flex:none;border:0;padding:0}
+.knob{position:absolute;top:2px;width:16px;height:16px;border-radius:50%;background:#F7F4ED}
+.seg{display:inline-flex;padding:2px;border-radius:8px;background:#E4DDDA;gap:2px}
+.seg button{height:26px;padding:0 12px;border:0;border-radius:6px;background:transparent;font:inherit;font-size:12px;color:#2B2621}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="none" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+
+  <aside aria-label="设置分类" style="flex: 0 0 280px; align-self: stretch; box-sizing: border-box; background: #F2EDE2; border-right: 1px solid #DFDBD5">
+    <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 20px; border-bottom: 1px solid #DFDBD5; font-size: 15px; font-weight: 600">设置</div>
+    <nav style="padding: 8px; display: flex; flex-direction: column; gap: 1px">
+      <a class="nav" href="SpaceStates.dc.html"><span class="ni"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5M3 12c0 1.7 4 3 9 3s9-1.3 9-3"></path></svg></span>空间与服务</a>
+      <a class="nav" href="Settings.dc.html" aria-current="page" style="background: #E4DDDA; font-weight: 600; box-shadow: inset 2px 0 0 #563E84"><span class="ni"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg></span>通用</a>
+      <a class="nav" href="NotAppliedStates.dc.html"><span class="ni"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8"></path></svg></span>模型连接<span class="v" style="margin-left: auto; font-size: 12px">已连接</span></a>
+      <div class="gl" style="padding: 14px 10px 4px">这台电脑</div>
+      <a class="nav" href="SettingsStates.dc.html"><span class="ni"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg></span>本机服务<span class="v" style="margin-left: auto; font-size: 12px">运行中</span></a>
+      <a class="nav" href="SettingsStates.dc.html"><span class="ni"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg></span>外部访问<span class="v" style="margin-left: auto; font-size: 12px">未开启</span></a>
+      <a class="nav" href="SettingsStates.dc.html"><span class="ni"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"></path></svg></span>版本更新<span style="margin-left: auto; height: 18px; padding: 0 6px; border-radius: 999px; background: #563E84; color: #F7F4ED; font-size: 11px; display: inline-flex; align-items: center">新版本</span></a>
+      <div class="gl" style="padding: 14px 10px 4px"></div>
+      <a class="nav" href="SettingsStates.dc.html"><span class="ni"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7.5h.01"></path></svg></span>关于 LinX</a>
+    </nav>
+  </aside>
+
+  <main aria-label="通用" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 24px; border-bottom: 1px solid #DFDBD5">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 600">通用</h1>
+    </header>
+    <div style="width: 100%; max-width: 640px; box-sizing: border-box; padding: 8px 24px 40px; align-self: center">
+      <div class="gl">外观</div>
+      <div class="grp">
+        <div class="gr"><span style="flex: 1">外观</span>
+          <div class="seg" role="radiogroup" aria-label="外观">
+            <button role="radio" aria-checked="true" style="background: #FBFAF7; font-weight: 600">跟随系统</button>
+            <button role="radio" aria-checked="false">浅色</button>
+            <button role="radio" aria-checked="false">深色</button>
+          </div>
+        </div>
+        <a class="gr" href="Settings.dc.html"><span style="flex: 1">语言</span><span class="v">简体中文</span><span class="chev">›</span></a>
+      </div>
+      <div class="foot">桌面版和网页版用同一个外观设置。</div>
+
+      <div class="gl">打开 LinX 时</div>
+      <div class="grp">
+        <a class="gr" href="Settings.dc.html"><span style="flex: 1">回到</span><span class="v">上次的位置</span><span class="chev">›</span></a>
+        <div class="gr"><span style="flex: 1">开机时自动打开</span><button class="sw" role="switch" aria-checked="false" aria-label="开机时自动打开" style="background: #87837D"><span class="knob" style="left: 2px"></span></button></div>
+      </div>
+
+      <div class="gl">通知</div>
+      <div class="grp">
+        <div class="gr"><span style="flex: 1">新消息</span><button class="sw" role="switch" aria-checked="true" aria-label="新消息" style="background: #563E84"><span class="knob" style="right: 2px"></span></button></div>
+        <div class="gr"><span style="flex: 1">有事等你决定</span><button class="sw" role="switch" aria-checked="true" aria-label="有事等你决定" style="background: #563E84"><span class="knob" style="right: 2px"></span></button></div>
+        <div class="gr"><span style="flex: 1">持续任务没成功</span><button class="sw" role="switch" aria-checked="true" aria-label="持续任务没成功" style="background: #563E84"><span class="knob" style="right: 2px"></span></button></div>
+        <div class="gr"><span style="flex: 1">通知里显示内容</span><button class="sw" role="switch" aria-checked="false" aria-label="通知里显示内容" style="background: #87837D"><span class="knob" style="left: 2px"></span></button></div>
+      </div>
+      <div class="foot">免打扰的会话不通知。关掉“显示内容”时，通知只写“你有新消息”。</div>
+
+      <div class="gl">发送</div>
+      <div class="grp">
+        <a class="gr" href="Settings.dc.html"><span style="flex: 1">发送消息</span><span class="v">Enter（Shift + Enter 换行）</span><span class="chev">›</span></a>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

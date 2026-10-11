@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>我的 AI</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.55}
+.gl{padding:24px 4px 8px;font-size:13px;font-weight:600}
+.grp{background:#FBFAF7;border-radius:12px;overflow:hidden;border:1px solid #DFDBD5}
+.gr{display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 16px;border-bottom:1px solid #DFDBD5;text-decoration:none;color:#2B2621}
+.gr:last-child{border-bottom:0}
+.v{color:#655D53;font-size:13px}
+.chev{color:#87837D}
+.s{font-size:12px;color:#655D53}
+.rgl{padding:16px 24px 6px;font-size:12px;color:#655D53}
+.rgrp{background:#FBFAF7;border-radius:10px;overflow:hidden;margin:0 12px}
+.rgr{display:flex;align-items:center;gap:8px;min-height:44px;padding:6px 12px;border-bottom:1px solid #DFDBD5;font-size:13px;text-decoration:none;color:#2B2621}
+.rgr:last-child{border-bottom:0}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="myai" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="AINav" selected="overview" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：概览" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 20px; border-bottom: 1px solid #DFDBD5"><h1 style="margin: 0; font-size: 15px; font-weight: 600">概览</h1></header>
+    <div style="width: 100%; max-width: 620px; box-sizing: border-box; padding: 8px 24px 40px; align-self: center">
+      <div class="gl">做事的方法</div>
+      <div class="grp">
+        <a class="gr" href="Method.dc.html"><span style="flex: 1"><span style="font-weight: 500">书店日常</span><br><span class="s">默认方法：先找现成的办法，对外发送前问你</span></span><span class="chev">›</span></a>
+        <a class="gr" href="Method.dc.html"><span style="flex: 1">2 项工作有自己的调整</span><span class="v">志愿者排班方案、秋季读书会报名</span><span class="chev">›</span></a>
+      </div>
+
+      <div class="gl">参与工作的知识</div>
+      <div class="grp">
+        <a class="gr" href="Library.dc.html"><span style="flex: 1">已确认的卡片</span><span class="v">12</span><span class="chev">›</span></a>
+        <a class="gr" href="LibraryStates.dc.html"><span style="flex: 1">最近从聊天记下的</span><span class="v">3</span><span class="chev">›</span></a>
+        <a class="gr" href="MyAIStates.dc.html"><span style="flex: 1"><span>项目记忆</span><br><span class="s">5 条，可以转成卡片，补上来源和条件</span></span><span class="chev">›</span></a>
+      </div>
+
+      <div class="gl">个人模型</div>
+      <div class="grp">
+        <a class="gr" href="Model.dc.html"><span style="flex: 1"><span style="font-weight: 500">还没有训练</span><br><span class="s">现在用的是云端基础模型，加上你确认过的卡片</span></span><span class="v">准备材料</span><span class="chev">›</span></a>
+      </div>
+    </div>
+  </main>
+
+  <aside aria-label="右边栏：最近" style="flex: 0 0 300px; box-sizing: border-box; background: #F2EDE2; border-left: 1px solid #DFDBD5; min-height: 900px">
+    <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #DFDBD5; font-weight: 600; font-size: 14px">最近用到</div>
+    <div class="rgl">今天</div>
+    <div class="rgrp">
+      <a class="rgr" href="Conversation.dc.html"><span style="flex: 1">志愿者排班方案<br><span class="s">书店日常 v4 · 卡片 维护成本</span></span></a>
+      <a class="rgr" href="Tasks.dc.html"><span style="flex: 1">每周排班提醒<br><span class="s">书店日常 v4</span></span></a>
+    </div>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

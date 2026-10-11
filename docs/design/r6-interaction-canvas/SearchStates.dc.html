@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>搜索状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.frame{border:1px solid #DFDBD5;border-radius:12px;overflow:hidden;background:#F7F4ED;display:flex;flex-direction:column;min-height:300px}
+.hd{height:48px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid #DFDBD5;font-size:13px}
+.q{flex:1;height:28px;display:flex;align-items:center;padding:0 10px;border-radius:6px;background:#FBFAF7;box-shadow:inset 0 0 0 1px #563E84}
+.note{padding:8px 14px;font-size:12px;color:#655D53;background:#F2EDE2;border-bottom:1px solid #DFDBD5}
+.center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:20px}
+.s{font-size:12px;color:#655D53}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.menu{background:#FBFAF7;border-radius:10px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:6px;width:230px}
+.mi{height:32px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:6px;font-size:13px}
+.sep{height:1px;background:#DFDBD5;margin:4px 6px}
+.r{display:flex;align-items:center;gap:8px;min-height:44px;padding:6px 14px;border-bottom:1px solid #DFDBD5;font-size:13px}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px">
+  <section>
+    <div class="lbl">范围菜单</div>
+    <div class="frame" style="padding: 16px; background: #F2EDE2">
+      <div class="menu" role="menu">
+        <div class="mi" role="menuitemradio" aria-checked="true" style="background: #E4DDDA"><span style="width: 14px">✓</span>我的空间</div>
+        <div class="mi" role="menuitemradio" aria-checked="false"><span style="width: 14px"></span>只搜卡片</div>
+        <div class="mi" role="menuitemradio" aria-checked="false"><span style="width: 14px"></span>当前文件夹：志愿者</div>
+        <div class="sep"></div>
+        <div class="mi" role="menuitemcheckbox" aria-checked="false"><span style="width: 14px"></span>也搜共享给我的</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">这个范围里没有</div>
+    <div class="frame">
+      <div class="hd"><span class="q">轮岗表</span></div>
+      <div class="center"><div style="font-weight: 500">“我的空间”里没有找到</div><div class="s">不代表别处没有</div><span class="btn">也搜共享给我的</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">还没建立索引</div>
+    <div class="frame">
+      <div class="hd"><span class="q">排班</span></div>
+      <div class="note">还没建立正文索引，这次只按标题搜索</div>
+      <div class="r"><span style="flex: 1">志愿者排班表.xlsx<br><span class="s">标题匹配</span></span></div>
+      <div class="r"><span style="flex: 1">排班规则.md<br><span class="s">标题匹配</span></span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">有结果看不了</div>
+    <div class="frame">
+      <div class="hd"><span class="q">预算</span></div>
+      <div class="r"><span style="flex: 1">书店年度预算.xlsx<br><span class="s">周禾 共享</span></span></div>
+      <div class="r" style="color: #655D53"><span style="flex: 1">2 个结果没有权限查看<br><span class="s">只显示数量，不显示标题和内容</span></span></div>
+      <div class="r" style="color: #655D53"><span style="flex: 1">供应商名单.xlsx<br><span class="s">原文件已被删除，只剩搜索记录</span></span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">没有网络</div>
+    <div class="frame">
+      <div class="hd"><span class="q">排班</span></div>
+      <div class="note">没有网络，只搜了这台电脑上已有的内容</div>
+      <div class="r"><span style="flex: 1">维护成本<br><span class="s">已确认卡片</span></span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">搜索出错</div>
+    <div class="frame">
+      <div class="hd"><span class="q">排班</span></div>
+      <div class="center"><div style="font-weight: 500">这次没搜成功</div><div class="s">刚才的结果还保留着</div><span class="btn">重试</span></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

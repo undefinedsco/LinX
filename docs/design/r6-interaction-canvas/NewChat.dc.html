@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>新建会话</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin:0 0 10px}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);display:flex;flex-direction:column;overflow:hidden}
+.srch{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border-bottom:1px solid #DFDBD5;font-size:14px}
+.sec{padding:10px 14px 4px;font-size:12px;color:#655D53}
+.it{display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;font-size:14px}
+.it.on{background:#E4DDDA}
+.av{width:30px;height:30px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;background:#E0DBDE}
+.aiav{background:#563E84;color:#F7F4ED;font-size:11px}
+.v{color:#655D53;font-size:12px}
+.foot{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid #DFDBD5;font-size:12px;color:#655D53}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 14px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:13px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.chip{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 8px;border-radius:999px;background:#E4DDDA;font-size:12px}
+.chk{width:16px;height:16px;border-radius:4px;border:1px solid #87837D;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+.chk.on{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;padding:1px 5px;border-radius:4px;background:#E4DDDA;color:#2B2621}
+.ib{width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:#655D53;display:inline-flex;align-items:center;justify-content:center;padding:0}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; align-content: start">
+  <section>
+    <h2 class="lbl">“+” › 找人聊天</h2>
+    <div class="sheet" role="dialog" aria-label="找人聊天">
+      <div class="srch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#655D53" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span style="color: #655D53">搜索朋友、助手或群</span></div>
+      <div class="sec">朋友</div>
+      <div class="it on"><span class="av">周</span><span style="flex: 1">周禾</span><span class="v">书店合伙人</span></div>
+      <div class="it"><span class="av">陈</span><span style="flex: 1">陈一</span></div>
+      <div class="it"><span class="av">许</span><span style="flex: 1">许安</span></div>
+      <div class="sec">助手</div>
+      <div class="it"><span class="av aiav">AI</span><span style="flex: 1">LinX 助手</span><span class="v">书店日常</span></div>
+      <div class="it"><span class="av aiav">AI</span><span style="flex: 1">活动小助手</span></div>
+      <div class="sec">群聊</div>
+      <div class="it"><span class="av">书</span><span style="flex: 1">书店活动组</span><span class="v">8 人</span></div>
+      <div class="foot"><span style="flex: 1"><span class="kbd">↑↓</span> 选择　<span class="kbd">Enter</span> 打开</span><a href="PeopleStates.dc.html">添加朋友…</a></div>
+    </div>
+    <div class="v" style="margin-top: 10px">已经有私聊就直接打开，不会新建第二个。</div>
+  </section>
+
+  <section>
+    <h2 class="lbl">“+” › 发起群聊</h2>
+    <div class="sheet" role="dialog" aria-label="发起群聊">
+      <div style="padding: 12px 14px 0; display: flex; gap: 6px; flex-wrap: wrap"><span class="chip">周禾 ×</span><span class="chip">陈一 ×</span><span class="chip">许安 ×</span></div>
+      <div class="srch" style="border-top: 0"><span style="color: #655D53">搜索联系人</span></div>
+      <div class="it"><span class="chk on" aria-hidden="true">✓</span><span class="av">周</span><span style="flex: 1">周禾</span></div>
+      <div class="it"><span class="chk on" aria-hidden="true">✓</span><span class="av">陈</span><span style="flex: 1">陈一</span></div>
+      <div class="it"><span class="chk on" aria-hidden="true">✓</span><span class="av">许</span><span style="flex: 1">许安</span></div>
+      <div class="it"><span class="chk" aria-hidden="true"></span><span class="av">白</span><span style="flex: 1">白露</span></div>
+      <div class="it"><span class="chk" aria-hidden="true"></span><span class="av aiav">AI</span><span style="flex: 1">LinX 助手</span><span class="v">可以一起加</span></div>
+      <div style="padding: 12px 14px; border-top: 1px solid #DFDBD5; display: flex; flex-direction: column; gap: 6px">
+        <label class="v" for="ngn">群名称（可以不填）</label>
+        <input id="ngn" placeholder="周禾、陈一、许安" style="height: 32px; border: 1px solid #87837D; border-radius: 6px; background: #F7F4ED; padding: 0 10px; font: inherit; font-size: 13px">
+      </div>
+      <div class="foot" style="justify-content: flex-end"><span class="btn">取消</span><span class="btn primary">创建（4 人）</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="lbl">“+” › 新的 AI 工作（在助手下开一个新话题）</h2>
+    <div style="border: 1px solid #DFDBD5; border-radius: 12px; overflow: hidden; background: #F7F4ED; display: flex; flex-direction: column; min-height: 520px">
+      <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #DFDBD5; font-weight: 600; font-size: 15px">LinX 助手<span style="margin-left: 10px; font-weight: 400; font-size: 12px; color: #655D53"># 新话题</span></div>
+      <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 24px">
+        <div style="font-size: 16px; font-weight: 600">想做点什么？</div>
+        <div class="v" style="font-size: 13px">直接说，第一句话发出后自动起标题</div>
+      </div>
+      <div style="position: relative; margin: 0 12px 12px">
+        <div class="sheet" role="listbox" aria-label="选择助手" style="position: absolute; left: 0; bottom: 104px; width: 240px">
+          <div class="it on"><span class="av aiav">AI</span><span style="flex: 1">LinX 助手</span><span class="v">默认</span></div>
+          <div class="it"><span class="av aiav">AI</span><span style="flex: 1">活动小助手</span></div>
+        </div>
+        <div style="border: 1px solid #563E84; border-radius: 10px; background: #FBFAF7; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px">
+          <button style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: #E4DDDA; font: inherit; font-size: 12px; color: #2B2621" aria-haspopup="listbox" aria-expanded="true">和 LinX 助手 ▾</button>
+          <label for="nw" style="position: absolute; left: -9999px">要做的事</label>
+          <textarea id="nw" rows="2" placeholder="例如：把三场活动的报名名单合并一下" style="border: 0; outline: none; resize: none; background: transparent; font: inherit; color: #2B2621"></textarea>
+          <div style="display: flex; align-items: center; gap: 2px">
+            <button class="ib" aria-label="添加文件"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"></path></svg></button>
+            <span style="flex: 1"></span>
+            <span class="btn primary">发送</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="v" style="margin-top: 10px">只有一个助手时不显示“和谁”。</div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

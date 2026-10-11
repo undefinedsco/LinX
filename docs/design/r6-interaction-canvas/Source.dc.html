@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI 引用：预览弹窗</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.ib{width:30px;height:30px;border:0;border-radius:6px;background:transparent;color:#655D53;display:inline-flex;align-items:center;justify-content:center;padding:0;text-decoration:none}
+.v{color:#655D53}
+.av{width:36px;height:36px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;background:#563E84;color:#F7F4ED}
+.cite{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:5px;background:#F2EDE2;border:1px solid #DFDBD5;font-size:12px;color:#2B2621}
+.page{background:#FBFAF7;border:1px solid #DFDBD5;border-radius:4px;box-shadow:0 2px 8px rgb(43 38 33 / .08);padding:40px 48px;box-sizing:border-box;font-family:'Songti SC','SimSun',serif;font-size:14px;line-height:1.9;color:#2B2621;position:relative}
+.hl{background:#E5DDF2;box-shadow:0 0 0 3px #E5DDF2;border-radius:2px}
+.tool{display:inline-flex;gap:2px;padding:4px;border-radius:8px;background:#2B2621;box-shadow:0 8px 24px rgb(43 38 33 / .2)}
+.tool span{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:5px;color:#F7F4ED;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="chat" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="ChatList" selected="volunteer" variant="normal" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：会话" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px; position: relative">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid #DFDBD5">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 600">LinX 助手</h1>
+      <span style="display: inline-flex; align-items: center; height: 26px; padding: 0 8px; border-radius: 6px; background: #E9E4E4; font-size: 12px"># 志愿者排班方案 ▾</span>
+    </header>
+    <div aria-hidden="true" style="padding: 20px 24px; display: flex; gap: 10px; align-items: flex-start">
+      <span class="av">AI</span>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="background: #FBFAF7; border: 1px solid #DFDBD5; border-radius: 8px; padding: 10px 12px">押金 500 元，签约时付，活动后 7 天内退。</div>
+        <span class="cite" style="align-self: flex-start; box-shadow: 0 0 0 2px #563E84">场地合同.pdf · 第 3 页 ›</span>
+      </div>
+    </div>
+
+    <div style="position: absolute; inset: 56px 0 0 0; background: rgb(43 38 33 / .22); display: flex; justify-content: center; align-items: flex-start; padding-top: 24px">
+      <div role="dialog" aria-labelledby="src-title" style="width: 960px; max-width: calc(100% - 48px); max-height: 820px; overflow: auto; background: #EFEBE3; border-radius: 12px; box-shadow: 0 20px 48px rgb(43 38 33 / .22); display: flex; flex-direction: column">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; background: #FBFAF7; border-bottom: 1px solid #EAE5DC; font-size: 13px">
+          <span id="src-title" style="flex: 1"><strong style="font-weight: 600">场地合同.pdf</strong> <span class="v">· 第 3 / 6 页 · 亮出来的是 LinX 引用的那段</span></span>
+          <button class="ib" aria-label="上一页">‹</button><button class="ib" aria-label="下一页">›</button>
+          <a class="ib" href="Library.dc.html" aria-label="展开成整页"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></a>
+          <button class="ib" aria-label="关闭"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+        </div>
+        <div style="padding: 20px 40px 28px">
+          <article class="page" aria-label="第 3 页">
+            <p style="margin: 0 0 10px; font-weight: 700">三、场地使用</p>
+            <p style="margin: 0 0 10px">乙方在约定时间内使用一楼活动区，可容纳 40 人，桌椅由甲方提供。</p>
+            <p style="margin: 0 0 10px"><span class="hl">乙方应于签约时支付押金人民币 500 元。活动结束后场地无损坏的，甲方在 7 日内退还押金。</span>如有损坏，按实际维修费用从押金中扣除。</p>
+            <p style="margin: 18px 0 10px; font-weight: 700">四、取消与改期</p>
+            <p style="margin: 0 0 10px">乙方提前 7 日取消的，押金全额退还；不足 7 日取消的，押金不予退还。</p>
+            <p style="margin: 0">改期需双方书面确认，改期不超过一次。</p>
+            <div style="position: absolute; left: 120px; top: 318px" class="tool" role="toolbar" aria-label="对选中的文字"><span>问 LinX</span><span>做成卡片</span><span>复制链接</span></div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

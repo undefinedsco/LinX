@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>全局查找</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.45}
+.muted{color:#655D53}
+.grp{padding:12px 16px 4px;font-size:12px;color:#655D53}
+.item{display:flex;align-items:center;gap:10px;height:52px;padding:0 16px;text-decoration:none;color:#2B2621}
+.item:hover{background:#E9E4E4}
+.av{width:36px;height:36px;border-radius:6px;background:#E0DBDE;display:inline-flex;align-items:center;justify-content:center;flex:none;font-size:13px;font-weight:600;color:#2B2621}
+.sub{font-size:12px;color:#655D53;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+mark{background:transparent;color:#563E84;font-weight:600}
+.more{display:block;padding:6px 16px 8px 62px;font-size:12px;color:#563E84;text-decoration:none}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED; position: relative">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="chat" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="ChatList" selected="volunteer" variant="normal" hint-size="280px,900px"></dc-import>
+  </div>
+  <div aria-hidden="true" style="flex: 999 1 480px; min-width: 0; min-height: 900px; display: flex; flex-direction: column">
+    <div style="height: 56px; border-bottom: 1px solid #DFDBD5"></div>
+  </div>
+  <div aria-hidden="true" style="flex: 0 0 300px; background: #F2EDE2; border-left: 1px solid #DFDBD5"></div>
+
+  <div style="position: absolute; left: 344px; top: 0; right: 0; bottom: 0; background: rgba(43, 38, 33, 0.18)"></div>
+
+  <div role="dialog" aria-label="搜索" style="position: absolute; left: 64px; top: 0; width: 560px; bottom: 0; background: #FBFAF7; border-right: 1px solid #DFDBD5; box-shadow: 0 8px 24px rgb(43 38 33 / .10); display: flex; flex-direction: column">
+    <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid #DFDBD5">
+      <div style="flex: 1; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border-radius: 6px; background: #F2EDE2; box-shadow: inset 0 0 0 1px #563E84">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#655D53" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <label for="q" style="position: absolute; left: -9999px">搜索</label>
+        <input id="q" value="排班" style="flex: 1; border: 0; outline: none; background: transparent; font: inherit; font-size: 13px; color: #2B2621">
+        <button aria-label="清除" style="border: 0; background: #87837D; color: #FBFAF7; width: 16px; height: 16px; border-radius: 50%; font-size: 10px; line-height: 16px; padding: 0">×</button>
+      </div>
+      <button style="border: 0; background: transparent; font: inherit; font-size: 13px; color: #563E84; cursor: pointer">取消</button>
+    </div>
+
+    <div style="flex: 1; overflow: auto">
+      <div class="grp">会话</div>
+      <a class="item" href="Conversation.dc.html" style="background: #E4DDDA">
+        <span class="av" style="background: #563E84; color: #F7F4ED">AI</span>
+        <span style="flex: 1; min-width: 0"><span>志愿者<mark>排班</mark>方案</span><br><span class="sub">话题：# <mark>排班</mark>规则草稿</span></span>
+      </a>
+
+      <div class="grp">联系人与群</div>
+      <a class="item" href="People.dc.html">
+        <span class="av">周</span>
+        <span style="flex: 1; min-width: 0"><span>周禾</span><br><span class="sub">群聊中提到：“<mark>排班</mark>表周四发”</span></span>
+      </a>
+      <a class="item" href="People.dc.html">
+        <span class="av">书</span>
+        <span style="flex: 1; min-width: 0"><span>书店活动组</span><br><span class="sub">3 条相关聊天记录</span></span>
+      </a>
+
+      <div class="grp">文件与卡片</div>
+      <a class="item" href="Card.dc.html">
+        <span class="av" style="background: #F2EDE2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="M8 8h8M8 12h8M8 16h5"></path></svg>
+        </span>
+        <span style="flex: 1; min-width: 0"><span>维护成本</span><br><span class="sub">判断卡 · 例外里提到志愿者<mark>排班</mark></span></span>
+      </a>
+      <a class="item" href="Library.dc.html">
+        <span class="av" style="background: #F2EDE2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg>
+        </span>
+        <span style="flex: 1; min-width: 0"><span>志愿者<mark>排班</mark>表.xlsx</span><br><span class="sub">文件 · 共享盘 / 活动</span></span>
+      </a>
+      <a class="more" href="SearchScope.dc.html">查看全部文件结果 ›</a>
+    </div>
+
+    <div style="padding: 10px 16px; border-top: 1px solid #DFDBD5; font-size: 12px; color: #655D53; display: flex; gap: 8px">
+      <span style="flex: 1">文件正文还在建立索引，暂时只搜标题</span>
+      <a href="SearchScope.dc.html">了解</a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

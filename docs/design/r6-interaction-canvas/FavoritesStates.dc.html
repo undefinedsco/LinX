@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>收藏状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.panel{border:1px solid #DFDBD5;border-radius:12px;background:#F2EDE2;padding:16px;display:flex;flex-direction:column;gap:10px;min-height:220px}
+.msg{background:#FBFAF7;border:1px solid #DFDBD5;border-radius:8px;padding:10px 12px;font-size:13px}
+.s{font-size:12px;color:#655D53}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 14px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:13px;font-weight:500;white-space:nowrap}
+.toast{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;background:#2B2621;color:#F7F4ED;font-size:13px}
+.center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px">
+  <section>
+    <div class="lbl">原消息已删除</div>
+    <div class="panel">
+      <div class="msg" style="color: #655D53">原消息已被删除</div>
+      <div class="s">来自 书店活动组 · 9月12日</div>
+      <span class="btn">移除这条收藏</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">没有权限了</div>
+    <div class="panel">
+      <div class="msg" style="color: #655D53">你已不在“作者见面会筹备”里，内容不再显示</div>
+      <div class="s">重新被邀请后会恢复</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">没有网络</div>
+    <div class="panel">
+      <div class="msg">签到表放共享盘了，周六 9:30 前到</div>
+      <div class="s">没有网络：显示的是上次看到的内容，暂时不能跳回原处</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">取消收藏（不弹确认，可以撤销）</div>
+    <div class="panel" style="justify-content: flex-end">
+      <div class="toast" role="status"><span style="flex: 1">已取消收藏</span><button style="border: 0; background: transparent; color: #F7F4ED; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer">撤销</button></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">还没有收藏</div>
+    <div class="panel"><div class="center"><div style="font-weight: 500">还没有收藏</div><div class="s">在消息、文件、卡片上右键，选“收藏”</div></div></div>
+  </section>
+
+  <section>
+    <div class="lbl">收藏 ≠ 记下来</div>
+    <div class="panel">
+      <div class="s">收藏只是书签，方便找回；不会变成知识卡片，也不会用于训练。</div>
+      <div class="s">想让它影响以后的工作，在右键菜单选“记为卡片”。</div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

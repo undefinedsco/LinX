@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>联系人：助手、群、新朋友与状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.panel{border:1px solid #DFDBD5;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px;background:#F7F4ED}
+.av{width:36px;height:36px;border-radius:6px;background:#E0DBDE;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+.grp{background:#FBFAF7;border-radius:10px;overflow:hidden}
+.gr{display:flex;align-items:center;gap:8px;min-height:42px;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px;text-decoration:none;color:#2B2621}
+.gr:last-child{border-bottom:0}
+.v{color:#655D53;font-size:12px}
+.chev{color:#87837D}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 14px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:13px;font-weight:500;white-space:nowrap;text-decoration:none}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.muted{color:#655D53}
+input{font:inherit}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px">
+  <section>
+    <div class="lbl">助手详情（和人的一样，多了方法和执行条件）</div>
+    <div class="panel">
+      <div style="display: flex; gap: 14px; align-items: center">
+        <span class="av" style="width: 56px; height: 56px; border-radius: 8px; background: #563E84; color: #F7F4ED; font-size: 18px">AI</span>
+        <div><div style="font-size: 18px; font-weight: 600">LinX 助手</div><div class="v">助手 · 你创建的</div></div>
+      </div>
+      <div class="grp">
+        <a class="gr" href="Method.dc.html"><span style="flex: 1">做事的方法</span><span class="v">书店日常</span><span class="chev">›</span></a>
+        <a class="gr" href="NotApplied.dc.html"><span style="flex: 1">执行条件</span><span class="v">云端模型</span><span class="chev">›</span></a>
+        <a class="gr" href="PeopleSolid.dc.html"><span style="flex: 1">在你空间里能看、能改</span><span class="v">活动、志愿者</span><span class="chev">›</span></a>
+        <div class="gr"><span style="flex: 1">账号</span><span class="v">linx@linzhou.undefineds.co</span><span class="v">复制地址</span></div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px"><a class="btn primary" href="Conversation.dc.html">发消息</a><span class="btn">语音通话</span><span class="btn">视频通话</span></div>
+      <div class="v">改名、换模型都不会改变它的身份和聊天记录</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">群聊详情（右边栏）</div>
+    <div class="panel">
+      <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; text-align: center; font-size: 11px">
+        <div><span class="av">林</span><br>林舟</div>
+        <div><span class="av">周</span><br>周禾</div>
+        <div><span class="av">陈</span><br>陈一</div>
+        <div><span class="av" style="background: #563E84; color: #F7F4ED; font-size: 11px">AI</span><br>LinX</div>
+        <div><span class="av" style="background: transparent; box-shadow: inset 0 0 0 1px #87837D">+</span><br>邀请</div>
+      </div>
+      <div class="grp">
+        <div class="gr"><span style="flex: 1">群名称</span><span class="v">书店活动组</span><span class="chev">›</span></div>
+        <div class="gr"><span style="flex: 1">我在群里的昵称</span><span class="v">林舟</span><span class="chev">›</span></div>
+      </div>
+      <div class="grp">
+        <div class="gr"><span style="flex: 1">免打扰</span><span role="switch" aria-checked="false" aria-label="免打扰" style="width: 34px; height: 20px; border-radius: 999px; background: #87837D; position: relative"><span style="position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #F7F4ED"></span></span></div>
+        <div class="gr"><span style="flex: 1">标星</span><span role="switch" aria-checked="true" aria-label="标星" style="width: 34px; height: 20px; border-radius: 999px; background: #563E84; position: relative"><span style="position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #F7F4ED"></span></span></div>
+      </div>
+      <div class="grp"><div class="gr" style="justify-content: center">退出群聊</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">新的朋友</div>
+    <div class="panel" style="padding: 8px">
+      <div class="gr" style="border-bottom: 1px solid #DFDBD5; min-height: 60px"><span class="av">白</span><span style="flex: 1">白露<br><span class="v">我是活动志愿者白露</span></span><span class="btn primary">接受</span></div>
+      <div class="gr" style="border-bottom: 1px solid #DFDBD5; min-height: 60px"><span class="av">陆</span><span style="flex: 1">陆川<br><span class="v">一起整理活动照片</span></span><span class="v">已添加</span></div>
+      <div class="gr" style="min-height: 60px"><span class="av">程</span><span style="flex: 1">程远<br><span class="v">你好</span></span><span class="v">已过期</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">添加朋友（“+”）</div>
+    <div class="panel">
+      <input aria-label="对方的 WebID" value="https://songqing.solidcommunity.net/profile/card#me" style="height: 32px; border: 1px solid #563E84; border-radius: 6px; background: #FBFAF7; padding: 0 10px; font-size: 12px">
+      <div class="grp"><div class="gr" style="min-height: 60px"><span class="av">宋</span><span style="flex: 1">宋青<br><span class="v">songqing@solidcommunity.net</span></span><span class="btn primary">添加</span></div></div>
+      <div class="v">先粘贴对方的 WebID；按名字搜索以后再做</div>
+      <div class="v">没找到时：“没有找到这个账号”，不显示别人的隐私信息</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">创建助手（“+”）</div>
+    <div class="panel">
+      <label class="v" for="an">名字</label>
+      <input id="an" value="活动小助手" style="height: 32px; border: 1px solid #87837D; border-radius: 6px; background: #FBFAF7; padding: 0 10px">
+      <div class="v">从哪个方法开始</div>
+      <div class="grp">
+        <div class="gr" style="background: #E4DDDA">书店日常<span class="v" style="margin-left: auto">✓</span></div>
+        <div class="gr">空白</div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">创建</span></div>
+      <div class="v">创建助手不会训练模型；执行条件之后可以改</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">读不到联系人时</div>
+    <div class="panel">
+      <div class="grp">
+        <div class="gr" style="min-height: 56px"><span class="av" style="color: #655D53">程</span><span style="flex: 1">程远<br><span class="v">对方已不在你的联系人里</span></span></div>
+        <div class="gr" style="min-height: 56px"><span class="av">宋</span><span style="flex: 1">宋青<br><span class="v">资料暂时读不到，显示的是上次的信息</span></span></div>
+      </div>
+      <div class="v">可以继续给对方发消息；对方资料恢复后自动更新</div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
