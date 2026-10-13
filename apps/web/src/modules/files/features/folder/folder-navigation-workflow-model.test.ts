@@ -58,10 +58,7 @@ describe('folder navigation workflow model', () => {
   })
 
   it('plans folder child open effects without coupling controller to open-mode semantics', () => {
-    expect(planFolderChildOpenEffect(entry(), 'click')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/files/readme.md',
-    })
+    expect(planFolderChildOpenEffect(entry(), 'click')).toEqual({ type: 'noop' })
     expect(planFolderChildOpenEffect(entry({
       kind: 'container',
       semanticKind: 'container',
@@ -73,11 +70,8 @@ describe('folder navigation workflow model', () => {
       treeNodeId: 'container:https://pod.example/files/docs/',
     })
     expect(planFolderChildOpenEffect(entry(), 'double-click')).toEqual({
-      type: 'open-editable-sheet',
-      file: expect.objectContaining({
-        uri: 'https://pod.example/files/readme.md',
-        previewUnavailableReason: '文件夹预览只显示轻量摘要；正文在文件详情中读取。',
-      }),
+      type: 'open-card',
+      uri: 'https://pod.example/files/readme.md',
     })
     expect(planFolderChildOpenEffect(entry({
       name: 'graph.ttl',
@@ -85,8 +79,8 @@ describe('folder navigation workflow model', () => {
       mimeType: 'text/turtle',
       semanticKind: 'structured',
     }), 'enter')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/files/graph.ttl',
+      type: 'open-card',
+      uri: 'https://pod.example/files/graph.ttl',
     })
   })
 

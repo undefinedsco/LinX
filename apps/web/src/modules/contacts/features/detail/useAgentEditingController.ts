@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { useOpenAgentMethod } from '@/modules/my-ai'
 import type { UnifiedContact } from '../../domain/types'
 import { contactOps } from '../../data/collections'
 import type { ContactDetailNotifier } from './controller-types'
@@ -6,7 +7,7 @@ import type { ContactDetailNotifier } from './controller-types'
 interface AgentEditingControllerOptions {
   contact: UnifiedContact | null
   notify: ContactDetailNotifier
-  openEditor(mode: 'prompt' | 'tools'): void
+  openEditor(mode: 'condition'): void
   closeEditor(): void
 }
 
@@ -16,63 +17,48 @@ export function useAgentEditingController({
   openEditor,
   closeEditor,
 }: AgentEditingControllerOptions) {
-  const [editingPrompt, setEditingPrompt] = useState('')
-  const [editingToolsText, setEditingToolsText] = useState('')
+  const [editingModel, setEditingModel] = useState('')
   const [isSavingAgent, setIsSavingAgent] = useState(false)
 
-  const handleOpenPromptEdit = useCallback(() => {
-    setEditingPrompt(contact?.agentConfig?.instructions || '')
-    openEditor('prompt')
+  const openAgentMethod = useOpenAgentMethod()
+
+  // 做事的方法只在“我的 AI”里编辑，这里只负责带过去。
+  const handleOpenMethod = useCallback(() => {
+    const agentId = contact?.agentConfig?.id
+    if (!agentId) return
+    openAgentMethod(agentId)
+  }, [contact, openAgentMethod])
+
+  const handleOpenCondition = useCallback(() => {
+    const config = contact?.agentConfig
+    const model = config?.model ?? ''
+    setEditingModel(config?.provider && model && !model.includes('/') ? `${config.provider}/${model}` : model)
+    openEditor('condition')
   }, [contact, openEditor])
 
-  const handleSavePrompt = useCallback(async () => {
+  const handleSaveModel = useCallback(async () => {
     const agentId = contact?.agentConfig?.id
-    if (!contact || !agentId) return
+    if (!agentId || !editingModel) return
+    const separator = editingModel.indexOf('/')
+    if (separator < 0) return
     setIsSavingAgent(true)
     try {
-      await contactOps.updateAgent(agentId, { instructions: editingPrompt.trim() })
-      notify.success('系统提示词已更新')
+      await contactOps.updateAgentModel(agentId, editingModel.slice(0, separator), editingModel.slice(separator + 1))
+      notify.success('执行条件已更新')
       closeEditor()
     } catch {
       notify.error('保存失败')
     } finally {
       setIsSavingAgent(false)
     }
-  }, [closeEditor, contact, editingPrompt, notify])
-
-  const handleOpenToolsEdit = useCallback(() => {
-    setEditingToolsText((contact?.agentConfig?.tools || []).join('\n'))
-    openEditor('tools')
-  }, [contact, openEditor])
-
-  const handleSaveTools = useCallback(async () => {
-    const agentId = contact?.agentConfig?.id
-    if (!contact || !agentId) return
-    const tools = Array.from(new Set(
-      editingToolsText.split('\n').map((entry) => entry.trim()).filter(Boolean),
-    ))
-
-    setIsSavingAgent(true)
-    try {
-      await contactOps.updateAgent(agentId, { tools })
-      notify.success('工具配置已更新')
-      closeEditor()
-    } catch {
-      notify.error('保存失败')
-    } finally {
-      setIsSavingAgent(false)
-    }
-  }, [closeEditor, contact, editingToolsText, notify])
+  }, [closeEditor, contact, editingModel, notify])
 
   return {
-    editingPrompt,
-    setEditingPrompt,
-    editingToolsText,
-    setEditingToolsText,
+    editingModel,
+    setEditingModel,
     isSavingAgent,
-    handleOpenPromptEdit,
-    handleSavePrompt,
-    handleOpenToolsEdit,
-    handleSaveTools,
+    handleOpenMethod,
+    handleOpenCondition,
+    handleSaveModel,
   }
 }

@@ -1,6 +1,7 @@
 export * from './acp.js'
 export * from './agent-runtime.js'
 export * from './auto-mode.js'
+export * from './auto-judge.js'
 export * from './companion-model.js'
 export * from './client-inbox-subscription.js'
 export * from './chat-reconciler.js'

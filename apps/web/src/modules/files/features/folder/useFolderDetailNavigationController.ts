@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { useCardDialog } from '@/lib/card-dialog'
 import { copyFilesText } from '../../app/platform-actions'
 import { useFilesStore } from '../../app/store'
 import {
@@ -14,10 +15,14 @@ import type { FilesDetail, FilesEntry } from '../../domain/resource/resource-mod
 export function useFolderDetailNavigationController({
   childUriSet,
   selectedChildren,
+  siblingUris = [],
 }: {
   childUriSet: Set<string>
   selectedChildren: FilesEntry[]
+  /** Cards of this folder in display order, for ‹ › in the card popup. */
+  siblingUris?: string[]
 }) {
+  const openCard = useCardDialog((state) => state.open)
   const selectTreeNode = useFilesStore((state) => state.selectTreeNode)
   const selectFile = useFilesStore((state) => state.selectFile)
   const setDetailTab = useFilesStore((state) => state.setDetailTab)
@@ -48,6 +53,9 @@ export function useFolderDetailNavigationController({
         break
       case 'open-editable-sheet':
         setSheetChild(effect.file)
+        break
+      case 'open-card':
+        openCard({ uri: effect.uri, siblings: siblingUris, from: 'folder' })
         break
       case 'select-file-preview':
         selectFile(effect.fileUri)

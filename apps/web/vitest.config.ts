@@ -35,8 +35,6 @@ export default defineConfig({
   resolve: {
     preserveSymlinks: true,
     alias: {
-      'tldraw/tldraw.css': path.resolve(__dirname, './src/test/empty.css'),
-      'tldraw': path.resolve(__dirname, './src/test/tldraw-test-double.tsx'),
       '@/modules/files/ui/BlockNoteFileEditor': path.resolve(
         __dirname,
         './src/modules/files/ui/__tests__/fake-block-note-file-editor.tsx',

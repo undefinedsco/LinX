@@ -43,7 +43,7 @@ describe('useStructuredWhiteboardRelationController', () => {
     expect(result.current.relationEditorChrome).toMatchObject({
       fromFieldLabel: '起点',
       fromFieldAriaLabel: 'Relation from',
-      saveButtonLabel: '创建视觉关系',
+      saveButtonLabel: '连接',
       cancelButtonAriaLabel: '取消视觉关系',
     })
     expect(result.current.visualRelationChips).toEqual([{
@@ -75,7 +75,7 @@ describe('useStructuredWhiteboardRelationController', () => {
     rerender({ relations: updatedRelations })
 
     act(() => result.current.openRelationEditorFor(updatedRelations[1]))
-    expect(result.current.relationEditorChrome.saveButtonLabel).toBe('保存视觉关系')
+    expect(result.current.relationEditorChrome.saveButtonLabel).toBe('保存连接')
     expect(result.current.relationToOptions).toEqual(['#a', '#c'])
     act(() => result.current.updateRelationTo('#c'))
     act(() => result.current.saveVisualRelation())

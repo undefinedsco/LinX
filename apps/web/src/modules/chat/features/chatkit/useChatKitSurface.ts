@@ -68,10 +68,8 @@ export function useChatKitSurface({
     }
     hostRef.current = host
     if (host) setIsMounted(true)
-    // ChatKit transiently invokes its callback ref with null and a new host
-    // during ordinary internal rerenders. Resetting restoration state here
-    // creates a readiness loop. A real replacement emits onReady, whose
-    // revision reruns restoration against the new host.
+    // ChatKit transiently calls this ref with null and a new host during ordinary rerenders;
+    // resetting restoration here loops readiness. A real replacement emits onReady instead.
   }, [])
   useEffect(() => {
     if (customElements.get('openai-chatkit')) {
@@ -104,14 +102,16 @@ export function useChatKitSurface({
     // races the explicit restore below. That race can leave a valid thread id
     // attached to an empty iframe after reload.
     initialThread: null,
+    locale: 'zh-CN', // LinX is Chinese-first; otherwise ChatKit follows navigator.language → English.
     theme: {
       colorScheme: theme,
       radius: 'round',
       density: 'normal',
       typography: { baseSize: 15 },
       color: {
-        accent: { primary: '#735FC4', level: 1 },
-        grayscale: { hue: 252, tint: 2 },
+        accent: { primary: '#563E84', level: 1 },
+        grayscale: { hue: 40, tint: 2 },
+        surface: theme === 'light' ? { background: '#F7F4ED', foreground: '#FBFAF7' } : undefined, // paper; raised composer
       },
     },
     header: { enabled: false },
@@ -134,9 +134,8 @@ export function useChatKitSurface({
           id: 'image_generation',
           label: '生成图片',
           shortLabel: '图片',
-          // `images` is supported by both the current CDN component and the
-          // installed ChatKit types. The newer `square-image` token caused the
-          // whole tool to be silently omitted by older cached components.
+          // `images` works in both the CDN component and installed types; the newer
+          // `square-image` token made older cached components silently drop the tool.
           icon: 'images',
           pinned: false,
           persistent: false,

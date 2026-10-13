@@ -16,7 +16,7 @@ import {
 import { MoreHorizontal } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useRef } from 'react'
 import {
-  type StructuredCellWriteProposal,
+  type StructuredCellCommitResult, type StructuredCellWriteProposal,
   type StructuredTableProjection,
 } from '../../domain/structured/structured-table'
 import {
@@ -64,7 +64,7 @@ export function StructuredKanbanView({
   onLaneOrderChange?: (laneOrder: string[]) => void
   onCollapsedLaneIdsChange?: (collapsedLaneIds: string[]) => void
   onHorizontalScrollLeftChange?: (scrollLeft: number) => void
-  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
   onCreateSubject?: (input: { columnId: string; columnValue: string | null; subject: string }) => boolean | Promise<boolean>
   onOpenSubject?: (subject: string, options?: StructuredSubjectOpenOptions) => void
 }) {

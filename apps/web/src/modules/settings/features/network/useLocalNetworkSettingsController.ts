@@ -35,7 +35,7 @@ export function useLocalNetworkSettingsController() {
     try {
       await refreshOnboarding()
     } catch (error) {
-      setActionError(formatLoginErrorForUser(error, '读取本地网络设置失败。请稍后重试。'))
+      setActionError(formatLoginErrorForUser(error, '读取外部访问设置失败。请稍后重试。'))
     }
   }, [refreshOnboarding])
 
@@ -50,15 +50,15 @@ export function useLocalNetworkSettingsController() {
       })
       if (next.errorCode) {
         setAdvancedOpen(true)
-        setActionError(formatLoginErrorForUser(next.message, '网络配置没有保存。请检查后重试。'))
+        setActionError(formatLoginErrorForUser(next.message, '设置没有保存。请检查后重试。'))
         return
       }
       setTunnelToken('')
       setDomainTouched(false)
-      setSuccess('网络配置已保存。')
+      setSuccess('已保存。')
     } catch (error) {
       setAdvancedOpen(true)
-      setActionError(formatLoginErrorForUser(error, '网络配置没有保存。请检查后重试。'))
+      setActionError(formatLoginErrorForUser(error, '设置没有保存。请检查后重试。'))
     }
   }, [publicDomain, saveNetworkConfig, tunnelToken])
 

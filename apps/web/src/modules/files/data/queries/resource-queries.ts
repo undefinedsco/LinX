@@ -143,6 +143,12 @@ export function useFilesTreeSearchEntries(enabled: boolean) {
   return useQuery<FilesEntry[]>(filesResourceQueryCollection.treeSearchEntries({ workspaceUri, enabled, db }))
 }
 
+/** Every entry in the person's Pod, for name search outside the Files tree (e.g. global search). */
+export function useFilesPodSearchEntries(enabled: boolean) {
+  const { db } = useSolidDatabase()
+  return useQuery<FilesEntry[]>(filesResourceQueryCollection.treeSearchEntries({ workspaceUri: null, enabled, db }))
+}
+
 export function useFilesContainerEntries(containerUri: string | null, enabled = true) {
   const { db } = useSolidDatabase()
   const queryOptions = filesResourceQueryCollection.containerEntries({

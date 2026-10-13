@@ -27,7 +27,12 @@ const mockCreateFolderResource = vi.fn()
 const mockToast = vi.fn()
 const mockRetryContainer = vi.fn()
 
+vi.mock('../app/feature-flags', () => ({ FILES_TREE_FOLDERS_AND_TABLES_ONLY: false }))
+
+const mockAgentNames: Record<string, string> = {}
+
 vi.mock('../data/queries', () => ({
+  useFilesAgentNames: () => mockAgentNames,
   useFilesEntries: (...args: unknown[]) => mockUseFilesEntries(...args),
   useFilesExpandedContainerEntries: ({ expandedContainerUris }: { expandedContainerUris: string[] }) => {
     const results = mockUseExplorerChildQueries(expandedContainerUris.map((uri) => ({
@@ -699,7 +704,7 @@ describe('FilesListPane', () => {
     render(<FilesListPane {...defaultProps} />)
 
     expect(screen.getByText('state.ttl')).toBeInTheDocument()
-    expect(screen.getByText('terms.ttl')).toBeInTheDocument()
+    expect(screen.getByText('属性')).toBeInTheDocument()
     expect(screen.queryByText('.data 表')).not.toBeInTheDocument()
     expect(screen.queryByText('vocab terms')).not.toBeInTheDocument()
     expect(screen.queryByText('text/turtle')).not.toBeInTheDocument()
@@ -714,6 +719,29 @@ describe('FilesListPane', () => {
 
     expect(screen.getByText('README.md')).toBeInTheDocument()
     expect(screen.queryByText('config.json')).not.toBeInTheDocument()
+  })
+
+  it('shows the search scope, one coverage note and the reason each result matched', () => {
+    render(<FilesListPane {...defaultProps} />)
+
+    fireEvent.change(screen.getByPlaceholderText('搜索当前范围...'), {
+      target: { value: 'README' },
+    })
+
+    expect(screen.getByRole('button', { name: '搜索范围' })).toHaveTextContent('范围：我的空间')
+    expect(screen.getByRole('status')).toHaveTextContent('只按标题搜索')
+    expect(screen.getByText('标题匹配')).toBeInTheDocument()
+  })
+
+  it('says where nothing was found without claiming it does not exist elsewhere', () => {
+    render(<FilesListPane {...defaultProps} />)
+
+    fireEvent.change(screen.getByPlaceholderText('搜索当前范围...'), {
+      target: { value: '轮岗表' },
+    })
+
+    expect(screen.getByText('“我的空间”里没有找到 轮岗表')).toBeInTheDocument()
+    expect(screen.getByText('不代表别处没有')).toBeInTheDocument()
   })
 
   it('filters entries by uri and mime text from the list search box', () => {

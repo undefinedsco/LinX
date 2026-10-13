@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { forwardRef, useEffect } from 'react'
 
@@ -95,8 +95,11 @@ vi.mock('@undefineds.co/models', async (importOriginal) => {
   }
 })
 
+const mockResolveApproval = vi.fn().mockResolvedValue(undefined)
 vi.mock('@/modules/inbox/collections', () => ({
   useInboxItems: (..._args: unknown[]) => mockUseInboxItems(),
+  useResolveInboxApproval: () => ({ mutateAsync: mockResolveApproval, isPending: false }),
+  useResolveInboxInputRequest: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
 }))
 
 vi.mock('@/modules/inbox/store', () => ({
@@ -169,6 +172,16 @@ vi.mock('../runtime-client', () => ({
 
 vi.mock('./ChatListPane', () => ({
   ChatListPane: () => <div data-testid="compact-chat-list">Compact chat list</div>,
+}))
+
+vi.mock('../features/conversation/ConversationSurface', () => ({
+  ConversationSurface: () => <div data-testid="conversation-surface-stub" />,
+}))
+
+vi.mock('../features/conversation/welcome/WelcomeConversation', () => ({
+  WelcomeConversation: ({ fallback }: { fallback?: React.ReactNode }) => (
+    <div data-testid="welcome-conversation-stub">{fallback}</div>
+  ),
 }))
 
 import { ChatContentPane, chatThreadRefsMatch, readActiveBranchSelections } from './ChatContentPane'
@@ -266,6 +279,7 @@ describe('ChatContentPane', () => {
     render(<ChatContentPane theme="light" />)
 
     expect(screen.getByText('选择或创建一个聊天')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '开始 AI 工作' })).toBeInTheDocument()
     expect(screen.queryByTestId('compact-chat-list')).not.toBeInTheDocument()
   })
 
@@ -463,6 +477,64 @@ describe('ChatContentPane', () => {
     expect(mockUseChatKit.mock.calls.at(-1)?.[0]).not.toHaveProperty('onThreadChange')
   })
 
+  it('keeps ChatKit by default and shows the AG-UI conversation only when switched', () => {
+    const { unmount } = render(<ChatContentPane theme="light" />)
+    expect(screen.queryByTestId('conversation-surface-stub')).toBeNull()
+    unmount()
+    localStorage.setItem('linx.conversation.surface', 'assistant-ui')
+    try {
+      render(<ChatContentPane theme="light" />)
+      expect(screen.getByTestId('conversation-surface-stub')).toBeTruthy()
+    } finally {
+      localStorage.removeItem('linx.conversation.surface')
+    }
+  })
+
+  describe('W0 welcome on the assistant-ui surface', () => {
+    const secretaryChatId = '__secretary__/index.ttl#this'
+    const arrange = (messages: unknown[]) => {
+      storeState.selectedChatId = secretaryChatId
+      storeState.selectedThreadId = 'thread-1'
+      mockUseChatList.mockReturnValue({
+        data: [{ id: secretaryChatId, title: 'LinX 助手' }],
+        isLoading: false,
+        error: null,
+        refetch: mockChatRefetch,
+      })
+      mockUseMessageList.mockReturnValue({ data: messages as any[], refetch: mockRefetchMessages })
+      localStorage.setItem('linx.conversation.surface', 'assistant-ui')
+    }
+
+    it('shows the welcome when the default topic already exists but has no messages', () => {
+      arrange([])
+      try {
+        render(<ChatContentPane theme="light" />)
+        expect(screen.getByTestId('welcome-conversation-stub')).toBeTruthy()
+        expect(screen.getByTestId('conversation-surface-stub')).toBeTruthy()
+      } finally {
+        localStorage.removeItem('linx.conversation.surface')
+      }
+    })
+
+    it('does not show the welcome once the topic has messages', () => {
+      arrange([{ id: 'm1' }])
+      try {
+        render(<ChatContentPane theme="light" />)
+        expect(screen.queryByTestId('welcome-conversation-stub')).toBeNull()
+        expect(screen.getByTestId('conversation-surface-stub')).toBeTruthy()
+      } finally {
+        localStorage.removeItem('linx.conversation.surface')
+      }
+    })
+
+    it('leaves the ChatKit surface untouched', () => {
+      arrange([])
+      localStorage.removeItem('linx.conversation.surface')
+      render(<ChatContentPane theme="light" />)
+      expect(screen.queryByTestId('welcome-conversation-stub')).toBeNull()
+    })
+  })
+
   it('uses the chat workspace as a full-bleed operational surface', () => {
     render(<ChatContentPane theme="light" />)
 
@@ -625,10 +697,10 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    expect(screen.getByRole('heading', { name: '你好，我是 LinX 主理人' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toBeEnabled()
+    expect(screen.getByRole('heading', { name: '你好，我是 LinX 助手' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '给 LinX 助手发消息' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: /整理今天的工作/ }))
-    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toHaveValue('帮我整理今天需要推进的工作')
+    expect(screen.getByRole('textbox', { name: '给 LinX 助手发消息' })).toHaveValue('帮我整理今天需要推进的工作')
     expect(screen.queryByText('正在准备话题...')).not.toBeInTheDocument()
     expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
   })
@@ -941,14 +1013,14 @@ describe('ChatContentPane', () => {
     })
 
     const first = render(<ChatContentPane theme="light" />)
-    fireEvent.change(screen.getByRole('textbox', { name: '给主理人发消息' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: '给 LinX 助手发消息' }), {
       target: { value: '刷新后仍需保留的草稿' },
     })
     first.unmount()
 
     render(<ChatContentPane theme="light" />)
 
-    await waitFor(() => expect(screen.getByRole('textbox', { name: '给主理人发消息' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '给 LinX 助手发消息' }))
       .toHaveValue('刷新后仍需保留的草稿'))
   })
 
@@ -993,7 +1065,7 @@ describe('ChatContentPane', () => {
     })
     view.rerender(<ChatContentPane theme="light" />)
 
-    expect(screen.getByRole('textbox', { name: '给主理人发消息' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: '给 LinX 助手发消息' })).toHaveValue('')
     expect(screen.getByRole('button', { name: '开始对话' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: '重试创建话题' })).not.toBeInTheDocument()
     expect(screen.queryByText(/old account thread failure/)).not.toBeInTheDocument()
@@ -1150,16 +1222,18 @@ describe('ChatContentPane', () => {
     await waitFor(() => expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(2))
   })
 
-  it('shows approval banner and routes to inbox for pending approvals', () => {
+  it('lets the person approve a pending request right in the conversation', async () => {
     mockUseInboxItems.mockReturnValue({
       data: [
         {
           id: 'approval:1',
           kind: 'approval',
           category: 'approval',
+          title: '发送排班日历邀请？',
           status: 'pending',
           chatId: 'chat-1',
           threadId: 'thread-1',
+          approval: { id: 'a1', status: 'pending' },
         },
       ],
       isLoading: false,
@@ -1167,36 +1241,29 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    expect(screen.getByText('当前话题有 1 条待处理授权')).toBeInTheDocument()
+    const decisions = screen.getByRole('region', { name: '等你处理' })
+    expect(within(decisions).getByText('发送排班日历邀请？')).toBeInTheDocument()
+    fireEvent.click(within(decisions).getByRole('button', { name: '批准' }))
 
-    fireEvent.click(screen.getByRole('button', { name: '打开收件箱' }))
-
-    expect(mockSetInboxFilter).toHaveBeenCalledWith('pending')
-    expect(mockSelectInboxItem).toHaveBeenCalledWith('approval:1')
-    expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/$microAppId',
-      params: { microAppId: 'inbox' },
+    await waitFor(() => {
+      expect(mockResolveApproval).toHaveBeenCalledWith({ approval: { id: 'a1', status: 'pending' }, decision: 'approved' })
     })
+    // Handling it here does not send the person to the inbox.
+    expect(mockNavigate).not.toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'inbox' } })
   })
 
-  it('prefers auth-required banner when authentication is needed', () => {
+  it('shows a login card when an outside service needs signing in', () => {
     mockUseInboxItems.mockReturnValue({
       data: [
         {
           id: 'audit:1',
           kind: 'audit',
           category: 'auth_required',
+          title: '需要登录书店日历',
           status: 'pending',
           chatId: 'chat-1',
           threadId: 'thread-1',
-        },
-        {
-          id: 'approval:1',
-          kind: 'approval',
-          category: 'approval',
-          status: 'pending',
-          chatId: 'chat-1',
-          threadId: 'thread-1',
+          authUrl: 'https://calendar.example/login',
         },
       ],
       isLoading: false,
@@ -1204,8 +1271,34 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    expect(screen.getByText('当前话题等待认证')).toBeInTheDocument()
-    expect(screen.getByText('请先在收件箱完成认证，再继续当前 runtime 会话。')).toBeInTheDocument()
+    expect(screen.getByText('需要登录书店日历')).toBeInTheDocument()
+    expect(screen.getByText('登录后自动回到这里继续')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '去登录' })).toHaveAttribute('href', 'https://calendar.example/login')
+    expect(screen.queryByText(/runtime/)).not.toBeInTheDocument()
+  })
+
+  it('surfaces a waiting input request in the conversation instead of hiding it', () => {
+    mockUseInboxItems.mockReturnValue({
+      data: [
+        {
+          id: 'input:1',
+          kind: 'input_request',
+          category: 'input_request',
+          title: '周日下午几点开始？',
+          status: 'pending',
+          chatId: 'chat-1',
+          threadId: 'thread-1',
+          inputRequest: { id: 'i1', status: 'pending', requestKind: 'user-input', inputOptions: '["13:00","14:00"]' },
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByText('周日下午几点开始？')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '14:00' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '提交' })).toBeDisabled()
   })
 
   it('shows bound workspace context when runtime mode is enabled', () => {

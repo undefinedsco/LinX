@@ -1,7 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useInboxStore } from '../../app/store'
-import { useInboxItems, useInboxSummary } from '../../data/collections'
-import type { InboxListItemView } from '../../domain/inbox-item'
+import { useInboxItems, useInboxSummary, useResolveInboxApproval } from '../../data/collections'
+import { useAutoJudgeActions, useInboxAutoJudgeSweep } from '../../data/auto-judge'
+import {
+  AUTO_JUDGE_CONFIDENCE_LABEL,
+  autoJudgeRemaining,
+  autoJudgeStateOf,
+  formatAutoJudgeRemaining,
+} from '../../domain/auto-judge-view'
+import type { InboxAutoWaitingView, InboxListItemView } from '../../domain/inbox-item'
+import { isAutoWaitingInboxItem } from '../../domain/utils'
 
 function formatTimeLabel(value: string) {
   if (!value) return '刚刚'
@@ -22,6 +30,39 @@ export function useInboxListPaneController() {
   const selectItem = useInboxStore((state) => state.selectItem)
   const { data: items = [], isLoading } = useInboxItems(filter)
   const summary = useInboxSummary()
+  const { data: allItems = [] } = useInboxItems('all')
+  const resolveApproval = useResolveInboxApproval()
+  const { takeOver } = useAutoJudgeActions()
+  const [now, setNow] = useState(() => new Date())
+
+  useInboxAutoJudgeSweep()
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const autoWaiting = useMemo<InboxAutoWaitingView[]>(
+    () => allItems.filter(isAutoWaitingInboxItem).flatMap((item) => {
+      const state = autoJudgeStateOf(item.approval)
+      if (!item.approval || !state) return []
+      return [{
+        id: item.id,
+        title: item.title,
+        detail: item.approval.target.split('#')[0]?.split('/').filter(Boolean).pop() ?? '',
+        remainingLabel: formatAutoJudgeRemaining(autoJudgeRemaining(item.approval, now)),
+        confidenceLabel: AUTO_JUDGE_CONFIDENCE_LABEL[state.confidence],
+      }]
+    }),
+    [allItems, now],
+  )
+  const decideWaiting = useCallback((id: string, decision: 'approved' | 'rejected') => {
+    const approval = allItems.find((item) => item.id === id)?.approval
+    if (approval) resolveApproval.mutate({ approval, decision })
+  }, [allItems, resolveApproval])
+  const takeOverWaiting = useCallback((id: string) => {
+    const approval = allItems.find((item) => item.id === id)?.approval
+    if (approval) takeOver.mutate(approval)
+  }, [allItems, takeOver])
 
   useEffect(() => {
     if (items.length === 0) {
@@ -44,6 +85,7 @@ export function useInboxListPaneController() {
       category: item.category,
       status: item.status,
       approvalTarget: item.approval?.target ?? null,
+      autoApproved: item.autoPhase === 'auto-approved',
     })),
     [items],
   )
@@ -75,6 +117,10 @@ export function useInboxListPaneController() {
     items: listItems,
     isLoading,
     summary,
+    autoWaiting,
+    onApproveWaiting: (id: string) => decideWaiting(id, 'approved'),
+    onRejectWaiting: (id: string) => decideWaiting(id, 'rejected'),
+    onTakeOverWaiting: takeOverWaiting,
     selectedIndex,
     onItemKeyDown,
     registerItemRef,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { StructuredCellWriteProposal, StructuredTableProjection } from '../../domain/structured/structured-table'
+import type { StructuredCellCommitResult, StructuredCellWriteProposal, StructuredTableProjection } from '../../domain/structured/structured-table'
 import type { StructuredCardProjection, StructuredKanbanColumn } from '../../domain/structured/structured-projections'
 import {
   projectStructuredApprovalStagedKanbanPendingMoves,
@@ -9,6 +9,7 @@ import {
   projectStructuredKanbanMoveModel,
   projectStructuredKanbanPendingMoveView,
   projectStructuredStagedKanbanPendingMoves,
+  projectStructuredWrittenKanbanPendingMoves,
   type StructuredKanbanMove,
   type StructuredKanbanMoveTarget,
 } from './structured-kanban-move-model'
@@ -27,7 +28,7 @@ export function useStructuredKanbanMoveController({
   columns: readonly StructuredKanbanColumn[]
   projectionRows: StructuredTableProjection['rows']
   onColumnOrderChange: (columnId: string, subjects: string[]) => void
-  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
 }) {
   const [pendingMoves, setPendingMoves] = useState<Record<string, StructuredKanbanMove>>({})
   const canCommitCrossColumnMoves = typeof onCommitCellWriteProposal === 'function'
@@ -85,6 +86,13 @@ export function useStructuredKanbanMoveController({
           subject: card.subject,
         }))
         return false
+      }
+      if (saved === 'written') {
+        setPendingMoves((current) => projectStructuredWrittenKanbanPendingMoves({
+          current,
+          subject: card.subject,
+        }))
+        return true
       }
       setPendingMoves((current) => projectStructuredApprovalStagedKanbanPendingMoves({
         current,

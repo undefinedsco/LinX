@@ -35,7 +35,7 @@ export const useChatLayoutConfig = () => {
       rightSidebarWidth: 320,
       rightSidebarToggle: activeChat
         ? {
-            label: '会话详情',
+            label: '聊天信息',
             open: showRightSidebar,
             onToggle: toggleRightSidebar,
           }

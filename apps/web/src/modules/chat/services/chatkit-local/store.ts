@@ -712,6 +712,23 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     return chatId
   }
 
+  /** Pod message URI of an item once it has been persisted or loaded here. */
+  resolveItemUri(itemId: string): string | null {
+    const rowId = this.messageRowIdByItemId.get(itemId)
+    if (!rowId) return null
+    try {
+      return this.resolveMessageIri({ id: rowId })
+    } catch {
+      return null
+    }
+  }
+
+  /** Topic (Thread) resource URI, the AG-UI threadId. */
+  async resolveThreadUri(threadId: string): Promise<string> {
+    const chatId = await this.getThreadChatId(threadId)
+    return this.buildThreadUri(chatId, threadId)
+  }
+
   private buildThreadUri(chatId: string, threadId: string): string {
     return threadRepository.iriForChat(requirePodBaseUrl(this.db), chatId, threadId)
   }

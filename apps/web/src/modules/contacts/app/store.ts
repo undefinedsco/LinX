@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ContactListFilter } from '../domain/types'
+import type { ContactEntry } from '../domain/types'
 
 export type ContactViewMode = 'view' | 'edit'
 export type CreateContactType = 'agent' | 'friend' | 'group'
@@ -9,12 +9,10 @@ interface ContactStore {
   search: string
   setSearch: (val: string) => void
 
-  // List filter (all / personal / groups / agents)
-  listFilter: ContactListFilter
-  setListFilter: (filter: ContactListFilter) => void
-
   // Selection & View State
   selectedId: string | null
+  /** "新的朋友" / "群聊" above the A–Z list; mutually exclusive with selectedId. */
+  entry: ContactEntry | null
   viewMode: ContactViewMode
 
   // Create Dialog State
@@ -30,6 +28,7 @@ interface ContactStore {
 
   // Actions
   select: (id: string | null) => void
+  openEntry: (entry: ContactEntry | null) => void
   openCreateDialog: (type: CreateContactType) => void
   closeCreateDialog: () => void
   startEdit: () => void
@@ -44,10 +43,8 @@ export const useContactStore = create<ContactStore>((set) => ({
   search: '',
   setSearch: (search) => set({ search }),
 
-  listFilter: 'all',
-  setListFilter: (listFilter) => set({ listFilter }),
-
   selectedId: null,
+  entry: null,
   viewMode: 'view',
   createDialogOpen: false,
   createType: null,
@@ -55,7 +52,8 @@ export const useContactStore = create<ContactStore>((set) => ({
   inviteMemberDialogOpen: false,
   inviteTargetGroupId: null,
 
-  select: (id) => set({ selectedId: id, viewMode: 'view' }),
+  select: (id) => set({ selectedId: id, entry: null, viewMode: 'view' }),
+  openEntry: (entry) => set({ entry, selectedId: null, viewMode: 'view' }),
   openCreateDialog: (type) => set({ createDialogOpen: true, createType: type }),
   closeCreateDialog: () => set({ createDialogOpen: false, createType: null }),
   startEdit: () => set((state) => state.selectedId ? { viewMode: 'edit' } : {}),

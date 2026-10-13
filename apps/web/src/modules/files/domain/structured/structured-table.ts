@@ -147,6 +147,12 @@ export const FILES_VOCAB_APPROVAL_POLICY_VERSION = 'files-vocab-proposal-v1'
 export const FILES_VOCAB_APPROVAL_TOOL_NAME = 'files.vocab.proposal'
 export const FILES_VOCAB_APPROVAL_ACTION = 'https://undefineds.co/vocab/approveVocabTermProposal'
 
+/**
+ * `'written'`: the person's own edit went straight into the document.
+ * `true`: it was staged for approval. `false`: it was not saved.
+ */
+export type StructuredCellCommitResult = boolean | 'written'
+
 export function createStructuredCellWriteProposal({
   documentUri,
   subject,

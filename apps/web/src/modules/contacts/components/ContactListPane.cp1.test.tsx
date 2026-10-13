@@ -56,7 +56,7 @@ vi.mock('@/providers/solid-session-context', () => ({
   }),
 }))
 
-// Store mock — mutable so tests can change listFilter
+// Store mock — mutable so tests can change the entry
 let mockStoreState = {
   search: '',
   setSearch: vi.fn(),
@@ -64,8 +64,8 @@ let mockStoreState = {
   viewMode: 'view',
   select: vi.fn(),
   openCreateDialog: vi.fn(),
-  listFilter: 'all' as string,
-  setListFilter: vi.fn(),
+  entry: null as string | null,
+  openEntry: vi.fn(),
 }
 
 vi.mock('../app/store', () => ({
@@ -96,8 +96,8 @@ describe('ContactListPane CP1 Filtering', () => {
       viewMode: 'view',
       select: vi.fn(),
       openCreateDialog: vi.fn(),
-      listFilter: 'all',
-      setListFilter: vi.fn(),
+      entry: null,
+      openEntry: vi.fn(),
     }
   })
 
@@ -111,39 +111,21 @@ describe('ContactListPane CP1 Filtering', () => {
     expect(screen.queryByText('群组')).not.toBeInTheDocument()
   })
 
-  it('renders all contacts when filter is "all"', async () => {
+  it('lists people and assistants together and keeps groups behind 群聊', async () => {
     render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
 
     expect(await screen.findByText('Alice')).toBeInTheDocument()
     expect(screen.getByText('GPT Helper')).toBeInTheDocument()
-    expect(screen.getByText('Dev Team')).toBeInTheDocument()
-  })
-
-  it('filters to only groups when listFilter is "groups"', async () => {
-    mockStoreState.listFilter = 'groups'
-
-    render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
-
-    expect(await screen.findByText('Dev Team')).toBeInTheDocument()
-    expect(screen.queryByText('Alice')).not.toBeInTheDocument()
-    expect(screen.queryByText('GPT Helper')).not.toBeInTheDocument()
-  })
-
-  it('filters to only agents when listFilter is "agents"', async () => {
-    mockStoreState.listFilter = 'agents'
-
-    render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
-
-    expect(await screen.findByText('GPT Helper')).toBeInTheDocument()
-    expect(screen.queryByText('Alice')).not.toBeInTheDocument()
     expect(screen.queryByText('Dev Team')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /群聊/ })).toHaveTextContent('1')
   })
 
-  it('shows group summary and owner badge for group contacts', async () => {
+  it('does not turn the list into per-type sections', async () => {
     render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
 
-    expect(await screen.findByText('2人 · Alice、Bob')).toBeInTheDocument()
-    expect(screen.getByText('群主')).toBeInTheDocument()
+    await screen.findByText('Alice')
+    expect(screen.queryByText(/AI 助手/)).not.toBeInTheDocument()
+    expect(screen.queryByText('星标朋友')).not.toBeInTheDocument()
   })
 
   it('hides filter tabs when searching', async () => {

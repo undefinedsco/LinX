@@ -49,7 +49,11 @@ vi.mock('../data/collections', async (importOriginal) => {
         const data = containerUri ? filesFixtures.containerEntries[containerUri] ?? [] : []
         return createQueryOptions(['files', 'container-entries', containerUri ?? ''], data, !!containerUri)
       },
-      entries: () => createQueryOptions(['files', 'entries', 'all'], filesFixtures.entries),
+      entries: () => {
+        const options = createQueryOptions(['files', 'entries', 'all'], filesFixtures.entries)
+        if (filesFixtures.rootLoading) delete options.initialData
+        return options
+      },
       treeSearchEntries: () => createQueryOptions(['files', 'tree-search', filesFixtures.workspaceUri], filesFixtures.searchEntries),
     },
   }
@@ -76,6 +80,10 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: { id: 'files-tree-test-db' } }),
 }))
 
+vi.mock('../data/queries/agent-name-queries', () => ({
+  useFilesAgentNames: () => ({ main: 'LinX 助手', helper: 'Reviewer' }),
+}))
+
 vi.mock('../features/add/FilesAddMenu', () => ({
   FilesAddMenu: ({
     containerUri,
@@ -98,136 +106,44 @@ beforeEach(() => {
   const workspaceUri = filesFixtures.workspaceUri
   const makeEntry = (entry: FilesEntry) => entry
 
+  const container = (uri: string, name: string, parentUri: string): FilesEntry => makeEntry({
+    id: uri, uri, name, kind: 'container', semanticKind: 'container', parentUri, mimeType: null, size: null, modifiedAt: null,
+  })
+  const file = (uri: string, name: string, parentUri: string, semanticKind: FilesEntry['semanticKind'] = 'file'): FilesEntry => makeEntry({
+    id: uri, uri, name, kind: 'resource', semanticKind, parentUri, mimeType: 'text/turtle', size: 1, modifiedAt: null,
+  })
+  const vocabUri = `${podRootUri}.vocab/`
+  const mainHome = `${podRootUri}.data/agents/main/`
+  const helperHome = `${podRootUri}.data/agents/helper/`
   filesFixtures.entries = [
-    makeEntry({
-      id: `${podRootUri}public/`,
-      uri: `${podRootUri}public/`,
-      name: 'public',
-      kind: 'container',
-      semanticKind: 'container',
-      parentUri: podRootUri,
-      mimeType: null,
-      size: null,
-      modifiedAt: null,
-    }),
-    makeEntry({
-      id: `${podRootUri}public/notes.txt`,
-      uri: `${podRootUri}public/notes.txt`,
-      name: 'notes.txt',
-      kind: 'resource',
-      semanticKind: 'file',
-      parentUri: `${podRootUri}public/`,
-      mimeType: 'text/plain',
-      size: 5,
-      modifiedAt: null,
-    }),
+    container(`${podRootUri}public/`, 'public', podRootUri),
+    container(vocabUri, '.vocab', podRootUri),
+    container(`${podRootUri}.data/agents/`, 'agents', podRootUri),
+    file(`${podRootUri}readme.md`, 'readme.md', podRootUri),
   ]
   filesFixtures.searchEntries = [...filesFixtures.entries]
   filesFixtures.containerEntries = {
-    [podRootUri]: [
-      makeEntry({
-        id: `${podRootUri}public/`,
-        uri: `${podRootUri}public/`,
-        name: 'public',
-        kind: 'container',
-        semanticKind: 'container',
-        parentUri: podRootUri,
-        mimeType: null,
-        size: null,
-        modifiedAt: null,
-      }),
-      makeEntry({
-        id: `${podRootUri}.vocab/`,
-        uri: `${podRootUri}.vocab/`,
-        name: '.vocab',
-        kind: 'container',
-        semanticKind: 'container',
-        parentUri: podRootUri,
-        mimeType: null,
-        size: null,
-        modifiedAt: null,
-      }),
+    [`${podRootUri}public/`]: [
+      container(`${podRootUri}public/docs/`, 'docs', `${podRootUri}public/`),
+      file(`${podRootUri}public/notes.txt`, 'notes.txt', `${podRootUri}public/`),
     ],
-    [`${podRootUri}.vocab/`]: [
-      ...['terms.ttl', 'shapes.ttl', 'namespaces.ttl'].map((name) => makeEntry({
-        id: `${podRootUri}.vocab/${name}`,
-        uri: `${podRootUri}.vocab/${name}`,
-        name,
-        kind: 'resource',
-        semanticKind: name === 'terms.ttl'
-          ? 'vocab-terms'
-          : name === 'shapes.ttl'
-            ? 'vocab-shapes'
-            : 'vocab-namespaces',
-        parentUri: `${podRootUri}.vocab/`,
-        mimeType: 'text/turtle',
-        size: 1,
-        modifiedAt: null,
-      })),
+    [vocabUri]: ['terms.ttl', 'shapes.ttl', 'namespaces.ttl'].map((name) => file(
+      `${vocabUri}${name}`,
+      name,
+      vocabUri,
+      name === 'terms.ttl' ? 'vocab-terms' : name === 'shapes.ttl' ? 'vocab-shapes' : 'vocab-namespaces',
+    )),
+    [`${podRootUri}.data/agents/`]: [
+      container(mainHome, 'main', `${podRootUri}.data/agents/`),
+      container(helperHome, 'helper', `${podRootUri}.data/agents/`),
     ],
-    [`${podRootUri}.data/workspaces/`]: [
-      makeEntry({
-        id: workspaceUri,
-        uri: workspaceUri,
-        name: 'ws-1',
-        kind: 'container',
-        semanticKind: 'container',
-        parentUri: `${podRootUri}.data/workspaces/`,
-        mimeType: null,
-        size: null,
-        modifiedAt: null,
-      }),
-    ],
+    [mainHome]: [file(`${mainHome}notes.md`, 'notes.md', mainHome)],
+    [helperHome]: [],
   }
   filesFixtures.rootData = {
     podRootUri,
     entries: filesFixtures.entries,
-    nodes: [
-      { id: 'all', label: '全部可浏览资源', type: 'all', count: 3 },
-      { id: 'smart-root:recent', label: '最近文件', type: 'recent', count: 2 },
-      {
-        id: `workspace:${workspaceUri}`,
-        label: '当前话题容器',
-        type: 'workspace',
-        uri: workspaceUri,
-        count: 1,
-      },
-      {
-        id: 'pod-root',
-        label: 'Pod 根目录',
-        type: 'container',
-        uri: podRootUri,
-        count: 2,
-      },
-      {
-        id: `container:${podRootUri}.vocab/`,
-        label: '.vocab',
-        type: 'container',
-        uri: `${podRootUri}.vocab/`,
-        count: 3,
-      },
-      {
-        id: 'smart-root:agents',
-        label: 'Agent homes',
-        type: 'agents-root',
-        uri: `${podRootUri}.data/agents/`,
-        count: 1,
-      },
-      {
-        id: 'smart-root:workspaces',
-        label: 'Workspaces',
-        type: 'workspaces-root',
-        uri: `${podRootUri}.data/workspaces/`,
-        count: 2,
-      },
-      {
-        id: 'smart-root:repositories',
-        label: 'Repositories',
-        type: 'repositories-root',
-        uri: `${podRootUri}.data/repositories/`,
-        count: 0,
-      },
-    ],
+    nodes: [{ id: 'all', label: '全部可浏览资源', type: 'all', count: 4 }],
   }
   filesFixtures.queryCalls = []
   filesFixtures.rootLoading = false
@@ -264,190 +180,94 @@ function renderTreePane() {
   )
 }
 
+function expandFolder(name: string) {
+  fireEvent.click(screen.getByRole('button', { name: `展开 ${name}` }))
+}
+
 describe('FilesTreePane', () => {
-  it('renders real root nodes with the search and add header', () => {
+  it('shows search, add menu and the 我的空间 / 共享给我 groups without the old roots', () => {
     renderTreePane()
 
     expect(screen.getByRole('textbox', { name: '搜索文件树' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '添加' })).toBeInTheDocument()
-    expect(screen.queryByText('资源范围')).not.toBeInTheDocument()
-    expect(screen.getByText('全部可浏览资源')).toBeInTheDocument()
-    expect(screen.getByText('最近文件')).toBeInTheDocument()
-    expect(screen.getByText('当前话题容器')).toBeInTheDocument()
-    expect(screen.getByText('Pod 根目录')).toBeInTheDocument()
-    expect(screen.getByText('Agent homes')).toBeInTheDocument()
-    expect(screen.getByText('Workspaces')).toBeInTheDocument()
-    expect(screen.getByText('Repositories')).toBeInTheDocument()
+    expect(screen.getByText('我的空间')).toBeInTheDocument()
+    expect(screen.getByText('共享给我')).toBeInTheDocument()
+    expect(screen.queryByText('全部可浏览资源')).not.toBeInTheDocument()
+    expect(screen.queryByText('最近文件')).not.toBeInTheDocument()
   })
 
-  it('selects a root container and its right-side folder preview on click', () => {
+  it('lists folders only at the root: no leaf files', () => {
     renderTreePane()
 
-    fireEvent.click(screen.getByText('当前话题容器'))
-
-    expect(useFilesStore.getState().selectedTreeNodeId).toBe('workspace:https://pod.example/.data/workspaces/ws-1/')
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/.data/workspaces/ws-1/')
+    expect(screen.getByRole('treeitem', { name: 'public' })).toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: '词表' })).toBeInTheDocument()
+    expect(screen.queryByText('readme.md')).not.toBeInTheDocument()
   })
 
-  it('selects root nodes with keyboard activation', () => {
+  it('selects a folder for the workspace table and expands it, hiding leaf files', () => {
     renderTreePane()
 
-    const workspaceNode = screen.getByRole('treeitem', { name: /当前话题容器/ })
-
-    fireEvent.keyDown(workspaceNode, { key: 'Enter' })
-
-    expect(useFilesStore.getState().selectedTreeNodeId).toBe('workspace:https://pod.example/.data/workspaces/ws-1/')
-  })
-
-  it('uses roving focus and arrow navigation across visible tree items', () => {
-    renderTreePane()
-
-    const allNode = screen.getByRole('treeitem', { name: /全部可浏览资源/ })
-    const recentNode = screen.getByRole('treeitem', { name: /最近文件/ })
-    const repositoryNode = screen.getByRole('treeitem', { name: /Repositories/ })
-
-    expect(allNode).toHaveAttribute('tabindex', '0')
-    expect(recentNode).toHaveAttribute('tabindex', '-1')
-    expect(screen.getByRole('button', { name: '展开 Pod 根目录' })).toHaveAttribute('tabindex', '-1')
-
-    allNode.focus()
-    fireEvent.keyDown(allNode, { key: 'ArrowDown' })
-    expect(recentNode).toHaveFocus()
-
-    fireEvent.keyDown(recentNode, { key: 'End' })
-    expect(repositoryNode).toHaveFocus()
-  })
-
-  it('selects the recent files smart root on click', () => {
-    renderTreePane()
-
-    fireEvent.click(screen.getByText('最近文件'))
-
-    expect(useFilesStore.getState().selectedTreeNodeId).toBe('smart-root:recent')
-    expect(useFilesStore.getState().selectedFileId).toBeNull()
-  })
-
-  it('expands pod root and renders child containers', () => {
-    renderTreePane()
-
-    const rootLabel = screen.getByText('Pod 根目录')
-    const expandButton = rootLabel.parentElement?.querySelector('button')
-    expect(expandButton).toBeTruthy()
-
-    fireEvent.click(expandButton!)
-
-    expect(screen.getByText('public')).toBeInTheDocument()
-  })
-
-  it('selects an expanded child folder for the right-side preview', () => {
-    renderTreePane()
-
-    fireEvent.click(screen.getByRole('button', { name: '展开 Pod 根目录' }))
     fireEvent.click(screen.getByRole('treeitem', { name: 'public' }))
 
     expect(useFilesStore.getState()).toMatchObject({
       selectedTreeNodeId: 'container:https://pod.example/public/',
       selectedFileId: 'https://pod.example/public/',
     })
-    expect(useFilesStore.getState().editableFileSheetOpenRequestUri).toBeNull()
+    expect(screen.getByRole('treeitem', { name: 'docs' })).toBeInTheDocument()
+    expect(screen.queryByText('notes.txt')).not.toBeInTheDocument()
   })
 
-  it('keeps resource actions on the selected tree row and opens sidecars from its menu', () => {
+  it('shows 词表 with 属性 / 类型 / 命名空间', () => {
     renderTreePane()
 
-    fireEvent.click(screen.getByRole('button', { name: '展开 Pod 根目录' }))
-    fireEvent.click(screen.getByRole('treeitem', { name: 'public' }))
+    expandFolder('词表')
 
-    expect(screen.getByRole('button', { name: '收藏 public' })).toBeInTheDocument()
-    fireEvent.pointerDown(screen.getByRole('button', { name: '更多 public 操作' }), { button: 0 })
-    fireEvent.click(screen.getByRole('menuitem', { name: '查看 .meta' }))
-
-    expect(useFilesStore.getState().sidecarActionRequest).toEqual({
-      uri: 'https://pod.example/public/',
-      action: 'meta',
-    })
+    expect(screen.getByRole('treeitem', { name: '属性' })).toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: '类型' })).toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: '命名空间' })).toBeInTheDocument()
+    expect(screen.queryByText('terms.ttl')).not.toBeInTheDocument()
   })
 
-  it('renders resource tree rows at the compact 28px shell rhythm', () => {
+  it('names assistant folders by the assistant with 授权 and 记住的 inside', () => {
     renderTreePane()
 
-    expect(screen.getByRole('treeitem', { name: /全部可浏览资源/ }).className).toContain('h-7')
-    expect(screen.getByRole('treeitem', { name: /当前话题容器/ }).className).toContain('h-7')
+    expandFolder('agents')
+    expect(screen.getByRole('treeitem', { name: 'LinX 助手' })).toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: 'Reviewer' })).toBeInTheDocument()
+    expandFolder('LinX 助手')
+
+    expect(screen.getByRole('treeitem', { name: '授权' })).toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: '记住的' })).toBeInTheDocument()
+    expect(screen.queryByText('notes.md')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('treeitem', { name: '授权' }))
+    expect(useFilesStore.getState().selectedFileId).toBe('linx://view/grants/main')
   })
 
-  it('expands containers with an accessible keyboard toggle', () => {
+  it('renders tree rows at the compact 28px rhythm', () => {
     renderTreePane()
 
-    const expandButton = screen.getByRole('button', { name: '展开 Pod 根目录' })
-
-    fireEvent.keyDown(expandButton, { key: ' ' })
-
-    expect(screen.getByText('public')).toBeInTheDocument()
+    expect(screen.getByRole('treeitem', { name: 'public' }).className).toContain('h-7')
   })
 
-  it('expands a path-backed smart root and renders child containers', () => {
-    renderTreePane()
-
-    const workspacesLabel = screen.getByText('Workspaces')
-    const expandButton = workspacesLabel.parentElement?.querySelector('button')
-    expect(expandButton).toBeTruthy()
-
-    fireEvent.click(expandButton!)
-
-    expect(screen.getByText('ws-1')).toBeInTheDocument()
-  })
-
-  it('shows vocab as registry files without fake official folders or sidecars', () => {
-    renderTreePane()
-
-    const vocabLabel = screen.getByText('.vocab')
-    const expandButton = vocabLabel.parentElement?.querySelector('button')
-    expect(expandButton).toBeTruthy()
-
-    fireEvent.click(expandButton!)
-
-    expect(screen.getByText('terms.ttl')).toBeInTheDocument()
-    expect(screen.getByText('shapes.ttl')).toBeInTheDocument()
-    expect(screen.getByText('namespaces.ttl')).toBeInTheDocument()
-    expect(screen.queryByText('official')).not.toBeInTheDocument()
-    expect(screen.queryByText('personal')).not.toBeInTheDocument()
-    expect(screen.queryByText('.meta')).not.toBeInTheDocument()
-    expect(screen.queryByText('.acl')).not.toBeInTheDocument()
-    expect(screen.queryByText('.acr')).not.toBeInTheDocument()
-  })
-
-  it('filters the tree into flat recursive search results and opens a match', () => {
+  it('keeps recent and leaf files reachable through flat search results', () => {
     filesFixtures.searchEntries = [
-        {
-          id: 'https://pod.example/public/docs/report.md',
-          uri: 'https://pod.example/public/docs/report.md',
-          name: 'report.md',
-          kind: 'resource',
-          semanticKind: 'file',
-          parentUri: 'https://pod.example/public/docs/',
-          mimeType: 'text/markdown',
-          size: 12,
-          modifiedAt: null,
-        },
-        {
-          id: 'https://pod.example/public/notes.txt',
-          uri: 'https://pod.example/public/notes.txt',
-          name: 'notes.txt',
-          kind: 'resource',
-          semanticKind: 'file',
-          parentUri: 'https://pod.example/public/',
-          mimeType: 'text/plain',
-          size: 5,
-          modifiedAt: null,
-        },
+      {
+        id: 'https://pod.example/public/docs/report.md',
+        uri: 'https://pod.example/public/docs/report.md',
+        name: 'report.md',
+        kind: 'resource',
+        semanticKind: 'file',
+        parentUri: 'https://pod.example/public/docs/',
+        mimeType: 'text/markdown',
+        size: 12,
+        modifiedAt: null,
+      },
     ]
     renderTreePane()
 
     fireEvent.change(screen.getByRole('textbox', { name: '搜索文件树' }), { target: { value: 'report' } })
-
-    expect(screen.getByText('report.md')).toBeInTheDocument()
-    expect(screen.queryByText('notes.txt')).not.toBeInTheDocument()
-    expect(screen.queryByText('全部可浏览资源')).not.toBeInTheDocument()
+    expect(screen.queryByText('我的空间')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText('report.md'))
 
@@ -456,19 +276,17 @@ describe('FilesTreePane', () => {
   })
 
   it('opens a container search result as a folder selection', () => {
-    filesFixtures.searchEntries = [
-        {
-          id: 'https://pod.example/public/docs/',
-          uri: 'https://pod.example/public/docs/',
-          name: 'docs',
-          kind: 'container',
-          semanticKind: 'container',
-          parentUri: 'https://pod.example/public/',
-          mimeType: null,
-          size: null,
-          modifiedAt: null,
-        },
-    ]
+    filesFixtures.searchEntries = [{
+      id: 'https://pod.example/public/docs/',
+      uri: 'https://pod.example/public/docs/',
+      name: 'docs',
+      kind: 'container',
+      semanticKind: 'container',
+      parentUri: 'https://pod.example/public/',
+      mimeType: null,
+      size: null,
+      modifiedAt: null,
+    }]
     renderTreePane()
 
     fireEvent.change(screen.getByRole('textbox', { name: '搜索文件树' }), { target: { value: 'docs' } })
@@ -483,34 +301,26 @@ describe('FilesTreePane', () => {
 
     const input = screen.getByRole('textbox', { name: '搜索文件树' })
     fireEvent.change(input, { target: { value: 'missing' } })
-
     expect(screen.getByText('没有匹配“missing”的资源')).toBeInTheDocument()
 
     fireEvent.keyDown(input, { key: 'Escape' })
 
     expect(screen.queryByText('没有匹配“missing”的资源')).not.toBeInTheDocument()
-    expect(screen.getByText('全部可浏览资源')).toBeInTheDocument()
+    expect(screen.getByText('我的空间')).toBeInTheDocument()
   })
 
   it('targets the selected container with the add menu', () => {
     renderTreePane()
 
-    fireEvent.click(screen.getByText('当前话题容器'))
+    fireEvent.click(screen.getByRole('treeitem', { name: 'public' }))
 
     expect(screen.getByRole('button', { name: '添加' })).toHaveAttribute(
       'data-add-container',
-      'https://pod.example/.data/workspaces/ws-1/',
+      'https://pod.example/public/',
     )
-
-    fireEvent.click(screen.getByRole('button', { name: '添加' }))
-
-    expect(filesFixtures.queryCalls).toContainEqual({
-      type: 'containerEntries',
-      containerUri: 'https://pod.example/.data/workspaces/ws-1/',
-    })
   })
 
-  it('shows loading state while root nodes are loading', () => {
+  it('shows loading state while root entries are loading', () => {
     filesFixtures.rootLoading = true
     renderTreePane()
 

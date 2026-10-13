@@ -1,5 +1,5 @@
 import type { KeyboardEvent, ReactNode } from 'react'
-import { Check, ExternalLink, Eye, Info, Minus, MoreHorizontal, RotateCcw, X } from 'lucide-react'
+import { CalendarDays, Check, ExternalLink, Eye, Hash, Info, Link2, ListChecks, Minus, MoreHorizontal, RotateCcw, ToggleLeft, Type, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -12,9 +12,10 @@ import {
   type StructuredPredicateValueEditorKind,
 } from './useStructuredPredicateValueEditorController'
 import { projectStructuredPredicateValueEditorChrome } from './structured-predicate-value-editor-model'
-import type {
-  StructuredDefinedPredicateHeaderChrome,
-  StructuredPendingPredicateHeaderChrome,
+import {
+  projectStructuredPredicateTypeIconKind,
+  type StructuredDefinedPredicateHeaderChrome,
+  type StructuredPendingPredicateHeaderChrome,
 } from './structured-predicate-column-header-model'
 import {
   planStructuredEnumSelectorInputKeyAction,
@@ -66,6 +67,20 @@ function PredicateDefinitionRow({
   )
 }
 
+const TYPE_ICONS = {
+  text: Type,
+  number: Hash,
+  date: CalendarDays,
+  boolean: ToggleLeft,
+  relation: Link2,
+  choice: ListChecks,
+} as const
+
+export function StructuredPredicateTypeIcon({ typeLabel }: { typeLabel: string }) {
+  const Icon = TYPE_ICONS[projectStructuredPredicateTypeIconKind(typeLabel)]
+  return <Icon className="h-3 w-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+}
+
 export function StructuredPredicateHeaderCell({
   chrome,
   predicate,
@@ -100,10 +115,11 @@ export function StructuredPredicateHeaderCell({
       <button
         type="button"
         className="flex min-w-0 items-center gap-1 hover:text-foreground"
-        title={displayLabel}
+        title={predicate}
         aria-label={chrome.sortButton.ariaLabel}
         onClick={onSort}
       >
+        <StructuredPredicateTypeIcon typeLabel={typeLabel} />
         <span className="min-w-0 truncate">{displayLabel}</span>
         {sortIcon}
       </button>
@@ -199,13 +215,16 @@ export function StructuredPendingPredicateHeaderCell({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex min-w-0 items-center gap-1 hover:text-foreground"
+          className="flex min-w-0 items-center gap-1 rounded border border-dashed border-muted-foreground/50 px-1 hover:text-foreground"
+          data-unconfirmed-column="true"
           data-proposal-uri={proposalUri}
           data-predicate-uri={predicateUri}
           title={displayLabel}
           aria-label={chrome.trigger.ariaLabel}
         >
+          <StructuredPredicateTypeIcon typeLabel={type} />
           <span className="min-w-0 truncate">{displayLabel}</span>
+          <span aria-hidden="true" className="shrink-0 text-[10px] text-muted-foreground">未确认</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
@@ -671,6 +690,7 @@ export function StructuredSubjectCell({
   openTarget,
   openAffordance,
   onOpenSubject,
+  onOpenCard,
 }: {
   subject: string
   displayLabel: string
@@ -685,6 +705,8 @@ export function StructuredSubjectCell({
     kind: StructuredSubjectCellOpenKind,
     options?: StructuredSubjectCellOpenOptions,
   ) => void
+  /** R6: the row opens as a card popup. */
+  onOpenCard?: () => void
 }) {
   if (pending) {
     return (
@@ -753,6 +775,20 @@ export function StructuredSubjectCell({
       >
         <Eye className="h-3 w-3" aria-hidden="true" />
       </button>
+      {onOpenCard ? (
+        <button
+          type="button"
+          aria-label={`打开 ${displayLabel}`}
+          title="打开"
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenCard()
+          }}
+        >
+          <ExternalLink className="h-3 w-3" aria-hidden="true" />
+        </button>
+      ) : null}
     </span>
   )
 }

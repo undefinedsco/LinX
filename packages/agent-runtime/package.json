@@ -17,10 +17,20 @@
       "node": "./dist/acp.js",
       "default": "./src/acp.ts"
     },
+    "./ag-ui": {
+      "types": "./src/ag-ui.ts",
+      "node": "./dist/ag-ui.js",
+      "default": "./src/ag-ui.ts"
+    },
     "./auto-mode": {
       "types": "./src/auto-mode.ts",
       "node": "./dist/auto-mode.js",
       "default": "./src/auto-mode.ts"
+    },
+    "./auto-judge": {
+      "types": "./src/auto-judge.ts",
+      "node": "./dist/auto-judge.js",
+      "default": "./src/auto-judge.ts"
     },
     "./chat-reconciler": {
       "types": "./src/chat-reconciler.ts",

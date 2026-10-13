@@ -20,6 +20,8 @@ import { projectFolderChildKeyboardNavigationPlan, type
   FolderDetailCollectionViewMode,
   FolderSortState,
 } from '../../domain/folder/folder-detail-model'
+import { useFilesAgentNames } from '../../data/queries/agent-name-queries'
+import { projectEntryDisplayName } from '../../domain/list/explorer-virtual-entries'
 import type { FilesEntry } from '../../domain/resource/resource-model'
 
 export type FolderChildCollectionViewMode = FolderDetailCollectionViewMode
@@ -105,6 +107,7 @@ export function FolderChildCollectionView({
   onMove: (child: FilesEntry) => void
   onDelete: (child: FilesEntry) => void
 }) {
+  const agentNames = useFilesAgentNames()
   const handleChildKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, child: FilesEntry) => {
     const navigationPlan = projectFolderChildKeyboardNavigationPlan({
       currentChildUri: child.uri,
@@ -196,13 +199,13 @@ export function FolderChildCollectionView({
               {viewMode === 'icons' ? (
                 <>
                   <ChildIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 truncate text-foreground/80">{child.name}</span>
+                  <span className="min-w-0 truncate text-foreground/80" title={child.name}>{projectEntryDisplayName(child, agentNames)}</span>
                 </>
               ) : (
                 <>
                   <span className="flex min-w-0 items-center gap-2">
                     <ChildIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate text-foreground/80">{child.name}</span>
+                    <span className="truncate text-foreground/80" title={child.name}>{projectEntryDisplayName(child, agentNames)}</span>
                   </span>
                   <span className="truncate text-muted-foreground">{row.typeLabel}</span>
                   <span className="truncate text-muted-foreground">{row.modifiedLabel}</span>

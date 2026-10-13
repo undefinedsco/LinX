@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import { FilesGrantsView } from '../data/queries'
+import { isGrantsViewUri } from '../domain/list/explorer-virtual-entries'
 import { FilesListPane } from '../features/list/FilesListPane'
 import { FileDetailPane } from '../features/detail/FileDetailPane'
 import { FilesTreePane } from '../features/tree/FilesTreePane'
@@ -78,7 +80,7 @@ function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
           <span className="text-muted-foreground">当前范围来自聊天关联文件；目录仍按 Pod 原始位置打开。</span>
         </div>
       ) : null}
-      <FileDetailPane />
+      {isGrantsViewUri(selectedFileId) ? <FilesGrantsView /> : <FileDetailPane />}
     </section>
   )
 

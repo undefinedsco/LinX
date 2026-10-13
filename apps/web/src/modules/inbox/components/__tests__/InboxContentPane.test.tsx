@@ -19,13 +19,39 @@ vi.mock('@/modules/chat/store', () => ({
   useChatStore: (selector: (state: unknown) => unknown) => mockUseChatStore(selector),
 }))
 
+const mockCreateUserMessage = vi.fn().mockResolvedValue({ id: 'message-1' })
+vi.mock('@/modules/chat/collections', () => ({
+  chatOps: { createUserMessage: (...args: unknown[]) => mockCreateUserMessage(...args) },
+}))
+
+vi.mock('@/providers/solid-session-context', () => ({
+  useSession: () => ({ session: { info: { webId: 'https://alice.example/profile/card#me' } } }),
+}))
+
 vi.mock('../../app/store', () => ({
   useInboxStore: (selector: (state: unknown) => unknown) => mockUseInboxStore(selector),
+}))
+
+const mockResolveInputMutateAsync = vi.fn().mockResolvedValue(undefined)
+
+vi.mock('../../data/auto-judge', () => ({
+  useInboxAutoJudgeSweep: () => undefined,
+  useGrantRows: () => ({ data: [], all: [], isLoading: false }),
+  useAutoJudgeActions: () => ({
+    takeOver: { mutate: vi.fn(), isPending: false },
+    markReviewed: { mutate: vi.fn(), isPending: false },
+    revokeGrant: { mutate: vi.fn(), isPending: false },
+  }),
 }))
 
 vi.mock('../../data/collections', () => ({
   useInboxItems: () => mockUseInboxItems(),
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
+  useResolveInboxInputRequest: () => ({
+    mutateAsync: mockResolveInputMutateAsync,
+    isPending: false,
+    error: null,
+  }),
 }))
 
 import { InboxContentPane } from '../InboxContentPane'
@@ -146,7 +172,7 @@ describe('InboxContentPane', () => {
     render(<InboxContentPane />)
 
     fireEvent.change(screen.getByLabelText('处理备注'), { target: { value: 'Needs policy support.' } })
-    fireEvent.click(screen.getByText('批准'))
+    fireEvent.click(screen.getByText('批准这一次'))
 
     await waitFor(() => {
       expect(mockMutateAsync).toHaveBeenCalledWith({
@@ -156,5 +182,95 @@ describe('InboxContentPane', () => {
       })
     })
     expect(screen.getByLabelText('处理备注')).toHaveValue('Needs policy support.')
+  })
+
+  const inputRequestItem = {
+    id: 'input:input-1',
+    kind: 'input_request' as const,
+    category: 'input_request' as const,
+    title: '周日下午几点开始？',
+    description: '等待输入',
+    timestamp: '2026-10-10T10:42:00.000Z',
+    status: 'pending',
+    chatId: 'chat-1',
+    threadId: 'thread-1',
+    inputRequest: {
+      id: 'input-1',
+      session: 'urn:linx:runtime-session:runtime-1',
+      requestKind: 'user-input',
+      prompt: '周日下午几点开始？',
+      inputOptions: '["13:00","14:00"]',
+      status: 'pending',
+      createdAt: '2026-10-10T10:42:00.000Z',
+    },
+  }
+
+  it('labels an input request as needing input and answers it in place', async () => {
+    mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedItemId: inputRequestItem.id,
+    }))
+    mockUseInboxItems.mockReturnValue({ data: [inputRequestItem], isLoading: false })
+
+    render(<InboxContentPane />)
+
+    expect(screen.getByText('需要输入')).toBeInTheDocument()
+    expect(screen.queryByText('审计事件')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('14:00'))
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => {
+      expect(mockResolveInputMutateAsync).toHaveBeenCalledWith({
+        inputRequest: inputRequestItem.inputRequest,
+        response: '14:00',
+      })
+    })
+    // Plain submit only queues the answer; it does not interrupt the conversation.
+    expect(mockCreateUserMessage).not.toHaveBeenCalled()
+  })
+
+  it('can steer the waiting run by also posting the answer into the original topic', async () => {
+    mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedItemId: inputRequestItem.id,
+    }))
+    mockUseInboxItems.mockReturnValue({ data: [inputRequestItem], isLoading: false })
+
+    render(<InboxContentPane />)
+
+    fireEvent.click(screen.getByLabelText('14:00'))
+    fireEvent.click(screen.getByRole('button', { name: '立即插话' }))
+
+    await waitFor(() => {
+      expect(mockCreateUserMessage).toHaveBeenCalledWith(
+        'chat-1',
+        'thread-1',
+        '回答「周日下午几点开始？」：14:00',
+        'https://alice.example/profile/card#me',
+      )
+    })
+    expect(mockResolveInputMutateAsync).toHaveBeenCalledWith({
+      inputRequest: inputRequestItem.inputRequest,
+      response: '14:00',
+    })
+  })
+
+  it('uses a masked field for secret input requests', () => {
+    mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedItemId: inputRequestItem.id,
+    }))
+    mockUseInboxItems.mockReturnValue({
+      data: [{
+        ...inputRequestItem,
+        inputRequest: { ...inputRequestItem.inputRequest, requestKind: 'secret', inputOptions: null },
+      }],
+      isLoading: false,
+    })
+
+    render(<InboxContentPane />)
+
+    expect(screen.getByLabelText('你的回答')).toHaveAttribute('type', 'password')
+    expect(screen.getByRole('button', { name: '提交' })).toBeDisabled()
+    // Secrets only queue; they never go into the conversation.
+    expect(screen.queryByRole('button', { name: '立即插话' })).not.toBeInTheDocument()
   })
 })

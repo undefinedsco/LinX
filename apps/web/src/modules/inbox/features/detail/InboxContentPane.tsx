@@ -11,7 +11,7 @@ export function InboxContentPane({ compact = false, theme }: MicroAppPaneProps) 
   if (controller.isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        正在加载 inbox 详情…
+        正在读取…
       </div>
     )
   }
@@ -23,7 +23,7 @@ export function InboxContentPane({ compact = false, theme }: MicroAppPaneProps) 
   if (!controller.selectedItem) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        选择一条 inbox 事件查看详情。
+        选一件事看看
       </div>
     )
   }
@@ -39,7 +39,7 @@ export function InboxContentPane({ compact = false, theme }: MicroAppPaneProps) 
             size="sm"
             className="h-8 gap-1 px-2 text-xs"
             onClick={() => controller.selectItem(null)}
-            aria-label="返回 inbox 列表"
+            aria-label="返回收件箱"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             列表

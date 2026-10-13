@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, Plus, Search, User, UserPlus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { ModelSelector } from '@/components/ui/model-selector'
 import type { ModelOption } from '@/components/ui/model-selector'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/use-toast'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Dialog,
   DialogContent,
@@ -19,7 +18,7 @@ import {
 import { CHAT_AGENT_PROVIDERS } from '@/lib/agent-providers'
 import { useChatStore } from '../store'
 import { useChatMutations } from '../collections'
-import { CreateGroupDialog, contactOps } from '@/modules/contacts'
+import { AddFriendForm, CreateGroupDialog } from '@/modules/contacts'
 import {
   DEFAULT_RUNTIME_BASE_REF,
   DEFAULT_RUNTIME_TOOL,
@@ -33,17 +32,6 @@ import { useModelServices } from '@/modules/model-services/data/use-model-servic
 
 interface AddChatDialogProps {
   onCreated?: (id: string) => void
-}
-
-interface FriendSearchState {
-  webId: string
-  isSearching: boolean
-  searchResult: {
-    name: string
-    webId: string
-    avatarUrl?: string
-  } | null
-  error: string
 }
 
 export function AddChatDialog({ onCreated }: AddChatDialogProps) {
@@ -87,12 +75,6 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const [runtimeBranch, setRuntimeBranch] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [friendSearch, setFriendSearch] = useState<FriendSearchState>({
-    webId: '',
-    isSearching: false,
-    searchResult: null,
-    error: '',
-  })
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -112,12 +94,6 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
     setRuntimeBranch('')
     setIsSubmitting(false)
     setError(null)
-    setFriendSearch({
-      webId: '',
-      isSearching: false,
-      searchResult: null,
-      error: '',
-    })
 
     const configuredDefault = configuredModelOptions[0]
     if (configuredDefault) {
@@ -259,74 +235,6 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
     }
   }
 
-  const handleSearchWebId = async () => {
-    const webId = friendSearch.webId.trim()
-    if (!webId) {
-      setFriendSearch((state) => ({ ...state, error: '请输入用户地址' }))
-      return
-    }
-
-    setError(null)
-    setFriendSearch((state) => ({
-      ...state,
-      isSearching: true,
-      error: '',
-      searchResult: null,
-    }))
-
-    try {
-      const profile = await contactOps.fetchSolidProfile(webId)
-      if (!profile) {
-        setFriendSearch((state) => ({
-          ...state,
-          isSearching: false,
-          error: '无法获取用户信息，请检查用户地址是否正确',
-        }))
-        return
-      }
-
-      setFriendSearch((state) => ({
-        ...state,
-        isSearching: false,
-        searchResult: {
-          name: profile.name,
-          webId: profile.webId,
-          avatarUrl: profile.avatarUrl,
-        },
-      }))
-    } catch (searchError) {
-      console.error('Search WebID failed:', searchError)
-      setFriendSearch((state) => ({
-        ...state,
-        isSearching: false,
-        error: '搜索失败，请稍后再试。',
-      }))
-    }
-  }
-
-  const handleAddFriend = async () => {
-    if (!friendSearch.searchResult || isSubmitting) return
-
-    setError(null)
-    setIsSubmitting(true)
-
-    try {
-      const result = await contactOps.addFriend({
-        name: friendSearch.searchResult.name,
-        webId: friendSearch.searchResult.webId,
-        avatarUrl: friendSearch.searchResult.avatarUrl,
-      })
-      selectChat(result.chatId)
-      onCreated?.(result.chatId)
-      closeAddDialog()
-    } catch (friendError: any) {
-      console.error('Add friend failed:', friendError)
-      setError(formatErrorForUser(friendError, '添加好友失败，请稍后再试。'))
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
   const getTitle = () => {
     switch (dialogMode) {
       case 'ai': return '创建聊天'
@@ -339,7 +247,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const getDescription = () => {
     switch (dialogMode) {
       case 'ai': return '创建一个会保存到当前空间的聊天'
-      case 'friend': return '添加外部用户为好友'
+      case 'friend': return '粘贴对方的账号，找到后添加为朋友。'
       case 'group': return '创建多人聊天群组'
       default: return ''
     }
@@ -373,12 +281,12 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="instructions">系统提示词（可选）</Label>
+        <Label htmlFor="instructions">做事的方法（可选）</Label>
         <Textarea
           id="instructions"
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
-          placeholder="例如：你是一个专业的代码助手..."
+          placeholder="例如：先给结论，再列出处；拿不准的先问我。"
           rows={3}
         />
       </div>
@@ -478,88 +386,6 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
     </form>
   )
 
-  const friendForm = (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="friend-webid">用户地址</Label>
-        <div className="flex gap-2">
-          <Input
-            id="friend-webid"
-            value={friendSearch.webId}
-            onChange={(event) => setFriendSearch((state) => ({
-              ...state,
-              webId: event.target.value,
-              error: '',
-            }))}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                void handleSearchWebId()
-              }
-            }}
-            placeholder="https://alice.solidcommunity.net/profile/card#me"
-          />
-          <Button type="button" variant="outline" onClick={() => void handleSearchWebId()} disabled={friendSearch.isSearching}>
-            {friendSearch.isSearching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-        {friendSearch.error && (
-          <p className="text-xs text-destructive">{friendSearch.error}</p>
-        )}
-      </div>
-
-      {friendSearch.searchResult ? (
-        <div className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-4">
-          <div className="flex items-center gap-3">
-            <Avatar className="h-12 w-12 rounded-xl">
-              <AvatarImage src={friendSearch.searchResult.avatarUrl} />
-              <AvatarFallback className="rounded-xl bg-primary/10 text-primary">
-                {friendSearch.searchResult.name.slice(0, 1).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-foreground">{friendSearch.searchResult.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{friendSearch.searchResult.webId}</p>
-            </div>
-          </div>
-          <Button type="button" className="w-full" onClick={() => void handleAddFriend()} disabled={isSubmitting}>
-            {isSubmitting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <UserPlus className="mr-2 h-4 w-4" />
-            )}
-            添加为好友
-          </Button>
-        </div>
-      ) : (
-        <div className="py-8 text-center text-muted-foreground">
-          <User className="mx-auto mb-2 h-10 w-10 opacity-30" />
-          <p className="text-sm">输入对方用户地址并搜索。</p>
-        </div>
-      )}
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      <div className="flex items-center gap-3 pt-2">
-        <Button type="button" variant="outline" onClick={closeAddDialog} className="flex-1">
-          取消
-        </Button>
-        <Button
-          type="button"
-          className="flex-1"
-          onClick={() => void (friendSearch.searchResult ? handleAddFriend() : handleSearchWebId())}
-          disabled={friendSearch.isSearching || isSubmitting}
-        >
-          {friendSearch.searchResult ? '添加' : '搜索'}
-        </Button>
-      </div>
-    </div>
-  )
-
   if (dialogMode === 'group') {
     return (
       <CreateGroupDialog
@@ -587,7 +413,15 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
         </DialogHeader>
 
         {dialogMode === 'ai' && agentForm}
-        {dialogMode === 'friend' && friendForm}
+        {dialogMode === 'friend' && (
+          <AddFriendForm
+            onAdded={({ chatId }) => {
+              selectChat(chatId)
+              onCreated?.(chatId)
+              closeAddDialog()
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )

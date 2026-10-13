@@ -35,6 +35,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     projection,
     structuredSourceLoading,
     structuredSourceUnavailable,
+    structuredSourceEtag,
     structuredWritesSupported,
     vocabDefinitionIndex,
     vocabShapesUri,
@@ -161,6 +162,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     syncLocalCellWriteProposalsFromTable,
   } = useStructuredCellProposalWorkflowController({
     currentPodRootUri,
+    documentEtag: structuredSourceEtag,
     documentUri: file.uri,
     structuredWritesSupported,
   })
@@ -235,13 +237,13 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     if (created === false) return false
 
     if (kanbanGroupPredicate && columnId !== 'ungrouped' && columnValue) {
-      return commitViewCellWriteProposal(createStructuredCellWriteProposal({
+      return (await commitViewCellWriteProposal(createStructuredCellWriteProposal({
         documentUri: file.uri,
         subject: plan.subject,
         predicate: kanbanGroupPredicate,
         previousValues: [],
         nextValues: [columnValue],
-      }))
+      }))) !== false
     }
     return true
   }

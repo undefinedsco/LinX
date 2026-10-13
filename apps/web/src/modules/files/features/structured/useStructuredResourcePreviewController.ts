@@ -67,6 +67,8 @@ export function useStructuredResourcePreviewController(file: FilesDetail) {
     currentPodRootUri,
     projection,
     structuredWritesSupported: supportsStructuredWriteProposals(file),
+    // The version the table shows; direct writes are refused if the document moved on.
+    structuredSourceEtag: rawQuery.data?.etag ?? null,
     structuredSourceLoading: rawQuery.isLoading,
     structuredSourceUnavailable: !!rawQuery.error && !rawQuery.data,
     vocabDefinitionIndex,

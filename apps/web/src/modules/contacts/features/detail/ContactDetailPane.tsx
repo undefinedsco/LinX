@@ -1,18 +1,26 @@
 import { ChevronLeft } from 'lucide-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
+import { AddFriendForm } from '../add-friend/AddFriendForm'
+import { GrantsView } from '@/modules/inbox'
 import { useContactStore } from '@/modules/contacts/app/store'
 import { ContactDetail } from '../../ui/ContactDetail'
 import { ContactListPane } from '../list/ContactListPane'
 import { CreateGroupDialog } from '../groups/CreateGroupDialog'
 import { useContactDetailController } from './useContactDetailController'
 
+const renderAddFriend = (props: { onAdded: (friend: { contactId: string; chatId: string }) => void; onOpenExisting: (contactId: string) => void }) => (
+  <AddFriendForm {...props} />
+)
+const renderGrants = (agentId: string) => <GrantsView agentId={agentId} />
+
 export function ContactDetailPane({ compact = false, theme }: MicroAppPaneProps) {
   const controller = useContactDetailController()
   const selectedId = useContactStore((state) => state.selectedId)
+  const entry = useContactStore((state) => state.entry)
   const select = useContactStore((state) => state.select)
 
-  if (compact && !selectedId) {
+  if (compact && !selectedId && !entry) {
     return <ContactListPane theme={theme} />
   }
 
@@ -32,7 +40,7 @@ export function ContactDetailPane({ compact = false, theme }: MicroAppPaneProps)
           </Button>
         </div>
         <div className="min-h-0 flex-1">
-          <ContactDetail {...controller} />
+          <ContactDetail {...controller} renderGrants={renderGrants} renderAddFriend={renderAddFriend} />
           <CreateGroupDialog
             open={controller.creation.open && controller.creation.type === 'group'}
             onOpenChange={(open) => {
@@ -47,7 +55,7 @@ export function ContactDetailPane({ compact = false, theme }: MicroAppPaneProps)
 
   return (
     <>
-      <ContactDetail {...controller} />
+      <ContactDetail {...controller} renderGrants={renderGrants} renderAddFriend={renderAddFriend} />
       <CreateGroupDialog
         open={controller.creation.open && controller.creation.type === 'group'}
         onOpenChange={(open) => {

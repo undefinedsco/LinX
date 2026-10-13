@@ -1,3 +1,15 @@
+import {
+  autoJudgeConfidenceFromScore,
+  DEFAULT_AUTO_JUDGE_WINDOWS,
+  isHighImpactAutoJudgeAction,
+  planAutoJudge,
+  resolveAutoJudgeWindowMs,
+  type AutoJudgeConfidence,
+  type AutoJudgeGrant,
+  type AutoJudgePlan,
+  type AutoJudgeWindows,
+} from './auto-judge.js'
+
 export type AutoModeBackend = 'linx' | 'codex' | 'claude' | 'codebuddy'
 export type AutoModeWorkerBackend = AutoModeBackend
 export type AutoModeMode = 'off' | 'auto'
@@ -169,7 +181,18 @@ export interface AutoModeSecretaryRecommendationBase {
   kind: AutoModeInteractionRequestKind
   canAutoDecide: boolean
   confidence?: number
+  /** R6 confidence band derived from `confidence` (high / medium / low). */
+  confidenceBand?: AutoJudgeConfidence
+  /**
+   * R6 wait before LinX decides, from the confidence band (high 10 min,
+   * medium 2 h by default); null = low confidence, never decided automatically.
+   */
+  autoJudgeWindowMs?: number | null
   reason?: string
+  /**
+   * Delay before the recommendation is applied. Since R6 this equals
+   * `autoJudgeWindowMs`; interactive terminals may clamp it for their own prompt.
+   */
   reactionWindowMs?: number
   source?: AutoModeSecretaryRecommendationSource
 }
@@ -251,11 +274,21 @@ export interface ParseAutoModeSecretaryRecommendationOptions {
   mode: LegacyAutoModeMode
   autoEnabled?: boolean
   request: AutoModeInteractionRequest
+  /** @deprecated The R6 wait comes from the confidence band; this is ignored. */
   defaultReactionWindowMs?: number
+  /** The user's three waits (K11); defaults to high 10 min, medium 2 h, low never. */
+  windows?: AutoJudgeWindows
 }
 
+/**
+ * @deprecated Pre-R6 5–60 s reaction window. Kept only as the clamp an
+ * interactive terminal prompt applies to its own countdown (apps/cli). The
+ * R6 wait comes from {@link resolveAutoModeSecretaryWindowMs}.
+ */
 export const DEFAULT_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS = 5_000
+/** @deprecated See {@link DEFAULT_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS}. */
 export const MIN_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS = 5_000
+/** @deprecated See {@link DEFAULT_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS}. */
 export const MAX_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS = 60_000
 
 export interface AutoModeToolCallEvent {
@@ -1097,18 +1130,14 @@ export function parseAutoModeSecretaryRecommendation(
   )
   const confidence = normalizeConfidence(raw.confidence ?? raw.confidenceScore ?? raw.confidence_score)
   const reason = stringFromUnknown(raw.reason ?? raw.rationale ?? raw.explanation)
-  const fallbackReactionWindowMs = options.defaultReactionWindowMs ?? DEFAULT_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS
-  const reactionWindowMs = confidence !== undefined
-    ? computeAutoModeSecretaryReactionWindowMs(confidence, fallbackReactionWindowMs)
-    : normalizeReactionWindowMs(
-      raw.reactionWindowMs
-        ?? raw.reaction_window_ms
-        ?? raw.reviewWindowMs
-        ?? raw.review_window_ms
-        ?? raw.autoDecisionDelayMs
-        ?? raw.auto_decision_delay_ms,
-      fallbackReactionWindowMs,
-    )
+  // R6: the wait comes from how sure the secretary is, never from the model's
+  // own reactionWindowMs. Low (or missing) confidence is never decided
+  // automatically; it goes back to the user.
+  const confidenceBand = autoJudgeConfidenceFromScore(confidence)
+  const autoJudgeWindowMs = resolveAutoModeSecretaryWindowMs(confidence, options.windows)
+  const allowsAutoDecision = autoJudgeWindowMs !== null
+  const reactionWindowMs = autoJudgeWindowMs ?? undefined
+  const band = { confidenceBand, autoJudgeWindowMs }
 
   if (options.request.kind === 'user-input') {
     const answers = normalizeSecretaryUserInputAnswers(
@@ -1118,8 +1147,9 @@ export function parseAutoModeSecretaryRecommendation(
 
     return {
       kind: 'user-input',
-      canAutoDecide: canAutoDecide === true && !!answers,
+      canAutoDecide: canAutoDecide === true && !!answers && allowsAutoDecision,
       ...(confidence !== undefined ? { confidence } : {}),
+      ...band,
       ...(reason ? { reason } : {}),
       ...(reactionWindowMs !== undefined ? { reactionWindowMs } : {}),
       ...(answers ? { answers } : {}),
@@ -1133,6 +1163,7 @@ export function parseAutoModeSecretaryRecommendation(
       kind: options.request.kind,
       canAutoDecide: false,
       ...(confidence !== undefined ? { confidence } : {}),
+      ...band,
       ...(reason ? { reason } : {}),
       ...(reactionWindowMs !== undefined ? { reactionWindowMs } : {}),
       source: 'model',
@@ -1141,9 +1172,10 @@ export function parseAutoModeSecretaryRecommendation(
 
   return {
     kind: options.request.kind,
-    canAutoDecide: canAutoDecide === true,
+    canAutoDecide: canAutoDecide === true && allowsAutoDecision,
     decision,
     ...(confidence !== undefined ? { confidence } : {}),
+    ...band,
     ...(reason ? { reason } : {}),
     ...(reactionWindowMs !== undefined ? { reactionWindowMs } : {}),
     source: 'model',
@@ -1234,14 +1266,71 @@ function normalizeConfidence(value: unknown): number | undefined {
   return undefined
 }
 
-function normalizeReactionWindowMs(value: unknown, fallback: number): number | undefined {
-  const parsed = normalizeDurationMs(value ?? fallback, 'ms')
-  if (parsed === undefined) {
-    return undefined
-  }
-  return Math.max(0, Math.min(MAX_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS, parsed))
+/**
+ * R6 wait before the secretary's recommendation is applied, from its 0..1
+ * confidence: high 10 min, medium 2 h, low never (null). `windows` are the
+ * user's settings (K11).
+ */
+export function resolveAutoModeSecretaryWindowMs(
+  confidence: number | undefined,
+  windows: AutoJudgeWindows = DEFAULT_AUTO_JUDGE_WINDOWS,
+): number | null {
+  return resolveAutoJudgeWindowMs(autoJudgeConfidenceFromScore(confidence), windows)
 }
 
+/** Confidence band (high / medium / low) for a 0..1 secretary confidence. */
+export function autoModeConfidenceBand(confidence: number | undefined): AutoJudgeConfidence {
+  return autoJudgeConfidenceFromScore(confidence)
+}
+
+const HIGH_IMPACT_COMMAND_PATTERN = /(?:^|[\s;&|(])(?:rm|rmdir|unlink|shred|del|erase)(?:\s|$)|\bgit\s+push\b|\b(?:npm|yarn|pnpm)\s+publish\b|\bcurl\b[^|;]*(?:-X\s*(?:POST|PUT|PATCH|DELETE)|--data|\s-d\s|-F\s)|(?:^|[\s;&|(])(?:mail|sendmail|scp|rsync)(?:\s|$)|\bdrop\s+(?:table|database)\b/i
+
+/**
+ * Sending out, spending or deleting: needs a grant confirmed separately for
+ * that impact, and is never covered by an ordinary grant.
+ */
+export function isHighImpactAutoModeApprovalRequest(request: AutoModeApprovalRequest): boolean {
+  if (request.kind === 'command-approval' && request.command && HIGH_IMPACT_COMMAND_PATTERN.test(request.command)) {
+    return true
+  }
+  return isHighImpactAutoJudgeAction(autoModeApprovalActionUri(request), autoModeApprovalToolName(request))
+}
+
+/**
+ * Plans the R6 auto-judge for an approval raised by a backend: grants cover
+ * it by target/action/risk, the secretary's grant-coverage confidence picks
+ * the wait. A coverage answer of `covers: false` keeps it with the user.
+ */
+export function planAutoModeApprovalAutoJudge(input: {
+  request: AutoModeApprovalRequest
+  /** Pod IRI the approval is about (the thread or resource). */
+  target: string
+  grants: AutoJudgeGrant[]
+  coverage?: AutoModeGrantCoverageDecision | null
+  now: Date
+  windows?: AutoJudgeWindows
+}): AutoJudgePlan {
+  if (input.coverage && !input.coverage.covers) {
+    return { mode: 'wait-user', reason: 'no-grant' }
+  }
+  return planAutoJudge({
+    request: {
+      target: input.target,
+      action: autoModeApprovalActionUri(input.request),
+      risk: autoModeApprovalRisk(input.request),
+      highImpact: isHighImpactAutoModeApprovalRequest(input.request),
+    },
+    grants: input.grants,
+    confidence: autoJudgeConfidenceFromScore(input.coverage?.confidence),
+    now: input.now,
+    windows: input.windows,
+  })
+}
+
+/**
+ * @deprecated Pre-R6 linear 5–60 s window, kept for interactive terminal
+ * countdowns. Use {@link resolveAutoModeSecretaryWindowMs}.
+ */
 export function computeAutoModeSecretaryReactionWindowMs(
   confidence: number | undefined,
   fallback = DEFAULT_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS,

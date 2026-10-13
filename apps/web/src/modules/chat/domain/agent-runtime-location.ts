@@ -41,8 +41,8 @@ export function writeAgentAiRuntimeLocationMetadata(
 
 export function describeAgentWorkspaceAccess(runtimeLocation: AgentAiRuntimeLocation): string {
   if (runtimeLocation === 'server') {
-    return '服务端 / xpod：空间在 server 侧按本地文件夹访问。'
+    return '在你的空间服务上运行：关掉这台设备也能继续。'
   }
 
-  return '客户端：通过 xpod CLI 访问空间，不把 Pod 当成本地目录。'
+  return '在这台设备上运行：设备关掉时会暂停，读写你的空间仍按你的授权来。'
 }

@@ -16,10 +16,11 @@ const alice = {
 const baseProps = {
   search: '',
   onSearchChange: vi.fn(),
-  filter: 'all' as const,
-  onFilterChange: vi.fn(),
+  entry: null,
+  groupCount: 2,
+  onOpenEntry: vi.fn(),
   selectedId: null,
-  sections: [{ key: 'contacts' as const, title: 'A', items: [alice] }],
+  sections: [{ key: 'letter' as const, title: 'A', items: [alice] }],
   letters: ['A'],
   isLoading: false,
   error: null,
@@ -49,7 +50,7 @@ describe('ContactList', () => {
     render(<ContactList {...baseProps} />)
 
     const separator = screen.getByRole('option', { name: /Alice/ }).querySelector('[aria-hidden="true"]')
-    expect(separator).toHaveClass('left-16', 'h-px', 'bg-border/70')
+    expect(separator).toHaveClass('left-[58px]', 'h-px', 'bg-border/70')
   })
 
   it('renders query failures instead of the empty state and exposes retry', () => {
@@ -70,6 +71,30 @@ describe('ContactList', () => {
     expect(onRetry).toHaveBeenCalledOnce()
   })
 
+  it('puts 新的朋友 and 群聊 above the list and opens them', () => {
+    const onOpenEntry = vi.fn()
+    render(<ContactList {...baseProps} onOpenEntry={onOpenEntry} entry="groups" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /新的朋友/ }))
+    expect(onOpenEntry).toHaveBeenCalledWith('new-friends')
+    expect(screen.getByRole('button', { name: /群聊/ })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: /群聊/ })).toHaveTextContent('2')
+  })
+
+  it('hides the entries while searching', () => {
+    render(<ContactList {...baseProps} search="al" />)
+
+    expect(screen.queryByRole('button', { name: /新的朋友/ })).not.toBeInTheDocument()
+  })
+
+  it('shows assistants in the same list, told apart only by an AI avatar', () => {
+    const helper = { ...alice, id: 'helper', name: '活动小助手', displayName: '活动小助手', sourceType: 'agent' } as UnifiedContact
+    render(<ContactList {...baseProps} sections={[{ key: 'letter', title: 'A', items: [alice, helper] }]} />)
+
+    expect(screen.getAllByRole('option')).toHaveLength(2)
+    expect(screen.getAllByTestId('assistant-avatar')).toHaveLength(1)
+  })
+
   it('keeps contact type filtering out of the compact list header', () => {
     render(<ContactList {...baseProps} />)
 
@@ -82,7 +107,7 @@ describe('ContactList', () => {
     const toolbar = screen.getByPlaceholderText('搜索联系人').parentElement?.parentElement
     expect(toolbar).toHaveClass('h-12')
     expect(screen.getByPlaceholderText('搜索联系人')).toHaveClass('h-7')
-    expect(screen.getByRole('button', { name: '添加联系人' })).toHaveClass('h-7', 'w-7')
+    expect(screen.getByRole('button', { name: '添加朋友、创建助手' })).toHaveClass('h-7', 'w-7')
     expect(toolbar).toHaveClass('border-b', 'border-border')
   })
 
@@ -90,8 +115,8 @@ describe('ContactList', () => {
     const onCreate = vi.fn()
     render(<ContactList {...baseProps} onCreate={onCreate} />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '添加联系人' }))
-    fireEvent.click(await screen.findByText('新建助手'))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '添加朋友、创建助手' }))
+    fireEvent.click(await screen.findByText('创建助手'))
 
     expect(onCreate).not.toHaveBeenCalled()
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith('agent'))

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { StructuredCellWriteProposal } from '../../domain/structured/structured-table'
+import type { StructuredCellCommitResult, StructuredCellWriteProposal } from '../../domain/structured/structured-table'
 import { documentCellKey, sameStructuredCellValues } from '../../domain/structured/structured-table-cell-model'
 import {
   buildStructuredPersistedCellWriteProposalByKey,
@@ -26,7 +26,7 @@ export function useStructuredCellWriteProposalController({
   persistedCellWriteProposals,
 }: {
   documentUri: string
-  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
   onLocalCellWriteProposalsChange?: (proposals: StructuredCellWriteProposal[]) => void
   onPendingWriteSubjectsChange?: (subjects: string[]) => void
   persistedCellWriteProposals: readonly StructuredCellWriteProposal[]
@@ -56,7 +56,9 @@ export function useStructuredCellWriteProposalController({
       proposal,
     }))
     void Promise.resolve(onCommitCellWriteProposal?.(proposal)).then((saved) => {
-      if (saved === false) {
+      // Not saved, or written straight into the document (the data is already
+      // re-read by then): either way there is no draft or pending marker left.
+      if (saved === false || saved === 'written') {
         setCellWriteProposalWorkflowState((current) => projectStructuredCellWriteProposalWorkflowDiscarded({
           current,
           key,

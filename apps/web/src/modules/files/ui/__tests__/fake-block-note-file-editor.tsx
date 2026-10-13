@@ -20,6 +20,8 @@ type FakeEditorProps = {
   onSubmitProposal?: (text: string, summary: { title: string | null; links: string[] }) => void | Promise<void>
   proposalPending?: boolean
   proposalLabel?: string
+  autoSaveDelayMs?: number
+  hideStatusBar?: boolean
 }
 
 function summarize(text: string): { title: string | null; links: string[] } {
@@ -64,6 +66,7 @@ export function BlockNoteFileEditor({
   onSubmitProposal,
   proposalPending = false,
   proposalLabel = '审批',
+  autoSaveDelayMs,
 }: FakeEditorProps) {
   const initial = content.text ?? ''
   const [text, setText] = useState(initial)
@@ -86,10 +89,38 @@ export function BlockNoteFileEditor({
     onSaveStatusChange?.(status)
   }, [status, onSaveStatusChange])
 
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const timerRef = autoSaveTimerRef
+    return () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  const saveText = async (next: string) => {
+    if (!editable || !onSaveText || next === lastSavedRef.current) return
+    setStatus('saving')
+    try {
+      await onSaveText(next)
+      lastSavedRef.current = next
+      setDirty(false)
+      setStatus('saved')
+    } catch (_error) {
+      setStatus('error')
+    }
+  }
+
   const markDirty = (next: string) => {
     setText(next)
     setDirty(next !== lastSavedRef.current)
     setStatus(next !== lastSavedRef.current ? 'dirty' : 'saved')
+    if (autoSaveDelayMs === undefined || !editable || !onSaveText) return
+    if (autoSaveTimerRef.current !== null) clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null
+      void saveText(next)
+    }, autoSaveDelayMs)
   }
 
   const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {

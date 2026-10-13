@@ -78,6 +78,8 @@ type LocalChatKitStorePort = ChatKitStore<StoreContext> & {
   uploadAttachment?: (attachmentId: string, body: BodyInit, mimeType?: string, signal?: AbortSignal) => Promise<Attachment>
   readAttachmentBytes?: (attachmentId: string) => Promise<Uint8Array>
   loadAttachmentObjectUrl?: (attachmentId: string) => Promise<string>
+  resolveItemUri?: (itemId: string) => string | null
+  resolveThreadUri?: (threadId: string) => Promise<string>
 }
 
 type ModelMessage = { role: string; content: string | ModelContentPart[] }
@@ -516,24 +518,60 @@ export class LocalChatKitService {
     context: StoreContext,
   ): AsyncIterable<Uint8Array> {
     const encoder = new TextEncoder()
+    for await (const event of this.streamEvents(request, context)) {
+      yield encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
+    }
+  }
 
+  /**
+   * A streaming request as ChatKit stream events, for adapters that do not
+   * speak the ChatKit wire format (the AG-UI conversation surface). A failure
+   * becomes one `error` event; a cancelled request ends quietly.
+   */
+  async *streamEvents(
+    request: StreamingReq,
+    context: StoreContext,
+  ): AsyncIterable<ThreadStreamEvent> {
     try {
-      for await (const event of this.processStreaming(request, context)) {
-        yield encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
-      }
+      yield* this.processStreaming(request, context)
     } catch (error: any) {
       if (isAbortError(error)) return
       console.error('[LocalChatKitService] Streaming request failed:', error)
       const userMessage = formatErrorForUser(error, '消息生成失败。请稍后重试。')
-      const errorEvent = {
+      yield {
         type: 'error',
         error: {
           code: 'internal_error',
           message: userMessage,
         },
       }
-      yield encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`)
     }
+  }
+
+  /**
+   * The active branch of a topic as the conversation surface needs it: every
+   * item with its Pod message URI (AG-UI `messageId`), and the topic URI
+   * (AG-UI `threadId`).
+   */
+  async loadConversation(threadId: string, context: StoreContext = {}): Promise<{
+    thread: ThreadMetadata
+    threadUri: string
+    items: Array<{ item: ThreadItem; uri: string }>
+  }> {
+    const thread = await this.store.loadThread(threadId, context)
+    const all = await this.loadAllThreadItems(threadId, context)
+    const active = projectActiveBranchItems({ data: all }, thread.metadata?.active_branch_by_parent).data
+    const threadUri = (await this.store.resolveThreadUri?.(threadId)) ?? threadId
+    return {
+      thread,
+      threadUri,
+      items: active.map((item) => ({ item, uri: this.store.resolveItemUri?.(item.id) ?? item.id })),
+    }
+  }
+
+  /** Pod message URI of an item that has been persisted or loaded here. */
+  resolveItemUri(itemId: string): string {
+    return this.store.resolveItemUri?.(itemId) ?? itemId
   }
 
   private async *processStreaming(

@@ -150,7 +150,7 @@ describe('StructuredProjectionTable', () => {
       />,
     )
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
     const addPredicateMenu = screen.getByRole('menu')
     expect(within(addPredicateMenu).queryByText('Existing Predicates')).not.toBeInTheDocument()
     expect(within(addPredicateMenu).getByPlaceholderText('选择已有 predicate 或创建')).toBeInTheDocument()
@@ -173,7 +173,7 @@ describe('StructuredProjectionTable', () => {
       />,
     )
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
     const addPredicateMenu = screen.getByRole('menu')
     fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '新建 predicate' }))
 
@@ -208,7 +208,7 @@ describe('StructuredProjectionTable', () => {
       />,
     )
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
 
     const addPredicateMenu = screen.getByRole('menu')
     const createPredicate = within(addPredicateMenu).getByRole('button', { name: '新建 predicate' })

@@ -56,42 +56,36 @@ describe('folder child open decisions', () => {
   it('opens an editable file in read-only preview on click and a sheet on open triggers', () => {
     const child = entry({ uri: 'https://pod.example/public/README.md', mimeType: 'text/markdown' })
 
-    expect(resolveFolderChildOpenDecision(child, 'click')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/public/README.md',
-    })
+    expect(resolveFolderChildOpenDecision(child, 'click')).toEqual({ type: 'noop' })
     expect(resolveFolderChildOpenDecision(child, 'double-click')).toEqual({
-      type: 'open-editable-sheet',
-      file: fileEntryToFolderChildDetail(child),
+      type: 'open-card',
+      uri: child.uri,
     })
     expect(resolveFolderChildOpenDecision(child, 'enter')).toEqual({
-      type: 'open-editable-sheet',
-      file: fileEntryToFolderChildDetail(child),
+      type: 'open-card',
+      uri: child.uri,
     })
     expect(resolveFolderChildOpenDecision(child, 'explicit-open')).toEqual({
-      type: 'open-editable-sheet',
-      file: fileEntryToFolderChildDetail(child),
+      type: 'open-card',
+      uri: child.uri,
     })
   })
 
   it('opens a readonly file preview on click and on explicit open triggers', () => {
     const child = entry({ uri: 'https://pod.example/public/image.png', mimeType: 'image/png' })
 
-    expect(resolveFolderChildOpenDecision(child, 'click')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/public/image.png',
-    })
+    expect(resolveFolderChildOpenDecision(child, 'click')).toEqual({ type: 'noop' })
     expect(resolveFolderChildOpenDecision(child, 'double-click')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/public/image.png',
+      type: 'open-card',
+      uri: child.uri,
     })
     expect(resolveFolderChildOpenDecision(child, 'enter')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/public/image.png',
+      type: 'open-card',
+      uri: child.uri,
     })
     expect(resolveFolderChildOpenDecision(child, 'explicit-open')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/public/image.png',
+      type: 'open-card',
+      uri: child.uri,
     })
   })
 
@@ -109,37 +103,31 @@ describe('folder child open decisions', () => {
       semanticKind: 'vocab-terms',
     })
 
-    expect(resolveFolderChildOpenDecision(structured, 'click')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/.data/state.ttl',
-    })
+    expect(resolveFolderChildOpenDecision(structured, 'click')).toEqual({ type: 'noop' })
     expect(resolveFolderChildOpenDecision(structured, 'double-click')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/.data/state.ttl',
+      type: 'open-card',
+      uri: structured.uri,
     })
     expect(resolveFolderChildOpenDecision(structured, 'enter')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/.data/state.ttl',
+      type: 'open-card',
+      uri: structured.uri,
     })
     expect(resolveFolderChildOpenDecision(structured, 'explicit-open')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/.data/state.ttl',
+      type: 'open-card',
+      uri: structured.uri,
     })
-    expect(resolveFolderChildOpenDecision(vocab, 'click')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/.vocab/terms.ttl',
-    })
+    expect(resolveFolderChildOpenDecision(vocab, 'click')).toEqual({ type: 'noop' })
     expect(resolveFolderChildOpenDecision(vocab, 'double-click')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/.vocab/terms.ttl',
+      type: 'open-card',
+      uri: vocab.uri,
     })
     expect(resolveFolderChildOpenDecision(vocab, 'enter')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/.vocab/terms.ttl',
+      type: 'open-card',
+      uri: vocab.uri,
     })
     expect(resolveFolderChildOpenDecision(vocab, 'explicit-open')).toEqual({
-      type: 'select-file-preview',
-      fileUri: 'https://pod.example/.vocab/terms.ttl',
+      type: 'open-card',
+      uri: vocab.uri,
     })
   })
 })

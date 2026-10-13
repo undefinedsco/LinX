@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '@/providers/solid-session-context'
-import { Bot, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Bot, ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { useOpenAgentMethod } from '@/modules/my-ai/app/open-method'
 import { ModelSelector } from '@/components/ui/model-selector'
 import type { ModelOption } from '@/components/ui/model-selector'
 import { useModelServices } from '@/modules/model-services/data/use-model-services'
@@ -21,6 +21,10 @@ import type { AIProvider } from '@/modules/model-services/domain/types'
 import { useToast } from '@/components/ui/use-toast'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
+import { ThreadSwitcher } from '../features/threads/ThreadSwitcher'
+import { useThreadSchedule } from '../features/schedule/useThreadSchedule'
+import { describeScheduleRepeat } from '../domain/schedule-label'
+import { toStringArray } from '@/lib/utils'
 import {
   LINX_DEFAULT_SECRETARY,
   isLinxDefaultSecretaryChat,
@@ -29,6 +33,7 @@ import {
 } from '../collections'
 import { agentCollection } from '../contacts-port'
 import { useEntity } from '@/lib/data/use-entity'
+import { avatarTextFor, displayAssistantName } from '../domain/chat-list-model'
 import {
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
@@ -88,12 +93,13 @@ export function ChatHeader() {
   const { session } = useSession()
   const { toast } = useToast()
   const selectedChatId = useChatStore((state) => state.selectedChatId)
+  const selectedThreadId = useChatStore((state) => state.selectedThreadId)
   const selectChat = useChatStore((state) => state.selectChat)
   const [isAgentDialogOpen, setIsAgentDialogOpen] = useState(false)
   const [isModelDialogOpen, setIsModelDialogOpen] = useState(false)
   const [agentNameDraft, setAgentNameDraft] = useState('')
-  const [instructionsDraft, setInstructionsDraft] = useState('')
   const [aiRuntimeLocationDraft, setAiRuntimeLocationDraft] = useState<AgentAiRuntimeLocation>('client')
+  const openAgentMethod = useOpenAgentMethod()
   const [modelDraft, setModelDraft] = useState('')
 
   const { data: chats } = useChatList()
@@ -105,6 +111,13 @@ export function ChatHeader() {
     [chats, selectedChatId],
   )
 
+  const participantList = useMemo(
+    () => Array.from(new Set(toStringArray(chat?.participants))),
+    [chat?.participants],
+  )
+  const counterparts = participantList.filter((participant) => participant !== session.info.webId)
+  const isGroup = counterparts.length > 1
+  const memberCount = Math.max(participantList.length, counterparts.length + 1)
   const contactUri = getPrimaryParticipantUri(chat, session.info.webId)
   const { data: contact, refresh: refreshContact } = useEntity(contactResource, contactUri)
   const agentUri = contact && isAgentContact(contact) ? contact.about : null
@@ -113,6 +126,16 @@ export function ChatHeader() {
     ? agentCollection.get(LINX_DEFAULT_SECRETARY.agentId)
     : null
   const resolvedAgent = agent ?? stagedSecretaryAgent ?? null
+  // While the agent row is still loading, fall back to the chat's own title rather than a placeholder.
+  const isAssistant = !isGroup && Boolean(resolvedAgent || isLinxDefaultSecretaryChat(chat))
+  const storedName = (typeof resolvedAgent?.name === 'string' && resolvedAgent.name) || chat?.title || '助手'
+  // Same naming as the chat list: legacy default names show as “LinX 助手”.
+  const displayName = isAssistant ? displayAssistantName(storedName) : storedName
+  const threadSchedule = useThreadSchedule(isAssistant ? selectedThreadId : null)
+  const scheduleLabel = useMemo(
+    () => describeScheduleRepeat(threadSchedule.schedule)?.label ?? null,
+    [threadSchedule.schedule],
+  )
   const agentId = typeof resolvedAgent?.id === 'string' && resolvedAgent.id.length > 0
     ? resolvedAgent.id
     : null
@@ -125,10 +148,6 @@ export function ChatHeader() {
   const provider = normalizeAIConfigProviderId(typeof resolvedAgent?.provider === 'string' ? resolvedAgent.provider : '') || LINX_PLATFORM_PROVIDER_ID
   const model = normalizeChatModelId(normalizeAIConfigResourceId(typeof resolvedAgent?.model === 'string' ? resolvedAgent.model : '') || DEFAULT_LINX_PLATFORM_MODEL_ID)
   const agentAiRuntimeLocation = readAgentAiRuntimeLocation((resolvedAgent as Record<string, unknown> | null | undefined)?.metadata)
-  const providerInfo = useMemo(() => {
-    if (!provider) return null
-    return getAgentProviderInfo(provider)
-  }, [provider])
   const configuredModelOptions = useMemo(
     () => buildChatModelOptions(configuredProviders, provider, model),
     [configuredProviders, model, provider],
@@ -150,14 +169,14 @@ export function ChatHeader() {
   useEffect(() => {
     if (!isAgentDialogOpen) return
     setAgentNameDraft((resolvedAgent?.name as string) || chat?.title || '')
-    setInstructionsDraft((resolvedAgent?.instructions as string) || '')
     setAiRuntimeLocationDraft(agentAiRuntimeLocation)
-  }, [resolvedAgent?.instructions, resolvedAgent?.name, agentAiRuntimeLocation, chat?.title, isAgentDialogOpen])
+  }, [resolvedAgent?.name, agentAiRuntimeLocation, chat?.title, isAgentDialogOpen])
 
   useEffect(() => {
     if (!isModelDialogOpen) return
     setModelDraft(`${provider}/${model}`)
-  }, [isModelDialogOpen, model, provider])
+    setAiRuntimeLocationDraft(agentAiRuntimeLocation)
+  }, [agentAiRuntimeLocation, isModelDialogOpen, model, provider])
 
   const handleOpenAgentDialog = useCallback(() => {
     if (!agentId || !selectedChatId) {
@@ -181,6 +200,14 @@ export function ChatHeader() {
     setIsModelDialogOpen(true)
   }, [agentId, selectedChatId, toast])
 
+  const executionConditionsRequest = useChatStore((state) => state.executionConditionsRequest)
+  const lastExecutionConditionsRequest = useRef(executionConditionsRequest)
+  useEffect(() => {
+    if (executionConditionsRequest === lastExecutionConditionsRequest.current) return
+    lastExecutionConditionsRequest.current = executionConditionsRequest
+    handleOpenModelDialog()
+  }, [executionConditionsRequest, handleOpenModelDialog])
+
   const handleSaveAgentProfile = useCallback(async () => {
     if (!agentId || !selectedChatId) return
 
@@ -197,8 +224,7 @@ export function ChatHeader() {
         agentId,
         currentAgent: resolvedAgent ?? undefined,
         name: normalizedName,
-        instructions: instructionsDraft,
-        aiRuntimeLocation: aiRuntimeLocationDraft,
+        aiRuntimeLocation: agentAiRuntimeLocation,
         chatId: selectedChatId,
         contactId: contactId ?? undefined,
       })
@@ -217,9 +243,8 @@ export function ChatHeader() {
     resolvedAgent,
     agentId,
     agentNameDraft,
-    aiRuntimeLocationDraft,
+    agentAiRuntimeLocation,
     contactId,
-    instructionsDraft,
     mutations.updateAgentProfile,
     refreshAgent,
     refreshContact,
@@ -261,9 +286,17 @@ export function ChatHeader() {
         currentAgent: resolvedAgent ?? undefined,
         provider: nextProvider,
         model: normalizedModel,
-        chatId: selectedChatId,
-        contactId: contactId ?? undefined,
       })
+      if (aiRuntimeLocationDraft !== agentAiRuntimeLocation) {
+        await mutations.updateAgentProfile.mutateAsync({
+          agentId,
+          currentAgent: resolvedAgent ?? undefined,
+          name: displayName,
+          aiRuntimeLocation: aiRuntimeLocationDraft,
+          chatId: selectedChatId,
+          contactId: contactId ?? undefined,
+        })
+      }
       await Promise.all([
         refreshAgent(),
         contactId ? refreshContact() : Promise.resolve(),
@@ -281,6 +314,10 @@ export function ChatHeader() {
     contactId,
     configuredProviders,
     modelDraft,
+    aiRuntimeLocationDraft,
+    agentAiRuntimeLocation,
+    displayName,
+    mutations.updateAgentProfile,
     mutations.updateAgentModel,
     refreshAgent,
     refreshContact,
@@ -307,39 +344,28 @@ export function ChatHeader() {
             <>
               <button
                 type="button"
-                title={`编辑助手设置：${resolvedAgent?.name || 'Assistant'}`}
+                title={isAssistant ? `编辑助手设置：${displayName}` : displayName}
                 className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50 shrink-0"
-                onClick={handleOpenAgentDialog}
+                onClick={isAssistant ? handleOpenAgentDialog : undefined}
               >
                 <Avatar className="h-8 w-8 border border-border/50 !rounded-sm">
                   <AvatarImage src={resolvedAgent?.avatarUrl} className="!rounded-sm object-cover" />
-                  <AvatarFallback className="!rounded-sm bg-primary/10 text-primary text-xs">
-                    {resolvedAgent?.name?.slice(0, 2).toUpperCase() || <Bot className="w-4 h-4" />}
+                  <AvatarFallback className={isAssistant ? '!rounded-sm bg-primary text-primary-foreground text-xs font-semibold' : '!rounded-sm bg-primary/10 text-primary text-xs'}>
+                    {avatarTextFor(isAssistant ? 'assistant' : 'person', displayName) || <Bot className="w-4 h-4" />}
                   </AvatarFallback>
                 </Avatar>
                 <span className="max-w-[180px] truncate text-sm font-medium">
-                  {resolvedAgent?.name || 'Assistant'}
+                  {displayName}
                 </span>
               </button>
 
-              <ChevronRight className="mx-1 h-4 w-4 shrink-0 text-muted-foreground/40" />
-
-              <button
-                type="button"
-                title={`切换模型：${model || '未选择'}`}
-                className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50"
-                onClick={handleOpenModelDialog}
-              >
-                <Avatar className="h-6 w-6 border border-border/50 !rounded-sm shrink-0">
-                  <AvatarImage src={providerInfo?.logoUrl} className="!rounded-sm object-cover" />
-                  <AvatarFallback className="!rounded-sm bg-muted text-[10px]">
-                    {provider?.slice(0, 2).toUpperCase() || '?'}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="truncate text-sm text-muted-foreground">
-                  {model || 'Select Model'}
-                </span>
-              </button>
+              {isGroup ? (
+                <span className="ml-1 shrink-0 text-xs text-muted-foreground">{memberCount} 人</span>
+              ) : null}
+              {isAssistant && selectedChatId ? <ThreadSwitcher chatId={selectedChatId} /> : null}
+              {isAssistant && scheduleLabel ? (
+                <span className="ml-2 shrink-0 text-xs text-muted-foreground">{scheduleLabel}</span>
+              ) : null}
             </>
           ) : (
             <span className="text-sm font-medium text-muted-foreground">聊天</span>
@@ -350,9 +376,9 @@ export function ChatHeader() {
       <Dialog open={isAgentDialogOpen} onOpenChange={setIsAgentDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>助手设置</DialogTitle>
+            <DialogTitle>助手资料</DialogTitle>
             <DialogDescription>
-              修改助手名称和系统提示词，并同步更新聊天展示名称。
+              名称会同步到联系人和会话。做事的方法在“我的 AI”里统一编辑，模型和运行位置在“执行条件”里。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -365,31 +391,19 @@ export function ChatHeader() {
                 placeholder="例如：代码助手"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="chat-header-agent-instructions">系统提示词</Label>
-              <Textarea
-                id="chat-header-agent-instructions"
-                value={instructionsDraft}
-                onChange={(event) => setInstructionsDraft(event.target.value)}
-                placeholder="输入系统提示词..."
-                className="min-h-[160px]"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="chat-header-ai-runtime-location">AI 运行位置</Label>
-              <select
-                id="chat-header-ai-runtime-location"
-                aria-label="AI 运行位置"
-                value={aiRuntimeLocationDraft}
-                onChange={(event) => setAiRuntimeLocationDraft(event.target.value === 'server' ? 'server' : 'client')}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+              <span className="text-sm font-medium">做事的方法</span>
+              <button
+                type="button"
+                className="text-sm text-primary underline-offset-4 hover:underline"
+                onClick={() => {
+                  if (!agentId) return
+                  setIsAgentDialogOpen(false)
+                  openAgentMethod(agentId)
+                }}
               >
-                <option value="client">客户端（默认）</option>
-                <option value="server">服务端 / xpod</option>
-              </select>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {describeAgentWorkspaceAccess(aiRuntimeLocationDraft)}
-              </p>
+                在“我的 AI”里编辑
+              </button>
             </div>
           </div>
           <DialogFooter>
@@ -406,14 +420,14 @@ export function ChatHeader() {
       <Dialog open={isModelDialogOpen} onOpenChange={setIsModelDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>模型设置</DialogTitle>
+            <DialogTitle>执行条件</DialogTitle>
             <DialogDescription>
-              切换模型时会同步更新 provider 和聊天头像。
+              用哪个模型、在哪里运行。换模型不会改变助手的名字、头像和聊天记录。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>选择模型</Label>
+              <Label>模型</Label>
               <ModelSelector
                 type="chat"
                 value={modelDraft}
@@ -422,12 +436,26 @@ export function ChatHeader() {
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground"
               />
             </div>
-            <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
-              <div className="text-xs text-muted-foreground">Provider</div>
-              <div className="mt-1 text-sm font-medium text-foreground">
-                {draftProviderName || '未识别'}
-              </div>
+            {draftProviderName ? (
+              <p className="text-xs text-muted-foreground">来自：{draftProviderName}</p>
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor="chat-header-ai-runtime-location">在哪里运行</Label>
+              <select
+                id="chat-header-ai-runtime-location"
+                aria-label="在哪里运行"
+                value={aiRuntimeLocationDraft}
+                onChange={(event) => setAiRuntimeLocationDraft(event.target.value === 'server' ? 'server' : 'client')}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="client">这台设备（默认）</option>
+                <option value="server">你的空间服务</option>
+              </select>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {describeAgentWorkspaceAccess(aiRuntimeLocationDraft)}
+              </p>
             </div>
+
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsModelDialogOpen(false)}>

@@ -32,8 +32,8 @@ describe('useStructuredSubjectCreationController', () => {
     expect(result.current.footerModel).toEqual({
       disabled: false,
       title: '在 udfs:Task 中新增 subject',
-      buttonAriaLabel: '+ Subject',
-      buttonLabel: 'Subject',
+      buttonAriaLabel: '+ 卡片',
+      buttonLabel: '卡片',
     })
     expect(result.current.dialogModel).toEqual({
       title: '新增 subject',
@@ -90,8 +90,8 @@ describe('useStructuredSubjectCreationController', () => {
     expect(result.current.footerModel).toEqual({
       disabled: true,
       title: '先选择 class 再新增 subject',
-      buttonAriaLabel: '+ Subject',
-      buttonLabel: 'Subject',
+      buttonAriaLabel: '+ 卡片',
+      buttonLabel: '卡片',
     })
     expect(result.current.dialogModel).toEqual({
       title: '新增 subject',

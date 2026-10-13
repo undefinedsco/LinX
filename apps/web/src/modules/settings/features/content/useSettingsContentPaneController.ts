@@ -1,15 +1,23 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { getRuntimeShellInfo } from '@/lib/runtime-shell'
 import { useAppUpdateStatus } from '@/modules/layout/use-app-update-status'
-import { useThemeMode } from '@/modules/layout/use-theme-mode'
-import type { ThemeMode } from '@/modules/layout/micro-app-registry'
+import { useThemePreference, type ThemePreference } from '@/modules/layout/use-theme-mode'
 import { requestOpenServiceManagement } from '../../data/platform-actions'
+import { useNotificationPrefs } from '../../app/notification-prefs'
 import { useSettingsStore } from '../../app/store'
+import { useSettingsNavigationHints } from '../list/useSettingsNavigationHints'
 
-export function useSettingsContentPaneController() {
+export function useSettingsContentPaneController({ compact = false }: { compact?: boolean } = {}) {
   const selectedSection = useSettingsStore((state) => state.selectedSection)
-  const [theme, toggleTheme, setTheme] = useThemeMode()
+  const compactLevel = useSettingsStore((state) => state.compactLevel)
+  const selectSection = useSettingsStore((state) => state.selectSection)
+  const showSectionList = useSettingsStore((state) => state.showSectionList)
+  const navigationHints = useSettingsNavigationHints()
+  const [runtimeAdvancedOpen, setRuntimeAdvancedOpen] = useState(false)
+  const [themePreference, setThemePreference] = useThemePreference()
+  const notificationPrefs = useNotificationPrefs((state) => state.prefs)
+  const setNotificationPref = useNotificationPrefs((state) => state.setPref)
   const appUpdate = useAppUpdateStatus()
   const {
     status: updateStatus,
@@ -32,13 +40,23 @@ export function useSettingsContentPaneController() {
     void navigate({ to: '/$microAppId', params: { microAppId: 'model-services' } })
   }, [navigate])
 
-  const selectTheme = useCallback((value: ThemeMode) => {
-    setTheme(value)
-  }, [setTheme])
+  const selectTheme = useCallback((value: ThemePreference) => {
+    setThemePreference(value)
+  }, [setThemePreference])
 
   return {
     selectedSection,
-    theme,
+    compact,
+    showSectionList: compactLevel === 'list',
+    navigationHints,
+    onSelectSection: selectSection,
+    onBack: showSectionList,
+    runtimeAdvancedOpen,
+    setRuntimeAdvancedOpen,
+    themePreference,
+    notificationPrefs,
+    setNotificationPref,
+    isDesktop: shell.id === 'desktop',
     updateStatus,
     updateChecking,
     releaseAvailable: Boolean(updateStatus.releaseUrl),
@@ -46,11 +64,11 @@ export function useSettingsContentPaneController() {
       ? new Date(updateStatus.checkedAt).toLocaleString()
       : null,
     shell: {
+      label: shell.label,
       description: shell.description,
       authLabel: shell.authLabel,
     },
     selectTheme,
-    toggleTheme,
     checkForUpdates,
     openReleasePage,
     openModelServices,

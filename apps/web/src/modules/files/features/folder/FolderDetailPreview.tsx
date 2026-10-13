@@ -48,6 +48,7 @@ export function FolderDetailPreview({
   const folderNavigation = useFolderDetailNavigationController({
     childUriSet,
     selectedChildren: folderSelection.selectedChildren,
+    siblingUris: visibleChildren.filter((child) => child.kind !== 'container').map((child) => child.uri),
   })
   const folderUpload = useFolderDetailUploadController({
     containerUri: file.uri,

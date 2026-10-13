@@ -7,13 +7,14 @@ import { FavoriteListPane } from '../list/FavoriteListPane'
 import { useFavoriteContentPaneController } from './useFavoriteContentPaneController'
 
 function FavoriteContentEnabled() {
-  const { favorite, onRemove, onOpenSource } = useFavoriteContentPaneController()
+  const { favorite, sourceStatus, onRemove, onOpenSource } = useFavoriteContentPaneController()
 
   if (!favorite) return <EmptyState />
 
   return (
     <FavoriteDetail
       favorite={favorite}
+      sourceStatus={sourceStatus}
       onRemove={onRemove}
       onOpenSource={onOpenSource}
     />

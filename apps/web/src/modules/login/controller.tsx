@@ -25,6 +25,7 @@ import {
   markLoginClientSchemaCurrent,
   resolvePostLoginMicroAppId,
   SIGN_OUT_EVENT,
+  SWITCH_ACCOUNT_EVENT,
 } from './login-utils'
 import {
   getLoginTransactionRetryEntryUrl,
@@ -1166,6 +1167,12 @@ export function useLoginController() {
     window.addEventListener(SIGN_OUT_EVENT, handler)
     return () => window.removeEventListener(SIGN_OUT_EVENT, handler)
   }, [signOut])
+
+  useEffect(() => {
+    const handler = () => void switchAccount()
+    window.addEventListener(SWITCH_ACCOUNT_EVENT, handler)
+    return () => window.removeEventListener(SWITCH_ACCOUNT_EVENT, handler)
+  }, [switchAccount])
 
   const clearError = useCallback(() => setError(null), [setError])
   const dismissStorageConflict = useCallback(() => {

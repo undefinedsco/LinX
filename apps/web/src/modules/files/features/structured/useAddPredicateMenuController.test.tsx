@@ -123,8 +123,8 @@ describe('useAddPredicateMenuController', () => {
       label: 'term',
     },
     trigger: {
-      ariaLabel: '+ predicate',
-      label: 'predicate',
+      ariaLabel: '+ 属性',
+      label: '属性',
     },
     valueSection: {
       label: 'value',

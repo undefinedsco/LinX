@@ -12,17 +12,21 @@ import { Bot } from 'lucide-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
-import { useChatInit } from '../collections'
+import { useChatInit, useMessageList } from '../collections'
 import { ChatListPane } from './ChatListPane'
 import { projectChatContentState, type ChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
 import {
   SecretaryWelcome,
   type SecretaryStarterAction,
 } from '../ui/SecretaryWelcome'
-import { InboxActionBanner } from '../features/inbox/InboxActionBanner'
+import { ConversationDecisions } from '../features/inbox/ConversationDecisions'
 import { RuntimeSessionToolbar } from '../features/runtime/RuntimeSessionToolbar'
 import { ChatKitPanel } from '../features/chatkit/ChatKitPanel'
+import { ConversationSurface } from '../features/conversation/ConversationSurface'
+import { WelcomeConversation } from '../features/conversation/welcome/WelcomeConversation'
+import { useConversationSurface } from '../features/conversation/surface-preference'
 import { useSecretaryChatController } from '../features/secretary/useSecretaryChatController'
+import { useStartAiWork } from '../features/threads/useStartAiWork'
 
 export { chatThreadRefsMatch, readActiveBranchSelections } from '../domain/thread-selection'
 
@@ -80,6 +84,8 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     scopeKey: databaseScopeKey,
   } = useSolidDatabase()
   const { isReady } = useChatInit()
+  const surfaceKind = useConversationSurface()
+  const { start: startAiWork, isStarting: isStartingAiWork } = useStartAiWork()
   const secretary = useSecretaryChatController({
     databaseScopeKey,
     webId: session.info.webId,
@@ -111,6 +117,23 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     completeDraftHandoff: completeSecretaryDraftHandoff,
     failDraftHandoff: failSecretaryDraftHandoff,
   } = secretary
+  const messagesQuery = useMessageList(selectedChatId, selectedThreadId)
+  const isThreadEmpty = !messagesQuery.isLoading && messagesQuery.data.length === 0
+  // W0: on the new surface the welcome shows in LinX 助手's selected topic as
+  // long as welcome.ttl is absent (checked inside WelcomeConversation) and the
+  // topic has no messages yet, whether or not the default topic already exists.
+  const showInlineWelcome = surfaceKind === 'assistant-ui' && isSecretary && Boolean(activeThread) && isThreadEmpty
+  // Keep the welcome wrapper mounted for this topic once it started, so the
+  // conversation underneath is not remounted when the first message arrives.
+  const [welcomeThreadId, setWelcomeThreadId] = useState<string | null>(null)
+  if (showInlineWelcome && selectedThreadId && welcomeThreadId !== selectedThreadId) setWelcomeThreadId(selectedThreadId)
+  const keepInlineWelcome = surfaceKind === 'assistant-ui' && isSecretary && Boolean(selectedThreadId) && welcomeThreadId === selectedThreadId
+  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null)
+  useEffect(() => {
+    if (pendingSuggestion === null || secretaryDraft !== pendingSuggestion) return
+    setPendingSuggestion(null)
+    void startAiWork().then(() => submitSecretaryDraft())
+  }, [pendingSuggestion, secretaryDraft, startAiWork, submitSecretaryDraft])
   const retryContentQueries = useCallback(() => {
     if (databaseStatus !== 'ready' || !db) {
       retryDatabase()
@@ -187,7 +210,15 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     }
     return (
       <div className="flex min-h-0 flex-1">
-        <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与文件夹。" />
+        <EmptyState
+          title="选择或创建一个聊天"
+          description="想做点什么？直接开始一项 AI 工作，或者从左边选一个会话。"
+          action={(
+            <Button size="sm" onClick={() => { void startAiWork() }} disabled={isStartingAiWork}>
+              开始 AI 工作
+            </Button>
+          )}
+        />
       </div>
     )
   }
@@ -196,7 +227,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     return <EmptyState title="登录未完成" description="请先完成登录，再开始聊天。" />
   }
 
-  if (contentState.kind === 'welcome') {
+  const buildWelcomeProps = (starterActions: readonly SecretaryStarterAction[], onStarterAction: (action: SecretaryStarterAction) => void) => {
     const composerStatus = threadCreationError
       ? '默认话题暂未创建，草稿已保留。重试后可以继续。'
       : activePendingSecretaryDraft
@@ -204,20 +235,24 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       : isDefaultSecretarySettling || !isReady || !db || isChatsLoading || isThreadsLoading
         ? '可以立即开始；对话记录会在空间准备好后同步。'
         : '准备就绪；发送后将进入默认话题。'
+    return {
+      starterActions,
+      composerValue: secretaryDraft,
+      composerStatus: composerStatus,
+      onStarterAction,
+      onComposerValueChange: updateSecretaryDraft,
+      onSubmit: submitSecretaryDraft,
+      isSubmitting: isCreatingThread || Boolean(activePendingSecretaryDraft),
+      retryLabel: threadCreationError ? '重试创建话题' : undefined,
+      onRetry: threadCreationError ? retryThreadCreation : undefined,
+    }
+  }
 
-    return (
-      <SecretaryWelcome
-        starterActions={SECRETARY_STARTER_ACTIONS}
-        composerValue={secretaryDraft}
-        composerStatus={composerStatus}
-        onStarterAction={(action) => updateSecretaryDraft(action.prompt)}
-        onComposerValueChange={updateSecretaryDraft}
-        onSubmit={submitSecretaryDraft}
-        isSubmitting={isCreatingThread || Boolean(activePendingSecretaryDraft)}
-        retryLabel={threadCreationError ? '重试创建话题' : undefined}
-        onRetry={threadCreationError ? retryThreadCreation : undefined}
-      />
-    )
+  if (contentState.kind === 'welcome') {
+    const welcomeProps = buildWelcomeProps(SECRETARY_STARTER_ACTIONS, (action) => updateSecretaryDraft(action.prompt))
+    return surfaceKind === 'assistant-ui'
+      ? <WelcomeConversation {...welcomeProps} chatId={selectedChatId} />
+      : <SecretaryWelcome {...welcomeProps} />
   }
 
   if (threadCreationError && !selectedThreadId) {
@@ -265,7 +300,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
           threadTitle={activeThread?.title ?? '默认话题'}
           workspaceUri={activeThread?.workspace}
         />
-        <InboxActionBanner chatId={selectedChatId} threadId={selectedThreadId} />
+        {surfaceKind === 'chatkit' ? <ConversationDecisions chatId={selectedChatId} threadId={selectedThreadId} /> : null}
         {readyWarning ? (
           <div role="alert" className="flex items-center justify-between gap-3 border-b border-warning/20 bg-warning/5 px-4 py-3">
             <div className="min-w-0">
@@ -289,22 +324,53 @@ export function ChatContentPane(props: ChatContentPaneProps) {
           </div>
         ) : null}
         <div className="min-h-0 flex-1 overflow-hidden">
-          <ChatKitPanel
-            theme={props.theme}
-            session={session}
-            selectedThreadId={selectedThreadId}
-            selectedChatId={selectedChatId}
-            selectedThreadTitle={activeThread?.title}
-            selectedWorkspaceUri={activeThread?.workspace}
-            persistedActiveBranchByParent={persistedActiveBranchByParent}
-            pendingComposerDraft={isSecretary
-              && activePendingSecretaryDraft?.chatId === selectedChatId
-              ? activePendingSecretaryDraft
-              : null}
-            onComposerDraftApplied={completeSecretaryDraftHandoff}
-            onComposerDraftError={failSecretaryDraftHandoff}
-            sendDisabled={databaseStatus !== 'ready' || !db}
-          />
+          {surfaceKind === 'assistant-ui' ? (() => {
+            const conversation = (
+            <ConversationSurface
+              key={`${selectedChatId}:${selectedThreadId}`}
+              session={session}
+              selectedThreadId={selectedThreadId}
+              selectedChatId={selectedChatId}
+              selectedThreadTitle={activeThread?.title}
+              persistedActiveBranchByParent={persistedActiveBranchByParent}
+              pendingComposerDraft={isSecretary
+                && activePendingSecretaryDraft?.chatId === selectedChatId
+                ? activePendingSecretaryDraft
+                : null}
+              onComposerDraftApplied={completeSecretaryDraftHandoff}
+              sendDisabled={databaseStatus !== 'ready' || !db}
+            />
+            )
+            return keepInlineWelcome
+              ? (
+                <WelcomeConversation
+                  {...buildWelcomeProps(SECRETARY_STARTER_ACTIONS, (action) => {
+                    updateSecretaryDraft(action.prompt)
+                    setPendingSuggestion(action.prompt)
+                  })}
+                  chatId={selectedChatId}
+                  fallback={conversation}
+                />
+              )
+              : conversation
+          })() : (
+            <ChatKitPanel
+              theme={props.theme}
+              session={session}
+              selectedThreadId={selectedThreadId}
+              selectedChatId={selectedChatId}
+              selectedThreadTitle={activeThread?.title}
+              selectedWorkspaceUri={activeThread?.workspace}
+              persistedActiveBranchByParent={persistedActiveBranchByParent}
+              pendingComposerDraft={isSecretary
+                && activePendingSecretaryDraft?.chatId === selectedChatId
+                ? activePendingSecretaryDraft
+                : null}
+              onComposerDraftApplied={completeSecretaryDraftHandoff}
+              onComposerDraftError={failSecretaryDraftHandoff}
+              sendDisabled={databaseStatus !== 'ready' || !db}
+            />
+          )}
         </div>
       </div>
     </div>

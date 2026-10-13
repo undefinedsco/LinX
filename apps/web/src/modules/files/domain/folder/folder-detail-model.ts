@@ -299,7 +299,7 @@ function folderChildIconKind(entry: FilesEntry): FolderChildCollectionRow['iconK
 }
 
 const FOLDER_DETAIL_VIEW_MODE_OPTIONS: Array<Omit<FolderDetailViewModeOption, 'active'>> = [
-  { mode: 'list', label: '列表', iconKind: 'list' },
+  { mode: 'list', label: '表格', iconKind: 'list' },
   { mode: 'icons', label: '网格', iconKind: 'icons' },
 ]
 

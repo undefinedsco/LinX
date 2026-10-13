@@ -1,5 +1,5 @@
 import type { StructuredVocabTermDefinition, VocabTermProposal } from '../../domain/structured/structured-table'
-import { localPredicateLabel } from '../../domain/structured/structured-table-vocab'
+import { localPredicateLabel, readablePredicateLabel } from '../../domain/structured/structured-table-vocab'
 import type { StructuredResourceViewMode } from '../../domain/structured/structured-view-metadata'
 import type {
   StructuredPredicateTypeFilter,
@@ -50,7 +50,7 @@ const EXTRA_VIEW_OPTIONS: Exclude<StructuredResourceViewMode, 'table'>[] = ['kan
 const PREDICATE_TYPE_FILTER_OPTIONS: StructuredPredicateTypeFilter[] = ['all', 'enum', 'boolean', 'number', 'date', 'relation', 'text']
 const VOCAB_TERM_FILTER_OPTIONS: StructuredVocabTermFilter[] = ['all', 'defined', 'observed']
 const VIEW_LABELS: Record<StructuredResourceViewMode, string> = {
-  table: 'Table',
+  table: '表格',
   kanban: 'Kanban',
   whiteboard: 'Whiteboard',
   raw: 'Raw',
@@ -169,8 +169,8 @@ function projectStructuredSubjectFilterRows({
 
 function structuredSortToolLabel(sortKey: string | null | undefined, sortDirection: 'asc' | 'desc') {
   if (!sortKey) return '排序'
-  if (sortKey === 'subject') return `subject ${sortDirection === 'desc' ? '降序' : '升序'}`
-  return `${localPredicateLabel(sortKey)} ${sortDirection === 'desc' ? '降序' : '升序'}`
+  if (sortKey === 'subject') return `名称 ${sortDirection === 'desc' ? '降序' : '升序'}`
+  return `${readablePredicateLabel(sortKey)} ${sortDirection === 'desc' ? '降序' : '升序'}`
 }
 
 function projectStructuredSortTool({
@@ -191,9 +191,9 @@ function projectStructuredSortTool({
 
 function projectStructuredSortRows(schemaPredicateControls: readonly string[]) {
   return [
-    { label: 'subject', sortKey: 'subject' },
+    { label: '名称', sortKey: 'subject' },
     ...schemaPredicateControls.map((sortKey) => ({
-      label: localPredicateLabel(sortKey),
+      label: readablePredicateLabel(sortKey),
       sortKey,
     })),
   ]

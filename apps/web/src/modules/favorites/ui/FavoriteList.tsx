@@ -164,7 +164,8 @@ export function FavoriteList({
         ) : !items.length ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
             <Star className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
-            暂无收藏
+            <p className="text-foreground">还没有收藏</p>
+            <p className="mt-1 text-xs">给会话、联系人或文件标星后会出现在这里</p>
           </div>
         ) : (
           <div role="listbox" aria-label="收藏" aria-orientation="vertical" className="divide-y divide-border/30 animate-fade-in">

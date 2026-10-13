@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils'
 
 import type { FolderChildActionKind, FolderColumnRow, FolderSortState } from '../../domain/folder/folder-detail-model'
 import type { FolderChildOpenTrigger } from '../../domain/folder/folder-child-open'
+import { useFilesAgentNames } from '../../data/queries/agent-name-queries'
+import { projectEntryDisplayName } from '../../domain/list/explorer-virtual-entries'
 import type { FilesDetail, FilesEntry } from '../../domain/resource/resource-model'
 import { useFolderColumnPanelController } from './useFolderColumnPanelController'
 import { useFolderDescendantColumnController } from './useFolderDescendantColumnController'
@@ -56,6 +58,7 @@ export function FolderColumnPanel({
   onRename: FolderColumnChildAction
   onDelete: FolderColumnChildAction
 }) {
+  const agentNames = useFilesAgentNames()
   const { actionMenu, sortedRows, hasSortedRows, entryCount } = useFolderColumnPanelController({ entries, sort })
 
   const handleAction = (action: FolderChildActionKind, child: FilesEntry) => {
@@ -124,7 +127,7 @@ export function FolderColumnPanel({
                   }}
                 >
                   <ChildIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="min-w-0 truncate">{child.name}</span>
+                  <span className="min-w-0 truncate" title={child.name}>{projectEntryDisplayName(child, agentNames)}</span>
                   {row.showDescendantIndicator ? (
                     <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/70" />
                   ) : (

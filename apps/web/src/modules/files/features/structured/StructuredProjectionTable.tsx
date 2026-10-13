@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-table'
 
 import {
-  type StructuredCellWriteProposal,
+  type StructuredCellCommitResult, type StructuredCellWriteProposal,
   type StructuredShapeValidationWarning,
   type StructuredTableProjection,
   type StructuredVocabDefinitionIndex,
@@ -88,7 +88,7 @@ export function StructuredProjectionTable({
   sortDirection?: 'asc' | 'desc'
   onSort?: (sortKey: string) => void
   onOpenSubjectResource?: (subject: string, targetUri: string, kind: StructuredProjectionSubjectOpenKind, options?: StructuredSubjectOpenOptions) => void
-  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
   onPendingWriteSubjectsChange?: (subjects: string[]) => void
   onLocalCellWriteProposalsChange?: (proposals: StructuredCellWriteProposal[]) => void
   onCreateVocabTermProposal?: (proposal: VocabTermProposal) => boolean | Promise<boolean>

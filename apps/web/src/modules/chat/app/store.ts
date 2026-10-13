@@ -37,6 +37,27 @@ function writeStoredChatSelection(selection: StoredChatSelection): void {
 
 const storedSelection = readStoredChatSelection()
 
+/** 聊天信息 is closed by default and remembers the last open/closed choice. */
+const CHAT_INFO_OPEN_STORAGE_KEY = 'linx:chat-info-open:v1'
+
+function readStoredChatInfoOpen(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(CHAT_INFO_OPEN_STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function writeStoredChatInfoOpen(open: boolean): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CHAT_INFO_OPEN_STORAGE_KEY, open ? 'true' : 'false')
+  } catch {
+    // Remembering the panel is a convenience; it must never block chat.
+  }
+}
+
 export type AddDialogMode = 'ai' | 'group' | 'friend'
 
 /**
@@ -62,6 +83,15 @@ interface ChatStore {
   isAddDialogOpen: boolean
   addDialogMode: AddDialogMode
   showRightSidebar: boolean
+  /** Bumped to ask the header to open 执行条件 (e.g. from the right sidebar). */
+  executionConditionsRequest: number
+  /** Bumped by ⌘K (or anyone) to open the search panel in the list column. */
+  searchRequest: number
+  /**
+   * The topic just opened by “新的 AI 工作”. While it is still empty, the
+   * assistant it belongs to can be switched (“和 LinX 助手 ▾”).
+   */
+  newWorkThreadId: string | null
 
   // Actions
   setSearch: (val: string) => void
@@ -74,6 +104,10 @@ interface ChatStore {
   openAddDialog: (mode?: AddDialogMode) => void
   closeAddDialog: () => void
   toggleRightSidebar: () => void
+  setRightSidebarOpen: (open: boolean) => void
+  requestExecutionConditions: () => void
+  requestSearch: () => void
+  setNewWorkThread: (threadId: string | null) => void
 
   // List view navigation
   enterChat: (chatId: string) => void  // 点击 Chat 进入 Topic 列表
@@ -91,7 +125,10 @@ export const useChatStore = create<ChatStore>((set) => ({
   listViewMode: 'chats',
   isAddDialogOpen: false,
   addDialogMode: 'ai',
-  showRightSidebar: false,
+  showRightSidebar: readStoredChatInfoOpen(),
+  executionConditionsRequest: 0,
+  searchRequest: 0,
+  newWorkThreadId: null,
 
   setSearch: (search) => set({ search }),
   selectChat: (id) => set((state) => {
@@ -112,7 +149,17 @@ export const useChatStore = create<ChatStore>((set) => ({
   clearActiveBranches: () => set({ activeBranchByParent: {} }),
   openAddDialog: (mode = 'ai') => set({ isAddDialogOpen: true, addDialogMode: mode }),
   closeAddDialog: () => set({ isAddDialogOpen: false }),
-  toggleRightSidebar: () => set((state) => ({ showRightSidebar: !state.showRightSidebar })),
+  toggleRightSidebar: () => set((state) => {
+    writeStoredChatInfoOpen(!state.showRightSidebar)
+    return { showRightSidebar: !state.showRightSidebar }
+  }),
+  setRightSidebarOpen: (open) => set(() => {
+    writeStoredChatInfoOpen(open)
+    return { showRightSidebar: open }
+  }),
+  requestExecutionConditions: () => set((state) => ({ executionConditionsRequest: state.executionConditionsRequest + 1 })),
+  requestSearch: () => set((state) => ({ searchRequest: state.searchRequest + 1 })),
+  setNewWorkThread: (newWorkThreadId) => set({ newWorkThreadId }),
 
   // 进入某个 Chat，切换到 Topic 列表视图
   enterChat: (chatId) => set((state) => {

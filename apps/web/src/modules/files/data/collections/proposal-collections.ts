@@ -41,6 +41,7 @@ import {
 } from '../proposal/proposal-query-use-cases'
 import { sourceUpdateProposalUseCases } from '../proposal/source-update-proposal-use-cases'
 import { structuredCellProposalUseCases } from '../proposal/structured-cell-proposal-use-cases'
+import { writeOwnStructuredCellChange } from '../proposal/structured-cell-approval-commands'
 import { vocabTermProposalUseCases } from '../proposal/vocab-term-proposal-use-cases'
 
 type FilesResourceCacheInvalidationCollection = ReturnType<typeof createFilesResourceCacheInvalidationCollection>
@@ -153,6 +154,30 @@ export function createProposalCollections(dependencies: ProposalCollectionsDepen
         proposalQueryKey: targetDocumentUri
           ? structuredCellProposalCollection.queryKey(targetDocumentUri)
           : queryKeys.structuredCellProposals,
+      })
+    },
+
+    /** The person's own edit: written straight into the document, then the document is re-read. */
+    async writeOwnChangeWithCache(input: {
+      cacheClient: QueryClient
+      db?: SolidDatabase | null
+      actorWebId: string
+      change: {
+        documentUri: string
+        subject: string
+        predicate: string
+        previousValues: string[]
+        nextValues: string[]
+        expectedEtag?: string | null
+      }
+    }): Promise<void> {
+      const db = input.db ?? getDb()
+      if (!db) throw new Error('Database not connected')
+      await writeOwnStructuredCellChange(db, { ...input.change, actorWebId: input.actorWebId })
+      await filesResourceCacheInvalidationCollection.invalidateProposalCreate(input.cacheClient, {
+        proposalResourceUri: input.change.documentUri,
+        detailResourceUris: [input.change.documentUri],
+        includeInbox: false,
       })
     },
 

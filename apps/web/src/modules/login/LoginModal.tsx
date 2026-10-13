@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Loader2, Plus, X, AlertCircle, ChevronRight, HardDrive, ArrowLeft, Link2, ShieldAlert } from 'lucide-react'
+import { Loader2, X, AlertCircle, ChevronRight, HardDrive, ArrowLeft, Link2, ShieldAlert } from 'lucide-react'
 import { isLocalAccessHostname } from '@/lib/local-access-url'
 import { cn } from '@/lib/utils'
 import type { LoginModalProps, LoginProviderOption } from './types'
@@ -18,7 +18,7 @@ export function LoginModal(props: LoginModalProps) {
   if (state === 'authenticated' && !storageConflict) return null
 
   return (
-    <LoginCardShell cardSize="compact">
+    <LoginCardShell cardSize="auto" cardClassName="min-h-[400px] max-h-[calc(100vh-32px)]">
       {storageConflict ? (
         <StorageConflictView
           storedAccount={props.storedAccount}
@@ -86,30 +86,30 @@ function StorageConflictView({
 
   return (
     <div className="flex-1 flex flex-col h-full">
-      <div className="px-5 pt-6 pb-4 shrink-0">
-        <p className="text-[11px] font-medium tracking-wide text-muted-foreground/70 text-center">
-          {isCreatePodSetup ? '需要创建空间' : '空间不匹配'}
-        </p>
-      </div>
-
-      <div className="px-5 pb-4 flex flex-col items-center justify-center gap-3 shrink-0">
+      <div className="px-5 pt-8 pb-4 flex flex-col items-center justify-center gap-3 shrink-0">
         <AccountAvatar
           name={accountName}
           avatarUrl={storedAccount?.avatarUrl}
           size="lg"
           spaceMarker={resolveStoredAccountSpaceMarker(storedAccount)}
         />
-        <p className="text-base font-semibold text-foreground">{accountName}</p>
+        <p className="text-base font-semibold text-foreground">
+          {isCreatePodSetup ? `${accountName} 在这里还没有空间` : '这个账号的数据在另一个空间'}
+        </p>
         <p className="max-w-[19rem] text-center text-sm leading-6 text-muted-foreground">
           {isCreatePodSetup
-            ? '这个账号还没有完成当前本机空间的创建。创建完成后，LinX 会把数据保存在这里。'
-            : '当前账号绑定的是另一个空间。请返回后重新选择正确空间，或先在当前空间完成创建。'}
+            ? '创建后，LinX 会把你的聊天、文件和卡片保存在这里。'
+            : '要去那里，还是在这里新建一个？'}
         </p>
       </div>
 
-      <div className="mx-4 space-y-3 rounded-lg border border-border/60 bg-muted/25 p-4">
-        <StorageDetail label="当前空间应写入" value={storageConflict.expectedStorageUrl} />
-        <StorageDetail label="账号当前绑定" value={storageConflict.actualStorageUrl ?? '未绑定'} />
+      <div className="mx-4">
+        <Details>
+          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/25 p-4">
+            <StorageDetail label="当前空间应写入" value={storageConflict.expectedStorageUrl} />
+            <StorageDetail label="账号当前绑定" value={storageConflict.actualStorageUrl ?? '未绑定'} />
+          </div>
+        </Details>
       </div>
 
       <div className="mt-auto px-4 pb-4 pt-5 space-y-2">
@@ -117,17 +117,19 @@ function StorageConflictView({
           <button
             type="button"
             onClick={onOpenCurrentSpacePodSetup}
-            className="w-full h-9 rounded-md border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+            className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
           >
-            {isCreatePodSetup ? '创建当前空间' : '在当前空间创建'}
+            在这里创建
           </button>
         ) : null}
         <button
           type="button"
           onClick={onDismiss}
-          className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+          className={canCreateHere
+            ? 'w-full h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer'
+            : 'w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer'}
         >
-          返回登录并重新选择空间
+          换个空间
         </button>
       </div>
 
@@ -150,10 +152,11 @@ function RestoringView({ storedAccount }: Pick<LoginModalProps, 'storedAccount'>
             spaceMarker={resolveStoredAccountSpaceMarker(storedAccount)}
           />
           <p className="text-sm font-medium text-foreground">{storedAccount.displayName}</p>
+          <p className="-mt-2 text-xs text-muted-foreground">{getRememberedAccountBindingLabel(storedAccount)}</p>
         </>
       ) : null}
       <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
-      <p className="text-xs text-muted-foreground">正在恢复登录状态...</p>
+      <p className="text-xs text-muted-foreground">正在回到上次的位置…</p>
     </div>
   )
 }
@@ -184,7 +187,7 @@ function AccountView({
         {isSessionExpired ? (
           <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary">
             <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
-            会话已过期
+            登录已过期
           </div>
         ) : null}
         <AccountAvatar
@@ -199,7 +202,7 @@ function AccountView({
         </div>
         {isSessionExpired ? (
           <p className="max-w-[18rem] text-center text-xs leading-5 text-muted-foreground">
-            为保护空间中的数据，LinX 已暂停当前会话。重新登录后可继续使用，账号和已有数据不会丢失。
+            没发出的草稿还在这台电脑，重新登录后继续。
           </p>
         ) : null}
       </div>
@@ -211,13 +214,13 @@ function AccountView({
           onClick={onContinueStoredAccount}
           className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
         >
-          进入
+          {isSessionExpired ? '重新登录' : '进入'}
         </button>
         <button
           onClick={onSwitchAccount}
           className="w-full h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
         >
-          切换账号
+          换个账号
         </button>
       </div>
 
@@ -226,13 +229,20 @@ function AccountView({
   )
 }
 
-// ── ProviderSelectionView ─────────────────────────────────────────────
+// ── ProviderSelectionView（S6：先选数据放哪） ───────────────────────────
+
+interface SpaceChoice {
+  id: 'cloud' | 'local' | 'standalone'
+  title: string
+  description: string
+  provider: LoginProviderOption | undefined
+  unavailableHint: string
+}
 
 function ProviderSelectionView({
   providers,
   error,
   localLoginStatus,
-  preferredSpace,
   onSelectSpace,
   onConnect,
   onAddProvider,
@@ -247,20 +257,15 @@ function ProviderSelectionView({
   onAddProvider: (url: string, label?: string) => void
   onClearError: () => void
 }) {
-  const [view, setView] = useState<'main' | 'methods'>('main')
+  const [view, setView] = useState<'main' | 'other'>('main')
   const cloudProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'cloud')
   const localProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'local')
   const standaloneProvider = providers.find((provider) => resolveLoginProviderSource(provider) === 'standalone')
-  const localAccessProvider = isUsableLocalProvider(localProvider) ? localProvider : standaloneProvider
-  const preferredProvider = preferredSpace === 'local' ? localAccessProvider : cloudProvider
 
-  if (view === 'methods') {
+  if (view === 'other') {
     return (
-      <LoginMethodListView
-        cloudProvider={cloudProvider}
-        localProvider={localAccessProvider}
+      <OtherSpaceView
         providers={providers}
-        onSelectSpace={onSelectSpace}
         onConnect={onConnect}
         onAddProvider={onAddProvider}
         onBack={() => setView('main')}
@@ -268,78 +273,105 @@ function ProviderSelectionView({
     )
   }
 
+  const choices: SpaceChoice[] = [
+    {
+      id: 'cloud',
+      title: '云端空间',
+      description: '用 undefineds 账号登录，数据保存在云端，换设备也能用',
+      provider: cloudProvider,
+      unavailableHint: '暂时连不上云端',
+    },
+    {
+      id: 'local',
+      title: '本机空间',
+      description: '用云端账号登录，数据保存在这台电脑',
+      provider: localProvider,
+      unavailableHint: '没找到这台电脑上的 LinX 服务',
+    },
+    {
+      id: 'standalone',
+      title: '独立空间',
+      description: '账号和数据都只在这台电脑，不需要网络账号',
+      provider: standaloneProvider,
+      unavailableHint: '没找到这台电脑上的 LinX 服务',
+    },
+  ]
+
+  const choose = (choice: SpaceChoice) => {
+    if (!choice.provider) return
+    if (choice.id !== 'standalone') onSelectSpace(choice.id)
+    onConnect(choice.provider.id)
+  }
+
   return (
-    <div className="flex-1 flex flex-col h-full px-7 py-7 text-center">
-      <div className="flex-1 flex flex-col items-center justify-center gap-5">
-        <div className="h-14 w-14 overflow-hidden rounded-xl border border-border bg-muted p-0.5">
+    <div className="flex-1 flex flex-col h-full px-6 py-6">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="h-12 w-12 overflow-hidden rounded-xl border border-border bg-muted p-0.5">
           <img src={linxLogoUrl} alt="LinX" className="h-full w-full scale-[1.24] object-cover" />
         </div>
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-foreground">LinX</h2>
-          <p className="text-sm text-muted-foreground">你的数据，存在你选的地方</p>
+        <div className="space-y-1.5">
+          <h2 className="text-lg font-semibold text-foreground">登录 LinX</h2>
+          <p className="text-xs leading-5 text-muted-foreground">
+            先选你的数据放在哪里。以后可以在 设置 › 空间与服务 里查看。
+          </p>
         </div>
-
-        {localLoginStatus.active ? (
-          <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-            <p className="text-xs text-muted-foreground">正在启动本机空间…</p>
-          </div>
-        ) : null}
       </div>
+
+      <div className="mt-5 flex-1 space-y-2 overflow-y-auto">
+        {choices.map((choice) => (
+          <button
+            key={choice.id}
+            type="button"
+            disabled={!choice.provider || localLoginStatus.active}
+            onClick={() => choose(choice)}
+            className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3.5 py-3 text-left transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium text-foreground">{choice.title}</span>
+              <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                {choice.provider ? choice.description : choice.unavailableHint}
+              </span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+
+      {localLoginStatus.active ? (
+        <div className="mt-3 flex items-center justify-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+          <p className="text-xs text-muted-foreground">正在启动本机空间…</p>
+        </div>
+      ) : null}
 
       <ErrorBanner error={error} onClearError={onClearError} />
 
-      <div className="shrink-0 space-y-2">
+      <div className="mt-3 shrink-0 space-y-1 text-center">
         <button
           type="button"
-          disabled={!preferredProvider}
-          onClick={() => preferredProvider && onConnect(preferredProvider.id)}
-          className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+          onClick={() => setView('other')}
+          className="h-8 w-full rounded-md text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground cursor-pointer"
         >
-          登录
+          使用其他空间…
         </button>
-        {localAccessProvider ? (
-          <p className="text-[11px] text-muted-foreground/80">
-            数据保存位置：{preferredSpace === 'local' ? '本机空间' : '云端空间'}
-          </p>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => setView('methods')}
-          className="w-full h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
-        >
-          更多选项
-        </button>
+        <p className="text-[11px] text-muted-foreground/80">登录不会自动创建空间；需要创建时会先问你。</p>
       </div>
     </div>
   )
 }
 
-function isUsableLocalProvider(provider: LoginProviderOption | undefined): boolean {
-  if (!provider?.storageProvider.url) return false
-
-  const onboardingState = provider.runtime?.onboarding?.state
-  return onboardingState !== 'repair_required' && onboardingState !== 'error'
-}
-
-function LoginMethodListView({
-  cloudProvider,
-  localProvider,
+/** 其他 Solid 空间：粘贴空间地址继续；以前添加过的也在这里。 */
+function OtherSpaceView({
   providers,
-  onSelectSpace,
   onConnect,
   onAddProvider,
   onBack,
 }: {
-  cloudProvider: LoginProviderOption | undefined
-  localProvider: LoginProviderOption | undefined
   providers: LoginProviderOption[]
-  onSelectSpace: (space: 'cloud' | 'local') => void
   onConnect: (providerKey: string) => void
   onAddProvider: (url: string, label?: string) => void
   onBack: () => void
 }) {
-  const [isAdding, setIsAdding] = useState(false)
   const [customUrl, setCustomUrl] = useState('')
   const [customUrlError, setCustomUrlError] = useState<string | null>(null)
   const configuredProviders = providers.filter((provider) => resolveLoginProviderSource(provider) === 'custom')
@@ -356,9 +388,8 @@ function LoginMethodListView({
       onConnect(normalized)
       setCustomUrl('')
       setCustomUrlError(null)
-      setIsAdding(false)
     } catch {
-      setCustomUrlError('请输入有效的 http(s) 地址。')
+      setCustomUrlError('连不上这个地址。确认它在运行，再试一次。')
     }
   }
 
@@ -375,48 +406,9 @@ function LoginMethodListView({
           返回
         </button>
       </div>
-      <h2 className="mt-3 text-base font-semibold text-foreground">更多选项</h2>
+      <h2 className="mt-3 text-base font-semibold text-foreground">使用其他空间</h2>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">已有 Solid 空间的话，粘贴它的地址。</p>
       <div className="mt-4 flex-1 space-y-2 overflow-y-auto">
-        {cloudProvider && localProvider ? (
-          <div className="w-full rounded-lg border border-border/60 bg-muted/20 px-3 py-3">
-            <p className="text-sm font-medium text-foreground">LinX 账号</p>
-            <p className="mt-1 text-xs text-muted-foreground">云端可多端同步，本机数据不出这台电脑</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => { onSelectSpace('cloud'); onConnect(cloudProvider.id) }}
-                className="h-8 rounded-md border border-border/60 bg-background text-xs font-medium text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
-              >
-                云端空间
-              </button>
-              <button
-                type="button"
-                onClick={() => { onSelectSpace('local'); onConnect(localProvider.id) }}
-                className="h-8 rounded-md border border-border/60 bg-background text-xs font-medium text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
-              >
-                本机空间
-              </button>
-            </div>
-          </div>
-        ) : cloudProvider || localProvider ? (
-          <button
-            type="button"
-            onClick={() => {
-              const provider = (cloudProvider ?? localProvider)!
-              onSelectSpace(cloudProvider ? 'cloud' : 'local')
-              onConnect(provider.id)
-            }}
-            className="w-full rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-foreground">LinX 账号</p>
-                <p className="mt-1 text-xs text-muted-foreground">{cloudProvider ? '云端空间' : '本机空间'}</p>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground/60" aria-hidden="true" />
-            </div>
-          </button>
-        ) : null}
         {configuredProviders.map((provider) => (
           <button
             key={provider.id}
@@ -435,61 +427,35 @@ function LoginMethodListView({
         ))}
       </div>
       <div className="mt-4 space-y-2">
-        {isAdding ? (
-          <div className="space-y-2">
-            <input
-              autoFocus
-              type="url"
-              aria-label="登录方式地址"
-              aria-invalid={customUrlError ? true : undefined}
-              aria-describedby={customUrlError ? 'custom-provider-url-error' : undefined}
-              placeholder="https://pod.example.com"
-              value={customUrl}
-              onChange={(event) => {
-                setCustomUrl(event.target.value)
-                setCustomUrlError(null)
-              }}
-              onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
-              className="w-full h-9 px-3 text-sm border border-border/60 rounded-lg bg-background focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
-            />
-            {customUrlError ? (
-              <p id="custom-provider-url-error" role="alert" className="flex items-center gap-1.5 text-left text-xs text-destructive">
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                {customUrlError}
-              </p>
-            ) : null}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={handleAdd}
-                disabled={!customUrl.trim()}
-                className="h-8 rounded-md bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50"
-              >
-                连接
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAdding(false)
-                  setCustomUrl('')
-                  setCustomUrlError(null)
-                }}
-                className="h-8 rounded-md border border-border/50 text-xs text-muted-foreground hover:text-foreground"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setIsAdding(true)}
-            className="w-full h-9 flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            添加登录方式
-          </button>
-        )}
+        <input
+          autoFocus
+          type="url"
+          aria-label="空间地址"
+          aria-invalid={customUrlError ? true : undefined}
+          aria-describedby={customUrlError ? 'custom-provider-url-error' : undefined}
+          placeholder="https://pod.example.com"
+          value={customUrl}
+          onChange={(event) => {
+            setCustomUrl(event.target.value)
+            setCustomUrlError(null)
+          }}
+          onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
+          className="w-full h-9 px-3 text-sm border border-border/60 rounded-lg bg-background focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
+        />
+        {customUrlError ? (
+          <p id="custom-provider-url-error" role="alert" className="flex items-center gap-1.5 text-left text-xs text-destructive">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {customUrlError}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={!customUrl.trim()}
+          className="h-9 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          继续
+        </button>
       </div>
     </div>
   )
@@ -513,8 +479,8 @@ function ConnectingView({
     : '请稍候...'
 
   if (authWindowStatus.open) {
-    title = '等待登录完成'
-    detail = '请在登录窗口完成'
+    title = '请在登录窗口完成'
+    detail = '完成后会自动回到这里。窗口没看到，可以再打开一次。'
   } else if (authWindowStatus.reason === 'completed') {
     title = '正在验证身份'
     detail = connectingProvider?.storageProviderLabel ? '正在进入所选空间' : detail
@@ -736,9 +702,9 @@ function LocalUnavailableRecovery({
     <div className="flex flex-col items-center gap-3 text-center">
       <AlertCircle className="w-6 h-6 text-destructive" />
       <div className="space-y-2">
-        <p className="text-sm font-medium text-foreground">本机空间暂时不可用</p>
+        <p className="text-sm font-medium text-foreground">本机空间没有启动</p>
         <p className="max-w-[18rem] text-xs leading-5 text-muted-foreground">
-          请重试或打开设置检查本机服务。不会自动切换到云端空间。
+          先重新检查；还不行就重启 LinX，它会自己修复。不会自动换成云端空间。
         </p>
       </div>
       <div className="w-full space-y-2">
@@ -748,25 +714,41 @@ function LocalUnavailableRecovery({
           disabled={!canRetry}
           className="w-full h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
-          重试
+          重新检查
         </button>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          disabled={!canOpenSettings}
-          className="w-full h-9 rounded-md border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-        >
-          打开设置
-        </button>
-        <button
-          type="button"
-          onClick={onSwitchAccount}
-          className="w-full h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
-        >
-          切换账号
-        </button>
+        <Details>
+          <div className="flex flex-col items-center gap-1">
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              disabled={!canOpenSettings}
+              className="h-8 rounded-md px-3 text-xs text-foreground hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            >
+              打开本机服务设置
+            </button>
+            <button
+              type="button"
+              onClick={onSwitchAccount}
+              className="h-8 rounded-md px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
+            >
+              换个空间
+            </button>
+          </div>
+        </Details>
       </div>
     </div>
+  )
+}
+
+/** 技术细节收进“详情”，默认收起。 */
+function Details({ children }: { children: ReactNode }) {
+  return (
+    <details className="group w-full text-center">
+      <summary className="inline-flex h-7 cursor-pointer list-none items-center justify-center rounded-md px-2 text-xs text-muted-foreground hover:text-foreground">
+        详情
+      </summary>
+      <div className="mt-1 text-left">{children}</div>
+    </details>
   )
 }
 

@@ -266,7 +266,7 @@ describe('Structured projection table model architecture boundary', () => {
     expect(subjectCreationControlsSource).toContain('dialogModel.cancelLabel')
     expect(subjectCreationControlsSource).toContain('dialogModel.submitLabel')
     expect(subjectCreationControlsSource).toContain('submitDisabled')
-    expect(subjectCreationControlsSource).not.toContain('aria-label="+ Subject"')
+    expect(subjectCreationControlsSource).not.toContain('aria-label="+ 卡片"')
     expect(subjectCreationControlsSource).not.toContain('>Subject<')
     expect(subjectCreationControlsSource).not.toContain('新增 subject')
     expect(subjectCreationControlsSource).not.toContain('先选择 class 再新增 subject')

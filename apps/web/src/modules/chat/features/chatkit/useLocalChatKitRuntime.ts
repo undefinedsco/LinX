@@ -30,6 +30,12 @@ function createUnavailableFetch(): LocalChatKitFetch {
   unavailableFetch.loadAttachmentObjectUrl = async () => { throw new Error('当前空间连接尚未恢复') }
   unavailableFetch.prepareAttachmentForReuse = async () => { throw new Error('当前空间连接尚未恢复') }
   unavailableFetch.saveArtifactVersion = async () => { throw new Error('当前空间连接尚未恢复') }
+  unavailableFetch.conversation = {
+    load: async () => { throw new Error('当前空间连接尚未恢复') },
+    resolveItemUri: (itemId) => itemId,
+    uploadAttachment: async () => { throw new Error('当前空间连接尚未恢复') },
+    run: async function* () { throw new Error('当前空间连接尚未恢复') },
+  }
   unavailableFetch.dispose = () => undefined
   return unavailableFetch
 }

@@ -151,6 +151,34 @@ export function usePendingStructuredCellChangeProposals(documentUri: string | nu
   }))
 }
 
+/** The person's own structured edit, written directly (no approval). */
+export function useWriteOwnStructuredCellChange() {
+  const { db } = useSolidDatabase()
+  const { session } = useSession()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (change: {
+      documentUri: string
+      subject: string
+      predicate: string
+      previousValues: string[]
+      nextValues: string[]
+      expectedEtag?: string | null
+    }) => {
+      if (!db) throw new Error('Database not connected')
+      const actorWebId = session.info.webId
+      if (!actorWebId) throw new Error('Cannot write without a logged-in WebID.')
+      await structuredCellProposalCollection.writeOwnChangeWithCache({
+        cacheClient: queryClient,
+        db,
+        actorWebId,
+        change,
+      })
+    },
+  })
+}
+
 export function useCreateStructuredCellChangeProposal() {
   const { db } = useSolidDatabase()
   const { session } = useSession()

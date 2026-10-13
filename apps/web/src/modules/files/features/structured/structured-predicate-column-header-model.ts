@@ -3,7 +3,7 @@ import type {
   StructuredVocabPredicateDefinition,
   VocabTermProposal,
 } from '../../domain/structured/structured-table'
-import { localPredicateLabel } from '../../domain/structured/structured-table-vocab'
+import { readablePredicateLabel } from '../../domain/structured/structured-table-vocab'
 
 export type StructuredPredicateColumnProposal = {
   id: string
@@ -222,13 +222,14 @@ export function projectStructuredPredicateHeaderColumnModel(input: {
   predicate: string
   projection: Pick<StructuredTableProjection, 'rows'>
   proposal?: Pick<StructuredPredicateColumnProposal, 'label'> | null
+  definition?: Pick<StructuredVocabPredicateDefinition, 'label'> | null
   showNamespaces: boolean
 }): StructuredPredicateHeaderColumnModel {
   const label = input.proposal
     ? input.proposal.label
     : input.showNamespaces
       ? input.predicate
-      : localPredicateLabel(input.predicate)
+      : readablePredicateLabel(input.predicate, input.definition?.label)
 
   return {
     label,
@@ -280,7 +281,7 @@ export function projectStructuredPredicateColumnHeader({
     }
   }
 
-  const label = showNamespaces ? predicate : localPredicateLabel(predicate)
+  const label = showNamespaces ? predicate : readablePredicateLabel(predicate, definition?.label)
   const shapeRules = definition?.shapeRules ?? []
   return {
     kind: 'defined',
@@ -300,4 +301,17 @@ export function projectStructuredPredicateColumnHeader({
     statusLabel: definition?.status || '已识别',
     typeLabel: predicateDefinitionTypeLabel(definition, observedValues),
   }
+}
+
+export type StructuredPredicateTypeIconKind = 'text' | 'number' | 'date' | 'boolean' | 'relation' | 'choice'
+
+/** The icon beside a column title (R6 K6): what kind of value the column holds. */
+export function projectStructuredPredicateTypeIconKind(typeLabel: string | null | undefined): StructuredPredicateTypeIconKind {
+  const normalized = (typeLabel ?? '').toLowerCase()
+  if (/bool/.test(normalized)) return 'boolean'
+  if (/int|decimal|double|float|number|numeric/.test(normalized)) return 'number'
+  if (/date|time/.test(normalized)) return 'date'
+  if (/enum|choice|select|option/.test(normalized)) return 'choice'
+  if (/relation|link|iri|uri|resource|reference|object/.test(normalized)) return 'relation'
+  return 'text'
 }

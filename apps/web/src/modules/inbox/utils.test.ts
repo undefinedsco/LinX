@@ -48,6 +48,7 @@ describe('inbox utils', () => {
     const items = [approvalPending, approvalResolved, authRequired, authResolved, auditOnly]
 
     expect(filterInboxItems(items, 'pending')).toEqual([approvalPending, authRequired])
+    expect(filterInboxItems(items, 'done')).toEqual([approvalResolved, authResolved])
     expect(filterInboxItems(items, 'audit')).toEqual([authRequired, authResolved, auditOnly])
     expect(filterInboxItems(items, 'all')).toEqual(items)
   })

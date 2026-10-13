@@ -9,6 +9,7 @@ export type FolderChildOpenDecision =
   | { type: 'browse-container'; treeNodeId: string }
   | { type: 'open-editable-inline'; file: FilesDetail }
   | { type: 'open-editable-sheet'; file: FilesDetail }
+  | { type: 'open-card'; uri: string }
   | { type: 'select-file-preview'; fileUri: string }
 
 export function fileEntryToFolderChildDetail(child: FilesEntry): FilesDetail {
@@ -140,19 +141,13 @@ export function resolveFolderChildOpenDecision(
 ): FolderChildOpenDecision {
   const openMode = getFilesEntryOpenMode(child)
 
-  if (trigger === 'click') {
-    return child.kind === 'container'
-      ? { type: 'noop' }
-      : { type: 'select-file-preview', fileUri: child.uri }
-  }
+  // R6: a single click only selects the row; it must never navigate the workspace to the file page.
+  if (trigger === 'click') return { type: 'noop' }
 
   if (openMode === 'browse-container') {
     return { type: 'browse-container', treeNodeId: createContainerNodeId(child.uri) }
   }
 
-  if (openMode === 'editable-file-sheet') {
-    return { type: 'open-editable-sheet', file: fileEntryToFolderChildDetail(child) }
-  }
-
-  return { type: 'select-file-preview', fileUri: child.uri }
+  // R6: double click / Enter opens the card popup for files and tables alike.
+  return { type: 'open-card', uri: child.uri }
 }

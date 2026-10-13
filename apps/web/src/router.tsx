@@ -18,6 +18,7 @@ import {
   type FilesRouteSearch,
 } from './modules/files/route-state'
 import { FilesRouteBridgeProvider } from './modules/files/app/FilesRouteContext'
+import { CardDialogHost } from './modules/files/features/card-dialog/CardDialogHost'
 import { useFilesStore } from './modules/files/app/store'
 
 const SolidAuthCallback = lazy(() => import('./components/AuthCallback'))
@@ -216,6 +217,7 @@ const microAppRoute = createRoute({
     return (
       <FilesRouteBridgeProvider bridge={filesRouteBridge}>
         <PrimaryLayout microAppId={microAppId as MicroAppId} onNavigate={handleMicroAppNavigation} />
+        <CardDialogHost />
       </FilesRouteBridgeProvider>
     )
   },

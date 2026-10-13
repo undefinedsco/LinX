@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useSession } from '@/providers/solid-session-context'
 import { useLiveQuery } from '@tanstack/react-db'
 import { isGroupContact } from '@undefineds.co/models'
@@ -6,13 +6,15 @@ import { useToast } from '@/components/ui/use-toast'
 import type { ModelOption } from '@/components/ui/model-selector'
 import { useModelServices } from '@/modules/model-services/data/use-model-services'
 import { useContactStore } from '../../app/store'
-import { contactCollection, getContactsChatCollection } from '../../data/collections'
-import { projectContactDetail } from '../../domain/contact-projection'
+import { agentCollection, contactCollection, contactOps, getContactsChatCollection } from '../../data/collections'
+import { buildContactListProjection, buildRecentFriends, projectContactDetail } from '../../domain/contact-projection'
+import { formatAccountAddress } from '../../domain/account-address'
 import { useAgentEditingController } from './useAgentEditingController'
 import { useContactCreationController } from './useContactCreationController'
 import { useContactDeletionNavigationController } from './useContactDeletionNavigationController'
 import { useContactGroupMembershipController } from './useContactGroupMembershipController'
 import { useContactProfileActionsController } from './useContactProfileActionsController'
+import { useContactSpaceController } from './useContactSpaceController'
 import { useContactProfileSyncController } from './useContactProfileSyncController'
 
 export function useContactDetailController() {
@@ -20,6 +22,8 @@ export function useContactDetailController() {
   const { toast } = useToast()
   const selectedId = useContactStore((state) => state.selectedId)
   const selectContact = useContactStore((state) => state.select)
+  const entry = useContactStore((state) => state.entry)
+  const openCreateDialog = useContactStore((state) => state.openCreateDialog)
   const createDialogOpen = useContactStore((state) => state.createDialogOpen)
   const createType = useContactStore((state) => state.createType)
   const closeCreateDialog = useContactStore((state) => state.closeCreateDialog)
@@ -31,8 +35,11 @@ export function useContactDetailController() {
   const { providers: modelProviders } = useModelServices()
   const contactQuery = useLiveQuery(contactCollection)
   const chatQuery = useLiveQuery(chatCollection)
-  const contacts = contactQuery.data ?? []
-  const chats = chatQuery.data ?? []
+  const contacts = useMemo(() => contactQuery.data ?? [], [contactQuery.data])
+  // An assistant is "mine" when it lives in my own agent collection; only then
+  // can its method and tools be changed from here.
+  const agentQuery = useLiveQuery(agentCollection)
+  const chats = useMemo(() => chatQuery.data ?? [], [chatQuery.data])
   const persistedContact = selectedId
     ? contacts.find((candidate) => candidate.id === selectedId) ?? null
     : null
@@ -55,6 +62,7 @@ export function useContactDetailController() {
     })
   }
 
+  const [revokeOnDelete, setRevokeOnDelete] = useState(true)
   const sync = useContactProfileSyncController(persistedContact)
   const contact = useMemo(() => (
     selectedId && persistedContact
@@ -85,6 +93,29 @@ export function useContactDetailController() {
     notify,
   })
   const isGroup = !!persistedContact && isGroupContact(persistedContact)
+  const rawAddress = persistedContact && !isGroup && /^https?:\/\//i.test(persistedContact.about ?? '')
+    ? persistedContact.about as string
+    : null
+  const isAgentContact = contact?.sourceType === 'agent'
+  const space = useContactSpaceController({
+    contactWebId: rawAddress && !isAgentContact ? rawAddress : null,
+    contactId: selectedId,
+    storedShowInProfile: !!persistedContact?.isPublic,
+    notify,
+  })
+  const groups = useMemo(
+    () => buildContactListProjection(contacts).groups,
+    [contacts],
+  )
+  const recentFriends = useMemo(() => buildRecentFriends(contacts), [contacts])
+  const commonGroups = useMemo(() => (
+    persistedContact && !isGroup
+      ? contactOps.getCommonGroups(persistedContact.id, contacts, chats).map((group) => ({
+        id: group.id,
+        name: group.alias?.trim() || group.name || '群聊',
+      }))
+      : []
+  ), [chats, contacts, isGroup, persistedContact])
   const currentUserRef = session.info.webId ?? undefined
   const group = useContactGroupMembershipController({
     groupContactId: isGroup ? persistedContact.id : null,
@@ -95,6 +126,17 @@ export function useContactDetailController() {
     contacts,
     chats,
   })
+  // "从哪个方法开始": start a new assistant from an existing assistant's method, or blank.
+  const methodTemplates = useMemo(() => ((agentQuery.data ?? []) as Array<{ id?: string; name?: string; instructions?: string }>)
+    .filter((row) => typeof row.id === 'string' && typeof row.instructions === 'string' && row.instructions.trim())
+    .map((row) => ({
+      id: row.id as string,
+      label: `${row.name?.trim() || '助手'}的方法`,
+      instructions: (row.instructions as string).trim(),
+    })), [agentQuery.data])
+  const ownAgentId = contact?.agentConfig?.id
+  const isOwnAgent = typeof ownAgentId === 'string'
+    && (agentQuery.data ?? []).some((row) => row.id === ownAgentId)
   const contactRecord = contact as Record<string, unknown> | null
   const contactInbox = typeof contactRecord?.inbox === 'string' && contactRecord.inbox.length > 0
     ? contactRecord.inbox
@@ -123,7 +165,15 @@ export function useContactDetailController() {
       persistedContact,
       contactInbox,
       isGroup,
+      isOwnAgent,
+      entry,
+      groups,
+      recentFriends,
+      commonGroups,
+      address: formatAccountAddress(rawAddress),
+      fullAddress: rawAddress,
     },
+    space,
     sync: {
       isSyncing: sync.isSyncing,
       errorMessage: sync.syncErrorMessage,
@@ -157,47 +207,50 @@ export function useContactDetailController() {
       mode: profile.editMode,
       isSaving: profile.isSavingProfile || agent.isSavingAgent || navigation.isDeleting || creation.isCreating,
       alias: profile.editingAlias,
-      prompt: agent.editingPrompt,
-      toolsText: agent.editingToolsText,
+      model: agent.editingModel,
+      revokeOnDelete,
       onAliasChange: profile.setEditingAlias,
-      onPromptChange: agent.setEditingPrompt,
-      onToolsTextChange: agent.setEditingToolsText,
+      onModelChange: agent.setEditingModel,
+      onRevokeOnDeleteChange: setRevokeOnDelete,
       onClose: profile.closeEditor,
-      onOpenDelete: () => profile.openEditor('delete'),
+      onOpen: profile.openEditor,
+      onOpenDelete: () => {
+        setRevokeOnDelete(true)
+        profile.openEditor('delete')
+      },
       onSaveAlias: profile.handleSaveAlias,
-      onSavePrompt: agent.handleSavePrompt,
-      onSaveTools: agent.handleSaveTools,
-      onDelete: navigation.handleDelete,
+      onSaveModel: agent.handleSaveModel,
+      onDelete: () => navigation.handleDelete(
+        revokeOnDelete && space.summary.sharedWithThem.length > 0 ? space.onRevokeAll : undefined,
+      ),
     },
     creation: {
       open: createDialogOpen,
       type: createType,
       form: creation.createForm,
       availableAgentModels,
-      friendSearch: creation.friendSearch,
+      methodTemplates,
       onUpdateForm: (patch: Partial<typeof creation.createForm>) => {
         creation.setCreateForm((current) => ({ ...current, ...patch }))
       },
-      onFriendWebIdChange: (webId: string) => {
-        creation.setFriendSearch((current) => ({ ...current, webId, error: '' }))
-      },
       onClose: closeCreateDialog,
-      onSearchWebId: creation.handleSearchWebId,
-      onAddFriend: creation.handleAddFriend,
+      onFriendAdded: ({ contactId }: { contactId: string }) => {
+        closeCreateDialog()
+        selectContact(contactId)
+      },
       onCreateAgent: creation.handleCreateAgent,
       onGroupCreated: navigation.handleGroupCreated,
     },
     actions: {
-      onShare: profile.handleShare,
-      onToggleStar: profile.handleToggleStar,
       onOpenAliasEdit: profile.handleOpenAliasEdit,
-      onCopyId: profile.handleCopyId,
+      onCopyAddress: profile.handleCopyAddress,
       onStartChat: navigation.handleStartChat,
       onVoiceCall: profile.handleVoiceCall,
       onVideoCall: profile.handleVideoCall,
-      onTogglePublic: profile.handleTogglePublic,
-      onOpenPromptEdit: agent.handleOpenPromptEdit,
-      onOpenToolsEdit: agent.handleOpenToolsEdit,
+      onOpenMethod: agent.handleOpenMethod,
+      onOpenCondition: agent.handleOpenCondition,
+      onSelectContact: selectContact,
+      onAddFriend: () => openCreateDialog('friend'),
     },
   }
 }

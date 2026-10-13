@@ -1550,8 +1550,6 @@ export interface UpdateAgentModelInput {
   currentAgent?: AgentRow
   provider: string
   model: string
-  chatId?: string
-  contactId?: string
 }
 
 /**
@@ -2202,42 +2200,27 @@ export const chatOps = {
   },
 
   /**
-   * Update an agent's model (and avatarUrl when provider changes)
-   * Also updates the related Chat's avatarUrl for list display
+   * Update an agent's model. The model is a replaceable execution condition:
+   * the assistant's name, avatar and chats keep their identity (R6 LS03).
    */
   async updateAgentModel(
     agentId: string,
     provider: string,
     model: string,
-    chatId?: string,
-    contactId?: string,
     currentAgent?: AgentRow,
   ): Promise<void> {
-    const providerInfo = getAgentProviderInfo(provider)
     const providerRef = normalizeAIConfigProviderId(provider)
     const modelRef = normalizeAIConfigResourceId(model)
     const current = (agentCollection.get(agentId) as AgentRow | undefined) ?? currentAgent
     if (!current) throw new Error(`Agent ${agentId} was not found`)
-    const providerChanged = normalizeAIConfigProviderId(current.provider || '') !== provider
     const changes: Parameters<typeof updateAgentHomeMetadata>[2] = {
       provider: providerRef,
       model: modelRef,
     }
-    if (providerChanged && providerInfo?.logoUrl) changes.avatarUrl = providerInfo.logoUrl
     const db = getDb()
     if (!db) throw new Error('Pod database is not initialized')
     await updateAgentHomeMetadata(db, agentId as any, changes, current)
     writeCollectionRow(agentCollection, { ...current, ...changes } as AgentRow, agentId)
-
-    if (contactId && providerInfo?.logoUrl) {
-      await updateLinkedContact(db, contactId, { avatarUrl: providerInfo.logoUrl })
-    }
-    
-    // Also update Chat avatarUrl if chatId provided and provider changed
-    if (chatId && providerInfo?.logoUrl) {
-      await this.updateChat(chatId, { avatarUrl: providerInfo.logoUrl })
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-    }
   },
 
   // ==========================================================================
@@ -2646,8 +2629,8 @@ export function useChatMutations() {
   })
 
   const updateAgentModel = useMutation({
-    mutationFn: ({ agentId, provider, model, chatId, contactId, currentAgent }: UpdateAgentModelInput) =>
-      chatOps.updateAgentModel(agentId, provider, model, chatId, contactId, currentAgent),
+    mutationFn: ({ agentId, provider, model, currentAgent }: UpdateAgentModelInput) =>
+      chatOps.updateAgentModel(agentId, provider, model, currentAgent),
   })
 
   return {

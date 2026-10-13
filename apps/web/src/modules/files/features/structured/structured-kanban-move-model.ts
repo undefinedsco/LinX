@@ -95,6 +95,19 @@ export function projectStructuredFailedKanbanPendingMoves({
   }
 }
 
+/** Written straight into the document and re-read: the card sits in its new column on its own. */
+export function projectStructuredWrittenKanbanPendingMoves({
+  current,
+  subject,
+}: {
+  current: Record<string, StructuredKanbanMove>
+  subject: string
+}) {
+  if (!(subject in current)) return current
+  const { [subject]: _written, ...rest } = current
+  return rest
+}
+
 export function projectStructuredApprovalStagedKanbanPendingMoves({
   current,
   subject,

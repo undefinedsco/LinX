@@ -99,7 +99,7 @@ describe('FavoriteListPane', () => {
 
       render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('暂无收藏')).toBeInTheDocument()
+      expect(screen.getByText('还没有收藏')).toBeInTheDocument()
     })
 
     it('shows loading state', () => {

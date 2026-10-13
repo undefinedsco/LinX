@@ -33,7 +33,7 @@ describe('useFolderDetailViewController', () => {
 
     expect(result.current.viewMode).toBe('list')
     expect(result.current.viewModeOptions).toEqual([
-      { mode: 'list', label: '列表', iconKind: 'list', active: true },
+      { mode: 'list', label: '表格', iconKind: 'list', active: true },
       { mode: 'icons', label: '网格', iconKind: 'icons', active: false },
     ])
     expect(result.current.toolbarChrome).toEqual({
@@ -68,7 +68,7 @@ describe('useFolderDetailViewController', () => {
     act(() => result.current.setViewMode('icons'))
     expect(result.current.viewMode).toBe('icons')
     expect(result.current.viewModeOptions).toEqual([
-      { mode: 'list', label: '列表', iconKind: 'list', active: false },
+      { mode: 'list', label: '表格', iconKind: 'list', active: false },
       { mode: 'icons', label: '网格', iconKind: 'icons', active: true },
     ])
     expect(result.current.contentState).toEqual({ kind: 'collection', viewMode: 'icons' })
@@ -86,7 +86,7 @@ describe('useFolderDetailViewController', () => {
     )
 
     expect(result.current.viewModeOptions.map((option) => option.mode)).toEqual(['list', 'icons'])
-    expect(result.current.viewModeOptions.map((option) => option.label)).toEqual(['列表', '网格'])
+    expect(result.current.viewModeOptions.map((option) => option.label)).toEqual(['表格', '网格'])
 
     act(() => result.current.setViewMode('columns' as never))
 

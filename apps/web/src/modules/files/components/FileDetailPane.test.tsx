@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { FileDetailPane } from './FileDetailPane'
+import { useCardDialog } from '@/lib/card-dialog'
 import { useFilesStore } from '../app/store'
 import { FilesResourceReadError } from '../browser'
 import { createSourceUpdateProposal, renderSourceUpdateProposalTurtle } from '../source-approval'
 import { createStructuredCellChangeProposal } from '../structured-cell-approval'
-import { createVocabTermProposal } from '../structured-table'
+import { applyStructuredCellWriteProposalToTurtle, createVocabTermProposal } from '../structured-table'
 import {
   loadLocalStructuredViewMetadata,
   saveLocalStructuredViewMetadata,
@@ -27,6 +28,7 @@ const mockUseCopyFileResource = vi.fn()
 const mockUseCreateFolderResource = vi.fn()
 const mockUseCreateSourceUpdateProposal = vi.fn()
 const mockUseCreateStructuredCellChangeProposal = vi.fn()
+const mockWriteOwnStructuredCellChange = vi.fn()
 const mockUsePendingStructuredCellChangeProposals = vi.fn()
 const mockUsePendingSourceUpdateProposals = vi.fn()
 const mockUsePendingAccessPolicyProposals = vi.fn()
@@ -155,6 +157,14 @@ async function confirmOperationSheet(confirmLabel: string) {
   await waitFor(() => expect(dialog).not.toBeInTheDocument())
 }
 
+beforeAll(() => {
+  // React Flow (the whiteboard view) measures nodes with these browser APIs.
+  class TestResizeObserver { observe() {} unobserve() {} disconnect() {} }
+  vi.stubGlobal('ResizeObserver', TestResizeObserver)
+  class TestDOMMatrixReadOnly { m22 = 1 }
+  vi.stubGlobal('DOMMatrixReadOnly', TestDOMMatrixReadOnly)
+})
+
 vi.mock('../data/queries', () => ({
   useFileDetail: (...args: unknown[]) => mockUseFileDetail(...args),
   useFilesFavoriteList: () => mockUseFavoriteList(),
@@ -176,6 +186,7 @@ vi.mock('../data/queries', () => ({
   useCreateFolderResource: () => mockUseCreateFolderResource(),
   useCreateSourceUpdateProposal: () => mockUseCreateSourceUpdateProposal(),
   useCreateStructuredCellChangeProposal: () => mockUseCreateStructuredCellChangeProposal(),
+  useWriteOwnStructuredCellChange: () => ({ mutateAsync: mockWriteOwnStructuredCellChange, isPending: false }),
   usePendingStructuredCellChangeProposals: (...args: unknown[]) => mockUsePendingStructuredCellChangeProposals(...args),
   usePendingSourceUpdateProposals: (...args: unknown[]) => mockUsePendingSourceUpdateProposals(...args),
   usePendingAccessPolicyProposals: (...args: unknown[]) => mockUsePendingAccessPolicyProposals(...args),
@@ -209,9 +220,50 @@ vi.mock('@/modules/inbox/collections', () => ({
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
 }))
 
+/**
+ * The person's own edits are written straight into the document and re-read.
+ * This applies each write to the mocked document (only that URL), the way the Pod would.
+ */
+function applyOwnWritesToDocument() {
+  const written = new Map<string, string>()
+  const baseRaw = mockUseRawTextResource.getMockImplementation()
+  const baseDetail = mockUseFileDetail.getMockImplementation()
+  mockUseRawTextResource.mockImplementation((...args: unknown[]) => {
+    const result = baseRaw?.(...args)
+    const uri = (result?.data?.uri ?? args[0]) as string | undefined
+    const content = uri ? written.get(uri) : undefined
+    return content !== undefined && result?.data ? { ...result, data: { ...result.data, content } } : result
+  })
+  mockUseFileDetail.mockImplementation((...args: unknown[]) => {
+    const result = baseDetail?.(...args)
+    const content = result?.data?.uri ? written.get(result.data.uri) : undefined
+    return content !== undefined ? { ...result, data: { ...result.data, previewText: content } } : result
+  })
+  mockWriteOwnStructuredCellChange.mockImplementation(async (change: {
+    documentUri: string
+    subject: string
+    predicate: string
+    previousValues: string[]
+    nextValues: string[]
+  }) => {
+    const current = written.get(change.documentUri)
+      ?? baseRaw?.(change.documentUri)?.data?.content
+      ?? baseDetail?.()?.data?.previewText
+      ?? ''
+    written.set(change.documentUri, applyStructuredCellWriteProposalToTurtle(current, {
+      id: `${change.documentUri}|${change.subject}|${change.predicate}`,
+      kind: 'cell-write',
+      status: 'pending-write',
+      ...change,
+      writesCanonicalResource: true,
+    }))
+  })
+}
+
 beforeEach(() => {
   vi.useRealTimers()
   vi.resetAllMocks()
+  useCardDialog.setState({ request: null })
   window.history.replaceState({}, '', '/files')
   useFilesStore.setState({
     selectedTreeNodeId: 'container:https://pod.example/public/',
@@ -406,6 +458,8 @@ beforeEach(() => {
     isPending: false,
   })
   mockCreateCellProposal.mockResolvedValue('https://pod.example/.data/approvals/2026/06/17.ttl#cell-approval-1')
+  mockWriteOwnStructuredCellChange.mockReset()
+  mockWriteOwnStructuredCellChange.mockResolvedValue(undefined)
   mockUseCreateStructuredCellChangeProposal.mockReturnValue({
     mutateAsync: mockCreateCellProposal,
     isPending: false,
@@ -3799,8 +3853,8 @@ describe('FileDetailPane', () => {
     expect(screen.queryByText(/@prefix udfs/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ 视图' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Kanban' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('cell', { name: 'tags' }))
     expect(screen.queryByRole('textbox', { name: /Edit/ })).not.toBeInTheDocument()
   })
@@ -3852,8 +3906,8 @@ describe('FileDetailPane', () => {
 
     expect(screen.getByText('#summary-shape')).toBeInTheDocument()
     expect(screen.queryByText('#title-shape')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('cell', { name: 'Summary shape' }))
     expect(screen.queryByRole('textbox', { name: /Edit/ })).not.toBeInTheDocument()
   })
@@ -3894,8 +3948,8 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('#schema')).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'active' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Schema.org terms' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('cell', { name: 'schema' }))
     expect(screen.queryByRole('textbox', { name: /Edit/ })).not.toBeInTheDocument()
   })
@@ -4000,8 +4054,8 @@ describe('FileDetailPane', () => {
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/.vocab/terms.ttl')
     expect(useFilesStore.getState().structuredSubjectReturnContext).toBeNull()
     expect(screen.queryByLabelText('Structured term peek')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: /Edit/ })).not.toBeInTheDocument()
   })
 
@@ -4041,15 +4095,15 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-	    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
+	    expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.queryByText('词表定义表')).not.toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '#tags' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'tags' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Topic labels' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'skos:Concept' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'TagsShape' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
   })
 
   it('renders generic RDF/XML resources under .vocab as read-only structured data', () => {
@@ -4083,13 +4137,13 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.queryByText('词表定义表')).not.toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '#tags' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'tags' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Topic labels' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
   })
 
   it('keeps Files control manifests under .data index read-only even though they are Turtle', () => {
@@ -4131,10 +4185,10 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'partial' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
     expect(mockUsePendingStructuredCellChangeProposals).toHaveBeenCalledWith(manifestUri, false)
     expect(mockUsePendingVocabTermProposals).toHaveBeenCalledWith(manifestUri, false)
 
@@ -4183,10 +4237,10 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'partial' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
     expect(mockUsePendingStructuredCellChangeProposals).toHaveBeenCalledWith(manifestUri, false)
     expect(mockUsePendingVocabTermProposals).toHaveBeenCalledWith(manifestUri, false)
 
@@ -4294,6 +4348,7 @@ describe('FileDetailPane', () => {
       }
     })
 
+    applyOwnWritesToDocument()
     render(<FileDetailPane />)
     const chooseClassScope = async (className: string) => {
       await act(async () => {
@@ -4324,7 +4379,7 @@ describe('FileDetailPane', () => {
       })
     }
 
-    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     const classScopeButton = screen.getByRole('button', { name: '当前 class：Workspace' })
     expect(classScopeButton).toBeInTheDocument()
     expect(within(classScopeButton).queryByText('Workspace')).not.toBeInTheDocument()
@@ -4339,26 +4394,26 @@ describe('FileDetailPane', () => {
     await chooseStructuredFilterCheckbox('有校验提醒的 subject')
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
     await chooseStructuredFilterItem('enum')
-    expect(screen.getByRole('columnheader', { name: /tags/ })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /mode/ })).toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: /title/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /tags/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /mode/i })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /title/i })).not.toBeInTheDocument()
     await chooseStructuredFilterItem('全部类型')
-    expect(screen.getByRole('columnheader', { name: /title/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /title/i })).toBeInTheDocument()
     await chooseStructuredFilterItem('schema')
-    expect(screen.getByRole('columnheader', { name: /dateModified/ })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /description/ })).toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: /title/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /description/i })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /title/i })).not.toBeInTheDocument()
     await chooseStructuredFilterItem('全部命名空间')
-    expect(screen.getByRole('columnheader', { name: /title/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /title/i })).toBeInTheDocument()
     await chooseStructuredFilterItem('已定义 predicate')
-    expect(screen.getByRole('columnheader', { name: /title/ })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /tags/ })).toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: /dateModified/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: /status/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /title/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /tags/i })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /date ?modified/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /status/i })).not.toBeInTheDocument()
     await chooseStructuredFilterItem('全部词表定义')
-    expect(screen.getByRole('columnheader', { name: /dateModified/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '+ 视图' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '预览' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '来源' })).not.toBeInTheDocument()
@@ -4597,15 +4652,15 @@ describe('FileDetailPane', () => {
 
     expect(screen.getByText('#Workspace')).toBeInTheDocument()
     expect(screen.getAllByText('tags').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('status')).toBeInTheDocument()
+    expect(screen.getByText('Status')).toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for title' }))
     expect(screen.getByText('Predicate 定义')).toBeInTheDocument()
     expect(screen.getByText('Human readable subject title.')).toBeInTheDocument()
     expect(screen.getByText('text')).toBeInTheDocument()
     expect(screen.getByText('minCount 1 · maxCount 1')).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: '复制 predicate URI' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /dateModified/ })).toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: /schema:dateModified/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /schema:dateModified/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('switch', { name: '显示命名空间' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '列显示' })).toBeInTheDocument()
 
@@ -4613,28 +4668,28 @@ describe('FileDetailPane', () => {
     const namespaceVisibilityItem = screen.getByRole('menuitemcheckbox', { name: '显示命名空间' })
     expect(namespaceVisibilityItem).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(namespaceVisibilityItem)
-    expect(screen.getByRole('columnheader', { name: /schema:dateModified/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /schema:dateModified/i })).toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '显示命名空间' }))
-    expect(screen.queryByRole('columnheader', { name: /schema:dateModified/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /schema:dateModified/i })).not.toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
     const dateModifiedVisibilityItem = screen.getByRole('menuitemcheckbox', { name: 'dateModified' })
     expect(dateModifiedVisibilityItem).toHaveAttribute('aria-checked', 'true')
     fireEvent.click(dateModifiedVisibilityItem)
-    expect(screen.queryByRole('columnheader', { name: /dateModified/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /date ?modified/i })).not.toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'dateModified' }))
-    expect(screen.getByRole('columnheader', { name: /dateModified/ })).toBeInTheDocument()
-    const subjectHeader = screen.getByRole('columnheader', { name: /subject/ })
-    const subjectResize = screen.getByRole('separator', { name: '调整 subject 列宽' })
+    expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
+    const subjectHeader = screen.getByRole('columnheader', { name: /名称/ })
+    const subjectResize = screen.getByRole('separator', { name: '调整 名称 列宽' })
     const initialSubjectWidth = Number.parseFloat(subjectHeader.style.width)
     fireEvent.mouseDown(subjectResize, { clientX: 200 })
     fireEvent.mouseMove(document, { clientX: 160 })
     fireEvent.mouseUp(document)
     expect(Number.parseFloat(subjectHeader.style.width)).toBeLessThan(initialSubjectWidth)
-    const dateModifiedHeader = screen.getByRole('columnheader', { name: /dateModified/ })
-    const dateModifiedResize = screen.getByRole('separator', { name: '调整 dateModified 列宽' })
+    const dateModifiedHeader = screen.getByRole('columnheader', { name: /date ?modified/i })
+    const dateModifiedResize = screen.getByRole('separator', { name: '调整 Date modified 列宽' })
     const initialWidth = Number.parseFloat(dateModifiedHeader.style.width)
     fireEvent.mouseDown(dateModifiedResize, { clientX: 200 })
     fireEvent.mouseMove(document, { clientX: 260 })
@@ -4644,7 +4699,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('cell', { name: 'core rdf' })).toBeInTheDocument()
 
     mockMutateRaw.mockClear()
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
     expect(titleInput).toHaveValue('Files')
@@ -4653,25 +4708,25 @@ describe('FileDetailPane', () => {
     fireEvent.blur(titleInput)
     expect(screen.getByRole('cell', { name: 'LinX Files' })).toBeInTheDocument()
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'title',
         previousValues: ['"Files"'],
         nextValues: ['"LinX Files"'],
-        writesCanonicalResource: false,
       }))
     })
-    expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' })).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Pending approval for title on #Workspace' })).not.toBeInTheDocument()
+    // The person's own edit is already written, so nothing is waiting for confirmation.
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的 subject' }))
-    expect(screen.getByRole('button', { name: '#Workspace' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '#Workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的 subject' }))
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
     expect(mockMutateRaw).not.toHaveBeenCalled()
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
 
     expect(screen.queryByRole('cell', { name: '"read/write"' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('cell', { name: 'read/write' }))
@@ -4681,17 +4736,16 @@ describe('FileDetailPane', () => {
     fireEvent.click(screen.getByRole('option', { name: 'read-only' }))
     expect(screen.getByRole('cell', { name: 'read-only' })).toBeInTheDocument()
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'mode',
         previousValues: ['"read/write"'],
         nextValues: ['"read-only"'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
 
     fireEvent.click(screen.getByRole('cell', { name: 'core rdf' }))
     expect(screen.getByRole('listbox', { name: '#Workspace 的 tags 选项' })).toBeInTheDocument()
@@ -4700,17 +4754,16 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('option', { name: 'archive' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '从 #Workspace 的 tags 移除 core' }))
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'tags',
         previousValues: ['"core"', '"rdf"'],
         nextValues: ['"rdf"'],
-        writesCanonicalResource: false,
       }))
     })
     expect(screen.getByRole('cell', { name: 'rdf' })).toBeInTheDocument()
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
     fireEvent.click(screen.getByRole('cell', { name: 'rdf' }))
     expect(screen.getByRole('listbox', { name: '#Workspace 的 tags 选项' })).toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '选项定义 archive' }))
@@ -4729,7 +4782,7 @@ describe('FileDetailPane', () => {
     })
     expect(screen.getByText('新增 solid-modeling*')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('option', { name: '新增选项 solid-modeling' }))
-    expect(screen.getByRole('status', { name: 'Pending approval for tags on #Workspace' })).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Pending approval for tags on #Workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '查看词表变更 solid-modeling' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '忽略词表变更 solid-modeling' })).not.toBeInTheDocument()
     await waitFor(() => {
@@ -4748,7 +4801,9 @@ describe('FileDetailPane', () => {
     })
     expect(screen.queryByText('待确认词表变更')).not.toBeInTheDocument()
     expect(screen.queryByText('Inbox 审批后写入 .vocab')).not.toBeInTheDocument()
-    const pendingTagsCell = await screen.findByRole('cell', { name: 'rdf solid-modeling*' })
+    // The earlier removal is already written (tags is now just "rdf"), and this vocab does not mark
+    // tags as multi-valued, so the new option replaces the single value.
+    const pendingTagsCell = await screen.findByRole('cell', { name: 'solid-modeling*' })
     fireEvent.click(pendingTagsCell)
     fireEvent.pointerDown(screen.getByRole('button', { name: '选项定义 solid-modeling' }))
     expect(screen.getByText('选项定义')).toBeInTheDocument()
@@ -4795,33 +4850,31 @@ describe('FileDetailPane', () => {
     fireEvent.click(workspacePublishedCell)
     expect(within(getCellByColumn(getWorkspaceRow(), /published/)).getByRole('button', { name: '切换布尔值 false' })).toBeInTheDocument()
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'published',
         previousValues: ['true'],
         nextValues: ['false'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
 
     const otherPublishedCell = getCellByColumn(getOtherRow(), /published/)
     fireEvent.click(otherPublishedCell)
     expect(within(getCellByColumn(getOtherRow(), /published/)).getByRole('button', { name: '切换布尔值 true' })).toBeInTheDocument()
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Other',
         predicate: 'published',
         previousValues: [],
         nextValues: ['true'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
 
     fireEvent.keyDown(within(getWorkspaceRow()).getByRole('cell', { name: '42' }), { key: 'Enter' })
     const progressInput = within(getWorkspaceRow()).getByRole('spinbutton', { name: '编辑 #Workspace 的 progress' })
@@ -4842,7 +4895,7 @@ describe('FileDetailPane', () => {
     expect(dueInput).toHaveAttribute('type', 'date')
     fireEvent.change(dueInput, { target: { value: '2026-03-10' } })
 
-    fireEvent.click(getCellByColumn(getOtherRow(), /due/))
+    fireEvent.click(getCellByColumn(getOtherRow(), /^due/))
     const emptyDueInput = within(getOtherRow()).getByLabelText('编辑 #Other 的 due')
     expect(emptyDueInput).toHaveAttribute('type', 'date')
     fireEvent.change(emptyDueInput, { target: { value: '2026-03-12' } })
@@ -4857,13 +4910,12 @@ describe('FileDetailPane', () => {
       expect(within(getOtherRow()).getByRole('button', { name: 'Open predicate #Workspace' })).toBeInTheDocument()
     })
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Other',
         predicate: 'related',
         previousValues: [],
         nextValues: ['<#Workspace>'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
@@ -4871,28 +4923,27 @@ describe('FileDetailPane', () => {
     fireEvent.click(within(getWorkspaceRow()).getByRole('cell', { name: '2026-04-01' }))
     const fullDueInput = within(getWorkspaceRow()).getByLabelText('编辑 #Workspace 的 fullDue')
     expect(fullDueInput).toHaveAttribute('type', 'date')
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
     fireEvent.change(fullDueInput, { target: { value: '2026-04-10' } })
     expect(within(getWorkspaceRow()).getByText('2026-04-10')).toBeInTheDocument()
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'fullDue',
         previousValues: ['"2026-04-01"^^<http://www.w3.org/2001/XMLSchema#date>'],
         nextValues: ['"2026-04-10"^^<http://www.w3.org/2001/XMLSchema#date>'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: '+ predicate' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '+ Subject' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '+ 属性' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '+ 卡片' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'class' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'report.md' })).toBeInTheDocument()
 
-    mockCreateCellProposal.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: '+ Subject' }))
+    mockWriteOwnStructuredCellChange.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: '+ 卡片' }))
 
     const createSubjectDialog = screen.getByRole('dialog', { name: '新增 subject' })
     expect(within(createSubjectDialog).getByText('udfs:Workspace')).toBeInTheDocument()
@@ -4904,18 +4955,17 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('#InboxRule*')).toBeInTheDocument()
     expect(screen.getByText('待确认 subject')).toBeInTheDocument()
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#InboxRule',
         predicate: 'rdf:type',
         previousValues: [],
         nextValues: ['udfs:Workspace'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
 
-	    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+	    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
 
     const addPredicateMenu = screen.getByRole('menu')
     expect(within(addPredicateMenu).queryByText('Existing Predicates')).not.toBeInTheDocument()
@@ -5009,12 +5059,14 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('separator', { name: '调整 Summary* 列宽' })).toBeInTheDocument()
 
     mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
     fireEvent.click(getCellByColumn(getWorkspaceRow(), /Summary/))
     const summaryInput = within(getWorkspaceRow()).getByRole('textbox', { name: '编辑 #Workspace 的 Summary' })
     fireEvent.change(summaryInput, { target: { value: 'Draft summary' } })
     fireEvent.keyDown(within(getWorkspaceRow()).getByRole('textbox', { name: '编辑 #Workspace 的 Summary' }), { key: 'Enter' })
 
     await waitFor(() => {
+      // A value in a column whose predicate is still awaiting vocab approval waits with it.
       expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
@@ -5024,6 +5076,9 @@ describe('FileDetailPane', () => {
         vocabTermProposalResourceUri: expect.stringMatching(/^https:\/\/pod\.example\/\.data\/proposals\/vocab\/summary-[a-z0-9]{7}\.ttl$/),
         writesCanonicalResource: false,
       }))
+    })
+    await waitFor(() => {
+      expect(mockWriteOwnStructuredCellChange).not.toHaveBeenCalled()
     })
 
 	    fireEvent.pointerDown(screen.getByRole('button', { name: '待确认 predicate Summary' }))
@@ -5047,8 +5102,8 @@ describe('FileDetailPane', () => {
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'schema' }))
-    expect(screen.getByRole('columnheader', { name: /dateModified/ })).toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: /mode/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /mode/i })).not.toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
@@ -5076,12 +5131,12 @@ describe('FileDetailPane', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 read-only' }))
 
     await waitFor(() => {
-      expect(screen.getByText('待审批：mode -> read-only')).toBeInTheDocument()
+      expect(screen.queryByText('待审批：mode -> read-only')).not.toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Table' }))
+    fireEvent.click(screen.getByRole('button', { name: '表格' }))
 
-    expect(Number.parseFloat(screen.getByRole('columnheader', { name: /dateModified/ }).style.width)).toBe(resizedDateModifiedWidth)
+    expect(Number.parseFloat(screen.getByRole('columnheader', { name: /date ?modified/i }).style.width)).toBe(resizedDateModifiedWidth)
     const whiteboardViewport = document.querySelector('[data-structured-resource-viewport="true"]') as HTMLElement
     const detailScrollViewport = whiteboardViewport.closest('[data-scroll-area-viewport="true"]') as HTMLElement
     expect(detailScrollViewport).toBeTruthy()
@@ -5096,7 +5151,6 @@ describe('FileDetailPane', () => {
       expect(whiteboardViewport.scrollLeft).toBe(0)
       expect(detailScrollViewport.scrollLeft).toBe(0)
     })
-    expect(screen.getByRole('button', { name: '添加 subject 到白板' })).toHaveAttribute('title', expect.stringContaining('白板中 0 张卡片'))
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     const whiteboardViewMenu = screen.getByRole('menu')
     expect(within(whiteboardViewMenu).queryByRole('menuitem', { name: 'Whiteboard' })).not.toBeInTheDocument()
@@ -5105,30 +5159,7 @@ describe('FileDetailPane', () => {
     fireEvent.keyDown(document.body, { key: 'Escape' })
     expect(screen.getByRole('button', { name: 'Kanban' })).toBeInTheDocument()
 
-    expect(screen.getByText('添加 subject 后会在白板中显示卡片。')).toBeInTheDocument()
-    expect(document.querySelector('[data-whiteboard-subject="#Workspace"]')).toBeNull()
-    fireEvent.pointerDown(screen.getByRole('button', { name: '添加 subject 到白板' }))
-    fireEvent.click(screen.getByRole('button', { name: '添加 Files' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: '添加 subject 到白板' }))
-    fireEvent.click(screen.getByRole('button', { name: '添加 Other' }))
-
-    expect(document.querySelectorAll('[data-whiteboard-subject-shape]')).toHaveLength(2)
-    const workspaceNode = document.querySelector('[data-whiteboard-subject="#Workspace"]') as HTMLElement
-    const otherNode = document.querySelector('[data-whiteboard-subject="#Other"]') as HTMLElement
-    expect(workspaceNode).toBeTruthy()
-    expect(otherNode).toBeTruthy()
-    expect(workspaceNode.dataset.layoutX).toBe('40')
-    expect(screen.getByRole('button', { name: '添加 subject 到白板' })).toHaveAttribute('title', expect.stringContaining('白板中 2 张卡片'))
-
-    fireEvent.doubleClick(workspaceNode)
-	    const whiteboardSubjectPeek = screen.getByLabelText('Structured subject peek')
-	    expect(screen.queryByRole('dialog', { name: 'Subject preview' })).not.toBeInTheDocument()
-	    expect(within(whiteboardSubjectPeek).getByText('Files')).toBeInTheDocument()
-	    expect(within(whiteboardSubjectPeek).getByText((_content, node) => node?.textContent === '类型 · Workspace')).toBeInTheDocument()
-	    expect(within(whiteboardSubjectPeek).queryByText('https://pod.example/.data/workspaces/ws-1/state.ttl')).not.toBeInTheDocument()
-	    fireEvent.click(within(whiteboardSubjectPeek).getByRole('button', { name: '查看 URI 详情' }))
-	    expect(within(whiteboardSubjectPeek).getByText('https://pod.example/.data/workspaces/ws-1/state.ttl')).toBeInTheDocument()
-    fireEvent.click(within(whiteboardSubjectPeek).getByRole('button', { name: '取消' }))
+    expect(screen.getByText('新白板')).toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Raw' }))
@@ -5449,7 +5480,7 @@ describe('FileDetailPane', () => {
 
     expect(mockUseRawTextResource).toHaveBeenCalledWith('https://schema.example/vocab/terms.ttl', true)
     expect(mockUseRawTextResource).toHaveBeenCalledWith('https://schema.example/vocab/shapes.ttl', true)
-    fireEvent.pointerDown(await screen.findByRole('button', { name: 'Open definition for summary' }))
+    fireEvent.pointerDown(await screen.findByRole('button', { name: 'Open definition for Shared summary' }))
     expect(screen.getByText('Definition from discovered Type Index.')).toBeInTheDocument()
   })
 
@@ -5514,7 +5545,7 @@ describe('FileDetailPane', () => {
     expect(within(classScopeMenu).getByText('描述：Personal workspace class.')).toBeInTheDocument()
     fireEvent.click(within(classScopeMenu).getByRole('menuitem', { name: 'Workspace' }))
 
-    expect(screen.getByRole('columnheader', { name: /tags/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /tags/i })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'core' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'core' })).not.toBeInTheDocument()
 
@@ -5736,10 +5767,10 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择或创建 class' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择 class' })).toHaveAttribute('title', '选择或创建 class')
-    expect(screen.queryByRole('columnheader', { name: /title/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /title/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Loose' })).not.toBeInTheDocument()
     expect(screen.queryByRole('cell', { name: '"Loose"' })).not.toBeInTheDocument()
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
@@ -5849,7 +5880,7 @@ describe('FileDetailPane', () => {
     fireEvent.click(pendingClassOption)
 
     expect(screen.getByRole('button', { name: '当前 class：workspace' })).toHaveAttribute('title', 'workspace')
-    expect(screen.getByRole('button', { name: '+ Subject' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '+ 卡片' })).toBeEnabled()
     expect(useFilesStore.getState().structuredClassScope).toMatch(/\.vocab\/terms\.ttl#workspace$/)
   })
 
@@ -5974,7 +6005,7 @@ describe('FileDetailPane', () => {
 
     expect(screen.queryByText(/校验提醒/)).not.toBeInTheDocument()
     expect(screen.getByText(/2 predicates/)).toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: /owner/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /owner/i })).not.toBeInTheDocument()
     expect(screen.getByText(/2 predicates.*1 hidden predicate/)).toBeInTheDocument()
     expect(screen.queryByText(/校验提醒/)).not.toBeInTheDocument()
   })
@@ -6048,7 +6079,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('columnheader', { name: /owner/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /owner/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '列显示' })).toBeInTheDocument()
     expect(screen.queryByRole('switch', { name: '显示命名空间' })).not.toBeInTheDocument()
   })
@@ -6124,7 +6155,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.queryByRole('columnheader', { name: /owner/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /owner/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/校验提醒/)).not.toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
@@ -6214,10 +6245,10 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'schema' }))
 
-    expect(screen.getByRole('columnheader', { name: /dateModified/ })).toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: /title/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /title/i })).not.toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
 
     const addPredicateMenu = screen.getByRole('menu')
     expect(within(addPredicateMenu).getByText('dateModified')).toBeInTheDocument()
@@ -6230,8 +6261,8 @@ describe('FileDetailPane', () => {
 
     fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '选择 predicate title' }))
 
-    expect(screen.getByRole('columnheader', { name: /title/ })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /dateModified/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /title/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
   })
 
   it('shows predicate definition context before opening the create flow', () => {
@@ -6317,7 +6348,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
 
     const addPredicateMenu = screen.getByRole('menu')
     const createPredicate = within(addPredicateMenu).getByRole('button', { name: '新建 predicate' })
@@ -6406,7 +6437,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('columnheader', { name: /owner/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /owner/i })).toBeInTheDocument()
     expect(screen.getByText('1 个校验提醒')).toBeInTheDocument()
     expect(screen.getByLabelText('Shape warning for owner on #Workspace')).toBeInTheDocument()
 
@@ -6418,13 +6449,12 @@ describe('FileDetailPane', () => {
     fireEvent.keyDown(ownerInput, { key: 'Enter' })
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'udfs:owner',
         previousValues: [],
         nextValues: ['<https://pod.example/people/me#id>'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
@@ -6492,7 +6522,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
     fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
     fireEvent.change(screen.getByLabelText('predicate term'), { target: { value: localName } })
     fireEvent.change(screen.getByLabelText('predicate 标签'), { target: { value: label } })
@@ -6561,7 +6591,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
     fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
     fireEvent.change(screen.getByLabelText('predicate term'), { target: { value: 'status' } })
     fireEvent.change(screen.getByLabelText('predicate 标签'), { target: { value: 'Status' } })
@@ -6599,7 +6629,7 @@ describe('FileDetailPane', () => {
     expect(mockCreateInboxApproval).not.toHaveBeenCalled()
   })
 
-  it('keeps the + Subject row available for an empty structured ttl with a selected class', async () => {
+  it('keeps the + 卡片 row available for an empty structured ttl with a selected class', async () => {
     const structuredSource = '@prefix udfs: <https://undefineds.co/vocab/> .\n'
     useFilesStore.setState({
       selectedFileId: 'https://pod.example/.data/workspaces/ws-1/empty.ttl',
@@ -6643,9 +6673,9 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.queryByText('没有可展示的 subject。')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '+ Subject' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '+ 卡片' })).toBeEnabled()
 
-    fireEvent.click(screen.getByRole('button', { name: '+ Subject' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ 卡片' }))
     const createSubjectDialog = screen.getByRole('dialog', { name: '新增 subject' })
     expect(within(createSubjectDialog).getByText('udfs:Workspace')).toBeInTheDocument()
     fireEvent.change(within(createSubjectDialog).getByLabelText('Subject'), { target: { value: '#FirstSubject' } })
@@ -6653,13 +6683,12 @@ describe('FileDetailPane', () => {
 
     expect(screen.getByText('#FirstSubject*')).toBeInTheDocument()
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/empty.ttl',
         subject: '#FirstSubject',
         predicate: 'rdf:type',
         previousValues: [],
         nextValues: ['udfs:Workspace'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
@@ -6841,7 +6870,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
     fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
     fireEvent.change(screen.getByLabelText('predicate term'), {
       target: { value: 'summary' },
@@ -6923,7 +6952,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
     fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
     fireEvent.change(screen.getByLabelText('predicate term'), {
       target: { value: 'summary' },
@@ -6997,7 +7026,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
     fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
     fireEvent.change(screen.getByLabelText('predicate term'), {
       target: { value: 'summary' },
@@ -7573,241 +7602,6 @@ describe('FileDetailPane', () => {
     expect(useFilesStore.getState().structuredSubjectReturnContext).toBeNull()
   })
 
-  it('opens a whiteboard subject resource directly with double click from the node', async () => {
-    const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
-    const structuredSource = '@prefix udfs: <https://undefineds.co/vocab/> .\n<https://pod.example/public/report.md> a udfs:Workspace ; title "Report" .'
-    useFilesStore.setState({
-      selectedFileId: documentUri,
-      structuredViewMode: 'whiteboard',
-      structuredClassScope: 'udfs:Workspace',
-      structuredWhiteboardSubjectsByDocument: {
-        [documentUri]: ['https://pod.example/public/report.md'],
-      },
-    })
-    mockUseFileDetail.mockReturnValue({
-      data: {
-        id: documentUri,
-        uri: documentUri,
-        name: 'state.ttl',
-        kind: 'resource',
-        semanticKind: 'structured-data',
-        parentUri: 'https://pod.example/.data/workspaces/ws-1/',
-        mimeType: 'text/turtle',
-        size: 128,
-        modifiedAt: '2026-03-01T10:00:00Z',
-        headers: {},
-        previewText: structuredSource,
-      },
-      isLoading: false,
-      error: null,
-    })
-    mockUseRawTextResource.mockImplementation((uri: string) => {
-      if (uri.endsWith('/.vocab/terms.ttl') || uri.endsWith('/.vocab/shapes.ttl')) {
-        return { data: null, isLoading: false, error: null }
-      }
-      return {
-        data: {
-          uri,
-          content: structuredSource,
-          mimeType: 'text/turtle',
-          etag: '"state-1"',
-          headers: { etag: '"state-1"', 'content-type': 'text/turtle' },
-        },
-        isLoading: false,
-        error: null,
-      }
-    })
-
-    render(<FileDetailPane />)
-
-    fireEvent.doubleClick(await screen.findByLabelText('打开 subject Report'))
-
-    expect(screen.queryByRole('dialog', { name: 'Subject preview' })).not.toBeInTheDocument()
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/report.md')
-    expect(useFilesStore.getState().structuredSubjectReturnContext).toMatchObject({
-      documentUri,
-      subject: 'https://pod.example/public/report.md',
-      viewMode: 'whiteboard',
-    })
-  })
-
-  it('navigates a whiteboard subject node with Enter and previews from the explicit preview action', async () => {
-    const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
-    const structuredSource = '@prefix udfs: <https://undefineds.co/vocab/> .\n<https://pod.example/public/report.md> a udfs:Workspace ; title "Report" .'
-    useFilesStore.setState({
-      selectedFileId: documentUri,
-      structuredViewMode: 'whiteboard',
-      structuredClassScope: 'udfs:Workspace',
-      structuredWhiteboardSubjectsByDocument: {
-        [documentUri]: ['https://pod.example/public/report.md'],
-      },
-    })
-    mockUseFileDetail.mockReturnValue({
-      data: {
-        id: documentUri,
-        uri: documentUri,
-        name: 'state.ttl',
-        kind: 'resource',
-        semanticKind: 'structured-data',
-        parentUri: 'https://pod.example/.data/workspaces/ws-1/',
-        mimeType: 'text/turtle',
-        size: 128,
-        modifiedAt: '2026-03-01T10:00:00Z',
-        headers: {},
-        previewText: structuredSource,
-      },
-      isLoading: false,
-      error: null,
-    })
-    mockUseRawTextResource.mockImplementation((uri: string) => {
-      if (uri.endsWith('/.vocab/terms.ttl') || uri.endsWith('/.vocab/shapes.ttl')) {
-        return { data: null, isLoading: false, error: null }
-      }
-      return {
-        data: {
-          uri,
-          content: structuredSource,
-          mimeType: 'text/turtle',
-          etag: '"state-1"',
-          headers: { etag: '"state-1"', 'content-type': 'text/turtle' },
-        },
-        isLoading: false,
-        error: null,
-      }
-    })
-
-    render(<FileDetailPane />)
-
-    fireEvent.keyDown(await screen.findByLabelText('打开 subject Report'), { key: 'Enter' })
-
-    expect(screen.queryByLabelText('Structured subject peek')).not.toBeInTheDocument()
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/report.md')
-    expect(useFilesStore.getState().structuredSubjectReturnContext).toMatchObject({
-      documentUri,
-      subject: 'https://pod.example/public/report.md',
-      viewMode: 'whiteboard',
-      classScope: 'udfs:Workspace',
-    })
-  })
-
-  it('does not open a whiteboard subject preview from a single card click', async () => {
-    const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
-    const structuredSource = '@prefix udfs: <https://undefineds.co/vocab/> .\n<#Workspace> a udfs:Workspace ; title "Files" .'
-    useFilesStore.setState({
-      selectedFileId: documentUri,
-      structuredViewMode: 'whiteboard',
-      structuredClassScope: 'udfs:Workspace',
-      structuredWhiteboardSubjectsByDocument: {
-        [documentUri]: ['#Workspace'],
-      },
-    })
-    mockUseFileDetail.mockReturnValue({
-      data: {
-        id: documentUri,
-        uri: documentUri,
-        name: 'state.ttl',
-        kind: 'resource',
-        semanticKind: 'structured-data',
-        parentUri: 'https://pod.example/.data/workspaces/ws-1/',
-        mimeType: 'text/turtle',
-        size: 128,
-        modifiedAt: '2026-03-01T10:00:00Z',
-        headers: {},
-        previewText: structuredSource,
-      },
-      isLoading: false,
-      error: null,
-    })
-    mockUseRawTextResource.mockImplementation((uri: string) => {
-      if (uri.endsWith('/.vocab/terms.ttl') || uri.endsWith('/.vocab/shapes.ttl')) {
-        return { data: null, isLoading: false, error: null }
-      }
-      return {
-        data: {
-          uri,
-          content: structuredSource,
-          mimeType: 'text/turtle',
-          etag: '"state-1"',
-          headers: { etag: '"state-1"', 'content-type': 'text/turtle' },
-        },
-        isLoading: false,
-        error: null,
-      }
-    })
-
-    render(<FileDetailPane />)
-
-    const workspaceNode = await screen.findByLabelText('打开 subject Files')
-    fireEvent.click(workspaceNode)
-    expect(screen.queryByLabelText('Structured subject peek')).not.toBeInTheDocument()
-    expect(useFilesStore.getState().selectedFileId).toBe(documentUri)
-    expect(useFilesStore.getState().structuredSubjectReturnContext).toBeNull()
-  })
-
-  it('opens whiteboard fragment terms as definitions with Enter instead of direct resource navigation', async () => {
-    const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
-    const termSubject = 'https://pod.example/.vocab/terms.ttl#tags'
-    const structuredSource = '@prefix udfs: <https://undefineds.co/vocab/> .\n@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n<https://pod.example/.vocab/terms.ttl#tags> a udfs:Predicate ; rdfs:label "tags" ; rdfs:comment "Topic labels" .'
-    useFilesStore.setState({
-      selectedFileId: documentUri,
-      structuredViewMode: 'whiteboard',
-      structuredClassScope: 'udfs:Predicate',
-      structuredWhiteboardSubjectsByDocument: {
-        [documentUri]: [termSubject],
-      },
-    })
-    mockUseFileDetail.mockReturnValue({
-      data: {
-        id: documentUri,
-        uri: documentUri,
-        name: 'state.ttl',
-        kind: 'resource',
-        semanticKind: 'structured-data',
-        parentUri: 'https://pod.example/.data/workspaces/ws-1/',
-        mimeType: 'text/turtle',
-        size: 128,
-        modifiedAt: '2026-03-01T10:00:00Z',
-        headers: {},
-        previewText: structuredSource,
-      },
-      isLoading: false,
-      error: null,
-    })
-    mockUseRawTextResource.mockImplementation((uri: string) => {
-      if (uri.endsWith('/.vocab/terms.ttl') || uri.endsWith('/.vocab/shapes.ttl')) {
-        return { data: null, isLoading: false, error: null }
-      }
-      return {
-        data: {
-          uri,
-          content: structuredSource,
-          mimeType: 'text/turtle',
-          etag: '"state-1"',
-          headers: { etag: '"state-1"', 'content-type': 'text/turtle' },
-        },
-        isLoading: false,
-        error: null,
-      }
-    })
-
-    render(<FileDetailPane />)
-
-    expect(screen.getByRole('button', { name: 'Whiteboard' })).toBeInTheDocument()
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    const viewMenu = screen.getByRole('menu')
-    expect(within(viewMenu).queryByRole('menuitem', { name: 'Whiteboard' })).not.toBeInTheDocument()
-    fireEvent.keyDown(document.body, { key: 'Escape' })
-    fireEvent.keyDown(await screen.findByLabelText('打开 subject tags'), { key: 'Enter' })
-
-    const termSidecar = screen.getByLabelText('Structured term peek')
-    expect(screen.queryByRole('dialog', { name: 'term definition' })).not.toBeInTheDocument()
-    expect(within(termSidecar).queryByText(termSubject)).not.toBeInTheDocument()
-    fireEvent.click(within(termSidecar).getByRole('button', { name: '查看 URI 详情' }))
-    expect(within(termSidecar).getByText(termSubject)).toBeInTheDocument()
-    expect(useFilesStore.getState().selectedFileId).toBe(documentUri)
-    expect(useFilesStore.getState().structuredSubjectReturnContext).toBeNull()
-  })
-
   it('hydrates structured view state from resource meta sidecar metadata', async () => {
     useFilesStore.setState({
       selectedFileId: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -7886,306 +7680,6 @@ describe('FileDetailPane', () => {
         label: 'sketch link',
       },
     ])
-    expect(screen.getByRole('button', { name: '添加 subject 到白板' })).toHaveAttribute('title', expect.stringContaining('白板中 2 张卡片'))
-    expect(document.querySelectorAll('[data-whiteboard-relation-source="visual"]')).toHaveLength(1)
-    expect((document.querySelector('[data-whiteboard-subject="#Workspace"]') as HTMLElement).dataset.layoutX).toBe('120')
-    expect(document.querySelector('[data-whiteboard-relation-source="visual"]')).toBeTruthy()
-  })
-
-  it('creates a temporary whiteboard visual relation through view metadata only', async () => {
-    const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
-    useFilesStore.setState({
-      selectedFileId: documentUri,
-      structuredSubjectReturnContext: null,
-    })
-    mockUseFileDetail.mockReturnValue({
-      data: {
-        id: documentUri,
-        uri: documentUri,
-        name: 'state.ttl',
-        kind: 'resource',
-        semanticKind: 'structured-data',
-        parentUri: 'https://pod.example/.data/workspaces/ws-1/',
-        mimeType: 'text/turtle',
-        size: 256,
-        modifiedAt: '2026-06-17T10:00:00Z',
-        headers: {},
-        previewText: '@prefix udfs: <https://undefineds.co/vocab/> .\n<#Workspace> a udfs:Workspace ; title "Files" ; mode "read/write" .\n<#Other> a udfs:Workspace ; title "Other" ; mode "read" .',
-      },
-      isLoading: false,
-      error: null,
-    })
-    mockUseRawTextResource.mockReturnValue({
-      data: {
-        uri: documentUri,
-        content: '@prefix udfs: <https://undefineds.co/vocab/> .\n<#Workspace> a udfs:Workspace ; title "Files" ; mode "read/write" .\n<#Other> a udfs:Workspace ; title "Other" ; mode "read" .',
-        mimeType: 'text/turtle',
-        etag: '"raw-meta-view-1"',
-        headers: { etag: '"raw-meta-view-1"', 'content-type': 'text/turtle' },
-      },
-      isLoading: false,
-      error: null,
-    })
-    saveLocalStructuredViewMetadata(documentUri, {
-      documentUri,
-      viewMode: 'whiteboard',
-      classScope: 'udfs:Workspace',
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: null,
-      kanbanOrder: {},
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: ['#Workspace', '#Other'],
-        positions: {},
-        visualRelations: [],
-      },
-      writesCanonicalData: false,
-    })
-
-    render(<FileDetailPane />)
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: '添加 subject 到白板' })).toHaveAttribute('title', expect.stringContaining('白板中 2 张卡片'))
-    })
-    mockCreateCellProposal.mockClear()
-    mockMutateRaw.mockClear()
-    mockCreateRaw.mockClear()
-    vi.useFakeTimers()
-
-    fireEvent.click(screen.getByRole('button', { name: '添加视觉关系' }))
-    fireEvent.change(screen.getByLabelText('Relation label'), {
-      target: { value: 'sketch link' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '创建视觉关系' }))
-
-    expect(useFilesStore.getState().structuredWhiteboardRelationsByDocument[documentUri]).toEqual([
-      expect.objectContaining({
-        from: '#Workspace',
-        to: '#Other',
-        label: 'sketch link',
-      }),
-    ])
-    expect(document.querySelector('[data-whiteboard-relation-source="visual"]')).toBeTruthy()
-    expect(mockCreateCellProposal).not.toHaveBeenCalled()
-    expect(mockMutateRaw).not.toHaveBeenCalled()
-    expect(mockCreateRaw).not.toHaveBeenCalled()
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(900)
-    })
-
-    expect(loadLocalStructuredViewMetadata(documentUri)).toEqual(
-      expect.objectContaining({
-        documentUri,
-        viewMode: 'whiteboard',
-        writesCanonicalData: false,
-        whiteboard: expect.objectContaining({
-          selectedSubjects: ['#Workspace', '#Other'],
-          visualRelations: [
-            expect.objectContaining({
-              from: '#Workspace',
-              to: '#Other',
-              label: 'sketch link',
-            }),
-          ],
-        }),
-      }),
-    )
-  })
-
-  it('edits a temporary whiteboard visual relation label without creating RDF facts', async () => {
-    const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
-    useFilesStore.setState({
-      selectedFileId: documentUri,
-      structuredSubjectReturnContext: null,
-    })
-    mockUseFileDetail.mockReturnValue({
-      data: {
-        id: documentUri,
-        uri: documentUri,
-        name: 'state.ttl',
-        kind: 'resource',
-        semanticKind: 'structured-data',
-        parentUri: 'https://pod.example/.data/workspaces/ws-1/',
-        mimeType: 'text/turtle',
-        size: 256,
-        modifiedAt: '2026-06-17T10:00:00Z',
-        headers: {},
-        previewText: '@prefix udfs: <https://undefineds.co/vocab/> .\n<#Workspace> a udfs:Workspace ; title "Files" ; mode "read/write" .\n<#Other> a udfs:Workspace ; title "Other" ; mode "read" .',
-      },
-      isLoading: false,
-      error: null,
-    })
-    mockUseRawTextResource.mockReturnValue({
-      data: {
-        uri: documentUri,
-        content: '@prefix udfs: <https://undefineds.co/vocab/> .\n<#Workspace> a udfs:Workspace ; title "Files" ; mode "read/write" .\n<#Other> a udfs:Workspace ; title "Other" ; mode "read" .',
-        mimeType: 'text/turtle',
-        etag: '"raw-meta-view-1"',
-        headers: { etag: '"raw-meta-view-1"', 'content-type': 'text/turtle' },
-      },
-      isLoading: false,
-      error: null,
-    })
-    saveLocalStructuredViewMetadata(documentUri, {
-      documentUri,
-      viewMode: 'whiteboard',
-      classScope: 'udfs:Workspace',
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: null,
-      kanbanOrder: {},
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: ['#Workspace', '#Other'],
-        positions: {},
-        visualRelations: [
-          {
-            id: 'visual-workspace-other',
-            from: '#Workspace',
-            to: '#Other',
-            label: 'sketch link',
-          },
-        ],
-      },
-      writesCanonicalData: false,
-    })
-
-    render(<FileDetailPane />)
-    await waitFor(() => {
-      expect(document.querySelectorAll('[data-whiteboard-relation-source="visual"]')).toHaveLength(1)
-    })
-    mockCreateCellProposal.mockClear()
-    mockMutateRaw.mockClear()
-    vi.useFakeTimers()
-
-    fireEvent.click(screen.getByRole('button', { name: '编辑视觉关系 sketch link' }))
-    fireEvent.change(screen.getByLabelText('Relation label'), {
-      target: { value: 'updated sketch' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '保存视觉关系' }))
-
-    expect(useFilesStore.getState().structuredWhiteboardRelationsByDocument[documentUri]).toEqual([
-      {
-        id: 'visual-workspace-other',
-        from: '#Workspace',
-        to: '#Other',
-        label: 'updated sketch',
-      },
-    ])
-    expect(mockCreateCellProposal).not.toHaveBeenCalled()
-    expect(mockMutateRaw).not.toHaveBeenCalled()
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(900)
-    })
-
-    expect(loadLocalStructuredViewMetadata(documentUri)).toEqual(
-      expect.objectContaining({
-        whiteboard: expect.objectContaining({
-          visualRelations: [
-            {
-              id: 'visual-workspace-other',
-              from: '#Workspace',
-              to: '#Other',
-              label: 'updated sketch',
-            },
-          ],
-        }),
-      }),
-    )
-  })
-
-  it('removes a temporary whiteboard visual relation without changing RDF facts', async () => {
-    const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
-    useFilesStore.setState({
-      selectedFileId: documentUri,
-      structuredSubjectReturnContext: null,
-    })
-    mockUseFileDetail.mockReturnValue({
-      data: {
-        id: documentUri,
-        uri: documentUri,
-        name: 'state.ttl',
-        kind: 'resource',
-        semanticKind: 'structured-data',
-        parentUri: 'https://pod.example/.data/workspaces/ws-1/',
-        mimeType: 'text/turtle',
-        size: 256,
-        modifiedAt: '2026-06-17T10:00:00Z',
-        headers: {},
-        previewText: '@prefix udfs: <https://undefineds.co/vocab/> .\n<#Workspace> a udfs:Workspace ; title "Files" ; mode "read/write" .\n<#Other> a udfs:Workspace ; title "Other" ; mode "read" .',
-      },
-      isLoading: false,
-      error: null,
-    })
-    mockUseRawTextResource.mockReturnValue({
-      data: {
-        uri: documentUri,
-        content: '@prefix udfs: <https://undefineds.co/vocab/> .\n<#Workspace> a udfs:Workspace ; title "Files" ; mode "read/write" .\n<#Other> a udfs:Workspace ; title "Other" ; mode "read" .',
-        mimeType: 'text/turtle',
-        etag: '"raw-meta-view-1"',
-        headers: { etag: '"raw-meta-view-1"', 'content-type': 'text/turtle' },
-      },
-      isLoading: false,
-      error: null,
-    })
-    saveLocalStructuredViewMetadata(documentUri, {
-      documentUri,
-      viewMode: 'whiteboard',
-      classScope: 'udfs:Workspace',
-      searchText: '',
-      sortKey: null,
-      sortDirection: 'asc',
-      hiddenPredicates: [],
-      kanbanGroupPredicate: null,
-      kanbanOrder: {},
-      columnSizing: {},
-      whiteboard: {
-        selectedSubjects: ['#Workspace', '#Other'],
-        positions: {},
-        visualRelations: [
-          {
-            id: 'visual-workspace-other',
-            from: '#Workspace',
-            to: '#Other',
-            label: 'sketch link',
-          },
-        ],
-      },
-      writesCanonicalData: false,
-    })
-
-    render(<FileDetailPane />)
-    await waitFor(() => {
-      expect(document.querySelector('[data-whiteboard-relation-source="visual"]')).toBeTruthy()
-    })
-    mockCreateCellProposal.mockClear()
-    mockMutateRaw.mockClear()
-    vi.useFakeTimers()
-
-    fireEvent.click(screen.getByRole('button', { name: '删除视觉关系 sketch link' }))
-
-    expect(useFilesStore.getState().structuredWhiteboardRelationsByDocument[documentUri]).toEqual([])
-    expect(document.querySelector('[data-whiteboard-relation-source="visual"]')).toBeNull()
-    expect(mockCreateCellProposal).not.toHaveBeenCalled()
-    expect(mockMutateRaw).not.toHaveBeenCalled()
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(900)
-    })
-
-    expect(loadLocalStructuredViewMetadata(documentUri)).toEqual(
-      expect.objectContaining({
-        whiteboard: expect.objectContaining({
-          visualRelations: [],
-        }),
-      }),
-    )
   })
 
   it('does not autosave stale default structured view metadata immediately after hydration', async () => {
@@ -8547,13 +8041,13 @@ describe('FileDetailPane', () => {
       })
 
       vi.useFakeTimers()
-      const titleHeader = screen.getByRole('columnheader', { name: /title/ })
+      const titleHeader = screen.getByRole('columnheader', { name: /title/i })
       const titleStartWidth = Number.parseFloat(titleHeader.style.width)
-      fireEvent.mouseDown(screen.getByRole('separator', { name: '调整 title 列宽' }), { clientX: 200 })
+      fireEvent.mouseDown(screen.getByRole('separator', { name: '调整 Title 列宽' }), { clientX: 200 })
       fireEvent.mouseMove(document, { clientX: 260 })
       fireEvent.mouseUp(document)
 
-      const resizedWidth = Number.parseFloat(screen.getByRole('columnheader', { name: /title/ }).style.width)
+      const resizedWidth = Number.parseFloat(screen.getByRole('columnheader', { name: /title/i }).style.width)
       expect(resizedWidth).toBe(titleStartWidth + 60)
       expect(useFilesStore.getState().structuredColumnSizingByDocument['https://pod.example/.data/workspaces/ws-1/state.ttl']?.title)
         .toBe(resizedWidth)
@@ -9454,7 +8948,7 @@ describe('FileDetailPane', () => {
   })
 
   it('rolls back failed structured table cell proposal attempts', async () => {
-    mockCreateCellProposal.mockRejectedValueOnce(new Error('offline'))
+    mockWriteOwnStructuredCellChange.mockRejectedValueOnce(new Error('offline'))
     mockUseFileDetail.mockReturnValue({
       data: {
         id: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -9537,6 +9031,7 @@ describe('FileDetailPane', () => {
       error: null,
     })
 
+    applyOwnWritesToDocument()
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
@@ -9548,13 +9043,12 @@ describe('FileDetailPane', () => {
     fireEvent.blur(titleInput)
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'title',
         previousValues: ['"Files"'],
         nextValues: ['"Draft title"'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
@@ -9562,9 +9056,7 @@ describe('FileDetailPane', () => {
       expect(screen.queryByRole('button', { name: 'Discard pending write for title on #Workspace' })).not.toBeInTheDocument()
     })
     expect(screen.getByText('Draft title')).toBeInTheDocument()
-    expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' })).toBeInTheDocument()
-    expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' }))
-      .toHaveAttribute('title', '单元格变更已提交；等待 Inbox 审批，canonical 数据未变更')
+    expect(screen.queryByRole('status', { name: 'Pending approval for title on #Workspace' })).not.toBeInTheDocument()
   })
 
   it('renders raw structured view from effective visible table state', async () => {
@@ -9598,6 +9090,7 @@ describe('FileDetailPane', () => {
       error: null,
     })
 
+    applyOwnWritesToDocument()
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
@@ -9608,7 +9101,7 @@ describe('FileDetailPane', () => {
     fireEvent.blur(titleInput)
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'title',
@@ -9669,12 +9162,12 @@ describe('FileDetailPane', () => {
 
     const sortButton = await screen.findByRole('button', { name: '排序' })
     fireEvent.pointerDown(sortButton)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'title 升序' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /title 升序/i }))
 
     await waitFor(() => {
       expect(useFilesStore.getState().structuredSortKey).toBe('title')
       expect(useFilesStore.getState().structuredSortDirection).toBe('asc')
-      expect(screen.getByRole('button', { name: '排序' })).toHaveAttribute('title', 'title 升序')
+      expect(screen.getByRole('button', { name: '排序' })).toHaveAttribute('title', 'Title 升序')
     })
   })
 
@@ -9715,24 +9208,23 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
     mockMutateRaw.mockClear()
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Move #Other' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 read/write' }))
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Other',
         predicate: 'mode',
         previousValues: ['"read"'],
         nextValues: ['"read/write"'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
     await waitFor(() => {
-      expect(screen.getByText('待审批：mode -> read/write')).toBeInTheDocument()
+      expect(screen.queryByText('待审批：mode -> read/write')).not.toBeInTheDocument()
     })
   })
 
@@ -9767,6 +9259,7 @@ describe('FileDetailPane', () => {
       error: null,
     })
 
+    applyOwnWritesToDocument()
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
@@ -9777,7 +9270,7 @@ describe('FileDetailPane', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 read/write' }))
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         subject: '#Other',
         predicate: 'mode',
         previousValues: ['"read"'],
@@ -9837,23 +9330,22 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'status' }))
     mockMutateRaw.mockClear()
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Move #Other' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 todo' }))
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Other',
         predicate: 'status',
         previousValues: ['https://example.com/status/done'],
         nextValues: ['https://example.com/status/todo'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
-    expect(screen.getByText('待审批：status -> todo')).toBeInTheDocument()
+    expect(screen.queryByText('待审批：status -> todo')).not.toBeInTheDocument()
   })
 
   it('stages keyboard Kanban moves through the structured cell proposal path', async () => {
@@ -9893,7 +9385,7 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
     mockMutateRaw.mockClear()
-    mockCreateCellProposal.mockClear()
+    mockWriteOwnStructuredCellChange.mockClear()
 
     const otherCard = document.querySelector('[data-kanban-card-subject="#Other"]') as HTMLElement
     const readWriteColumn = screen.getByLabelText('Kanban column read/write')
@@ -9907,18 +9399,17 @@ describe('FileDetailPane', () => {
     fireEvent.keyDown(otherCard, { key: direction, code: direction, altKey: true })
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Other',
         predicate: 'mode',
         previousValues: ['"read"'],
         nextValues: ['"read/write"'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
     await waitFor(() => {
-      expect(screen.getByText('待审批：mode -> read/write')).toBeInTheDocument()
+      expect(screen.queryByText('待审批：mode -> read/write')).not.toBeInTheDocument()
     })
   })
 
@@ -10052,7 +9543,7 @@ describe('FileDetailPane', () => {
       isLoading: false,
       error: null,
     })
-    mockCreateCellProposal.mockRejectedValueOnce(new Error('offline'))
+    mockWriteOwnStructuredCellChange.mockRejectedValueOnce(new Error('offline'))
 
     render(<FileDetailPane />)
 
@@ -10066,13 +9557,12 @@ describe('FileDetailPane', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 read/write' }))
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Other',
         predicate: 'mode',
         previousValues: ['"read"'],
         nextValues: ['"read/write"'],
-        writesCanonicalResource: false,
       }))
     })
     await waitFor(() => {
@@ -10193,13 +9683,12 @@ describe('FileDetailPane', () => {
     fireEvent.blur(relationInput)
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'related',
         previousValues: ['#Other'],
         nextValues: ['<#Replacement>'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
@@ -10244,13 +9733,12 @@ describe('FileDetailPane', () => {
     fireEvent.click(screen.getByRole('button', { name: '清空 #Workspace 的 source' }))
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Workspace',
         predicate: 'source',
         previousValues: ['https://source.example/report.pdf'],
         nextValues: [],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
@@ -10300,13 +9788,12 @@ describe('FileDetailPane', () => {
     fireEvent.blur(summaryInput)
 
     await waitFor(() => {
-      expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
         subject: '#Other',
         predicate: 'summary',
         previousValues: [],
         nextValues: ['"Needs review"'],
-        writesCanonicalResource: false,
       }))
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
@@ -10356,10 +9843,10 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Files' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
 
@@ -10401,10 +9888,10 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Files' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ Subject' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '+ predicate' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
 
@@ -10446,7 +9933,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('button', { name: 'Table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.getByText('完整原始内容暂时不可用，不能解析结构化表。')).toBeInTheDocument()
     expect(screen.queryByText(/udfs:Repository · 1 行 · 2 Predicates/)).not.toBeInTheDocument()
     expect(screen.queryByRole('cell', { name: '#Repository' })).not.toBeInTheDocument()
@@ -10636,9 +10123,9 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('button', { name: '来源' })).not.toBeInTheDocument()
     expect(screen.queryByText('浏览 public')).not.toBeInTheDocument()
     expect(screen.queryByText(/生产路径|Finder-like/)).not.toBeInTheDocument()
-    const listViewButton = screen.getByRole('button', { name: '列表' })
+    const listViewButton = screen.getByRole('button', { name: '表格' })
     const iconViewButton = screen.getByRole('button', { name: '网格' })
-    expect(listViewButton).toHaveTextContent('列表')
+    expect(listViewButton).toHaveTextContent('表格')
     expect(iconViewButton).toHaveTextContent('网格')
     expect(screen.queryByRole('button', { name: '分栏视图' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '图标预览' })).not.toBeInTheDocument()
@@ -10789,7 +10276,7 @@ describe('FileDetailPane', () => {
 
   })
 
-  it('routes a plain folder child click to the global read-only preview', () => {
+  it('keeps a plain folder child click as row selection without opening the file page', () => {
     useFilesStore.setState({ selectedFileId: 'https://pod.example/public/' })
     mockUseFileDetail.mockReturnValue({
       data: {
@@ -10824,8 +10311,8 @@ describe('FileDetailPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /readme\.md/ }))
 
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/readme.md')
-    expect(useFilesStore.getState().detailTab).toBe('preview')
+    // R6: a single click only selects the row; it never navigates the workspace to the file page.
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
   })
 
   it('hides file-level sidecars from folder detail children and counts', () => {
@@ -11574,7 +11061,7 @@ describe('FileDetailPane', () => {
     fireEvent.contextMenu(childRow())
     fireEvent.click(await screen.findByRole('menuitem', { name: '打开' }))
     await waitFor(() => {
-      expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/diagram.png')
+      expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/diagram.png')
     })
   })
 
@@ -11979,15 +11466,15 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('menuitem', { name: '打开' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: '复制 URI' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitem', { name: '打开' }))
-    expect(await screen.findByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
+    await waitFor(() => expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/README.md'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    act(() => { useCardDialog.getState().close() })
 
     fireEvent.doubleClick(readmeChild)
 
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
-    expect(screen.getByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
-    expect(screen.getByTestId('rich-text-file-editor')).toBeInTheDocument()
+    expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/README.md')
+    
   })
 
   it('opens an editable child file sheet with Enter after preview selection', () => {
@@ -12038,8 +11525,8 @@ describe('FileDetailPane', () => {
     fireEvent.keyDown(readmeChild, { key: 'Enter' })
 
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
-    expect(screen.getByRole('dialog', { name: 'Hello' })).toHaveAttribute('data-document-editor-modal', 'true')
-    expect(screen.getByTestId('rich-text-file-editor')).toBeInTheDocument()
+    expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/README.md')
+    
   })
 
   it('keeps ordinary file meta drawer from duplicating Access ACL and ACR permission summaries', () => {
@@ -12119,8 +11606,8 @@ describe('FileDetailPane', () => {
 
     fireEvent.doubleClick(stateChild)
 
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/state.ttl')
-    expect(useFilesStore.getState().detailTab).toBe('preview')
+    expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/state.ttl')
+    
   })
 
   it('keeps folder icon view tiles Finder-like while previewing children', () => {
@@ -12181,8 +11668,8 @@ describe('FileDetailPane', () => {
 
     fireEvent.doubleClick(stateTile)
 
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/state.ttl')
-    expect(useFilesStore.getState().detailTab).toBe('preview')
+    expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/state.ttl')
+    
 
     act(() => {
       useFilesStore.setState({ selectedFileId: 'https://pod.example/public/' })
@@ -12190,10 +11677,10 @@ describe('FileDetailPane', () => {
     fireEvent.click(screen.getByRole('button', { name: '网格' }))
     const resetIconView = screen.getByLabelText('Folder icon view')
     const resetStateTile = within(resetIconView).getByRole('button', { name: 'state.ttl' })
+    act(() => { useCardDialog.getState().close() })
     fireEvent.keyDown(resetStateTile, { key: 'Enter' })
 
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/state.ttl')
-    expect(useFilesStore.getState().detailTab).toBe('preview')
+    expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/state.ttl')
   })
 
   it('keeps Space selection and opens folder children with Enter', () => {
@@ -12243,7 +11730,7 @@ describe('FileDetailPane', () => {
 
     fireEvent.keyDown(child, { key: 'Enter' })
 
-    expect(screen.getByRole('dialog', { name: 'Hello' })).toBeInTheDocument()
+    expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/README.md')
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/')
   })
 
@@ -12326,8 +11813,8 @@ describe('FileDetailPane', () => {
 
     fireEvent.doubleClick(screen.getByText('diagram.png').closest('button')!)
 
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/diagram.png')
-    expect(useFilesStore.getState().detailTab).toBe('preview')
+    expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/diagram.png')
+    
   })
 
   it('copies the selected folder child uri from the row context menu', async () => {
@@ -12435,7 +11922,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.doubleClick(screen.getByText('diagram.png').closest('button')!)
+    act(() => useFilesStore.getState().selectFile('https://pod.example/public/diagram.png'))
     const detailHead = screen.getByLabelText('文件详情 head')
     expect(within(detailHead).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
 
@@ -12504,7 +11991,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.doubleClick(screen.getByText('diagram.png').closest('button')!)
+    act(() => useFilesStore.getState().selectFile('https://pod.example/public/diagram.png'))
     const detailHead = screen.getByLabelText('文件详情 head')
     expect(within(detailHead).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
     expect(within(detailHead).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()

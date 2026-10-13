@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { FavoriteRow } from '@undefineds.co/models'
 import { useFavoriteStore } from '../../app/store'
-import { useFavoriteList, useFavoriteMutations } from '../../data/collections'
+import { useFavoriteList, useFavoriteMutations, useFavoriteSourceStatus } from '../../data/collections'
 import { resolveFavoriteScene } from '../../domain/scene-restore'
 import { useChatStore } from '@/modules/chat/store'
 import { useContactStore } from '@/modules/contacts/app/store'
@@ -25,6 +25,10 @@ export function useFavoriteContentPaneController() {
     if (!selectedFavoriteId || !favorites) return null
     return favorites.find((f) => f.id === selectedFavoriteId) ?? null
   }, [selectedFavoriteId, favorites])
+
+  const sourceStatus = useFavoriteSourceStatus(
+    favorite ? ((favorite as { targetUri?: string | null }).targetUri ?? null) : null,
+  )
 
   const handleRemove = useCallback(async () => {
     if (!favorite) return
@@ -70,6 +74,7 @@ export function useFavoriteContentPaneController() {
 
   return {
     favorite: favorite as FavoriteRow | null,
+    sourceStatus,
     onRemove: handleRemove,
     onOpenSource: handleOpenSource,
   }

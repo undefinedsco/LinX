@@ -62,7 +62,7 @@ export function LocalNetworkSettingsCard({
             <Wifi className="h-4 w-4" />
             本地网络
           </CardTitle>
-          <CardDescription>本地网络设置只在桌面端可用。</CardDescription>
+          <CardDescription>外部访问只在桌面版里设置。</CardDescription>
         </CardHeader>
       </Card>
     )
@@ -76,16 +76,11 @@ export function LocalNetworkSettingsCard({
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Wifi className="h-4 w-4" />
-                本地网络
+                外部访问
               </CardTitle>
-              <CardDescription>管理 Local 的 canonical 存储地址、隧道 token 和本机/公网可达性。</CardDescription>
+              <CardDescription>让手机和别的电脑也能打开这台电脑上的空间。</CardDescription>
             </div>
             <Badge variant={snapshot.state === 'ready' ? 'secondary' : 'outline'}>{statusLabel}</Badge>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">Cloud 负责账号</Badge>
-            <Badge variant="outline">Local 负责数据</Badge>
-            {snapshot.capabilities?.version ? <Badge variant="secondary">xpod {snapshot.capabilities.version}</Badge> : null}
           </div>
         </CardHeader>
 
@@ -96,17 +91,17 @@ export function LocalNetworkSettingsCard({
           <div className="grid gap-3 md:grid-cols-2">
             <EndpointPanel
               icon={Globe2}
-              label="Cloud 分配的 Local 域名"
-              value={canonicalUrl ?? '等待 Local 启动后由 Cloud 分配'}
+              label="外面访问用的地址"
+              value={canonicalUrl ?? '本机服务启动后自动分配'}
             />
-            <EndpointPanel icon={Wifi} label="本机入口" value={localUrl ?? '等待本机服务启动'} />
+            <EndpointPanel icon={Wifi} label="这台电脑上的地址" value={localUrl ?? '等待本机服务启动'} />
           </div>
 
           <AdvancedDisclosure open={advancedOpen} onOpenChange={setAdvancedOpen}>
             <div className="space-y-4">
               <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
                 <div className="space-y-2">
-                  <Label htmlFor="local-network-public-domain">自有公网域名（可选）</Label>
+                  <Label htmlFor="local-network-public-domain">我自己的域名（可选）</Label>
                   <Input
                     id="local-network-public-domain"
                     value={publicDomain}
@@ -114,39 +109,39 @@ export function LocalNetworkSettingsCard({
                     placeholder="pod.example.com"
                   />
                   <p className="text-xs leading-5 text-muted-foreground">
-                    留空使用 Cloud 分配的 Local 域名。只有你要把 canonical storage URL 换成自有 HTTPS 域名时才填写。
+                    留空就用 LinX 提供的地址。只有想换成自己的 HTTPS 域名时才填写。
                   </p>
                 </div>
               </div>
 
               <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
                 <div className="space-y-2">
-                  <Label htmlFor="local-network-tunnel-token">Cloudflare Tunnel token（可选）</Label>
+                  <Label htmlFor="local-network-tunnel-token">隧道密钥（可选）</Label>
                   <Input
                     id="local-network-tunnel-token"
                     type="password"
                     value={tunnelToken}
                     onChange={(event) => setTunnelToken(event.target.value)}
-                    placeholder={hasSavedToken ? '留空则沿用已保存 token' : '粘贴 token 或完整 cloudflared 命令'}
+                    placeholder={hasSavedToken ? '留空则沿用已保存的密钥' : '粘贴密钥或完整的 cloudflared 命令'}
                   />
                   <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
                     <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <span>{hasSavedToken ? '已保存 token，不显示明文。' : 'token 只保存到本机 Local 配置，不会显示在页面上。'}</span>
+                    <span>{hasSavedToken ? '已保存，不显示。' : '密钥只保存在这台电脑上，不会显示在页面上。'}</span>
                   </div>
                 </div>
               </div>
 
               <div className="rounded-2xl border border-border/60 bg-background p-4">
-                <div className="text-sm font-medium">Cloudflare 配置提示</div>
+                <div className="text-sm font-medium">隧道设置参考</div>
                 <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
                   <InstructionRow
-                    label="Public Hostname"
-                    value={canonicalUrl ? hostFromUrl(canonicalUrl) : '等待 Cloud 分配 Local 域名'}
+                    label="对外域名"
+                    value={canonicalUrl ? hostFromUrl(canonicalUrl) : '等待分配'}
                   />
-                  <InstructionRow label="Service URL" value={serviceUrl ?? '等待本机入口'} />
+                  <InstructionRow label="服务地址" value={serviceUrl ?? '等待本机入口'} />
                 </div>
                 <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                  隧道只影响外网访问，不改变账号和数据归属。本机入口可用时，公网不可达也可以继续本机使用。
+                  “外部访问”只决定能不能连上；谁能看什么，由文件的共享决定。外面访问不到时，这台电脑上仍可正常使用。
                 </p>
               </div>
             </div>
@@ -155,14 +150,14 @@ export function LocalNetworkSettingsCard({
           <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-medium">可达性验证</div>
+                <div className="text-sm font-medium">外面能不能访问到</div>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  同时检测本机入口和公网 canonical URL，并校验是否指向同一个 Local 节点。
+                  检查这台电脑上和外面各自能不能打开。
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={() => void testConnectivity()} disabled={busy}>
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
-                检测可达性
+                再检查
               </Button>
             </div>
             <LocalReachabilitySummary
@@ -174,15 +169,15 @@ export function LocalNetworkSettingsCard({
               <p className="mt-3 text-xs leading-5 text-muted-foreground">{snapshot.connectivity.message}</p>
             ) : null}
             <div className="mt-3 grid gap-2 md:grid-cols-2">
-              <ProbeDetail label="本机入口" probe={snapshot.connectivity?.local ?? null} />
-              <ProbeDetail label="公网入口" probe={snapshot.connectivity?.public ?? null} />
+              <ProbeDetail label="这台电脑" probe={snapshot.connectivity?.local ?? null} />
+              <ProbeDetail label="外面" probe={snapshot.connectivity?.public ?? null} />
             </div>
           </div>
 
           <div className="flex flex-wrap gap-3">
             <Button onClick={() => void save()} disabled={busy}>
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              保存网络设置
+              保存
             </Button>
             <Button variant="outline" onClick={() => void refresh()} disabled={busy}>
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}

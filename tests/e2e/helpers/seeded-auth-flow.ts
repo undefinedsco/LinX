@@ -10,7 +10,7 @@ export async function loginToSeededXpod(page: Page, runtime: SeededXpodRuntime):
 
   const providerOrigin = new URL(runtime.baseUrl).origin
   const appOrigin = new URL(page.url()).origin
-  await page.getByRole('dialog', { name: '登录 LinX' }).getByRole('button', { name: '连接' }).click()
+  await page.getByRole('dialog', { name: '登录 LinX' }).getByRole('button', { name: '继续' }).click()
 
   await expect.poll(async () => {
     const currentUrl = new URL(page.url())

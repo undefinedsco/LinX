@@ -1,20 +1,21 @@
-import {
-  type StructuredWhiteboardVisualRelation,
-} from '../../domain/structured/structured-projections'
-import type { StructuredCellWriteProposal, StructuredTableProjection } from '../../domain/structured/structured-table'
+import type { StructuredWhiteboardVisualRelation } from '../../domain/structured/structured-projections'
+import type { StructuredCellCommitResult, StructuredCellWriteProposal, StructuredTableProjection } from '../../domain/structured/structured-table'
 import type {
   StructuredWhiteboardPosition,
   StructuredWhiteboardSnapshotV1,
 } from '../../domain/structured/structured-view-metadata'
 import { LinxWhiteboardCanvas } from './whiteboard/LinxWhiteboardCanvas'
-import {
-  useStructuredWhiteboardViewController,
-  type StructuredWhiteboardSubjectOpenOptions,
-} from './useStructuredWhiteboardViewController'
+import { useWhiteboardBoardController } from './whiteboard/useWhiteboardBoardController'
+import type { StructuredWhiteboardSubjectOpenOptions } from './useStructuredWhiteboardViewController'
 
 const EMPTY_WHITEBOARD_LAYOUT: Record<string, { x: number; y: number }> = {}
 const EMPTY_WHITEBOARD_SUBJECTS: string[] = []
 
+/**
+ * The board's layout now lives in the Pod (JSON Canvas). The props that used to
+ * carry positions and card lists in view settings are still accepted so callers
+ * keep working; they only seed the first load of an existing board.
+ */
 export function StructuredWhiteboardView({
   documentUri,
   layout = EMPTY_WHITEBOARD_LAYOUT,
@@ -23,13 +24,7 @@ export function StructuredWhiteboardView({
   visualRelations = [],
   snapshot,
   relationPredicateOptions = [],
-  onAddSubject,
-  onCreateSubject,
-  onRemoveSubject,
-  onClearSubjects,
-  onNodePositionChange,
   onVisualRelationsChange,
-  onSnapshotChange,
   onOpenSubject,
   onCommitCellWriteProposal,
 }: {
@@ -48,34 +43,29 @@ export function StructuredWhiteboardView({
   onVisualRelationsChange?: (relations: StructuredWhiteboardVisualRelation[]) => void
   onSnapshotChange?: (snapshot: StructuredWhiteboardSnapshotV1) => void
   onOpenSubject?: (subject: string, options?: StructuredWhiteboardSubjectOpenOptions) => void
-  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
 }) {
-  const whiteboard = useStructuredWhiteboardViewController({
+  const board = useWhiteboardBoardController({
     documentUri,
     layout,
     projection,
     selectedSubjects,
     visualRelations,
+    snapshot,
     relationPredicateOptions,
     onCommitCellWriteProposal,
-    onNodePositionChange,
     onVisualRelationsChange,
     onOpenSubject,
   })
 
   return (
     <LinxWhiteboardCanvas
-      model={whiteboard}
-      snapshot={snapshot}
-      onAddSubject={onAddSubject}
-      onCreateSubject={onCreateSubject}
-      onClearSubjects={onClearSubjects}
-      onNodePositionChange={onNodePositionChange}
-      onRemoveSubject={onRemoveSubject}
-      onSnapshotChange={onSnapshotChange}
-      onOpenRelationEditor={whiteboard.openRelationEditor}
-      onOpenSubject={onOpenSubject}
-      relation={whiteboard}
+      documentUri={documentUri}
+      model={board.model}
+      cards={board.cards}
+      canvasState={board.canvasState}
+      relation={board.relation}
+      onCommitCardBody={board.commitCardBody}
     />
   )
 }

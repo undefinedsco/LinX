@@ -118,3 +118,30 @@ describe('projectFilesExplorerRows', () => {
     ])
   })
 })
+
+describe('assistant folder names', () => {
+  it('labels /.data/agents/<id>/ folders by the assistant name', () => {
+    const home = (id: string) => ({
+      id: `https://pod.example/.data/agents/${id}/`,
+      uri: `https://pod.example/.data/agents/${id}/`,
+      name: id,
+      kind: 'container',
+      semanticKind: 'container',
+      parentUri: 'https://pod.example/.data/agents/',
+      mimeType: null,
+      size: null,
+      modifiedAt: null,
+    }) as FilesEntry
+    const rows = projectFilesExplorerRows({
+      rootEntries: [home('main'), home('other')],
+      expandedUris: new Set(),
+      childEntriesByContainerUri: {},
+      loadingContainerUris: new Set(),
+      errorByContainerUri: {},
+      searchText: '',
+      agentNames: { main: 'LinX 助手' },
+    })
+
+    expect(rows.map((row) => row.label)).toEqual(['LinX 助手', 'other'])
+  })
+})

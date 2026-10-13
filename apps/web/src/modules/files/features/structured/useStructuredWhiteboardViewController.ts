@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
-import type { StructuredCellWriteProposal, StructuredTableProjection } from '../../domain/structured/structured-table'
+import type { StructuredCellCommitResult, StructuredCellWriteProposal, StructuredTableProjection } from '../../domain/structured/structured-table'
 import type { StructuredWhiteboardPosition } from '../../domain/structured/structured-view-metadata'
 import {
   projectStructuredWhiteboardViewModel,
@@ -32,7 +32,7 @@ export function useStructuredWhiteboardViewController({
   selectedSubjects?: string[]
   visualRelations?: StructuredWhiteboardVisualRelation[]
   relationPredicateOptions?: readonly string[]
-  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
   onNodePositionChange?: (subject: string, position: StructuredWhiteboardPosition) => void
   onVisualRelationsChange?: (relations: StructuredWhiteboardVisualRelation[]) => void
   onOpenSubject?: (subject: string, options?: StructuredWhiteboardSubjectOpenOptions) => void

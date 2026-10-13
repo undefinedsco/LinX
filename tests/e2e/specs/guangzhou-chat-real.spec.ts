@@ -248,7 +248,7 @@ async function login(page: Page): Promise<void> {
       const login = page.getByRole('button', { name: /^登录$/ })
       const surface = await Promise.race([
         login.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'login' as const),
-        page.getByText('LinX 主理人', { exact: true }).first()
+        page.getByText('LinX 助手', { exact: true }).first()
           .waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'chat' as const),
       ]).catch(() => 'unknown' as const)
       if (surface === 'chat') return
@@ -289,7 +289,7 @@ async function login(page: Page): Promise<void> {
 }
 
 async function waitForAuthenticatedChat(page: Page): Promise<boolean> {
-  return page.getByText('LinX 主理人', { exact: true }).first()
+  return page.getByText('LinX 助手', { exact: true }).first()
     .waitFor({ state: 'visible', timeout: 45_000 })
     .then(() => true, () => false)
 }
@@ -318,7 +318,7 @@ async function ensureProviderCapability(page: Page, label: string): Promise<void
   }
   await expect(page.getByRole('switch', { name: `关闭 ${label}` })).toBeVisible({ timeout: 60_000 })
   await page.goto(`${GUANGZHOU_WEB_URL}/chat`)
-  await expect(page.getByText('LinX 主理人', { exact: true }).first()).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText('LinX 助手', { exact: true }).first()).toBeVisible({ timeout: 60_000 })
 }
 
 async function createAcceptanceChat(page: Page): Promise<void> {

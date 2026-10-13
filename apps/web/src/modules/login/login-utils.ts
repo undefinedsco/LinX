@@ -509,11 +509,18 @@ export async function performSignOut(
 }
 
 export const SIGN_OUT_EVENT = 'linx:sign-out'
+export const SWITCH_ACCOUNT_EVENT = 'linx:switch-account'
 export const SESSION_RECOVERY_EVENT = 'linx:session-recovery-required'
 
 export function requestSignOut() {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(SIGN_OUT_EVENT))
+}
+
+/** Leave this account and go back to the login screen to pick another. */
+export function requestSwitchAccount() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(SWITCH_ACCOUNT_EVENT))
 }
 
 export function requestSessionRecovery() {

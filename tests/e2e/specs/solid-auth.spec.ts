@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expectLoginDialog, fillCustomLoginProvider, getLoginDialog, openLoginMethods } from '../helpers/login-ui'
+import { expectLoginDialog, fillCustomLoginProvider, getLoginDialog } from '../helpers/login-ui'
 
 test.describe('Solid authentication entry', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,26 +7,27 @@ test.describe('Solid authentication entry', () => {
     await expectLoginDialog(page)
   })
 
-  test('shows the current compact login surface', async ({ page }) => {
+  test('asks where the data should live first', async ({ page }) => {
     const dialog = getLoginDialog(page)
-    await expect(dialog.getByRole('heading', { name: 'LinX' })).toBeVisible()
-    await expect(dialog.getByRole('button', { name: '登录', exact: true })).toBeVisible()
-    await expect(dialog.getByRole('button', { name: '更多选项' })).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: '登录 LinX' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /云端空间/ })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '使用其他空间…' })).toBeVisible()
   })
 
-  test('opens the current custom Solid provider form', async ({ page }) => {
+  test('opens the other-space form', async ({ page }) => {
     await fillCustomLoginProvider(page, 'http://localhost:5737')
 
     const dialog = getLoginDialog(page)
-    await expect(dialog.getByRole('heading', { name: '更多选项' })).toBeVisible()
-    await expect(dialog.getByLabel('登录方式地址')).toHaveValue('http://localhost:5737')
-    await expect(dialog.getByRole('button', { name: '连接' })).toBeEnabled()
+    await expect(dialog.getByRole('heading', { name: '使用其他空间' })).toBeVisible()
+    await expect(dialog.getByLabel('空间地址')).toHaveValue('http://localhost:5737')
+    await expect(dialog.getByRole('button', { name: '继续' })).toBeEnabled()
   })
 
-  test('returns from login methods to the main login surface', async ({ page }) => {
-    await openLoginMethods(page)
-    await getLoginDialog(page).getByRole('button', { name: '返回' }).click()
+  test('returns from the other-space form to the space choices', async ({ page }) => {
+    const dialog = getLoginDialog(page)
+    await dialog.getByRole('button', { name: '使用其他空间…' }).click()
+    await dialog.getByRole('button', { name: '返回' }).click()
 
-    await expect(getLoginDialog(page).getByRole('button', { name: '登录', exact: true })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /云端空间/ })).toBeVisible()
   })
 })

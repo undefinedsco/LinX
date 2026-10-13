@@ -137,13 +137,13 @@ describe('structured-whiteboard-relation-model', () => {
       labelFieldLabel: '标签',
       labelFieldAriaLabel: 'Relation label',
       labelFieldPlaceholder: '视觉关系',
-      saveButtonLabel: '创建视觉关系',
+      saveButtonLabel: '连接',
       cancelButtonLabel: '取消',
       cancelButtonAriaLabel: '取消视觉关系',
     })
 
     expect(projectStructuredWhiteboardRelationEditorChrome({ editingRelationId: 'visual-a-b' }).saveButtonLabel)
-      .toBe('保存视觉关系')
+      .toBe('保存连接')
 
     expect(projectStructuredWhiteboardRelationModel({
       editingRelationId: 'visual-a-b',
@@ -151,7 +151,7 @@ describe('structured-whiteboard-relation-model', () => {
       relationFrom: '#a',
       relationTo: '#b',
       visualRelations: [relation],
-    }).relationEditorChrome.saveButtonLabel).toBe('保存视觉关系')
+    }).relationEditorChrome.saveButtonLabel).toBe('保存连接')
   })
 
   it('projects visual relation chips with fallback labels and aria text', () => {

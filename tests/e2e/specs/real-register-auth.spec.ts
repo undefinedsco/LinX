@@ -29,7 +29,7 @@ test.describe('Real register auth flow', () => {
 
     await Promise.all([
       page.waitForURL(new RegExp(escapeRegex(new URL(runtime.baseUrl).origin)), { timeout: 30_000 }),
-      page.getByRole('dialog', { name: '登录 LinX' }).getByRole('button', { name: '连接' }).click(),
+      page.getByRole('dialog', { name: '登录 LinX' }).getByRole('button', { name: '继续' }).click(),
     ])
 
     await signUpToFreshRuntime(page, runtime)

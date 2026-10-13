@@ -94,7 +94,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       warningRowsOnly: true,
     })).toEqual({
       activeViewTabRows: [
-        { value: 'table', label: 'Table', active: false, closable: false, closeLabel: '关闭 Table 视图' },
+        { value: 'table', label: '表格', active: false, closable: false, closeLabel: '关闭 表格 视图' },
         { value: 'kanban', label: 'Kanban', active: true, closable: true, closeLabel: '关闭 Kanban 视图' },
       ],
       availablePredicateNamespaces: ['https://schema.org/', 'https://undefineds.co/vocab/'],
@@ -220,43 +220,43 @@ describe('projectStructuredResourceToolbarModel', () => {
         { label: 'name', predicate: 'https://schema.org/name', visible: true },
       ],
       sortRows: [
-        { label: 'subject', sortKey: 'subject' },
-        { label: 'dateCreated', sortKey: 'https://schema.org/dateCreated' },
-        { label: 'name', sortKey: 'https://schema.org/name' },
+        { label: '名称', sortKey: 'subject' },
+        { label: 'Date created', sortKey: 'https://schema.org/dateCreated' },
+        { label: 'Name', sortKey: 'https://schema.org/name' },
       ],
       sortOptionRows: [
         {
-          label: 'subject',
+          label: '名称',
           sortKey: 'subject',
           choices: [
-            { key: 'subject:asc', label: 'subject 升序', sortDirection: 'asc', sortKey: 'subject' },
-            { key: 'subject:desc', label: 'subject 降序', sortDirection: 'desc', sortKey: 'subject' },
+            { key: 'subject:asc', label: '名称 升序', sortDirection: 'asc', sortKey: 'subject' },
+            { key: 'subject:desc', label: '名称 降序', sortDirection: 'desc', sortKey: 'subject' },
           ],
         },
         {
-          label: 'dateCreated',
+          label: 'Date created',
           sortKey: 'https://schema.org/dateCreated',
           choices: [
             {
               key: 'https://schema.org/dateCreated:asc',
-              label: 'dateCreated 升序',
+              label: 'Date created 升序',
               sortDirection: 'asc',
               sortKey: 'https://schema.org/dateCreated',
             },
             {
               key: 'https://schema.org/dateCreated:desc',
-              label: 'dateCreated 降序',
+              label: 'Date created 降序',
               sortDirection: 'desc',
               sortKey: 'https://schema.org/dateCreated',
             },
           ],
         },
         {
-          label: 'name',
+          label: 'Name',
           sortKey: 'https://schema.org/name',
           choices: [
-            { key: 'https://schema.org/name:asc', label: 'name 升序', sortDirection: 'asc', sortKey: 'https://schema.org/name' },
-            { key: 'https://schema.org/name:desc', label: 'name 降序', sortDirection: 'desc', sortKey: 'https://schema.org/name' },
+            { key: 'https://schema.org/name:asc', label: 'Name 升序', sortDirection: 'asc', sortKey: 'https://schema.org/name' },
+            { key: 'https://schema.org/name:desc', label: 'Name 降序', sortDirection: 'desc', sortKey: 'https://schema.org/name' },
           ],
         },
       ],
@@ -270,9 +270,9 @@ describe('projectStructuredResourceToolbarModel', () => {
         active: true,
         ariaLabel: '排序',
         iconKind: 'desc',
-        label: 'dateCreated 降序',
+        label: 'Date created 降序',
       },
-      sortToolLabel: 'dateCreated 降序',
+      sortToolLabel: 'Date created 降序',
       vocabTermFilterRows: [
         { value: 'all', label: '全部词表定义', checked: false },
         { value: 'defined', label: '已定义 predicate', checked: true },
@@ -349,7 +349,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       toggleLabel: '定义',
     })
     expect(model.pendingClassProposals).toEqual([])
-    expect(model.activeViewTabRows).toEqual([{ value: 'table', label: 'Table', active: true, closable: false, closeLabel: '关闭 Table 视图' }])
+    expect(model.activeViewTabRows).toEqual([{ value: 'table', label: '表格', active: true, closable: false, closeLabel: '关闭 表格 视图' }])
     expect(model.extraViewOptionRows).toEqual([
       { value: 'kanban', label: 'Kanban' },
       { value: 'whiteboard', label: 'Whiteboard' },

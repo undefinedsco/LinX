@@ -1,4 +1,7 @@
 import type { ColumnDef, SortingFn } from '@tanstack/react-table'
+import { useCardDialog } from '@/lib/card-dialog'
+import { projectCardSubjectUris } from '../../domain/card/card-dialog-model'
+import { expandRdfIri } from '../../domain/card/rdf-term-tokens'
 
 import type {
   StructuredShapeValidationWarning,
@@ -105,6 +108,14 @@ const structuredTableSortingFn: SortingFn<StructuredProjectionTableRow> = (left,
   return compareStructuredProjectionTableRows(left.original, right.original, columnId)
 }
 
+function openSubjectCard(projection: StructuredTableProjection, documentUri: string, subject: string) {
+  useCardDialog.getState().open({
+    uri: expandRdfIri(subject, documentUri, projection.prefixes),
+    siblings: projectCardSubjectUris(projection, documentUri),
+    from: 'table',
+  })
+}
+
 export function buildStructuredProjectionTableColumns({
   activeEnumCell,
   activeRelationCell,
@@ -162,10 +173,10 @@ export function buildStructuredProjectionTableColumns({
       accessorFn: (row) => row.subject,
       size: 124,
       sortingFn: structuredTableSortingFn,
-      meta: { label: 'subject', resizable: true },
+      meta: { label: '名称', resizable: true },
       header: () => (
         <button className="flex items-center gap-1 hover:text-foreground" onClick={() => onSort?.('subject')}>
-          subject <StructuredProjectionSortIcon columnKey="subject" sortKey={sortKey} sortDirection={sortDirection} />
+          名称 <StructuredProjectionSortIcon columnKey="subject" sortKey={sortKey} sortDirection={sortDirection} />
         </button>
       ),
       cell: ({ row }) => {
@@ -185,19 +196,21 @@ export function buildStructuredProjectionTableColumns({
             openTarget={subjectChrome.openTarget}
             openAffordance={subjectChrome.openAffordance}
             onOpenSubject={onOpenSubjectResource}
+            onOpenCard={() => openSubjectCard(projection, documentUri, row.original.subject)}
           />
         )
       },
     },
     ...visiblePredicates.map<ColumnDef<StructuredProjectionTableRow>>((predicate) => {
       const proposal = pendingProposalByPredicate.get(predicate)
+      const definition = getPredicateDefinition(predicate)
       const columnModel = projectStructuredPredicateHeaderColumnModel({
         predicate,
+        definition,
         projection,
         proposal,
         showNamespaces,
       })
-      const definition = getPredicateDefinition(predicate)
       return {
         id: predicate,
         accessorFn: (row) => (row.cells[predicate] ?? []).join(' '),

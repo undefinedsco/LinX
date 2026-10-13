@@ -4,49 +4,52 @@
 @source "../../../node_modules/@undefineds.co/shared-ui/dist";
 
 /**
- * LinX 颜色系统 - 基于 Shadcn 结构，主色收敛到 Linked Data Taro Purple
+ * LinX 颜色系统 - 基于 Shadcn 结构，采用 2026-09-27 选定品牌
  *
- * 核心色值：
- * - Primary / Lineage: Linked Data Taro Purple (#735FC4)
- * - Neutral surfaces: achromatic gray
+ * 核心色值（LinX DESIGN / 主站 DESIGN）：
+ * - Primary / Lineage: ink purple (#563E84)，只用于操作、选中、焦点与来源标记
+ * - Surfaces: paper (#F7F4ED) / sunken (#F2EDE2) / raised (#FBFAF7)，暖中性，不带紫色
+ * - Text: #2B2621，muted #655D53，line #DFDBD5
  * - Radius: 0.5rem (8px)
  */
 
 @layer base {
-  :root {
+  /* .light forces light mode explicitly; it must stay identical to :root. */
+  :root,
+  .light {
     /* ============================================== */
     /* Shadcn UI Standard Theme (Light)               */
-    /* LinX Linked Data family palette                */
+    /* LinX paper + ink palette                       */
     /* ============================================== */
-    --background: 0 0% 98%;
-    --foreground: 0 0% 12%;
-    
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 12%;
-    
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 12%;
-    
-    --primary: 252 46% 57%; /* #735fc4 linked-data taro */
-    --primary-foreground: 0 0% 100%;
-    
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 12%;
-    
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 43%;
-    
-    --accent: 0 0% 96%;
-    --accent-foreground: 0 0% 12%;
-    
+    --background: 42 38% 95%; /* paper #F7F4ED */
+    --foreground: 30 13% 15%; /* text #2B2621 */
+
+    --card: 45 33% 98%; /* raised #FBFAF7 */
+    --card-foreground: 30 13% 15%;
+
+    --popover: 45 33% 98%;
+    --popover-foreground: 30 13% 15%;
+
+    --primary: 261 36% 38%; /* ink #563E84 */
+    --primary-foreground: 42 38% 95%;
+
+    --secondary: 41 38% 92%; /* sunken #F2EDE2 */
+    --secondary-foreground: 30 13% 15%;
+
+    --muted: 41 38% 92%;
+    --muted-foreground: 33 10% 36%; /* muted #655D53 */
+
+    --accent: 0 10% 90%; /* tint-paper #E9E4E4 */
+    --accent-foreground: 30 13% 15%;
+
     --destructive: 352 43% 49%;
     --destructive-foreground: 0 0% 100%;
-    
-    --border: 0 0% 88%;
-    --input: 0 0% 88%;
-    --ring: 252 46% 57%;
-    --lineage: 252 46% 57%;
-    --lineage-foreground: 0 0% 100%;
+
+    --border: 36 14% 85%; /* line #DFDBD5 */
+    --input: 36 4% 51%; /* control #87837D */
+    --ring: 261 36% 38%;
+    --lineage: 261 36% 38%;
+    --lineage-foreground: 42 38% 95%;
     --boundary: 202 34% 37%;
     --boundary-foreground: 0 0% 100%;
     --success: 160 48% 30%;
@@ -73,21 +76,21 @@
     /* ============================================== */
     /* LinX Layout Mappings (Derived from Standard)   */
     /* ============================================== */
-    /* Sidebar: neutral shell; purple is reserved for active state. */
-    --layout-sidebar: 0 0% 96%;
-    
-    /* List Pane: 使用 Background (纯白) */
-    --layout-list-header: 0 0% 100%;
-    --layout-list-hover: 0 0% 96%;
-    --layout-list-item: 0 0% 100%;
-    --layout-list-selected: 252 24% 94%;
-    
-    /* Content Pane: 使用 Background (纯白) */
-    --layout-content: 0 0% 100%;
+    /* Rail: the deepest warm neutral (tint-sunken #E4DDDA); ink marks the active entry. */
+    --layout-sidebar: 18 16% 87%;
+
+    /* List Pane: sunken #F2EDE2, selection uses tint-sunken */
+    --layout-list-header: 41 38% 92%;
+    --layout-list-hover: 0 10% 90%;
+    --layout-list-item: 41 38% 92%;
+    --layout-list-selected: 18 16% 87%;
+
+    /* Content Pane: paper #F7F4ED */
+    --layout-content: 42 38% 95%;
 
     /* 兼容性变量 (Legacy) */
-    --purple-medium: 252 46% 57%;
-    --purple-deep: 252 40% 46%;
+    --purple-medium: 261 36% 38%;
+    --purple-deep: 261 36% 32%;
     --purple-light: 258 48% 84%;
     --warm-amber: 44 72% 36%;
   }
@@ -164,57 +167,6 @@
     --layout-content: 0 0% 8%;
   }
 
-  /* 
-   * 显式的 .light 类支持 (用于强制亮色模式)
-   * 内容与 :root 保持一致
-   */
-  .light {
-    --background: 0 0% 98%;
-    --foreground: 0 0% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 12%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 12%;
-    --primary: 252 46% 57%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 12%;
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 43%;
-    --accent: 0 0% 96%;
-    --accent-foreground: 0 0% 12%;
-    --destructive: 352 43% 49%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 88%;
-    --input: 0 0% 88%;
-    --ring: 252 46% 57%;
-    --lineage: 252 46% 57%;
-    --lineage-foreground: 0 0% 100%;
-    --boundary: 202 34% 37%;
-    --boundary-foreground: 0 0% 100%;
-    --success: 160 48% 30%;
-    --success-foreground: 0 0% 100%;
-    --warning: 44 72% 36%;
-    --warning-foreground: 0 0% 100%;
-    
-    /* 圆角系统 */
-    --radius-xs: 2px;
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-    --radius-xl: 16px;
-    --radius-2xl: 16px;
-    --radius-3xl: 16px;
-    --radius: 0.5rem;
-    
-    /* Layout */
-    --layout-sidebar: 0 0% 96%;
-    --layout-list-header: 0 0% 100%;
-    --layout-list-hover: 0 0% 96%;
-    --layout-list-item: 0 0% 100%;
-    --layout-list-selected: 252 24% 94%;
-    --layout-content: 0 0% 100%;
-  }
 }
 
 @layer base {

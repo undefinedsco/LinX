@@ -245,14 +245,14 @@ describe('structured projection table model', () => {
     expect(projectStructuredSubjectCreationFooterModel({ classScope: 'schema:Task' })).toEqual({
       disabled: false,
       title: '在 schema:Task 中新增 subject',
-      buttonAriaLabel: '+ Subject',
-      buttonLabel: 'Subject',
+      buttonAriaLabel: '+ 卡片',
+      buttonLabel: '卡片',
     })
     expect(projectStructuredSubjectCreationFooterModel({ classScope: null })).toEqual({
       disabled: true,
       title: '先选择 class 再新增 subject',
-      buttonAriaLabel: '+ Subject',
-      buttonLabel: 'Subject',
+      buttonAriaLabel: '+ 卡片',
+      buttonLabel: '卡片',
     })
   })
 

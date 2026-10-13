@@ -10,7 +10,7 @@ import {
   buildContactListProjection,
   isContactGroup,
 } from '../../domain/contact-projection'
-import type { GroupContactInfo } from '../../domain/types'
+import type { ContactSection, GroupContactInfo } from '../../domain/types'
 import { ContactList } from '../../ui/ContactList'
 
 export function ContactListPane({}: MicroAppPaneProps) {
@@ -24,8 +24,8 @@ export function ContactListPane({}: MicroAppPaneProps) {
   const selectedId = useContactStore((state) => state.selectedId)
   const select = useContactStore((state) => state.select)
   const openCreateDialog = useContactStore((state) => state.openCreateDialog)
-  const listFilter = useContactStore((state) => state.listFilter)
-  const setListFilter = useContactStore((state) => state.setListFilter)
+  const entry = useContactStore((state) => state.entry)
+  const openEntry = useContactStore((state) => state.openEntry)
 
   useEffect(() => {
     if (!db) {
@@ -105,9 +105,15 @@ export function ContactListPane({}: MicroAppPaneProps) {
     return result
   }, [visibleContacts, session.info.webId])
   const projection = useMemo(
-    () => buildContactListProjection(visibleContacts, { filter: listFilter, groupInfoById }),
-    [visibleContacts, listFilter, groupInfoById],
+    () => buildContactListProjection(visibleContacts, { groupInfoById }),
+    [visibleContacts, groupInfoById],
   )
+  // Searching also finds saved groups, which otherwise live behind "群聊".
+  const sections = useMemo<ContactSection[]>(() => (
+    search.trim() && projection.groups.length
+      ? [...projection.sections, { key: 'groups', title: '群聊', items: projection.groups }]
+      : projection.sections
+  ), [projection.groups, projection.sections, search])
   const connectionError = !db && databaseStatus === 'error'
     ? databaseError?.message ?? '空间连接失败，请重试。'
     : !db && databaseStatus === 'idle' && !session.info.isLoggedIn
@@ -121,8 +127,8 @@ export function ContactListPane({}: MicroAppPaneProps) {
     ?? (db && liveQuery.isError ? '联系人加载失败，请重试。' : null)
 
   const flatContacts = useMemo(
-    () => projection.sections.flatMap((section) => section.items),
-    [projection.sections],
+    () => sections.flatMap((section) => section.items),
+    [sections],
   )
   const selectedIndex = useMemo(
     () => flatContacts.findIndex((contact) => contact.id === selectedId),
@@ -150,15 +156,16 @@ export function ContactListPane({}: MicroAppPaneProps) {
     <ContactList
       search={search}
       onSearchChange={setSearch}
-      filter={listFilter}
-      onFilterChange={setListFilter}
       selectedId={selectedId}
-      sections={projection.sections}
+      entry={entry}
+      sections={sections}
       letters={projection.letters}
+      groupCount={projection.groups.length}
       isLoading={databaseStatus === 'initializing' || (!!db && (liveQuery.isLoading || isSearching))}
       error={listError}
       onRetry={retryContacts}
       onSelect={select}
+      onOpenEntry={openEntry}
       onCreate={openCreateDialog}
       selectedIndex={selectedIndex}
       onItemKeyDown={onItemKeyDown}

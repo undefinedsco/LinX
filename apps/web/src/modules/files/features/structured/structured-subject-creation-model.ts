@@ -168,8 +168,8 @@ export function projectStructuredSubjectCreationFooterModel({
   return {
     disabled: !classScope,
     title: classScope ? `在 ${classScope} 中新增 subject` : '先选择 class 再新增 subject',
-    buttonAriaLabel: '+ Subject',
-    buttonLabel: 'Subject',
+    buttonAriaLabel: '+ 卡片',
+    buttonLabel: '卡片',
   }
 }
 

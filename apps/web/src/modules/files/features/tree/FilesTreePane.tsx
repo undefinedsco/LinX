@@ -1,236 +1,12 @@
-import type { KeyboardEvent } from 'react'
-import {
-  FolderOpen,
-  HardDrive,
-  ChevronRight,
-  Loader2,
-  FolderRoot,
-  Search,
-  Clock3,
-  MoreHorizontal,
-  Star,
-  FileText,
-  X,
-} from 'lucide-react'
+import { FileText, FolderOpen, Search, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
-import type { FilesEntry, FilesTreeNode } from '../../domain/resource/resource-model'
-import {
-  useFilesTreeChildrenController,
-  useFilesTreePaneController,
-} from './useFilesTreePaneController'
+import type { FilesEntry } from '../../domain/resource/resource-model'
+import { useFilesTreePaneController } from './useFilesTreePaneController'
 import { FilesAddMenu } from '../add/FilesAddMenu'
-
-const ICON_MAP: Record<FilesTreeNode['type'], typeof FolderOpen> = {
-  all: FolderRoot,
-  recent: Clock3,
-  workspace: FolderOpen,
-  'local-workspace': HardDrive,
-  'agents-root': FolderOpen,
-  'workspaces-root': FolderOpen,
-  'repositories-root': FolderOpen,
-  container: FolderOpen,
-  resource: FileText,
-}
-
-// ============================================================================
-// Tree Node Item
-// ============================================================================
-
-interface TreeNodeItemProps {
-  node: FilesTreeNode
-  depth: number
-  isSelected: boolean
-  isExpanded: boolean
-  canExpand: boolean
-  isLoading?: boolean
-  toggleLabel: string
-  onSelect: () => void
-  onToggle: () => void
-  isFavorite: boolean
-  onToggleFavorite: (() => void) | null
-  onOpenSidecar: ((action: 'meta' | 'access') => void) | null
-}
-
-function TreeNodeItem({
-  node,
-  depth,
-  isSelected,
-  isExpanded,
-  canExpand,
-  isLoading,
-  toggleLabel,
-  onSelect,
-  onToggle,
-  isFavorite,
-  onToggleFavorite,
-  onOpenSidecar,
-}: TreeNodeItemProps) {
-  const Icon = ICON_MAP[node.type] ?? FolderOpen
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    onSelect()
-  }
-  const handleToggleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    event.stopPropagation()
-    onToggle()
-  }
-
-  return (
-    <div
-      role="treeitem"
-      aria-expanded={canExpand ? isExpanded : undefined}
-      aria-selected={isSelected}
-      tabIndex={isSelected ? 0 : -1}
-      onClick={onSelect}
-      onKeyDown={handleKeyDown}
-      className={cn(
-        'group relative flex h-7 min-w-0 cursor-pointer select-none items-center gap-1.5 overflow-hidden px-3 pr-12 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-        isSelected
-          ? 'bg-layout-list-selected text-foreground'
-          : 'text-foreground/80 hover:bg-layout-list-hover',
-      )}
-      style={{ paddingLeft: `${12 + depth * 16}px` }}
-    >
-      {/* Expand toggle */}
-      {canExpand ? (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={toggleLabel}
-          aria-expanded={isExpanded}
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggle()
-          }}
-          onKeyDown={handleToggleKeyDown}
-          className="shrink-0 p-0.5 rounded hover:bg-muted/60"
-        >
-          {isLoading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground motion-reduce:animate-none" />
-          ) : (
-            <ChevronRight
-              className={cn(
-                'h-3.5 w-3.5 text-muted-foreground transition-transform',
-                isExpanded && 'rotate-90',
-              )}
-            />
-          )}
-        </button>
-      ) : (
-        <span className="w-4.5" />
-      )}
-
-      <Icon strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{node.label}</span>
-
-      {onToggleFavorite || onOpenSidecar ? (
-        <span
-          className={cn(
-            'absolute right-2 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
-            isFavorite || isSelected ? 'opacity-100' : 'opacity-0',
-          )}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          {onToggleFavorite ? (
-            <button
-              type="button"
-              aria-label={`${isFavorite ? '取消收藏' : '收藏'} ${node.label}`}
-              title={isFavorite ? '取消收藏' : '收藏'}
-              className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-              onClick={(event) => {
-                event.stopPropagation()
-                onToggleFavorite()
-              }}
-            >
-              <Star className={cn('h-3.5 w-3.5', isFavorite && 'fill-primary text-primary')} strokeWidth={1.6} />
-            </button>
-          ) : null}
-          {onOpenSidecar ? (
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={`更多 ${node.label} 操作`}
-                  title="更多"
-                  className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.6} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onSelect={() => onOpenSidecar('meta')}>查看 .meta</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => onOpenSidecar('access')}>查看 Access 来源</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
-        </span>
-      ) : null}
-    </div>
-  )
-}
-
-function handleTreeNavigation(event: KeyboardEvent<HTMLDivElement>) {
-  if (!(event.target instanceof HTMLElement)) return
-  const currentItem = event.target.closest<HTMLElement>('[role="treeitem"]')
-  if (!currentItem || !event.currentTarget.contains(currentItem)) return
-
-  const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]'))
-  const currentIndex = items.indexOf(currentItem)
-  if (currentIndex < 0) return
-
-  const focusItem = (item: HTMLElement | undefined) => {
-    if (!item) return
-    items.forEach((candidate) => {
-      candidate.tabIndex = candidate === item ? 0 : -1
-    })
-    item.focus()
-  }
-
-  if (event.key === 'ArrowDown') {
-    event.preventDefault()
-    focusItem(items[Math.min(currentIndex + 1, items.length - 1)])
-    return
-  }
-  if (event.key === 'ArrowUp') {
-    event.preventDefault()
-    focusItem(items[Math.max(currentIndex - 1, 0)])
-    return
-  }
-  if (event.key === 'Home') {
-    event.preventDefault()
-    focusItem(items[0])
-    return
-  }
-  if (event.key === 'End') {
-    event.preventDefault()
-    focusItem(items[items.length - 1])
-    return
-  }
-
-  const toggle = currentItem.querySelector<HTMLButtonElement>('button[aria-expanded]')
-  if (event.key === 'ArrowRight' && toggle?.getAttribute('aria-expanded') === 'false') {
-    event.preventDefault()
-    toggle.click()
-  } else if (event.key === 'ArrowLeft' && toggle?.getAttribute('aria-expanded') === 'true') {
-    event.preventDefault()
-    toggle.click()
-  }
-}
+import { FilesExplorerRow } from '../../ui/FilesExplorerRow'
 
 function TreeSearchHeader({
   searchText,
@@ -327,22 +103,12 @@ function TreeSearchResultRow({
   )
 }
 
-function TreeChildrenSkeleton({
-  depth,
-  label,
-}: {
-  depth: number
-  label: string
-}) {
+function TreeRootSkeleton({ label }: { label: string }) {
   const widths = ['58%', '44%', '66%']
   return (
     <div role="status" aria-label={label} className="animate-pulse py-0.5 motion-reduce:animate-none">
       {widths.map((width, index) => (
-        <div
-          key={index}
-          className="flex h-7 items-center gap-1.5 px-3"
-          style={{ paddingLeft: `${12 + (depth + 1) * 16}px` }}
-        >
+        <div key={index} className="flex h-7 items-center gap-1.5 px-3">
           <span className="h-3.5 w-3.5 shrink-0 rounded-sm bg-muted-foreground/15" />
           <span className="h-4 w-4 shrink-0 rounded-sm bg-muted-foreground/15" />
           <span className="h-2.5 rounded-full bg-muted-foreground/15" style={{ width }} />
@@ -352,51 +118,10 @@ function TreeChildrenSkeleton({
   )
 }
 
-function TreeChildren({
-  parentNode,
-  depth,
-}: {
-  parentNode: FilesTreeNode
-  depth: number
-}) {
-  const treeChildren = useFilesTreeChildrenController(parentNode)
-
-  if (treeChildren.childrenState.kind === 'loading') {
-    return (
-      <TreeChildrenSkeleton
-        depth={depth}
-        label={treeChildren.chrome.childLoadingLabel}
-      />
-    )
-  }
-
-  return treeChildren.childrenState.childNodes.map((childNode) => {
-    const nodeState = treeChildren.projectNode(childNode)
-    return (
-      <div key={childNode.id}>
-        <TreeNodeItem
-          node={childNode}
-          depth={depth}
-          isSelected={nodeState.isSelected}
-          isExpanded={nodeState.isExpanded}
-          canExpand={nodeState.canExpand}
-          toggleLabel={nodeState.toggleLabel}
-          onSelect={nodeState.onSelect}
-          onToggle={nodeState.onToggle}
-          isFavorite={nodeState.isFavorite}
-          onToggleFavorite={nodeState.onToggleFavorite}
-          onOpenSidecar={nodeState.onOpenSidecar}
-        />
-        {nodeState.canExpand && nodeState.isExpanded ? (
-          <TreeChildren parentNode={childNode} depth={depth + 1} />
-        ) : null}
-      </div>
-    )
-  })
-}
-
 export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { forceExpanded?: boolean }) {
   const tree = useFilesTreePaneController()
+  const { explorer } = tree
+  const firstEntryUri = explorer.rows.find((row) => row.kind === 'entry')?.id
 
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
@@ -414,7 +139,7 @@ export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { f
       ) : null}
       <ScrollArea className="flex-1">
         {tree.searchActive ? (
-          <div className="py-1" role="tree" aria-label={tree.chrome.treeLabel} onKeyDown={handleTreeNavigation}>
+          <div className="py-1" role="tree" aria-label={tree.chrome.treeLabel}>
             {tree.searchLoading ? (
               <div className="px-4 py-3 text-sm text-muted-foreground">{tree.chrome.rootLoadingLabel}</div>
             ) : tree.searchResults.length === 0 ? (
@@ -431,43 +156,63 @@ export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { f
             ))}
           </div>
         ) : (
-        <div className="py-1" role="tree" aria-label={tree.chrome.treeLabel} onKeyDown={handleTreeNavigation}>
-          {tree.contentState.kind === 'loading' ? (
-            <TreeChildrenSkeleton depth={-1} label={tree.chrome.rootLoadingLabel} />
-          ) : tree.contentState.kind === 'error' ? (
-            <div className="px-4 py-3 text-sm text-destructive">{tree.chrome.rootErrorLabel}</div>
-          ) : tree.contentState.kind === 'empty' ? null : tree.contentState.treeNodes.map((node) => {
-            const nodeState = tree.projectNode(node)
-            return (
-              <div key={node.id}>
-                <TreeNodeItem
-                  node={node}
-                  depth={0}
-                  isSelected={nodeState.isSelected}
-                  isExpanded={nodeState.isExpanded}
-                  canExpand={nodeState.canExpand}
-                  isLoading={nodeState.isLoading}
-                  toggleLabel={nodeState.toggleLabel}
-                  onSelect={nodeState.onSelect}
-                  onToggle={nodeState.onToggle}
-                  isFavorite={nodeState.isFavorite}
-                  onToggleFavorite={nodeState.onToggleFavorite}
-                  onOpenSidecar={nodeState.onOpenSidecar}
+          <div className="w-full max-w-full overflow-hidden py-1" role="tree" aria-label={tree.chrome.treeLabel}>
+            {tree.rootLoading ? (
+              <TreeRootSkeleton label={tree.chrome.rootLoadingLabel} />
+            ) : tree.rootError ? (
+              <div className="px-4 py-3 text-sm text-destructive">{tree.chrome.rootErrorLabel}</div>
+            ) : explorer.rows.map((row) => {
+              if (row.kind === 'group') {
+                return (
+                  <div
+                    key={row.id}
+                    role="presentation"
+                    className="px-3 pb-1 pt-3 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {row.label}
+                  </div>
+                )
+              }
+              if (row.kind !== 'entry') {
+                return (
+                  <div
+                    key={row.id}
+                    role="treeitem"
+                    aria-level={row.depth + 1}
+                    className="flex h-7 items-center truncate px-2 text-xs text-muted-foreground"
+                    style={{ paddingLeft: `${28 + row.depth * 14}px` }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{row.label}</span>
+                  </div>
+                )
+              }
+              const entry = row.entry
+              const selected = tree.isEntrySelected(entry)
+              return (
+                <FilesExplorerRow
+                  key={row.id}
+                  uri={entry.uri}
+                  name={row.label}
+                  iconKind={row.iconKind}
+                  depth={row.depth}
+                  expandable={row.expandable}
+                  expanded={row.expanded}
+                  selected={selected}
+                  focusable={selected || (!explorer.rows.some((candidate) => candidate.kind === 'entry' && tree.isEntrySelected(candidate.entry)) && firstEntryUri === row.id)}
+                  favorite={tree.isEntryFavorite(entry)}
+                  metadataWarning={row.metadataWarning}
+                  onToggle={() => explorer.toggleFolder(entry.uri)}
+                  onSelect={() => tree.activateEntry(entry)}
+                  onOpen={() => tree.activateEntry(entry)}
+                  onToggleFavorite={() => tree.toggleEntryFavorite(entry)}
+                  onKeyCommand={(key) => explorer.handleRowKeyDown(entry.uri, key)}
+                  renderContextMenu={() => null}
                 />
-                {nodeState.canExpand && nodeState.isExpanded ? (
-                  <TreeChildren parentNode={node} depth={1} />
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
         )}
       </ScrollArea>
-      {tree.footerLabel ? (
-        <div aria-label="资源树状态条" className="flex h-7 shrink-0 items-center border-t border-border/40 px-4">
-          <p className="truncate text-[11px] text-muted-foreground" title={tree.footerLabel}>{tree.footerLabel}</p>
-        </div>
-      ) : null}
     </div>
   )
 }

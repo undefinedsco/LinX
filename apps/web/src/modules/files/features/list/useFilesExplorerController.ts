@@ -18,6 +18,9 @@ export interface FilesExplorerControllerInput {
   loadingContainerUris?: ReadonlySet<string>
   errorByContainerUri?: Record<string, unknown>
   retryContainer?: (containerUri: string) => void
+  treeOnly?: boolean
+  groups?: boolean
+  agentNames?: Record<string, string>
 }
 
 function isContainerEntry(entry: FilesEntry) {
@@ -37,6 +40,9 @@ export function useFilesExplorerController({
   loadingContainerUris = new Set(),
   errorByContainerUri = {},
   retryContainer,
+  treeOnly = false,
+  groups = false,
+  agentNames,
 }: FilesExplorerControllerInput) {
   const selectFile = useFilesStore((state) => state.selectFile)
   const clearFileSelection = useFilesStore((state) => state.clearFileSelection)
@@ -55,8 +61,11 @@ export function useFilesExplorerController({
     loadingContainerUris,
     errorByContainerUri,
     searchText,
+    treeOnly,
+    groups,
+    agentNames,
     }),
-    [childEntriesByContainerUri, errorByContainerUri, expandedUris, loadingContainerUris, rootEntries, searchText],
+    [agentNames, childEntriesByContainerUri, errorByContainerUri, expandedUris, groups, loadingContainerUris, rootEntries, searchText, treeOnly],
   )
 
   const toggleFolder = useCallback((containerUri: string) => {

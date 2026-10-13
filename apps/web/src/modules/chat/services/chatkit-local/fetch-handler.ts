@@ -23,7 +23,7 @@ import {
   setThing,
   universalAccess,
 } from '@inrupt/solid-client'
-import { nowTimestamp, type Attachment, type ThreadItem, type ThreadMetadata } from '@/lib/vendor/xpod-chatkit'
+import { nowTimestamp, type Attachment, type StreamingReq, type ThreadItem, type ThreadMetadata, type ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { LocalChatKitStore } from './store'
@@ -281,6 +281,40 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     }
     return { uri: sourceUrl.href, name: versionName, createdAt }
   }
+  const conversation: LocalConversationApi = {
+    load: (threadId) => service.loadConversation(threadId, {}),
+    resolveItemUri: (itemId) => service.resolveItemUri(itemId),
+    async uploadAttachment(file, signal) {
+      if (!isAvailable()) throw new Error('当前空间连接尚未恢复，请稍后重试。')
+      const created = await service.process(JSON.stringify({
+        type: 'attachments.create',
+        params: { name: file.name, mime_type: file.mimeType, size: file.blob.size },
+      }), { signal })
+      if (created.type !== 'non_streaming') throw new Error('附件创建失败')
+      const attachment = JSON.parse(created.json) as Attachment
+      return service.uploadAttachment(attachment.id, file.blob, file.mimeType, signal)
+    },
+    async *run(request, signal) {
+      if (!isAvailable()) throw new Error('当前空间连接尚未恢复，请稍后重试。')
+      const controller = new AbortController()
+      const abortFromCaller = () => controller.abort(signal?.reason)
+      signal?.addEventListener('abort', abortFromCaller, { once: true })
+      if (signal?.aborted) abortFromCaller()
+      activeStreamingControllers.add(controller)
+      notifyStreamingChange()
+      try {
+        for await (const event of service.streamEvents(request, { signal: controller.signal })) {
+          onServiceAccessRecovered?.()
+          yield event
+        }
+      } finally {
+        signal?.removeEventListener('abort', abortFromCaller)
+        activeStreamingControllers.delete(controller)
+        notifyStreamingChange()
+      }
+    },
+  }
+  localFetch.conversation = conversation
   localFetch.dispose = () => {
     interruptActiveStreams()
     store.dispose()
@@ -522,7 +556,24 @@ export type LocalChatKitFetch = typeof fetch & {
     mimeType?: string | null
     content: string
   }) => Promise<{ uri: string; name: string; createdAt: number }>
+  /**
+   * Typed access for the AG-UI conversation surface (the ChatKit wire format
+   * is not involved). Same service, same store, same abort handling.
+   */
+  conversation: LocalConversationApi
   dispose: () => void
+}
+
+export interface LocalConversationApi {
+  load: (threadId: string) => Promise<{
+    thread: ThreadMetadata
+    threadUri: string
+    items: Array<{ item: ThreadItem; uri: string }>
+  }>
+  resolveItemUri: (itemId: string) => string
+  /** Two-phase upload collapsed into one call; returns the stored attachment. */
+  uploadAttachment: (file: { name: string; mimeType: string; blob: Blob }, signal?: AbortSignal) => Promise<Attachment>
+  run: (request: StreamingReq, signal?: AbortSignal) => AsyncIterable<ThreadStreamEvent>
 }
 
 const AI_SERVICE_RESOURCE_IDS = new Set([

@@ -215,9 +215,12 @@ export function projectStructuredWhiteboard(
     }
   }
 
+  const rdfEdges = new Set(relations.map((relation) => `${relation.from}\u0000${relation.to}`))
   for (const relation of visualRelations) {
     if (!relation.id || !relation.from || !relation.to) continue
     if (!subjectSet.has(relation.from) || !subjectSet.has(relation.to)) continue
+    // A labelled edge that is already stored as a relation keeps only its label locally.
+    if (rdfEdges.has(`${relation.from}\u0000${relation.to}`)) continue
     relations.push({
       id: relation.id,
       from: relation.from,

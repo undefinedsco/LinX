@@ -6,6 +6,7 @@ import {
   projectStructuredPredicateColumnHeader,
   projectStructuredPredicateHeaderColumnModel,
   projectStructuredPendingPredicateHeaderChrome,
+  projectStructuredPredicateTypeIconKind,
 } from './structured-predicate-column-header-model'
 
 const predicate = 'https://pod.example/.vocab/terms.ttl#reviewStatus'
@@ -88,8 +89,8 @@ describe('projectStructuredPredicateColumnHeader', () => {
     })).toMatchObject({
       kind: 'defined',
       description: '用于编辑、校验、选项和链接行为。',
-      displayLabel: 'reviewStatus',
-      normalizedLabel: 'reviewStatus',
+      displayLabel: 'Review status',
+      normalizedLabel: 'Review status',
       ruleText: '使用默认 predicate 规则',
       shapeRuleActions: [],
       statusLabel: '已识别',
@@ -268,8 +269,8 @@ describe('projectStructuredPredicateColumnHeader', () => {
       proposal: undefined,
       showNamespaces: false,
     })).toEqual({
-      label: 'status',
-      actionLabel: 'status',
+      label: 'Status',
+      actionLabel: 'Status',
       observedValues: ['"Draft"', '"Review"', '"Blocked"'],
     })
     expect(projectStructuredPredicateHeaderColumnModel({
@@ -282,5 +283,16 @@ describe('projectStructuredPredicateColumnHeader', () => {
       actionLabel: 'Workflow status*',
       observedValues: ['"Draft"', '"Review"', '"Blocked"'],
     })
+  })
+})
+
+describe('projectStructuredPredicateTypeIconKind', () => {
+  it('maps value types to column header icons', () => {
+    expect(projectStructuredPredicateTypeIconKind('xsd:integer')).toBe('number')
+    expect(projectStructuredPredicateTypeIconKind('date')).toBe('date')
+    expect(projectStructuredPredicateTypeIconKind('boolean')).toBe('boolean')
+    expect(projectStructuredPredicateTypeIconKind('enum')).toBe('choice')
+    expect(projectStructuredPredicateTypeIconKind('relation')).toBe('relation')
+    expect(projectStructuredPredicateTypeIconKind('observed')).toBe('text')
   })
 })

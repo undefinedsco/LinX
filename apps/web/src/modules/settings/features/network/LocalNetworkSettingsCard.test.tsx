@@ -48,16 +48,16 @@ describe('LocalNetworkSettingsCard', () => {
     render(<LocalNetworkSettingsCard />)
     fireEvent.click(screen.getByRole('button', { name: '高级网络设置' }))
 
-    const tokenInput = screen.getByLabelText('Cloudflare Tunnel token（可选）')
+    const tokenInput = screen.getByLabelText('隧道密钥（可选）')
     fireEvent.change(tokenInput, { target: { value: 'retry-token' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存网络设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     expect(await screen.findByText('隧道密钥无效。')).toBeInTheDocument()
     expect(tokenInput).toHaveValue('retry-token')
 
-    fireEvent.click(screen.getByRole('button', { name: '保存网络设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
-    expect(await screen.findByText('网络配置已保存。')).toBeInTheDocument()
+    expect(await screen.findByText('已保存。')).toBeInTheDocument()
     expect(tokenInput).toHaveValue('')
   })
 })

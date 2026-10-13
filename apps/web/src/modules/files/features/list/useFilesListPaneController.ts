@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
+import { FILES_TREE_FOLDERS_AND_TABLES_ONLY } from '../../app/feature-flags'
 import { copyFilesText } from '../../app/platform-actions'
 import { useFilesStore, type FilesSidecarAction } from '../../app/store'
 import {
@@ -228,6 +229,9 @@ export function useFilesListPaneController() {
     setSearchText,
     setTagFilter,
     showRecentScopeHeader,
+    showGroups: selection.kind === 'all',
+    currentFolderUri: selection.kind === 'container' ? selection.containerUri ?? null : null,
+    treeOnly: FILES_TREE_FOLDERS_AND_TABLES_ONLY,
     scopeHeader,
     sortField,
     sortDirection,

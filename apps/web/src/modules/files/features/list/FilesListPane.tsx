@@ -46,6 +46,7 @@ import { useFilesListPaneController } from './useFilesListPaneController'
 import { useFilesListOperationController } from './useFilesListOperationController'
 import { useFilesListSelectionController } from './useFilesListSelectionController'
 import { useFilesExplorerDataController } from './useFilesExplorerDataController'
+import { useFilesSearchController } from './useFilesSearchController'
 
 const LIST_EMPTY_STATE_ICON = {
   file: FileText,
@@ -245,7 +246,20 @@ export function FilesListPane(_props: MicroAppPaneProps) {
     entryScope: listPane.entryScope,
     rootEntries: listPane.files,
     searchText: listPane.searchText,
+    groups: listPane.showGroups,
+    treeOnly: listPane.treeOnly,
   })
+  const search = useFilesSearchController({
+    rows: explorer.rows,
+    searchText: listPane.searchText,
+    currentFolderUri: listPane.currentFolderUri,
+  })
+  const renderedRows: Array<{ row: (typeof explorer.rows)[number]; reason?: string }> = search.active
+    ? search.results.map(({ row, reason }) => ({
+        row: { ...row, depth: 0, expandable: false, expanded: false },
+        reason,
+      }))
+    : explorer.rows.map((row) => ({ row }))
   const explorerEntries = explorer.rows
     .filter((row) => row.kind === 'entry')
     .map((row) => row.entry)
@@ -387,6 +401,27 @@ export function FilesListPane(_props: MicroAppPaneProps) {
           {listPane.scopeHeader.label}
         </div>
       ) : null}
+      {search.active ? (
+        <div className="shrink-0 border-b border-border/30 px-3 py-1.5 text-xs">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" aria-label="搜索范围" className="font-medium text-foreground hover:underline">
+                范围：{search.scopeLabel} ▾
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-44">
+              <DropdownMenuRadioGroup value={search.scope} onValueChange={(value) => search.setScope(value as typeof search.scope)}>
+                {search.scopeOptions.map((option) => (
+                  <DropdownMenuRadioItem key={option.id} value={option.id}>{option.label}</DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {search.note ? (
+            <p role="status" className="mt-0.5 text-muted-foreground">{search.note.text}</p>
+          ) : null}
+        </div>
+      ) : null}
       {listSelection.hasBatchSelection ? (
         <div className="flex items-center justify-between border-b border-border/50 bg-muted/20 px-4 py-2">
           <span className="text-xs font-medium text-foreground/80">{listSelection.batchSelectionLabel}</span>
@@ -435,8 +470,8 @@ export function FilesListPane(_props: MicroAppPaneProps) {
         />
       ) : listPane.contentState.kind === 'empty' ? (
         <FilesEmptyState
-          title={listPane.emptyState.title}
-          description={listPane.emptyState.description}
+          title={(!listPane.mimeTypeFilter && !listPane.tagFilter && search.emptyText?.title) || listPane.emptyState.title}
+          description={(!listPane.mimeTypeFilter && !listPane.tagFilter && search.emptyText?.description) || listPane.emptyState.description}
           icon={LIST_EMPTY_STATE_ICON[listPane.emptyState.iconKind]}
           action={listPane.searchText || listPane.mimeTypeFilter || listPane.tagFilter ? (
             <button
@@ -459,7 +494,25 @@ export function FilesListPane(_props: MicroAppPaneProps) {
       ) : (
         <ScrollArea className="flex-1">
           <div role="tree" aria-label="文件资源树" className="w-full max-w-full overflow-hidden py-1">
-            {explorer.rows.map((row) => {
+            {search.emptyText ? (
+              <FilesEmptyState
+                title={search.emptyText.title}
+                description={search.emptyText.description}
+                icon={Search}
+              />
+            ) : null}
+            {renderedRows.map(({ row, reason }) => {
+              if (row.kind === 'group') {
+                return (
+                  <div
+                    key={row.id}
+                    role="presentation"
+                    className="px-3 pb-1 pt-3 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {row.label}
+                  </div>
+                )
+              }
               if (row.kind !== 'entry') {
                 return (
                   <div
@@ -499,10 +552,10 @@ export function FilesListPane(_props: MicroAppPaneProps) {
               }
               const file = row.entry
               return (
+                <div key={row.id}>
                 <FilesExplorerRow
-                  key={row.id}
                   uri={file.uri}
-                  name={file.name}
+                  name={row.label}
                   iconKind={row.iconKind}
                   depth={row.depth}
                   expandable={row.expandable}
@@ -524,6 +577,10 @@ export function FilesListPane(_props: MicroAppPaneProps) {
                   renderContextMenu={() => renderFileContextMenu(file)}
                   renderActionsMenu={() => renderFileActionsMenu(file)}
                 />
+                {reason ? (
+                  <p className="-mt-1 truncate pb-1 pl-11 pr-3 text-[11px] text-muted-foreground">{reason}</p>
+                ) : null}
+                </div>
               )
             })}
           </div>
