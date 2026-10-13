@@ -1,0 +1,122 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+import { findCardLocatorLines, type CardLocator } from '../../domain/card/card-dialog-model'
+
+interface SelectionState {
+  text: string
+  left: number
+  top: number
+}
+
+/** The passage selected inside `container`, with where to float the toolbar. */
+export function useCardTextSelection(container: React.RefObject<HTMLElement | null>) {
+  const [selection, setSelection] = useState<SelectionState | null>(null)
+
+  const read = useCallback(() => {
+    const root = container.current
+    const current = typeof window !== 'undefined' ? window.getSelection() : null
+    if (!root || !current || current.rangeCount === 0 || current.isCollapsed) {
+      setSelection(null)
+      return
+    }
+    const text = current.toString().trim()
+    const range = current.getRangeAt(0)
+    if (!text || !root.contains(range.commonAncestorContainer)) {
+      setSelection(null)
+      return
+    }
+    const rect = range.getBoundingClientRect()
+    setSelection({ text, left: rect.left + rect.width / 2, top: Math.max(8, rect.top - 40) })
+  }, [container])
+
+  useEffect(() => {
+    const root = container.current
+    if (!root) return
+    const clearWhenCollapsed = () => {
+      const current = window.getSelection()
+      if (!current || current.isCollapsed) setSelection(null)
+    }
+    root.addEventListener('mouseup', read)
+    root.addEventListener('keyup', read)
+    document.addEventListener('selectionchange', clearWhenCollapsed)
+    return () => {
+      root.removeEventListener('mouseup', read)
+      root.removeEventListener('keyup', read)
+      document.removeEventListener('selectionchange', clearWhenCollapsed)
+    }
+  }, [container, read])
+
+  return { selection, clear: () => setSelection(null) }
+}
+
+/** 问 LinX · 做成卡片 · 复制链接 — floats above the selected passage (K5). */
+export function CardSelectionToolbar({
+  selection,
+  onAsk,
+  onMakeCard,
+  onCopyLink,
+}: {
+  selection: SelectionState | null
+  onAsk: (quote: string) => void
+  onMakeCard: (quote: string) => void
+  onCopyLink: (quote: string) => void
+}) {
+  if (!selection) return null
+  const items: Array<[string, (quote: string) => void]> = [
+    ['问 LinX', onAsk],
+    ['做成卡片', onMakeCard],
+    ['复制链接', onCopyLink],
+  ]
+  return (
+    <div
+      role="toolbar"
+      aria-label="选中的文字"
+      data-card-selection-toolbar="true"
+      className="fixed z-[70] flex -translate-x-1/2 items-center gap-0.5 rounded-lg border border-border/60 bg-popover p-1 text-xs shadow-md"
+      style={{ left: selection.left, top: selection.top }}
+      onMouseDown={(event) => event.preventDefault()}
+    >
+      {items.map(([label, handler]) => (
+        <button
+          key={label}
+          type="button"
+          className="rounded-md px-2 py-1 hover:bg-muted"
+          onClick={() => handler(selection.text)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Plain text files: line numbers, jumped to the cited line with the passage lit up. */
+export function CardTextViewer({ text, locator }: { text: string; locator?: CardLocator | null }) {
+  const lines = text.split('\n')
+  const range = findCardLocatorLines(text, locator)
+  const firstCited = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    firstCited.current?.scrollIntoView?.({ block: 'center' })
+  }, [range?.start, text])
+
+  return (
+    <div data-card-text-viewer="true" className="font-mono text-xs leading-6">
+      {lines.map((line, index) => {
+        const number = index + 1
+        const cited = !!range && number >= range.start && number <= range.end
+        return (
+          <div
+            key={number}
+            ref={cited && number === range?.start ? firstCited : undefined}
+            data-cited={cited ? 'true' : undefined}
+            className={`flex gap-3 rounded px-1 ${cited ? 'bg-amber-100 text-amber-950' : ''}`}
+          >
+            <span className="w-8 shrink-0 select-none text-right text-muted-foreground">{number}</span>
+            <span className="whitespace-pre-wrap break-words">{line || ' '}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}

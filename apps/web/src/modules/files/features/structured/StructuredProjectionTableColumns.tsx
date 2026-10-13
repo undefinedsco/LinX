@@ -25,7 +25,9 @@ import {
   type StructuredPredicateColumnProposal,
 } from './StructuredPredicateColumnHeader'
 import { StructuredPredicateActiveCell } from './StructuredPredicateActiveCell'
+import { StructuredAiCellDot } from './StructuredAiCellDot'
 import { StructuredPredicateStaticCell } from './StructuredPredicateStaticCell'
+import { aiCellKey, type AiCellChange } from '../../domain/proposal/ai-cell-change-model'
 import {
   StructuredSubjectCell,
   type StructuredSubjectCellOpenKind,
@@ -102,6 +104,10 @@ export interface StructuredProjectionTableColumnsInput {
   visiblePredicates: readonly string[]
   vocabDefinitionIndex?: StructuredVocabDefinitionIndex
   removeEnumOption: StructuredPredicateActiveCellProps['onRemoveEnumOption']
+  /** Cells LinX wrote that still wear a purple dot, keyed by `aiCellKey(subjectIri, predicateIri)`. */
+  aiCellDots?: ReadonlyMap<string, AiCellChange>
+  onUndoAiCell?: (change: AiCellChange) => void
+  onSeenAiCell?: (change: AiCellChange) => void
 }
 
 const structuredTableSortingFn: SortingFn<StructuredProjectionTableRow> = (left, right, columnId) => {
@@ -117,6 +123,9 @@ function openSubjectCard(projection: StructuredTableProjection, documentUri: str
 }
 
 export function buildStructuredProjectionTableColumns({
+  aiCellDots,
+  onUndoAiCell,
+  onSeenAiCell,
   activeEnumCell,
   activeRelationCell,
   activeTextCell,
@@ -311,6 +320,15 @@ export function buildStructuredProjectionTableColumns({
                   pendingWrite={cellChrome.pendingWrite}
                   shapeWarning={cellChrome.shapeWarning}
                   onDiscardPendingWrite={() => discardCellDraft(row.original.subject, predicate)}
+                  aiChangeDot={(() => {
+                    const change = aiCellDots?.get(aiCellKey(
+                      expandRdfIri(row.original.subject, documentUri, projection.prefixes),
+                      expandRdfIri(predicate, documentUri, projection.prefixes),
+                    ))
+                    return change && onUndoAiCell && onSeenAiCell
+                      ? <StructuredAiCellDot change={change} onUndo={onUndoAiCell} onSeen={onSeenAiCell} />
+                      : null
+                  })()}
                 />
               )}
               onOpenRelationValue={openRelationValue}

@@ -24,6 +24,8 @@ export interface LoadedConversation {
   messages: AgUiHistoryMessage[]
   /** Pod message URI → local item id, for actions on persisted messages. */
   itemIdByUri: Map<string, string>
+  /** Pod message URI → who wrote it (WebID or contact address); resolved to a name only when shown. */
+  makerByUri: Map<string, string>
 }
 
 interface UserContentPart {
@@ -74,11 +76,14 @@ export class LinxConversationAgent extends AbstractAgent {
     const conversation = await this.backend.load(this.localThreadId)
     this.threadId = conversation.threadUri
     const itemIdByUri = new Map<string, string>()
+    const makerByUri = new Map<string, string>()
     for (const { item, uri } of conversation.items) {
       itemIdByUri.set(uri, item.id)
+      const maker = (item as { maker?: unknown }).maker
+      if (typeof maker === 'string' && maker) makerByUri.set(uri, maker)
       this.itemIdByMessageId.set(uri, item.id)
     }
-    return { messages: itemsToAgUiMessages(conversation.items), itemIdByUri }
+    return { messages: itemsToAgUiMessages(conversation.items), itemIdByUri, makerByUri }
   }
 
   /** A stop was asked for; the run is "stopped" only once the stream really ended. */

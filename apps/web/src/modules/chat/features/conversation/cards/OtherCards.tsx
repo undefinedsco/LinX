@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { AiDraftMessageBar } from '@/modules/files'
 import { displayAssistantName } from '@/lib/assistant-name'
 import { FileText, FileSpreadsheet, FileImage, File as FileIcon, CalendarClock, Sparkles, PencilLine } from 'lucide-react'
 import { agentResource, scheduleResource } from '@undefineds.co/models'
@@ -82,6 +83,7 @@ export function FileCard({ uri, hints, onRetry }: { uri: string; hints?: Record<
   const contentType = file.state === 'ready' ? file.contentType : null
   const size = file.state === 'ready' ? file.size : null
   return (
+    <div className="flex max-w-[320px] flex-col">
     <button
       type="button"
       aria-label={`打开 ${name}`}
@@ -96,6 +98,9 @@ export function FileCard({ uri, hints, onRetry }: { uri: string; hints?: Record<
         </span>
       </span>
     </button>
+    {/* K10: keep / undo LinX's unconfirmed edits right from the file message. */}
+    <AiDraftMessageBar targetResourceUri={uri} />
+    </div>
   )
 }
 

@@ -21,7 +21,7 @@ function backend(events: ThreadStreamEvent[], requests: StreamingReq[] = []): Lo
       thread: { id: 't1', status: { type: 'active' }, created_at: 0, updated_at: 0 },
       threadUri: THREAD,
       items: [
-        { uri: 'https://alice.example/m1', item: { id: 'i1', thread_id: 't1', type: 'user_message', content: [{ type: 'input_text', text: '早' }], created_at: 0 } },
+        { uri: 'https://alice.example/m1', item: { id: 'i1', thread_id: 't1', maker: 'https://bob.example/profile/card#me', type: 'user_message', content: [{ type: 'input_text', text: '早' }], created_at: 0 } },
         { uri: 'https://alice.example/m2', item: item('i2', '早上好') },
       ],
     }),
@@ -112,6 +112,13 @@ describe('LinxConversationAgent requests', () => {
     })
     expect(uploaded).toEqual(['名单.txt'])
     expect(requests[0]).toMatchObject({ type: 'threads.add_user_message', params: { input: { attachments: ['att-9'] } } })
+  })
+
+  it('remembers who wrote each message for group speaker names', async () => {
+    const agent = new LinxConversationAgent({ localThreadId: 't1', threadUri: THREAD, backend: backend([]) })
+    const loaded = await agent.load()
+    expect(loaded.makerByUri.get('https://alice.example/m1')).toBe('https://bob.example/profile/card#me')
+    expect(loaded.makerByUri.has('https://alice.example/m2')).toBe(false)
   })
 
   it('regenerates instead of re-sending a question that is already in the Pod', async () => {

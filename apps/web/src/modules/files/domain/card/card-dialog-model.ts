@@ -227,7 +227,85 @@ export function projectCardMediaSource(objectUrl: string, kind: CardMediaKind, l
   if (kind === 'pdf' && typeof locator?.page === 'number' && locator.page > 0) {
     return `${objectUrl}#page=${Math.floor(locator.page)}`
   }
+  // Media fragment: the player starts from the cited moment.
+  if ((kind === 'audio' || kind === 'video') && typeof locator?.timeSeconds === 'number' && locator.timeSeconds > 0) {
+    return `${objectUrl}#t=${Math.floor(locator.timeSeconds)}`
+  }
   return objectUrl
+}
+
+// ---------------------------------------------------------------------------
+// Plain text files and text selection (K5)
+// ---------------------------------------------------------------------------
+
+export interface CardLineRange {
+  /** 1-based, inclusive. */
+  start: number
+  end: number
+}
+
+/** The lines a citation points at: a line number, or the line(s) holding the quoted passage. */
+export function findCardLocatorLines(text: string, locator: CardLocator | null | undefined): CardLineRange | null {
+  if (!locator) return null
+  const lineCount = text.split('\n').length
+  if (typeof locator.line === 'number' && locator.line >= 1) {
+    const line = Math.min(Math.floor(locator.line), lineCount)
+    return { start: line, end: line }
+  }
+  const quote = locator.quote?.trim()
+  if (!quote) return null
+  const index = text.indexOf(quote)
+  if (index < 0) return null
+  const start = text.slice(0, index).split('\n').length
+  return { start, end: start + quote.split('\n').length - 1 }
+}
+
+/** Where a copied link to the cited spot points (standard fragments the preview understands). */
+export function projectCardLocatorLink(uri: string, locator: CardLocator | null | undefined): string {
+  if (!locator || uri.includes('#')) return uri
+  if (typeof locator.page === 'number') return `${uri}#page=${Math.floor(locator.page)}`
+  if (typeof locator.timeSeconds === 'number') return `${uri}#t=${Math.floor(locator.timeSeconds)}`
+  if (typeof locator.line === 'number') return `${uri}#line=${Math.floor(locator.line)}`
+  return uri
+}
+
+function quoteLines(text: string) {
+  return text.trim().split('\n').map((line) => `> ${line}`).join('\n')
+}
+
+/** Words dropped into the clipboard by 问 LinX: the passage, with where it came from. */
+export function projectCardQuotedPrompt({ title, quote, locatorLabel }: { title: string; quote: string; locatorLabel?: string | null }): string {
+  const where = locatorLabel ? `「${title}」${locatorLabel}` : `「${title}」`
+  return `关于${where}里的这段：\n${quoteLines(quote)}\n\n`
+}
+
+/** 做成卡片: a small note holding the passage and a link back to where it came from. */
+export function projectCardExcerptNote({
+  title,
+  quote,
+  sourceUri,
+  locatorLabel,
+  now = new Date(),
+}: {
+  title: string
+  quote: string
+  sourceUri: string
+  locatorLabel?: string | null
+  now?: Date
+}): { fileName: string; content: string } {
+  const heading = quote.trim().replace(/\s+/g, ' ').slice(0, 24) || '摘录'
+  const safe = heading.replace(/[\\/:*?"<>|#%]+/g, ' ').trim() || '摘录'
+  const day = `${now.getMonth() + 1}-${now.getDate()}`
+  return {
+    fileName: `${safe} ${day}.md`,
+    content: `# ${safe}\n\n${quoteLines(quote)}\n\n来源：[${title}${locatorLabel ? ` · ${locatorLabel}` : ''}](${sourceUri})\n`,
+  }
+}
+
+/** Files that are plain text (not notes or pages): shown with line numbers. */
+export function isCardPlainTextMime(mimeType: string | null | undefined): boolean {
+  const normalized = mimeType?.split(';')[0]?.trim().toLowerCase() ?? ''
+  return !!normalized && normalized !== 'text/markdown' && normalized !== 'text/html'
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +329,21 @@ const BODY_PREDICATES = [
   'http://schema.org/description',
   'http://purl.org/dc/terms/description',
   'http://www.w3.org/2000/01/rdf-schema#comment',
+  'http://www.w3.org/2006/vcard/ns#note',
+  'http://xmlns.com/foaf/0.1/status',
 ]
+
+/** A person's avatar: shown beside the title instead of as a property row. */
+const PHOTO_PREDICATES = [
+  'http://www.w3.org/2006/vcard/ns#hasPhoto',
+  'http://www.w3.org/2006/vcard/ns#photo',
+  'http://xmlns.com/foaf/0.1/img',
+  'http://xmlns.com/foaf/0.1/depiction',
+  'http://schema.org/image',
+  'https://schema.org/image',
+]
+
+const FOAF_PRIMARY_TOPIC_IRI = 'http://xmlns.com/foaf/0.1/primaryTopic'
 
 const AS_NOTE_IRI = 'https://www.w3.org/ns/activitystreams#Note'
 const DEFAULT_NOTE_BODY_PREDICATE = 'https://www.w3.org/ns/activitystreams#content'
@@ -263,8 +355,51 @@ const KNOWN_PREDICATE_LABELS: Record<string, string> = {
   'http://purl.org/dc/terms/title': '标题',
   'http://xmlns.com/foaf/0.1/name': '名字',
   'http://www.w3.org/2006/vcard/ns#fn': '名字',
-  'http://purl.org/dc/terms/created': '创建',
-  'http://purl.org/dc/terms/modified': '修改',
+  'http://xmlns.com/foaf/0.1/nick': '昵称',
+  'http://xmlns.com/foaf/0.1/img': '头像',
+  'http://xmlns.com/foaf/0.1/depiction': '头像',
+  'http://xmlns.com/foaf/0.1/status': '签名',
+  'http://xmlns.com/foaf/0.1/mbox': '邮箱',
+  'http://xmlns.com/foaf/0.1/phone': '电话',
+  'http://xmlns.com/foaf/0.1/homepage': '主页',
+  'http://xmlns.com/foaf/0.1/based_near': '地区',
+  'http://xmlns.com/foaf/0.1/knows': '认识的人',
+  'http://xmlns.com/foaf/0.1/maker': '创建者',
+  'http://xmlns.com/foaf/0.1/primaryTopic': '主要内容',
+  'http://www.w3.org/2006/vcard/ns#nickname': '昵称',
+  'http://www.w3.org/2006/vcard/ns#hasPhoto': '头像',
+  'http://www.w3.org/2006/vcard/ns#photo': '头像',
+  'http://www.w3.org/2006/vcard/ns#note': '签名',
+  'http://www.w3.org/2006/vcard/ns#region': '地区',
+  'http://www.w3.org/2006/vcard/ns#locality': '城市',
+  'http://www.w3.org/2006/vcard/ns#country-name': '国家',
+  'http://www.w3.org/2006/vcard/ns#hasAddress': '地址',
+  'http://www.w3.org/2006/vcard/ns#url': '主页',
+  'http://www.w3.org/2006/vcard/ns#bday': '生日',
+  'http://www.w3.org/2006/vcard/ns#organization-name': '公司',
+  'http://www.w3.org/2006/vcard/ns#role': '职位',
+  'http://schema.org/image': '头像',
+  'https://schema.org/image': '头像',
+  'http://schema.org/email': '邮箱',
+  'http://schema.org/telephone': '电话',
+  'http://schema.org/url': '主页',
+  'http://schema.org/address': '地区',
+  'http://schema.org/nickname': '昵称',
+  'http://schema.org/alternateName': '昵称',
+  'http://schema.org/birthDate': '生日',
+  'http://schema.org/jobTitle': '职位',
+  'http://schema.org/dateCreated': '创建时间',
+  'http://schema.org/dateModified': '修改时间',
+  'http://purl.org/dc/terms/created': '创建时间',
+  'http://purl.org/dc/terms/modified': '修改时间',
+  'http://www.w3.org/ns/solid/terms#oidcIssuer': '登录服务',
+  'http://www.w3.org/ns/pim/space#storage': '数据空间',
+  'http://www.w3.org/ns/solid/terms#storage': '数据空间',
+  'http://www.w3.org/ns/pim/space#preferencesFile': '偏好设置',
+  'http://www.w3.org/ns/pim/space#workspace': '工作区',
+  'http://www.w3.org/ns/ldp#inbox': '收件箱',
+  'http://www.w3.org/2000/01/rdf-schema#seeAlso': '相关资料',
+  'http://www.w3.org/2002/07/owl#sameAs': '同一个人',
   'http://purl.org/dc/terms/date': '日期',
   'http://purl.org/dc/terms/creator': '谁记的',
   'http://purl.org/dc/terms/source': '来源',
@@ -307,6 +442,8 @@ export interface CardSubjectModel {
   bodyValueTokens: string[]
   typeLabels: string[]
   properties: CardPropertyModel[]
+  /** Avatar URL when the subject has one (web links only). */
+  photoUri: string | null
 }
 
 export type CardPredicateLabeler = (predicateIri: string) => string | null | undefined
@@ -379,8 +516,15 @@ export function projectCardSubjectModel({
     ? displayRdfValue(titleCell.values.find(isRdfLiteralToken) ?? '')
     : localRdfName(subjectIri)
 
+  const photoCell = PHOTO_PREDICATES
+    .map((predicate) => cells.find((cell) => cell.predicate === predicate && cell.values.some((value) => !isRdfLiteralToken(value))))
+    .find(Boolean)
+  const photoValue = photoCell?.values.find((value) => !isRdfLiteralToken(value))
+  const photoIri = photoValue ? expandRdfIri(photoValue, documentUri, prefixes) : null
+
   return {
     subjectIri,
+    photoUri: photoIri && /^https?:\/\//.test(photoIri) ? photoIri : null,
     title,
     titlePredicate: titleCell?.predicate ?? null,
     bodyPredicate,
@@ -388,7 +532,12 @@ export function projectCardSubjectModel({
     bodyValueTokens: bodyCell ? bodyCell.values.map((value) => toPatchValueToken(value, documentUri, prefixes)) : [],
     typeLabels: typeIris.map((iri) => labeler?.(iri) || localRdfName(iri)),
     properties: cells
-      .filter((cell) => cell.predicate !== RDF_TYPE_IRI && cell.predicate !== titleCell?.predicate && cell.predicate !== bodyPredicate)
+      .filter((cell) => (
+        cell.predicate !== RDF_TYPE_IRI
+        && cell.predicate !== titleCell?.predicate
+        && cell.predicate !== bodyPredicate
+        && cell.predicate !== photoCell?.predicate
+      ))
       .map((cell) => cellModel(cell.predicate, cell.values, documentUri, prefixes, labeler)),
   }
 }
@@ -430,10 +579,22 @@ export function projectCardDocumentOverview({
 }): CardDocumentOverview {
   const iris = projectCardSubjectUris(projection, documentUri)
   const unique = Array.from(new Set(iris))
-  const mainSubjectIri = unique.length === 1
-    ? unique[0]
-    : [documentUri, ...MAIN_SUBJECT_FRAGMENTS.map((fragment) => `${documentUri}#${fragment}`)]
-      .find((candidate) => unique.includes(candidate)) ?? null
+  // A profile document describes a person: foaf:primaryTopic points at them,
+  // so the person (not the document) is the card.
+  const primaryTopicIri = (() => {
+    const documentRow = findCardSubjectRow(projection, documentUri, documentUri)
+    const cell = documentRow?.cells.find((candidate) => (
+      expandRdfIri(candidate.predicate, documentUri, projection.prefixes) === FOAF_PRIMARY_TOPIC_IRI
+    ))
+    const value = cell?.values.find((candidate) => !isRdfLiteralToken(candidate))
+    const iri = value ? expandRdfIri(value, documentUri, projection.prefixes) : null
+    return iri && unique.includes(iri) ? iri : null
+  })()
+  const mainSubjectIri = primaryTopicIri
+    ?? (unique.length === 1
+      ? unique[0]
+      : [...MAIN_SUBJECT_FRAGMENTS.map((fragment) => `${documentUri}#${fragment}`), documentUri]
+        .find((candidate) => unique.includes(candidate)) ?? null)
   const rows = unique.map((subjectIri): CardDocumentSubjectRow => {
     const model = projectCardSubjectModel({ projection, documentUri, subjectIri, labeler })
     const summary = (model?.properties ?? [])

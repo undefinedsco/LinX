@@ -14,6 +14,7 @@ import {
   type StructuredVocabDefinitionIndex,
   type VocabTermProposal,
 } from '../../domain/structured/structured-table'
+import type { AiCellChange } from '../../domain/proposal/ai-cell-change-model'
 import { CompactTableShell } from '../../ui/CompactTableShell'
 import {
   buildStructuredProjectionTableColumns,
@@ -47,6 +48,9 @@ import {
 const EMPTY_HIDDEN_PREDICATES = new Set<string>()
 
 export function StructuredProjectionTable({
+  aiCellDots,
+  onUndoAiCell,
+  onSeenAiCell,
   documentUri,
   projection,
   availablePredicates = projection.predicates,
@@ -80,6 +84,9 @@ export function StructuredProjectionTable({
   targetVocabUri,
   targetShapesUri,
 }: {
+  aiCellDots?: ReadonlyMap<string, AiCellChange>
+  onUndoAiCell?: (change: AiCellChange) => void
+  onSeenAiCell?: (change: AiCellChange) => void
   documentUri: string
   projection: StructuredTableProjection
   availablePredicates?: readonly string[]
@@ -275,6 +282,9 @@ export function StructuredProjectionTable({
 
   const columns = useMemo(
     () => buildStructuredProjectionTableColumns({
+      aiCellDots,
+      onUndoAiCell,
+      onSeenAiCell,
       activeEnumCell,
       activeRelationCell,
       activeTextCell,
@@ -326,6 +336,9 @@ export function StructuredProjectionTable({
       removeEnumOption,
     }),
     [
+      aiCellDots,
+      onUndoAiCell,
+      onSeenAiCell,
       activeEnumCell,
       activeRelationCell,
       activeTextCell,

@@ -13,8 +13,11 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/modules/files/ui/BlockNoteFileEditor', async () => import('../../ui/__tests__/fake-block-note-file-editor'))
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mocks.navigate }))
-vi.mock('../sidecars/ResourceSidecars', () => ({ AccessPolicyDialog: () => null }))
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mocks.navigate,
+  useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => unknown }) => select({ location: { pathname: '/files' } }),
+}))
+vi.mock('../sidecars/ShareDialog', () => ({ ShareDialog: () => null }))
 vi.mock('../../data/queries', () => ({
   useFileDetail: () => mocks.detail(),
   useRawTextResource: () => mocks.raw(),
@@ -23,6 +26,9 @@ vi.mock('../../data/queries', () => ({
   useFilesMetaSidecar: () => ({ data: undefined }),
   useSaveRawTextResource: () => ({ mutateAsync: mocks.saveRaw }),
   useWriteOwnStructuredCellChange: () => ({ mutateAsync: vi.fn() }),
+  useAiDraft: () => ({ data: null }),
+  useCreateRawTextResource: () => ({ mutateAsync: vi.fn() }),
+  useActOnAiDraft: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 const DOC = 'https://pod.example/notes/plan.md'
@@ -105,7 +111,7 @@ describe('CardDialogHost', () => {
       render(<CardDialogHost />)
       act(() => { useCardDialog.getState().open({ uri: TTL, from: 'folder' }) })
       expect(await screen.findByLabelText('属性')).toBeInTheDocument()
-      expect(screen.getByText('Homepage')).toBeInTheDocument()
+      expect(screen.getByText('主页')).toBeInTheDocument()
       expect(screen.getByRole('link', { name: /alice\.example|https:\/\/alice/ })).toHaveAttribute('href', 'https://alice.example/')
     })
 

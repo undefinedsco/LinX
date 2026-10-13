@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { ThreadPrimitive, useAui } from '@assistant-ui/react'
 import { useChatStore } from '../../store'
 import type { PendingComposerDraft } from '../../domain/conversation-workbench'
@@ -37,11 +37,15 @@ export function ConversationThread({
 }) {
   const aui = useAui()
   useMessageAnchor()
+  const handledDraft = useRef<PendingComposerDraft | null>(null)
   useEffect(() => {
-    if (!pendingComposerDraft) return
+    if (!pendingComposerDraft || handledDraft.current === pendingComposerDraft) return
+    handledDraft.current = pendingComposerDraft
     aui.composer().setText(pendingComposerDraft.text)
+    // W0: the welcome composer already asked to send, so one press is enough.
+    if (pendingComposerDraft.autoSend && !sendDisabled) aui.composer().send()
     onComposerDraftApplied(pendingComposerDraft)
-  }, [aui, onComposerDraftApplied, pendingComposerDraft])
+  }, [aui, onComposerDraftApplied, pendingComposerDraft, sendDisabled])
 
   return (
     <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col bg-background" data-testid="conversation-surface">

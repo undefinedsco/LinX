@@ -7,7 +7,10 @@ import { useToast } from '@/components/ui/use-toast'
 import { copyFilesText } from '../../app/platform-actions'
 import { useFilesStore } from '../../app/store'
 import {
+  useActOnAiDraft,
+  useAiDraft,
   useBlobResource,
+  useCreateRawTextResource,
   useFileDetail,
   useFilesCurrentPodRootUri,
   useFilesMetaSidecar,
@@ -17,7 +20,12 @@ import {
 } from '../../data/queries'
 import {
   CARD_PREVIEW_MAX_BYTES,
+  isCardPlainTextMime,
   parseCardTarget,
+  projectCardExcerptNote,
+  projectCardLocatorLabel,
+  projectCardLocatorLink,
+  projectCardQuotedPrompt,
   planCardBodyWrite,
   planCardValueWrite,
   projectCardDocumentOverview,
@@ -53,6 +61,10 @@ export function useCardDialogController(request: CardDialogRequest) {
   const blobQuery = useBlobResource(target.documentUri, !!mediaKind && !tooLarge)
   const metaQuery = useFilesMetaSidecar(kind === 'document' || kind === 'media' ? detail : null, kind === 'document' || kind === 'media')
   const saveRawText = useSaveRawTextResource()
+  const createRawText = useCreateRawTextResource()
+  const aiDraftQuery = useAiDraft(target.documentUri, kind === 'document')
+  const aiDraft = aiDraftQuery.data ?? null
+  const actOnAiDraft = useActOnAiDraft()
   const writeOwnCell = useWriteOwnStructuredCellChange()
   const [saveStatus, setSaveStatus] = useState<CardSaveStatus>('idle')
   const [accessOpen, setAccessOpen] = useState(false)
@@ -173,6 +185,11 @@ export function useCardDialogController(request: CardDialogRequest) {
     }))
   }, [rawQuery.data?.etag, subject, target.documentUri, track, writeOwnCell])
 
+  /** Editing LinX's unconfirmed draft means keeping it (K10). */
+  const keepAiDraftAndEdit = useCallback(() => {
+    if (aiDraft?.state === 'draft') void actOnAiDraft.mutateAsync({ draft: aiDraft, action: 'keep' })
+  }, [actOnAiDraft, aiDraft])
+
   const expand = useCallback(() => {
     const store = useFilesStore.getState()
     if (target.fragment) {
@@ -183,6 +200,49 @@ export function useCardDialogController(request: CardDialogRequest) {
     closeDialog()
     void navigate({ to: '/$microAppId', params: { microAppId: 'files' } })
   }, [closeDialog, navigate, target])
+
+  /** 问 LinX: no chat hook is reachable from here, so the quoted passage goes to the clipboard. */
+  const askLinx = useCallback(async (quote: string) => {
+    try {
+      await copyFilesText(projectCardQuotedPrompt({
+        title: title,
+        quote,
+        locatorLabel: projectCardLocatorLabel(request.locator),
+      }))
+      toast({ title: '已复制这段话', description: '到和 LinX 的聊天里粘贴就能问。' })
+    } catch (_error) {
+      toast({ title: '没复制成功', variant: 'destructive' })
+    }
+  }, [request.locator, title, toast])
+
+  const makeCardFromQuote = useCallback(async (quote: string) => {
+    if (!podRootUri) return
+    const note = projectCardExcerptNote({
+      title,
+      quote,
+      sourceUri: projectCardLocatorLink(request.uri, request.locator),
+      locatorLabel: projectCardLocatorLabel(request.locator),
+    })
+    const root = podRootUri.endsWith('/') ? podRootUri : `${podRootUri}/`
+    try {
+      await createRawText.mutateAsync({
+        resource: { uri: `${root}${encodeURIComponent('摘录')}/${encodeURIComponent(note.fileName)}`, mimeType: 'text/markdown' },
+        content: note.content,
+      })
+      toast({ title: '已做成卡片', description: `放在“我的空间 / 摘录”里：${note.fileName}` })
+    } catch (_error) {
+      toast({ title: '没做成卡片', variant: 'destructive' })
+    }
+  }, [createRawText, podRootUri, request.locator, request.uri, title, toast])
+
+  const copyQuoteLink = useCallback(async () => {
+    try {
+      await copyFilesText(projectCardLocatorLink(request.uri, request.locator))
+      toast({ title: '链接已复制' })
+    } catch (_error) {
+      toast({ title: '没复制成功', variant: 'destructive' })
+    }
+  }, [request.locator, request.uri, toast])
 
   const copyLink = useCallback(async () => {
     try {
@@ -206,6 +266,8 @@ export function useCardDialogController(request: CardDialogRequest) {
     retry: () => { void detailQuery.refetch(); void rawQuery.refetch() },
     documentText: rawQuery.data?.content ?? detail?.previewText ?? '',
     documentMimeType: rawQuery.data?.mimeType ?? detail?.mimeType ?? null,
+    aiDraft,
+    keepAiDraftAndEdit,
     documentEditable: kind === 'document' && (rawQuery.data?.mimeType ?? detail?.mimeType) === 'text/markdown',
     subject,
     subjectList,
@@ -221,6 +283,10 @@ export function useCardDialogController(request: CardDialogRequest) {
     expand,
     close: closeDialog,
     copyLink,
+    askLinx,
+    makeCardFromQuote,
+    copyQuoteLink,
+    documentPlainText: kind === 'document' && isCardPlainTextMime(rawQuery.data?.mimeType ?? detail?.mimeType),
     accessOpen,
     setAccessOpen,
   }

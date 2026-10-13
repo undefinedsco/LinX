@@ -8,6 +8,7 @@ import { MarkdownText, PlainText } from './MarkdownText'
 import { MessageToolbar } from './MessageToolbar'
 import { ProcessLine } from './ProcessLine'
 import { SourcesLine } from './SourcesLine'
+import { useSpeakerName } from './speaker'
 
 function Avatar({ name, assistant }: { name: string; assistant: boolean }) {
   // Assistants always show “AI” (W5: only the avatar tells people and assistants apart).
@@ -68,16 +69,15 @@ function BranchPicker() {
 }
 
 function Speaker({ role }: { role: 'user' | 'assistant' }) {
-  const identity = useOptionalConversationIdentity()
-  const custom = useAuiState((state) => state.message.metadata?.custom) as { senderName?: string } | undefined
-  if (!identity?.isGroup) return null
-  const name = custom?.senderName ?? (role === 'assistant' ? identity.agentName : identity.selfName)
-  return <span className="px-1 text-xs text-muted-foreground">{name}</span>
+  const name = useSpeakerName(role)
+  if (!name) return null
+  return <span className="px-1 text-xs text-muted-foreground" data-testid="speaker-name">{name}</span>
 }
 
 export function UserMessage() {
   const messageId = useAuiState((state) => state.message.id)
   const identity = useOptionalConversationIdentity()
+  const speaker = useSpeakerName('user')
   return (
     <MessagePrimitive.Root className="group/message flex items-start justify-end gap-2.5" data-role="user" data-message-id={messageId}>
       <div className="flex min-w-0 max-w-[68%] flex-col items-end gap-1.5">
@@ -88,7 +88,7 @@ export function UserMessage() {
         </div>
         <MessageToolbar role="user" />
       </div>
-      <Avatar name={identity?.selfName ?? '我'} assistant={false} />
+      <Avatar name={speaker ?? identity?.selfName ?? '我'} assistant={false} />
     </MessagePrimitive.Root>
   )
 }
@@ -98,6 +98,7 @@ export function AssistantMessage() {
   const identity = useOptionalConversationIdentity()
   const running = useAuiState((state) => state.message.status?.type === 'running')
   const empty = useAuiState((state) => state.message.content.length === 0)
+  const hasText = useAuiState((state) => state.message.content.some((part) => part.type === 'text' && part.text.trim().length > 0))
   const error = useAuiState((state) => {
     const status = state.message.status
     return status?.type === 'incomplete' && status.reason === 'error' ? status.error : undefined
@@ -121,6 +122,9 @@ export function AssistantMessage() {
             },
           }}
         />
+        {identity?.isGroup && !running && hasText ? (
+          <p className="px-1 text-xs text-muted-foreground">只用了这个群里的消息</p>
+        ) : null}
         {running && empty ? (
           <p role="status" className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />正在处理…

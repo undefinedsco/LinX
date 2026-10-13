@@ -81,6 +81,9 @@ const {
   sourceUpdateProposalCollection,
   filesProposalQueryCollection,
   aiChangeProposalCollection,
+  aiDraftCollection,
+  aiCellChangeCollection,
+  shareCollection,
 } = createProposalCollections({
   getDb,
   queryClient,
@@ -97,6 +100,9 @@ export {
   sourceUpdateProposalCollection,
   filesProposalQueryCollection,
   aiChangeProposalCollection,
+  aiDraftCollection,
+  aiCellChangeCollection,
+  shareCollection,
 }
 
 const {

@@ -16,6 +16,7 @@ import { StructuredSubjectPeekActions } from './StructuredSubjectPeekActions'
 import { StructuredSubjectPeekDrawer } from './StructuredSubjectPeek'
 import { StructuredWhiteboardView } from './StructuredWhiteboardView'
 import { projectStructuredResourcePreviewHeaderModel } from './structured-resource-preview-header-model'
+import { useStructuredAiCellDots } from './useStructuredAiCellDots'
 import { useStructuredCellProposalWorkflowController } from './useStructuredCellProposalWorkflowController'
 import { useStructuredProjectionFilterController } from './useStructuredProjectionFilterController'
 import { useStructuredProjectionReviewController } from './useStructuredProjectionReviewController'
@@ -30,6 +31,7 @@ import { projectStructuredRelationPredicateOptions } from './structured-projecti
 
 export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   const [classScopeMenuOpen, setClassScopeMenuOpen] = useState(false)
+  const aiCellDots = useStructuredAiCellDots(file.uri)
   const {
     currentPodRootUri,
     projection,
@@ -367,6 +369,9 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
             />
           ) : viewMode === 'table' ? (
             <StructuredProjectionTable
+              aiCellDots={aiCellDots.aiCellDots}
+              onUndoAiCell={aiCellDots.onUndoAiCell}
+              onSeenAiCell={aiCellDots.onSeenAiCell}
               documentUri={file.uri}
               projection={tableProjection}
               availablePredicates={schemaPredicateControls}

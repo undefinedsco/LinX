@@ -3,7 +3,11 @@ import { useNavigate } from '@tanstack/react-router'
 import type { FavoriteRow } from '@undefineds.co/models'
 import { useFavoriteStore } from '../../app/store'
 import { useFavoriteList, useFavoriteMutations, useFavoriteSourceStatus } from '../../data/collections'
+import { favoriteGroupOf } from '../../domain/groups'
 import { resolveFavoriteScene } from '../../domain/scene-restore'
+import { undoToastAction } from '../../ui/UndoToastAction'
+import { useToast } from '@/components/ui/use-toast'
+import { useCardDialog } from '@/lib/card-dialog'
 import { useChatStore } from '@/modules/chat/store'
 import { useContactStore } from '@/modules/contacts/app/store'
 import { useFilesStore } from '@/modules/files/store'
@@ -18,7 +22,9 @@ export function useFavoriteContentPaneController() {
   const selectFile = useFilesStore((s) => s.selectFile)
   const selectTreeNode = useFilesStore((s) => s.selectTreeNode)
   const { data: favorites } = useFavoriteList()
-  const { removeFavorite } = useFavoriteMutations()
+  const { removeFavorite, restoreFavorite } = useFavoriteMutations()
+  const { toast } = useToast()
+  const openCard = useCardDialog((s) => s.open)
   const navigate = useNavigate()
 
   const favorite = useMemo(() => {
@@ -32,12 +38,25 @@ export function useFavoriteContentPaneController() {
 
   const handleRemove = useCallback(async () => {
     if (!favorite) return
-    await removeFavorite.mutateAsync(favorite.id)
+    const removed = favorite
+    await removeFavorite.mutateAsync(removed.id)
     select(null)
-  }, [favorite, removeFavorite, select])
+    // No confirm dialog: only the bookmark goes away (never the original), and it can be put back.
+    toast({
+      description: '已取消收藏',
+      action: undoToastAction(() => {
+        void restoreFavorite.mutateAsync(removed).then(() => select(removed.id))
+      }),
+    })
+  }, [favorite, removeFavorite, restoreFavorite, select, toast])
 
   const handleOpenSource = useCallback(() => {
     if (!favorite) return
+    if (favoriteGroupOf(favorite) === 'cards') {
+      const uri = (favorite as { targetUri?: string | null }).targetUri ?? favorite.sourceId
+      if (uri) openCard({ uri, from: 'favorites' })
+      return
+    }
     const scene = resolveFavoriteScene(favorite)
     if (!scene) return
 
@@ -70,7 +89,7 @@ export function useFavoriteContentPaneController() {
       to: '/$microAppId',
       params: { microAppId: scene.microAppId },
     })
-  }, [favorite, navigate, selectChat, selectContact, selectFile, selectThread, selectTreeNode, setMessageAnchor])
+  }, [favorite, navigate, openCard, selectChat, selectContact, selectFile, selectThread, selectTreeNode, setMessageAnchor])
 
   return {
     favorite: favorite as FavoriteRow | null,

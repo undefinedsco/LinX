@@ -26,8 +26,8 @@ const ABILITIES: Array<[string, string]> = [
 function AssistantBubble({ children, name }: { children: React.ReactNode; name: string }) {
   return (
     <div className="flex items-start gap-2.5">
-      <span aria-hidden="true" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-[13px] font-semibold text-primary-foreground">
-        {Array.from(name)[0] ?? 'AI'}
+      <span aria-hidden="true" title={name} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-[13px] font-semibold text-primary-foreground">
+        AI
       </span>
       <div className="max-w-[72%] space-y-2">{children}</div>
     </div>

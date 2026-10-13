@@ -9,6 +9,23 @@ import {
 import {
   type AiChangeProposal,
 } from '../../domain/proposal/ai-change-approval-model'
+import { applyShareChange, readShareState, type ShareChange } from '../proposal/share-commands'
+import type { AiCellChange } from '../../domain/proposal/ai-cell-change-model'
+import {
+  markAiCellChangeSeen,
+  readAiCellChanges,
+  undoAiCellChange,
+  writeAiCellChange,
+} from '../proposal/ai-cell-change-commands'
+import type { AiDraft } from '../../domain/proposal/ai-draft-model'
+import {
+  keepAiDraft,
+  readAiDraft,
+  reapplyAiDraft,
+  stageAiDraft,
+  undoAiDraft,
+  undoAiDraftSpot,
+} from '../proposal/ai-draft-commands'
 import {
   FILES_STRUCTURED_CELL_APPROVAL_ACTION,
   FILES_STRUCTURED_CELL_APPROVAL_TOOL_NAME,
@@ -460,6 +477,146 @@ export function createProposalCollections(dependencies: ProposalCollectionsDepen
     },
   }
 
+  /**
+   * R6 K10: LinX's change to a file as an unconfirmed draft (not an inbox item). The file keeps its
+   * original content until the draft is kept; a kept draft stays undoable.
+   */
+  const aiDraftCollection = {
+    queryKey(targetResourceUri: string): QueryKey {
+      return [...queryKeys.aiChangeProposals, 'draft', targetResourceUri]
+    },
+
+    async fetch(targetResourceUri: string, input: { db?: SolidDatabase | null; podRootUri?: string | null }) {
+      const db = input.db ?? getDb()
+      if (!db || !targetResourceUri) return null
+      return readAiDraft(db, targetResourceUri, input.podRootUri)
+    },
+
+    async run(
+      cacheClient: QueryClient,
+      draftTarget: string,
+      job: () => Promise<AiDraft>,
+    ): Promise<AiDraft> {
+      try {
+        return await job()
+      } finally {
+        await filesResourceCacheInvalidationCollection.invalidateProposalCreate(cacheClient, {
+          proposalQueryKey: aiDraftCollection.queryKey(draftTarget),
+          rawTextResourceUris: [draftTarget],
+          detailResourceUris: [draftTarget],
+          includeInbox: false,
+        })
+      }
+    },
+
+    stage(input: {
+      cacheClient: QueryClient
+      db?: SolidDatabase | null
+      actorWebId: string
+      targetResourceUri: string
+      draftContent: string
+      agentWebId?: string | null
+      delegated?: boolean
+      summary?: string
+      podRootUri?: string | null
+    }) {
+      const db = input.db ?? getDb()
+      if (!db) throw new Error('Database not connected')
+      return aiDraftCollection.run(input.cacheClient, input.targetResourceUri, () => stageAiDraft(db, input))
+    },
+
+    act(input: {
+      cacheClient: QueryClient
+      db?: SolidDatabase | null
+      draft: AiDraft
+      action: 'keep' | 'undo' | 'reapply' | { undoSpot: number }
+    }) {
+      const db = input.db ?? getDb()
+      if (!db) throw new Error('Database not connected')
+      const { draft, action } = input
+      return aiDraftCollection.run(input.cacheClient, draft.targetResourceUri, () => {
+        if (action === 'keep') return keepAiDraft(db, draft)
+        if (action === 'undo') return undoAiDraft(db, draft)
+        if (action === 'reapply') return reapplyAiDraft(db, draft)
+        return undoAiDraftSpot(db, draft, action.undoSpot)
+      })
+    },
+  }
+
+  /** R6 K10b: LinX's direct table writes, each with a record for the purple dot and undo. */
+  const aiCellChangeCollection = {
+    queryKey(documentUri: string): QueryKey {
+      return [...queryKeys.aiChangeProposals, 'cells', documentUri]
+    },
+
+    async fetch(documentUri: string, input: { db?: SolidDatabase | null; podRootUri?: string | null }) {
+      const db = input.db ?? getDb()
+      if (!db || !documentUri) return []
+      return readAiCellChanges(db, documentUri, input.podRootUri)
+    },
+
+    async run<T>(cacheClient: QueryClient, documentUri: string, job: (db: SolidDatabase) => Promise<T>): Promise<T> {
+      const db = getDb()
+      if (!db) throw new Error('Database not connected')
+      try {
+        return await job(db)
+      } finally {
+        await filesResourceCacheInvalidationCollection.invalidateProposalCreate(cacheClient, {
+          proposalResourceUri: documentUri,
+          proposalQueryKey: aiCellChangeCollection.queryKey(documentUri),
+          detailResourceUris: [documentUri],
+          includeInbox: false,
+        })
+      }
+    },
+
+    write(input: Parameters<typeof writeAiCellChange>[1] & { cacheClient: QueryClient; db?: SolidDatabase | null }) {
+      return aiCellChangeCollection.run(input.cacheClient, input.documentUri, (db) => writeAiCellChange(input.db ?? db, input))
+    },
+
+    undo(input: { cacheClient: QueryClient; db?: SolidDatabase | null; actorWebId: string; change: AiCellChange; podRootUri?: string | null }) {
+      return aiCellChangeCollection.run(input.cacheClient, input.change.documentUri, (db) => undoAiCellChange(input.db ?? db, input))
+    },
+
+    markSeen(input: { cacheClient: QueryClient; db?: SolidDatabase | null; change: AiCellChange; podRootUri?: string | null }) {
+      return aiCellChangeCollection.run(input.cacheClient, input.change.documentUri, (db) => markAiCellChangeSeen(input.db ?? db, input))
+    },
+  }
+
+  /** R6 K9: who can open an item, and changes to that, applied at once. */
+  const shareCollection = {
+    queryKey(uri: string): QueryKey {
+      return [...queryKeys.accessPolicyProposals, 'share', uri]
+    },
+
+    async fetch(uri: string, isFolder: boolean, dbOverride?: SolidDatabase | null, selfWebId?: string | null) {
+      const db = dbOverride ?? getDb()
+      if (!db || !uri) return null
+      return readShareState(db, uri, isFolder, selfWebId)
+    },
+
+    async apply(input: {
+      cacheClient: QueryClient
+      db?: SolidDatabase | null
+      uri: string
+      isFolder: boolean
+      change: ShareChange
+      selfWebId?: string | null
+    }): Promise<void> {
+      const db = input.db ?? getDb()
+      if (!db) throw new Error('Database not connected')
+      try {
+        await applyShareChange(db, input)
+      } finally {
+        await filesResourceCacheInvalidationCollection.invalidateProposalCreate(input.cacheClient, {
+          proposalQueryKey: shareCollection.queryKey(input.uri),
+          accessBasicsTargets: [{ uri: input.uri, kind: input.isFolder ? 'container' : 'resource' }],
+          includeInbox: false,
+        })
+      }
+    },
+  }
+
   const filesProposalQueryCollection = {
     pendingStructuredCellChanges(input: {
       documentUri?: string | null
@@ -542,5 +699,8 @@ export function createProposalCollections(dependencies: ProposalCollectionsDepen
     sourceUpdateProposalCollection,
     filesProposalQueryCollection,
     aiChangeProposalCollection,
+    aiDraftCollection,
+    aiCellChangeCollection,
+    shareCollection,
   }
 }

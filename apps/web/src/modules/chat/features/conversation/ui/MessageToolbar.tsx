@@ -6,6 +6,8 @@ import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 import { useOptionalConversationIdentity } from '../ConversationContext'
 import { RememberStrip } from './RememberStrip'
+import { useChatList } from '../../../collections'
+import { useSpeakerName } from './speaker'
 import { useRememberMessage } from './useRememberMessage'
 
 const buttonClass = 'inline-flex h-7 items-center gap-1 rounded px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50'
@@ -26,6 +28,9 @@ export function MessageToolbar({ role }: { role: 'user' | 'assistant' }) {
   const { toast } = useToast()
   const text = messageTextOf(content as ReadonlyArray<{ type: string; text?: string }>)
   const persisted = isPodMessage(id)
+  const speaker = useSpeakerName(role)
+  const { data: chats } = useChatList()
+  const chatTitle = chats?.find((chat) => chat.id === identity?.chatId)?.title ?? undefined
   const memory = useRememberMessage(id, text)
   const { data: favorites = [] } = useFavoriteList({ sourceModule: 'messages' })
   const starred = favorites.some((row) => row.sourceId === id)
@@ -35,7 +40,11 @@ export function MessageToolbar({ role }: { role: 'user' | 'assistant' }) {
       title: text.replace(/\s+/gu, ' ').trim().slice(0, 40) || '消息',
       searchText: text,
       snapshotContent: text,
-      snapshotAuthor: role === 'user' ? identity?.selfName : identity?.agentName,
+      snapshotAuthor: speaker ?? (role === 'user' ? identity?.selfName : identity?.agentName),
+      // K7: lets 收藏 jump back to the message ("在会话中查看"); messageId is the Pod message URI.
+      snapshotMeta: JSON.stringify({ chatId: identity?.chatId, chatTitle, threadId: identity?.threadId, messageId: id }),
+      // Top-level copies for the favorites module (R2-C); fields it does not know yet are ignored.
+      chatId: identity?.chatId, chatTitle, threadId: identity?.threadId,
     }).catch(() => toast({ variant: 'destructive', description: starred ? '没取消成功，请重试。' : '没收藏成功，请重试。' }))
   }
 

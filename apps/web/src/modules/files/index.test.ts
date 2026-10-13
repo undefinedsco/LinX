@@ -13,6 +13,7 @@ const resourceCollectionPath = 'src/modules/files/data/collections/resource-coll
 describe('files public module exports', () => {
   it('keeps the module root export surface to micro-app entrypoints only', () => {
     expect(Object.keys(filesModule).sort()).toEqual([
+      'AiDraftMessageBar',
       'FileDetailPane',
       'FilesListPane',
       'FilesTreePane',

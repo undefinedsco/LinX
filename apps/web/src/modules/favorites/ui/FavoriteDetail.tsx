@@ -8,6 +8,7 @@ import {
   canShowFavoriteSnapshot,
   type FavoriteSourceStatus,
 } from '../domain/source-status'
+import { favoriteGroupOf } from '../domain/groups'
 
 // ============================================================================
 // Helpers
@@ -21,6 +22,16 @@ const SOURCE_COPY: Record<string, { label: string; noun: string; open: string }>
   contacts: { label: '联系人', noun: '联系人', open: '查看联系人' },
 }
 const FALLBACK_COPY = { label: '收藏', noun: '内容', open: '打开原处' }
+
+function chatTitleOf(favorite: FavoriteRow): string | null {
+  if (!favorite.snapshotMeta) return null
+  try {
+    const parsed = JSON.parse(favorite.snapshotMeta) as { chatTitle?: unknown }
+    return typeof parsed?.chatTitle === 'string' && parsed.chatTitle ? parsed.chatTitle : null
+  } catch {
+    return null
+  }
+}
 
 function formatDate(value: unknown): string | null {
   if (!value) return null
@@ -62,16 +73,19 @@ export function FavoriteDetail({
   onRemove: () => void
   onOpenSource: () => void
 }) {
-  const copy = SOURCE_COPY[favorite.sourceModule ?? ''] ?? FALLBACK_COPY
+  const copy = favoriteGroupOf(favorite) === 'cards'
+    ? { label: '卡片', noun: '卡片', open: '查看卡片' }
+    : SOURCE_COPY[favorite.sourceModule ?? ''] ?? FALLBACK_COPY
   const savedAt = formatDate(favorite.favoredAt)
   const byline = [copy.label, favorite.snapshotAuthor, savedAt].filter(Boolean).join(' · ')
+  const chatTitle = chatTitleOf(favorite)
   const showSnapshot = canShowFavoriteSnapshot(sourceStatus) && Boolean(favorite.snapshotContent)
 
   if (sourceStatus === 'deleted') {
     return (
       <StateNotice
         title={`原${copy.noun}已被删除`}
-        detail={[favorite.title, savedAt].filter(Boolean).join(' · ')}
+        detail={[chatTitle ? `来自 ${chatTitle}` : null, savedAt].filter(Boolean).join(' · ') || undefined}
         action={<Button variant="outline" size="sm" onClick={onRemove}>移除这条收藏</Button>}
       />
     )
@@ -80,8 +94,8 @@ export function FavoriteDetail({
   if (sourceStatus === 'forbidden') {
     return (
       <StateNotice
-        title="你已没有权限查看，内容不再显示"
-        detail="重新获得权限后会恢复"
+        title="没有权限了"
+        detail={`${chatTitle ? `你已不在“${chatTitle}”里，` : ''}内容不再显示。重新获得权限后会恢复`}
         action={<Button variant="outline" size="sm" onClick={onRemove}>取消收藏</Button>}
       />
     )

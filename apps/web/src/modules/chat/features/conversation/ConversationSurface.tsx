@@ -73,7 +73,12 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
         const loaded = await agent.load()
         setThreadUri(agent.threadId)
         setLoadError(false)
-        return ExportedMessageRepository.fromArray(fromAgUiMessages(loaded.messages))
+        // W8: remember who wrote each message so group chats can show the speaker.
+        const withAuthors = fromAgUiMessages(loaded.messages).map((message) => {
+          const maker = message.id ? loaded.makerByUri.get(message.id) : undefined
+          return maker ? { ...message, metadata: { ...message.metadata, custom: { ...message.metadata?.custom, senderRef: maker } } } : message
+        })
+        return ExportedMessageRepository.fromArray(withAuthors)
       } catch {
         setLoadError(true)
         return { messages: [] }

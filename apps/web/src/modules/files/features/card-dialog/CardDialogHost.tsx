@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, Expand, Link2, MoreHorizontal, Share2 } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { useRouterState } from '@tanstack/react-router'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -17,7 +18,9 @@ import {
   projectCardSaveLabel,
   type CardPropertyModel,
 } from '../../domain/card/card-dialog-model'
-import { AccessPolicyDialog } from '../sidecars/ResourceSidecars'
+import { ShareDialog } from '../sidecars/ShareDialog'
+import { AiDraftBanner, AiDraftReview } from './AiDraftViews'
+import { CardSelectionToolbar, CardTextViewer, useCardTextSelection } from './CardSelectionViews'
 import { useCardDialogController } from './useCardDialogController'
 
 const AUTOSAVE_MS = 800
@@ -88,6 +91,7 @@ function useLocatorHighlight(container: React.RefObject<HTMLElement | null>, quo
 function CardDialog({ request }: { request: CardDialogRequest }) {
   const card = useCardDialogController(request)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const { selection } = useCardTextSelection(bodyRef)
   useLocatorHighlight(bodyRef, request.locator?.quote, request.uri)
   const locatorLabel = projectCardLocatorLabel(request.locator)
   const { siblings } = card
@@ -116,7 +120,17 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
     return (
       <>
         {media}
+        {card.kind === 'document' ? <AiDraftBanner draft={card.aiDraft} currentContent={card.documentText} /> : null}
+        {card.subject?.photoUri ? (
+          <img src={card.subject.photoUri} alt={card.title} data-card-photo="true" className="mb-4 h-20 w-20 rounded-full object-cover" />
+        ) : null}
         <div ref={bodyRef}>
+          <CardSelectionToolbar
+            selection={selection}
+            onAsk={(quote) => { void card.askLinx(quote) }}
+            onMakeCard={(quote) => { void card.makeCardFromQuote(quote) }}
+            onCopyLink={() => { void card.copyQuoteLink() }}
+          />
           {card.subject && (card.kind !== 'table' || card.subject.bodyText) ? (
             <BlockNoteFileEditor
               key={request.uri}
@@ -128,7 +142,11 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
               onSaveStatusChange={(status) => card.setSaveStatus(status === 'dirty' ? 'idle' : status)}
               className="min-h-[200px] border-0 px-0 py-0 shadow-none"
             />
-          ) : card.subject ? null : card.kind === 'document' ? (
+          ) : card.subject ? null : card.kind === 'document' && card.aiDraft?.state === 'draft' ? (
+            <AiDraftReview key={card.aiDraft.updatedAt} draft={card.aiDraft} onEdit={card.keepAiDraftAndEdit} />
+          ) : card.documentPlainText ? (
+            <CardTextViewer text={card.documentText} locator={request.locator} />
+          ) : card.kind === 'document' ? (
             <BlockNoteFileEditor
               key={request.uri}
               content={{ inputFormat: card.documentMimeType === 'text/html' ? 'html' : 'markdownish', saveFormat: 'markdown', text: card.documentText }}
@@ -213,7 +231,7 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
         </DialogContent>
       </Dialog>
       {card.detail ? (
-        <AccessPolicyDialog file={card.detail} open={card.accessOpen} onOpenChange={card.setAccessOpen} />
+        <ShareDialog file={card.detail} open={card.accessOpen} onOpenChange={card.setAccessOpen} />
       ) : null}
     </>
   )
@@ -222,6 +240,17 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
 /** Renders the card popup requested through `useCardDialog` (R6 K2/K8). */
 export function CardDialogHost() {
   const request = useCardDialog((state) => state.request)
+  const close = useCardDialog((state) => state.close)
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  // The popup belongs to the page it was opened from: leaving the page closes it.
+  const openedAt = useRef(pathname)
+  useEffect(() => {
+    if (!request) {
+      openedAt.current = pathname
+      return
+    }
+    if (openedAt.current !== pathname) close()
+  }, [close, pathname, request])
   if (!request) return null
   return <CardDialog request={request} />
 }

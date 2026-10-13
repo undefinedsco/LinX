@@ -558,14 +558,16 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
 
   const storedThreadItem = parseStoredThreadItem(record.richContent, threadId, createdAt)
     ?? parseStoredThreadItem(record.content, threadId, createdAt)
+  const maker = typeof record.maker === 'string' && record.maker ? record.maker : undefined
   if (storedThreadItem) {
-    return storedThreadItem
+    return maker ? { ...storedThreadItem, maker } as unknown as ThreadItem : storedThreadItem
   }
 
   if (record.role === MessageRole.USER) {
     return {
       id: itemId,
       thread_id: threadId,
+      ...(maker ? { maker } : {}),
       type: 'user_message',
       content: [{ type: 'input_text', text: record.content || '' }],
       attachments: [],
@@ -575,6 +577,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
   return {
     id: itemId,
     thread_id: threadId,
+    ...(maker ? { maker } : {}),
     type: 'assistant_message',
     content: [{ type: 'output_text', text: record.content || '', annotations: [] } as any],
     attachments: [],

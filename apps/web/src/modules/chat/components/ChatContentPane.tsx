@@ -128,12 +128,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   const [welcomeThreadId, setWelcomeThreadId] = useState<string | null>(null)
   if (showInlineWelcome && selectedThreadId && welcomeThreadId !== selectedThreadId) setWelcomeThreadId(selectedThreadId)
   const keepInlineWelcome = surfaceKind === 'assistant-ui' && isSecretary && Boolean(selectedThreadId) && welcomeThreadId === selectedThreadId
-  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null)
-  useEffect(() => {
-    if (pendingSuggestion === null || secretaryDraft !== pendingSuggestion) return
-    setPendingSuggestion(null)
-    void startAiWork().then(() => submitSecretaryDraft())
-  }, [pendingSuggestion, secretaryDraft, startAiWork, submitSecretaryDraft])
+  const sendOnSubmit = surfaceKind === 'assistant-ui'
   const retryContentQueries = useCallback(() => {
     if (databaseStatus !== 'ready' || !db) {
       retryDatabase()
@@ -241,7 +236,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       composerStatus: composerStatus,
       onStarterAction,
       onComposerValueChange: updateSecretaryDraft,
-      onSubmit: submitSecretaryDraft,
+      onSubmit: () => submitSecretaryDraft({ autoSend: sendOnSubmit }),
       isSubmitting: isCreatingThread || Boolean(activePendingSecretaryDraft),
       retryLabel: threadCreationError ? '重试创建话题' : undefined,
       onRetry: threadCreationError ? retryThreadCreation : undefined,
@@ -249,7 +244,10 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   }
 
   if (contentState.kind === 'welcome') {
-    const welcomeProps = buildWelcomeProps(SECRETARY_STARTER_ACTIONS, (action) => updateSecretaryDraft(action.prompt))
+    const welcomeProps = buildWelcomeProps(SECRETARY_STARTER_ACTIONS, (action) => {
+      if (surfaceKind === 'assistant-ui') submitSecretaryDraft({ text: action.prompt, autoSend: true })
+      else updateSecretaryDraft(action.prompt)
+    })
     return surfaceKind === 'assistant-ui'
       ? <WelcomeConversation {...welcomeProps} chatId={selectedChatId} />
       : <SecretaryWelcome {...welcomeProps} />
@@ -345,8 +343,8 @@ export function ChatContentPane(props: ChatContentPaneProps) {
               ? (
                 <WelcomeConversation
                   {...buildWelcomeProps(SECRETARY_STARTER_ACTIONS, (action) => {
-                    updateSecretaryDraft(action.prompt)
-                    setPendingSuggestion(action.prompt)
+                    // One action: the suggestion's prompt is sent into this (empty) topic.
+                    void startAiWork().then(() => submitSecretaryDraft({ text: action.prompt, autoSend: true }))
                   })}
                   chatId={selectedChatId}
                   fallback={conversation}
