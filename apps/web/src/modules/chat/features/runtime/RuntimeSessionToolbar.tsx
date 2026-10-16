@@ -236,8 +236,8 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
       ) : (
         <div className="flex items-center justify-between gap-3 border-b border-border/50 bg-muted/20 px-4 py-3">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">{workspaceSummary ? `当前话题已绑定${workspaceSummary.kindLabel}` : '当前话题仅保存到空间'}</p>
-            <p className="text-xs text-muted-foreground">{workspaceSummary ? [workspaceSummary.primaryText, workspaceSummary.secondaryText].filter(Boolean).join(' · ') : '需要远程运行时时，再为这个聊天话题绑定运行时会话与文件夹即可。'}</p>
+            <p className="text-sm font-medium text-foreground">{workspaceSummary ? `当前聊天已绑定${workspaceSummary.kindLabel}` : '当前聊天仅保存到空间'}</p>
+            <p className="text-xs text-muted-foreground">{workspaceSummary ? [workspaceSummary.primaryText, workspaceSummary.secondaryText].filter(Boolean).join(' · ') : '需要远程运行时时，再为这个聊天绑定运行时会话与文件夹即可。'}</p>
             {runtimeError ? <p className="mt-1 text-xs text-destructive">{runtimeError}</p> : null}
           </div>
           <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => setIsDialogOpen(true)}><PlayCircle className="mr-1 h-4 w-4" />创建运行时会话</Button>
@@ -246,7 +246,7 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>创建运行时会话</DialogTitle><DialogDescription>为当前话题绑定一个本地运行时与文件夹。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>创建运行时会话</DialogTitle><DialogDescription>为当前聊天绑定一个本地运行时与文件夹。</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2"><Label htmlFor="runtime-repo-path">仓库路径</Label><Input id="runtime-repo-path" value={repoPath} onChange={(event) => setRepoPath(event.target.value)} placeholder="例如：/Users/ganlu/develop/linx" /></div>
             <div className="space-y-2"><Label htmlFor="runtime-folder-path">文件夹路径</Label><Input id="runtime-folder-path" value={folderPath} onChange={(event) => setFolderPath(event.target.value)} placeholder="留空则默认使用仓库路径" /></div>

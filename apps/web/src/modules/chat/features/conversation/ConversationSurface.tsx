@@ -56,9 +56,10 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
     () => new LinxConversationAgent({
       localThreadId: props.selectedThreadId,
       threadUri: props.selectedThreadId,
+      chatId: props.selectedChatId,
       backend: localFetch.conversation,
     }),
-    [localFetch, props.selectedThreadId],
+    [localFetch, props.selectedThreadId, props.selectedChatId],
   )
   const [loadError, setLoadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -70,7 +71,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
     load: async () => {
       try {
         void reloadKey
-        const loaded = await agent.load()
+        const loaded = await agent.loadSettled()
         setThreadUri(agent.threadId)
         setLoadError(false)
         // W8: remember who wrote each message so group chats can show the speaker.
@@ -116,7 +117,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
       </ConversationProvider>
       {loadError ? (
         <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-sm">
-          <span>读不到这个话题的消息。</span>
+          <span>读不到这个聊天的消息。</span>
           <Button size="sm" variant="outline" onClick={() => setReloadKey((key) => key + 1)}>重试</Button>
         </div>
       ) : null}

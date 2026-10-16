@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { Check, ListFilter, Loader2, Plus, Search, ShieldAlert, User, Users, MessageSquarePlus, WifiOff, X } from 'lucide-react'
+import { Check, ListFilter, Loader2, Plus, Search, ShieldAlert, User, Users, WifiOff, X } from 'lucide-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { ContactPickerDialog } from '@/modules/contacts'
 import { useBrowserOnline } from '@/lib/use-browser-online'
@@ -26,7 +26,6 @@ import { useChatStore } from '../store'
 import { chatOps, useChatInit, useChatMutations } from '../collections'
 import { deleteChatCopy } from '../domain/chat-list-model'
 import { useChatListEntries } from '../features/list/useChatListEntries'
-import { useStartAiWork } from '../features/threads/useStartAiWork'
 import { GlobalSearchResults } from '../features/search/GlobalSearchResults'
 import { ChatListRow } from '../ui/ChatListRow'
 import { AddChatDialog } from './AddChatDialog'
@@ -79,7 +78,6 @@ export function ChatListPane(_props: ChatListPaneProps) {
   const isOnline = useBrowserOnline()
   const mutations = useChatMutations()
   const { entries, isLoading, isError, isForbidden, refetch } = useChatListEntries()
-  const { start: startAiWork } = useStartAiWork()
 
   const visible = useMemo(
     () => (filter === 'unread' ? entries.filter((entry) => entry.unreadCount > 0) : entries),
@@ -208,10 +206,6 @@ export function ChatListPane(_props: ChatListPaneProps) {
             <DropdownMenuItem onClick={() => openAddDialog('group')}>
               <Users strokeWidth={1.5} className="mr-2 h-4 w-4" />
               <span>发起群聊</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { void startAiWork() }}>
-              <MessageSquarePlus strokeWidth={1.5} className="mr-2 h-4 w-4" />
-              <span>新的 AI 工作</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

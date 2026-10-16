@@ -275,7 +275,7 @@ describe('ChatHeader', () => {
     })
   })
 
-  it('offers a topic switcher beside the title at every width', async () => {
+  it('shows no topic switcher beside an assistant title', () => {
     mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
       selectedChatId: 'chat-1',
       selectedThreadId: 'thread-1',
@@ -294,15 +294,8 @@ describe('ChatHeader', () => {
 
     render(<ChatHeader />)
 
-    const trigger = screen.getByRole('button', { name: '切换话题，当前：比较三种工具' })
-    expect(trigger.className).not.toContain('hidden')
-
-    fireEvent.click(trigger)
-    // The switcher says which topic is waiting on you and can search topics.
-    expect(await screen.findByText('等你决定')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('搜索话题')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('# 排班规则草稿'))
-    expect(mockSelectThread).toHaveBeenCalledWith('thread-2')
+    expect(screen.queryByRole('button', { name: /切换话题/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/比较三种工具/)).not.toBeInTheDocument()
   })
 
   it('shows the schedule label next to a recurring topic', () => {

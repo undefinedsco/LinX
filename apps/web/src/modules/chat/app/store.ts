@@ -87,11 +87,6 @@ interface ChatStore {
   executionConditionsRequest: number
   /** Bumped by ⌘K (or anyone) to open the search panel in the list column. */
   searchRequest: number
-  /**
-   * The topic just opened by “新的 AI 工作”. While it is still empty, the
-   * assistant it belongs to can be switched (“和 LinX 助手 ▾”).
-   */
-  newWorkThreadId: string | null
 
   // Actions
   setSearch: (val: string) => void
@@ -107,7 +102,6 @@ interface ChatStore {
   setRightSidebarOpen: (open: boolean) => void
   requestExecutionConditions: () => void
   requestSearch: () => void
-  setNewWorkThread: (threadId: string | null) => void
 
   // List view navigation
   enterChat: (chatId: string) => void  // 点击 Chat 进入 Topic 列表
@@ -128,7 +122,6 @@ export const useChatStore = create<ChatStore>((set) => ({
   showRightSidebar: readStoredChatInfoOpen(),
   executionConditionsRequest: 0,
   searchRequest: 0,
-  newWorkThreadId: null,
 
   setSearch: (search) => set({ search }),
   selectChat: (id) => set((state) => {
@@ -159,7 +152,6 @@ export const useChatStore = create<ChatStore>((set) => ({
   }),
   requestExecutionConditions: () => set((state) => ({ executionConditionsRequest: state.executionConditionsRequest + 1 })),
   requestSearch: () => set((state) => ({ searchRequest: state.searchRequest + 1 })),
-  setNewWorkThread: (newWorkThreadId) => set({ newWorkThreadId }),
 
   // 进入某个 Chat，切换到 Topic 列表视图
   enterChat: (chatId) => set((state) => {

@@ -27,8 +27,6 @@ const listState = {
 }
 vi.mock('../features/list/useChatListEntries', () => ({ useChatListEntries: () => listState }))
 
-const startAiWork = vi.fn()
-vi.mock('../features/threads/useStartAiWork', () => ({ useStartAiWork: () => ({ start: startAiWork }) }))
 vi.mock('../features/search/GlobalSearchResults', () => ({
   GlobalSearchResults: ({ query }: { query: string }) => <div data-testid="global-search-results">{query}</div>,
 }))
@@ -94,13 +92,14 @@ describe('ChatListPane', () => {
     expect(selectChat).toHaveBeenCalledWith('k')
   })
 
-  it('shows the topic that needs you in the preview', () => {
+  it('shows the state that needs you in the preview, without a topic name', () => {
     listState.entries = [entry({
       id: 'a', title: 'LinX 助手', kind: 'assistant',
       headlineTopic: { title: '每周排班提醒', status: { kind: 'decision', label: '等你决定', needsYou: true } },
     })]
     render(<ChatListPane theme="light" />)
-    expect(screen.getByText('# 每周排班提醒 · 等你决定')).toBeInTheDocument()
+    expect(screen.getByText('等你决定')).toBeInTheDocument()
+    expect(screen.queryByText(/每周排班提醒/)).not.toBeInTheDocument()
   })
 
   it('filters to unread conversations', async () => {
@@ -115,15 +114,14 @@ describe('ChatListPane', () => {
     expect(screen.getByText('有未读')).toBeInTheDocument()
   })
 
-  it('offers 找人聊天, 发起群聊 and 新的 AI 工作 from the + menu', async () => {
+  it('offers only 找人聊天 and 发起群聊 (no 新的 AI 工作) from the + menu', async () => {
     render(<ChatListPane theme="light" />)
     fireEvent.pointerDown(screen.getByTitle('新建聊天'), { button: 0, ctrlKey: false })
     fireEvent.click(await screen.findByText('发起群聊'))
     expect(openAddDialog).toHaveBeenCalledWith('group')
     fireEvent.pointerDown(screen.getByTitle('新建聊天'), { button: 0, ctrlKey: false })
-    fireEvent.click(await screen.findByText('新的 AI 工作'))
-    expect(startAiWork).toHaveBeenCalled()
-    fireEvent.pointerDown(screen.getByTitle('新建聊天'), { button: 0, ctrlKey: false })
+    expect(await screen.findByText('找人聊天')).toBeInTheDocument()
+    expect(screen.queryByText('新的 AI 工作')).not.toBeInTheDocument()
     fireEvent.click(await screen.findByText('找人聊天'))
     expect(await screen.findByRole('dialog', { name: '找人聊天' })).toBeInTheDocument()
   })

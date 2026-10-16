@@ -198,7 +198,7 @@ export function ArtifactWorkspace({ versions, authFetch, onContinue, onSaveVersi
     }
   }
 
-  if (!selected) return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">当前话题还没有运行产物。</div>
+  if (!selected) return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">这个聊天还没有运行产物。</div>
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1">

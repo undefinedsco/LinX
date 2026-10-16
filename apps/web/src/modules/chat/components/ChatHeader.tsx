@@ -21,7 +21,6 @@ import type { AIProvider } from '@/modules/model-services/domain/types'
 import { useToast } from '@/components/ui/use-toast'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
-import { ThreadSwitcher } from '../features/threads/ThreadSwitcher'
 import { useThreadSchedule } from '../features/schedule/useThreadSchedule'
 import { describeScheduleRepeat } from '../domain/schedule-label'
 import { toStringArray } from '@/lib/utils'
@@ -362,7 +361,6 @@ export function ChatHeader() {
               {isGroup ? (
                 <span className="ml-1 shrink-0 text-xs text-muted-foreground">{memberCount} 人</span>
               ) : null}
-              {isAssistant && selectedChatId ? <ThreadSwitcher chatId={selectedChatId} /> : null}
               {isAssistant && scheduleLabel ? (
                 <span className="ml-2 shrink-0 text-xs text-muted-foreground">{scheduleLabel}</span>
               ) : null}

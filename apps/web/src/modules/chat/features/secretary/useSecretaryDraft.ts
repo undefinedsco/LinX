@@ -54,7 +54,7 @@ export function useSecretaryDraft({ scopeKey, draftScope, selectedChatId, webId,
 
   const failDraftHandoff = useCallback((failed: PendingComposerDraft) => {
     if (activeScopeRef.current !== failed.scopeKey) return
-    setHandoffFailure({ message: '无法将草稿填入当前话题。草稿仍保留，可重试。', scopeKey: failed.scopeKey, chatId: failed.chatId })
+    setHandoffFailure({ message: '无法将草稿填入当前聊天。草稿仍保留，可重试。', scopeKey: failed.scopeKey, chatId: failed.chatId })
   }, [])
 
   return {

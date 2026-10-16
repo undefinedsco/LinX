@@ -12,7 +12,8 @@ import { Bot } from 'lucide-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
-import { useChatInit, useMessageList } from '../collections'
+import { LINX_DEFAULT_SECRETARY, useChatInit, useMessageList } from '../collections'
+import { useChatStore } from '../store'
 import { ChatListPane } from './ChatListPane'
 import { projectChatContentState, type ChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
 import {
@@ -26,7 +27,6 @@ import { ConversationSurface } from '../features/conversation/ConversationSurfac
 import { WelcomeConversation } from '../features/conversation/welcome/WelcomeConversation'
 import { useConversationSurface } from '../features/conversation/surface-preference'
 import { useSecretaryChatController } from '../features/secretary/useSecretaryChatController'
-import { useStartAiWork } from '../features/threads/useStartAiWork'
 
 export { chatThreadRefsMatch, readActiveBranchSelections } from '../domain/thread-selection'
 
@@ -85,7 +85,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   } = useSolidDatabase()
   const { isReady } = useChatInit()
   const surfaceKind = useConversationSurface()
-  const { start: startAiWork, isStarting: isStartingAiWork } = useStartAiWork()
+  const selectChat = useChatStore((state) => state.selectChat)
   const secretary = useSecretaryChatController({
     databaseScopeKey,
     webId: session.info.webId,
@@ -207,10 +207,10 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       <div className="flex min-h-0 flex-1">
         <EmptyState
           title="选择或创建一个聊天"
-          description="想做点什么？直接开始一项 AI 工作，或者从左边选一个会话。"
+          description="想做点什么？直接和助手聊聊，或者从左边选一个会话。"
           action={(
-            <Button size="sm" onClick={() => { void startAiWork() }} disabled={isStartingAiWork}>
-              开始 AI 工作
+            <Button size="sm" onClick={() => selectChat(LINX_DEFAULT_SECRETARY.chatId)}>
+              和助手聊聊
             </Button>
           )}
         />
@@ -224,12 +224,12 @@ export function ChatContentPane(props: ChatContentPaneProps) {
 
   const buildWelcomeProps = (starterActions: readonly SecretaryStarterAction[], onStarterAction: (action: SecretaryStarterAction) => void) => {
     const composerStatus = threadCreationError
-      ? '默认话题暂未创建，草稿已保留。重试后可以继续。'
+      ? '聊天暂时没准备好，草稿已保留。重试后可以继续。'
       : activePendingSecretaryDraft
-        ? '草稿已保留，将在默认话题准备好后填入输入框。'
+        ? '草稿已保留，将在聊天准备好后填入输入框。'
       : isDefaultSecretarySettling || !isReady || !db || isChatsLoading || isThreadsLoading
         ? '可以立即开始；对话记录会在空间准备好后同步。'
-        : '准备就绪；发送后将进入默认话题。'
+        : '准备就绪。'
     return {
       starterActions,
       composerValue: secretaryDraft,
@@ -238,7 +238,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       onComposerValueChange: updateSecretaryDraft,
       onSubmit: () => submitSecretaryDraft({ autoSend: sendOnSubmit }),
       isSubmitting: isCreatingThread || Boolean(activePendingSecretaryDraft),
-      retryLabel: threadCreationError ? '重试创建话题' : undefined,
+      retryLabel: threadCreationError ? '重试' : undefined,
       onRetry: threadCreationError ? retryThreadCreation : undefined,
     }
   }
@@ -256,7 +256,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   if (threadCreationError && !selectedThreadId) {
     return (
       <EmptyState
-        title="无法创建默认话题"
+        title="聊天暂时无法准备"
         description={`${threadCreationError}。请检查当前空间后重试。`}
         action={<Button variant="outline" size="sm" onClick={retryThreadCreation}>重试</Button>}
       />
@@ -287,7 +287,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   }
 
   if (!selectedThreadId || !activeChat) {
-    return <EmptyState title="正在加载聊天" description="正在同步当前聊天与话题状态。" />
+    return <EmptyState title="正在加载聊天" description="正在同步当前聊天。" />
   }
 
   return (
@@ -343,8 +343,8 @@ export function ChatContentPane(props: ChatContentPaneProps) {
               ? (
                 <WelcomeConversation
                   {...buildWelcomeProps(SECRETARY_STARTER_ACTIONS, (action) => {
-                    // One action: the suggestion's prompt is sent into this (empty) topic.
-                    void startAiWork().then(() => submitSecretaryDraft({ text: action.prompt, autoSend: true }))
+                    // The suggestion's prompt is sent into this same chat.
+                    submitSecretaryDraft({ text: action.prompt, autoSend: true })
                   })}
                   chatId={selectedChatId}
                   fallback={conversation}

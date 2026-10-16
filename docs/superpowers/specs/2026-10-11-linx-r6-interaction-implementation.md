@@ -23,7 +23,7 @@
 
 身份与聊天
 
-- 一个身份只占一个入口：每个助手、每个人、每个群在聊天列表里只有一行。同一个助手做的不同工作是它下面的话题，在标题旁的“# 话题 ▾”里切换。右边栏不放话题列表。
+- 一个身份只占一个入口：每个助手、每个人、每个群在聊天列表里只有一行。**和助手一直聊下去，不分话题（2026-10-13 修订）**：界面上没有“# 话题 ▾”、没有“新的 AI 工作”；LinX 在内部管理空间和 threads（运行、持续任务、编程工具、上下文管理），这些都出现在同一条时间线里。
 - 右边栏是“聊天信息”（同微信），默认收起，点标题栏按钮打开，记住上次的开关状态；窗口窄于 1280 时浮在内容上。
 - 会话只有“标星”，不设“置顶”；标星的排在前面。
 - 助手当人看：联系人里助手和人在同一个 A–Z 列表里，只靠头像区分，不分页、不打标签。
@@ -58,7 +58,7 @@
 ### 3.1 会话协议（W2p）
 
 - **聊天组件只接 AG-UI 事件流**（`@ag-ui/client` 1.0.2）。组件用 assistant-ui（`@assistant-ui/react` 0.15.27、`@assistant-ui/react-ag-ui` 0.0.67），依赖已装好。
-- **ID 对应**：AG-UI 的 `threadId` 是话题资源 URI，`runId` 是这次运行的资源 URI，`messageId` 是 Pod 里消息的 URI，interrupt 的 `id` 是 Approval 或 InputRequest 资源的 URI。
+- **ID 对应**：AG-UI 的 `threadId` 是内部 thread 的资源 URI（用户看不到），`runId` 是这次运行的资源 URI，`messageId` 是 Pod 里消息的 URI，interrupt 的 `id` 是 Approval 或 InputRequest 资源的 URI。
 - **消息里的卡片走 A2UI v0.9**，放在 AG-UI 的 `ACTIVITY_SNAPSHOT` 里（`activityType: "a2ui-surface"`）。`surfaceId` 就是卡片绑定的 RDF 资源 URI。卡片显示什么、处于什么状态，都从 Pod 读，不读消息里留下的旧文字。资源读不到时，卡片说明原因。
 - **点卡片按钮 = 写 Pod 里的那个资源。** 运行时（或 Web 端的本地运行时）盯着资源，资源变了就让那次运行接着走。所以会话里点、收件箱里点、LinX 自动通过，走的是同一条路。回答的格式能从 `shapes.ttl` 生成就从那里生成。
 - **编程工具**（Codex / Claude Code / CodeBuddy）仍然用 ACP 接进运行时，由运行时转成 AG-UI 事件。界面不直接接 ACP。ACP 的 `allow_once` 对应“允许这一次”，`allow_always` 对应“以后交给 LinX 判断”（写一条授权）。

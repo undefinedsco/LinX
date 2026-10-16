@@ -1,4 +1,4 @@
-import { AttachmentPrimitive, BranchPickerPrimitive, MessagePrimitive, useAuiState } from '@assistant-ui/react'
+import { ActionBarPrimitive, AttachmentPrimitive, BranchPickerPrimitive, MessagePrimitive, useAuiState } from '@assistant-ui/react'
 import type { ToolCallMessagePartProps } from '@assistant-ui/react'
 import { ChevronLeft, ChevronRight, FileText, Loader2, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -103,6 +103,11 @@ export function AssistantMessage() {
     const status = state.message.status
     return status?.type === 'incomplete' && status.reason === 'error' ? status.error : undefined
   })
+  const text = useAuiState((state) => state.message.content.map((part) => (part.type === 'text' ? part.text : '')).join(''))
+  // A failed run says so once: when the bubble already carries the reason
+  // (the saved failure message), only the retry action is added below it.
+  const errorText = typeof error === 'string' ? error : error ? '这次没有完成，可以重试。' : ''
+  const failureInBubble = Boolean(errorText) && text.includes(errorText)
   return (
     <MessagePrimitive.Root className="group/message flex items-start gap-2.5" data-role="assistant" data-message-id={messageId}>
       <Avatar name={identity?.agentName ?? 'AI'} assistant />
@@ -130,7 +135,12 @@ export function AssistantMessage() {
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />正在处理…
           </p>
         ) : null}
-        {error ? <p role="alert" className="px-1 text-xs text-destructive">{typeof error === 'string' ? error : '这次没有完成，可以重试。'}</p> : null}
+        {error ? (
+          <p role={failureInBubble ? undefined : 'alert'} className="px-1 text-xs text-destructive">
+            {failureInBubble ? null : <>{errorText}{' '}</>}
+            <ActionBarPrimitive.Reload className="text-primary hover:underline">重试</ActionBarPrimitive.Reload>
+          </p>
+        ) : null}
         <div className="flex items-center gap-2">
           <MessageToolbar role="assistant" />
           <BranchPicker />

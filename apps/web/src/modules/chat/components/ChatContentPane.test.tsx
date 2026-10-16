@@ -279,7 +279,7 @@ describe('ChatContentPane', () => {
     render(<ChatContentPane theme="light" />)
 
     expect(screen.getByText('选择或创建一个聊天')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '开始 AI 工作' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '和助手聊聊' })).toBeInTheDocument()
     expect(screen.queryByTestId('compact-chat-list')).not.toBeInTheDocument()
   })
 
@@ -944,7 +944,7 @@ describe('ChatContentPane', () => {
     act(() => options.onError(new Error('thread write failed')))
 
     expect(screen.getByRole('button', { name: '开始对话' })).toBeDisabled()
-    fireEvent.click(await screen.findByRole('button', { name: '重试创建话题' }))
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }))
 
     await waitFor(() => expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(2))
   })
@@ -1046,7 +1046,7 @@ describe('ChatContentPane', () => {
     await waitFor(() => expect(mockMutations.createThread.mutate).toHaveBeenCalled())
     const [, options] = mockMutations.createThread.mutate.mock.calls[0]
     act(() => options.onError(new Error('old account thread failure')))
-    expect(screen.getByRole('button', { name: '重试创建话题' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
 
     mockSession.info.webId = 'https://bob.example/profile/card#me'
     mockUseSolidDatabase.mockReturnValue({
@@ -1067,7 +1067,7 @@ describe('ChatContentPane', () => {
 
     expect(screen.getByRole('textbox', { name: '给 LinX 助手发消息' })).toHaveValue('')
     expect(screen.getByRole('button', { name: '开始对话' })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: '重试创建话题' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument()
     expect(screen.queryByText(/old account thread failure/)).not.toBeInTheDocument()
   })
 
@@ -1215,7 +1215,7 @@ describe('ChatContentPane', () => {
       options.onError(new Error('network down'))
     })
 
-    expect(await screen.findByText('无法创建默认话题')).toBeInTheDocument()
+    expect(await screen.findByText('聊天暂时无法准备')).toBeInTheDocument()
     expect(screen.getByText(/network down/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
 
@@ -1327,7 +1327,7 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    expect(screen.getByText('当前话题已绑定空间文件夹')).toBeInTheDocument()
+    expect(screen.getByText('当前聊天已绑定空间文件夹')).toBeInTheDocument()
     expect(screen.getByText('Pod Workspace · https://alice.example/.data/workspaces/ws-1/ · main · 基于 origin/main')).toBeInTheDocument()
   })
 

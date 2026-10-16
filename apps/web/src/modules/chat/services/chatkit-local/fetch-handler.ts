@@ -282,7 +282,9 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     return { uri: sourceUrl.href, name: versionName, createdAt }
   }
   const conversation: LocalConversationApi = {
-    load: (threadId) => service.loadConversation(threadId, {}),
+    load: (threadId, chatId) => (chatId
+      ? service.loadChatConversation(chatId, threadId, {})
+      : service.loadConversation(threadId, {})),
     resolveItemUri: (itemId) => service.resolveItemUri(itemId),
     async uploadAttachment(file, signal) {
       if (!isAvailable()) throw new Error('当前空间连接尚未恢复，请稍后重试。')
@@ -565,10 +567,11 @@ export type LocalChatKitFetch = typeof fetch & {
 }
 
 export interface LocalConversationApi {
-  load: (threadId: string) => Promise<{
+  /** With `chatId`, every thread of the chat merged into one timeline. */
+  load: (threadId: string, chatId?: string) => Promise<{
     thread: ThreadMetadata
     threadUri: string
-    items: Array<{ item: ThreadItem; uri: string }>
+    items: Array<{ item: ThreadItem; uri: string; threadId?: string }>
   }>
   resolveItemUri: (itemId: string) => string
   /** Two-phase upload collapsed into one call; returns the stored attachment. */

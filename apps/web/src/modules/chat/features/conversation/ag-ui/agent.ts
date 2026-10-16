@@ -17,6 +17,8 @@ export interface LinxConversationAgentOptions {
   localThreadId: string
   /** Topic resource URI: the AG-UI threadId. */
   threadUri: string
+  /** When set, history is the whole chat (all its threads merged). */
+  chatId?: string
   backend: LocalConversationApi
 }
 
@@ -60,30 +62,65 @@ export function userFiles(content: UserContent): Array<{ name: string; mimeType:
 
 export class LinxConversationAgent extends AbstractAgent {
   private readonly localThreadId: string
+  private readonly chatId: string | undefined
   private readonly backend: LocalConversationApi
+  /** Thread each loaded message lives in (older ones may not be the send target). */
+  private readonly threadIdByMessageId = new Map<string, string>()
   private readonly itemIdByMessageId = new Map<string, string>()
   private controller: AbortController | null = null
+  private runsStartedCount = 0
+  private idleWaiters = new Set<() => void>()
   private stopListeners = new Set<(state: 'idle' | 'stopping') => void>()
 
   constructor(options: LinxConversationAgentOptions) {
     super({ threadId: options.threadUri })
     this.localThreadId = options.localThreadId
+    this.chatId = options.chatId
     this.backend = options.backend
   }
 
   /** Reads the topic from the Pod; call once before the first run. */
   async load(): Promise<LoadedConversation> {
-    const conversation = await this.backend.load(this.localThreadId)
+    const conversation = await this.backend.load(this.localThreadId, this.chatId)
     this.threadId = conversation.threadUri
     const itemIdByUri = new Map<string, string>()
     const makerByUri = new Map<string, string>()
-    for (const { item, uri } of conversation.items) {
+    for (const { item, uri, threadId } of conversation.items) {
+      if (threadId) this.threadIdByMessageId.set(uri, threadId)
       itemIdByUri.set(uri, item.id)
       const maker = (item as { maker?: unknown }).maker
       if (typeof maker === 'string' && maker) makerByUri.set(uri, maker)
       this.itemIdByMessageId.set(uri, item.id)
     }
     return { messages: itemsToAgUiMessages(conversation.items), itemIdByUri, makerByUri }
+  }
+
+  /**
+   * `load()` that survives a send overtaking it. The Pod read can be slower
+   * than the person's first message; importing that stale result would wipe
+   * their message from the screen, so once a run has started it is awaited and
+   * the topic is read again.
+   */
+  async loadSettled(): Promise<LoadedConversation> {
+    let started = this.runsStartedCount
+    let loaded = await this.load()
+    while (this.runsStartedCount !== started) {
+      await this.whenIdle()
+      started = this.runsStartedCount
+      loaded = await this.load()
+    }
+    return loaded
+  }
+
+  /** How many runs have started; lets a slow history load notice a send that overtook it. */
+  get runsStarted(): number {
+    return this.runsStartedCount
+  }
+
+  /** Resolves once no run is in flight. */
+  whenIdle(): Promise<void> {
+    if (!this.controller) return Promise.resolve()
+    return new Promise((resolve) => { this.idleWaiters.add(resolve) })
   }
 
   /** A stop was asked for; the run is "stopped" only once the stream really ended. */
@@ -110,7 +147,7 @@ export class LinxConversationAgent extends AbstractAgent {
       if (knownItemId) {
         return {
           type: 'threads.custom_action',
-          params: { action: { type: 'message.regenerate', payload: { thread_id: this.localThreadId, item_id: knownItemId } } },
+          params: { action: { type: 'message.regenerate', payload: { thread_id: this.threadIdByMessageId.get(last.id) ?? this.localThreadId, item_id: knownItemId } } },
         }
       }
       const content = last.content as UserContent
@@ -136,6 +173,7 @@ export class LinxConversationAgent extends AbstractAgent {
     return new Observable<BaseEvent>((subscriber) => {
       const controller = new AbortController()
       this.controller = controller
+      this.runsStartedCount += 1
       const runId = `${this.threadId}-run-${crypto.randomUUID()}`
       const translator = new ThreadEventTranslator({
         threadUri: this.threadId,
@@ -169,6 +207,11 @@ export class LinxConversationAgent extends AbstractAgent {
         } finally {
           if (this.controller === controller) this.controller = null
           for (const listener of this.stopListeners) listener('idle')
+          if (!this.controller) {
+            const waiters = [...this.idleWaiters]
+            this.idleWaiters.clear()
+            for (const resolve of waiters) resolve()
+          }
           subscriber.complete()
         }
       })()

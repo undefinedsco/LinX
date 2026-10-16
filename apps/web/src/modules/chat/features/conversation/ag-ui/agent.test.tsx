@@ -91,6 +91,47 @@ describe('LinxConversationAgent with assistant-ui', () => {
   })
 })
 
+describe('LinxConversationAgent one continuous chat', () => {
+  it('loads the whole chat and regenerates an older message in the thread it lives in', async () => {
+    const requests: StreamingReq[] = []
+    const loads: Array<[string, string | undefined]> = []
+    const base = backend([], requests)
+    const agent = new LinxConversationAgent({
+      localThreadId: 't2',
+      threadUri: THREAD,
+      chatId: 'chat-1',
+      backend: {
+        ...base,
+        load: async (threadId, chatId) => {
+          loads.push([threadId, chatId])
+          return {
+            thread: { id: 't2', status: { type: 'active' }, created_at: 0, updated_at: 0 },
+            threadUri: THREAD,
+            items: [
+              { uri: 'https://alice.example/old', threadId: 't1', item: { id: 'i-old', thread_id: 't1', type: 'user_message', content: [{ type: 'input_text', text: '上周的问题' }], created_at: 1 } },
+              { uri: 'https://alice.example/new', threadId: 't2', item: { id: 'i-new', thread_id: 't2', type: 'user_message', content: [{ type: 'input_text', text: '今天的问题' }], created_at: 2 } },
+            ],
+          }
+        },
+      },
+    })
+    const loaded = await agent.load()
+    expect(loads).toEqual([['t2', 'chat-1']])
+    expect(loaded.messages.map((message) => message.id)).toEqual(['https://alice.example/old', 'https://alice.example/new'])
+
+    await new Promise<void>((resolve) => {
+      agent.run({
+        threadId: THREAD, runId: 'r', state: {}, tools: [], context: [], forwardedProps: {},
+        messages: [{ id: 'https://alice.example/old', role: 'user', content: '上周的问题' }],
+      }).subscribe({ complete: resolve })
+    })
+    expect(requests[0]).toMatchObject({
+      type: 'threads.custom_action',
+      params: { action: { type: 'message.regenerate', payload: { thread_id: 't1', item_id: 'i-old' } } },
+    })
+  })
+})
+
 describe('LinxConversationAgent requests', () => {
   it('stores composer attachments first and sends their ids', async () => {
     const requests: StreamingReq[] = []

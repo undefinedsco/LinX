@@ -64,11 +64,12 @@ describe('GlobalSearchResults', () => {
     mocks.fileError = false
   })
 
-  it('groups conversations, topics, contacts and file names', () => {
+  it('groups conversations, contacts and file names', () => {
     render(<GlobalSearchResults query="排班" />)
 
     expect(screen.getByRole('region', { name: '会话' })).toHaveTextContent('排班小组')
-    expect(screen.getByRole('region', { name: '会话' })).toHaveTextContent('# 排班规则草稿')
+    // Internal topics are never search results.
+    expect(screen.queryByText(/排班规则草稿/)).not.toBeInTheDocument()
     expect(screen.getByRole('region', { name: '联系人与群' })).toHaveTextContent('周禾排班')
     expect(screen.getByRole('region', { name: '联系人与群' })).toHaveTextContent('群聊')
     expect(screen.getByRole('region', { name: '文件' })).toHaveTextContent('排班表.xlsx')
@@ -80,9 +81,9 @@ describe('GlobalSearchResults', () => {
     mocks.findOrCreateChat.mockResolvedValue('chat-zhou')
     render(<GlobalSearchResults query="排班" />)
 
-    fireEvent.click(screen.getByText('# 排班规则草稿'))
+    fireEvent.click(screen.getByText('排班小组'))
     expect(mocks.selectChat).toHaveBeenCalledWith('chat-team')
-    expect(mocks.selectThread).toHaveBeenCalledWith('thread-rules')
+    expect(mocks.selectThread).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByText('周禾排班'))
     await waitFor(() => expect(mocks.selectChat).toHaveBeenCalledWith('chat-zhou'))

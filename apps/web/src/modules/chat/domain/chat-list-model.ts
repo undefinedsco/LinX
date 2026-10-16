@@ -56,8 +56,9 @@ export function unreadBadgeText(count: number): string | null {
 
 export function projectChatListEntry(source: ChatListEntrySource, now: number = Date.now()): ChatListEntry {
   const topic = source.headlineTopic
+  // The state of the chat (running, needs you...), never a topic name.
   const preview = topic
-    ? `# ${topic.title} · ${topic.status.label}`
+    ? topic.status.label
     : source.preview?.trim() || '还没有消息'
   return {
     id: source.id,
@@ -95,9 +96,9 @@ export function orderChatListEntries<T extends Pick<ChatListEntry, 'starred' | '
     .map(({ entry }) => entry)
 }
 
-export function deleteChatCopy(entry: Pick<ChatListEntry, 'title' | 'kind'>, topicCount: number): { title: string; description: string } {
+export function deleteChatCopy(entry: Pick<ChatListEntry, 'title' | 'kind'>, _topicCount?: number): { title: string; description: string } {
   const who = entry.kind === 'person' ? `和${entry.title}的会话` : `“${entry.title}”`
-  const topics = topicCount > 1 ? `${topicCount} 个话题的聊天记录` : '聊天记录'
+  const topics = '聊天记录'
   return {
     title: `删除${who}？`,
     description: `${topics}会被删除，不能恢复。发过的文件和知识卡片不受影响。`,

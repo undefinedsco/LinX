@@ -47,7 +47,7 @@ export function ChatHistorySearchDialog({ open, onOpenChange, messages, podBaseU
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>查找聊天记录</DialogTitle>
-          <DialogDescription>在这个会话的所有话题里找消息、文件和图片。</DialogDescription>
+          <DialogDescription>在这个聊天里找消息、文件和图片。</DialogDescription>
         </DialogHeader>
         <Input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索" aria-label="搜索聊天记录" />
         <Tabs value={tab} onValueChange={(value) => setTab(value as HistoryTab)}>

@@ -167,7 +167,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
           onCreated?.(id)
           toast({
             title: '聊天已创建',
-            description: '默认话题创建失败。进入会话后会自动补建，可继续使用。',
+            description: '会话还没准备好，进入后会自动补好，可以继续使用。',
           })
           return
         }

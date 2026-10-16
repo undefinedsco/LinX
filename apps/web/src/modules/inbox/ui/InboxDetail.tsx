@@ -357,7 +357,7 @@ export function InboxDetail({
                   {inputRequestForm.secret
                     ? '只会排队交给等待中的运行，不会出现在聊天记录里。'
                     : inputRequestForm.canSteer
-                      ? '提交：排队，等它下次来取，不打断正在做的事。立即插话：同时发进原话题，马上交给它。'
+                      ? '提交：排队，等它下次来取，不打断正在做的事。立即插话：同时发进原来的聊天，马上交给它。'
                       : '提交后排队交给等待中的那次运行，不会重新开始。'}
                 </p>
               </form>

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Bot, FileText, Folder, Hash, MessageCircle, Users, User, WifiOff } from 'lucide-react'
+import { Bot, FileText, Folder, MessageCircle, Users, User, WifiOff } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useGlobalSearch } from './useGlobalSearch'
 
@@ -43,19 +43,10 @@ export function GlobalSearchResults({ query }: { query: string }) {
           </p>
         ) : null}
 
-        {search.chats.length > 0 || search.topics.length > 0 ? (
+        {search.chats.length > 0 ? (
           <Section title="会话">
             {search.chats.map((hit) => (
               <Row key={hit.id} icon={<MessageCircle className="h-4 w-4" />} title={hit.title} subtitle={hit.preview} onClick={() => search.openChat(hit.id)} />
-            ))}
-            {search.topics.map((hit) => (
-              <Row
-                key={hit.id}
-                icon={<Hash className="h-4 w-4" />}
-                title={`# ${hit.title}`}
-                subtitle={hit.chatTitle ? `话题 · ${hit.chatTitle}` : '话题'}
-                onClick={() => search.openTopic(hit)}
-              />
             ))}
           </Section>
         ) : null}
@@ -110,7 +101,7 @@ export function GlobalSearchResults({ query }: { query: string }) {
         {search.isEmpty ? (
           <div className="px-4 py-10 text-center">
             <p className="text-sm text-foreground">没有找到“{trimmed}”</p>
-            <p className="mt-1 text-xs text-muted-foreground">搜了会话、话题、联系人和文件名；文件正文不在搜索范围里</p>
+            <p className="mt-1 text-xs text-muted-foreground">搜了会话、联系人和文件名；文件正文不在搜索范围里</p>
           </div>
         ) : null}
       </div>

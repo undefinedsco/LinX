@@ -52,6 +52,7 @@ import {
   type AgentAiRuntimeLocation,
 } from '../../agent-runtime-location'
 import { classifyRuntimeTool } from '../../domain/runtime-tool-category'
+import { mergeThreadTimelines } from '../../domain/chat-threads'
 import { readProjectContext, renderProjectSystemContext } from '../project-context'
 
 const LINX_PLATFORM_PROVIDER_ID = 'undefineds'
@@ -567,6 +568,29 @@ export class LocalChatKitService {
       threadUri,
       items: active.map((item) => ({ item, uri: this.store.resolveItemUri?.(item.id) ?? item.id })),
     }
+  }
+
+  /**
+   * One continuous chat: the active branch of every thread of the chat merged
+   * in time order, each message keeping its real Pod URI and the thread it
+   * lives in. `currentThreadId` (where new messages go) is always included.
+   */
+  async loadChatConversation(chatId: string, currentThreadId: string, context: StoreContext = {}): Promise<{
+    thread: ThreadMetadata
+    threadUri: string
+    items: Array<{ item: ThreadItem; uri: string; threadId: string }>
+  }> {
+    const listed = await this.store.loadThreads(1000, undefined, 'asc', context)
+    const ids = listed.data
+      .filter((thread) => thread.metadata?.chat_id === chatId)
+      .map((thread) => thread.id)
+    if (!ids.includes(currentThreadId)) ids.push(currentThreadId)
+    const loaded = await Promise.all(ids.map(async (id) => ({ id, conversation: await this.loadConversation(id, context) })))
+    const current = loaded.find((entry) => entry.id === currentThreadId)!.conversation
+    const items = mergeThreadTimelines(loaded.map(({ id, conversation }) => (
+      conversation.items.map((entry) => ({ ...entry, threadId: id, createdAt: entry.item.created_at ?? 0 }))
+    ))).map(({ createdAt: _createdAt, ...entry }) => entry)
+    return { thread: current.thread, threadUri: current.threadUri, items }
   }
 
   /** Pod message URI of an item that has been persisted or loaded here. */

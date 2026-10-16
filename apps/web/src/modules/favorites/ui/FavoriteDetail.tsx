@@ -16,7 +16,7 @@ import { favoriteGroupOf } from '../domain/groups'
 
 const SOURCE_COPY: Record<string, { label: string; noun: string; open: string }> = {
   chat: { label: '会话', noun: '会话', open: '在会话中查看' },
-  thread: { label: '话题', noun: '话题', open: '在会话中查看' },
+  thread: { label: '聊天', noun: '聊天', open: '在会话中查看' },
   messages: { label: '消息', noun: '消息', open: '在会话中查看' },
   files: { label: '文件', noun: '文件', open: '打开文件' },
   contacts: { label: '联系人', noun: '联系人', open: '查看联系人' },
