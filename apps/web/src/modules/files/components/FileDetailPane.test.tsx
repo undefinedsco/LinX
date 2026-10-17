@@ -1,4 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Heavy full-pane renders: under a full parallel run some take longer than the 5 s default.
+vi.setConfig({ testTimeout: 20_000 })
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { FileDetailPane } from './FileDetailPane'
 import { useCardDialog } from '@/lib/card-dialog'

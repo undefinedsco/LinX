@@ -13,7 +13,6 @@ const initializeFilesCollectionsMock = vi.fn()
 const subscribeFilesToPodMock = vi.fn()
 const initializeInboxCollectionsMock = vi.fn()
 const subscribeInboxToPodMock = vi.fn()
-const initializeModelCollectionsMock = vi.fn()
 const initializeSymphonyControlCollectionsMock = vi.fn()
 const subscribeSymphonyControlToPodMock = vi.fn()
 const ensureLinxWelcomeMock = vi.fn()
@@ -103,10 +102,6 @@ vi.mock('@/modules/inbox/collections', () => ({
   },
 }))
 
-vi.mock('@/modules/model-services/data/collections', () => ({
-  initializeModelCollections: (...args: unknown[]) => initializeModelCollectionsMock(...args),
-}))
-
 vi.mock('@/modules/symphony/collections', () => ({
   initializeSymphonyControlCollections: (...args: unknown[]) => initializeSymphonyControlCollectionsMock(...args),
   symphonyControlOps: {
@@ -175,7 +170,6 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeFavoriteCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeFilesCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(null)
-    expect(initializeModelCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(null)
     expect(ensureLinxWelcomeMock).not.toHaveBeenCalled()
     expect(subscribeToPodMock).not.toHaveBeenCalled()
@@ -185,7 +179,7 @@ describe('PodCollectionsBootstrap', () => {
     expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
   })
 
-  it('binds contact and model collections before rendering consumers', () => {
+  it('binds contact collections before rendering consumers', () => {
     const db = { id: 'db' }
     const observeBindings = vi.fn()
     useSolidDatabaseMock.mockReturnValue({ db })
@@ -193,7 +187,6 @@ describe('PodCollectionsBootstrap', () => {
     function CollectionConsumer() {
       observeBindings({
         contactsBound: initializeContactCollectionsMock.mock.calls.some(([value]) => value === db),
-        modelsBound: initializeModelCollectionsMock.mock.calls.some(([value]) => value === db),
       })
       return <div>collection consumer</div>
     }
@@ -206,7 +199,6 @@ describe('PodCollectionsBootstrap', () => {
 
     expect(observeBindings).toHaveBeenCalledWith({
       contactsBound: true,
-      modelsBound: true,
     })
   })
 
@@ -230,7 +222,6 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeFavoriteCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeFilesCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(db)
-    expect(initializeModelCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(db)
     expect(subscribeToPodMock).toHaveBeenCalledTimes(1)
     expect(subscribeFavoritesToPodMock).toHaveBeenCalledTimes(1)

@@ -2,6 +2,10 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// Date labels in tests are written for China time; pin it so results don't depend on the
+// machine's timezone.
+process.env.TZ = 'Asia/Shanghai'
+
 const repoRoot = path.resolve(__dirname, '../..')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,

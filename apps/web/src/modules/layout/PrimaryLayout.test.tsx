@@ -32,10 +32,25 @@ const mockSessionState = vi.hoisted(() => ({
   sessionRequestInProgress: false,
 }))
 
-// The layout loads module panes lazily; under load the real Files tree can finish loading
-// mid-suite and needs providers this test does not set up. Its behaviour is tested elsewhere.
-vi.mock('@/modules/files/features/tree/FilesTreePane', () => ({
-  FilesTreePane: () => <div data-testid="files-tree-pane-stub" />,
+// The layout loads module panes lazily; under load a real pane can finish loading mid-suite
+// and needs providers this test does not set up. The panes are tested on their own, so they
+// are stubbed here; layout config bridges stay real (the width contracts come from them).
+vi.mock('@/modules/chat/components/ChatListPane', () => ({ ChatListPane: () => <div data-testid="ChatListPane-stub" /> }))
+vi.mock('@/modules/chat/components/ChatContentPane', () => ({ ChatContentPane: () => <div data-testid="ChatContentPane-stub" /> }))
+vi.mock('@/modules/inbox/components/InboxListPane', () => ({ InboxListPane: () => <div data-testid="InboxListPane-stub" /> }))
+vi.mock('@/modules/inbox/components/InboxContentPane', () => ({ InboxContentPane: () => <div data-testid="InboxContentPane-stub" /> }))
+vi.mock('@/modules/contacts/features/list/ContactListPane', () => ({ ContactListPane: () => <div data-testid="ContactListPane-stub" /> }))
+vi.mock('@/modules/contacts/features/detail/ContactDetailPane', () => ({ ContactDetailPane: () => <div data-testid="ContactDetailPane-stub" /> }))
+vi.mock('@/modules/files/features/tree/FilesTreePane', () => ({ FilesTreePane: () => <div data-testid="FilesTreePane-stub" /> }))
+vi.mock('@/modules/files/app/FilesWorkspacePane', () => ({ FilesWorkspacePane: () => <div data-testid="FilesWorkspacePane-stub" /> }))
+vi.mock('@/modules/model-services/features/list/ModelServicesListPane', () => ({ ModelServicesListPane: () => <div data-testid="ModelServicesListPane-stub" /> }))
+vi.mock('@/modules/model-services/features/detail/ModelServicesContentPane', () => ({ ModelServicesContentPane: () => <div data-testid="ModelServicesContentPane-stub" /> }))
+vi.mock('@/modules/settings/features/list/SettingsListPane', () => ({ SettingsListPane: () => <div data-testid="SettingsListPane-stub" /> }))
+vi.mock('@/modules/settings/features/content/SettingsContentPane', () => ({ SettingsContentPane: () => <div data-testid="SettingsContentPane-stub" /> }))
+vi.mock('@/modules/favorites/features/shell/FavoriteThreePane', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  FavoriteGroupsPane: () => <div data-testid="FavoriteGroupsPane-stub" />,
+  FavoriteItemsPane: () => <div data-testid="FavoriteItemsPane-stub" />,
 }))
 
 vi.mock('@tanstack/react-router', () => ({

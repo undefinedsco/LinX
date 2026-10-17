@@ -104,6 +104,29 @@ vi.mock('@/lib/vendor/xpod-chatkit', () => ({
 
 import { LocalChatKitService } from '../service'
 
+/**
+ * Besides the model call the service looks up the model list (capabilities) and the
+ * withdrawn-cards list. These tests are about model traffic, so the side lookups get
+ * neutral answers here and only model requests reach the test's fetch mock.
+ */
+function modelTraffic(fetchMock: (...args: any[]) => any) {
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (/\/v1\/models$/.test(url)) {
+      // A test that declares model capabilities answers /v1/models itself; ask its
+      // implementation directly so the lookup is not recorded as model traffic.
+      const implementation = (fetchMock as any).getMockImplementation?.()
+      const own = implementation ? await implementation(input, init) : null
+      const text = own instanceof Response && own.ok ? await own.text() : ''
+      let declared = false
+      try { declared = Array.isArray(JSON.parse(text)?.data) } catch { declared = false }
+      return new Response(declared ? text : JSON.stringify({ data: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (url.endsWith('/settings/linx/withdrawn-cards.ttl')) return new Response('', { status: 404 })
+    return fetchMock(input, init)
+  }
+}
+
 function createSseResponse(chunks: string[]) {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
@@ -398,7 +421,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -427,7 +450,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -458,7 +481,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -498,7 +521,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -549,7 +572,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -613,7 +636,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -648,7 +671,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -668,7 +691,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -720,7 +743,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -753,7 +776,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -787,7 +810,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -834,7 +857,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -864,7 +887,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await collectStreamEvents(await service.process(JSON.stringify({
@@ -932,7 +955,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
       attachmentThreadId: 'thread-1',
     })
 
@@ -967,7 +990,7 @@ describe('LocalChatKitService platform runtime routing', () => {
         store: store as any,
         db: createMockDb({ provider: 'custom', model }) as any,
         webId: 'https://id.undefineds.co/profile/card#me',
-        authFetch: authFetch as any,
+        authFetch: modelTraffic(authFetch) as any,
         attachmentThreadId: 'thread-1',
       })
       await service.process(JSON.stringify({
@@ -1076,7 +1099,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1128,7 +1151,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1171,7 +1194,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1205,7 +1228,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1231,7 +1254,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1264,7 +1287,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     await sendMessage(service)
@@ -1310,7 +1333,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1345,7 +1368,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1372,7 +1395,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { model: 'linx-lite' })
@@ -1396,7 +1419,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { model: 'linx-lite' })
@@ -1426,7 +1449,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
       onServiceAccessRequired,
     })
 
@@ -1451,7 +1474,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     await sendMessage(service, { model: 'linx' })
@@ -1483,7 +1506,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     await sendMessage(service)
@@ -1519,7 +1542,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       }
       return new Response('', { status: 404 })
     })
-    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: modelTraffic(authFetch) as any })
 
     const events = await sendMessage(service, {
       model: 'linx-lite',
@@ -1578,7 +1601,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { model: 'gpt-image-1' })
@@ -1604,7 +1627,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1634,7 +1657,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       return new Response('', { status: 404 })
     })
     const downloadFetch = vi.spyOn(globalThis, 'fetch')
-    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: modelTraffic(authFetch) as any })
 
     const events = await sendMessage(service, {
       model: 'linx-lite',
@@ -1672,7 +1695,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       return new Response('', { status: 404 })
     })
     const downloadFetch = vi.spyOn(globalThis, 'fetch')
-    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: modelTraffic(authFetch) as any })
 
     await sendMessage(service, {
       model: 'linx-lite',
@@ -1701,7 +1724,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, {
@@ -1751,7 +1774,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       }
       return new Response('', { status: 404 })
     })
-    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: modelTraffic(authFetch) as any })
 
     const events = await collectStreamEvents(await service.process(JSON.stringify({
       type: 'threads.add_user_message',
@@ -1794,7 +1817,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1829,7 +1852,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1871,7 +1894,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1922,7 +1945,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     await sendMessage(service)
@@ -1948,7 +1971,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
     await sendMessage(service)
     const persistedItems = (await originalLoadItems()).data
@@ -1998,7 +2021,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -2026,7 +2049,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -2054,7 +2077,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -2093,7 +2116,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
