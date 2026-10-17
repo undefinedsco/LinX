@@ -4,7 +4,7 @@ import { selectLoginSpace } from '../helpers/login-ui'
 /**
  * Smoke for a deployed LinX Web (RC or production), run by .github/workflows/candidate.yml.
  *
- *   LINX_E2E_BASE_URL            the deployed site, e.g. https://linx-rc.undefineds.cn
+ *   LINX_E2E_BASE_URL            the deployed site, e.g. https://linx-web-rc.sealosgzg.site
  *   LINX_E2E_CLOUD_IDENTITY_URL  the provider the build points at, e.g. https://id.undefineds.co
  *   LINX_E2E_EXPECT_VERSION      optional: the candidate version in /version.json
  *

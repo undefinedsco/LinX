@@ -25,11 +25,12 @@ GitHub Environment `rc`（Settings → Environments，deployment branch policy �
 | --- | --- | --- |
 | Secret | `KUBE_CONFIG_DATA` | base64 的广州 Sealos kubeconfig（RC 所在集群） |
 | Variable | `SEALOS_NAMESPACE` | RC 所在 namespace（广州为 `ns-iknkxtc8`） |
-| Variable | `LINX_RC_URL` | RC 公网地址，例如 `https://linx-rc.undefineds.cn` |
+| Variable | `LINX_RC_HOST` | RC 用 Sealos 分配的域名（不挂我们自己的域名），例如 `linx-web-rc.sealosgzg.site`；RC 地址即 `https://<LINX_RC_HOST>` |
+| Variable | `LINX_RC_TLS_SECRET` | 可选，Sealos 通配证书所在的 Secret，默认 `wildcard-cert` |
 
 另外：
 
-- 域名与路由：在 Sealos 控制台绑定 RC 域名，并在 `undefinedsco/homepage` 的 `deploy/ci/gz-gateway-routes.sh` 增加一行，把该域名转到 `linx-web-rc.<namespace>.svc.cluster.local:80`。
+- 域名：RC 只用 Sealos 自己的域名，由 `deploy/rc/linx-web-rc.yaml` 里的 Ingress 直接指到 `linx-web-rc`，不用改 DNS，也不经过共享网关（homepage 仓库的路由表不用动）。
 - 镜像拉取：`ghcr.io/undefinedsco/linx-web` 首次推送后默认是私有包；要么在 GitHub 把它设为公开，要么在 namespace 里配 GHCR 拉取凭据并加到 `deploy/rc/linx-web-rc.yaml` 的 `imagePullSecrets`。
 
 ## 待补

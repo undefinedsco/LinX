@@ -130,7 +130,10 @@ jobs:
     env:
       KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
       NAMESPACE: ${{ vars.SEALOS_NAMESPACE }}
-      RC_URL: ${{ vars.LINX_RC_URL }}
+      # RC lives on the Sealos-assigned domain (e.g. <name>.sealosgzg.site), not ours.
+      RC_HOST: ${{ vars.LINX_RC_HOST }}
+      RC_URL: ${{ vars.LINX_RC_HOST && format('https://{0}', vars.LINX_RC_HOST) || '' }}
+      RC_TLS_SECRET: ${{ vars.LINX_RC_TLS_SECRET || 'wildcard-cert' }}
       IMAGE: ${{ format('{0}@{1}', 'ghcr.io/undefinedsco/linx-web', needs.build_image.outputs.digest) }}
     steps:
       - uses: actions/checkout@v4
@@ -140,7 +143,8 @@ jobs:
           missing=0
           [ -n "$KUBE_CONFIG_DATA" ] || { echo "::error::rc secret KUBE_CONFIG_DATA is required"; missing=1; }
           [ -n "$NAMESPACE" ] || { echo "::error::rc variable SEALOS_NAMESPACE is required"; missing=1; }
-          [ -n "$RC_URL" ] || { echo "::error::rc variable LINX_RC_URL is required"; missing=1; }
+          [ -n "$RC_HOST" ] || { echo "::error::rc variable LINX_RC_HOST (Sealos-assigned host) is required"; missing=1; }
+          [[ "$RC_HOST" =~ ^[a-z0-9.-]+$ ]] || { echo "::error::LINX_RC_HOST must be a bare host name"; missing=1; }
           [[ "${{ needs.build_image.outputs.digest }}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::invalid image digest"; missing=1; }
           exit "$missing"
       - name: Configure kubectl
@@ -153,7 +157,9 @@ jobs:
       - name: Deploy RC image by digest (single apply)
         run: |
           set -euo pipefail
-          sed -e "s|__NAMESPACE__|${NAMESPACE}|g" -e "s|__IMAGE__|${IMAGE}|g" deploy/rc/linx-web-rc.yaml > "$RUNNER_TEMP/linx-web-rc.yaml"
+          sed -e "s|__NAMESPACE__|${NAMESPACE}|g" -e "s|__IMAGE__|${IMAGE}|g" \
+            -e "s|__HOST__|${RC_HOST}|g" -e "s|__TLS_SECRET__|${RC_TLS_SECRET}|g" \
+            deploy/rc/linx-web-rc.yaml > "$RUNNER_TEMP/linx-web-rc.yaml"
           if grep -q '__[A-Z]*__' "$RUNNER_TEMP/linx-web-rc.yaml"; then echo "::error::unrendered placeholder"; exit 1; fi
           kubectl apply -f "$RUNNER_TEMP/linx-web-rc.yaml"
           kubectl -n "$NAMESPACE" rollout status deployment/linx-web-rc --timeout=300s
@@ -180,7 +186,7 @@ jobs:
       - name: Deployed-site smoke (Playwright)
         env:
           CI: '1'
-          LINX_E2E_BASE_URL: ${{ vars.LINX_RC_URL }}
+          LINX_E2E_BASE_URL: ${{ env.RC_URL }}
           LINX_E2E_REUSE_SERVER: '0'
           LINX_E2E_CLOUD_IDENTITY_URL: ${{ env.CLOUD_IDENTITY_URL }}
           LINX_E2E_EXPECT_VERSION: ${{ needs.metadata.outputs.candidate }}

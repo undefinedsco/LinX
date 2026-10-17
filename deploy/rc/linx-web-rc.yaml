@@ -1,13 +1,13 @@
 # LinX Web release candidate (RC).
 #
-# Rendered by .github/workflows/candidate.yml: __NAMESPACE__ and __IMAGE__ are replaced
-# with the RC Environment's namespace and the candidate's immutable image digest, then the
-# result is applied once. Do not set the image or restart the Deployment in separate steps.
+# Rendered by .github/workflows/candidate.yml: __NAMESPACE__, __IMAGE__, __HOST__ and
+# __TLS_SECRET__ are replaced with the RC Environment's namespace, the candidate's immutable
+# image digest, the Sealos-assigned host (vars.LINX_RC_HOST, e.g. <name>.sealosgzg.site) and the
+# cluster's wildcard certificate Secret (vars.LINX_RC_TLS_SECRET, default `wildcard-cert`), then
+# the result is applied once. Do not set the image or restart the Deployment in separate steps.
 #
-# Only RC-owned objects live here (Deployment and Service `linx-web-rc`). The public host
-# (vars.LINX_RC_URL, e.g. https://linx-rc.undefineds.cn) is routed to Service/linx-web-rc by
-# the shared gateway, whose routing table is owned by the homepage repo
-# (deploy/ci/gz-gateway-routes.sh); the domain/Ingress is bound in the SealOS console.
+# RC stays on the Sealos domain: no undefineds.* DNS, no shared-gateway route. Only RC-owned
+# objects live here (Deployment, Service and Ingress `linx-web-rc`).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -83,3 +83,30 @@ spec:
     - name: http
       port: 80
       targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: linx-web-rc
+  namespace: __NAMESPACE__
+  labels:
+    app: linx-web-rc
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+spec:
+  tls:
+    - hosts:
+        - __HOST__
+      secretName: __TLS_SECRET__
+  rules:
+    - host: __HOST__
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: linx-web-rc
+                port:
+                  name: http
