@@ -679,7 +679,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       text: '联网搜索失败',
     })
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({
         text: '联网搜索暂不可用。请检查本地 xpod 的 AI 上游配置后重试。',
       })],
@@ -765,7 +765,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       text: '联网搜索失败',
     })
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({
         text: expect.stringContaining('未声明 Responses API 能力'),
       })],
@@ -880,7 +880,7 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     expect(authFetch).not.toHaveBeenCalled()
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({ text: expect.stringContaining('未声明 图片输入 能力') })],
     }))
   })
@@ -1135,7 +1135,7 @@ describe('LocalChatKitService platform runtime routing', () => {
     const completed = findAssistantDone(events)?.item
 
     expect(completed).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({ text: '已生成部分。' })],
     }))
     expect(events).toContainEqual(expect.objectContaining({
@@ -1237,7 +1237,7 @@ describe('LocalChatKitService platform runtime routing', () => {
     const events = await sendMessage(service)
 
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({
         text: expect.stringContaining('服务没有返回内容'),
       })],
@@ -1352,7 +1352,7 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     expect(authFetch).not.toHaveBeenCalled()
     expect(browserFetch).not.toHaveBeenCalledWith('/api/ai/chat/completions', expect.anything())
-    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.status).toBe('failed')
     expect(events).toContainEqual(expect.objectContaining({
       type: 'error',
       error: expect.objectContaining({
@@ -1377,7 +1377,7 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     const events = await sendMessage(service, { model: 'linx-lite' })
 
-    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.status).toBe('failed')
     expect(findAssistantDone(events)?.item?.content?.[0]?.text)
       .toBe('网络或 AI 上游暂不可用，请稍后重试。')
     expect(events.some((event) => event.type === 'error')).toBe(false)
@@ -2060,7 +2060,7 @@ describe('LocalChatKitService platform runtime routing', () => {
     const events = await sendMessage(service)
 
     expect(providerFetch).not.toHaveBeenCalled()
-    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.status).toBe('failed')
     expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('消息生成失败。请稍后重试。')
     expect(events).toContainEqual(expect.objectContaining({
       type: 'error',
@@ -2099,7 +2099,7 @@ describe('LocalChatKitService platform runtime routing', () => {
     const events = await sendMessage(service)
 
     expect(providerFetch).not.toHaveBeenCalled()
-    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.status).toBe('failed')
     expect(events).toContainEqual(expect.objectContaining({
       type: 'error',
       error: expect.objectContaining({

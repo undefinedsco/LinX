@@ -72,42 +72,34 @@ describe('chat module architecture', () => {
     expect(collectionsFacade).not.toContain('createPodCollection')
   })
 
-  it('keeps ChatKit protocol commands behind the workbench adapter', () => {
+  it('uses the assistant-ui + AG-UI conversation as the only chat surface', () => {
     expectFilesToExist([
       `${root}/domain/conversation-workbench.ts`,
-      `${root}/features/chatkit/chatkit-workbench-adapter.ts`,
-      `${root}/features/chatkit/useChatKitSurface.ts`,
+      `${root}/features/conversation/ConversationSurface.tsx`,
+      `${root}/features/conversation/ag-ui/agent.ts`,
     ])
+    expect(existsSync(`${root}/features/chatkit`)).toBe(false)
 
     const contentPane = readModuleSource(`${root}/components/ChatContentPane.tsx`)
-    const chatKitPanel = readModuleSource(`${root}/features/chatkit/ChatKitPanel.tsx`)
-    const chatKitSurface = readModuleSource(`${root}/features/chatkit/useChatKitSurface.ts`)
-    const adapter = readModuleSource(`${root}/features/chatkit/chatkit-workbench-adapter.ts`)
-
-    expect(contentPane).not.toContain('useChatKit')
-    expect(chatKitPanel).not.toContain('useChatKit(')
-    expect(chatKitSurface).toContain('createChatKitWorkbenchAdapter')
-    expect(chatKitSurface).not.toMatch(/(?:await|void) chatkit\.sendCustomAction/)
-    expect(adapter).toContain("messageAction('message.edit'")
-    expect(adapter).toContain("messageAction('message.delete'")
-    expect(adapter).toContain("messageAction('message.regenerate'")
+    const surface = readModuleSource(`${root}/features/conversation/ConversationSurface.tsx`)
+    expect(contentPane).toContain('ConversationSurface')
+    expect(contentPane).not.toMatch(/chatkit|useChatKit/i)
+    expect(surface).not.toMatch(/@openai\/chatkit/)
   })
 
   it('keeps message action UI props-only', () => {
-    for (const file of ['AttachmentWorkspaceDialogs.tsx', 'ChatGenerationControl.tsx', 'MessageEditDialog.tsx']) {
+    for (const file of ['AttachmentWorkspaceDialogs.tsx', 'MessageEditDialog.tsx']) {
       const source = readModuleSource(`${root}/ui/${file}`)
-      expect(source).not.toMatch(/useChatKit|useChatStore|useMessageList|createLocalChatKitFetch/)
+      expect(source).not.toMatch(/@openai\/chatkit|useChatStore|useMessageList|createLocalChatKitFetch/)
       expect(source).not.toMatch(/from ['"]\.\.\/(?:data|features|services|app)/)
     }
   })
 
-  it('keeps page and ChatKit containers below the god-component threshold', () => {
+  it('keeps the page and conversation containers below the god-component threshold', () => {
     const contentPane = readModuleSource(`${root}/components/ChatContentPane.tsx`)
-    const chatKitPanel = readModuleSource(`${root}/features/chatkit/ChatKitPanel.tsx`)
-    const chatKitSurface = readModuleSource(`${root}/features/chatkit/useChatKitSurface.ts`)
+    const surface = readModuleSource(`${root}/features/conversation/ConversationSurface.tsx`)
     expect(contentPane.split('\n').length).toBeLessThan(400)
-    expect(chatKitPanel.split('\n').length).toBeLessThan(500)
-    expect(chatKitSurface.split('\n').length).toBeLessThan(350)
+    expect(surface.split('\n').length).toBeLessThan(250)
   })
 
   it('does not retain or route through the retired custom message stack', () => {

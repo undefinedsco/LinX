@@ -1,6 +1,12 @@
-import { AttachmentPrimitive, ComposerPrimitive, useAuiState } from '@assistant-ui/react'
-import { FileText, Paperclip, Send, Square, X } from 'lucide-react'
+import { useState, type KeyboardEvent } from 'react'
+import { AttachmentPrimitive, ComposerPrimitive, useAui, useAuiState } from '@assistant-ui/react'
+import { AudioLines, Camera, FileText, Globe, ImagePlus, Mic, Paperclip, Send, Square, X } from 'lucide-react'
+import { Command, CommandEmpty, CommandItem, CommandList } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
+import { useThreadList } from '../../../collections'
+import { useOptionalConversationIdentity } from '../ConversationContext'
+import { useWorkbenchDialogs } from '../workbench-dialogs'
+import { SLASH_COMMANDS, useComposerTools, type SlashCommand } from './composer-tools'
 
 function AttachmentChip() {
   const name = useAuiState((state) => state.attachment.name)
@@ -19,15 +25,74 @@ function AttachmentChip() {
   )
 }
 
+const iconButton = 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted'
+
+/** `/` at the start of the message opens a small list of commands. */
+function useSlashMenu() {
+  const aui = useAui()
+  const text = useAuiState((state) => state.composer.text)
+  const { setWebSearch, setImageGeneration } = useComposerTools()
+  const openDialog = useWorkbenchDialogs((state) => state.open)
+  const identity = useOptionalConversationIdentity()
+  const { data: threads = [] } = useThreadList(identity?.chatId ?? '', { enabled: Boolean(identity?.chatId) })
+  const hasWorkspace = (threads as Array<{ id?: string | null; workspace?: string | null }>).some(
+    (thread) => thread.id === identity?.threadId && Boolean(thread.workspace),
+  )
+  const [selected, setSelected] = useState<SlashCommand['id']>('generate-image')
+  const isOpen = /^\/\S*$/u.test(text)
+  const query = isOpen ? text.slice(1).trim().toLowerCase() : ''
+  const commands = isOpen
+    ? SLASH_COMMANDS.filter((command) => (command.id !== 'project-context' || hasWorkspace)).filter((command) => !query || `${command.label} ${command.keywords}`.toLowerCase().includes(query))
+    : []
+  const active = commands.some((command) => command.id === selected) ? selected : commands[0]?.id
+  const run = (id: SlashCommand['id']) => {
+    aui.composer().setText('')
+    if (id === 'generate-image') setImageGeneration(true)
+    else if (id === 'web-search') setWebSearch(true)
+    else openDialog(id)
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!isOpen || commands.length === 0) return
+    const index = commands.findIndex((command) => command.id === active)
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const next = (index + (event.key === 'ArrowDown' ? 1 : -1) + commands.length) % commands.length
+      setSelected(commands[next].id)
+    } else if (event.key === 'Enter' && !event.shiftKey && active) {
+      event.preventDefault()
+      run(active)
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      aui.composer().setText('')
+    }
+  }
+  return { isOpen: isOpen && commands.length > 0, commands, active, setSelected, run, onKeyDown }
+}
+
 /** 消息 · 发送 · 停止 — the WeChat-style input row. Attachments never block sending. */
 export function Composer({ disabled, disabledReason }: { disabled?: boolean; disabledReason?: string }) {
   const running = useAuiState((state) => state.thread.isRunning)
+  const dictating = useAuiState((state) => state.composer.dictation != null)
+  const { webSearch, setWebSearch, imageGeneration, setImageGeneration } = useComposerTools()
+  const openDialog = useWorkbenchDialogs((state) => state.open)
+  const slash = useSlashMenu()
   return (
     <ComposerPrimitive.Root className="border-t border-border bg-background px-4 py-3">
       <div className="mx-auto max-w-3xl">
         <div className="mb-2 flex flex-wrap gap-1.5 empty:hidden">
           <ComposerPrimitive.Attachments components={{ Attachment: AttachmentChip }} />
         </div>
+        <div className="relative">
+        {slash.isOpen ? (
+          <Command shouldFilter={false} value={slash.active} onValueChange={(value) => slash.setSelected(value as SlashCommand['id'])} className="absolute bottom-full left-0 z-20 mb-2 h-auto w-64 rounded-lg border shadow-md">
+            <CommandList aria-label="命令">
+              <CommandEmpty>没有这个命令</CommandEmpty>
+              {slash.commands.map((command) => (
+                <CommandItem key={command.id} value={command.id} onSelect={() => slash.run(command.id)}>{command.label}</CommandItem>
+              ))}
+            </CommandList>
+          </Command>
+        ) : null}
         <div className="flex items-end gap-2 rounded-lg border border-border bg-card px-2 py-1.5 focus-within:border-primary/60">
           <ComposerPrimitive.AddAttachment
             aria-label="添加附件"
@@ -35,11 +100,47 @@ export function Composer({ disabled, disabledReason }: { disabled?: boolean; dis
           >
             <Paperclip className="h-4 w-4" aria-hidden="true" />
           </ComposerPrimitive.AddAttachment>
+          <button
+            type="button"
+            aria-label="生成图片"
+            aria-pressed={imageGeneration}
+            title="生成图片（只用于下一条消息）"
+            onClick={() => setImageGeneration(!imageGeneration)}
+            className={cn('inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted', imageGeneration ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}
+          >
+            <ImagePlus className="h-4 w-4" aria-hidden="true" />{imageGeneration ? '图片' : null}
+          </button>
+          <button type="button" aria-label="截图记录" title="截图记录" onClick={() => openDialog('capture')} className={iconButton}>
+            <Camera className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="联网搜索"
+            aria-pressed={webSearch}
+            title="联网搜索（只用于下一条消息）"
+            onClick={() => setWebSearch(!webSearch)}
+            className={cn('inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted', webSearch ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}
+          >
+            <Globe className="h-4 w-4" aria-hidden="true" />{webSearch ? '搜索' : null}
+          </button>
+          {dictating ? (
+            <ComposerPrimitive.StopDictation aria-label="结束语音输入" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-destructive/10 text-destructive">
+              <Square className="h-3.5 w-3.5" aria-hidden="true" />
+            </ComposerPrimitive.StopDictation>
+          ) : (
+            <ComposerPrimitive.Dictate aria-label="语音输入" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:hidden">
+              <Mic className="h-4 w-4" aria-hidden="true" />
+            </ComposerPrimitive.Dictate>
+          )}
+          <button type="button" aria-label="语音对话" title="语音对话" onClick={() => openDialog('voice')} className={iconButton}>
+            <AudioLines className="h-4 w-4" aria-hidden="true" />
+          </button>
           <ComposerPrimitive.Input
             rows={1}
+            onKeyDown={slash.onKeyDown}
             maxRows={6}
             aria-label="消息"
-            placeholder={disabled ? disabledReason ?? '暂时不能发送' : '消息'}
+            placeholder={disabled ? disabledReason ?? '暂时不能发送' : imageGeneration ? '描述想要的图片' : '消息'}
             disabled={disabled}
             className="min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm outline-none placeholder:text-muted-foreground"
           />
@@ -59,6 +160,7 @@ export function Composer({ disabled, disabledReason }: { disabled?: boolean; dis
               <Send className="h-3.5 w-3.5" aria-hidden="true" />发送
             </ComposerPrimitive.Send>
           )}
+        </div>
         </div>
       </div>
     </ComposerPrimitive.Root>

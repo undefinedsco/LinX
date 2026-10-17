@@ -12,7 +12,7 @@ import {
 
 export type ReconnectStatus = 'idle' | 'syncing' | 'error'
 
-interface UseLocalChatKitRuntimeOptions {
+interface UseLocalChatRuntimeOptions {
   session: Session
   selectedThreadId: string
   selectedChatId: string
@@ -40,7 +40,7 @@ function createUnavailableFetch(): LocalChatKitFetch {
   return unavailableFetch
 }
 
-export function useLocalChatKitRuntime({
+export function useLocalChatRuntime({
   session,
   selectedThreadId,
   selectedChatId,
@@ -48,7 +48,7 @@ export function useLocalChatKitRuntime({
   persistedActiveBranchByParent,
   sendDisabled,
   onRequestError,
-}: UseLocalChatKitRuntimeOptions) {
+}: UseLocalChatRuntimeOptions) {
   const { db } = useSolidDatabase()
   const sessionFetch = session.fetch
   const sessionWebId = session.info.webId
@@ -99,7 +99,8 @@ export function useLocalChatKitRuntime({
         },
       },
       isAvailable: () => sendAvailableRef.current,
-      onAttachmentsChange: setThreadAttachments,
+      // The 附件 dialog lists the whole chat itself (ConversationDialogs); the
+      // store only ever reports the last thread it happened to load.
       onRequestError: (message) => onRequestErrorRef.current?.(message),
       onStreamingChange: ({ active, abort }) => {
         abortGenerationRef.current = abort ?? null

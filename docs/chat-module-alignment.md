@@ -1,5 +1,7 @@
 # Chat 模块交互对齐文档
 
+> **2026-10 更新（R6 第 4 轮）**：聊天界面现在是 assistant-ui + AG-UI（`modules/chat/features/conversation`），ChatKit 界面和 `@openai/chatkit-react` 已删除。下文各表里写着“ChatKit”的行是 R6 之前的历史记录；其中的能力以新界面为准：流式回答、附件、停止、重试、分支切换、复制、联网搜索开关、语音输入、回到最新消息按钮。`services/chatkit-local` 目录名保留，它是新界面背后的本地聊天回路和 Pod 存档。尚未搬到新界面的能力见 R6 第 4 轮交付说明（编辑消息、反馈、朗读、拍摄/语音对话、产物/共享/项目上下文弹窗）。
+
 本文档记录 Chat 模块与 Cherry Studio 及设计规范的对齐状态。
 
 ## 参考文档

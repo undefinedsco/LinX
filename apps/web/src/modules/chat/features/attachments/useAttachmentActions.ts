@@ -10,7 +10,6 @@ interface UseAttachmentActionsOptions {
 }
 
 export function useAttachmentActions({ localFetch, threadId, attachments, setAttachments }: UseAttachmentActionsOptions) {
-  const [isOpen, setIsOpen] = useState(false)
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
   const [loadingAttachmentId, setLoadingAttachmentId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -58,13 +57,10 @@ export function useAttachmentActions({ localFetch, threadId, attachments, setAtt
   useEffect(() => {
     setAttachments([])
     setPreviewAttachment(null)
-    setIsOpen(false)
   }, [setAttachments, threadId])
 
   return {
     attachments,
-    isOpen,
-    setIsOpen,
     previewAttachment,
     closePreview: () => setPreviewAttachment(null),
     loadingAttachmentId,

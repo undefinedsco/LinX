@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { isLinxCardPart, LinxCardPart } from '../cards/CardCatalog'
 import { useOptionalConversationIdentity } from '../ConversationContext'
 import { MarkdownText, PlainText } from './MarkdownText'
+import { EditComposer } from './message-actions/EditComposer'
 import { MessageToolbar } from './MessageToolbar'
 import { ProcessLine } from './ProcessLine'
 import { SourcesLine } from './SourcesLine'
@@ -78,15 +79,25 @@ export function UserMessage() {
   const messageId = useAuiState((state) => state.message.id)
   const identity = useOptionalConversationIdentity()
   const speaker = useSpeakerName('user')
+  const editing = useAuiState((state) => state.composer.isEditing)
   return (
     <MessagePrimitive.Root className="group/message flex items-start justify-end gap-2.5" data-role="user" data-message-id={messageId}>
       <div className="flex min-w-0 max-w-[68%] flex-col items-end gap-1.5">
         <Speaker role="user" />
-        <MessagePrimitive.Parts components={{ Text: PlainText }} />
-        <div className="flex flex-wrap justify-end gap-1.5">
-          <MessagePrimitive.Attachments components={{ Attachment: FileChip }} />
-        </div>
-        <MessageToolbar role="user" />
+        {editing ? (
+          <EditComposer />
+        ) : (
+          <>
+            <MessagePrimitive.Parts components={{ Text: PlainText }} />
+            <div className="flex flex-wrap justify-end gap-1.5">
+              <MessagePrimitive.Attachments components={{ Attachment: FileChip }} />
+            </div>
+            <div className="flex items-center gap-2">
+              <BranchPicker />
+              <MessageToolbar role="user" />
+            </div>
+          </>
+        )}
       </div>
       <Avatar name={speaker ?? identity?.selfName ?? '我'} assistant={false} />
     </MessagePrimitive.Root>

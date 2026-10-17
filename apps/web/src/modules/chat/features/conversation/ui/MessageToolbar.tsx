@@ -1,4 +1,4 @@
-import { Bookmark, BookmarkCheck, Copy, MoreHorizontal, RotateCcw, BookmarkPlus } from 'lucide-react'
+import { Bookmark, BookmarkCheck, BookmarkPlus, Copy, MoreHorizontal, Pencil, RotateCcw, ThumbsDown, ThumbsUp, Volume2, VolumeX } from 'lucide-react'
 import { ActionBarPrimitive, useAuiState } from '@assistant-ui/react'
 import { favoriteHooks, useFavoriteList } from '@/modules/favorites/collections'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -8,6 +8,7 @@ import { useOptionalConversationIdentity } from '../ConversationContext'
 import { RememberStrip } from './RememberStrip'
 import { useChatList } from '../../../collections'
 import { useSpeakerName } from './speaker'
+import { useReadAloud } from './message-actions/read-aloud'
 import { useRememberMessage } from './useRememberMessage'
 
 const buttonClass = 'inline-flex h-7 items-center gap-1 rounded px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50'
@@ -34,6 +35,8 @@ export function MessageToolbar({ role }: { role: 'user' | 'assistant' }) {
   const memory = useRememberMessage(id, text)
   const { data: favorites = [] } = useFavoriteList({ sourceModule: 'messages' })
   const starred = favorites.some((row) => row.sourceId === id)
+  const feedback = useAuiState((state) => state.message.metadata?.submittedFeedback?.type)
+  const speech = useReadAloud(id, text, (description) => toast({ variant: 'destructive', description }))
 
   const toggleStar = () => {
     void favoriteHooks.onStarredChange('messages', id, !starred, {
@@ -63,16 +66,42 @@ export function MessageToolbar({ role }: { role: 'user' | 'assistant' }) {
           {starred ? <BookmarkCheck className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> : <Bookmark className="h-3.5 w-3.5" aria-hidden="true" />}
           {starred ? '已收藏' : '收藏'}
         </button>
-        {role === 'assistant' ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger className={buttonClass} aria-label="更多"><MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" /></DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <ActionBarPrimitive.Reload asChild>
-                <DropdownMenuItem><RotateCcw className="mr-2 h-3.5 w-3.5" aria-hidden="true" />重新回答</DropdownMenuItem>
-              </ActionBarPrimitive.Reload>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+        <DropdownMenu>
+          <DropdownMenuTrigger className={buttonClass} aria-label="更多"><MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" /></DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {role === 'user' ? (
+              <ActionBarPrimitive.Edit asChild>
+                <DropdownMenuItem><Pencil className="mr-2 h-3.5 w-3.5" aria-hidden="true" />编辑</DropdownMenuItem>
+              </ActionBarPrimitive.Edit>
+            ) : (
+              <>
+                <ActionBarPrimitive.Reload asChild>
+                  <DropdownMenuItem><RotateCcw className="mr-2 h-3.5 w-3.5" aria-hidden="true" />重新回答</DropdownMenuItem>
+                </ActionBarPrimitive.Reload>
+                {speech.supported && text ? (
+                  <DropdownMenuItem onSelect={speech.toggle}>
+                    {speech.reading ? <VolumeX className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> : <Volume2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" />}
+                    {speech.reading ? '停止朗读' : '朗读'}
+                  </DropdownMenuItem>
+                ) : null}
+                {persisted ? (
+                  <>
+                    <ActionBarPrimitive.FeedbackPositive asChild>
+                      <DropdownMenuItem aria-checked={feedback === 'positive'} role="menuitemcheckbox">
+                        <ThumbsUp className={cn('mr-2 h-3.5 w-3.5', feedback === 'positive' && 'text-primary')} aria-hidden="true" />{feedback === 'positive' ? '已点有用' : '有用'}
+                      </DropdownMenuItem>
+                    </ActionBarPrimitive.FeedbackPositive>
+                    <ActionBarPrimitive.FeedbackNegative asChild>
+                      <DropdownMenuItem aria-checked={feedback === 'negative'} role="menuitemcheckbox">
+                        <ThumbsDown className={cn('mr-2 h-3.5 w-3.5', feedback === 'negative' && 'text-primary')} aria-hidden="true" />{feedback === 'negative' ? '已点没用' : '没用'}
+                      </DropdownMenuItem>
+                    </ActionBarPrimitive.FeedbackNegative>
+                  </>
+                ) : null}
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </ActionBarPrimitive.Root>
       <RememberStrip status={memory.status} onUndo={() => void memory.undo()} onRetry={() => void memory.remember()} />
       {starred ? <span className="sr-only">已收藏</span> : null}

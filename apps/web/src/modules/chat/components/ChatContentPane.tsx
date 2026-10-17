@@ -1,9 +1,8 @@
 /**
  * ChatContentPane - AI 聊天内容面板
  *
- * 使用 OpenAI ChatKit SDK 作为主交互层。
- * Pod 负责留档；当本地 service 中存在运行时会话时，
- * ChatKit 的 assistant 响应会经由 runtime 转发并流式返回。
+ * 对话界面是 assistant-ui + AG-UI（features/conversation）。
+ * Pod 负责留档；本地聊天回路把 assistant 响应流式返回给 AG-UI agent。
  */
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
@@ -16,16 +15,10 @@ import { LINX_DEFAULT_SECRETARY, useChatInit, useMessageList } from '../collecti
 import { useChatStore } from '../store'
 import { ChatListPane } from './ChatListPane'
 import { projectChatContentState, type ChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
-import {
-  SecretaryWelcome,
-  type SecretaryStarterAction,
-} from '../ui/SecretaryWelcome'
-import { ConversationDecisions } from '../features/inbox/ConversationDecisions'
+import type { SecretaryStarterAction } from '../ui/SecretaryWelcome'
 import { RuntimeSessionToolbar } from '../features/runtime/RuntimeSessionToolbar'
-import { ChatKitPanel } from '../features/chatkit/ChatKitPanel'
 import { ConversationSurface } from '../features/conversation/ConversationSurface'
-import { WelcomeConversation } from '../features/conversation/welcome/WelcomeConversation'
-import { useConversationSurface } from '../features/conversation/surface-preference'
+import { InlineWelcomeHost, WelcomeConversation, type InlineWelcome } from '../features/conversation/welcome/WelcomeConversation'
 import { useSecretaryChatController } from '../features/secretary/useSecretaryChatController'
 
 export { chatThreadRefsMatch, readActiveBranchSelections } from '../domain/thread-selection'
@@ -84,7 +77,6 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     scopeKey: databaseScopeKey,
   } = useSolidDatabase()
   const { isReady } = useChatInit()
-  const surfaceKind = useConversationSurface()
   const selectChat = useChatStore((state) => state.selectChat)
   const secretary = useSecretaryChatController({
     databaseScopeKey,
@@ -109,26 +101,22 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     draft: secretaryDraft,
     activePendingDraft: activePendingSecretaryDraft,
     creationError: threadCreationError,
-    handoffError: secretaryDraftHandoffError,
     updateDraft: updateSecretaryDraft,
     submitDraft: submitSecretaryDraft,
     retryThreadCreation,
-    retryDraftHandoff: retrySecretaryDraftHandoff,
     completeDraftHandoff: completeSecretaryDraftHandoff,
-    failDraftHandoff: failSecretaryDraftHandoff,
   } = secretary
   const messagesQuery = useMessageList(selectedChatId, selectedThreadId)
   const isThreadEmpty = !messagesQuery.isLoading && messagesQuery.data.length === 0
-  // W0: on the new surface the welcome shows in LinX 助手's selected topic as
+  // W0: the welcome shows in LinX 助手's selected topic as
   // long as welcome.ttl is absent (checked inside WelcomeConversation) and the
   // topic has no messages yet, whether or not the default topic already exists.
-  const showInlineWelcome = surfaceKind === 'assistant-ui' && isSecretary && Boolean(activeThread) && isThreadEmpty
+  const showInlineWelcome = isSecretary && Boolean(activeThread) && isThreadEmpty
   // Keep the welcome wrapper mounted for this topic once it started, so the
   // conversation underneath is not remounted when the first message arrives.
   const [welcomeThreadId, setWelcomeThreadId] = useState<string | null>(null)
   if (showInlineWelcome && selectedThreadId && welcomeThreadId !== selectedThreadId) setWelcomeThreadId(selectedThreadId)
-  const keepInlineWelcome = surfaceKind === 'assistant-ui' && isSecretary && Boolean(selectedThreadId) && welcomeThreadId === selectedThreadId
-  const sendOnSubmit = surfaceKind === 'assistant-ui'
+  const keepInlineWelcome = isSecretary && Boolean(selectedThreadId) && welcomeThreadId === selectedThreadId
   const retryContentQueries = useCallback(() => {
     if (databaseStatus !== 'ready' || !db) {
       retryDatabase()
@@ -236,7 +224,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       composerStatus: composerStatus,
       onStarterAction,
       onComposerValueChange: updateSecretaryDraft,
-      onSubmit: () => submitSecretaryDraft({ autoSend: sendOnSubmit }),
+      onSubmit: () => submitSecretaryDraft({ autoSend: true }),
       isSubmitting: isCreatingThread || Boolean(activePendingSecretaryDraft),
       retryLabel: threadCreationError ? '重试' : undefined,
       onRetry: threadCreationError ? retryThreadCreation : undefined,
@@ -245,12 +233,9 @@ export function ChatContentPane(props: ChatContentPaneProps) {
 
   if (contentState.kind === 'welcome') {
     const welcomeProps = buildWelcomeProps(SECRETARY_STARTER_ACTIONS, (action) => {
-      if (surfaceKind === 'assistant-ui') submitSecretaryDraft({ text: action.prompt, autoSend: true })
-      else updateSecretaryDraft(action.prompt)
+      submitSecretaryDraft({ text: action.prompt, autoSend: true })
     })
-    return surfaceKind === 'assistant-ui'
-      ? <WelcomeConversation {...welcomeProps} chatId={selectedChatId} />
-      : <SecretaryWelcome {...welcomeProps} />
+    return <WelcomeConversation {...welcomeProps} chatId={selectedChatId} />
   }
 
   if (threadCreationError && !selectedThreadId) {
@@ -290,6 +275,24 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     return <EmptyState title="正在加载聊天" description="正在同步当前聊天。" />
   }
 
+  const renderConversation = (welcome: InlineWelcome | undefined) => (
+    <ConversationSurface
+      key={`${selectedChatId}:${selectedThreadId}`}
+      session={session}
+      selectedThreadId={selectedThreadId}
+      selectedChatId={selectedChatId}
+      selectedThreadTitle={activeThread?.title}
+      persistedActiveBranchByParent={persistedActiveBranchByParent}
+      pendingComposerDraft={isSecretary
+        && activePendingSecretaryDraft?.chatId === selectedChatId
+        ? activePendingSecretaryDraft
+        : null}
+      onComposerDraftApplied={completeSecretaryDraftHandoff}
+      sendDisabled={databaseStatus !== 'ready' || !db}
+      welcome={welcome}
+    />
+  )
+
   return (
     <div className="flex h-full flex-1 overflow-hidden bg-background">
       <div data-testid="chat-workspace-surface" className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
@@ -298,7 +301,6 @@ export function ChatContentPane(props: ChatContentPaneProps) {
           threadTitle={activeThread?.title ?? '默认话题'}
           workspaceUri={activeThread?.workspace}
         />
-        {surfaceKind === 'chatkit' ? <ConversationDecisions chatId={selectedChatId} threadId={selectedThreadId} /> : null}
         {readyWarning ? (
           <div role="alert" className="flex items-center justify-between gap-3 border-b border-warning/20 bg-warning/5 px-4 py-3">
             <div className="min-w-0">
@@ -310,65 +312,10 @@ export function ChatContentPane(props: ChatContentPaneProps) {
             </Button>
           </div>
         ) : null}
-        {secretaryDraftHandoffError ? (
-          <div role="alert" className="flex items-center justify-between gap-3 border-b border-destructive/20 bg-destructive/5 px-4 py-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">无法填入 Secretary 草稿</p>
-              <p className="mt-1 text-xs text-muted-foreground">{secretaryDraftHandoffError}</p>
-            </div>
-            <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={retrySecretaryDraftHandoff}>
-              重试填入草稿
-            </Button>
-          </div>
-        ) : null}
         <div className="min-h-0 flex-1 overflow-hidden">
-          {surfaceKind === 'assistant-ui' ? (() => {
-            const conversation = (
-            <ConversationSurface
-              key={`${selectedChatId}:${selectedThreadId}`}
-              session={session}
-              selectedThreadId={selectedThreadId}
-              selectedChatId={selectedChatId}
-              selectedThreadTitle={activeThread?.title}
-              persistedActiveBranchByParent={persistedActiveBranchByParent}
-              pendingComposerDraft={isSecretary
-                && activePendingSecretaryDraft?.chatId === selectedChatId
-                ? activePendingSecretaryDraft
-                : null}
-              onComposerDraftApplied={completeSecretaryDraftHandoff}
-              sendDisabled={databaseStatus !== 'ready' || !db}
-            />
-            )
-            return keepInlineWelcome
-              ? (
-                <WelcomeConversation
-                  {...buildWelcomeProps(SECRETARY_STARTER_ACTIONS, (action) => {
-                    // The suggestion's prompt is sent into this same chat.
-                    submitSecretaryDraft({ text: action.prompt, autoSend: true })
-                  })}
-                  chatId={selectedChatId}
-                  fallback={conversation}
-                />
-              )
-              : conversation
-          })() : (
-            <ChatKitPanel
-              theme={props.theme}
-              session={session}
-              selectedThreadId={selectedThreadId}
-              selectedChatId={selectedChatId}
-              selectedThreadTitle={activeThread?.title}
-              selectedWorkspaceUri={activeThread?.workspace}
-              persistedActiveBranchByParent={persistedActiveBranchByParent}
-              pendingComposerDraft={isSecretary
-                && activePendingSecretaryDraft?.chatId === selectedChatId
-                ? activePendingSecretaryDraft
-                : null}
-              onComposerDraftApplied={completeSecretaryDraftHandoff}
-              onComposerDraftError={failSecretaryDraftHandoff}
-              sendDisabled={databaseStatus !== 'ready' || !db}
-            />
-          )}
+          {keepInlineWelcome ? (
+            <InlineWelcomeHost render={renderConversation} />
+          ) : renderConversation(undefined)}
         </div>
       </div>
     </div>

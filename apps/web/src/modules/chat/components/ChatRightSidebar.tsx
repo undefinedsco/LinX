@@ -19,6 +19,7 @@ import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useOpenAgentMethod } from '@/modules/my-ai/app/open-method'
 import { useChatStore } from '../store'
+import { useWorkbenchDialogs } from '../features/conversation/workbench-dialogs'
 import {
   useChatMutations,
   useMessageIndex,
@@ -80,6 +81,8 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   const runtime = useRuntimeSession(isAssistant ? selectedThreadId : null)
   const codingSession = runtime.runtimeSession && isCodingTool(runtime.runtimeSession.tool) ? runtime.runtimeSession : null
 
+  const hasWorkspace = (threads as Array<{ id?: string | null; workspace?: string | null }>).some((thread) => thread.id === selectedThreadId && Boolean(thread.workspace))
+  const openDialog = useWorkbenchDialogs((state) => state.open)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
@@ -207,6 +210,14 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
               </InfoGroup>
             </>
           )}
+
+          <InfoGroup title="这段聊天">
+            {hasWorkspace ? <InfoRow label="项目记忆" onClick={() => openDialog('project-context')} /> : null}
+            <InfoRow label="附件" onClick={() => openDialog('attachments')} />
+            <InfoRow label="产物" onClick={() => openDialog('artifacts')} />
+            <InfoRow label="素材" onClick={() => openDialog('assets')} />
+            <InfoRow label="分享这段聊天" onClick={() => openDialog('share')} last />
+          </InfoGroup>
 
           <InfoGroup>
             {!isSecretary ? (

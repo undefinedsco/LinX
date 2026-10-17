@@ -33,7 +33,7 @@ vi.mock('../collections', () => ({
     deleteChat: { mutateAsync: deleteChat, isPending: false },
   }),
   useMessageIndex: () => ({ data: [] }),
-  useThreadList: () => ({ data: [{ id: 'thread-1' }] }),
+  useThreadList: () => ({ data: [{ id: 'thread-1', workspace: 'https://pod/ws/' }] }),
   chatOps: { getThreads: () => [{}, {}] },
   messageRowMatchesThread: () => true,
 }))
@@ -46,6 +46,7 @@ vi.mock('@/components/ui/use-toast', () => ({ useToast: () => ({ toast: vi.fn() 
 vi.mock('@/modules/contacts/domain/contact-projection', () => ({ formatModelLabel: (model?: string) => model ?? null }))
 
 import { ChatRightSidebar } from './ChatRightSidebar'
+import { useWorkbenchDialogs } from '../features/conversation/workbench-dialogs'
 
 function identity(kind: 'assistant' | 'person' | 'group', extra: object = {}) {
   return {
@@ -122,5 +123,17 @@ describe('ChatRightSidebar (聊天信息)', () => {
     expect(screen.getByText('助手在这个群里')).toBeInTheDocument()
     expect(screen.queryByText('做事的方法')).not.toBeInTheDocument()
     expect(screen.getByText('退出群聊…')).toBeInTheDocument()
+  })
+
+  it('opens the chat dialogs from the 这段聊天 rows', () => {
+    render(<ChatRightSidebar />)
+    const rows: Array<[string, string]> = [
+      ['项目记忆', 'project-context'], ['附件', 'attachments'], ['产物', 'artifacts'], ['素材', 'assets'], ['分享这段聊天', 'share'],
+    ]
+    for (const [label, dialog] of rows) {
+      useWorkbenchDialogs.getState().close()
+      fireEvent.click(screen.getByText(label))
+      expect(useWorkbenchDialogs.getState().active).toBe(dialog)
+    }
   })
 })

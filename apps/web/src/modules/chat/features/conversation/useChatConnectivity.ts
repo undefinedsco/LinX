@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@inrupt/solid-client-authn-browser'
 import { probeChatConnectivity } from '../../domain/chat-connectivity'
 import type { LocalChatKitFetch } from '../../services/chatkit-local/fetch-handler'
-import type { ReconnectStatus } from './useLocalChatKitRuntime'
+import type { ReconnectStatus } from './useLocalChatRuntime'
 
 interface UseChatConnectivityOptions {
   podBaseUrl: string | null
@@ -36,7 +36,7 @@ export function useChatConnectivity({
       ])
       setReconnectStatus('idle')
     } catch (error) {
-      console.error('[ChatKit] Failed to refresh after reconnect:', error)
+      console.error('[chat] Failed to refresh after reconnect:', error)
       setReconnectStatus('error')
     }
   }, [localFetch, refreshMessages, refreshSurface, selectedThreadId, setReconnectStatus])

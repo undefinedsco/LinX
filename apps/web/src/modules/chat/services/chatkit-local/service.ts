@@ -558,16 +558,31 @@ export class LocalChatKitService {
     thread: ThreadMetadata
     threadUri: string
     items: Array<{ item: ThreadItem; uri: string }>
+    /** Items of the versions that are not shown (edits, regenerated answers), for the branch picker. */
+    alternates: Array<{ item: ThreadItem; uri: string }>
   }> {
     const thread = await this.store.loadThread(threadId, context)
     const all = await this.loadAllThreadItems(threadId, context)
     const active = projectActiveBranchItems({ data: all }, thread.metadata?.active_branch_by_parent).data
+    const shown = new Set(active.map((item) => item.id))
     const threadUri = (await this.store.resolveThreadUri?.(threadId)) ?? threadId
+    const withUri = (item: ThreadItem) => ({ item, uri: this.store.resolveItemUri?.(item.id) ?? item.id })
     return {
       thread,
       threadUri,
-      items: active.map((item) => ({ item, uri: this.store.resolveItemUri?.(item.id) ?? item.id })),
+      items: active.map(withUri),
+      alternates: all.filter((item) => !shown.has(item.id)).map(withUri),
     }
+  }
+
+  /** Ids of every thread of a chat; `currentThreadId` (where new messages go) is always included. */
+  private async chatThreadIds(chatId: string, currentThreadId: string, context: StoreContext): Promise<string[]> {
+    const listed = await this.store.loadThreads(1000, undefined, 'asc', context)
+    const ids = listed.data
+      .filter((thread) => thread.metadata?.chat_id === chatId)
+      .map((thread) => thread.id)
+    if (!ids.includes(currentThreadId)) ids.push(currentThreadId)
+    return ids
   }
 
   /**
@@ -579,18 +594,29 @@ export class LocalChatKitService {
     thread: ThreadMetadata
     threadUri: string
     items: Array<{ item: ThreadItem; uri: string; threadId: string }>
+    alternates: Array<{ item: ThreadItem; uri: string; threadId: string }>
   }> {
-    const listed = await this.store.loadThreads(1000, undefined, 'asc', context)
-    const ids = listed.data
-      .filter((thread) => thread.metadata?.chat_id === chatId)
-      .map((thread) => thread.id)
-    if (!ids.includes(currentThreadId)) ids.push(currentThreadId)
+    const ids = await this.chatThreadIds(chatId, currentThreadId, context)
     const loaded = await Promise.all(ids.map(async (id) => ({ id, conversation: await this.loadConversation(id, context) })))
     const current = loaded.find((entry) => entry.id === currentThreadId)!.conversation
     const items = mergeThreadTimelines(loaded.map(({ id, conversation }) => (
       conversation.items.map((entry) => ({ ...entry, threadId: id, createdAt: entry.item.created_at ?? 0 }))
     ))).map(({ createdAt: _createdAt, ...entry }) => entry)
-    return { thread: current.thread, threadUri: current.threadUri, items }
+    const alternates = loaded.flatMap(({ id, conversation }) => conversation.alternates.map((entry) => ({ ...entry, threadId: id })))
+    return { thread: current.thread, threadUri: current.threadUri, items, alternates }
+  }
+
+  /** Every file attached to, or generated in, any thread of the chat (the chat is one timeline). */
+  async loadChatAttachments(chatId: string, currentThreadId: string, context: StoreContext = {}): Promise<Attachment[]> {
+    const ids = await this.chatThreadIds(chatId, currentThreadId, context)
+    const perThread = await Promise.all(ids.map((id) => this.loadAllThreadItems(id, context)))
+    const attachments = new Map<string, Attachment>()
+    for (const item of perThread.flat()) {
+      const own = 'attachments' in item ? (item as { attachments?: Attachment[] }).attachments ?? [] : []
+      for (const attachment of own) attachments.set(attachment.id, attachment)
+      if (item.type === 'generated_image' && item.attachment) attachments.set(item.attachment.id, item.attachment)
+    }
+    return [...attachments.values()]
   }
 
   /** Pod message URI of an item that has been persisted or loaded here. */
@@ -1361,7 +1387,9 @@ export class LocalChatKitService {
         text: fullText || (isAbortError(error) ? '已停止生成。' : userFacingMessage),
         annotations: [],
       }]
-      assistantItem.status = 'incomplete'
+      // A stop keeps its partial text as 'incomplete'; a failure is marked
+      // 'failed' so a reloaded conversation can still offer 重试.
+      assistantItem.status = isAbortError(error) ? 'incomplete' : 'failed'
       await this.store.saveItem(thread.id, assistantItem, context)
       // ChatKit owns the UI transition for a cancelled request. Sending a
       // terminal item event after its fetch was aborted makes the embedded
