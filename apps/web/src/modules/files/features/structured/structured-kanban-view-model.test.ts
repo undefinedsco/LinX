@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { StructuredTableProjection } from '../../domain/structured/structured-table'
 import {
   findStructuredKanbanColumnForSubject,
+  mergeKanbanOptionLanes,
   findStructuredKanbanTargetColumnForDndOverId,
   createStructuredKanbanNativeDragState,
   hasStructuredKanbanMoveTargets,
@@ -236,5 +237,18 @@ describe('kanban lane customization and card fields', () => {
     const facts = buildKanbanCardFactLines(projection.rows, ['status'])
     expect(facts.get('#a')).toEqual(['status：Todo'])
     expect(buildKanbanCardFactLines(projection.rows, []).size).toBe(0)
+  })
+})
+
+describe('mergeKanbanOptionLanes', () => {
+  it('adds one lane per option of the grouping property after the lanes added by hand', () => {
+    const options = new Map([['https://pod.example/.vocab/terms.ttl#status', [{ label: '待办' }, { label: '进行中' }, { label: '完成' }]]])
+    expect(mergeKanbanOptionLanes(['搁置'], 'udfs:status', options)).toEqual(['搁置', '待办', '进行中', '完成'])
+    expect(mergeKanbanOptionLanes(['待办'], 'https://pod.example/.vocab/terms.ttl#status', options)).toEqual(['待办', '进行中', '完成'])
+  })
+
+  it('keeps the hand-added lanes when the property has no options or nothing is grouped', () => {
+    expect(mergeKanbanOptionLanes(['搁置'], null, new Map())).toEqual(['搁置'])
+    expect(mergeKanbanOptionLanes(undefined, 'udfs:owner', new Map())).toEqual([])
   })
 })

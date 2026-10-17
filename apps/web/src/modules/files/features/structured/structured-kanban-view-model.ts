@@ -113,6 +113,31 @@ export function projectStructuredKanbanNativeDragCleared(): StructuredKanbanNati
  * is that name as a text value, so dragging a card there writes the name into the
  * grouping property. Renamed lanes only change the label.
  */
+/**
+ * K6d: grouping by a 选项 property shows one lane per option, empty ones included. Enum cells
+ * store the option label, so option lanes behave like lanes added by hand (`extraLanes`).
+ */
+export function mergeKanbanOptionLanes(
+  extraLanes: readonly string[] | undefined,
+  groupPredicate: string | null | undefined,
+  enumOptionsByPredicate: ReadonlyMap<string, ReadonlyArray<{ label: string }>> | undefined,
+): string[] {
+  const lanes = [...(extraLanes ?? [])]
+  if (!groupPredicate || !enumOptionsByPredicate) return lanes
+  let options = enumOptionsByPredicate.get(groupPredicate)
+  if (!options) {
+    const local = localPredicateLabel(groupPredicate)
+    for (const [key, value] of enumOptionsByPredicate) {
+      if (localPredicateLabel(key) === local) { options = value; break }
+    }
+  }
+  for (const option of options ?? []) {
+    const label = option.label.trim()
+    if (label && !lanes.includes(label)) lanes.push(label)
+  }
+  return lanes
+}
+
 export function applyStructuredKanbanLaneCustomization(
   kanban: StructuredKanbanProjection,
   { extraLanes = [], laneLabels = {} }: { extraLanes?: readonly string[]; laneLabels?: Record<string, string> },

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import { createStructuredCellWriteProposal } from '../../domain/structured/structured-table'
 import { StructuredKanbanView } from './StructuredKanbanView'
+import { mergeKanbanOptionLanes } from './structured-kanban-view-model'
 import {
   StructuredProjectionWarningsAlert,
   StructuredShapeWarningsAlert,
@@ -304,6 +305,11 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     return true
   }
 
+  const kanbanLanes = useMemo(
+    () => mergeKanbanOptionLanes(kanbanBoard.extraLanes, kanbanGroupPredicate, vocabDefinitionIndex?.enumOptionsByPredicate),
+    [kanbanBoard.extraLanes, kanbanGroupPredicate, vocabDefinitionIndex?.enumOptionsByPredicate],
+  )
+
   return (
     <div className="relative min-h-full w-full min-w-0 max-w-full overflow-hidden p-2 space-y-2">
       <div
@@ -453,7 +459,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               laneOrder={kanbanBoard.laneOrder}
               initialCollapsedLaneIds={kanbanBoard.collapsedLaneIds}
               initialScrollLeft={kanbanBoard.scrollLeft}
-              extraLanes={kanbanBoard.extraLanes}
+              extraLanes={kanbanLanes}
               laneLabels={kanbanBoard.laneLabels}
               cardFields={kanbanBoard.cardFields}
               onBoardChange={structuredWritesSupported ? (patch) => setKanbanBoardFromUi({ ...kanbanBoard, ...patch }) : undefined}
