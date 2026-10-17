@@ -30,21 +30,22 @@ export function useCardTextSelection(container: React.RefObject<HTMLElement | nu
   }, [container])
 
   useEffect(() => {
-    const root = container.current
-    if (!root) return
+    // Listen on the document: the card body mounts after the card loads, so a listener on
+    // `container.current` taken at mount would never attach. `read` keeps only selections
+    // inside the body.
     const clearWhenCollapsed = () => {
       const current = window.getSelection()
       if (!current || current.isCollapsed) setSelection(null)
     }
-    root.addEventListener('mouseup', read)
-    root.addEventListener('keyup', read)
+    document.addEventListener('mouseup', read)
+    document.addEventListener('keyup', read)
     document.addEventListener('selectionchange', clearWhenCollapsed)
     return () => {
-      root.removeEventListener('mouseup', read)
-      root.removeEventListener('keyup', read)
+      document.removeEventListener('mouseup', read)
+      document.removeEventListener('keyup', read)
       document.removeEventListener('selectionchange', clearWhenCollapsed)
     }
-  }, [container, read])
+  }, [read])
 
   return { selection, clear: () => setSelection(null) }
 }

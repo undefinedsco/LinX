@@ -103,48 +103,7 @@ export function Composer({ disabled, disabledReason, citation }: { disabled?: bo
             </CommandList>
           </Command>
         ) : null}
-        <div className="flex items-end gap-2 rounded-lg border border-border bg-card px-2 py-1.5 focus-within:border-primary/60">
-          <ComposerPrimitive.AddAttachment
-            aria-label="添加附件"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-          >
-            <Paperclip className="h-4 w-4" aria-hidden="true" />
-          </ComposerPrimitive.AddAttachment>
-          <button
-            type="button"
-            aria-label="生成图片"
-            aria-pressed={imageGeneration}
-            title="生成图片（只用于下一条消息）"
-            onClick={() => setImageGeneration(!imageGeneration)}
-            className={cn('inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted', imageGeneration ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}
-          >
-            <ImagePlus className="h-4 w-4" aria-hidden="true" />{imageGeneration ? '图片' : null}
-          </button>
-          <button type="button" aria-label="截图记录" title="截图记录" onClick={() => openDialog('capture')} className={iconButton}>
-            <Camera className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            aria-label="联网搜索"
-            aria-pressed={webSearch}
-            title="联网搜索（只用于下一条消息）"
-            onClick={() => setWebSearch(!webSearch)}
-            className={cn('inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted', webSearch ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}
-          >
-            <Globe className="h-4 w-4" aria-hidden="true" />{webSearch ? '搜索' : null}
-          </button>
-          {dictating ? (
-            <ComposerPrimitive.StopDictation aria-label="结束语音输入" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-destructive/10 text-destructive">
-              <Square className="h-3.5 w-3.5" aria-hidden="true" />
-            </ComposerPrimitive.StopDictation>
-          ) : (
-            <ComposerPrimitive.Dictate aria-label="语音输入" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:hidden">
-              <Mic className="h-4 w-4" aria-hidden="true" />
-            </ComposerPrimitive.Dictate>
-          )}
-          <button type="button" aria-label="语音对话" title="语音对话" onClick={() => openDialog('voice')} className={iconButton}>
-            <AudioLines className="h-4 w-4" aria-hidden="true" />
-          </button>
+        <div className="rounded-xl border border-border bg-card focus-within:border-primary/60">
           <ComposerPrimitive.Input
             rows={1}
             onKeyDown={slash.onKeyDown}
@@ -152,24 +111,68 @@ export function Composer({ disabled, disabledReason, citation }: { disabled?: bo
             aria-label="消息"
             placeholder={disabled ? disabledReason ?? '暂时不能发送' : imageGeneration ? '描述想要的图片' : '消息'}
             disabled={disabled}
-            className="min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm outline-none placeholder:text-muted-foreground"
+            className="block min-h-10 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
           />
-          {running ? (
-            <ComposerPrimitive.Cancel
-              aria-label="停止"
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-border px-3 text-sm hover:bg-muted"
+          <div className="flex items-center gap-1 px-1.5 pb-1.5">
+            <ComposerPrimitive.AddAttachment
+              aria-label="添加附件"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
             >
-              <Square className="h-3 w-3" aria-hidden="true" />停止
-            </ComposerPrimitive.Cancel>
-          ) : (
-            <ComposerPrimitive.Send
-              aria-label="发送"
-              disabled={disabled}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50"
+              <Paperclip className="h-4 w-4" aria-hidden="true" />
+            </ComposerPrimitive.AddAttachment>
+            <button
+              type="button"
+              aria-label="生成图片"
+              aria-pressed={imageGeneration}
+              title="生成图片（只用于下一条消息）"
+              onClick={() => setImageGeneration(!imageGeneration)}
+              className={cn('inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted', imageGeneration ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}
             >
-              <Send className="h-3.5 w-3.5" aria-hidden="true" />发送
-            </ComposerPrimitive.Send>
-          )}
+              <ImagePlus className="h-4 w-4" aria-hidden="true" />{imageGeneration ? '图片' : null}
+            </button>
+            <button type="button" aria-label="截图记录" title="截图记录" onClick={() => openDialog('capture')} className={iconButton}>
+              <Camera className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="联网搜索"
+              aria-pressed={webSearch}
+              title="联网搜索（只用于下一条消息）"
+              onClick={() => setWebSearch(!webSearch)}
+              className={cn('inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted', webSearch ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}
+            >
+              <Globe className="h-4 w-4" aria-hidden="true" />{webSearch ? '搜索' : null}
+            </button>
+            {dictating ? (
+              <ComposerPrimitive.StopDictation aria-label="结束语音输入" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-destructive/10 text-destructive">
+                <Square className="h-3.5 w-3.5" aria-hidden="true" />
+              </ComposerPrimitive.StopDictation>
+            ) : (
+              <ComposerPrimitive.Dictate aria-label="语音输入" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:hidden">
+                <Mic className="h-4 w-4" aria-hidden="true" />
+              </ComposerPrimitive.Dictate>
+            )}
+            <button type="button" aria-label="语音对话" title="语音对话" onClick={() => openDialog('voice')} className={iconButton}>
+              <AudioLines className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <div className="flex-1" />
+            {running ? (
+              <ComposerPrimitive.Cancel
+                aria-label="停止"
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-border px-3 text-sm hover:bg-muted"
+              >
+                <Square className="h-3 w-3" aria-hidden="true" />停止
+              </ComposerPrimitive.Cancel>
+            ) : (
+              <ComposerPrimitive.Send
+                aria-label="发送"
+                disabled={disabled}
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50"
+              >
+                <Send className="h-3.5 w-3.5" aria-hidden="true" />发送
+              </ComposerPrimitive.Send>
+            )}
+          </div>
         </div>
         </div>
       </div>

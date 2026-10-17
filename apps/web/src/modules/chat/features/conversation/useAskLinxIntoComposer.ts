@@ -4,7 +4,7 @@
  * and never sent on its own; an existing draft is kept above it. The source
  * shows as a chip that opens the card.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAui, useAuiState } from '@assistant-ui/react'
 import { ASK_LINX_MAX_AGE_MS, useAskLinx, type PendingAskLinx } from '@/lib/ask-linx'
 import { useCardDialog } from '@/lib/card-dialog'
@@ -57,8 +57,32 @@ export function useAskLinxIntoComposer(chatId: string): ComposerCitation | null 
   }, [aui, isLinx, pending, settle])
 
   // The chip belongs to the message being written: sending it (or switching chats) ends it.
-  const sentCount = useAuiState((state) => state.thread.messages.length)
-  useEffect(() => setSource(null), [chatId, sentCount])
+  // Only a new message from the person counts; history loading in must not clear it.
+  const lastUserMessageId = useAuiState((state) => {
+    const messages = state.thread.messages
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === 'user') return messages[index].id
+    }
+    return null
+  })
+  const userMessageAtSource = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (!source) {
+      userMessageAtSource.current = undefined
+      return
+    }
+    if (userMessageAtSource.current === undefined) {
+      userMessageAtSource.current = lastUserMessageId
+      return
+    }
+    if (lastUserMessageId !== userMessageAtSource.current) setSource(null)
+  }, [lastUserMessageId, source])
+  const chatIdAtMount = useRef(chatId)
+  useEffect(() => {
+    if (chatIdAtMount.current === chatId) return
+    chatIdAtMount.current = chatId
+    setSource(null)
+  }, [chatId])
   useEffect(() => () => setComposerCitation(null), [chatId])
 
   const sourceUri = source?.sourceUri
