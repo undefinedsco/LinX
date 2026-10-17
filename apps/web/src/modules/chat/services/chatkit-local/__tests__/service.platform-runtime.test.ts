@@ -105,9 +105,17 @@ vi.mock('@/lib/vendor/xpod-chatkit', () => ({
 import { LocalChatKitService } from '../service'
 
 /**
+ * The gateway's model list (`/v1/models`) is where the service reads capabilities. Each mock
+ * Pod states what its provider can do (`providerCapabilities`); the test gateway lists the
+ * agent's model with those capabilities. The LinX platform model declares Responses and
+ * web search, as the real gateway does.
+ */
+let gatewayModels: Array<Record<string, unknown>> = []
+
+/**
  * Besides the model call the service looks up the model list (capabilities) and the
  * withdrawn-cards list. These tests are about model traffic, so the side lookups get
- * neutral answers here and only model requests reach the test's fetch mock.
+ * answers from the test gateway here and only model requests reach the test's fetch mock.
  */
 function modelTraffic(fetchMock: (...args: any[]) => any) {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -117,14 +125,32 @@ function modelTraffic(fetchMock: (...args: any[]) => any) {
       // implementation directly so the lookup is not recorded as model traffic.
       const implementation = (fetchMock as any).getMockImplementation?.()
       const own = implementation ? await implementation(input, init) : null
-      const text = own instanceof Response && own.ok ? await own.text() : ''
+      // Read a clone: a queued response may be the one the real call receives later.
+      const text = own instanceof Response && own.ok ? await own.clone().text() : ''
       let declared = false
       try { declared = Array.isArray(JSON.parse(text)?.data) } catch { declared = false }
-      return new Response(declared ? text : JSON.stringify({ data: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      return new Response(declared ? text : JSON.stringify({ data: gatewayModels }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
     if (url.endsWith('/settings/linx/withdrawn-cards.ttl')) return new Response('', { status: 404 })
     return fetchMock(input, init)
   }
+}
+
+/**
+ * Progress text the person sees: before the answer starts, `respond` shows progress in the
+ * 处理中 status widget (replaced in place); later it passes progress_update events through.
+ */
+function progressTexts(events: any[]): string[] {
+  const texts: string[] = []
+  for (const event of events) {
+    if (event?.type === 'progress_update' && typeof event.text === 'string') texts.push(event.text)
+    const widget = event?.item?.type === 'widget' ? event.item.widget : null
+    const statusRow = widget?.children?.[0]
+    if (statusRow?.children?.[0]?.name === 'spinner' && typeof statusRow.children[1]?.value === 'string') {
+      texts.push(statusRow.children[1].value)
+    }
+  }
+  return texts
 }
 
 function createSseResponse(chunks: string[]) {
@@ -275,6 +301,11 @@ function createMockDb(
     about: options.contactAbout ?? 'agent-1/',
     contactType: 'agent',
   }
+  gatewayModels = options.providerCapabilities
+    ? [{ id: `${agent.provider}/${agent.model}`, owned_by: agent.provider, capabilities: options.providerCapabilities }]
+    : agent.provider === 'undefineds'
+      ? [{ id: `undefineds/${agent.model}`, owned_by: 'undefineds', capabilities: ['chat_completions', 'responses', 'responses_web_search'] }]
+      : []
   const agentRow = {
     id: 'agent-1/',
     provider: agent.provider,
@@ -588,11 +619,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       tool_choice: 'auto',
     }))
     expect(body).not.toHaveProperty('temperature')
-    expect(events).toContainEqual({
-      type: 'progress_update',
-      icon: 'search',
-      text: '正在搜索网络并整理来源…',
-    })
+    expect(progressTexts(events)).toContain('正在搜索网络并整理来源…')
     expect(findAssistantDone(events)?.item?.content?.[0]).toEqual({
       type: 'output_text',
       text: '今日结果',
@@ -696,11 +723,7 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
 
-    expect(events).toContainEqual({
-      type: 'progress_update',
-      icon: 'search',
-      text: '联网搜索失败',
-    })
+    expect(progressTexts(events)).toContain('联网搜索失败')
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
       status: 'failed',
       content: [expect.objectContaining({
@@ -782,11 +805,7 @@ describe('LocalChatKitService platform runtime routing', () => {
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
 
     expect(authFetch).not.toHaveBeenCalled()
-    expect(events).toContainEqual({
-      type: 'progress_update',
-      icon: 'search',
-      text: '联网搜索失败',
-    })
+    expect(progressTexts(events)).toContain('联网搜索失败')
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
       status: 'failed',
       content: [expect.objectContaining({
@@ -918,7 +937,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: vi.fn() as any,
+      authFetch: modelTraffic(vi.fn()) as any,
       attachmentThreadId: 'thread-1',
     })
 
@@ -1024,7 +1043,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: vi.fn() as any,
+      authFetch: modelTraffic(vi.fn()) as any,
     })
 
     const result = await service.process(JSON.stringify({
@@ -1053,7 +1072,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: vi.fn() as any,
+      authFetch: modelTraffic(vi.fn()) as any,
       attachmentThreadId: 'thread-1',
     })
 
@@ -1633,11 +1652,7 @@ describe('LocalChatKitService platform runtime routing', () => {
     const events = await sendMessage(service)
 
     expect(authFetch).toHaveBeenCalledTimes(2)
-    expect(events).toContainEqual({
-      type: 'progress_update',
-      icon: 'refresh',
-      text: '服务暂未返回内容，正在重试…',
-    })
+    expect(progressTexts(events)).toContain('服务暂未返回内容，正在重试…')
     expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('第二次返回正常')
     expect(findAssistantDone(events)?.item?.status).toBe('completed')
   })
@@ -1736,7 +1751,8 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: 'error',
-        error: expect.objectContaining({ message: expect.stringContaining('可用的图片生成模型') }),
+        // Refused either because the provider declares no image generation or no model offers it.
+        error: expect.objectContaining({ message: expect.stringMatching(/图片生成/u) }),
       }),
     ]))
   })

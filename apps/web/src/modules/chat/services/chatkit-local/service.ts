@@ -479,6 +479,19 @@ type RuntimeThreadEvent =
   | { type: 'exit'; ts: number; threadId: string; code: number | null; signal?: string }
   | { type: 'error'; ts: number; threadId: string; message: string }
 
+/**
+ * Chat Completions is the universal OpenAI-compatible baseline: a provider whose list only
+ * mentions extras (e.g. image input) still routes plain text through Chat Completions. A
+ * provider that declares Responses but not Chat Completions is Responses-only.
+ */
+function withChatCompletionsBaseline(declared: readonly string[]): string[] {
+  const capabilities = new Set(declared)
+  const responsesOnly = capabilities.has(AIConfigRuntimeCapability.responses)
+    && !capabilities.has(AIConfigRuntimeCapability.chatCompletions)
+  if (!responsesOnly) capabilities.add(AIConfigRuntimeCapability.chatCompletions)
+  return [...capabilities]
+}
+
 export class LocalChatKitService {
   private store: LocalServiceOptions['store']
   private db: SolidDatabase
@@ -1908,7 +1921,15 @@ export class LocalChatKitService {
 
       if (provider === LINX_PLATFORM_PROVIDER_ID) {
         const configured = await this.resolveConfiguredProviderConfig()
-        if (configured) return configured
+        // The gateway picks the model; where it runs and how the agent behaves stay the agent's.
+        if (configured) {
+          return {
+            ...configured,
+            instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
+            contextRound: normalizeContextRound(agent.contextRound),
+            aiRuntimeLocation: readAgentAiRuntimeLocation((agent as Record<string, unknown>).metadata),
+          }
+        }
       }
 
       return {
@@ -2326,10 +2347,7 @@ export class LocalChatKitService {
     const capabilities = (await this.loadGatewayModels())
       .filter((model) => model.provider === provider)
       .flatMap((model) => model.capabilities)
-    // Chat Completions is the universal OpenAI-compatible baseline: providers
-    // whose declared list only mentions extras (e.g. image input) still route
-    // through chat completions for plain text.
-    return [...new Set([AIConfigRuntimeCapability.chatCompletions, ...capabilities])]
+    return withChatCompletionsBaseline(capabilities)
   }
 
   private async resolveModelCapabilities(providerId: string, modelId?: string | null): Promise<string[]> {
@@ -2346,7 +2364,7 @@ export class LocalChatKitService {
     const capabilities = match
       ? match.capabilities
       : entries.filter((entry) => entry.provider === provider).flatMap((entry) => entry.capabilities)
-    return [...new Set([AIConfigRuntimeCapability.chatCompletions, ...capabilities])]
+    return withChatCompletionsBaseline(capabilities)
   }
 
   private async loadGatewayModels(): Promise<Array<{ provider: string; model: string; capabilities: string[] }>> {
@@ -2377,6 +2395,10 @@ export class LocalChatKitService {
       for (const capability of stringList(entry.custom_capabilities)) capabilities.add(capability)
       if (structured.imageInput === true) capabilities.add(AIConfigRuntimeCapability.imageInput)
       if (structured.toolCalls === true) capabilities.add(AIConfigRuntimeCapability.toolCalls)
+      if (structured.imageGeneration === true) capabilities.add(AIConfigRuntimeCapability.imageGeneration)
+      if (structured.imageEditing === true) capabilities.add(AIConfigRuntimeCapability.imageEditing)
+      // Image models are recognised by name too, as resolveImageModel does.
+      if (isImageGenerationModel(model)) capabilities.add(AIConfigRuntimeCapability.imageGeneration)
       if (stringList(entry.modalities && typeof entry.modalities === 'object'
         ? (entry.modalities as Record<string, unknown>).input
         : undefined).includes('image')) {
