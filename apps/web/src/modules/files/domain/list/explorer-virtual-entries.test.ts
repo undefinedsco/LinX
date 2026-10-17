@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { FilesEntry } from '../resource/resource-model'
 import { projectFilesExplorerRows } from './explorer-tree-model'
 import {
+  isExplorerSystemDataFolder,
   isGrantsViewUri,
   mergeAgentHomeVirtualEntries,
   parseAgentHomeContainer,
@@ -68,5 +69,15 @@ describe('explorer virtual entries', () => {
     expect(projectEntryDisplayName(folder, { secretary: 'LinX 助手' })).toBe('LinX 助手')
     expect(projectEntryDisplayName(folder)).toBe('secretary')
     expect(projectEntryDisplayName({ ...folder, kind: 'resource' }, { secretary: 'LinX 助手' })).toBe('secretary')
+  })
+
+  it('shows .data as 数据 and hides its bookkeeping folders, keeping assistant homes', () => {
+    expect(projectExplorerEntryLabel(entry({ uri: 'https://pod.example/.data/', kind: 'container', semanticKind: 'folder' }))).toBe('数据')
+    for (const name of ['proposals', 'history', 'views', 'inbox']) {
+      expect(isExplorerSystemDataFolder({ kind: 'container', uri: `https://pod.example/.data/${name}/` })).toBe(true)
+    }
+    expect(isExplorerSystemDataFolder({ kind: 'container', uri: HOME })).toBe(false)
+    expect(isExplorerSystemDataFolder({ kind: 'container', uri: 'https://pod.example/.data/agents/' })).toBe(false)
+    expect(isExplorerSystemDataFolder({ kind: 'resource', uri: 'https://pod.example/.data/views/board.canvas' })).toBe(false)
   })
 })

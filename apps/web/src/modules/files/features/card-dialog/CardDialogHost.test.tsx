@@ -11,6 +11,17 @@ const mocks = vi.hoisted(() => ({
   saveRaw: vi.fn(),
   navigate: vi.fn(),
   history: { ready: true, read: vi.fn(), record: vi.fn().mockResolvedValue(undefined) },
+  withdrawn: new Set<string>(),
+  restore: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('@/lib/use-withdrawn-cards', () => ({
+  useWithdrawnCards: () => ({
+    isWithdrawn: (uri: string) => mocks.withdrawn.has(uri),
+    withdraw: vi.fn().mockResolvedValue([]),
+    restore: mocks.restore,
+    pending: false,
+  }),
 }))
 
 vi.mock('@/modules/files/ui/BlockNoteFileEditor', async () => import('../../ui/__tests__/fake-block-note-file-editor'))
@@ -77,6 +88,19 @@ describe('CardDialogHost', () => {
     fireEvent.click(screen.getByRole('button', { name: '展开' }))
     await waitFor(() => expect(useCardDialog.getState().request).toBeNull())
     expect(mocks.navigate).toHaveBeenCalled()
+  })
+
+  it('marks a withdrawn card and puts it back into use', async () => {
+    mocks.withdrawn.add(DOC)
+    try {
+      render(<CardDialogHost />)
+      act(() => { useCardDialog.getState().open({ uri: DOC }) })
+      expect(await screen.findByText('已撤回：以后的工作不再使用这张卡片。')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '恢复使用' }))
+      expect(mocks.restore).toHaveBeenCalledWith(DOC)
+    } finally {
+      mocks.withdrawn.clear()
+    }
   })
 
   it('explains a deleted file with one action', async () => {

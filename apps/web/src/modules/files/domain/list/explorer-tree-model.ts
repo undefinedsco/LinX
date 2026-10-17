@@ -5,7 +5,7 @@ import {
   formatFilesListSize,
   isFilesListSidecarEntry,
 } from './list-view-model'
-import { isExplorerTreeEntry, parseAgentHomeContainer, projectExplorerEntryLabel } from './explorer-virtual-entries'
+import { isExplorerSystemDataFolder, isExplorerTreeEntry, parseAgentHomeContainer, projectExplorerEntryLabel } from './explorer-virtual-entries'
 
 export type FilesExplorerEntryRow = {
   kind: 'entry'
@@ -139,7 +139,7 @@ function projectRowsForEntries({
 }): FilesExplorerRowModel[] {
   const rows: FilesExplorerRowModel[] = []
   for (const entry of entries
-    .filter((candidate) => !isFilesListSidecarEntry(candidate) && (!input.treeOnly || !!normalizedSearch || isExplorerTreeEntry(candidate)))
+    .filter((candidate) => !isFilesListSidecarEntry(candidate) && !isExplorerSystemDataFolder(candidate) && (!input.treeOnly || !!normalizedSearch || isExplorerTreeEntry(candidate)))
     .sort(compareEntries)) {
     const row = projectEntryRow(entry, depth, input.expandedUris, input.agentNames)
     const containerUri = isContainerEntry(entry) ? normalizeContainerKey(entry.uri) : null

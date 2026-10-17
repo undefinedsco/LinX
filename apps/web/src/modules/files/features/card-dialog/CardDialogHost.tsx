@@ -1,8 +1,9 @@
-import { ChevronLeft, ChevronRight, Expand, History, Link2, MoreHorizontal, Share2 } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { ChevronLeft, ChevronRight, Expand, History, Link2, MoreHorizontal, Share2, Undo2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouterState } from '@tanstack/react-router'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import {
   DropdownMenu,
@@ -11,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useCardDialog, type CardDialogRequest } from '@/lib/card-dialog'
+import { useWithdrawnCards } from '@/lib/use-withdrawn-cards'
 import { BlockNoteFileEditor } from '@/modules/files/ui/BlockNoteFileEditor'
 
 import {
@@ -103,6 +105,10 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
   useLocatorHighlight(bodyRef, request.locator?.quote, request.uri)
   const locatorLabel = projectCardLocatorLabel(request.locator)
   const { siblings } = card
+  // K2b 撤回: future work stops using this card; finished work and chats keep it.
+  const withdrawnCards = useWithdrawnCards()
+  const withdrawn = withdrawnCards.isWithdrawn(request.uri)
+  const [withdrawConfirmOpen, setWithdrawConfirmOpen] = useState(false)
 
   const renderBody = () => {
     if (card.loading) return <p className="py-10 text-center text-sm text-muted-foreground">正在打开…</p>
@@ -235,9 +241,19 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
                 {card.historySupported ? (
                   <DropdownMenuItem onSelect={() => { void card.openHistory() }}><History className="mr-2 h-3.5 w-3.5" />版本…</DropdownMenuItem>
                 ) : null}
+                {!withdrawn ? (
+                  // Let the menu close before the confirm dialog takes focus.
+                  <DropdownMenuItem onSelect={() => { setTimeout(() => setWithdrawConfirmOpen(true), 0) }}><Undo2 className="mr-2 h-3.5 w-3.5" />撤回…</DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           </header>
+          {withdrawn ? (
+            <div role="status" data-card-withdrawn="true" className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
+              <span className="flex-1">已撤回：以后的工作不再使用这张卡片。</span>
+              <Button size="sm" variant="outline" disabled={withdrawnCards.pending} onClick={() => { void withdrawnCards.restore(request.uri) }}>恢复使用</Button>
+            </div>
+          ) : null}
           {card.saveStatus === 'conflict' ? (
             <div role="alert" data-card-conflict="true" className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">
               <span className="flex-1">这张卡片在另一台设备上也改了。比较后选择用哪一份，或者两处都保留成两个版本。</span>
@@ -248,6 +264,18 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
           <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">{renderBody()}</div>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={withdrawConfirmOpen}
+        onOpenChange={setWithdrawConfirmOpen}
+        title={`撤回“${card.title}”？`}
+        description="以后的工作不再使用它。已完成的工作和原来的聊天不受影响。"
+        confirmLabel="撤回"
+        destructive
+        busy={withdrawnCards.pending}
+        onConfirm={() => {
+          void withdrawnCards.withdraw(request.uri).then(() => setWithdrawConfirmOpen(false)).catch(() => undefined)
+        }}
+      />
       <CardHistoryDialog
         open={card.historyOpen}
         onOpenChange={card.setHistoryOpen}

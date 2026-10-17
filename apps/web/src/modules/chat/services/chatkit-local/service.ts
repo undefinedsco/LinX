@@ -35,6 +35,7 @@ import {
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { readWithdrawnCards, renderWithdrawnCardsContext } from '@/lib/withdrawn-cards'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
 import { createAssistantTextDeltaEvent, createWaitingToolbarEvent } from './thread-stream-events'
@@ -2671,10 +2672,25 @@ export class LocalChatKitService {
       }
     }
 
+    const withdrawnContext = await this.readWithdrawnCardsContext()
+    if (withdrawnContext) systemPrompt = `${systemPrompt}\n\n${withdrawnContext}`
+
     return [
       { role: 'system', content: systemPrompt },
       ...conversation,
     ]
+  }
+
+  /** K2b 撤回: cards the person withdrew stay out of new work. Null when none or unreadable. */
+  private async readWithdrawnCardsContext(): Promise<string | null> {
+    const podBaseUrl = resolveCurrentPodBaseUrl(this.db)
+    if (!podBaseUrl) return null
+    try {
+      return renderWithdrawnCardsContext(await readWithdrawnCards(podBaseUrl, this.authFetch))
+    } catch (error) {
+      console.warn('[LocalChatKitService] Withdrawn cards unavailable:', error)
+      return null
+    }
   }
 
   private async buildAttachmentModelParts(attachments: Attachment[] | undefined): Promise<ModelContentPart[]> {
@@ -2711,7 +2727,8 @@ export class LocalChatKitService {
         ? part.text
         : `[图片附件 ${index + 1} 已保存到 Pod；当前终端 runtime 仅接收文本，请在支持视觉的模型会话中分析图片内容。]`
     )).join('\n\n')
-    return [text, attachmentText].filter(Boolean).join('\n\n') || '请分析附件。'
+    const withdrawnContext = await this.readWithdrawnCardsContext()
+    return [text, attachmentText, withdrawnContext ? `（${withdrawnContext}）` : ''].filter(Boolean).join('\n\n') || '请分析附件。'
   }
 
   private async createUserMessage(

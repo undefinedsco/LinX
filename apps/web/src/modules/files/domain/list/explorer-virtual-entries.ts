@@ -64,10 +64,22 @@ const VOCAB_LABELS: Partial<Record<FilesEntry['semanticKind'], string>> = {
 }
 
 /** Plain words for built-in folders and vocabulary tables; everything else keeps its own name. */
+/**
+ * `.data/` holds structured data the person works with, so it stays in the tree as 数据. Its
+ * system folders (proposals, versions, view layouts, inbox, indexes) are LinX bookkeeping and
+ * stay hidden; their contents are reached through 收件箱, 版本 and the views themselves.
+ */
+const SYSTEM_DATA_FOLDER = /\/\.data\/(?:proposals|history|views|inbox|ingest|index|approvals)\/$/
+
+export function isExplorerSystemDataFolder(entry: Pick<FilesEntry, 'kind' | 'uri'>): boolean {
+  return entry.kind === 'container' && SYSTEM_DATA_FOLDER.test(normalizeContainerUri(entry.uri))
+}
+
 export function projectExplorerEntryLabel(entry: FilesEntry): string {
   const vocabLabel = VOCAB_LABELS[entry.semanticKind]
   if (vocabLabel) return vocabLabel
   if (entry.kind === 'container' && /\/\.vocab\/$/.test(normalizeContainerUri(entry.uri))) return '词表'
+  if (entry.kind === 'container' && /\/\.data\/$/.test(normalizeContainerUri(entry.uri))) return '数据'
   return entry.name
 }
 
