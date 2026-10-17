@@ -1,0 +1,85 @@
+# LinX Web release candidate (RC).
+#
+# Rendered by .github/workflows/candidate.yml: __NAMESPACE__ and __IMAGE__ are replaced
+# with the RC Environment's namespace and the candidate's immutable image digest, then the
+# result is applied once. Do not set the image or restart the Deployment in separate steps.
+#
+# Only RC-owned objects live here (Deployment and Service `linx-web-rc`). The public host
+# (vars.LINX_RC_URL, e.g. https://linx-rc.undefineds.cn) is routed to Service/linx-web-rc by
+# the shared gateway, whose routing table is owned by the homepage repo
+# (deploy/ci/gz-gateway-routes.sh); the domain/Ingress is bound in the SealOS console.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linx-web-rc
+  namespace: __NAMESPACE__
+  labels:
+    app: linx-web-rc
+    app.kubernetes.io/name: linx-web
+    app.kubernetes.io/instance: rc
+    app.kubernetes.io/managed-by: linx-candidate-workflow
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: linx-web-rc
+  template:
+    metadata:
+      labels:
+        app: linx-web-rc
+        app.kubernetes.io/name: linx-web
+        app.kubernetes.io/instance: rc
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: linx-web
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: linx-web-rc
+  namespace: __NAMESPACE__
+  labels:
+    app: linx-web-rc
+spec:
+  selector:
+    app: linx-web-rc
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

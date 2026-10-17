@@ -1,5 +1,6 @@
 {
   "name": "linx-monorepo",
+  "version": "0.3.34",
   "private": true,
   "packageManager": "yarn@1.22.22",
   "engines": {
