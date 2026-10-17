@@ -278,6 +278,35 @@ describe('LocalChatKitService P0 data and cancellation', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'thread.item.added' }))
   })
 
+  it('keeps the 问 LinX citation when a message is edited or its answer regenerated', async () => {
+    const citation = { sourceUri: 'https://pod.example/notes/a.md', title: '会议纪要', locator: { line: 5 } }
+    const item = { id: 'user-1', thread_id: 'thread-1', type: 'user_message', content: [{ type: 'input_text', text: 'old' }], citation }
+    const thread = { id: 'thread-1', status: { type: 'active' }, metadata: {} }
+    const store = createStore({
+      loadItem: vi.fn(async () => ({ ...item })),
+      saveItem: vi.fn(async () => undefined),
+      loadThread: vi.fn(async () => thread),
+      saveThread: vi.fn(async () => undefined),
+      loadThreadItems: vi.fn(async () => ({ data: [item], has_more: false })),
+      generateItemId: vi.fn(() => 'user-branch-1'),
+    })
+    const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any }) as any
+    service.respond = vi.fn(async function* () {
+      yield { type: 'thread.item.done', item: { id: 'assistant-1', type: 'assistant_message', content: [] } }
+    })
+    const run = async (action: unknown) => {
+      const result = await service.process(JSON.stringify({ type: 'threads.custom_action', params: { action } }), {})
+      if (result.type === 'streaming') for await (const _chunk of result.stream()) { /* drain */ }
+    }
+
+    await run({ type: 'message.edit', payload: { thread_id: 'thread-1', item_id: 'user-1', text: 'new', regenerate: true } })
+    expect(store.saveItem).toHaveBeenCalledWith('thread-1', expect.objectContaining({ id: 'user-branch-1', citation }), {})
+    expect(service.respond).toHaveBeenLastCalledWith(thread, expect.objectContaining({ id: 'user-branch-1', citation }), {}, undefined, { selectResponseBranch: true })
+
+    await run({ type: 'message.regenerate', payload: { thread_id: 'thread-1', item_id: 'user-1' } })
+    expect(service.respond).toHaveBeenLastCalledWith(thread, expect.objectContaining({ id: 'user-1', citation }), {}, undefined, { selectResponseBranch: true })
+  })
+
   it('regenerates a sibling answer from the selected user message', async () => {
     const item = { id: 'user-1', thread_id: 'thread-1', type: 'user_message', content: [{ type: 'input_text', text: 'again' }] }
     const thread = { id: 'thread-1', status: { type: 'active' }, metadata: {} }
