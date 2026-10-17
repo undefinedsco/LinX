@@ -74,7 +74,7 @@ describe('structured-subject-creation-model', () => {
       classScope: 'udfs:Task',
     })).toEqual({
       disabled: false,
-      title: '在 udfs:Task 中新增 subject',
+      title: '在“udfs:Task”里新增一行',
       buttonAriaLabel: '+ 卡片',
       buttonLabel: '卡片',
     })
@@ -83,7 +83,7 @@ describe('structured-subject-creation-model', () => {
       classScope: null,
     })).toEqual({
       disabled: true,
-      title: '先选择 class 再新增 subject',
+      title: '先选一个类型再新增一行',
       buttonAriaLabel: '+ 卡片',
       buttonLabel: '卡片',
     })
@@ -91,7 +91,7 @@ describe('structured-subject-creation-model', () => {
     expect(projectStructuredSubjectCreationDialogModel({
       classScope: 'udfs:Task',
     })).toEqual({
-      title: '新增 subject',
+      title: '新增一行',
       description: 'udfs:Task',
       subjectInputLabel: 'Subject',
       cancelLabel: '取消',
@@ -101,8 +101,8 @@ describe('structured-subject-creation-model', () => {
     expect(projectStructuredSubjectCreationDialogModel({
       classScope: null,
     })).toEqual({
-      title: '新增 subject',
-      description: '先选择 class 再新增 subject。',
+      title: '新增一行',
+      description: '先选一个类型再新增一行。',
       subjectInputLabel: 'Subject',
       cancelLabel: '取消',
       submitLabel: '创建条目审批',

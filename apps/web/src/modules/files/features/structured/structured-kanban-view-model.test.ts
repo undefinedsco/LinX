@@ -15,6 +15,7 @@ import {
   projectStructuredKanbanNativeDragStarted,
   projectStructuredKanbanMoveTargets,
   projectStructuredKanbanSourceModel,
+  buildKanbanCardFactLines,
 } from './structured-kanban-view-model'
 
 const projection: StructuredTableProjection = {
@@ -57,11 +58,11 @@ describe('structured-kanban-view-model', () => {
     expect(model.kanban.columns.map((column) => column.id)).toEqual(['Todo', 'Done'])
     expect(model.hasColumns).toBe(true)
     expect(model.hasPredicateOptions).toBe(true)
-    expect(model.groupLabel).toBe('按 status 分组')
+    expect(model.groupLabel).toBe('按“status”分组')
     expect(model.groupTriggerLabel).toBe('status')
     expect(model.chrome).toEqual({
-      emptyStateMessage: '没有可投影到 Kanban 的 subject。',
-      groupPredicateButtonAriaLabel: 'Kanban 分组 predicate',
+      emptyStateMessage: '这张表里还没有卡片。',
+      groupPredicateButtonAriaLabel: '看板分组',
     })
     expect(model.predicateOptions).toEqual([
       { predicate: 'status', label: 'status' },
@@ -80,7 +81,7 @@ describe('structured-kanban-view-model', () => {
     const cardBySubject = projectStructuredKanbanCardBySubject(displayColumns)
 
     expect(displayColumns.map((column) => column.cardCountLabel)).toEqual(['2', '1'])
-    expect(displayColumns.map((column) => column.ariaLabel)).toEqual(['Kanban column Todo', 'Kanban column Done'])
+    expect(displayColumns.map((column) => column.ariaLabel)).toEqual(['看板列 Todo', '看板列 Done'])
     expect(displayColumns[0]?.cardSubjects).toEqual(['#a', '#b'])
     expect(displayColumns[0]?.cards[0]).toMatchObject({
       openAriaLabel: '打开 subject #a',
@@ -212,5 +213,28 @@ describe('structured-kanban-view-model', () => {
       dragOverColumnId: null,
     })
     expect(projectStructuredKanbanNativeDragCleared()).toEqual(initialState)
+  })
+})
+
+describe('kanban lane customization and card fields', () => {
+  it('adds empty lanes by name and renames lanes without touching values', () => {
+    const model = projectStructuredKanbanSourceModel({
+      projection,
+      groupPredicate: 'status',
+      kanbanOrder: {},
+      extraLanes: ['待定'],
+      laneLabels: { Todo: '要做' },
+    })
+    const ids = model.kanban.columns.map((column) => column.id)
+    expect(ids).toContain('待定')
+    const lane = model.kanban.columns.find((column) => column.id === '待定')
+    expect(lane).toMatchObject({ label: '待定', value: '"待定"', cards: [] })
+    expect(model.kanban.columns.find((column) => column.id === 'Todo')?.label).toBe('要做')
+  })
+
+  it('builds 属性：值 lines for the chosen card fields', () => {
+    const facts = buildKanbanCardFactLines(projection.rows, ['status'])
+    expect(facts.get('#a')).toEqual(['status：Todo'])
+    expect(buildKanbanCardFactLines(projection.rows, []).size).toBe(0)
   })
 })

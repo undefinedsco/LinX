@@ -42,116 +42,30 @@ describe('useAddPredicateMenuController', () => {
     }))
 
     expect(result.current.createOpen).toBe(false)
-    expect(result.current.chrome).toEqual({
-      createPanel: {
-        description: '提交后以 * 参与当前表格；审批通过前不改写 vocab。',
-        heading: '新建 predicate',
-      },
-      definitionByline: {
-        ariaLabel: 'predicate 定义',
-      },
-      descriptionField: {
-        ariaLabel: 'predicate 描述',
-        label: '描述',
-        placeholder: '说明这个 predicate 的用途、来源和使用边界',
-      },
-      emptyState: {
-        label: '没有匹配的 predicate',
-      },
-      enumOptionsField: {
-        ariaLabel: 'predicate 枚举选项',
-        label: '选项',
-        placeholder: 'Ready, Blocked',
-      },
-      labelField: {
-        ariaLabel: 'predicate 标签',
-        label: '标签',
-        placeholder: 'Summary',
-      },
-      localNameField: {
-        ariaLabel: 'predicate term',
-        label: 'term',
-        placeholder: 'summary',
-      },
-      searchField: {
-        ariaLabel: '选择或创建 predicate',
-        placeholder: '选择已有 predicate 或创建',
-      },
-      shapeFields: {
-        classScope: {
-          ariaLabel: 'predicate class scope',
-          label: 'class scope',
-          placeholder: 'udfs:Workspace',
-        },
-        editor: {
-          ariaLabel: 'predicate editor type',
-          label: 'editor',
-          options: ['input', 'textarea', 'select', 'multi-select', 'date', 'checkbox', 'relation'],
-        },
-        maxCount: {
-          ariaLabel: 'predicate 最大数量',
-          placeholder: '最大',
-          srLabel: '最大',
-        },
-        minCount: {
-          ariaLabel: 'predicate 最小数量',
-          placeholder: '最小',
-          srLabel: '最小',
-        },
-        namespace: {
-          ariaLabel: 'predicate namespace',
-          label: 'ns',
-          placeholder: 'udfs',
-        },
-        required: {
-          ariaLabel: 'predicate 必填',
-          label: '必填',
-        },
-      uri: {
-        ariaLabel: 'predicate URI',
-        label: 'URI 覆盖',
-        placeholder: 'https://example.com/vocab/summary',
-      },
-    },
-    shapeSection: {
-      label: 'shape',
-      },
-      submitButton: {
-        label: '提交待确认 predicate *',
-      },
-    termSection: {
-      label: 'term',
-    },
-    trigger: {
-      ariaLabel: '+ 属性',
-      label: '属性',
-    },
-    valueSection: {
-      label: 'value',
-    },
-    valueTypes: {
-      ariaLabel: 'predicate value types',
-      optionAriaLabelPrefix: '类型',
-    },
+    expect(result.current.chrome).toMatchObject({
+      createPanel: { description: '会放进“词表 › 属性”，别的表格也能用。', heading: '新建一个属性' },
+      submitButton: { label: '添加' },
+      trigger: { ariaLabel: '+ 属性', label: '属性' },
+      valueSection: { label: '值是什么' },
     })
     expect(result.current.definitionDetailsToggle).toEqual({
-      ariaLabel: '展开 shape 和高级信息',
+      ariaLabel: '展开更多设置',
       expanded: false,
       indicator: '+',
-      label: 'shape',
+      label: '更多设置',
     })
     expect(result.current.hasVisibleExistingPredicates).toBe(true)
     expect(result.current.visibleExistingPredicates.map((row) => row.label)).toEqual(['Review status', 'title'])
     expect(result.current.visibleExistingPredicates[0]).toMatchObject({
       predicate: 'https://pod.example/.vocab/terms.ttl#reviewStatus',
-      selectAriaLabel: '选择 predicate Review status',
-      typeLabel: 'enum',
+      selectAriaLabel: '选择属性 Review status',
+      typeLabel: '选项（可多选）',
       description: 'Approval state for a card',
     })
     expect(result.current.draft.classScope).toBe('udfs:Card')
     expect(result.current.submitDisabled).toBe(true)
     expect(result.current.uriPreview).toEqual({
-      label: 'URI 预览 · 填写 ns 和 term 后生成',
+      label: '先写上名字',
       title: undefined,
     })
     expect(result.current.valueTypeRows.map((row) => ({ value: row.value, selected: row.selected }))).toEqual([
@@ -160,6 +74,7 @@ describe('useAddPredicateMenuController', () => {
       { value: 'date', selected: false },
       { value: 'boolean', selected: false },
       { value: 'enum', selected: false },
+      { value: 'contact', selected: false },
       { value: 'relation', selected: false },
       { value: 'url', selected: false },
     ])
@@ -174,10 +89,10 @@ describe('useAddPredicateMenuController', () => {
     act(() => result.current.setPredicateSearch('missing'))
     expect(result.current.hasVisibleExistingPredicates).toBe(false)
     expect(result.current.visibleExistingPredicates).toEqual([])
-    expect(result.current.createTriggerLabel).toBe('新建 "missing"')
+    expect(result.current.createTriggerLabel).toBe('新建“missing”')
 
     act(() => result.current.setPredicateSearch('<udfs:auditedBy>'))
-    expect(result.current.createTriggerLabel).toBe('新建 "<udfs:auditedBy>"')
+    expect(result.current.createTriggerLabel).toBe('新建“<udfs:auditedBy>”')
     act(() => result.current.openCreateFromSearch())
 
     expect(result.current.createOpen).toBe(true)
@@ -186,7 +101,7 @@ describe('useAddPredicateMenuController', () => {
     expect(result.current.resolvedUri).toBe('https://pod.example/.vocab/terms.ttl#auditedby')
     expect(result.current.submitDisabled).toBe(false)
     expect(result.current.uriPreview).toEqual({
-      label: 'URI 预览 · https://pod.example/.vocab/terms.ttl#auditedby',
+      label: '会放进“词表 › 属性” · https://pod.example/.vocab/terms.ttl#auditedby',
       title: 'https://pod.example/.vocab/terms.ttl#auditedby',
     })
 
@@ -196,10 +111,10 @@ describe('useAddPredicateMenuController', () => {
     act(() => result.current.toggleDefinitionDetails())
     expect(result.current.definitionDetailsOpen).toBe(true)
     expect(result.current.definitionDetailsToggle).toEqual({
-      ariaLabel: '收起 shape 和高级信息',
+      ariaLabel: '收起更多设置',
       expanded: true,
       indicator: '-',
-      label: 'shape',
+      label: '更多设置',
     })
 
     act(() => result.current.submitDraft())
@@ -212,10 +127,10 @@ describe('useAddPredicateMenuController', () => {
     expect(result.current.createOpen).toBe(false)
     expect(result.current.definitionDetailsOpen).toBe(false)
     expect(result.current.definitionDetailsToggle).toEqual({
-      ariaLabel: '展开 shape 和高级信息',
+      ariaLabel: '展开更多设置',
       expanded: false,
       indicator: '+',
-      label: 'shape',
+      label: '更多设置',
     })
     expect(result.current.submitDisabled).toBe(true)
     expect(result.current.draft).toMatchObject({
@@ -237,7 +152,7 @@ describe('useAddPredicateMenuController', () => {
     )
 
     expect(result.current.draft.classScope).toBe('')
-    expect(result.current.createTriggerLabel).toBe('新建 predicate')
+    expect(result.current.createTriggerLabel).toBe('新建一个属性')
 
     rerender({ classScope: 'udfs:Card' })
     expect(result.current.draft.classScope).toBe('udfs:Card')

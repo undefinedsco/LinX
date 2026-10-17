@@ -9,12 +9,15 @@ import {
   useOpenFileEntry,
   type FileNameSearchEntry,
 } from '@/modules/files/features/search/file-name-search'
+import { useFilesBodySearch, useOpenBodyHit, type FilesBodyHit } from '@/modules/files/features/search/useFilesBodySearch'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { useFilesStore } from '@/modules/files/app/store'
 import { useChatStore } from '../../store'
 import { useChatList } from '../../collections'
 
 const SECTION_LIMIT = 5
+const NAME_HIT_LIMIT = 4
+const BODY_HIT_LIMIT = 3
 
 export interface GlobalSearchChatHit { id: string; title: string; preview: string | null }
 export interface GlobalSearchContactHit { id: string; name: string; kind: 'person' | 'assistant' | 'group' }
@@ -37,6 +40,8 @@ export function useGlobalSearch(query: string) {
   const contactQuery = useLiveQuery(contactCollection)
   const fileSearch = useFileNameSearch(isOnline ? query : '')
   const openFileEntry = useOpenFileEntry()
+  const bodySearch = useFilesBodySearch(query)
+  const openBodyHit = useOpenBodyHit()
   const [openError, setOpenError] = useState<string | null>(null)
 
   const chats = useMemo<GlobalSearchChatHit[]>(() => (
@@ -63,7 +68,13 @@ export function useGlobalSearch(query: string) {
       : []
   ), [active, contactQuery.data, term])
 
-  const files = useMemo(() => fileSearch.results.slice(0, SECTION_LIMIT), [fileSearch.results])
+  // Files found by name first; then files whose text matched (a file found both ways shows once).
+  const bodyOnlyHits = useMemo<FilesBodyHit[]>(() => {
+    const byName = new Set(fileSearch.results.map((entry) => entry.uri))
+    return bodySearch.hits.filter((hit) => !byName.has(hit.uri))
+  }, [bodySearch.hits, fileSearch.results])
+  const files = useMemo(() => fileSearch.results.slice(0, NAME_HIT_LIMIT), [fileSearch.results])
+  const bodyFiles = useMemo(() => bodyOnlyHits.slice(0, BODY_HIT_LIMIT), [bodyOnlyHits])
 
   const openChat = useCallback((chatId: string) => selectChat(chatId), [selectChat])
   const openContact = useCallback(async (hit: GlobalSearchContactHit) => {
@@ -89,17 +100,21 @@ export function useGlobalSearch(query: string) {
     chats,
     contacts,
     files,
+    bodyFiles,
     fileSearch: {
       isLoading: fileSearch.isLoading,
       isError: fileSearch.isError,
-      total: fileSearch.results.length,
+      total: fileSearch.results.length + bodyOnlyHits.length,
+      shown: files.length + bodyFiles.length,
+      coverageNote: bodySearch.note,
       retry: fileSearch.retry,
     },
-    isEmpty: chats.length + contacts.length + files.length === 0 && !fileSearch.isLoading,
+    isEmpty: chats.length + contacts.length + files.length + bodyFiles.length === 0 && !fileSearch.isLoading,
     openError,
     openChat,
     openContact,
     openFile,
+    openBodyHit,
     viewAllFiles,
   }
 }

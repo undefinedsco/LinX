@@ -16,6 +16,7 @@ describe('Files add menu model', () => {
     expect(model.destinationLabel).toBe('添加到 https://pod.example/public/docs/')
     expect(model.actions.map(({ id, label }) => ({ id, label }))).toEqual([
       { id: 'create-document', label: '新建文档' },
+      { id: 'create-table', label: '新建表格' },
       { id: 'create-folder', label: '新建文件夹' },
       { id: 'upload-files', label: '上传文件' },
       { id: 'upload-folder', label: '上传文件夹' },

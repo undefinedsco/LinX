@@ -38,6 +38,8 @@ export function useStructuredKanbanViewController({
   kanbanOrder,
   laneOrder = [],
   initialCollapsedLaneIds = [],
+  extraLanes,
+  laneLabels,
   onColumnOrderChange,
   onLaneOrderChange,
   onCollapsedLaneIdsChange,
@@ -50,6 +52,8 @@ export function useStructuredKanbanViewController({
   kanbanOrder: Record<string, string[]>
   laneOrder?: string[]
   initialCollapsedLaneIds?: string[]
+  extraLanes?: string[]
+  laneLabels?: Record<string, string>
   onColumnOrderChange: (columnId: string, subjects: string[]) => void
   onLaneOrderChange?: (laneOrder: string[]) => void
   onCollapsedLaneIdsChange?: (collapsedLaneIds: string[]) => void
@@ -69,8 +73,10 @@ export function useStructuredKanbanViewController({
       groupPredicate,
       kanbanOrder,
       projection,
+      extraLanes,
+      laneLabels,
     }),
-    [groupPredicate, kanbanOrder, projection],
+    [extraLanes, groupPredicate, kanbanOrder, laneLabels, projection],
   )
   const move = useStructuredKanbanMoveController({
     documentUri,

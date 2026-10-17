@@ -501,6 +501,7 @@ function threadItemToMessageRecord(item: ThreadItem): {
   if (item.type === 'user_message') {
     const hasExtendedState = Array.isArray(item.attachments) && item.attachments.length > 0
       || Boolean(item.inference_options && Object.keys(item.inference_options).length > 0)
+      || Boolean((item as any).citation)
       || hasConversationMetadata
     return {
       content: (item as any).content

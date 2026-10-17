@@ -65,18 +65,18 @@ export function GlobalSearchResults({ query }: { query: string }) {
           </Section>
         ) : null}
 
-        {search.isOnline && (search.files.length > 0 || search.fileSearch.isLoading || search.fileSearch.isError) ? (
+        {(search.isOnline && (search.files.length > 0 || search.fileSearch.isLoading || search.fileSearch.isError)) || search.bodyFiles.length > 0 ? (
           <Section
-            title="文件"
+            title="文件与卡片"
             footer={search.fileSearch.isError ? (
               <span>
                 文件这次没搜成功
                 <button type="button" className="ml-2 text-primary hover:underline" onClick={search.fileSearch.retry}>重试</button>
               </span>
-            ) : search.fileSearch.isLoading ? '正在搜文件名…' : (
+            ) : (
               <>
-                文件只按名称搜索，不搜正文。
-                {search.fileSearch.total > search.files.length ? (
+                {search.fileSearch.isLoading ? '正在搜文件名…' : search.fileSearch.coverageNote}
+                {search.fileSearch.total > search.fileSearch.shown ? (
                   <button type="button" className="ml-2 text-primary hover:underline" onClick={search.viewAllFiles}>
                     查看全部 {search.fileSearch.total} 个
                   </button>
@@ -93,6 +93,15 @@ export function GlobalSearchResults({ query }: { query: string }) {
                 onClick={() => search.openFile(entry)}
               />
             ))}
+            {search.bodyFiles.map((hit) => (
+              <Row
+                key={`body:${hit.uri}`}
+                icon={<FileText className="h-4 w-4" />}
+                title={hit.title}
+                subtitle={`${hit.snippet}  ·  ${hit.reason}`}
+                onClick={() => search.openBodyHit(hit)}
+              />
+            ))}
           </Section>
         ) : null}
 
@@ -101,7 +110,7 @@ export function GlobalSearchResults({ query }: { query: string }) {
         {search.isEmpty ? (
           <div className="px-4 py-10 text-center">
             <p className="text-sm text-foreground">没有找到“{trimmed}”</p>
-            <p className="mt-1 text-xs text-muted-foreground">搜了会话、联系人和文件名；文件正文不在搜索范围里</p>
+            <p className="mt-1 text-xs text-muted-foreground">搜了会话、联系人、文件名和已建索引的文件正文</p>
           </div>
         ) : null}
       </div>

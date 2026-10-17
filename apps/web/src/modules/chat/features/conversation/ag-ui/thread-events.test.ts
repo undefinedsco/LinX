@@ -65,6 +65,19 @@ describe('ChatKit stream → AG-UI', () => {
     expect(sources.content.sources[0].uri).toBe('https://example.com/a')
   })
 
+  it('shows a file LinX edited as a file message so keep / undo sits under it', () => {
+    const FILE = 'https://alice.example/docs/plan.md'
+    const done = {
+      id: 'tool-1', thread_id: 't1', type: 'client_tool_call', name: 'files_edit', call_id: 'c1',
+      arguments: { uri: FILE, content: 'x' }, output: '已作为未确认草稿，等用户保留。', status: 'completed', created_at: 1,
+    } as unknown as ThreadItem
+    const events = translate([{ type: 'thread.item.done', item: done }])
+    const card = events.find((event) => event.type === 'ACTIVITY_SNAPSHOT') as { content: unknown } | undefined
+    expect(JSON.stringify(card?.content)).toContain(FILE)
+    const other = { ...done, name: 'read_file' } as unknown as ThreadItem
+    expect(translate([{ type: 'thread.item.done', item: other }]).some((event) => event.type === 'ACTIVITY_SNAPSHOT')).toBe(false)
+  })
+
   it('ends with a run error when the stream reports one', () => {
     const translator = new ThreadEventTranslator({ threadUri: THREAD, runId: 'r', resolveItemUri: (id) => id })
     const out = [...translator.start(), ...translator.push({ type: 'error', error: { code: 'x', message: '没连上' } } as ThreadStreamEvent)]

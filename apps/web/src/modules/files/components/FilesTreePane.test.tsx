@@ -88,6 +88,18 @@ vi.mock('../data/queries/agent-name-queries', () => ({
   useFilesAgentNames: () => ({ main: 'LinX 助手', helper: 'Reviewer' }),
 }))
 
+const bodySearchFixture = vi.hoisted(() => ({ hits: [] as Array<Record<string, unknown>> }))
+vi.mock('../features/search/useFilesBodySearch', () => ({
+  useFilesBodySearch: (query: string) => ({
+    active: query.trim().length > 0,
+    hits: query.trim() ? bodySearchFixture.hits : [],
+    note: null,
+    isIndexing: false,
+    coverage: null,
+  }),
+  useOpenBodyHit: () => () => {},
+}))
+
 vi.mock('../features/add/FilesAddMenu', () => ({
   FilesAddMenu: ({
     containerUri,
@@ -311,6 +323,26 @@ describe('FilesTreePane', () => {
 
     expect(screen.queryByText('没有匹配“missing”的资源')).not.toBeInTheDocument()
     expect(screen.getByText('我的空间')).toBeInTheDocument()
+  })
+
+  it('lists matches inside file text under the name matches, without the empty hint', () => {
+    bodySearchFixture.hits = [{
+      uri: 'https://pod.example/notes/meeting.md',
+      title: '会议纪要',
+      snippet: '第二项：向日葵计划下周启动',
+      matched: '向日葵',
+      reason: '正文',
+      line: 5,
+      quote: '向日葵计划下周启动',
+    }]
+    try {
+      renderTreePane()
+      fireEvent.change(screen.getByRole('textbox', { name: '搜索文件树' }), { target: { value: '向日葵' } })
+      expect(screen.getByRole('region', { name: '正文里的结果' })).toHaveTextContent('会议纪要')
+      expect(screen.queryByText('没有匹配“向日葵”的资源')).not.toBeInTheDocument()
+    } finally {
+      bodySearchFixture.hits = []
+    }
   })
 
   it('targets the selected container with the add menu', () => {

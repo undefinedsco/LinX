@@ -9,6 +9,7 @@ import { useAui, useAuiState } from '@assistant-ui/react'
 import { ASK_LINX_MAX_AGE_MS, useAskLinx, type PendingAskLinx } from '@/lib/ask-linx'
 import { useCardDialog } from '@/lib/card-dialog'
 import { LINX_DEFAULT_SECRETARY } from '../../collections'
+import { setComposerCitation } from '../../domain/message-citation'
 
 export interface ComposerCitation {
   label: string
@@ -42,6 +43,10 @@ export function useAskLinxIntoComposer(chatId: string): ComposerCitation | null 
     const composer = aui.composer()
     composer.setText(mergeAskIntoDraft(composer.getState().text, pending.text))
     setSource(pending.sourceUri ? { sourceUri: pending.sourceUri, locator: pending.locator, title: pending.title } : null)
+    // The send takes this as structured context (message `citation`), not only the quoted text.
+    setComposerCitation(pending.sourceUri
+      ? { sourceUri: pending.sourceUri, locator: pending.locator, title: pending.title }
+      : null)
     // Focus once the text is in, with the caret after the quote.
     window.requestAnimationFrame(() => {
       const input = document.querySelector<HTMLTextAreaElement>('[data-testid="conversation-surface"] textarea[aria-label="消息"]')
@@ -54,10 +59,14 @@ export function useAskLinxIntoComposer(chatId: string): ComposerCitation | null 
   // The chip belongs to the message being written: sending it (or switching chats) ends it.
   const sentCount = useAuiState((state) => state.thread.messages.length)
   useEffect(() => setSource(null), [chatId, sentCount])
+  useEffect(() => () => setComposerCitation(null), [chatId])
 
   const sourceUri = source?.sourceUri
   const locator = source?.locator
-  const remove = useCallback(() => setSource(null), [])
+  const remove = useCallback(() => {
+    setSource(null)
+    setComposerCitation(null)
+  }, [])
   if (!source || !sourceUri) return null
   return {
     label: citationLabel(source),

@@ -53,6 +53,7 @@ import {
   type AutoJudgeWindows,
 } from '@linx/agent-runtime/auto-judge'
 import { grantAppliesToAgent, writeGrantAgentContext } from '../domain/grant-agent'
+import { grantShapeForApproval, isFileEditApproval, proposalResourceOfApproval, readProposalFileTarget } from '../domain/grant-shape'
 import { approvalAutoPhase } from '../domain/auto-judge-view'
 import type { InboxItem, InboxItemCategory, InboxItemKind } from '../domain/inbox-item'
 
@@ -710,15 +711,18 @@ export const inboxOps = {
     userWebId: string
     highImpactConfirmed: boolean
     agentIri?: string | null
+    /** The file a file-edit approval touches, when the caller knows it (see domain/grant-shape.ts). */
+    fileTarget?: string | null
   }): Promise<GrantRow> {
     const db = getDb()
     if (!db) throw new Error('Database not connected')
     const now = new Date()
-    const target = input.approval.target.split('#', 1)[0] || input.approval.target
+    const shape = grantShapeForApproval(input.approval, input.fileTarget)
+    const target = shape.target.split('#', 1)[0] || shape.target
     const payload = {
       id: crypto.randomUUID(),
       target,
-      action: input.approval.action,
+      action: shape.action,
       effect: 'allow',
       title: input.approval.toolName,
       riskCeiling: input.approval.risk,
@@ -887,6 +891,19 @@ export async function continueRuntimeAfterApproval(input: {
   }
 }
 
+/** The file a proposal approval is about, read from the stored proposal; null when unknown. */
+export async function readApprovalFileTarget(approval: ApprovalRow, authFetch: typeof fetch): Promise<string | null> {
+  if (!isFileEditApproval(approval)) return null
+  const proposal = proposalResourceOfApproval(approval)
+  if (!proposal) return null
+  try {
+    const response = await authFetch(proposal, { headers: { Accept: 'text/turtle' } })
+    return response.ok ? readProposalFileTarget(await response.text()) : null
+  } catch {
+    return null
+  }
+}
+
 export function useResolveInboxApproval() {
   const { session } = useSession()
   const { db } = useSolidDatabase()
@@ -897,7 +914,13 @@ export function useResolveInboxApproval() {
       decision: 'approved' | 'rejected'
       reason?: string
       /** "以后这类交给 LinX 判断": also grant this kind of request. */
-      grant?: { highImpactConfirmed: boolean; /** Assistant the grant is for; defaults to the one handling the request. */ agentIri?: string | null }
+      grant?: {
+        highImpactConfirmed: boolean
+        /** Assistant the grant is for; defaults to the one handling the request. */
+        agentIri?: string | null
+        /** The file a file-edit approval touches; read from the proposal when omitted. */
+        fileTarget?: string | null
+      }
     }) => {
       const actorWebId = session.info.webId
       if (!actorWebId) {
@@ -912,7 +935,9 @@ export function useResolveInboxApproval() {
       })
 
       if (input.grant && input.decision === 'approved') {
+        const fileTarget = input.grant.fileTarget ?? await readApprovalFileTarget(input.approval, session.fetch)
         await inboxOps.createGrantFromApproval({
+          fileTarget,
           approval: input.approval,
           userWebId: actorWebId,
           highImpactConfirmed: input.grant.highImpactConfirmed,
@@ -931,3 +956,4 @@ export function useResolveInboxApproval() {
     },
   })
 }
+export { grantShapeForApproval } from '../domain/grant-shape'

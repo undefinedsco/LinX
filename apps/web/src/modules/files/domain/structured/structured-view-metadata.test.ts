@@ -96,6 +96,9 @@ describe('structured view metadata model', () => {
         doing: ['#b', '#a', '#b', ''],
         done: 'not an array',
       },
+      laneLabels: { doing: ' 进行中 ', done: '', bad: 3 },
+      extraLanes: ['待定', '待定', 5],
+      cardFields: ['p1', 'p1'],
     }, {
       todo: ['#legacy'],
     })).toEqual({
@@ -106,6 +109,9 @@ describe('structured view metadata model', () => {
       cardOrder: {
         doing: ['#b', '#a'],
       },
+      laneLabels: { doing: '进行中' },
+      extraLanes: ['待定'],
+      cardFields: ['p1'],
     })
 
     expect(normalizeStructuredKanbanBoardMetadata({ version: 99 }, {
@@ -118,6 +124,9 @@ describe('structured view metadata model', () => {
       cardOrder: {
         todo: ['#legacy'],
       },
+      laneLabels: {},
+      extraLanes: [],
+      cardFields: [],
     })
   })
 

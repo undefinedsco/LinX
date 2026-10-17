@@ -165,7 +165,10 @@ beforeAll(() => {
   vi.stubGlobal('DOMMatrixReadOnly', TestDOMMatrixReadOnly)
 })
 
+const { emptyWhiteboardSpace } = vi.hoisted(() => ({ emptyWhiteboardSpace: { rows: [], boardsByCard: new Map(), rowByUri: new Map(), loading: false } }))
+
 vi.mock('../data/queries', () => ({
+  useWhiteboardSpace: () => emptyWhiteboardSpace,
   useFileDetail: (...args: unknown[]) => mockUseFileDetail(...args),
   useFilesFavoriteList: () => mockUseFavoriteList(),
   filesFavoriteHooks: {
@@ -3860,7 +3863,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('columnheader', { name: 'rdf:type' })).not.toBeInTheDocument()
     expect(screen.queryByText(/@prefix udfs/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ 视图' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Kanban' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '看板' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ 属性' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('cell', { name: 'tags' }))
@@ -4360,7 +4363,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
     const chooseClassScope = async (className: string) => {
       await act(async () => {
-        fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+        fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
       })
       const displayName = className.includes(':') ? className.split(':').pop()! : className
       await act(async () => {
@@ -4388,7 +4391,7 @@ describe('FileDetailPane', () => {
     }
 
     expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
-    const classScopeButton = screen.getByRole('button', { name: '当前 class：Workspace' })
+    const classScopeButton = screen.getByRole('button', { name: '当前类型：Workspace' })
     expect(classScopeButton).toBeInTheDocument()
     expect(within(classScopeButton).queryByText('Workspace')).not.toBeInTheDocument()
     expect(screen.getByText(/4 行 · \d+ predicate/)).toBeInTheDocument()
@@ -4420,7 +4423,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('columnheader', { name: /status/i })).not.toBeInTheDocument()
     await chooseStructuredFilterItem('全部词表定义')
     expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '+ 视图' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '预览' })).not.toBeInTheDocument()
@@ -4438,7 +4441,7 @@ describe('FileDetailPane', () => {
     expect(structuredTableTools).toBeInTheDocument()
     expect(structuredTableTools).toHaveAttribute('data-control-surface', 'byline-tools')
     expect(structuredTableTools).toHaveClass('contents')
-    expect(screen.queryByRole('button', { name: 'Kanban' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '看板' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'class' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'rdf:type' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'report.md' })).toBeInTheDocument()
@@ -4630,7 +4633,7 @@ describe('FileDetailPane', () => {
     })
 
     await chooseClassScope('udfs:Workspace')
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('button', { name: '定义' }))
     await waitFor(() => {
       expect(screen.getByText('描述：Personal workspace class.')).toBeInTheDocument()
@@ -4946,14 +4949,14 @@ describe('FileDetailPane', () => {
     expect(mockMutateRaw).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: '+ 属性' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '+ 卡片' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'class' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'report.md' })).toBeInTheDocument()
 
     mockWriteOwnStructuredCellChange.mockClear()
     fireEvent.click(screen.getByRole('button', { name: '+ 卡片' }))
 
-    const createSubjectDialog = screen.getByRole('dialog', { name: '新增 subject' })
+    const createSubjectDialog = screen.getByRole('dialog', { name: '新增一行' })
     expect(within(createSubjectDialog).getByText('udfs:Workspace')).toBeInTheDocument()
     const subjectInput = within(createSubjectDialog).getByLabelText('Subject')
     expect(subjectInput).toHaveValue('#NewSubject')
@@ -4977,62 +4980,62 @@ describe('FileDetailPane', () => {
 
     const addPredicateMenu = screen.getByRole('menu')
     expect(within(addPredicateMenu).queryByText('Existing Predicates')).not.toBeInTheDocument()
-    expect(within(addPredicateMenu).getByPlaceholderText('选择已有 predicate 或创建')).toBeInTheDocument()
-    expect(within(addPredicateMenu).getByRole('button', { name: '新建 predicate' })).toBeInTheDocument()
-		    fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '新建 predicate' }))
-				    expect(screen.getByLabelText('predicate 定义')).toBeInTheDocument()
-				    expect(screen.getAllByText('term').length).toBeGreaterThan(0)
-				    expect(screen.getAllByText('value').length).toBeGreaterThan(0)
-				    expect(screen.getByText('标签')).toBeInTheDocument()
-				    expect(screen.getByText('描述')).toBeInTheDocument()
-				    expect(screen.queryByLabelText('predicate namespace')).not.toBeInTheDocument()
-				    expect(screen.queryByLabelText('predicate URI')).not.toBeInTheDocument()
+    expect(within(addPredicateMenu).getByPlaceholderText('从词表里找，或直接输入新名字')).toBeInTheDocument()
+    expect(within(addPredicateMenu).getByRole('button', { name: '新建一个属性' })).toBeInTheDocument()
+		    fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '新建一个属性' }))
+				    expect(screen.getByLabelText('属性定义')).toBeInTheDocument()
+				    expect(screen.getAllByText('名字').length).toBeGreaterThan(0)
+				    expect(screen.getAllByText('值是什么').length).toBeGreaterThan(0)
+				    expect(screen.getByText('名字', { selector: 'span' })).toBeInTheDocument()
+				    expect(screen.getByText('说明')).toBeInTheDocument()
+				    expect(screen.queryByLabelText('命名空间')).not.toBeInTheDocument()
+				    expect(screen.queryByLabelText('指定地址')).not.toBeInTheDocument()
 				    expect(screen.getByRole('button', { name: '类型 text' })).toHaveAttribute('aria-pressed', 'true')
 				    expect(screen.getByRole('button', { name: '类型 relation' })).toHaveAttribute('aria-pressed', 'false')
-		    expect(screen.queryByLabelText('predicate 最小数量')).not.toBeInTheDocument()
-		    expect(screen.queryByLabelText('predicate editor type')).not.toBeInTheDocument()
-		    expect(screen.getByRole('button', { name: '展开 shape 和高级信息' })).toBeInTheDocument()
-		    fireEvent.click(screen.getByRole('button', { name: '展开 shape 和高级信息' }))
-					    expect(screen.getAllByText('shape').length).toBeGreaterThan(0)
-					    expect(screen.getByText('URI 覆盖')).toBeInTheDocument()
-					    expect(screen.getByText('class scope')).toBeInTheDocument()
-		    expect(screen.getByText('ns')).toBeInTheDocument()
-		    expect(screen.getByLabelText('predicate class scope')).toHaveValue('udfs:Workspace')
+		    expect(screen.queryByLabelText('最少几个值')).not.toBeInTheDocument()
+		    expect(screen.queryByLabelText('填写方式')).not.toBeInTheDocument()
+		    expect(screen.getByRole('button', { name: '展开更多设置' })).toBeInTheDocument()
+		    fireEvent.click(screen.getByRole('button', { name: '展开更多设置' }))
+					    expect(screen.getAllByText('更多设置').length).toBeGreaterThan(0)
+					    expect(screen.getByText('指定地址')).toBeInTheDocument()
+					    expect(screen.getByText('适用的类型')).toBeInTheDocument()
+		    expect(screen.getByText('命名空间')).toBeInTheDocument()
+		    expect(screen.getByLabelText('适用的类型')).toHaveValue('udfs:Workspace')
 		    expect(screen.getByText('必填')).toBeInTheDocument()
-		    expect(screen.getByText('最小')).toBeInTheDocument()
-	    expect(screen.getByText('最大')).toBeInTheDocument()
-	    expect(screen.getByText('editor')).toBeInTheDocument()
-	    expect(screen.getByText('描述')).toBeInTheDocument()
-    expect(screen.getByText('提交后以 * 参与当前表格；审批通过前不改写 vocab。')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('predicate namespace'), {
+		    expect(screen.getByText('最少')).toBeInTheDocument()
+	    expect(screen.getByText('最多')).toBeInTheDocument()
+	    expect(screen.getByText('填写方式')).toBeInTheDocument()
+	    expect(screen.getByText('说明')).toBeInTheDocument()
+    expect(screen.getByText('会放进“词表 › 属性”，别的表格也能用。')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('命名空间'), {
       target: { value: 'udfs' },
     })
-    fireEvent.change(screen.getByLabelText('predicate term'), {
+    fireEvent.change(screen.getByLabelText('属性代号'), {
       target: { value: 'summary' },
     })
-    fireEvent.change(screen.getByLabelText('predicate 标签'), {
+    fireEvent.change(screen.getByLabelText('属性名字'), {
       target: { value: 'Summary' },
     })
-    fireEvent.change(screen.getByLabelText('predicate URI'), {
+    fireEvent.change(screen.getByLabelText('指定地址'), {
       target: { value: 'https://undefineds.co/vocab/summary' },
     })
-    fireEvent.change(screen.getByLabelText('predicate class scope'), {
+    fireEvent.change(screen.getByLabelText('适用的类型'), {
       target: { value: 'udfs:Workspace' },
     })
-    fireEvent.change(screen.getByLabelText('predicate 描述'), {
+    fireEvent.change(screen.getByLabelText('属性说明'), {
       target: { value: 'Short note summary shown on cards.' },
     })
-    fireEvent.click(screen.getByLabelText('predicate 必填'))
-    fireEvent.change(screen.getByLabelText('predicate 最小数量'), {
+    fireEvent.click(screen.getByLabelText('必填'))
+    fireEvent.change(screen.getByLabelText('最少几个值'), {
       target: { value: '1' },
     })
-    fireEvent.change(screen.getByLabelText('predicate 最大数量'), {
+    fireEvent.change(screen.getByLabelText('最多几个值'), {
       target: { value: '1' },
     })
-    fireEvent.change(screen.getByLabelText('predicate editor type'), {
+    fireEvent.change(screen.getByLabelText('填写方式'), {
       target: { value: 'textarea' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认 predicate *' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
     expect(screen.getByRole('columnheader', { name: /Summary\*/ })).toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '待确认 predicate Summary' }))
     expect(screen.getByText('待确认 predicate')).toBeInTheDocument()
@@ -5094,14 +5097,14 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('columnheader', { name: /Summary\*/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/pendingPredicate|pending-predicate-uri/i)).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByPlaceholderText('搜索 subject'), {
+    fireEvent.change(screen.getByPlaceholderText('搜索卡片'), {
       target: { value: '"Other"' },
     })
 
     expect(screen.getAllByText('#Other').length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: '#Workspace' })).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByPlaceholderText('搜索 subject'), {
+    fireEvent.change(screen.getByPlaceholderText('搜索卡片'), {
       target: { value: '' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Sort title' }))
@@ -5114,18 +5117,18 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('columnheader', { name: /mode/i })).not.toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
 
-	    expect(screen.getByText('按未分组展示')).toBeInTheDocument()
-	    expect(screen.getByText('Unassigned')).toBeInTheDocument()
+	    expect(screen.getByText('还没有分组，选一个属性来分列')).toBeInTheDocument()
+	    expect(screen.getByText('未分组')).toBeInTheDocument()
     expect(screen.queryByText('active')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Kanban' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '看板' })).toBeInTheDocument()
     expect(screen.queryByTestId('rich-text-file-editor')).not.toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
 
-	    expect(screen.getByText('按 mode 分组')).toBeInTheDocument()
+	    expect(screen.getByText('按“mode”分组')).toBeInTheDocument()
     expect(screen.getByText('read-only')).toBeInTheDocument()
     expect(screen.getByText('read')).toBeInTheDocument()
 
@@ -5153,7 +5156,7 @@ describe('FileDetailPane', () => {
     detailScrollViewport.scrollLeft = 360
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Whiteboard' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '白板' }))
 
     await waitFor(() => {
       expect(whiteboardViewport.scrollLeft).toBe(0)
@@ -5161,16 +5164,16 @@ describe('FileDetailPane', () => {
     })
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     const whiteboardViewMenu = screen.getByRole('menu')
-    expect(within(whiteboardViewMenu).queryByRole('menuitem', { name: 'Whiteboard' })).not.toBeInTheDocument()
-    expect(within(whiteboardViewMenu).queryByRole('menuitem', { name: 'Kanban' })).not.toBeInTheDocument()
-    expect(within(whiteboardViewMenu).getByRole('menuitem', { name: 'Raw' })).toBeInTheDocument()
+    expect(within(whiteboardViewMenu).queryByRole('menuitem', { name: '白板' })).not.toBeInTheDocument()
+    expect(within(whiteboardViewMenu).queryByRole('menuitem', { name: '看板' })).not.toBeInTheDocument()
+    expect(within(whiteboardViewMenu).getByRole('menuitem', { name: '原文' })).toBeInTheDocument()
     fireEvent.keyDown(document.body, { key: 'Escape' })
-    expect(screen.getByRole('button', { name: 'Kanban' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '看板' })).toBeInTheDocument()
 
     expect(screen.getByText('新白板')).toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Raw' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '原文' }))
 
     expect(screen.getByText(/@prefix schema/)).toBeInTheDocument()
 
@@ -5545,7 +5548,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     const classScopeMenu = screen.getByRole('menu')
     expect(within(classScopeMenu).getByRole('menuitem', { name: 'Workspace' })).toBeInTheDocument()
     expect(within(classScopeMenu).queryByRole('menuitem', { name: 'core' })).not.toBeInTheDocument()
@@ -5887,7 +5890,7 @@ describe('FileDetailPane', () => {
     const pendingClassOption = screen.getByRole('menuitem', { name: 'workspace*' })
     fireEvent.click(pendingClassOption)
 
-    expect(screen.getByRole('button', { name: '当前 class：workspace' })).toHaveAttribute('title', 'workspace')
+    expect(screen.getByRole('button', { name: '当前类型：workspace' })).toHaveAttribute('title', 'workspace')
     expect(screen.getByRole('button', { name: '+ 卡片' })).toBeEnabled()
     expect(useFilesStore.getState().structuredClassScope).toMatch(/\.vocab\/terms\.ttl#workspace$/)
   })
@@ -6262,12 +6265,12 @@ describe('FileDetailPane', () => {
     expect(within(addPredicateMenu).getByText('dateModified')).toBeInTheDocument()
     expect(within(addPredicateMenu).getByText('title')).toBeInTheDocument()
 
-    const predicateSearch = within(addPredicateMenu).getByPlaceholderText('选择已有 predicate 或创建')
+    const predicateSearch = within(addPredicateMenu).getByPlaceholderText('从词表里找，或直接输入新名字')
     fireEvent.change(predicateSearch, { target: { value: 'title' } })
-    expect(within(addPredicateMenu).getByRole('button', { name: '选择 predicate title' })).toBeInTheDocument()
-    expect(within(addPredicateMenu).queryByRole('button', { name: '选择 predicate dateModified' })).not.toBeInTheDocument()
+    expect(within(addPredicateMenu).getByRole('button', { name: '选择属性 title' })).toBeInTheDocument()
+    expect(within(addPredicateMenu).queryByRole('button', { name: '选择属性 dateModified' })).not.toBeInTheDocument()
 
-    fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '选择 predicate title' }))
+    fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '选择属性 title' }))
 
     expect(screen.getByRole('columnheader', { name: /title/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
@@ -6359,20 +6362,19 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
 
     const addPredicateMenu = screen.getByRole('menu')
-    const createPredicate = within(addPredicateMenu).getByRole('button', { name: '新建 predicate' })
-    const titlePredicate = within(addPredicateMenu).getByRole('button', { name: '选择 predicate Title' })
+    const createPredicate = within(addPredicateMenu).getByRole('button', { name: '新建一个属性' })
+    const titlePredicate = within(addPredicateMenu).getByRole('button', { name: '选择属性 Title' })
     expect(titlePredicate.compareDocumentPosition(createPredicate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(within(titlePredicate).getByText('text')).toBeInTheDocument()
+    expect(within(titlePredicate).getByText('文字')).toBeInTheDocument()
     expect(within(titlePredicate).getByText('Short display name for the workspace.')).toBeInTheDocument()
     expect(within(addPredicateMenu).getByText('Modified')).toBeInTheDocument()
-    expect(within(addPredicateMenu).getByText('date')).toBeInTheDocument()
-    expect(within(addPredicateMenu).queryByLabelText('predicate namespace')).not.toBeInTheDocument()
+    expect(within(addPredicateMenu).getByText('日期')).toBeInTheDocument()
+    expect(within(addPredicateMenu).queryByLabelText('命名空间')).not.toBeInTheDocument()
 
     fireEvent.click(createPredicate)
 
-    expect(within(addPredicateMenu).queryByLabelText('predicate namespace')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '展开 shape 和高级信息' }))
-    expect(within(addPredicateMenu).getByLabelText('predicate namespace')).toBeInTheDocument()
+    expect(within(addPredicateMenu).queryByLabelText('命名空间')).not.toBeInTheDocument()
+    expect(within(addPredicateMenu).getByLabelText('属性名字')).toBeInTheDocument()
   })
 
   it('renders required vocab schema predicates as editable empty table cells', async () => {
@@ -6531,15 +6533,15 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
-    fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
-    fireEvent.change(screen.getByLabelText('predicate term'), { target: { value: localName } })
-    fireEvent.change(screen.getByLabelText('predicate 标签'), { target: { value: label } })
+    fireEvent.click(screen.getByRole('button', { name: '新建一个属性' }))
+    fireEvent.click(screen.getByRole('button', { name: '展开更多设置' }))
+    fireEvent.change(screen.getByLabelText('属性代号'), { target: { value: localName } })
+    fireEvent.change(screen.getByLabelText('属性名字'), { target: { value: label } })
     fireEvent.click(screen.getByRole('button', { name: `类型 ${predicateType}` }))
-    fireEvent.click(screen.getByRole('button', { name: '展开 shape 和高级信息' }))
-    fireEvent.change(screen.getByLabelText('predicate namespace'), { target: { value: 'schema' } })
-    fireEvent.change(screen.getByLabelText('predicate class scope'), { target: { value: 'udfs:Workspace' } })
-    fireEvent.change(screen.getByLabelText('predicate editor type'), { target: { value: editorType } })
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认 predicate *' }))
+    fireEvent.change(screen.getByLabelText('命名空间'), { target: { value: 'schema' } })
+    fireEvent.change(screen.getByLabelText('适用的类型'), { target: { value: 'udfs:Workspace' } })
+    fireEvent.change(screen.getByLabelText('填写方式'), { target: { value: editorType } })
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
     await waitFor(() => {
       expect(mockCreateInboxApproval).toHaveBeenCalled()
     })
@@ -6600,14 +6602,14 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
-    fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
-    fireEvent.change(screen.getByLabelText('predicate term'), { target: { value: 'status' } })
-    fireEvent.change(screen.getByLabelText('predicate 标签'), { target: { value: 'Status' } })
+    fireEvent.click(screen.getByRole('button', { name: '新建一个属性' }))
+    fireEvent.click(screen.getByRole('button', { name: '展开更多设置' }))
+    fireEvent.change(screen.getByLabelText('属性代号'), { target: { value: 'status' } })
+    fireEvent.change(screen.getByLabelText('属性名字'), { target: { value: 'Status' } })
     fireEvent.click(screen.getByRole('button', { name: '类型 enum' }))
-    fireEvent.click(screen.getByRole('button', { name: '展开 shape 和高级信息' }))
-    fireEvent.change(screen.getByLabelText('predicate editor type'), { target: { value: 'select' } })
-    fireEvent.change(screen.getByLabelText('predicate 枚举选项'), { target: { value: 'Ready, Blocked' } })
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认 predicate *' }))
+    fireEvent.change(screen.getByLabelText('填写方式'), { target: { value: 'select' } })
+    fireEvent.change(screen.getByLabelText('属性选项'), { target: { value: 'Ready, Blocked' } })
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
     await waitFor(() => {
       expect(mockCreateInboxApproval).toHaveBeenCalledWith(expect.objectContaining({
         label: 'Status',
@@ -6684,7 +6686,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('button', { name: '+ 卡片' })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('button', { name: '+ 卡片' }))
-    const createSubjectDialog = screen.getByRole('dialog', { name: '新增 subject' })
+    const createSubjectDialog = screen.getByRole('dialog', { name: '新增一行' })
     expect(within(createSubjectDialog).getByText('udfs:Workspace')).toBeInTheDocument()
     fireEvent.change(within(createSubjectDialog).getByLabelText('Subject'), { target: { value: '#FirstSubject' } })
     fireEvent.click(within(createSubjectDialog).getByRole('button', { name: '创建条目审批' }))
@@ -6879,14 +6881,15 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
-    fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
-    fireEvent.change(screen.getByLabelText('predicate term'), {
+    fireEvent.click(screen.getByRole('button', { name: '新建一个属性' }))
+    fireEvent.click(screen.getByRole('button', { name: '展开更多设置' }))
+    fireEvent.change(screen.getByLabelText('属性代号'), {
       target: { value: 'summary' },
     })
-    fireEvent.change(screen.getByLabelText('predicate 标签'), {
+    fireEvent.change(screen.getByLabelText('属性名字'), {
       target: { value: 'Summary' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认 predicate *' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
     await waitFor(() => {
       expect(mockCreateInboxApproval).toHaveBeenCalled()
     })
@@ -6961,18 +6964,18 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
-    fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
-    fireEvent.change(screen.getByLabelText('predicate term'), {
+    fireEvent.click(screen.getByRole('button', { name: '新建一个属性' }))
+    fireEvent.click(screen.getByRole('button', { name: '展开更多设置' }))
+    fireEvent.change(screen.getByLabelText('属性代号'), {
       target: { value: 'summary' },
     })
-    fireEvent.change(screen.getByLabelText('predicate 标签'), {
+    fireEvent.change(screen.getByLabelText('属性名字'), {
       target: { value: 'Summary' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '展开 shape 和高级信息' }))
-    fireEvent.change(screen.getByLabelText('predicate namespace'), {
+    fireEvent.change(screen.getByLabelText('命名空间'), {
       target: { value: 'schema' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认 predicate *' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
 
     await waitFor(() => {
       expect(mockCreateInboxApproval).toHaveBeenCalledWith(expect.objectContaining({
@@ -7035,18 +7038,18 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
-    fireEvent.click(screen.getByRole('button', { name: '新建 predicate' }))
-    fireEvent.change(screen.getByLabelText('predicate term'), {
+    fireEvent.click(screen.getByRole('button', { name: '新建一个属性' }))
+    fireEvent.click(screen.getByRole('button', { name: '展开更多设置' }))
+    fireEvent.change(screen.getByLabelText('属性代号'), {
       target: { value: 'summary' },
     })
-	    fireEvent.change(screen.getByLabelText('predicate 标签'), {
+	    fireEvent.change(screen.getByLabelText('属性名字'), {
 	      target: { value: 'Summary' },
 	    })
-	    fireEvent.click(screen.getByRole('button', { name: '展开 shape 和高级信息' }))
-	    fireEvent.change(screen.getByLabelText('predicate URI'), {
+	    fireEvent.change(screen.getByLabelText('指定地址'), {
 	      target: { value: 'https://schema.org/summary' },
 	    })
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认 predicate *' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
 
     await waitFor(() => {
       expect(mockCreateInboxApproval).toHaveBeenCalledWith(expect.objectContaining({
@@ -7813,7 +7816,7 @@ describe('FileDetailPane', () => {
 
     vi.useFakeTimers()
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
 
     await vi.advanceTimersByTimeAsync(900)
 
@@ -7865,7 +7868,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
 
     await vi.advanceTimersByTimeAsync(900)
 
@@ -7916,7 +7919,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
 
     await vi.advanceTimersByTimeAsync(900)
 
@@ -7974,7 +7977,7 @@ describe('FileDetailPane', () => {
     vi.useFakeTimers()
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Project' }))
 
     await vi.advanceTimersByTimeAsync(900)
@@ -8318,7 +8321,7 @@ describe('FileDetailPane', () => {
 
     const { rerender } = render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
@@ -8398,7 +8401,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
 
     expect(mockUsePendingStructuredCellChangeProposals).toHaveBeenCalledWith(
@@ -8779,7 +8782,7 @@ describe('FileDetailPane', () => {
     expect(summaryHeaders).toHaveLength(1)
     expect(summaryHeaders[0]).toHaveTextContent('Summary*')
     expect(screen.getByRole('cell', { name: 'Existing' })).toBeInTheDocument()
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     expect(screen.getByText('Note*')).toBeInTheDocument()
     expect(screen.getByText('审批记录已准备')).toBeInTheDocument()
     expect(screen.queryByText('待确认词表变更')).not.toBeInTheDocument()
@@ -8881,7 +8884,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(await screen.findByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /(?:当前类型|选择 class)/ }))
     expect(screen.getByText('Note*')).toBeInTheDocument()
   })
 
@@ -8927,7 +8930,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(await screen.findByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('button', { name: '创建 class' }))
     fireEvent.change(screen.getByLabelText('新 class URI'), { target: { value: 'udfs:Note' } })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
@@ -8988,7 +8991,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
@@ -9042,7 +9045,7 @@ describe('FileDetailPane', () => {
     applyOwnWritesToDocument()
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
@@ -9101,7 +9104,7 @@ describe('FileDetailPane', () => {
     applyOwnWritesToDocument()
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
@@ -9121,7 +9124,7 @@ describe('FileDetailPane', () => {
       useFilesStore.setState({ structuredHiddenPredicates: new Set(['status']) })
     })
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Raw' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '原文' }))
 
     expect(screen.getByRole('heading', { name: '当前视图文本' })).toBeInTheDocument()
     expect(screen.getByText('当前筛选、predicate 可见性和待确认更改后的投影视图。')).toBeInTheDocument()
@@ -9179,7 +9182,7 @@ describe('FileDetailPane', () => {
     })
   })
 
-  it('stages Kanban moves for writable .data grouping predicates through structured cell approvals', async () => {
+  it('stages 看板 moves for writable .data grouping predicates through structured cell approvals', async () => {
     mockUseFileDetail.mockReturnValue({
       data: {
         id: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -9212,8 +9215,8 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
     mockMutateRaw.mockClear()
     mockWriteOwnStructuredCellChange.mockClear()
@@ -9236,7 +9239,7 @@ describe('FileDetailPane', () => {
     })
   })
 
-  it('carries Kanban move proposals into the raw structured view', async () => {
+  it('carries 看板 move proposals into the raw structured view', async () => {
     const source = '@prefix udfs: <https://undefineds.co/vocab/> .\n<#Workspace> a udfs:Workspace ; title "Files" ; mode "read/write" .\n<#Other> a udfs:Workspace ; title "Other" ; mode "read" .'
     mockUseFileDetail.mockReturnValue({
       data: {
@@ -9271,8 +9274,8 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Move #Other' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 read/write' }))
@@ -9287,7 +9290,7 @@ describe('FileDetailPane', () => {
     })
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Raw' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '原文' }))
 
     const rawBlock = document.querySelector('pre')
     expect(rawBlock?.textContent).toContain('#Other')
@@ -9296,7 +9299,7 @@ describe('FileDetailPane', () => {
     expect(mockMutateRaw).not.toHaveBeenCalled()
   })
 
-  it('stages Kanban moves with the canonical grouping value instead of the display label', async () => {
+  it('stages 看板 moves with the canonical grouping value instead of the display label', async () => {
     const source = [
       '@prefix udfs: <https://undefineds.co/vocab/> .',
       '<#Workspace> a udfs:Workspace ; title "Files" ; status <https://example.com/status/todo> .',
@@ -9334,8 +9337,8 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'status' }))
     mockMutateRaw.mockClear()
     mockWriteOwnStructuredCellChange.mockClear()
@@ -9356,7 +9359,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByText('待审批：status -> todo')).not.toBeInTheDocument()
   })
 
-  it('stages keyboard Kanban moves through the structured cell proposal path', async () => {
+  it('stages keyboard 看板 moves through the structured cell proposal path', async () => {
     mockUseFileDetail.mockReturnValue({
       data: {
         id: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -9389,18 +9392,18 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
     mockMutateRaw.mockClear()
     mockWriteOwnStructuredCellChange.mockClear()
 
     const otherCard = document.querySelector('[data-kanban-card-subject="#Other"]') as HTMLElement
-    const readWriteColumn = screen.getByLabelText('Kanban column read/write')
+    const readWriteColumn = screen.getByLabelText('看板列 read/write')
     expect(otherCard).toHaveAttribute('data-dnd-kit-sortable', 'true')
     expect(readWriteColumn).toHaveAttribute('data-dnd-kit-droppable', 'true')
 
-    const lanes = screen.getAllByLabelText(/^Kanban column /)
+    const lanes = screen.getAllByLabelText(/^看板列 /)
     const sourceLaneIndex = lanes.findIndex((lane) => lane.contains(otherCard))
     const targetLaneIndex = lanes.indexOf(readWriteColumn)
     const direction = targetLaneIndex < sourceLaneIndex ? 'ArrowLeft' : 'ArrowRight'
@@ -9421,7 +9424,7 @@ describe('FileDetailPane', () => {
     })
   })
 
-  it('autosaves Kanban column order through view metadata without staging cell approvals', async () => {
+  it('autosaves 看板列 order through view metadata without staging cell approvals', async () => {
     vi.useFakeTimers()
     const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
     const source = '@prefix udfs: <https://undefineds.co/vocab/> .\n<#A> a udfs:Workspace ; title "Alpha" ; mode "read" .\n<#B> a udfs:Workspace ; title "Beta" ; mode "read" .\n<#C> a udfs:Workspace ; title "Gamma" ; mode "read" .'
@@ -9483,7 +9486,7 @@ describe('FileDetailPane', () => {
     mockCreateCellProposal.mockClear()
     mockMutateRaw.mockClear()
 
-    const readColumn = screen.getByLabelText('Kanban column read')
+    const readColumn = screen.getByLabelText('看板列 read')
     const subjectsInReadColumn = () => Array.from(readColumn.querySelectorAll('[data-kanban-card-subject]'))
       .map((element) => element.getAttribute('data-kanban-card-subject'))
     expect(subjectsInReadColumn()).toEqual(['#A', '#B', '#C'])
@@ -9522,7 +9525,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByText(/待审批：mode/)).not.toBeInTheDocument()
   })
 
-  it('rolls back Kanban moves when structured cell approval staging fails', async () => {
+  it('rolls back 看板 moves when structured cell approval staging fails', async () => {
     mockUseFileDetail.mockReturnValue({
       data: {
         id: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -9556,8 +9559,8 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
     mockMutateRaw.mockClear()
 
@@ -9576,8 +9579,8 @@ describe('FileDetailPane', () => {
     await waitFor(() => {
       expect(screen.queryByText('待审批：mode -> read/write')).not.toBeInTheDocument()
     })
-    expect(within(screen.getByLabelText('Kanban column read')).getByText('Other')).toBeInTheDocument()
-    expect(within(screen.getByLabelText('Kanban column read/write')).queryByText('Other')).not.toBeInTheDocument()
+    expect(within(screen.getByLabelText('看板列 read')).getByText('Other')).toBeInTheDocument()
+    expect(within(screen.getByLabelText('看板列 read/write')).queryByText('Other')).not.toBeInTheDocument()
     expect(mockMutateRaw).not.toHaveBeenCalled()
   })
 
@@ -9613,7 +9616,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open predicate #Other' }))
 
@@ -9680,7 +9683,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     const workspaceRow = screen.getAllByRole('row').find((candidate) => within(candidate).queryByRole('cell', { name: '#Workspace' }))
     expect(workspaceRow).toBeDefined()
@@ -9735,7 +9738,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'report.pdf' }))
     fireEvent.click(screen.getByRole('button', { name: '清空 #Workspace 的 source' }))
@@ -9784,7 +9787,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前 class|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     const otherRow = screen.getAllByRole('row').find((candidate) => within(candidate).queryByRole('cell', { name: '#Other' }))
     expect(otherRow).toBeDefined()
@@ -9949,7 +9952,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('cell', { name: '"main"' })).not.toBeInTheDocument()
   })
 
-  it('keeps Kanban moves read-only for Turtle resources outside .data', () => {
+  it('keeps 看板 moves read-only for Turtle resources outside .data', () => {
     const source = '@prefix udfs: <https://undefineds.co/vocab/> .\n<#Workspace> a udfs:Workspace ; title "Files" ; mode "read/write" .\n<#Other> a udfs:Workspace ; title "Other" ; mode "read" .'
     mockUseFileDetail.mockReturnValue({
       data: {
@@ -9983,12 +9986,12 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Kanban' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Kanban 分组 predicate/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
 
-    expect(screen.getByLabelText('Kanban column read')).toBeInTheDocument()
-    expect(screen.getByLabelText('Kanban column read/write')).toBeInTheDocument()
+    expect(screen.getByLabelText('看板列 read')).toBeInTheDocument()
+    expect(screen.getByLabelText('看板列 read/write')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Move #Other' })).not.toBeInTheDocument()
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
     expect(mockMutateRaw).not.toHaveBeenCalled()

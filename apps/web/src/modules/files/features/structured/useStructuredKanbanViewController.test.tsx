@@ -46,7 +46,7 @@ describe('useStructuredKanbanViewController', () => {
     }))
 
     expect(result.current.hasColumns).toBe(true)
-    expect(result.current.groupLabel).toBe('按 status 分组')
+    expect(result.current.groupLabel).toBe('按“status”分组')
     expect(result.current.groupTriggerLabel).toBe('status')
     expect(result.current.hasPredicateOptions).toBe(true)
     expect(result.current.canMoveCardsInColumn('Todo')).toBe(true)

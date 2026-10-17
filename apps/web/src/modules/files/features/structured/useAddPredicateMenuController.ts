@@ -97,6 +97,10 @@ export function useAddPredicateMenuController({
     setMenuState(projectAddPredicateMenuCreateOpened)
   }, [])
 
+  const closeCreate = useCallback(() => {
+    setMenuState((current) => ({ ...current, createOpen: false }))
+  }, [])
+
   const updateDraft = useCallback((patch: Partial<PredicateDefinitionDraft>) => {
     setMenuState((current) => projectAddPredicateMenuStateDraftPatch({
       current,
@@ -148,6 +152,7 @@ export function useAddPredicateMenuController({
     showEnumOptionsEditor,
     setPredicateSearch,
     openCreateFromSearch,
+    closeCreate,
     updateDraft,
     toggleDefinitionDetails,
     submitDraft,

@@ -9,6 +9,7 @@ import { Observable } from 'rxjs'
 import type { AgUiEvent } from '@linx/agent-runtime/ag-ui'
 import type { StreamingReq, ThreadItem, ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
 import type { LocalConversationApi } from '../../../services/chatkit-local/fetch-handler'
+import { takeComposerCitation } from '../../../domain/message-citation'
 import { ThreadEventTranslator } from './thread-events'
 import { itemsToAgUiMessages, type AgUiHistoryMessage } from './history'
 import { alternateParents, branchParentOf, canonicalBranchRef } from './branches'
@@ -296,6 +297,8 @@ export class LinxConversationAgent extends AbstractAgent {
       if (target) this.localThreadId = target
       const uploaded = await Promise.all(userFiles(content).map((file) => this.backend.uploadAttachment(file, signal)))
       if (!text && uploaded.length === 0) return null
+      // 问 LinX: where the quoted passage came from, as structured context.
+      const citation = takeComposerCitation()
       return {
         type: 'threads.add_user_message',
         params: {
@@ -304,6 +307,7 @@ export class LinxConversationAgent extends AbstractAgent {
             content: [{ type: 'input_text', text: text || '请看附件。' }],
             attachments: uploaded.map((attachment) => attachment.id),
             inference_options: this.takeInferenceOptions?.() ?? {},
+            ...(citation ? { citation } : {}),
           },
         },
       }

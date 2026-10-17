@@ -11,6 +11,12 @@ import {
   resolveRuntimeThreadWorkdir,
   runtimeThreadWorkspaceFileUrl,
 } from './runtime-workspace'
+import {
+  buildPodFileToolsAgentConfig,
+  buildToolContinuationPrompt,
+  PodFileToolBridge,
+  type PendingFileToolCall,
+} from './pod-file-tools'
 
 // xpod 0.2.0 runtime internals still use "thread" naming.
 // LinX treats that as an implementation detail and exposes "runtime session" at the product boundary.
@@ -119,6 +125,9 @@ function buildDefaultBranchName(record: RuntimeThreadRecord): string {
 export class XpodPtyRuntimeRunner implements RuntimeRunner {
   private readonly agentRuntime = getSharedAcpRuntime()
   private readonly gitService = getSharedGitService()
+  /** File tool calls waiting for the client's result (the next turn is stateless, so remember them). */
+  private readonly pendingFileToolCalls = new Map<string, PendingFileToolCall>()
+  private lastUserPrompt: string | undefined
 
   constructor(private readonly host: RuntimeRunnerHost) {}
 
@@ -196,11 +205,8 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
       text: `$ ${text}`,
     })
 
-    void this.streamRuntimeEvents(record.id, this.agentRuntime.run({
-      threadId: record.id,
-      prompt: text,
-      config: this.buildRuntimeConfig(record),
-    }))
+    this.lastUserPrompt = text
+    void this.runTurn(record, text)
     return record
   }
 
@@ -217,12 +223,47 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
       text: `[tool_response] ${requestId} ${output}`,
     })
 
-    void this.streamRuntimeEvents(record.id, this.agentRuntime.run({
-      threadId: record.id,
-      prompt: `Continue after tool response ${requestId}:\n${output}`,
-      config: this.buildRuntimeConfig(record),
-    }))
+    const pending = this.pendingFileToolCalls.get(requestId)
+    this.pendingFileToolCalls.delete(requestId)
+    void this.runTurn(record, buildToolContinuationPrompt(
+      requestId,
+      output,
+      pending ? { ...pending, userPrompt: pending.userPrompt ?? this.lastUserPrompt } : undefined,
+    ))
     return record
+  }
+
+  /**
+   * One model turn. LinX's file tools (client-executed, R6-D) are attached to the session through a
+   * per-turn loopback bridge; a call from the model becomes a `tool_call` event and ends the turn.
+   */
+  private async runTurn(record: RuntimeThreadRecord, prompt: string): Promise<void> {
+    let bridge: PodFileToolBridge | null = null
+    let config: ReturnType<XpodPtyRuntimeRunner['buildRuntimeConfig']> & { agentConfig?: unknown } = this.buildRuntimeConfig(record)
+    if (process.env.LINX_DISABLE_FILE_TOOLS !== '1') {
+      try {
+        bridge = new PodFileToolBridge()
+        const endpoint = await bridge.start()
+        config = {
+          ...config,
+          agentConfig: buildPodFileToolsAgentConfig({
+            executorType: config.runner.type,
+            mcpScriptPath: path.join(__dirname, 'pod-file-tools-mcp.js'),
+            endpoint,
+            token: bridge.token,
+          }),
+        }
+      } catch (error) {
+        console.warn('[XpodRuntime] File tools unavailable for this turn:', error)
+        bridge?.close()
+        bridge = null
+      }
+    }
+    try {
+      await this.streamRuntimeEvents(record.id, this.agentRuntime.run({ threadId: record.id, prompt, config }), bridge)
+    } finally {
+      bridge?.close()
+    }
   }
 
   private async ensureWorkspaceReady(): Promise<string> {
@@ -290,11 +331,38 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
   private async streamRuntimeEvents(
     threadRuntimeId: string,
     events: AsyncIterable<PtyRuntimeOutputEvent>,
+    bridge: PodFileToolBridge | null = null,
   ): Promise<void> {
     let fullText = ''
+    const iterator = events[Symbol.asyncIterator]()
+    const bridged = bridge ? bridge.firstCall.then((call) => ({ call })) : null
 
     try {
-      for await (const event of events) {
+      while (true) {
+        const next = iterator.next()
+        const step = bridged ? await Promise.race([next, bridged]) : await next
+        if ('call' in step) {
+          // The model asked for a file edit: hand it to the client and end this turn.
+          const record = this.host.getRecord()
+          this.pendingFileToolCalls.set(step.call.requestId, {
+            name: step.call.name,
+            arguments: step.call.arguments,
+            userPrompt: this.lastUserPrompt,
+          })
+          this.host.emitEvent({
+            type: 'tool_call',
+            ts: Date.now(),
+            threadId: record.id,
+            requestId: step.call.requestId,
+            name: step.call.name,
+            arguments: step.call.arguments,
+          })
+          void iterator.return?.().catch(() => undefined)
+          void next.catch(() => undefined)
+          break
+        }
+        if (step.done) break
+        const event = step.value
         const record = this.host.getRecord()
 
         if (event.type === 'text') {

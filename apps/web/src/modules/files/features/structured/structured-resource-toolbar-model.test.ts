@@ -95,7 +95,7 @@ describe('projectStructuredResourceToolbarModel', () => {
     })).toEqual({
       activeViewTabRows: [
         { value: 'table', label: '表格', active: false, closable: false, closeLabel: '关闭 表格 视图' },
-        { value: 'kanban', label: 'Kanban', active: true, closable: true, closeLabel: '关闭 Kanban 视图' },
+        { value: 'kanban', label: '看板', active: true, closable: true, closeLabel: '关闭 看板 视图' },
       ],
       availablePredicateNamespaces: ['https://schema.org/', 'https://undefineds.co/vocab/'],
       byline: {
@@ -106,7 +106,7 @@ describe('projectStructuredResourceToolbarModel', () => {
         { label: 'Task', uri: 'https://schema.org/Task' },
       ],
       classScopeMenu: {
-        headingLabel: '当前 class',
+        headingLabel: '当前类型',
       },
       classCreateControl: {
         ariaLabel: '创建 class',
@@ -134,8 +134,8 @@ describe('projectStructuredResourceToolbarModel', () => {
         toggleLabel: '定义',
       },
       extraViewOptionRows: [
-        { value: 'whiteboard', label: 'Whiteboard' },
-        { value: 'raw', label: 'Raw' },
+        { value: 'whiteboard', label: '白板' },
+        { value: 'raw', label: '原文' },
       ],
       extraViewTrigger: {
         ariaLabel: '+ 视图',
@@ -152,7 +152,7 @@ describe('projectStructuredResourceToolbarModel', () => {
         ariaLabel: '筛选',
       },
       searchField: {
-        placeholder: '搜索 subject',
+        placeholder: '搜索卡片',
       },
       structuredTools: {
         ariaLabel: '结构化表工具',
@@ -332,7 +332,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       uriLabel: 'class URI',
     })
     expect(model.classScopeMenu).toEqual({
-      headingLabel: '当前 class',
+      headingLabel: '当前类型',
     })
     expect(model.classDefinitionPanel).toEqual({
       headingLabel: null,
@@ -351,9 +351,9 @@ describe('projectStructuredResourceToolbarModel', () => {
     expect(model.pendingClassProposals).toEqual([])
     expect(model.activeViewTabRows).toEqual([{ value: 'table', label: '表格', active: true, closable: false, closeLabel: '关闭 表格 视图' }])
     expect(model.extraViewOptionRows).toEqual([
-      { value: 'kanban', label: 'Kanban' },
-      { value: 'whiteboard', label: 'Whiteboard' },
-      { value: 'raw', label: 'Raw' },
+      { value: 'kanban', label: '看板' },
+      { value: 'whiteboard', label: '白板' },
+      { value: 'raw', label: '原文' },
     ])
     expect(model.extraViewTrigger).toEqual({
       ariaLabel: '+ 视图',
@@ -369,7 +369,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       ariaLabel: '筛选',
     })
     expect(model.searchField).toEqual({
-      placeholder: '搜索 subject',
+      placeholder: '搜索卡片',
     })
     expect(model.structuredTools).toEqual({
       ariaLabel: '结构化表工具',

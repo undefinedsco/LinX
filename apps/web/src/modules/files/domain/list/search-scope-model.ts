@@ -54,10 +54,13 @@ export type FilesSearchNote =
   | { kind: 'info'; text: string }
   | { kind: 'warning'; text: string }
 
-/** At most one grey line under the search box, only when coverage is partial. */
-export function projectFilesSearchNote({ offline }: { offline: boolean }): FilesSearchNote {
+/**
+ * At most one grey line under the search box, only when coverage is partial.
+ * Body-text coverage has its own line in the 正文 results (FilesBodySearchSection).
+ */
+export function projectFilesSearchNote({ offline }: { offline: boolean }): FilesSearchNote | null {
   if (offline) return { kind: 'warning', text: '没有网络，只搜了这台电脑上已有的内容' }
-  return { kind: 'info', text: '文件正文还没建立索引，这次只按标题搜索' }
+  return null
 }
 
 export function projectFilesSearchEmptyText(scopeLabel: string, query: string): { title: string; description: string } {

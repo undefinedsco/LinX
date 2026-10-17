@@ -273,3 +273,9 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Card popup: the quoted passage a search hit or citation points at (CardDialogHost useLocatorHighlight). */
+::highlight(card-locator) {
+  background-color: rgb(253 230 138 / 0.7);
+  color: inherit;
+}

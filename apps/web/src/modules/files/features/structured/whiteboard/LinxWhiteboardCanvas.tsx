@@ -17,6 +17,8 @@ import {
 } from '@xyflow/react'
 
 import { useCardDialog } from '@/lib/card-dialog'
+import { useWhiteboardSpace } from '../../../data/queries'
+import { projectWhiteboardUsedOnLabel } from '../../../domain/structured/whiteboard-space-index'
 import type { StructuredCardProjection } from '../../../domain/structured/structured-projections'
 import {
   WHITEBOARD_CARD_DEFAULT_SIZE,
@@ -27,6 +29,7 @@ import {
   createWhiteboardCardNode,
   resolveWhiteboardCardNodeUri,
   resolveWhiteboardSubjectUri,
+  whiteboardCanvasResourceUri,
   type WhiteboardCanvas,
   type WhiteboardCanvasNode,
   type WhiteboardCanvasSide,
@@ -43,6 +46,7 @@ import {
   WHITEBOARD_LIBRARY_DRAG_TYPE,
   WhiteboardLibraryPanel,
   type WhiteboardLibraryItem,
+  type WhiteboardLibraryTab,
 } from './WhiteboardLibraryPanel'
 import { WhiteboardFilesSource } from './WhiteboardFilesSource'
 import { WhiteboardRelationPicker } from './WhiteboardRelationPicker'
@@ -128,10 +132,23 @@ function WhiteboardCanvasInner({
   const [tool, setTool] = useState<WhiteboardTool>('select')
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [libraryTab, setLibraryTab] = useState<'cards' | 'files'>('cards')
+  const [libraryTab, setLibraryTab] = useState<WhiteboardLibraryTab>('cards')
   const [libraryOpen, setLibraryOpen] = useState(() => canvas.nodes.length === 0)
   const [picker, setPicker] = useState<{ edgeId: string; left: number; top: number } | null>(null)
   const [pendingRelation, setPendingRelation] = useState<{ edgeId: string; from: string; to: string; predicate: string } | null>(null)
+
+  // --- the rest of the space: other tables' rows and the other boards -------------------
+  const documentBaseUri = documentUri.split('#')[0]
+  const holdsOtherTableCards = useMemo(() => canvas.nodes.some((node) => {
+    if (node.type !== 'file') return false
+    const uri = resolveWhiteboardCardNodeUri(node, podRootUri)
+    return Boolean(uri && uri.includes('#') && uri.split('#')[0] !== documentBaseUri)
+  }), [canvas.nodes, documentBaseUri, podRootUri])
+  const space = useWhiteboardSpace({
+    enabled: libraryOpen || holdsOtherTableCards,
+    documentUri,
+    currentBoardUri: podRootUri ? whiteboardCanvasResourceUri(podRootUri, documentUri) : null,
+  })
 
   // --- what each canvas node shows --------------------------------------------------
   const cardByUri = useMemo(() => {
@@ -151,11 +168,15 @@ function WhiteboardCanvasInner({
     if (card) {
       return { kind: 'row', title: card.title, body: card.summary, className: card.className, state: 'ok', uri, subject: card.subject }
     }
+    const otherRow = space.rowByUri.get(uri)
+    if (otherRow) {
+      return { kind: 'row', title: otherRow.title, body: otherRow.summary, className: otherRow.className, state: 'ok', uri, subject: null }
+    }
     if (uri.split('#')[0] === documentBase && uri.includes('#')) {
       return { kind: 'row', title: '', body: '', className: null, state: 'deleted', uri, subject: null }
     }
     return { kind: 'file', title: fileNameFromUri(uri), body: '', className: null, state: 'ok', uri, subject: null }
-  }, [cardByUri, documentBase, podRootUri])
+  }, [cardByUri, documentBase, podRootUri, space.rowByUri])
 
   const nodeIdBySubject = useMemo(() => {
     const map = new Map<string, string>()
@@ -415,8 +436,21 @@ function WhiteboardCanvasInner({
         uri: resolveWhiteboardSubjectUri(card.subject, documentUri),
         title: card.title || '未命名卡片',
         subtitle: card.summary || card.className || undefined,
+        usedOn: projectWhiteboardUsedOnLabel(space.boardsByCard.get(resolveWhiteboardSubjectUri(card.subject, documentUri))) ?? undefined,
       }))
-  }, [cards, documentUri, nodeIdBySubject])
+  }, [cards, documentUri, nodeIdBySubject, space.boardsByCard])
+
+  const libraryRows = useMemo<WhiteboardLibraryItem[]>(() => {
+    const onBoard = new Set(canvas.nodes.map((node) => resolveWhiteboardCardNodeUri(node, podRootUri)))
+    return space.rows
+      .filter((row) => !onBoard.has(row.uri))
+      .map((row) => ({
+        uri: row.uri,
+        title: row.title,
+        subtitle: row.subtitle,
+        usedOn: projectWhiteboardUsedOnLabel(space.boardsByCard.get(row.uri)) ?? undefined,
+      }))
+  }, [canvas.nodes, podRootUri, space.boardsByCard, space.rows])
 
   const findItems = useMemo(() => canvas.nodes
     .filter((node) => node.type !== 'group')
@@ -503,6 +537,8 @@ function WhiteboardCanvasInner({
               <WhiteboardLibraryPanel
                 tab={libraryTab}
                 cards={libraryCards}
+                rows={libraryRows}
+                loadingRows={space.loading}
                 files={libraryFiles}
                 onTab={setLibraryTab}
                 onAdd={(item) => addCardByUri(item.uri)}
@@ -534,7 +570,7 @@ function WhiteboardCanvasInner({
           </div>
         ) : null}
         {STATUS_TEXT[status] ? (
-          <span className="pointer-events-none absolute right-3 top-2 z-10 text-[11px] text-muted-foreground">{STATUS_TEXT[status]}</span>
+          <span className="pointer-events-none absolute left-3 top-2 z-10 text-[11px] text-muted-foreground">{STATUS_TEXT[status]}</span>
         ) : null}
 
         {picker && pickerEdge ? (

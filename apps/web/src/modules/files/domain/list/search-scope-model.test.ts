@@ -35,8 +35,8 @@ describe('files search scope model', () => {
   })
 
   it('words partial coverage and empty results plainly', () => {
-    expect(projectFilesSearchNote({ offline: false }).text).toContain('只按标题搜索')
-    expect(projectFilesSearchNote({ offline: true }).text).toContain('没有网络')
+    expect(projectFilesSearchNote({ offline: false })).toBeNull()
+    expect(projectFilesSearchNote({ offline: true })?.text).toContain('没有网络')
     expect(projectFilesSearchEmptyText('我的空间', ' 轮岗表 ')).toEqual({ title: '“我的空间”里没有找到 轮岗表', description: '不代表别处没有' })
     expect(projectFilesSearchScopeLabel('folder', '志愿者')).toBe('当前文件夹：志愿者')
   })

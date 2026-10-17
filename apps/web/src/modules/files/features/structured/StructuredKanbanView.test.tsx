@@ -45,7 +45,7 @@ describe('StructuredKanbanView', () => {
     )
 
     expect(container.querySelector('[data-kanban-board="horizontal"]')).toBeInTheDocument()
-    expect(screen.getByLabelText('Kanban column Todo')).toHaveAttribute('data-lane-width', '288')
+    expect(screen.getByLabelText('看板列 Todo')).toHaveAttribute('data-lane-width', '288')
     expect(screen.getByText('Alpha')).toBeVisible()
     expect(screen.getByRole('button', { name: '添加 Subject 到 Todo' })).toBeVisible()
   })
@@ -70,8 +70,8 @@ describe('StructuredKanbanView', () => {
     )
     const board = container.querySelector('[data-kanban-board="horizontal"]') as HTMLDivElement
 
-    expect(screen.getByLabelText('Kanban column Done')).toHaveAttribute('data-lane-collapsed', 'true')
-    expect(screen.getAllByLabelText(/^Kanban column /).map((lane) => lane.getAttribute('data-kanban-column'))).toEqual(['Done', 'Todo'])
+    expect(screen.getByLabelText('看板列 Done')).toHaveAttribute('data-lane-collapsed', 'true')
+    expect(screen.getAllByLabelText(/^看板列 /).map((lane) => lane.getAttribute('data-kanban-column'))).toEqual(['Done', 'Todo'])
     expect(board.scrollLeft).toBe(180)
 
     board.scrollLeft = 240
@@ -263,9 +263,9 @@ describe('StructuredKanbanView', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Kanban 分组 predicate' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '添加 Subject 到 Unassigned' }))
-    const input = screen.getByRole('textbox', { name: 'Subject title for Unassigned' })
+    expect(screen.getByRole('button', { name: '看板分组' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '添加 Subject 到 未分组' }))
+    const input = screen.getByRole('textbox', { name: 'Subject title for 未分组' })
     fireEvent.change(input, { target: { value: '#first' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 

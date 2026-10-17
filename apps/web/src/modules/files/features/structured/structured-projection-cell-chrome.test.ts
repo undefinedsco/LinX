@@ -204,7 +204,7 @@ describe('projectStructuredSubjectCellChrome', () => {
       rowIndex: 4,
     })
 
-    expect(chrome.displayLabel).toBe('#Repository')
+    expect(chrome.displayLabel).toBe('Repository')
     expect(chrome.pendingMarker).toBeNull()
   })
 

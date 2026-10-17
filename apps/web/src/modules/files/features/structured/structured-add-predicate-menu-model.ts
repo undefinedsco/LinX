@@ -1,6 +1,7 @@
 import type { StructuredVocabDefinitionIndex } from '../../domain/structured/structured-table'
 import {
   DEFAULT_PREDICATE_NAMESPACE,
+  autoPredicateLocalName,
   PREDICATE_VALUE_TYPE_OPTIONS,
   createPredicateDefinitionDraft,
   predicateUriFromDraft,
@@ -21,6 +22,7 @@ export type AddPredicateMenuExistingPredicateRow = {
 export type AddPredicateMenuValueTypeRow = {
   value: (typeof PREDICATE_VALUE_TYPE_OPTIONS)[number]['value']
   label: string
+  icon: string
   description: string
   selected: boolean
 }
@@ -134,93 +136,93 @@ export function planAddPredicateMenuSubmitted({
 export function projectAddPredicateMenuChrome() {
   return {
     createPanel: {
-      description: '提交后以 * 参与当前表格；审批通过前不改写 vocab。',
-      heading: '新建 predicate',
+      description: '会放进“词表 › 属性”，别的表格也能用。',
+      heading: '新建一个属性',
     },
     definitionByline: {
-      ariaLabel: 'predicate 定义',
+      ariaLabel: '属性定义',
     },
     descriptionField: {
-      ariaLabel: 'predicate 描述',
-      label: '描述',
-      placeholder: '说明这个 predicate 的用途、来源和使用边界',
+      ariaLabel: '属性说明',
+      label: '说明',
+      placeholder: '这一列用来记什么',
     },
     emptyState: {
-      label: '没有匹配的 predicate',
+      label: '词表里没有匹配的属性',
     },
     enumOptionsField: {
-      ariaLabel: 'predicate 枚举选项',
-      label: '选项',
-      placeholder: 'Ready, Blocked',
+      ariaLabel: '属性选项',
+      label: '选项（用逗号隔开）',
+      placeholder: '摄影，布置，签到',
     },
     labelField: {
-      ariaLabel: 'predicate 标签',
-      label: '标签',
-      placeholder: 'Summary',
+      ariaLabel: '属性名字',
+      label: '名字',
+      placeholder: '比如：擅长',
     },
     localNameField: {
-      ariaLabel: 'predicate term',
-      label: 'term',
-      placeholder: 'summary',
+      ariaLabel: '属性代号',
+      label: '代号',
+      placeholder: 'skill',
     },
     searchField: {
-      ariaLabel: '选择或创建 predicate',
-      placeholder: '选择已有 predicate 或创建',
+      ariaLabel: '从词表挑一个属性，或新建',
+      placeholder: '从词表里找，或直接输入新名字',
     },
     shapeFields: {
       classScope: {
-        ariaLabel: 'predicate class scope',
-        label: 'class scope',
+        ariaLabel: '适用的类型',
+        label: '适用的类型',
         placeholder: 'udfs:Workspace',
       },
       editor: {
-        ariaLabel: 'predicate editor type',
-        label: 'editor',
+        ariaLabel: '填写方式',
+        label: '填写方式',
         options: ['input', 'textarea', 'select', 'multi-select', 'date', 'checkbox', 'relation'],
       },
       maxCount: {
-        ariaLabel: 'predicate 最大数量',
-        placeholder: '最大',
-        srLabel: '最大',
+        ariaLabel: '最多几个值',
+        placeholder: '最多',
+        srLabel: '最多',
       },
       minCount: {
-        ariaLabel: 'predicate 最小数量',
-        placeholder: '最小',
-        srLabel: '最小',
+        ariaLabel: '最少几个值',
+        placeholder: '最少',
+        srLabel: '最少',
       },
       namespace: {
-        ariaLabel: 'predicate namespace',
-        label: 'ns',
+        ariaLabel: '命名空间',
+        label: '命名空间',
         placeholder: 'udfs',
       },
       required: {
-        ariaLabel: 'predicate 必填',
+        ariaLabel: '必填',
         label: '必填',
       },
       uri: {
-        ariaLabel: 'predicate URI',
-        label: 'URI 覆盖',
-        placeholder: 'https://example.com/vocab/summary',
+        ariaLabel: '指定地址',
+        label: '指定地址',
+        placeholder: 'https://example.com/vocab/skill',
       },
     },
     shapeSection: {
-      label: 'shape',
+      label: '更多设置',
     },
     submitButton: {
-      label: '提交待确认 predicate *',
+      label: '添加',
     },
     termSection: {
-      label: 'term',
+      label: '名字',
     },
     trigger: {
       ariaLabel: '+ 属性',
       label: '属性',
     },
     valueSection: {
-      label: 'value',
+      label: '值是什么',
     },
     valueTypes: {
-      ariaLabel: 'predicate value types',
+      ariaLabel: '值的类型',
       optionAriaLabelPrefix: '类型',
     },
   }
@@ -228,10 +230,10 @@ export function projectAddPredicateMenuChrome() {
 
 export function projectAddPredicateMenuDefinitionDetailsToggle(definitionDetailsOpen: boolean) {
   return {
-    ariaLabel: definitionDetailsOpen ? '收起 shape 和高级信息' : '展开 shape 和高级信息',
+    ariaLabel: definitionDetailsOpen ? '收起更多设置' : '展开更多设置',
     expanded: definitionDetailsOpen,
     indicator: definitionDetailsOpen ? '-' : '+',
-    label: 'shape',
+    label: '更多设置',
   }
 }
 
@@ -250,7 +252,13 @@ export function projectAddPredicateMenuDraftPatch({
   currentDraft: PredicateDefinitionDraft
   patch: Partial<PredicateDefinitionDraft>
 }): PredicateDefinitionDraft {
-  return { ...currentDraft, ...patch }
+  const next = { ...currentDraft, ...patch }
+  // The person only names the column; its machine name follows until they set one themselves.
+  if (patch.label !== undefined && patch.localName === undefined
+    && (currentDraft.localName === '' || currentDraft.localName === autoPredicateLocalName(currentDraft.label))) {
+    next.localName = autoPredicateLocalName(patch.label)
+  }
+  return next
 }
 
 export function projectAddPredicateMenuDraftClassScope({
@@ -312,9 +320,9 @@ export function projectAddPredicateMenuExistingPredicateRows({
         predicate,
         label,
         displayLabel: showNamespaces ? predicate : label,
-        typeLabel: definition?.valueType || 'observed',
+        typeLabel: predicateTypeLabel(definition?.valueType),
         description: definition?.description || definition?.shape || definition?.shapeRules?.[0]?.constraint || '',
-        selectAriaLabel: `选择 predicate ${label}`,
+        selectAriaLabel: `选择属性 ${label}`,
       }
     })
 }
@@ -330,7 +338,13 @@ export function projectAddPredicateMenuDraftSeed({
   if (!search) return currentDraft
 
   const localName = localPredicateLabel(search).replace(/[^\w.-]+/g, '')
-  if (!localName) return currentDraft
+  if (!localName) {
+    return {
+      ...currentDraft,
+      label: currentDraft.label || search,
+      localName: currentDraft.localName || autoPredicateLocalName(search),
+    }
+  }
 
   const label = localName.charAt(0).toUpperCase() + localName.slice(1)
   const curieMatch = search.match(/^([A-Za-z][\w.-]*):(.+)$/)
@@ -347,9 +361,19 @@ export function projectAddPredicateMenuDraftSeed({
   }
 }
 
+const PREDICATE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  PREDICATE_VALUE_TYPE_OPTIONS.map((option) => [option.value, option.label]),
+)
+
+/** 文字 / 数字 / …; a term that has no declared type is just 已有 in the picker. */
+export function predicateTypeLabel(valueType?: string | null) {
+  const key = valueType?.trim().toLowerCase()
+  return (key && PREDICATE_TYPE_LABELS[key]) || '已有'
+}
+
 export function projectAddPredicateMenuCreateTriggerLabel(predicateSearch: string) {
   const normalizedSearch = predicateSearch.trim()
-  return normalizedSearch ? `新建 "${normalizedSearch}"` : '新建 predicate'
+  return normalizedSearch ? `新建“${normalizedSearch}”` : '新建一个属性'
 }
 
 export function canSubmitAddPredicateMenuDraft(resolvedUri?: string | null) {
@@ -358,7 +382,7 @@ export function canSubmitAddPredicateMenuDraft(resolvedUri?: string | null) {
 
 export function projectAddPredicateMenuUriPreview(resolvedUri?: string | null) {
   return {
-    label: resolvedUri ? `URI 预览 · ${resolvedUri}` : 'URI 预览 · 填写 ns 和 term 后生成',
+    label: resolvedUri ? `会放进“词表 › 属性” · ${resolvedUri}` : '先写上名字',
     title: resolvedUri || undefined,
   }
 }

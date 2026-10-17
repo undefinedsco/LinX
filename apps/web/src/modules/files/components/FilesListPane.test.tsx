@@ -28,6 +28,10 @@ const mockToast = vi.fn()
 const mockRetryContainer = vi.fn()
 
 vi.mock('../app/feature-flags', () => ({ FILES_TREE_FOLDERS_AND_TABLES_ONLY: false }))
+vi.mock('../features/search/useFilesBodySearch', () => ({
+  useFilesBodySearch: () => ({ active: false, hits: [], note: null, isIndexing: false, coverage: null }),
+  useOpenBodyHit: () => () => {},
+}))
 
 const mockAgentNames: Record<string, string> = {}
 
@@ -68,6 +72,8 @@ vi.mock('../data/queries', () => ({
   useCreateRawTextResource: () => mockUseCreateRawTextResource(),
   useCreateBlobResource: () => mockUseCreateBlobResource(),
   useCreateFolderResource: () => mockUseCreateFolderResource(),
+  useCreateVocabTermProposalInboxApproval: () => ({ mutateAsync: vi.fn() }),
+  useFilesCurrentPodRootUri: () => 'https://pod.example/',
 }))
 
 vi.mock('@tanstack/react-query', async (importOriginal) => ({
@@ -723,7 +729,7 @@ describe('FilesListPane', () => {
     expect(screen.queryByText('config.json')).not.toBeInTheDocument()
   })
 
-  it('shows the search scope, one coverage note and the reason each result matched', () => {
+  it('shows the search scope and the reason each result matched, without a title-only note', () => {
     render(<FilesListPane {...defaultProps} />)
 
     fireEvent.change(screen.getByPlaceholderText('搜索当前范围...'), {
@@ -731,7 +737,8 @@ describe('FilesListPane', () => {
     })
 
     expect(screen.getByRole('button', { name: '搜索范围' })).toHaveTextContent('范围：我的空间')
-    expect(screen.getByRole('status')).toHaveTextContent('只按标题搜索')
+    // Body-text coverage is reported by the 正文 results section, not as a title-only note.
+    expect(screen.queryByText(/只按标题搜索/)).toBeNull()
     expect(screen.getByText('标题匹配')).toBeInTheDocument()
   })
 

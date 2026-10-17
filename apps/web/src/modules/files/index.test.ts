@@ -17,7 +17,13 @@ describe('files public module exports', () => {
       'FileDetailPane',
       'FilesListPane',
       'FilesTreePane',
+      'createRawTextResource',
+      'readRawTextResource',
+      'saveRawTextResource',
+      'stageAiColumnChange',
+      'stageAiDraft',
       'useFilesStore',
+      'writeAiCellChange',
     ])
     expect(Object.keys(filesModule).filter((key) => /^use[A-Z]/.test(key))).toEqual(['useFilesStore'])
     expect(filesModule).not.toHaveProperty('getFilesEntryOpenMode')

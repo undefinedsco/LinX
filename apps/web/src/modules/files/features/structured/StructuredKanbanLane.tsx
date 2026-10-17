@@ -2,7 +2,14 @@ import { type HTMLAttributes, type KeyboardEvent, type ReactNode, useCallback, u
 import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronDown, ChevronRight, GripVertical, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, GripVertical, MoreHorizontal, Plus } from 'lucide-react'
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 import { cn } from '@/lib/utils'
 import type { StructuredKanbanDisplayColumn } from './structured-kanban-view-model'
@@ -17,6 +24,8 @@ export function StructuredKanbanLane({
   onToggleCollapsed,
   onKeyboardReorder,
   onQuickCreate,
+  onRename,
+  onRemove,
   ...dropProps
 }: {
   column: StructuredKanbanDisplayColumn
@@ -28,6 +37,9 @@ export function StructuredKanbanLane({
   onToggleCollapsed: (columnId: string) => void
   onKeyboardReorder?: (columnId: string, direction: 'left' | 'right') => void
   onQuickCreate?: (columnId: string, subject: string) => void | Promise<unknown>
+  onRename?: (columnId: string, label: string) => void
+  /** Only lanes added by hand (and still empty) can be removed. */
+  onRemove?: (columnId: string) => void
 } & HTMLAttributes<HTMLElement>) {
   const { setNodeRef: setDropNodeRef, isOver } = useDroppable({ id: column.id })
   const {
@@ -42,6 +54,8 @@ export function StructuredKanbanLane({
   const [draft, setDraft] = useState('')
   const [creatingError, setCreatingError] = useState<string | null>(null)
   const [creatingSaving, setCreatingSaving] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [renameDraft, setRenameDraft] = useState(column.label)
   const setNodeRef = useCallback((node: HTMLElement | null) => {
     setDropNodeRef(node)
     setSortableNodeRef(node)
@@ -119,7 +133,7 @@ export function StructuredKanbanLane({
         <button
           type="button"
           aria-label={`Reorder lane ${column.label}`}
-          title={`Reorder lane ${column.label}`}
+          title="拖动调整列的顺序"
           className="inline-flex h-6 w-6 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
           data-kanban-lane-handle="true"
           {...attributes}
@@ -136,14 +150,60 @@ export function StructuredKanbanLane({
         >
           {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
-        <p className={cn('min-w-0 flex-1 truncate text-xs font-medium text-foreground/80', collapsed && 'sr-only')}>
-          {column.label}
-        </p>
+        {renaming ? (
+          <input
+            autoFocus
+            aria-label={`重命名 ${column.label}`}
+            className="h-7 min-w-0 flex-1 rounded border border-border bg-background px-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
+            value={renameDraft}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                if (renameDraft.trim()) onRename?.(column.id, renameDraft.trim())
+                setRenaming(false)
+              }
+              if (event.key === 'Escape') setRenaming(false)
+            }}
+            onBlur={() => {
+              if (renameDraft.trim() && renameDraft.trim() !== column.label) onRename?.(column.id, renameDraft.trim())
+              setRenaming(false)
+            }}
+          />
+        ) : (
+          <p className={cn('min-w-0 flex-1 truncate text-xs font-medium text-foreground/80', collapsed && 'sr-only')}>
+            {column.label}
+          </p>
+        )}
         <span className="shrink-0 text-[10px] text-muted-foreground">{column.cardCountLabel}</span>
+        {!collapsed && !renaming && (onRename || onRemove) ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={`${column.label} 的更多操作`}
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {onRename ? (
+                <DropdownMenuItem onSelect={() => { setRenameDraft(column.label); setRenaming(true) }}>改名字</DropdownMenuItem>
+              ) : null}
+              {onRemove && column.cards.length === 0 ? <DropdownMenuItem onSelect={() => onRemove(column.id)}>去掉这一列</DropdownMenuItem> : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </div>
       {collapsed ? null : (
         <div className="max-h-[calc(100vh-20.5rem)] space-y-2 overflow-y-auto p-2">
           {children}
+          {column.cards.length === 0 && !showEndDropPlaceholder && !isOver ? (
+            <p data-kanban-empty-lane="true" className="rounded-md border border-dashed border-border/50 px-2 py-4 text-center text-[11px] text-muted-foreground">
+              还没有卡片，把卡片拖到这里
+            </p>
+          ) : null}
           {showEndDropPlaceholder || (isOver && !isDropTarget) ? (
             <div
               aria-label={`将卡片放入 ${column.label}`}
@@ -179,7 +239,7 @@ export function StructuredKanbanLane({
               onClick={() => setCreating(true)}
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              Subject
+              卡片
             </button>
           ) : null}
         </div>

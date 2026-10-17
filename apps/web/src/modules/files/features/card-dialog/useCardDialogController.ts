@@ -17,6 +17,7 @@ import {
   useFilesMetaSidecar,
   useRawTextResource,
   useSaveRawTextResource,
+  useCardHistoryAccess,
   useWriteOwnStructuredCellChange,
 } from '../../data/queries'
 import {
@@ -42,6 +43,12 @@ import {
   type CardPropertyModel,
   type CardSaveStatus,
 } from '../../domain/card/card-dialog-model'
+import {
+  cardSnapshotsEqual,
+  projectCardVersionRows,
+  type CardHistory,
+  type CardSnapshot,
+} from '../../domain/history/card-history'
 import { getEntryName } from '../../domain/resource/resource-semantics'
 import { projectStructuredResourceTable } from '../../domain/structured/structured-table'
 
@@ -69,6 +76,10 @@ export function useCardDialogController(request: CardDialogRequest) {
   const writeOwnCell = useWriteOwnStructuredCellChange()
   const [saveStatus, setSaveStatus] = useState<CardSaveStatus>('idle')
   const [accessOpen, setAccessOpen] = useState(false)
+  const historyAccess = useCardHistoryAccess()
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState<CardHistory | null>(null)
+  const [historyError, setHistoryError] = useState(false)
 
   useEffect(() => { setSaveStatus('idle') }, [request.uri])
 
@@ -149,10 +160,29 @@ export function useCardDialogController(request: CardDialogRequest) {
     }
   }, [])
 
+  /** Version history is best effort: a failure here never fails the save. */
+  const recordVersion = useCallback((after: CardSnapshot | null, before: CardSnapshot | null) => {
+    if (!after) return
+    void historyAccess.record({ cardUri: request.uri, before, after }).then(
+      () => setHistory(null),
+      () => undefined,
+    )
+  }, [historyAccess, request.uri])
+
+  const subjectSnapshot = useCallback((overrides?: { body?: string; predicate?: string; tokens?: string[] }): CardSnapshot | null => {
+    if (!subject) return null
+    const properties: Record<string, string[]> = {}
+    for (const property of subject.properties) properties[property.predicate] = [...property.valueTokens]
+    if (overrides?.predicate && overrides.tokens) properties[overrides.predicate] = overrides.tokens
+    return { body: overrides?.body ?? subject.bodyText, properties }
+  }, [subject])
+
   const saveDocumentText = useCallback(async (text: string) => {
     if (!rawQuery.data) return
+    const before = rawQuery.data.content
     await track(() => saveRawText.mutateAsync({ resource: rawQuery.data, content: text }))
-  }, [rawQuery.data, saveRawText, track])
+    recordVersion({ body: text }, { body: before })
+  }, [rawQuery.data, recordVersion, saveRawText, track])
 
   const saveSubjectBody = useCallback(async (text: string) => {
     if (!subject) return
@@ -166,7 +196,8 @@ export function useCardDialogController(request: CardDialogRequest) {
       nextValues: plan.nextValues,
       expectedEtag: rawQuery.data?.etag ?? null,
     }))
-  }, [rawQuery.data?.etag, subject, target.documentUri, track, writeOwnCell])
+    recordVersion(subjectSnapshot({ body: text.replace(/\s+$/, '') }), subjectSnapshot())
+  }, [rawQuery.data?.etag, recordVersion, subject, subjectSnapshot, target.documentUri, track, writeOwnCell])
 
   const saveSubjectProperty = useCallback(async (property: CardPropertyModel, nextText: string) => {
     if (!subject) return
@@ -184,7 +215,47 @@ export function useCardDialogController(request: CardDialogRequest) {
       nextValues: plan.nextValues,
       expectedEtag: rawQuery.data?.etag ?? null,
     }))
-  }, [rawQuery.data?.etag, subject, target.documentUri, track, writeOwnCell])
+    recordVersion(subjectSnapshot({ predicate: property.predicate, tokens: plan.nextValues }), subjectSnapshot())
+  }, [rawQuery.data?.etag, recordVersion, subject, subjectSnapshot, target.documentUri, track, writeOwnCell])
+
+  const openHistory = useCallback(async () => {
+    setHistoryOpen(true)
+    setHistoryError(false)
+    try {
+      setHistory(await historyAccess.read(request.uri))
+    } catch {
+      setHistoryError(true)
+    }
+  }, [historyAccess, request.uri])
+
+  const currentSnapshot: CardSnapshot | null = subject
+    ? subjectSnapshot()
+    : kind === 'document' && rawQuery.data ? { body: rawQuery.data.content } : null
+
+  /** 恢复到这个版本: written back through the normal save paths, so it becomes a new version. */
+  const restoreVersion = useCallback(async (snapshot: CardSnapshot) => {
+    if (subject) {
+      if (snapshot.body.replace(/\s+$/, '') !== subject.bodyText.replace(/\s+$/, '')) await saveSubjectBody(snapshot.body)
+      for (const [predicate, tokens] of Object.entries(snapshot.properties ?? {})) {
+        const current = subject.properties.find((property) => property.predicate === predicate)
+        const previous = current?.valueTokens ?? []
+        if (previous.length === tokens.length && previous.every((token, index) => token === tokens[index])) continue
+        await track(() => writeOwnCell.mutateAsync({
+          documentUri: target.documentUri,
+          subject: subject.subjectIri,
+          predicate,
+          previousValues: [...previous],
+          nextValues: tokens,
+          expectedEtag: null,
+        }))
+      }
+      recordVersion(snapshot, subjectSnapshot())
+    } else {
+      await saveDocumentText(snapshot.body)
+    }
+    await historyAccess.read(request.uri).then(setHistory, () => undefined)
+    toast({ title: '已恢复到这个版本' })
+  }, [historyAccess, recordVersion, request.uri, saveDocumentText, saveSubjectBody, subject, subjectSnapshot, target.documentUri, toast, track, writeOwnCell])
 
   /** Editing LinX's unconfirmed draft means keeping it (K10). */
   const keepAiDraftAndEdit = useCallback(() => {
@@ -299,5 +370,14 @@ export function useCardDialogController(request: CardDialogRequest) {
     documentPlainText: kind === 'document' && isCardPlainTextMime(rawQuery.data?.mimeType ?? detail?.mimeType),
     accessOpen,
     setAccessOpen,
+    historyOpen,
+    setHistoryOpen,
+    openHistory,
+    historyError,
+    versionRows: history ? projectCardVersionRows(history) : null,
+    currentSnapshot,
+    restoreVersion,
+    canRestore: (snapshot: CardSnapshot) => !currentSnapshot || !cardSnapshotsEqual(currentSnapshot, snapshot),
+    historySupported: kind === 'document' ? Boolean(rawQuery.data) && (rawQuery.data?.mimeType ?? detail?.mimeType) === 'text/markdown' : Boolean(subject),
   }
 }

@@ -49,6 +49,8 @@ import { useFilesListOperationController } from './useFilesListOperationControll
 import { useFilesListSelectionController } from './useFilesListSelectionController'
 import { useFilesExplorerDataController } from './useFilesExplorerDataController'
 import { useFilesSearchController } from './useFilesSearchController'
+import { FilesBodySearchSection } from '../search/FilesBodySearchSection'
+import { useFilesBodySearch } from '../search/useFilesBodySearch'
 
 const LIST_EMPTY_STATE_ICON = {
   file: FileText,
@@ -260,6 +262,12 @@ export function FilesListPane(_props: MicroAppPaneProps) {
       for (const row of explorer.rows) if (row.kind === 'error') explorer.retryContainer?.(row.containerUri)
     },
   })
+  // K3: matches inside file text, listed under the title results.
+  const bodySearch = useFilesBodySearch(search.active ? listPane.searchText : '', {
+    scope: search.scope,
+    currentFolderUri: listPane.currentFolderUri,
+  })
+  const onlyBodyHits = search.active && bodySearch.hits.length > 0
   const renderedRows: Array<{ row: (typeof explorer.rows)[number]; reason?: string }> = search.active
     ? search.results.map(({ row, reason }) => ({
         row: { ...row, depth: 0, expandable: false, expanded: false },
@@ -452,6 +460,9 @@ export function FilesListPane(_props: MicroAppPaneProps) {
           ) : null}
         </div>
       ) : null}
+      {search.active ? (
+        <FilesBodySearchSection query={listPane.searchText} search={bodySearch} />
+      ) : null}
       {listSelection.hasBatchSelection ? (
         <div className="flex items-center justify-between border-b border-border/50 bg-muted/20 px-4 py-2">
           <span className="text-xs font-medium text-foreground/80">{listSelection.batchSelectionLabel}</span>
@@ -498,7 +509,7 @@ export function FilesListPane(_props: MicroAppPaneProps) {
             </button>
           )}
         />
-      ) : listPane.contentState.kind === 'empty' ? (
+      ) : listPane.contentState.kind === 'empty' && onlyBodyHits ? null : listPane.contentState.kind === 'empty' ? (
         <FilesEmptyState
           title={(!listPane.mimeTypeFilter && !listPane.tagFilter && search.emptyText?.title) || listPane.emptyState.title}
           description={(!listPane.mimeTypeFilter && !listPane.tagFilter && search.emptyText?.description) || listPane.emptyState.description}

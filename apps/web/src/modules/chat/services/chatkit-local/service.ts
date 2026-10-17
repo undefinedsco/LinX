@@ -27,6 +27,7 @@ import {
   chatResource,
   contactResource,
   extractChatIdFromChatRef,
+  grantResource,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   type AgentRow,
@@ -38,6 +39,10 @@ import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
 import { createAssistantTextDeltaEvent, createWaitingToolbarEvent } from './thread-stream-events'
 import { normalizeToolCallArguments } from './tool-call-protocol'
+import { executePodFileTool, isPodFileTool } from './pod-file-tools'
+import { toAutoJudgeGrant } from '@linx/agent-runtime/auto-judge'
+import { grantAppliesToAgent } from '@/modules/inbox/domain/grant-agent'
+import { normalizeMessageCitation, withCitedSource } from '../../domain/message-citation'
 import {
   inferMarkdownLinkAnnotations,
   mergeChatKitAnnotations,
@@ -419,6 +424,9 @@ interface ThreadAgentConfig {
   contextRound?: number
   aiRuntimeLocation: AgentAiRuntimeLocation
 }
+
+/** Thread metadata: files LinX created in this chat (written directly, no draft). */
+const LINX_CREATED_FILES_KEY = 'linx_created_files'
 
 function normalizeContextRound(value: unknown): number | undefined {
   const parsed = typeof value === 'number' ? value : Number(value)
@@ -845,6 +853,8 @@ export class LocalChatKitService {
         params.input.inference_options,
         thread,
         context,
+        undefined,
+        params.input.citation,
       )
       const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
       if (matrixSent) {
@@ -878,6 +888,7 @@ export class LocalChatKitService {
       thread,
       context,
       parentItem,
+      params.input.citation,
     )
     const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
     if (matrixSent) {
@@ -1556,6 +1567,44 @@ export class LocalChatKitService {
     } as ThreadItem
   }
 
+  /** Runs one of LinX's file tools (see pod-file-tools.ts); the text is what the model is told. */
+  private async executePodFileToolCall(
+    thread: ThreadMetadata,
+    toolItem: { name: string; arguments: Record<string, unknown> },
+    context: StoreContext,
+  ): Promise<string> {
+    const files = await import('@/modules/files')
+    const chatId = readChatIdFromThread(thread)
+    const chat = chatId ? await this.findChatById(chatId).catch(() => null) : null
+    const agentIds: string[] = Array.isArray(chat?.participants)
+      ? chat.participants.filter((entry: unknown): entry is string => typeof entry === 'string')
+      : []
+    const rows = await this.db.select().from(grantResource).execute().catch(() => [] as any[])
+    const grants = (rows as any[])
+      .filter((row) => grantAppliesToAgent(row, agentIds))
+      .flatMap((row) => {
+        const grant = toAutoJudgeGrant(row)
+        return grant ? [grant] : []
+      })
+    const stored = thread.metadata?.[LINX_CREATED_FILES_KEY]
+    const createdByLinx = new Set<string>(Array.isArray(stored) ? stored.filter((v): v is string => typeof v === 'string') : [])
+    const sizeBefore = createdByLinx.size
+    const output = await executePodFileTool(toolItem.name, toolItem.arguments, {
+      db: this.db,
+      actorWebId: this.webId,
+      agentWebId: agentIds[0] ?? null,
+      podRootUri: resolveCurrentPodBaseUrl(this.db),
+      grants,
+      createdByLinx,
+      files: files as any,
+    })
+    if (createdByLinx.size !== sizeBefore) {
+      thread.metadata = { ...(thread.metadata ?? {}), [LINX_CREATED_FILES_KEY]: [...createdByLinx] }
+      await this.store.saveThread(thread, context)
+    }
+    return output
+  }
+
   private async finalizePendingRuntimeItem(
     threadId: string,
     assistantItem: any,
@@ -1697,6 +1746,24 @@ export class LocalChatKitService {
           const toolItem = this.createRuntimeToolCallItem(thread, event, context)
           await this.store.addThreadItem(thread.id, toolItem, context)
           yield { type: 'thread.item.added', item: toolItem }
+
+          // R6-C: LinX's file edits run here, through the draft layer, and the result goes back
+          // to the model (it must know an edit is only a draft).
+          if (isPodFileTool(event.name)) {
+            controller.abort()
+            const output = await this.executePodFileToolCall(thread, toolItem as any, context)
+            const doneItem = await this.finalizePendingRuntimeItem(
+              thread.id, assistantItem, context, fullText, fullText ? '' : '已处理文件改动。',
+            )
+            ;(doneItem as any).status = 'completed'
+            await this.store.saveItem(thread.id, doneItem, context)
+            yield { type: 'thread.item.done', item: doneItem }
+            yield* this.handleThreadsAddClientToolOutput(
+              { thread_id: thread.id, item_id: toolItem.id, output },
+              context,
+            )
+            return
+          }
 
           const pendingItem = await this.finalizePendingRuntimeItem(
             thread.id,
@@ -2563,7 +2630,7 @@ export class LocalChatKitService {
     }
     for (const item of activeItems.slice(firstItemIndex)) {
       if (item.type === 'user_message') {
-        const text = extractUserMessageText((item as any).content)
+        const text = withCitedSource(extractUserMessageText((item as any).content), (item as any).citation)
         const attachmentParts = await this.buildAttachmentModelParts((item as any).attachments)
         if (text || attachmentParts.length > 0) {
           conversation.push({
@@ -2637,7 +2704,7 @@ export class LocalChatKitService {
   }
 
   private async buildRuntimeUserText(item: ThreadItem): Promise<string> {
-    const text = extractUserMessageText((item as any).content)
+    const text = withCitedSource(extractUserMessageText((item as any).content), (item as any).citation)
     const parts = await this.buildAttachmentModelParts((item as any).attachments)
     const attachmentText = parts.map((part, index) => (
       part.type === 'text'
@@ -2655,6 +2722,7 @@ export class LocalChatKitService {
     thread?: ThreadMetadata,
     context: StoreContext = {},
     parentItem?: ThreadItem,
+    citation?: unknown,
   ): Promise<ThreadItem> {
     const fallbackThread = thread || {
       id: threadId,
@@ -2682,6 +2750,7 @@ export class LocalChatKitService {
       ...(inferenceOptions && Object.keys(inferenceOptions).length > 0
         ? { inference_options: inferenceOptions }
         : {}),
+      ...(normalizeMessageCitation(citation) ? { citation: normalizeMessageCitation(citation) } : {}),
       created_at: nowTimestamp(),
     } as ThreadItem
   }

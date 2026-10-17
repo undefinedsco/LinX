@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   raw: vi.fn(),
   saveRaw: vi.fn(),
   navigate: vi.fn(),
+  history: { ready: true, read: vi.fn(), record: vi.fn().mockResolvedValue(undefined) },
 }))
 
 vi.mock('@/modules/files/ui/BlockNoteFileEditor', async () => import('../../ui/__tests__/fake-block-note-file-editor'))
@@ -26,6 +27,7 @@ vi.mock('../../data/queries', () => ({
   useFilesMetaSidecar: () => ({ data: undefined }),
   useSaveRawTextResource: () => ({ mutateAsync: mocks.saveRaw }),
   useWriteOwnStructuredCellChange: () => ({ mutateAsync: vi.fn() }),
+  useCardHistoryAccess: () => mocks.history,
   useAiDraft: () => ({ data: null }),
   useCreateRawTextResource: () => ({ mutateAsync: vi.fn() }),
   useActOnAiDraft: () => ({ mutateAsync: vi.fn(), isPending: false }),

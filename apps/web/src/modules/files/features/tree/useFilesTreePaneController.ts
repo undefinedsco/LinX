@@ -4,6 +4,7 @@ import { useFilesStore } from '../../app/store'
 import {
   filesFavoriteHooks,
   useFilesContainerEntries,
+  useFilesCurrentPodRootUri,
   useFilesEntries,
   useFilesFavoriteList,
   useFilesTreeSearchEntries,
@@ -95,7 +96,12 @@ export function useFilesTreePaneController() {
   }, [isEntryFavorite])
 
   const selection = useSelectedFilesLocation(selectedTreeNodeId)
-  const addContainerUri = useMemo(() => projectFilesAddContainerUri(selection), [selection])
+  const podRootUri = useFilesCurrentPodRootUri()
+  // Nothing (or a non-folder view) selected: 添加 goes to the top of 我的空间 instead of being disabled.
+  const addContainerUri = useMemo(
+    () => projectFilesAddContainerUri(selection) ?? podRootUri,
+    [podRootUri, selection],
+  )
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const addEntriesQuery = useFilesContainerEntries(addContainerUri, addMenuOpen)
 

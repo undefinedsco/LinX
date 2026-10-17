@@ -32,16 +32,19 @@ export function projectStructuredReconciledKanbanBoard({
   kanbanOrder,
   projection,
   saved,
+  extraLanes,
 }: {
   groupPredicate: string | null
   kanbanOrder: Record<string, string[]>
   projection: StructuredTableProjection
   saved: unknown
+  extraLanes?: readonly string[]
 }) {
   const { kanban } = projectStructuredKanbanSourceModel({
     groupPredicate,
     kanbanOrder,
     projection,
+    extraLanes,
   })
   return reconcileStructuredKanbanBoardState({
     saved,

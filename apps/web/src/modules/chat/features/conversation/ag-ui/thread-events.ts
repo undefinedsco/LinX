@@ -13,6 +13,7 @@ import {
   type LinxSource,
 } from '@linx/agent-runtime/ag-ui'
 import type { ThreadItem, ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
+import { podFileToolTarget } from '../../../services/chatkit-local/pod-file-tools'
 
 export interface ThreadEventTranslatorOptions {
   threadUri: string
@@ -128,13 +129,22 @@ export class ThreadEventTranslator {
 
   private toolResult(item: Extract<ThreadItem, { type: 'client_tool_call' }>): AgUiEvent[] {
     if (item.output === undefined || item.output === null) return []
-    return this.map({
+    const result = this.map({
       type: 'tool.result',
       payload: {
         toolCallId: item.call_id || item.id,
         content: typeof item.output === 'string' ? item.output : JSON.stringify(item.output),
       },
     })
+    // R6-C: a file LinX edited shows as a file message, so keep / undo sits right under it.
+    const target = podFileToolTarget(item.name, toolArguments(item))
+    if (target) {
+      result.push(...this.map({
+        type: 'card',
+        payload: { card: 'file', resource: target, fallbackText: 'LinX 改动了一个文件' },
+      }))
+    }
+    return result
   }
 
   private assistantDone(item: Extract<ThreadItem, { type: 'assistant_message' }>): AgUiEvent[] {

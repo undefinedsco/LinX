@@ -453,6 +453,10 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               laneOrder={kanbanBoard.laneOrder}
               initialCollapsedLaneIds={kanbanBoard.collapsedLaneIds}
               initialScrollLeft={kanbanBoard.scrollLeft}
+              extraLanes={kanbanBoard.extraLanes}
+              laneLabels={kanbanBoard.laneLabels}
+              cardFields={kanbanBoard.cardFields}
+              onBoardChange={structuredWritesSupported ? (patch) => setKanbanBoardFromUi({ ...kanbanBoard, ...patch }) : undefined}
               onGroupPredicateChange={setKanbanGroupPredicateFromUi}
               onColumnOrderChange={setKanbanColumnOrderFromUi}
               onLaneOrderChange={(laneOrder) => setKanbanBoardFromUi({ ...kanbanBoard, laneOrder })}

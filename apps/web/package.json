@@ -72,6 +72,7 @@
     "katex": "^0.16.47",
     "lucide-react": "^1.16.0",
     "mermaid": "^11.15.0",
+    "minisearch": "7.2.0",
     "pdfjs-dist": "6.1.200",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

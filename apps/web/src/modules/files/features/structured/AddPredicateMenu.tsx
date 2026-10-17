@@ -116,18 +116,6 @@ export function AddPredicateMenu({
               <div className="grid gap-2 border-t border-border/30 pt-2" aria-label={menu.chrome.definitionByline.ariaLabel}>
                 <section className="grid gap-1.5">
                   <p className="text-[11px] font-medium text-muted-foreground">{menu.chrome.termSection.label}</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="grid gap-1">
-                      <span className="text-[11px] font-medium text-foreground/80">{menu.chrome.localNameField.label}</span>
-                      <input
-                        aria-label={menu.chrome.localNameField.ariaLabel}
-                        className="h-7 rounded-md border border-border/40 bg-background px-2 text-[11px] outline-none focus:border-primary/50"
-                        placeholder={menu.chrome.localNameField.placeholder}
-                        value={menu.draft.localName}
-                        onChange={(event) => menu.updateDraft({ localName: event.target.value })}
-                      />
-                    </label>
-                  </div>
                   <label className="grid gap-1">
                     <span className="text-[11px] font-medium text-foreground/80">{menu.chrome.labelField.label}</span>
                     <input
@@ -157,7 +145,7 @@ export function AddPredicateMenu({
                         )}
                         onClick={() => menu.updateDraft({ type: option.value })}
                       >
-                        <span className="mt-1 h-2.5 w-2.5 rounded-full border border-current" aria-hidden="true" />
+                        <span className="mt-0.5 text-center text-[12px] font-semibold leading-4" aria-hidden="true">{option.icon}</span>
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{option.label}</span>
                           <span className="block truncate text-[10px] text-muted-foreground">{option.description}</span>
@@ -201,6 +189,18 @@ export function AddPredicateMenu({
                   </button>
                   {menu.definitionDetailsOpen ? (
                     <div className="grid gap-2 rounded-md border border-border/40 bg-background/70 p-2">
+                  <div className="grid gap-2">
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-medium text-foreground/80">{menu.chrome.localNameField.label}</span>
+                      <input
+                        aria-label={menu.chrome.localNameField.ariaLabel}
+                        className="h-7 rounded-md border border-border/40 bg-background px-2 text-[11px] outline-none focus:border-primary/50"
+                        placeholder={menu.chrome.localNameField.placeholder}
+                        value={menu.draft.localName}
+                        onChange={(event) => menu.updateDraft({ localName: event.target.value })}
+                      />
+                    </label>
+                  </div>
                       <div className="grid grid-cols-[0.42fr_1fr] gap-2">
                         <label className="grid gap-1">
                           <span className="text-[11px] font-medium text-foreground/80">{menu.chrome.shapeFields.namespace.label}</span>
@@ -286,14 +286,23 @@ export function AddPredicateMenu({
                   ) : null}
                 </section>
               </div>
-              <button
-                type="button"
-                className="sticky bottom-0 mt-1 w-full rounded-md bg-primary px-2 py-1.5 text-[11px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-40"
-                disabled={menu.submitDisabled}
-                onClick={menu.submitDraft}
-              >
-                {menu.chrome.submitButton.label}
-              </button>
+              <div className="sticky bottom-0 mt-1 flex gap-2 bg-popover">
+                <button
+                  type="button"
+                  className="rounded-md border border-border/50 px-3 py-1.5 text-[11px] hover:bg-muted/60"
+                  onClick={menu.closeCreate}
+                >
+                  返回
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 rounded-md bg-primary px-2 py-1.5 text-[11px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-40"
+                  disabled={menu.submitDisabled || !menu.draft.label.trim()}
+                  onClick={menu.submitDraft}
+                >
+                  {menu.chrome.submitButton.label}
+                </button>
+              </div>
             </>
           ) : null}
         </div>

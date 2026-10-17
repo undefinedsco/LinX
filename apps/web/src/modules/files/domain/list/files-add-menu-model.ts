@@ -1,5 +1,6 @@
 export type FilesAddActionId =
   | 'create-document'
+  | 'create-table'
   | 'create-folder'
   | 'upload-files'
   | 'upload-folder'
@@ -8,7 +9,7 @@ export type FilesAddActionId =
 export type FilesAddActionModel = {
   id: FilesAddActionId
   label: string
-  iconKind: 'document' | 'folder' | 'upload-file' | 'upload-folder' | 'web'
+  iconKind: 'document' | 'table' | 'folder' | 'upload-file' | 'upload-folder' | 'web'
   disabled: boolean
 }
 
@@ -33,6 +34,7 @@ export function projectFilesAddMenuModel(containerUri: string | null): FilesAddM
     destinationLabel: containerUri ? `添加到 ${containerUri}` : '先选择一个文件夹',
     actions: [
       { id: 'create-document', label: '新建文档', iconKind: 'document', disabled },
+      { id: 'create-table', label: '新建表格', iconKind: 'table', disabled },
       { id: 'create-folder', label: '新建文件夹', iconKind: 'folder', disabled },
       { id: 'upload-files', label: '上传文件', iconKind: 'upload-file', disabled },
       { id: 'upload-folder', label: '上传文件夹', iconKind: 'upload-folder', disabled },

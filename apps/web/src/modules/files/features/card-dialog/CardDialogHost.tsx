@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Expand, Link2, MoreHorizontal, Share2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Expand, History, Link2, MoreHorizontal, Share2 } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useRouterState } from '@tanstack/react-router'
 
@@ -19,6 +19,7 @@ import {
   type CardPropertyModel,
 } from '../../domain/card/card-dialog-model'
 import { ShareDialog } from '../sidecars/ShareDialog'
+import { CardHistoryDialog } from './CardHistoryDialog'
 import { AiDraftBanner, AiDraftReview } from './AiDraftViews'
 import { CardSelectionToolbar, CardTextViewer, useCardTextSelection } from './CardSelectionViews'
 import { useCardDialogController } from './useCardDialogController'
@@ -67,13 +68,17 @@ function PropertyRow({ property, onSave }: { property: CardPropertyModel; onSave
 /** Highlights the cited quote in the body once the editor has rendered it. */
 function useLocatorHighlight(container: React.RefObject<HTMLElement | null>, quote: string | undefined, key: string) {
   useEffect(() => {
-    const root = container.current
     const registry = (globalThis as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights
     const HighlightCtor = (globalThis as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight
-    if (!root || !quote || !registry || !HighlightCtor) return
-    const timer = setTimeout(() => {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!quote || !registry || !HighlightCtor) return
+    // The editor renders asynchronously: look again for a few seconds until the quote is there.
+    let attempts = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const find = () => {
+      // The body mounts after the card loads, so read the ref on every attempt.
+      const root = container.current
+      const walker = root ? document.createTreeWalker(root, NodeFilter.SHOW_TEXT) : null
+      for (let node = walker?.nextNode(); walker && node; node = walker.nextNode()) {
         const index = node.textContent?.indexOf(quote) ?? -1
         if (index < 0) continue
         const range = document.createRange()
@@ -83,7 +88,10 @@ function useLocatorHighlight(container: React.RefObject<HTMLElement | null>, quo
         node.parentElement?.scrollIntoView?.({ block: 'center' })
         return
       }
-    }, 300)
+      attempts += 1
+      if (attempts < 20) timer = setTimeout(find, 300)
+    }
+    timer = setTimeout(find, 300)
     return () => { clearTimeout(timer); registry.delete('card-locator') }
   }, [container, quote, key])
 }
@@ -224,12 +232,31 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onSelect={() => { void card.copyLink() }}><Link2 className="mr-2 h-3.5 w-3.5" />复制链接</DropdownMenuItem>
+                {card.historySupported ? (
+                  <DropdownMenuItem onSelect={() => { void card.openHistory() }}><History className="mr-2 h-3.5 w-3.5" />版本…</DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           </header>
+          {card.saveStatus === 'conflict' ? (
+            <div role="alert" data-card-conflict="true" className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+              <span className="flex-1">这张卡片在另一台设备上也改了。比较后选择用哪一份，或者两处都保留成两个版本。</span>
+              <Button size="sm" variant="outline" onClick={() => { void card.openHistory() }}>比较</Button>
+              <Button size="sm" variant="ghost" onClick={card.retry}>刷新</Button>
+            </div>
+          ) : null}
           <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">{renderBody()}</div>
         </DialogContent>
       </Dialog>
+      <CardHistoryDialog
+        open={card.historyOpen}
+        onOpenChange={card.setHistoryOpen}
+        rows={card.versionRows}
+        error={card.historyError}
+        current={card.currentSnapshot}
+        canRestore={card.canRestore}
+        onRestore={card.restoreVersion}
+      />
       {card.detail ? (
         <ShareDialog file={card.detail} open={card.accessOpen} onOpenChange={card.setAccessOpen} />
       ) : null}

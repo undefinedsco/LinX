@@ -6,7 +6,12 @@ import type { WhiteboardCanvas } from '../../../domain/structured/structured-whi
 import type { StructuredWhiteboardViewModel } from '../structured-whiteboard-view-model'
 import { LinxWhiteboardCanvas, type WhiteboardCanvasState } from './LinxWhiteboardCanvas'
 
+const mocks = vi.hoisted(() => ({
+  space: { rows: [] as Array<Record<string, unknown>>, boardsByCard: new Map<string, string[]>(), rowByUri: new Map<string, Record<string, unknown>>(), loading: false },
+}))
+
 vi.mock('../../../data/queries', () => ({
+  useWhiteboardSpace: () => mocks.space,
   useFilesPodSearchEntries: () => ({ data: [{ uri: 'https://pod.example/docs/plan.md', name: 'plan.md', kind: 'file' }] }),
 }))
 
@@ -92,6 +97,24 @@ describe('LinxWhiteboardCanvas', () => {
     render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={cards} canvasState={makeState({ nodes: [], edges: [] })} />)
     fireEvent.click(screen.getByRole('button', { name: '文件' }))
     expect(screen.getByText('plan.md')).toBeTruthy()
+  })
+
+  it('lists rows of other tables and says which cards are already on another board', () => {
+    mocks.space = {
+      rows: [{ uri: `${POD}data/suppliers.ttl#x`, title: '花店', subtitle: 'suppliers', summary: '', className: null }],
+      boardsByCard: new Map([[`${DOC}#a`, ['秋季读书会']], [`${POD}data/suppliers.ttl#x`, ['活动采购']]]),
+      rowByUri: new Map(),
+      loading: false,
+    }
+    try {
+      render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={cards} canvasState={makeState({ nodes: [], edges: [] })} />)
+      expect(screen.getByText('已在“秋季读书会”白板上')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: '别的表' }))
+      expect(screen.getByText('花店')).toBeTruthy()
+      expect(screen.getByText('已在“活动采购”白板上')).toBeTruthy()
+    } finally {
+      mocks.space = { rows: [], boardsByCard: new Map(), rowByUri: new Map(), loading: false }
+    }
   })
 
   it('explains the offline and conflict states', () => {

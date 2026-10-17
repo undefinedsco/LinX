@@ -5,7 +5,12 @@
  */
 import { useCallback, useMemo } from 'react'
 import { approvalResource, grantResource, type ApprovalRow, type InputRequestRow } from '@undefineds.co/models'
-import { useResolveInboxApproval, useResolveInboxInputRequest } from '@/modules/inbox/collections'
+import {
+  grantShapeForApproval,
+  readApprovalFileTarget,
+  useResolveInboxApproval,
+  useResolveInboxInputRequest,
+} from '@/modules/inbox/collections'
 import { updateExactRecord } from '@/lib/data/exact-records'
 import { useSession } from '@/providers/solid-session-context'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
@@ -36,10 +41,13 @@ export function useDecisionActions() {
     if (!db || !webId) throw new Error('空间还没准备好')
     const id = `${crypto.randomUUID()}.ttl`
     const { approval } = decision
+    // File-edit approvals become `modify` grants on the edited file (R6-D).
+    const fileTarget = await readApprovalFileTarget(approval, session.fetch)
+    const shape = grantShapeForApproval(approval as never, fileTarget)
     await db.insert(grantResource).values({
       id,
-      target: approval.target,
-      action: approval.action,
+      target: shape.target,
+      action: shape.action,
       effect: 'allow',
       riskCeiling: approval.risk,
       title: grantTitleFor(approval, decision.question),
@@ -49,7 +57,7 @@ export function useDecisionActions() {
       createdAt: new Date(),
     } as never).execute()
     return db.resolveRowIri(grantResource as never, { id } as never)
-  }, [db, webId])
+  }, [db, session.fetch, webId])
 
   const approve = useCallback(async (decision: ApprovalDecision): Promise<ApprovalOutcome> => {
     await resolveApproval.mutateAsync({ approval: decision.approval, decision: 'approved' })

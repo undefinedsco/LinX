@@ -7,6 +7,7 @@ import { buildLinxCardSurface, readLinxCardSurface } from '@linx/agent-runtime/a
 import type { StreamingReq, ThreadItem, ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
 import type { LocalConversationApi } from '../../../services/chatkit-local/fetch-handler'
 import { LinxConversationAgent } from './agent'
+import { setComposerCitation } from '../../../domain/message-citation'
 
 const THREAD = 'https://alice.example/.data/chat/c1/index.ttl#t1'
 const APPROVAL = 'https://alice.example/.data/approvals/a1.ttl#it'
@@ -153,6 +154,24 @@ describe('LinxConversationAgent requests', () => {
     })
     expect(uploaded).toEqual(['名单.txt'])
     expect(requests[0]).toMatchObject({ type: 'threads.add_user_message', params: { input: { attachments: ['att-9'] } } })
+  })
+
+  it('sends the 问 LinX citation as structured context, once', async () => {
+    const requests: StreamingReq[] = []
+    const agent = new LinxConversationAgent({ localThreadId: 't1', threadUri: THREAD, backend: backend([], requests) })
+    setComposerCitation({ sourceUri: 'https://alice.example/docs/a.pdf', locator: { page: 3, quote: '第三条' }, title: 'a.pdf' })
+    const send = (id: string) => new Promise<void>((resolve) => {
+      agent.run({
+        threadId: THREAD, runId: 'r', state: {}, tools: [], context: [], forwardedProps: {},
+        messages: [{ id, role: 'user', content: '这是什么意思' }],
+      } as never).subscribe({ complete: resolve })
+    })
+    await send('local-1')
+    await send('local-2')
+    expect(requests[0]).toMatchObject({
+      params: { input: { citation: { sourceUri: 'https://alice.example/docs/a.pdf', locator: { page: 3, quote: '第三条' }, title: 'a.pdf' } } },
+    })
+    expect((requests[1] as any).params.input.citation).toBeUndefined()
   })
 
   it('remembers who wrote each message for group speaker names', async () => {

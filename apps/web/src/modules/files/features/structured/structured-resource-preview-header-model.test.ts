@@ -17,7 +17,7 @@ describe('projectStructuredResourcePreviewHeaderModel', () => {
       },
       selectedClassName: 'https://schema.org/Task',
     })).toEqual({
-      classScopeButtonLabel: '当前 class：Task definition',
+      classScopeButtonLabel: '当前类型：Task definition',
       classScopeDisplayLabel: 'Task definition',
       classScopeLabel: 'Task definition',
     })
@@ -30,7 +30,7 @@ describe('projectStructuredResourcePreviewHeaderModel', () => {
       },
       selectedClassName: 'https://schema.org/PendingTask',
     })).toEqual({
-      classScopeButtonLabel: '当前 class：Pending Task',
+      classScopeButtonLabel: '当前类型：Pending Task',
       classScopeDisplayLabel: 'Pending Task',
       classScopeLabel: 'Pending Task',
     })
@@ -40,7 +40,7 @@ describe('projectStructuredResourcePreviewHeaderModel', () => {
       pendingClassScopeProposal: undefined,
       selectedClassName: 'https://schema.org/FallbackTask',
     })).toEqual({
-      classScopeButtonLabel: '当前 class：FallbackTask',
+      classScopeButtonLabel: '当前类型：FallbackTask',
       classScopeDisplayLabel: 'FallbackTask',
       classScopeLabel: 'FallbackTask',
     })

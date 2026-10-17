@@ -23,8 +23,9 @@ type StructuredSubjectOpenOptions = {
   scrollTop?: number
 }
 
-function cardFacts(card: StructuredKanbanCardView, pendingMove?: StructuredKanbanPendingMoveView) {
+function cardFacts(card: StructuredKanbanCardView, pendingMove?: StructuredKanbanPendingMoveView, extraFacts: readonly string[] = []) {
   return [
+    ...extraFacts.map((fact) => ({ id: `field:${fact}`, label: fact })),
     ...card.visibleTags.map((tag) => ({ id: `tag:${tag}`, label: tag })),
     ...(pendingMove ? [{ id: `pending:${pendingMove.predicate}`, label: pendingMove.label }] : []),
   ]
@@ -35,6 +36,7 @@ export function StructuredKanbanCard({
   columns = [],
   canMove,
   pendingMove,
+  extraFacts,
   overlay = false,
   selected = false,
   selectionCount = 1,
@@ -48,6 +50,8 @@ export function StructuredKanbanCard({
   columns?: StructuredKanbanMoveTargetColumn[]
   canMove: boolean
   pendingMove?: StructuredKanbanPendingMoveView
+  /** K6d: 「属性：值」 lines for the properties the board shows on cards. */
+  extraFacts?: readonly string[]
   overlay?: boolean
   selected?: boolean
   selectionCount?: number
@@ -147,7 +151,7 @@ export function StructuredKanbanCard({
           title: card.title,
           summary: card.summary,
           classLabel: card.className,
-          facts: cardFacts(card, pendingMove),
+          facts: cardFacts(card, pendingMove, extraFacts),
           pending: Boolean(pendingMove && !pendingMove.retryable),
           errorLabel: pendingMove?.retryable ? pendingMove.statusLabel : undefined,
         }}

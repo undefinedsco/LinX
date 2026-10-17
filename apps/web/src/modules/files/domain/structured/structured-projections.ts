@@ -77,6 +77,21 @@ function localName(value: string): string {
 
 type ProjectionWithScope = StructuredTableProjection & { className?: string | null }
 
+/** Names LinX generates for non-Latin labels (`p-<hash>`, see autoPredicateLocalName) mean nothing to people. */
+function isMachineName(name: string): boolean {
+  return /^p-[0-9a-f]{6,}$/i.test(name)
+}
+
+/** A row without a title is called by its own name: the part after `#` (or the last path segment). */
+function rowNameOfSubject(subject: string): string {
+  const raw = localName(subject)
+  try {
+    return decodeURIComponent(raw) || subject
+  } catch {
+    return raw || subject
+  }
+}
+
 const TITLE_PREDICATES = [
   'title',
   'name',
@@ -117,8 +132,9 @@ const SUMMARY_PREDICATES = [
 export function projectStructuredCards(projection: ProjectionWithScope): StructuredCardProjection[] {
   return projection.rows.map((row) => {
     const title = firstValue(row, TITLE_PREDICATES)
-      ?? row.subject
-    const className = firstValue(row, CLASS_PREDICATES) ?? projection.className ?? null
+      ?? rowNameOfSubject(row.subject)
+    const classValue = firstValue(row, CLASS_PREDICATES) ?? projection.className ?? null
+    const className = classValue && !isMachineName(localName(classValue)) ? classValue : null
     const tags = TAG_PREDICATES.flatMap((predicate) => valuesFor(row, predicate)).map(localName)
 
     const summary = firstValue(row, SUMMARY_PREDICATES)

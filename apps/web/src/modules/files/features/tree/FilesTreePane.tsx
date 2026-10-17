@@ -7,6 +7,8 @@ import type { FilesEntry } from '../../domain/resource/resource-model'
 import { useFilesTreePaneController } from './useFilesTreePaneController'
 import { FilesAddMenu } from '../add/FilesAddMenu'
 import { FilesExplorerRow } from '../../ui/FilesExplorerRow'
+import { FilesBodySearchSection } from '../search/FilesBodySearchSection'
+import { useFilesBodySearch } from '../search/useFilesBodySearch'
 
 function TreeSearchHeader({
   searchText,
@@ -122,6 +124,9 @@ export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { f
   const tree = useFilesTreePaneController()
   const { explorer } = tree
   const firstEntryUri = explorer.rows.find((row) => row.kind === 'entry')?.id
+  // K3: matches inside file text, listed under the name matches.
+  const bodySearch = useFilesBodySearch(tree.searchActive ? tree.searchText : '')
+  const noBodyHits = bodySearch.hits.length === 0
 
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
@@ -142,7 +147,7 @@ export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { f
           <div className="py-1" role="tree" aria-label={tree.chrome.treeLabel}>
             {tree.searchLoading ? (
               <div className="px-4 py-3 text-sm text-muted-foreground">{tree.chrome.rootLoadingLabel}</div>
-            ) : tree.searchResults.length === 0 ? (
+            ) : tree.searchResults.length === 0 && noBodyHits && !bodySearch.isIndexing ? (
               <div className="px-4 py-3 text-sm text-muted-foreground">
                 {tree.chrome.emptySearchLabel(tree.searchText.trim())}
               </div>
@@ -154,6 +159,7 @@ export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { f
                 onOpen={() => tree.openSearchResult(entry)}
               />
             ))}
+            <FilesBodySearchSection query={tree.searchText} search={bodySearch} />
           </div>
         ) : (
           <div className="w-full max-w-full overflow-hidden py-1" role="tree" aria-label={tree.chrome.treeLabel}>

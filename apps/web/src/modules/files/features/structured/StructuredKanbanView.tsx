@@ -13,8 +13,8 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { MoreHorizontal } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useRef } from 'react'
+import { Check, MoreHorizontal } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   type StructuredCellCommitResult, type StructuredCellWriteProposal,
   type StructuredTableProjection,
@@ -22,9 +22,16 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { buildKanbanCardFactLines } from './structured-kanban-view-model'
+import { StructuredKanbanAddLane } from './StructuredKanbanAddLane'
+import { StructuredSaveLine } from './StructuredSaveLine'
+import { useStructuredSaveTracker } from './useStructuredSaveTracker'
 import { StructuredKanbanCard } from './StructuredKanbanCard'
 import { StructuredKanbanLane } from './StructuredKanbanLane'
 import { useStructuredKanbanViewController } from './useStructuredKanbanViewController'
@@ -43,6 +50,10 @@ export function StructuredKanbanView({
   laneOrder,
   initialCollapsedLaneIds,
   initialScrollLeft,
+  extraLanes,
+  laneLabels,
+  cardFields,
+  onBoardChange,
   onGroupPredicateChange,
   onColumnOrderChange,
   onLaneOrderChange,
@@ -59,6 +70,11 @@ export function StructuredKanbanView({
   laneOrder?: string[]
   initialCollapsedLaneIds?: string[]
   initialScrollLeft?: number
+  /** K6d: lanes added by hand, display names for lanes, and the properties shown on cards. */
+  extraLanes?: string[]
+  laneLabels?: Record<string, string>
+  cardFields?: string[]
+  onBoardChange?: (patch: { extraLanes?: string[]; laneLabels?: Record<string, string>; cardFields?: string[] }) => void
   onGroupPredicateChange: (predicate: string | null) => void
   onColumnOrderChange: (columnId: string, subjects: string[]) => void
   onLaneOrderChange?: (laneOrder: string[]) => void
@@ -74,6 +90,17 @@ export function StructuredKanbanView({
   )
   const horizontalBoardRef = useRef<HTMLDivElement | null>(null)
   const horizontalScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveTracker = useStructuredSaveTracker()
+  const trackedCommit = useMemo(() => (
+    onCommitCellWriteProposal
+      ? (proposal: StructuredCellWriteProposal) => saveTracker.track(() => onCommitCellWriteProposal(proposal), proposal)
+      : undefined
+  ), [onCommitCellWriteProposal, saveTracker])
+  const trackedCreate = useMemo(() => (
+    onCreateSubject
+      ? (input: { columnId: string; columnValue: string | null; subject: string }) => saveTracker.trackCreate(() => onCreateSubject(input))
+      : undefined
+  ), [onCreateSubject, saveTracker])
   const kanban = useStructuredKanbanViewController({
     documentUri,
     projection,
@@ -81,12 +108,19 @@ export function StructuredKanbanView({
     kanbanOrder,
     laneOrder,
     initialCollapsedLaneIds,
+    extraLanes,
+    laneLabels,
     onColumnOrderChange,
     onLaneOrderChange,
     onCollapsedLaneIdsChange,
-    onCommitCellWriteProposal,
-    onCreateSubject,
+    onCommitCellWriteProposal: trackedCommit,
+    onCreateSubject: trackedCreate,
   })
+  const cardFieldList = useMemo(() => cardFields ?? [], [cardFields])
+  const factsBySubject = useMemo(
+    () => buildKanbanCardFactLines(projection.rows, cardFieldList),
+    [cardFieldList, projection.rows],
+  )
   useEffect(() => {
     const board = horizontalBoardRef.current
     if (!board || typeof initialScrollLeft !== 'number') return
@@ -108,12 +142,12 @@ export function StructuredKanbanView({
 
   const displayColumns = kanban.hasColumns ? kanban.displayColumns : [{
     id: 'unassigned',
-    label: 'Unassigned',
+    label: '未分组',
     value: null,
     cards: [],
     cardSubjects: [],
     cardCountLabel: '0',
-    ariaLabel: 'Kanban column Unassigned',
+    ariaLabel: '看板列 未分组',
   }]
 
   return (
@@ -137,14 +171,42 @@ export function StructuredKanbanView({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">分组依据</DropdownMenuLabel>
               {kanban.predicateOptions.map(({ predicate, label }) => (
-                <DropdownMenuItem key={predicate} title={predicate} onSelect={() => onGroupPredicateChange(predicate)}>
-                  {label}
+                <DropdownMenuItem key={predicate} onSelect={() => onGroupPredicateChange(predicate)}>
+                  <span className="flex-1">{label}</span>
+                  {predicate === groupPredicate ? <Check className="ml-2 h-3.5 w-3.5" aria-hidden="true" /> : null}
                 </DropdownMenuItem>
               ))}
+              {groupPredicate ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => onGroupPredicateChange(null)}>不分组</DropdownMenuItem>
+                </>
+              ) : null}
+              {onBoardChange ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">卡片上显示</DropdownMenuLabel>
+                  {kanban.predicateOptions.map(({ predicate, label }) => (
+                    <DropdownMenuCheckboxItem
+                      key={`field:${predicate}`}
+                      checked={cardFieldList.includes(predicate)}
+                      onSelect={(event) => event.preventDefault()}
+                      onCheckedChange={(checked) => onBoardChange({
+                        cardFields: checked ? [...cardFieldList, predicate] : cardFieldList.filter((field) => field !== predicate),
+                      })}
+                    >
+                      {label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
+        <span className="ml-auto" />
+        <StructuredSaveLine state={saveTracker.state} onRetry={saveTracker.retry} />
       </div>
       <DndContext
         sensors={sensors}
@@ -176,6 +238,10 @@ export function StructuredKanbanView({
                     onToggleCollapsed={kanban.toggleLaneCollapsed}
                     onKeyboardReorder={kanban.reorderLaneByKeyboard}
                     onQuickCreate={onCreateSubject ? kanban.quickCreateSubject : undefined}
+                    onRename={onBoardChange && column.id !== 'unassigned' ? (columnId, label) => onBoardChange({ laneLabels: { ...(laneLabels ?? {}), [columnId]: label } }) : undefined}
+                    onRemove={onBoardChange && (extraLanes ?? []).includes(column.id)
+                      ? (columnId) => onBoardChange({ extraLanes: (extraLanes ?? []).filter((lane) => lane !== columnId) })
+                      : undefined}
                   >
                     {column.cards.map((card) => (
                       <Fragment key={card.subject}>
@@ -189,6 +255,7 @@ export function StructuredKanbanView({
                         ) : null}
                         <StructuredKanbanCard
                         card={card}
+                        extraFacts={factsBySubject.get(card.subject)}
                         columns={kanban.moveTargetColumnsFor(column.id)}
                         canMove={kanban.canMoveCardsInColumn(column.id)}
                         pendingMove={kanban.pendingMoveViewForSubject(card.subject)}
@@ -207,6 +274,12 @@ export function StructuredKanbanView({
                   </StructuredKanbanLane>
                 </SortableContext>
               ))}
+              {onBoardChange && groupPredicate ? (
+                <StructuredKanbanAddLane
+                  takenIds={kanban.displayColumns.map((column) => column.id)}
+                  onAdd={(name) => onBoardChange({ extraLanes: [...(extraLanes ?? []), name] })}
+                />
+              ) : null}
             </div>
           </SortableContext>
         </div>

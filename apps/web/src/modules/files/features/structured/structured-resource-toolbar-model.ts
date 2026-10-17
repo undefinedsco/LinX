@@ -51,9 +51,9 @@ const PREDICATE_TYPE_FILTER_OPTIONS: StructuredPredicateTypeFilter[] = ['all', '
 const VOCAB_TERM_FILTER_OPTIONS: StructuredVocabTermFilter[] = ['all', 'defined', 'observed']
 const VIEW_LABELS: Record<StructuredResourceViewMode, string> = {
   table: '表格',
-  kanban: 'Kanban',
-  whiteboard: 'Whiteboard',
-  raw: 'Raw',
+  kanban: '看板',
+  whiteboard: '白板',
+  raw: '原文',
 }
 
 function projectStructuredViewModeRow(value: StructuredResourceViewMode) {
@@ -93,13 +93,13 @@ function projectStructuredByline() {
 
 function projectStructuredClassScopeMenu() {
   return {
-    headingLabel: '当前 class',
+    headingLabel: '当前类型',
   }
 }
 
 function projectStructuredSearchField() {
   return {
-    placeholder: '搜索 subject',
+    placeholder: '搜索卡片',
   }
 }
 
