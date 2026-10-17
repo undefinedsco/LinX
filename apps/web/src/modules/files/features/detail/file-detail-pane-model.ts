@@ -67,6 +67,8 @@ export function shouldResetFileDetailHorizontalScroll({
 }
 
 function fileDetailKindLabel(file: FilesDetail): string {
+  // `.data/` is the Pod's shared business-data area: LinX and other Solid apps store records here.
+  if (file.kind === 'container' && /\/\.data\/?$/.test(file.uri)) return '各应用共用的数据'
   if (file.kind === 'container') return '文件夹'
   const mime = file.mimeType ?? ''
   if (mime === 'text/markdown') return 'Markdown 文档'

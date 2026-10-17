@@ -200,6 +200,14 @@ describe('file detail pane model', () => {
       kind: 'container',
       childEntries: [],
     }).title).toBe('数据')
+    expect(projectFileDetailChrome({
+      ...file(),
+      uri: 'https://pod.example/.data/',
+      name: '.data',
+      kind: 'container',
+      parentUri: 'https://pod.example/',
+      childEntries: [],
+    }).subtitle).toBe('各应用共用的数据 · /')
   })
 
   it('projects empty state, shell fallback, and horizontal scroll reset decisions', () => {
