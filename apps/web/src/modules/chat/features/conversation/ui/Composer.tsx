@@ -78,7 +78,7 @@ export function Composer({ disabled, disabledReason, citation }: { disabled?: bo
   const openDialog = useWorkbenchDialogs((state) => state.open)
   const slash = useSlashMenu()
   return (
-    <ComposerPrimitive.Root className="border-t border-border bg-background px-4 py-3">
+    <ComposerPrimitive.Root className="bg-background px-4 pb-3 pt-1">
       <div className="mx-auto max-w-3xl">
         <div className="mb-2 flex flex-wrap gap-1.5 empty:hidden">
           {citation ? (
@@ -103,17 +103,9 @@ export function Composer({ disabled, disabledReason, citation }: { disabled?: bo
             </CommandList>
           </Command>
         ) : null}
-        <div className="rounded-xl border border-border bg-card focus-within:border-primary/60">
-          <ComposerPrimitive.Input
-            rows={1}
-            onKeyDown={slash.onKeyDown}
-            maxRows={6}
-            aria-label="消息"
-            placeholder={disabled ? disabledReason ?? '暂时不能发送' : imageGeneration ? '描述想要的图片' : '消息'}
-            disabled={disabled}
-            className="block min-h-10 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-          />
-          <div className="flex items-center gap-1 px-1.5 pb-1.5">
+        {/* Like WeChat's desktop input area: no divider or box, tools above the text, 发送 at the bottom right. */}
+        <div>
+          <div className="flex items-center gap-1">
             <ComposerPrimitive.AddAttachment
               aria-label="添加附件"
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
@@ -155,7 +147,17 @@ export function Composer({ disabled, disabledReason, citation }: { disabled?: bo
             <button type="button" aria-label="语音对话" title="语音对话" onClick={() => openDialog('voice')} className={iconButton}>
               <AudioLines className="h-4 w-4" aria-hidden="true" />
             </button>
-            <div className="flex-1" />
+          </div>
+          <ComposerPrimitive.Input
+            rows={1}
+            onKeyDown={slash.onKeyDown}
+            maxRows={6}
+            aria-label="消息"
+            placeholder={disabled ? disabledReason ?? '暂时不能发送' : imageGeneration ? '描述想要的图片' : '消息'}
+            disabled={disabled}
+            className="block min-h-16 w-full resize-none bg-transparent px-1.5 py-1 text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+          <div className="flex items-center justify-end">
             {running ? (
               <ComposerPrimitive.Cancel
                 aria-label="停止"
