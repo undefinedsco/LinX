@@ -284,3 +284,29 @@ Heptabase 的白板是用户主动创建的思考空间，不是挂在每份资�
 - 复核中发现并修正：卡片正文加载完之前就挂选区监听，导致“问 LinX”工具条在要加载的卡片里出不来；聊天历史加载会把刚放进输入框的来源标签清掉；发送框文字被挤在按钮中间、还多一层焦点框——改成上面整行输入、下面一排工具和“发送”。
 
 测试现状（2026-10-17）：全量 vitest 3222 条全部通过（连续两次）。最后 16 条在 `service.platform-runtime.test.ts`，修的过程中发现并改了三处真问题：只声明 Responses 的供应商会被错发 Chat Completions；智能体用 LinX 平台模型时，“在服务端运行”等设置被网关的默认模型覆盖、会悄悄改在本机跑；网关用结构化写法（或图片模型名）声明的图片生成 / 编辑能力不被识别。其余是测试跟不上后来的改动（能力改从网关读、进度改在“处理中”提示里显示），已按现行规则更新。R6 期间一直标为“已知失败”的另外 29 条已修：测试时区固定为中国时间、启动测试去掉已删除的模型集合、聊天运行时测试把模型目录和撤回名单的读取与模型请求分开、两个满负荷下偶发失败的测试（PrimaryLayout、FileDetailPane）已稳定。端到端：问 LinX 引用（发送 / 编辑 / 重试都带给模型）、撤回与“数据”文件夹、两条登录，共 7 条通过。
+
+### 7.12 逐项复核（2026-10-17，最终代码）
+
+每一轮列出的事项对应的证据（单元测试在 `apps/web/src/**`，端到端在 `tests/e2e/specs/`，均在最终代码上跑过：全量 vitest 3222+ 条全过，端到端 8 条全过）。
+
+| 轮 | 事项 | 证据 |
+|---|---|---|
+| 7.4 | 外壳、聊天列表、联系人、收件箱、文件、白板各块可用 | e2e `r6-surfaces`（聊天 / 收件箱 / 联系人 / 文件 / 收藏 / 个人资料 / 设置逐页打开、无报错、截图对照画板） |
+| 7.4 | 登录卡片、登录 e2e | e2e `solid-auth`、`real-seeded-auth`（本机 Chrome） |
+| 7.5 | 欢迎只出现一次、一次发出 | e2e `r6-surfaces`（欢迎语恰好 1 条）；单元测试 9 个文件 |
+| 7.5 | 群聊发言人、收藏分组 / 单条 / 状态 | 单元测试（speaker 3、`favorites/domain/groups.test.ts`、`source-status.test.ts`） |
+| 7.5 | 卡片弹窗、AI 草稿保留 / 撤销、共享弹窗、引用定位与高亮 | 单元测试（AiDraft 9、ShareDialog 2、locator 7）；e2e `ask-linx-citation`（定位到行并高亮） |
+| 7.6 | 和 AI 一直聊、时间线合并 | 单元测试 `mergeThreadTimelines`、handoff 3 |
+| 7.7 | 唯一聊天界面；编辑、点赞、`/` 命令、聊天信息入口 | e2e `r6-surfaces`（`/` 命令菜单、聊天信息面板、输入框各按钮）；e2e `ask-linx-citation`（编辑、重试）；单元测试（编辑 / 分支 2、反馈 6） |
+| 7.8 | 内部 thread 实时并入、自动换 thread | 单元测试（`mergeThreadTimelines`、handoff） |
+| 7.8 | 问 LinX 进输入框带来源 | e2e `ask-linx-citation` |
+| 7.8 | AI 加列未确认、未确认文件标记、表格批量、共享给我、搜索范围 / 无权限 | 单元测试（AiColumn 7、unconfirmed 9、useSharedWithMe 3、无权限 3） |
+| 7.8 | 三档等待时间存 Pod、授权属于哪个助手、还有谁能看到、助手准备失败卡、过期 / 别处已处理 | 单元测试（auto-judge-settings、grantAppliesToAgent、WhoCanSeeMe、AssistantNotReadyCard、过期 9） |
+| 7.8 | 开机自动打开、启动时打开 | 单元测试 `settings/data/auto-launch.test.ts`、`lib/micro-apps/startup.test.ts`；桌面端 `app:get/setAutoLaunch` 已接；e2e `r6-surfaces`（设置页“启动时打开”） |
+| 7.9 | 文件正文检索、卡片历史、+属性 / 新建表格、看板、白板卡片库 | 单元测试（body-index 5、card-history、structured-new-table、K6d 2、whiteboard-space-index）；浏览器截图核对（见 7.9） |
+| 7.9 | 引用发给模型（发送 / 编辑 / 重试） | e2e `ask-linx-citation`（抓取发给模型的请求，三条路都带来源） |
+| 7.9 | AI 文件工具、改文件授权落在文件上 | 单元测试 pod-file-tools 2、grant-shape；服务端测试 37/37 |
+| 7.10 | 看板按选项出空列 | 单元测试 `mergeKanbanOptionLanes` |
+| 7.11 | 卡片撤回、“数据”文件夹 | e2e `card-withdraw-and-data-folder`；单元测试 withdrawn-cards 3 |
+| 7.11 | 账号登录按 Solid、下载只显示阶段 | 已定（见 7.11），无代码要做；登录 e2e 通过 |
+| — | 发送框按微信样式 | e2e `r6-surfaces`（输入区无分隔线、工具与发送按钮可见） |
