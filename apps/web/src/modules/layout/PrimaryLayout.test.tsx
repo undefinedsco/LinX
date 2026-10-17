@@ -1,10 +1,41 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render as renderRaw, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
+
+// Panel layouts persist in localStorage, and the test run shares one storage file across
+// workers. Give this file its own in-memory storage before the layout stores load, so
+// another suite's saved widths or open panels never leak in.
+const memoryStorage = vi.hoisted(() => {
+  const items = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => { items.set(key, String(value)) },
+    removeItem: (key: string) => { items.delete(key) },
+    clear: () => { items.clear() },
+    key: (index: number) => [...items.keys()][index] ?? null,
+    get length() { return items.size },
+  }
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage })
+  if (typeof window !== 'undefined') Object.defineProperty(window, 'localStorage', { configurable: true, value: storage })
+  return storage
+})
+
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return renderRaw(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 
 const mockNavigate = vi.fn()
 const mockSessionState = vi.hoisted(() => ({
   isLoggedIn: true,
   sessionRequestInProgress: false,
+}))
+
+// The layout loads module panes lazily; under load the real Files tree can finish loading
+// mid-suite and needs providers this test does not set up. Its behaviour is tested elsewhere.
+vi.mock('@/modules/files/features/tree/FilesTreePane', () => ({
+  FilesTreePane: () => <div data-testid="files-tree-pane-stub" />,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -104,8 +135,7 @@ describe('PrimaryLayout', () => {
   })
 
   beforeEach(() => {
-    // Panel layouts persist in localStorage; other suites share the same storage file.
-    window.localStorage.clear()
+    memoryStorage.clear()
     vi.clearAllMocks()
     mockSessionState.isLoggedIn = true
     mockSessionState.sessionRequestInProgress = false

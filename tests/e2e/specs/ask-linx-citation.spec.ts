@@ -61,7 +61,14 @@ test.afterAll(async () => {
   await runtime?.stop?.()
 })
 
-test('问 LinX carries the citation, and editing the message keeps it', async ({ page }) => {
+test('问 LinX sends the citation to the model on send, edit and retry, and stores it with the message', async ({ page }) => {
+  // What the browser hands to the model: every outgoing request body that mentions a test message.
+  const modelBodies: string[] = []
+  page.on('request', (request) => {
+    const body = request.postData()
+    if (body && body.includes('citecheck')) modelBodies.push(body)
+  })
+  const sentToModel = (marker: string) => modelBodies.some((body) => body.includes(marker) && body.includes('meeting-notes.md'))
   await loginToSeededXpod(page, runtime)
   await expectSecretaryInitialized(page)
   await putNote(page)
@@ -88,6 +95,7 @@ test('问 LinX carries the citation, and editing the message keeps it', async ({
   await expect.poll(async () => (await chatResourcesMentioning(page, 'citecheck-alpha')).some((text) => text.includes('meeting-notes.md')), {
     timeout: 60_000,
   }).toBe(true)
+  await expect.poll(() => sentToModel('citecheck-alpha'), { timeout: 30_000 }).toBe(true)
 
   // Edit the sent message: the new version must carry the same citation.
   const sent = page.locator('[data-role="user"]').filter({ hasText: 'citecheck-alpha' }).last()
@@ -100,5 +108,17 @@ test('问 LinX carries the citation, and editing the message keeps it', async ({
 
   await expect.poll(async () => (await chatResourcesMentioning(page, 'citecheck-beta')).some((text) => text.includes('meeting-notes.md')), {
     timeout: 60_000,
+  }).toBe(true)
+  await expect.poll(() => sentToModel('citecheck-beta'), { timeout: 30_000 }).toBe(true)
+
+  // 重新回答: the answer is asked for again from the stored message, citation included.
+  // (This test Pod has no model, so the answer fails; 重试 asks again the same way.)
+  const answer = page.locator('[data-role="assistant"]').last()
+  const retry = answer.getByRole('button', { name: '重试' })
+  await expect(retry).toBeEnabled({ timeout: 60_000 })
+  const before = modelBodies.length
+  await retry.click()
+  await expect.poll(() => modelBodies.slice(before).some((body) => body.includes('citecheck-beta') && body.includes('meeting-notes.md')), {
+    timeout: 30_000,
   }).toBe(true)
 })
