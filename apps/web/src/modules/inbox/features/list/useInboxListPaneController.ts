@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useBrowserOnline } from '@/lib/use-browser-online'
 import { useInboxStore } from '../../app/store'
 import { useInboxItems, useInboxSummary, useResolveInboxApproval } from '../../data/collections'
-import { useAutoJudgeActions, useInboxAutoJudgeSweep } from '../../data/auto-judge'
+import { useAutoJudgeActions } from '../../data/auto-judge'
+import { useInboxAutoJudgeSweep } from '../../app/auto-judge-sweep'
 import {
   AUTO_JUDGE_CONFIDENCE_LABEL,
   autoJudgeRemaining,
@@ -10,6 +12,7 @@ import {
 } from '../../domain/auto-judge-view'
 import type { InboxAutoWaitingView, InboxListItemView } from '../../domain/inbox-item'
 import { isAutoWaitingInboxItem } from '../../domain/utils'
+import { isRequestExpired } from '../../domain/request-state'
 
 function formatTimeLabel(value: string) {
   if (!value) return '刚刚'
@@ -34,6 +37,7 @@ export function useInboxListPaneController() {
   const resolveApproval = useResolveInboxApproval()
   const { takeOver } = useAutoJudgeActions()
   const [now, setNow] = useState(() => new Date())
+  const online = useBrowserOnline()
 
   useInboxAutoJudgeSweep()
   useEffect(() => {
@@ -86,8 +90,9 @@ export function useInboxListPaneController() {
       status: item.status,
       approvalTarget: item.approval?.target ?? null,
       autoApproved: item.autoPhase === 'auto-approved',
+      expired: item.kind !== 'audit' && isRequestExpired(item.approval ?? item.inputRequest, now),
     })),
-    [items],
+    [items, now],
   )
 
   const selectedIndex = listItems.findIndex((item) => item.id === selectedItemId)
@@ -116,6 +121,7 @@ export function useInboxListPaneController() {
     selectItem,
     items: listItems,
     isLoading,
+    offline: !online,
     summary,
     autoWaiting,
     onApproveWaiting: (id: string) => decideWaiting(id, 'approved'),

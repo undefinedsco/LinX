@@ -3,20 +3,23 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@inrupt/solid-client-authn-browser'
-import { AssistantRuntimeProvider, ExportedMessageRepository, WebSpeechDictationAdapter, type ThreadHistoryAdapter } from '@assistant-ui/react'
-import { fromAgUiMessages, useAgUiRuntime, type UseAgUiRuntimeOptions } from '@assistant-ui/react-ag-ui'
+import { AssistantRuntimeProvider, WebSpeechDictationAdapter, type ThreadHistoryAdapter } from '@assistant-ui/react'
+import { useAgUiRuntime, type UseAgUiRuntimeOptions } from '@assistant-ui/react-ag-ui'
 import { ShieldCheck, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import type { PendingComposerDraft } from '../../domain/conversation-workbench'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { useSendThreadRollover } from './useSendThreadRollover'
+import { useLiveChatSync } from './useLiveChatSync'
 import { useLocalChatRuntime } from './useLocalChatRuntime'
 import { useChatConnectivity } from './useChatConnectivity'
 import { LinxConversationAgent } from './ag-ui/agent'
+import { loadedToRepository } from './ag-ui/repository'
 import { ConversationProvider, useResolveConversationIdentity } from './ConversationContext'
 import { ConversationThread } from './ConversationThread'
 import { localAttachmentAdapter } from './local-attachments'
-import { createFeedbackAdapter, withSavedFeedback } from './ui/message-actions/feedback'
+import { createFeedbackAdapter } from './ui/message-actions/feedback'
 import type { InlineWelcome } from './welcome/WelcomeConversation'
 import { ConversationDialogs } from './ConversationDialogs'
 import { usePersistVersionChoice } from './usePersistVersionChoice'
@@ -34,13 +37,20 @@ export interface ConversationSurfaceProps {
   onComposerDraftApplied: (draft: PendingComposerDraft) => void
   sendDisabled: boolean
   welcome?: InlineWelcome
+  /** The runtime moved new messages to a successor internal thread (see chat-threads.ts). */
+  onSendThreadChanged?: (threadId: string) => void
 }
 
 export function ConversationSurface(props: ConversationSurfaceProps) {
   const { toast } = useToast()
+  // The surface (runtime, composer draft, scroll) outlives a thread switch made
+  // by the runtime, so the local chat service and the agent are built for the
+  // thread this surface started with; the agent then moves its own send target.
+  const [anchorThreadId] = useState(props.selectedThreadId)
+  const { chatRows, prepareSendThread } = useSendThreadRollover(props.selectedChatId, props.onSendThreadChanged)
   const runtime = useLocalChatRuntime({
     session: props.session,
-    selectedThreadId: props.selectedThreadId,
+    selectedThreadId: anchorThreadId,
     selectedChatId: props.selectedChatId,
     selectedThreadTitle: props.selectedThreadTitle,
     persistedActiveBranchByParent: props.persistedActiveBranchByParent,
@@ -68,61 +78,55 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
   useEffect(() => () => useWorkbenchDialogs.getState().close(), [])
   const agent = useMemo(
     () => new LinxConversationAgent({
-      localThreadId: props.selectedThreadId,
-      threadUri: props.selectedThreadId,
+      localThreadId: anchorThreadId,
+      threadUri: anchorThreadId,
       chatId: props.selectedChatId,
       backend: localFetch.conversation,
       takeInferenceOptions,
+      prepareSendThread,
     }),
-    [localFetch, props.selectedThreadId, props.selectedChatId, takeInferenceOptions],
+    [localFetch, anchorThreadId, props.selectedChatId, takeInferenceOptions, prepareSendThread],
   )
   const [loadError, setLoadError] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
   const [threadUri, setThreadUri] = useState<string | null>(null)
   const [stopState, setStopState] = useState<'idle' | 'stopping'>('idle')
   useEffect(() => agent.onStopRequested(setStopState), [agent])
 
+  const toRepository = loadedToRepository
+
+  const [firstLoadDone, setFirstLoadDone] = useState(false)
   const history = useMemo<ThreadHistoryAdapter>(() => ({
     load: async () => {
       try {
-        void reloadKey
         const loaded = await agent.loadSettled()
         setThreadUri(agent.threadId)
         setLoadError(false)
-        // W8: remember who wrote each message so group chats can show the speaker.
-        const decorate = (messages: typeof loaded.messages) => fromAgUiMessages(messages).map((message) => {
-          const maker = message.id ? loaded.makerByUri.get(message.id) : undefined
-          const withMaker = maker ? { ...message, metadata: { ...message.metadata, custom: { ...message.metadata?.custom, senderRef: maker } } } : message
-          // A reply that failed (as opposed to being stopped) keeps offering 重试 after reload.
-          const failure = message.id ? loaded.failedByUri.get(message.id) : undefined
-          const saved = withSavedFeedback(withMaker, loaded.feedbackByUri)
-          return failure !== undefined && message.role === 'assistant'
-            ? { ...saved, status: { type: 'incomplete' as const, reason: 'error' as const, error: failure || '这次没有完成，可以重试。' } }
-            : saved
-        })
-        const shown = decorate(loaded.messages)
-        if (loaded.alternates.length === 0) return ExportedMessageRepository.fromArray(shown)
-        // Other versions of a message (edits, regenerated answers) hang beside the shown ones.
-        const parentById = new Map(loaded.alternates.map(({ message, parentId }) => [message.id, parentId]))
-        const hidden = decorate(loaded.alternates.map(({ message }) => message)).flatMap((message) => {
-          const parentId = message.id ? parentById.get(message.id) : undefined
-          return message.id && parentId !== undefined ? [{ message, parentId }] : []
-        })
-        const versions = [
-          ...shown.map((message, index) => ({ message, parentId: index > 0 ? shown[index - 1].id ?? null : null })),
-          ...hidden,
-        ]
-        // The picker numbers versions in the order they are added: oldest first.
-        const writtenAt = (id: string | undefined) => (id ? loaded.createdAtByUri.get(id) ?? 0 : 0)
-        versions.sort((left, right) => writtenAt(left.message.id) - writtenAt(right.message.id))
-        return ExportedMessageRepository.fromBranchableArray(versions, { headId: shown[shown.length - 1]?.id ?? null })
+        return toRepository(loaded)
       } catch {
         setLoadError(true)
         return { messages: [] }
+      } finally {
+        setFirstLoadDone(true)
       }
     },
     append: async () => undefined,
-  }), [agent, reloadKey]) // reloadKey: "重试" builds a fresh adapter, which loads again
+  }), [agent, toRepository])
+
+  // assistant-ui loads the history once. Later changes in the Pod (a reconnect,
+  // a "重试", messages other internal threads wrote) are merged into the running
+  // thread in place: no remount, so the composer draft and scroll stay.
+  const runtimeRef = useRef<{ thread: { import: (repository: ReturnType<typeof toRepository>) => void } } | null>(null)
+  const refreshFromPod = useCallback(async () => {
+    try {
+      const loaded = await agent.loadSettled()
+      setThreadUri(agent.threadId)
+      runtimeRef.current?.thread.import(toRepository(loaded))
+      setLoadError(false)
+    } catch (error) {
+      setLoadError(true)
+      throw error
+    }
+  }, [agent, toRepository])
 
   const { isOnline: online, synchronize } = useChatConnectivity({
     podBaseUrl,
@@ -130,7 +134,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
     localFetch,
     selectedThreadId: props.selectedThreadId,
     setReconnectStatus: runtime.setReconnectStatus,
-    refreshSurface: async () => { setReloadKey((key) => key + 1) },
+    refreshSurface: refreshFromPod,
   })
   const dictation = useMemo(
     () => (WebSpeechDictationAdapter.isSupported() ? new WebSpeechDictationAdapter({ language: 'zh-CN', continuous: true, interimResults: true }) : undefined),
@@ -142,6 +146,8 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
     adapters: { history, attachments: localAttachmentAdapter, dictation, feedback: createFeedbackAdapter(agent) },
     onError: (error) => toast({ variant: 'destructive', description: error.message || '这次没有完成，可以重试。' }),
   })
+  runtimeRef.current = assistantRuntime as unknown as typeof runtimeRef.current
+  useLiveChatSync({ agent, rows: chatRows, ready: firstLoadDone, refresh: refreshFromPod })
   usePersistVersionChoice(
     assistantRuntime,
     agent,
@@ -179,7 +185,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
               sendDisabled={props.sendDisabled}
               threadAttachments={runtime.threadAttachments}
               setThreadAttachments={runtime.setThreadAttachments}
-              refresh={() => setReloadKey((key) => key + 1)}
+              refresh={() => { void refreshFromPod().catch(() => undefined) }}
             />
           </AssistantRuntimeProvider>
           </ComposerToolsContext.Provider>
@@ -188,7 +194,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
       {loadError ? (
         <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-sm">
           <span>读不到这个聊天的消息。</span>
-          <Button size="sm" variant="outline" onClick={() => setReloadKey((key) => key + 1)}>重试</Button>
+          <Button size="sm" variant="outline" onClick={() => { void refreshFromPod().catch(() => undefined) }}>重试</Button>
         </div>
       ) : null}
       {runtime.serviceAccessRequired ? (

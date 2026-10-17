@@ -23,6 +23,13 @@ export interface LinxConversationAgentOptions {
   backend: LocalConversationApi
   /** Per-message options of the composer (e.g. 联网搜索); read once for each new message. */
   takeInferenceOptions?: () => Record<string, unknown> | undefined
+  /**
+   * Called right before a new message is sent. Returns the local id of the
+   * internal thread the message should go to (the runtime may start a fresh one
+   * when the current thread is too long or has been idle; see chat-threads.ts),
+   * or null to stay in the current thread.
+   */
+  prepareSendThread?: (current: string) => Promise<string | null>
 }
 
 export interface LoadedConversation {
@@ -74,10 +81,12 @@ export function userFiles(content: UserContent): Array<{ name: string; mimeType:
 const ROOT = 'root'
 
 export class LinxConversationAgent extends AbstractAgent {
-  private readonly localThreadId: string
+  /** Where new messages go. Mutable: the runtime can move it to a successor thread. */
+  private localThreadId: string
   private readonly chatId: string | undefined
   private readonly backend: LocalConversationApi
   private readonly takeInferenceOptions: (() => Record<string, unknown> | undefined) | undefined
+  private readonly prepareSendThread: ((current: string) => Promise<string | null>) | undefined
   /** Thread each loaded message lives in (older ones may not be the send target). */
   private readonly threadIdByMessageId = new Map<string, string>()
   private readonly itemIdByMessageId = new Map<string, string>()
@@ -102,6 +111,28 @@ export class LinxConversationAgent extends AbstractAgent {
     this.chatId = options.chatId
     this.backend = options.backend
     this.takeInferenceOptions = options.takeInferenceOptions
+    this.prepareSendThread = options.prepareSendThread
+  }
+
+  /** Local id of the internal thread new messages currently go to. */
+  get sendThreadId(): string {
+    return this.localThreadId
+  }
+
+  /**
+   * A test for "did this agent already see that message?" by Pod row id or
+   * message URI. The live sync uses it to tell messages written by other
+   * threads or other actors from the ones this surface itself just produced.
+   */
+  messageKnower(): (rowId: string) => boolean {
+    const tail = (value: string) => value.slice(Math.max(value.lastIndexOf('#'), value.lastIndexOf('/')) + 1)
+    const known = new Set<string>()
+    for (const [uri, itemId] of this.itemIdByMessageId) {
+      known.add(uri)
+      known.add(itemId)
+      known.add(tail(uri))
+    }
+    return (rowId) => known.has(rowId) || known.has(tail(rowId))
   }
 
   /** Reads the topic from the Pod; call once before the first run. */
@@ -260,6 +291,9 @@ export class LinxConversationAgent extends AbstractAgent {
           },
         }
       }
+      // The runtime decides where this message goes (a long or long-idle thread hands over to a new one).
+      const target = await this.prepareSendThread?.(this.localThreadId).catch(() => null)
+      if (target) this.localThreadId = target
       const uploaded = await Promise.all(userFiles(content).map((file) => this.backend.uploadAttachment(file, signal)))
       if (!text && uploaded.length === 0) return null
       return {

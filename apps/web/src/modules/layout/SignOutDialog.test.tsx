@@ -3,18 +3,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { saveChatDraft } from '@/modules/chat/draft-store'
 import { SignOutDialog } from './SignOutDialog'
 
+vi.mock('./use-running-task-count', () => ({ useRunningTaskCount: () => 0 }))
+
 describe('SignOutDialog', () => {
   beforeEach(() => {
     window.localStorage.clear()
   })
 
-  it('keeps this account drafts by default and says running work continues', () => {
+  it('keeps this account drafts by default and says running work continues when there is some', () => {
     saveChatDraft({ accountScope: 'alice', chatId: 'chat-1' }, '共享日历先试两周')
     saveChatDraft({ accountScope: 'alice', chatId: 'chat-2', threadId: 't-1' }, '周六签到改到 9:30')
     saveChatDraft({ accountScope: 'bob', chatId: 'chat-9' }, 'bob 的草稿')
     const onConfirm = vi.fn()
 
-    render(<SignOutDialog open onOpenChange={vi.fn()} accountScope="alice" onConfirm={onConfirm} />)
+    render(<SignOutDialog open onOpenChange={vi.fn()} accountScope="alice" onConfirm={onConfirm} runningTaskCount={2} />)
 
     expect(screen.getByText('2 条没发出的草稿会留在这台电脑，只有你登录后能看到')).toBeTruthy()
     expect(screen.getByText('正在运行的任务会继续，退出不会停止它们')).toBeTruthy()
@@ -43,5 +45,10 @@ describe('SignOutDialog', () => {
 
     expect(screen.queryByText(/草稿/)).toBeNull()
     expect(screen.queryByRole('button', { name: '放弃草稿并退出' })).toBeNull()
+  })
+
+  it('shows no running-task line when nothing is running', () => {
+    render(<SignOutDialog open onOpenChange={vi.fn()} accountScope="alice" onConfirm={vi.fn()} />)
+    expect(screen.queryByText(/正在运行的任务会继续/)).toBeNull()
   })
 })

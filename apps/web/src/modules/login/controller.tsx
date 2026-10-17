@@ -111,6 +111,7 @@ export function useLoginController() {
   const initRef = useRef(false)
   const suppressAutoLoginRef = useRef(false)
   const localConnectKeyRef = useRef<string | null>(null)
+  const lastConnectKeyRef = useRef<string | null>(null)
   const desktopAuthPendingRef = useRef(false)
   const desktopAuthSurfaceOpenedRef = useRef(false)
   const silentLocalFallbackStartedRef = useRef(false)
@@ -725,6 +726,7 @@ export function useLoginController() {
   const connect = useCallback(async (providerKey: string, options?: { prompt?: 'none' | 'consent' | 'login'; isInvalidClientRetry?: boolean }) => {
     loginFinalizeGenerationRef.current += 1
     suppressAutoLoginRef.current = false
+    lastConnectKeyRef.current = providerKey
     setStorageConflict(null)
     const normalizedProviderKeyUrl = normalizeUrl(providerKey)
     const provider = resolveProviderByKey(providerKey, providers)
@@ -1057,6 +1059,17 @@ export function useLoginController() {
     setView,
   ])
 
+  /** 重新打开: close the login window and start the same sign-in again. */
+  const reopenAuthWindow = useCallback(() => {
+    const providerKey = lastConnectKeyRef.current
+    if (!providerKey) return
+    oidc.cancel()
+    resetDesktopAuthState()
+    void Promise.resolve(embeddedAuthorization.close())
+      .catch(() => undefined)
+      .then(() => connect(providerKey))
+  }, [connect, embeddedAuthorization, oidc, resetDesktopAuthState])
+
   const cancelConnecting = useCallback(() => {
     oidc.cancel()
     setError(null)
@@ -1259,6 +1272,7 @@ export function useLoginController() {
     testLocalConnectivity,
     backFromLocal,
     cancelConnecting,
+    reopenAuthWindow,
     switchAccount,
     addProvider,
     removeProvider,

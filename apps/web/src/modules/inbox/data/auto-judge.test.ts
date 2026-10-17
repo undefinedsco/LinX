@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTO_JUDGE_LEASE_OWNER, writeAutoJudgeContext } from '@linx/agent-runtime/auto-judge'
 
 const autoApprove = vi.fn().mockResolvedValue(true)
+const planApproval = vi.fn().mockResolvedValue('auto')
 
 vi.mock('@/providers/solid-session-context', () => ({ useSession: () => ({ session: { info: {} } }) }))
 vi.mock('@/providers/solid-database-provider', () => ({ useSolidDatabase: () => ({ db: null }) }))
@@ -9,8 +10,12 @@ vi.mock('./collections', () => ({
   approvalCollection: {},
   grantCollection: {},
   continueRuntimeAfterApproval: vi.fn(),
-  inboxOps: { autoApproveApproval: (...args: unknown[]) => autoApprove(...args) },
+  inboxOps: {
+    autoApproveApproval: (...args: unknown[]) => autoApprove(...args),
+    planApprovalAutoJudge: (...args: unknown[]) => planApproval(...args),
+  },
 }))
+vi.mock('@/modules/chat/collections', () => ({ LINX_DEFAULT_SECRETARY: { agentId: 'agent-1' } }))
 
 import { sweepDueAutoJudge } from './auto-judge'
 
@@ -42,5 +47,17 @@ describe('sweepDueAutoJudge', () => {
     expect(autoApprove).toHaveBeenCalledTimes(1)
     expect(autoApprove).toHaveBeenCalledWith(expect.objectContaining({ approval: due }))
     expect(onApproved).toHaveBeenCalledWith(due)
+  })
+
+  it('plans requests nobody has planned yet with the Pod waits', async () => {
+    const fresh = { id: 'n', status: 'pending', assignedTo: null, context: null }
+    const windows = { high: 1000, medium: 2000, low: null }
+    await sweepDueAutoJudge({
+      approvals: [fresh] as never,
+      userWebId: 'https://alice.example/profile/card#me',
+      now,
+      planning: { grants: [], windows, agentIri: 'https://pod.example/agents/linx#me' },
+    })
+    expect(planApproval).toHaveBeenCalledWith(expect.objectContaining({ approval: fresh, windows }))
   })
 })

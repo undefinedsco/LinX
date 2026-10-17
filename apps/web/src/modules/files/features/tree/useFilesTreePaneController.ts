@@ -8,6 +8,7 @@ import {
   useFilesFavoriteList,
   useFilesTreeSearchEntries,
   useSelectedFilesLocation,
+  useSharedWithMe,
 } from '../../data/queries'
 import { projectFilesAddContainerUri } from '../../domain/list/files-add-menu-model'
 import { normalizeContainerUri } from '../../domain/resource/resource-semantics'
@@ -33,12 +34,14 @@ export function useFilesTreePaneController() {
   const { data: favorites = [] } = useFilesFavoriteList({ sourceModule: 'files' })
   const rootEntriesQuery = useFilesEntries(ALL_FILES_NODE_ID, 'all')
   const rootEntries = useMemo(() => rootEntriesQuery.data ?? [], [rootEntriesQuery.data])
+  const sharedWithMe = useSharedWithMe()
   const explorer = useFilesExplorerDataController({
     entryScope: 'all',
     rootEntries,
     searchText: '',
     groups: true,
     treeOnly: true,
+    sharedWithMe,
   })
   const chrome = useMemo(() => projectFilesTreeChromeModel(), [])
 

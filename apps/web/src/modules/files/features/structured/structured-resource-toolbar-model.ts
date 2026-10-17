@@ -27,7 +27,7 @@ export function projectStructuredViewSaveIndicator(
       ariaLabel: '正在同步视图配置',
       kind: 'saving' as const,
       retryable: false,
-      title: '正在同步 .meta',
+      title: '保存中…',
     }
   }
   if (status === 'error') {
@@ -35,14 +35,14 @@ export function projectStructuredViewSaveIndicator(
       ariaLabel: '视图配置未同步，点击重试',
       kind: 'error' as const,
       retryable: true,
-      title: error || '视图配置未同步',
+      title: error || '没保存成功，点一下重试',
     }
   }
   return {
     ariaLabel: '视图配置尚未同步',
     kind: 'dirty' as const,
     retryable: false,
-    title: '等待同步 .meta',
+    title: '等着保存',
   }
 }
 

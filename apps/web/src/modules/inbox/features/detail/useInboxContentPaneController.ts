@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useBrowserOnline } from '@/lib/use-browser-online'
 import { useChatStore } from '@/modules/chat/store'
 import { chatOps } from '@/modules/chat/collections'
 import { useSession } from '@/providers/solid-session-context'
 import { useInboxStore } from '../../app/store'
-import { useInboxItems, useResolveInboxApproval, useResolveInboxInputRequest } from '../../data/collections'
+import { refreshInboxRequests, useInboxItems, useResolveInboxApproval, useResolveInboxInputRequest } from '../../data/collections'
+import { describeHandledElsewhere, isPendingRequestStatus, isRequestExpired } from '../../domain/request-state'
 import { formatInputSteerMessage, isPendingInputRequestStatus, isSecretInputRequest, parseInputRequestOptions } from '../../domain/input-request'
 import { buildAuditPresentation, createResolvedAuthTimestampsIndex, formatAuditActorRole, formatInboxStatusLabel } from '../../domain/presentation'
 import { isActionableInboxItem } from '../../domain/utils'
@@ -34,6 +36,10 @@ export function useInboxContentPaneController() {
   const [confirmGrantOpen, setConfirmGrantOpen] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const [steerError, setSteerError] = useState<string | null>(null)
+  const online = useBrowserOnline()
+  // The request that was still pending when it was opened, and the one this person decided here.
+  const [openedPendingId, setOpenedPendingId] = useState<string | null>(null)
+  const [decidedHereId, setDecidedHereId] = useState<string | null>(null)
   const [isSteering, setIsSteering] = useState(false)
   const { session } = useSession()
   const navigate = useNavigate()
@@ -56,6 +62,16 @@ export function useInboxContentPaneController() {
     setGrantChecked(false)
     setConfirmGrantOpen(false)
   }, [selectedItemId])
+  useEffect(() => {
+    // Re-read on open: it may have been decided somewhere else since the list loaded.
+    if (selectedItemId) refreshInboxRequests()
+    setOpenedPendingId(null)
+  }, [selectedItemId])
+  useEffect(() => {
+    if (selectedItem && selectedItem.kind !== 'audit' && isPendingRequestStatus(selectedItem.status)) {
+      setOpenedPendingId(selectedItem.id)
+    }
+  }, [selectedItem])
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30_000)
     return () => clearInterval(timer)
@@ -92,12 +108,24 @@ export function useInboxContentPaneController() {
     return null
   }, [grants, now, selectedItem])
 
-  const isPendingApproval = selectedItem?.kind === 'approval' && selectedItem.status === 'pending' && !!selectedItem.approval
+  const stateSource = selectedItem?.approval ?? selectedItem?.inputRequest ?? null
+  const expired = !!selectedItem && selectedItem.kind !== 'audit' && isRequestExpired(stateSource, now)
+  const handledElsewhere = selectedItem
+    && selectedItem.kind !== 'audit'
+    && openedPendingId === selectedItem.id
+    && decidedHereId !== selectedItem.id
+    ? describeHandledElsewhere(stateSource)
+    : null
+  const requestState = expired
+    ? ({ kind: 'expired' } as const)
+    : handledElsewhere ? ({ kind: 'elsewhere', ...handledElsewhere } as const) : null
+  const isPendingApproval = selectedItem?.kind === 'approval' && selectedItem.status === 'pending' && !!selectedItem.approval && !expired
   const isPendingAuthRequired = !!selectedItem && isActionableInboxItem(selectedItem) && selectedItem.category === 'auth_required'
   const isResolvedAuthRequired = selectedItem?.category === 'auth_required' && selectedItem.status === 'resolved'
   const isPendingInputRequest = selectedItem?.kind === 'input_request'
     && !!selectedItem.inputRequest
     && isPendingInputRequestStatus(selectedItem.status)
+    && !expired
   const inputRequestForm = useMemo(() => {
     const inputRequest = selectedItem?.inputRequest
     if (!inputRequest) return null
@@ -113,7 +141,7 @@ export function useInboxContentPaneController() {
         : null,
     }
   }, [selectedItem])
-  const isMutating = resolveApproval.isPending || takeOver.isPending || markReviewed.isPending || revokeGrant.isPending || resolveInputRequest.isPending || isSteering
+  const isMutating = !online || resolveApproval.isPending || takeOver.isPending || markReviewed.isPending || revokeGrant.isPending || resolveInputRequest.isPending || isSteering
 
   const approvalMeta = useMemo(() => {
     if (!selectedItem?.approval) return null
@@ -137,6 +165,7 @@ export function useInboxContentPaneController() {
         reason,
         ...(withGrant && decision === 'approved' ? { grant: { highImpactConfirmed: impactKind !== null } } : {}),
       })
+      setDecidedHereId(selectedItem.id)
       setReason('')
       setGrantChecked(false)
       setConfirmGrantOpen(false)
@@ -186,6 +215,7 @@ export function useInboxContentPaneController() {
       // React Query owns the displayed error state; the typed answer stays in place.
       return
     }
+    setDecidedHereId(item.id)
     setInputAnswer('')
     if (mode !== 'steer' || !inputRequestForm?.canSteer || !item.chatId || !item.threadId) return
     const webId = session.info.webId
@@ -222,6 +252,8 @@ export function useInboxContentPaneController() {
   return {
     selectedItem,
     isLoading,
+    offline: !online,
+    requestState,
     reason,
     setReason,
     isPendingApproval,

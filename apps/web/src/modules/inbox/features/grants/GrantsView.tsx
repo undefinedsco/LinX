@@ -2,8 +2,10 @@ import { useMemo } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { useAutoJudgeActions, useGrantRows, useGrantUseCounts } from '../../data/auto-judge'
+import { useAutoJudgeSettingsSync } from '../../app/auto-judge-sweep'
 import { AUTO_JUDGE_WINDOW_CHOICES, useAutoJudgeSettings } from '../../app/auto-judge-settings'
 import { describeGrantAction, formatAutoJudgeWindow, HIGH_IMPACT_LABEL, detectHighImpact } from '../../domain/auto-judge-view'
+import { grantAppliesToAgent, readGrantAgent } from '../../domain/grant-agent'
 import type { AutoJudgeConfidence } from '@linx/agent-runtime/auto-judge'
 
 /**
@@ -12,8 +14,10 @@ import type { AutoJudgeConfidence } from '@linx/agent-runtime/auto-judge'
  */
 export interface GrantsViewProps {
   /**
-   * Assistant whose grants to show. Grants do not record which assistant they
-   * were given to yet (shared model has no field), so all grants are shown.
+   * Assistant whose grants to show (its IRI or id). A grant records its
+   * assistant in `context` (`{ agent }`, see domain/grant-agent.ts); grants
+   * without one show for every assistant, labelled 通用. Without `agentId`
+   * all grants are shown.
    */
   agentId?: string
 }
@@ -32,13 +36,17 @@ function formatDay(value: unknown): string {
   return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
-export function GrantsView(_props: GrantsViewProps) {
+export function GrantsView({ agentId }: GrantsViewProps) {
+  useAutoJudgeSettingsSync()
   const { data: grants } = useGrantRows()
   const counts = useGrantUseCounts()
   const { revokeGrant } = useAutoJudgeActions()
   const windows = useAutoJudgeSettings((state) => state.windows)
   const setWindow = useAutoJudgeSettings((state) => state.setWindow)
-  const rows = useMemo(() => grants.filter((grant) => grant.effect !== 'deny'), [grants])
+  const rows = useMemo(
+    () => grants.filter((grant) => grant.effect !== 'deny' && grantAppliesToAgent(grant, agentId ? [agentId] : [])),
+    [agentId, grants],
+  )
 
   return (
     <ScrollArea className="h-full">
@@ -72,6 +80,7 @@ export function GrantsView(_props: GrantsViewProps) {
                     <tr key={grant.id} className="border-b border-border">
                       <td className="py-2.5 pr-3 text-foreground">
                         {describeGrantAction(grant)}
+                        {agentId && !readGrantAgent(grant) ? <span className="ml-2 text-xs text-muted-foreground">通用</span> : null}
                         {impact ? <span className="ml-2 text-xs text-muted-foreground">{HIGH_IMPACT_LABEL[impact]}</span> : null}
                       </td>
                       <td className="py-2.5 pr-3 text-muted-foreground">交给你</td>

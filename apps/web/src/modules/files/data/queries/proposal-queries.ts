@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useSession } from '@/providers/solid-session-context'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
@@ -6,6 +7,7 @@ import type { AiChangeProposal } from '../../domain/proposal/ai-change-approval-
 import type { ShareChange } from '../proposal/share-commands'
 import type { ShareState } from '../../domain/resource/share-model'
 import type { AiCellChange } from '../../domain/proposal/ai-cell-change-model'
+import type { AiColumnChange } from '../../domain/proposal/ai-column-change-model'
 import type { AiDraft } from '../../domain/proposal/ai-draft-model'
 import type { StructuredCellChangeProposal } from '../../domain/proposal/structured-cell-approval-model'
 import type { SourceUpdateProposal } from '../../domain/source/source-approval-model'
@@ -14,6 +16,7 @@ import {
   accessPolicyProposalCollection,
   aiChangeProposalCollection,
   aiCellChangeCollection,
+  aiColumnChangeCollection,
   shareCollection,
   aiDraftCollection,
   filesProposalQueryCollection,
@@ -217,6 +220,26 @@ export function useAiDraft(targetResourceUri: string | null | undefined, enabled
   })
 }
 
+const NO_UNCONFIRMED_DRAFTS: ReadonlySet<string> = new Set()
+
+/**
+ * Which files in a list (a folder, search results) carry an unconfirmed LinX draft, for the small
+ * purple dot (R6 K10). One query for the whole list.
+ */
+export function useUnconfirmedAiDraftTargets(scopeKey: string, targetResourceUris: readonly string[], enabled = true): ReadonlySet<string> {
+  const { db } = useSolidDatabase()
+  const query = useQuery<string[]>({
+    queryKey: aiDraftCollection.listQueryKey(scopeKey, targetResourceUris),
+    queryFn: () => aiDraftCollection.fetchUnconfirmed(targetResourceUris, { db }),
+    enabled: enabled && !!db && targetResourceUris.length > 0,
+    retry: false,
+  })
+  return useMemo(
+    () => (query.data && query.data.length > 0 ? new Set(query.data) : NO_UNCONFIRMED_DRAFTS),
+    [query.data],
+  )
+}
+
 /** Used by whoever runs LinX's edits: lays the change over the file as an unconfirmed draft (or keeps it under a grant). */
 export function useStageAiDraft() {
   const { db } = useSolidDatabase()
@@ -306,6 +329,72 @@ export function useMarkAiCellChangeSeen() {
 
   return useMutation({
     mutationFn: async (change: AiCellChange) => aiCellChangeCollection.markSeen({ cacheClient: queryClient, db, change }),
+  })
+}
+
+/** Columns LinX added to a table, for the dashed header and the "LinX added a column" line (R6 K6b). */
+export function useAiColumnChanges(documentUri: string | null | undefined, enabled = true) {
+  const { db } = useSolidDatabase()
+  const uri = documentUri?.trim() ?? ''
+  return useQuery<AiColumnChange[]>({
+    queryKey: aiColumnChangeCollection.queryKey(uri),
+    queryFn: () => aiColumnChangeCollection.fetch(uri, { db }),
+    enabled: enabled && !!db && uri.length > 0,
+  })
+}
+
+/** Used by whoever runs LinX's table edits: adds a column unconfirmed, or straight away under a grant. */
+export function useStageAiColumnChange() {
+  const { db } = useSolidDatabase()
+  const { session } = useSession()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: {
+      documentUri: string
+      predicate: string
+      label: string
+      valueType?: string
+      delegated?: boolean
+      agentWebId?: string | null
+      podRootUri?: string | null
+    }) => {
+      const actorWebId = session.info.webId
+      if (!actorWebId) throw new Error('Cannot add a column without a logged-in WebID.')
+      return aiColumnChangeCollection.stage({ cacheClient: queryClient, db, actorWebId, ...input })
+    },
+  })
+}
+
+export function useKeepAiColumnChange() {
+  const { db } = useSolidDatabase()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (change: AiColumnChange) => aiColumnChangeCollection.keep({ cacheClient: queryClient, db, change }),
+  })
+}
+
+export function useRemoveAiColumnChange() {
+  const { db } = useSolidDatabase()
+  const { session } = useSession()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (change: AiColumnChange) => {
+      const actorWebId = session.info.webId
+      if (!actorWebId) throw new Error('Cannot remove a column without a logged-in WebID.')
+      return aiColumnChangeCollection.remove({ cacheClient: queryClient, db, actorWebId, change })
+    },
+  })
+}
+
+export function useMarkAiColumnChangeSeen() {
+  const { db } = useSolidDatabase()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (change: AiColumnChange) => aiColumnChangeCollection.markSeen({ cacheClient: queryClient, db, change }),
   })
 }
 

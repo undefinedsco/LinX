@@ -48,6 +48,11 @@ export interface FilesExplorerProjectionInput {
   groups?: boolean
   /** Assistant folder key -> display name, so `/.data/agents/<id>/` is named by the assistant. */
   agentNames?: Record<string, string>
+  /** Items other people shared with me, listed under 共享给我 (R6 K0), grouped by who shared them. */
+  sharedWithMe?: {
+    items: ReadonlyArray<{ ownerName: string; uri: string; name: string; kind: 'file' | 'folder' }>
+    isLoading: boolean
+  }
 }
 
 function normalizeContainerKey(uri: string): string {
@@ -189,5 +194,44 @@ export function projectFilesExplorerRows(input: FilesExplorerProjectionInput): F
     { kind: 'group', id: 'group::mine', depth: 0, containerUri: '', label: '我的空间' },
     ...rows,
     { kind: 'group', id: 'group::shared', depth: 0, containerUri: '', label: '共享给我' },
+    ...projectSharedWithMeRows(input),
   ]
+}
+
+function projectSharedWithMeRows(input: FilesExplorerProjectionInput): FilesExplorerRowModel[] {
+  const shared = input.sharedWithMe
+  if (!shared) return []
+  if (shared.isLoading && shared.items.length === 0) {
+    return [{ kind: 'loading', id: 'shared::loading', depth: 0, containerUri: '', label: '正在读取…' }]
+  }
+  if (shared.items.length === 0) {
+    return [{ kind: 'loading', id: 'shared::empty', depth: 0, containerUri: '', label: '没有找到别人共享给你的文件夹' }]
+  }
+  const owners = new Map<string, Array<(typeof shared.items)[number]>>()
+  for (const item of shared.items) owners.set(item.ownerName, [...(owners.get(item.ownerName) ?? []), item])
+  const rows: FilesExplorerRowModel[] = []
+  for (const [ownerName, items] of owners) {
+    rows.push({ kind: 'group', id: `shared::owner::${ownerName}`, depth: 0, containerUri: '', label: ownerName })
+    const entries = sharedWithMeItemsToEntries(items)
+    rows.push(...projectRowsForEntries({ depth: 1, entries, input, normalizedSearch: '' }))
+  }
+  return rows
+}
+
+/** Shared items as entries the tree and search can show like any other file or folder. */
+export function sharedWithMeItemsToEntries(
+  items: ReadonlyArray<{ ownerName: string; uri: string; name: string; kind: 'file' | 'folder' }>,
+): FilesEntry[] {
+  return items.map((item): FilesEntry => ({
+    id: item.uri,
+    uri: item.uri,
+    name: item.name,
+    kind: item.kind === 'folder' ? 'container' as const : 'resource' as const,
+    semanticKind: item.kind === 'folder' ? 'container' : 'file',
+    parentUri: '',
+    mimeType: null,
+    size: null,
+    modifiedAt: null,
+    sourceLabel: item.ownerName,
+  }))
 }

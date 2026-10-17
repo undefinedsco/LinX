@@ -9,6 +9,11 @@ vi.mock('../../app/store', () => ({
   useInboxStore: (selector: (state: unknown) => unknown) => mockUseInboxStore(selector),
 }))
 
+vi.mock('../../app/auto-judge-sweep', () => ({
+  useInboxAutoJudgeSweep: () => undefined,
+  useAutoJudgeSettingsSync: () => undefined,
+}))
+
 vi.mock('../../data/auto-judge', () => ({
   useInboxAutoJudgeSweep: () => undefined,
   useGrantRows: () => ({ data: [], all: [], isLoading: false }),

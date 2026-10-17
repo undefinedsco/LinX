@@ -66,3 +66,19 @@ export function projectFilesSearchEmptyText(scopeLabel: string, query: string): 
     description: '不代表别处没有',
   }
 }
+
+export const FILES_SEARCH_INCLUDE_SHARED_LABEL = '也搜共享给我的'
+
+/** Entries whose details could not be read because of missing permission; they are not shown, only counted. */
+export function countFilesSearchNoAccess(entries: readonly FilesEntry[]): number {
+  return entries.filter((entry) => (
+    entry.metadataState === 'unavailable'
+    && (entry.metadataErrorKind === 'unauthorized' || entry.metadataErrorKind === 'forbidden')
+  )).length
+}
+
+export function projectFilesSearchNoAccessLine(count: number): string | null {
+  return count > 0 ? `${count} 个没有权限，不显示` : null
+}
+
+export const FILES_SEARCH_ERROR_TEXT = '搜索出错了，没有搜完'

@@ -584,3 +584,91 @@ export function toAutoJudgeGrant(row: {
     highImpactConfirmed: isHighImpactConfirmedGrant(row),
   }
 }
+
+// ---------------------------------------------------------------------------
+// The three waits (K11), stored in the Pod
+// ---------------------------------------------------------------------------
+
+/**
+ * Pod document that holds the person's three waits, relative to the Pod root:
+ * `settings/linx/auto-judge.ttl`. Web, desktop and CLI read the same document,
+ * so a change on one device applies everywhere.
+ *
+ * ```turtle
+ * @prefix linx: <https://undefineds.co/ns#> .
+ * <#windows> a linx:AutoJudgeWindows ;
+ *   linx:highWaitMs 600000 ;      # milliseconds
+ *   linx:mediumWaitMs 7200000 ;
+ *   linx:lowWaitNever true .      # `linx:<band>WaitNever true` replaces the number: never auto-approve
+ * ```
+ */
+export const AUTO_JUDGE_SETTINGS_PATH = 'settings/linx/auto-judge.ttl'
+
+const SETTINGS_PREFIX = 'https://undefineds.co/ns#'
+
+export function serializeAutoJudgeWindows(windows: AutoJudgeWindows): string {
+  const lines = (['high', 'medium', 'low'] as const).map((band) => {
+    const value = windows[band]
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? `  linx:${band}WaitMs ${Math.round(value)}`
+      : `  linx:${band}WaitNever true`
+  })
+  return [
+    `@prefix linx: <${SETTINGS_PREFIX}> .`,
+    '<#windows> a linx:AutoJudgeWindows ;',
+    `${lines.join(' ;\n')} .`,
+    '',
+  ].join('\n')
+}
+
+/** Reads the waits from the settings document; a missing band falls back to its default. Null when it holds none. */
+export function parseAutoJudgeWindows(turtle: string): AutoJudgeWindows | null {
+  let found = false
+  const read = (band: AutoJudgeConfidence): number | null => {
+    if (new RegExp(`linx:${band}WaitNever\\s+(?:true|"true")`).test(turtle)) {
+      found = true
+      return null
+    }
+    const match = new RegExp(`linx:${band}WaitMs\\s+"?(\\d+)"?`).exec(turtle)
+    if (match) {
+      found = true
+      return Number(match[1])
+    }
+    return DEFAULT_AUTO_JUDGE_WINDOWS[band]
+  }
+  const windows: AutoJudgeWindows = { high: read('high'), medium: read('medium'), low: read('low') }
+  return found ? windows : null
+}
+
+export type AutoJudgeSettingsFetch = (
+  input: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string },
+) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>
+
+function settingsUrl(podBaseUrl: string): string {
+  return `${podBaseUrl.replace(/\/+$/, '')}/${AUTO_JUDGE_SETTINGS_PATH}`
+}
+
+/** Reads the waits from the Pod. `null` = nothing stored yet (404); throws on other failures. */
+export async function readAutoJudgeWindowsFromPod(
+  podBaseUrl: string,
+  fetchFn: AutoJudgeSettingsFetch,
+): Promise<AutoJudgeWindows | null> {
+  const response = await fetchFn(settingsUrl(podBaseUrl), { headers: { Accept: 'text/turtle' } })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(`Reading auto-judge settings failed (${response.status})`)
+  return parseAutoJudgeWindows(await response.text())
+}
+
+export async function writeAutoJudgeWindowsToPod(
+  podBaseUrl: string,
+  fetchFn: AutoJudgeSettingsFetch,
+  windows: AutoJudgeWindows,
+): Promise<void> {
+  const response = await fetchFn(settingsUrl(podBaseUrl), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/turtle' },
+    body: serializeAutoJudgeWindows(windows),
+  })
+  if (!response.ok) throw new Error(`Saving auto-judge settings failed (${response.status})`)
+}

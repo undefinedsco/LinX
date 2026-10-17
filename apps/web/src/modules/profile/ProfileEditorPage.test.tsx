@@ -14,6 +14,10 @@ const retry = vi.fn()
 const revertChange = vi.fn()
 
 vi.mock('./useProfileEditor', () => ({ useProfileEditor: () => editorState.value }))
+const whoCanSee = vi.hoisted(() => ({
+  value: { publicContacts: [{ webId: 'https://a.example/profile/card#me', name: '小林' }], sharedWithPeople: 3, isLoading: false },
+}))
+vi.mock('@/modules/contacts', () => ({ useWhoCanSeeMe: () => whoCanSee.value }))
 vi.mock('./useSpaceStatus', () => ({ useSpaceStatus: () => ({ spaceLabel: '云端' }) }))
 
 import { useCardDialog } from '@/lib/card-dialog'
@@ -150,5 +154,14 @@ describe('ProfileEditorPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '复制地址' }))
     expect(writeText).toHaveBeenCalledWith(WEB_ID)
     expect(await screen.findByRole('button', { name: '已复制' })).toBeInTheDocument()
+  })
+
+  it('lists who can see me and links shared files to Files', () => {
+    render(<ProfileEditorPage theme="light" />)
+    const panel = screen.getByRole('region', { name: '还有谁能看到' })
+    expect(panel).toHaveTextContent('1 人')
+    expect(panel).toHaveTextContent('小林')
+    fireEvent.click(screen.getByRole('button', { name: /共享出去的文件和卡片/ }))
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'files' } })
   })
 })

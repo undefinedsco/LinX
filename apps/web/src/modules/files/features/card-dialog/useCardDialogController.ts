@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 
+import { ask as askLinxInChat } from '@/lib/ask-linx'
 import { useCardDialog, type CardDialogRequest } from '@/lib/card-dialog'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -201,19 +202,28 @@ export function useCardDialogController(request: CardDialogRequest) {
     void navigate({ to: '/$microAppId', params: { microAppId: 'files' } })
   }, [closeDialog, navigate, target])
 
-  /** 问 LinX: no chat hook is reachable from here, so the quoted passage goes to the clipboard. */
+  /**
+   * 问 LinX: the chat opens with the quoted passage in its composer (not sent).
+   * Only when nothing in the app listens do we fall back to the clipboard.
+   */
   const askLinx = useCallback(async (quote: string) => {
+    const text = projectCardQuotedPrompt({
+      title: title,
+      quote,
+      locatorLabel: projectCardLocatorLabel(request.locator),
+    })
+    if (askLinxInChat({ text, sourceUri: request.uri, locator: request.locator, title })) {
+      closeDialog()
+      void navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
+      return
+    }
     try {
-      await copyFilesText(projectCardQuotedPrompt({
-        title: title,
-        quote,
-        locatorLabel: projectCardLocatorLabel(request.locator),
-      }))
+      await copyFilesText(text)
       toast({ title: '已复制这段话', description: '到和 LinX 的聊天里粘贴就能问。' })
     } catch (_error) {
       toast({ title: '没复制成功', variant: 'destructive' })
     }
-  }, [request.locator, title, toast])
+  }, [closeDialog, navigate, request.locator, request.uri, title, toast])
 
   const makeCardFromQuote = useCallback(async (quote: string) => {
     if (!podRootUri) return

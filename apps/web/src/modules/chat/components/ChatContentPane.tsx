@@ -5,13 +5,14 @@
  * Pod 负责留档；本地聊天回路把 assistant 响应流式返回给 AG-UI agent。
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useSession } from '@/providers/solid-session-context'
+import { useAskLinx } from '@/lib/ask-linx'
 import { Bot } from 'lucide-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
-import { LINX_DEFAULT_SECRETARY, useChatInit, useMessageList } from '../collections'
+import { LINX_DEFAULT_SECRETARY, useChatInit, useChatMessageRows, useMessageList } from '../collections'
 import { useChatStore } from '../store'
 import { ChatListPane } from './ChatListPane'
 import { projectChatContentState, type ChatContentState, type ChatContentStateKind } from '../domain/chat-content-state'
@@ -78,6 +79,11 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   } = useSolidDatabase()
   const { isReady } = useChatInit()
   const selectChat = useChatStore((state) => state.selectChat)
+  // 问 LinX from elsewhere: open the LinX 助手 chat; its composer takes the prompt.
+  const hasPendingAsk = useAskLinx((state) => state.pending !== null)
+  useEffect(() => {
+    if (hasPendingAsk) selectChat(LINX_DEFAULT_SECRETARY.chatId)
+  }, [hasPendingAsk, selectChat])
   const secretary = useSecretaryChatController({
     databaseScopeKey,
     webId: session.info.webId,
@@ -107,11 +113,19 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     completeDraftHandoff: completeSecretaryDraftHandoff,
   } = secretary
   const messagesQuery = useMessageList(selectedChatId, selectedThreadId)
-  const isThreadEmpty = !messagesQuery.isLoading && messagesQuery.data.length === 0
+  // The chat is one timeline across its internal threads: it is "empty" only when all of them are.
+  const chatMessageRows = useChatMessageRows(selectedChatId)
+  const isThreadEmpty = !messagesQuery.isLoading && messagesQuery.data.length === 0 && chatMessageRows.length === 0
+  // The conversation surface is keyed by the thread it was opened on. When the
+  // runtime itself moves new messages to a successor thread (too long / idle),
+  // the surface stays mounted: composer draft and scroll position survive.
+  const rolledToRef = useRef<string | null>(null)
+  const surfaceRef = useRef<{ chatId: string; threadId: string } | null>(null)
+  const selectThread = useChatStore((state) => state.selectThread)
   // W0: the welcome shows in LinX 助手's selected topic as
   // long as welcome.ttl is absent (checked inside WelcomeConversation) and the
   // topic has no messages yet, whether or not the default topic already exists.
-  const showInlineWelcome = isSecretary && Boolean(activeThread) && isThreadEmpty
+  const showInlineWelcome = isSecretary && Boolean(selectedThreadId) && isThreadEmpty
   // Keep the welcome wrapper mounted for this topic once it started, so the
   // conversation underneath is not remounted when the first message arrives.
   const [welcomeThreadId, setWelcomeThreadId] = useState<string | null>(null)
@@ -275,9 +289,20 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     return <EmptyState title="正在加载聊天" description="正在同步当前聊天。" />
   }
 
+  if (
+    !surfaceRef.current
+    || surfaceRef.current.chatId !== selectedChatId
+    || (surfaceRef.current.threadId !== selectedThreadId && rolledToRef.current !== selectedThreadId)
+  ) surfaceRef.current = { chatId: selectedChatId, threadId: selectedThreadId }
+  const surfaceKey = `${surfaceRef.current.chatId}:${surfaceRef.current.threadId}`
+
   const renderConversation = (welcome: InlineWelcome | undefined) => (
     <ConversationSurface
-      key={`${selectedChatId}:${selectedThreadId}`}
+      key={surfaceKey}
+      onSendThreadChanged={(threadId) => {
+        rolledToRef.current = threadId
+        selectThread(threadId)
+      }}
       session={session}
       selectedThreadId={selectedThreadId}
       selectedChatId={selectedChatId}

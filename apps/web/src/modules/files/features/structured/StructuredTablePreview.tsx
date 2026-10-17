@@ -16,6 +16,8 @@ import { StructuredSubjectPeekActions } from './StructuredSubjectPeekActions'
 import { StructuredSubjectPeekDrawer } from './StructuredSubjectPeek'
 import { StructuredWhiteboardView } from './StructuredWhiteboardView'
 import { projectStructuredResourcePreviewHeaderModel } from './structured-resource-preview-header-model'
+import { STRUCTURED_TABLE_ROW_ORDER_KEY } from './structured-row-selection-model'
+import { localRdfName } from '../../domain/card/rdf-term-tokens'
 import { useStructuredAiCellDots } from './useStructuredAiCellDots'
 import { useStructuredCellProposalWorkflowController } from './useStructuredCellProposalWorkflowController'
 import { useStructuredProjectionFilterController } from './useStructuredProjectionFilterController'
@@ -249,6 +251,38 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     }
     return true
   }
+  // R6 K6 bulk bar: a card is the subject, so deleting clears everything written about it, and
+  // moving to another table changes the class it belongs to.
+  const bulkMoveTargets = scopedProjection.classOptions
+    .filter((className) => className !== scopedProjection.className)
+    .map((className) => ({ id: className, label: localRdfName(className) }))
+  const rowsBySubject = new Map(projection.rows.map((row) => [row.subject, row]))
+  const deleteSubjects = async (subjects: string[]) => {
+    for (const subject of subjects) {
+      for (const cell of rowsBySubject.get(subject)?.cells ?? []) {
+        if (cell.values.length === 0) continue
+        await commitViewCellWriteProposal(createStructuredCellWriteProposal({
+          documentUri: file.uri,
+          subject,
+          predicate: cell.predicate,
+          previousValues: cell.values,
+          nextValues: [],
+        }))
+      }
+    }
+  }
+  const moveSubjects = async (subjects: string[], className: string) => {
+    for (const subject of subjects) {
+      const previous = rowsBySubject.get(subject)?.cells.find((cell) => cell.predicate === 'rdf:type')?.values ?? []
+      await commitViewCellWriteProposal(createStructuredCellWriteProposal({
+        documentUri: file.uri,
+        subject,
+        predicate: 'rdf:type',
+        previousValues: previous,
+        nextValues: [className],
+      }))
+    }
+  }
   const createWhiteboardSubject = async (subject: string) => {
     const plan = planStructuredSubjectCreation({
       classScope: scopedProjection.className,
@@ -369,7 +403,15 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
             />
           ) : viewMode === 'table' ? (
             <StructuredProjectionTable
+              rowOrder={kanbanOrder[STRUCTURED_TABLE_ROW_ORDER_KEY]}
+              onRowOrderChange={(subjects) => setKanbanColumnOrderFromUi(STRUCTURED_TABLE_ROW_ORDER_KEY, subjects)}
+              bulkMoveTargets={bulkMoveTargets}
+              onDeleteSubjects={structuredWritesSupported ? deleteSubjects : undefined}
+              onMoveSubjects={structuredWritesSupported ? moveSubjects : undefined}
               aiCellDots={aiCellDots.aiCellDots}
+              aiColumns={aiCellDots.aiColumns}
+              onKeepAiColumn={aiCellDots.onKeepAiColumn}
+              onRemoveAiColumn={aiCellDots.onRemoveAiColumn}
               onUndoAiCell={aiCellDots.onUndoAiCell}
               onSeenAiCell={aiCellDots.onSeenAiCell}
               documentUri={file.uri}

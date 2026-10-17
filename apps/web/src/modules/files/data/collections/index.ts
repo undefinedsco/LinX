@@ -83,6 +83,7 @@ const {
   aiChangeProposalCollection,
   aiDraftCollection,
   aiCellChangeCollection,
+  aiColumnChangeCollection,
   shareCollection,
 } = createProposalCollections({
   getDb,
@@ -102,6 +103,7 @@ export {
   aiChangeProposalCollection,
   aiDraftCollection,
   aiCellChangeCollection,
+  aiColumnChangeCollection,
   shareCollection,
 }
 

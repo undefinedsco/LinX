@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { AiDraftDot } from './AiDraftDot'
 import type { FilesExplorerRowOpenTrigger } from './files-explorer-row-types'
 
 export interface FilesExplorerRowProps {
@@ -22,6 +23,8 @@ export interface FilesExplorerRowProps {
   /** Only the active tree row participates in the page tab sequence. */
   focusable?: boolean
   favorite?: boolean
+  /** LinX changed this file and the change is not confirmed yet (R6 K10). */
+  unconfirmed?: boolean
   contextTarget?: boolean
   metadataWarning: {
     label: string
@@ -48,6 +51,7 @@ export function FilesExplorerRow({
   selected,
   focusable = true,
   favorite = false,
+  unconfirmed = false,
   contextTarget = false,
   metadataWarning,
   onToggle,
@@ -139,6 +143,7 @@ export function FilesExplorerRow({
           )}
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate">{name}</span>
+          {unconfirmed ? <AiDraftDot /> : null}
           {metadataWarning ? (
             <span
               aria-label={metadataWarning.label}

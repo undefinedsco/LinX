@@ -19,3 +19,5 @@ export type {
 } from './domain/types'
 export { contactOps, contactCollection, initializeContactCollections } from './data/collections'
 export { CONTACTS_CP1_ENABLED } from './app/feature-flags'
+export { useSharedWithMe, type SharedWithMeItem } from './features/shared/useSharedWithMe'
+export { useWhoCanSeeMe, type PublicContactEntry, type WhoCanSeeMe } from './features/shared/useWhoCanSeeMe'

@@ -1,6 +1,6 @@
 import { auditResource, type SolidDatabase } from '@undefineds.co/models'
 import { assertInsertValuesBelongToCurrentPod } from '@/lib/data/pod-write-guard'
-import { createRawTextResource, readRawTextResource, saveRawTextResource } from '../pod-adapter'
+import { createRawTextResource, listContainerResourceUris, readRawTextResource, saveRawTextResource } from '../pod-adapter'
 import {
   aiDraftResourceUri,
   countAiDraftSpots,
@@ -33,6 +33,42 @@ export async function readAiDraft(
     if (isMissing(error)) return null
     throw error
   }
+}
+
+/**
+ * Which of these files carry an unconfirmed LinX draft (R6 K10 list dots). One listing of the
+ * draft container and one read per draft that exists — never one request per row: a draft's
+ * location is derived from its file, so the listing is matched against the expected locations.
+ */
+export async function listUnconfirmedAiDraftTargets(
+  db: SolidDatabase,
+  targetResourceUris: readonly string[],
+  podRootUri?: string | null,
+): Promise<Set<string>> {
+  const targets = targetResourceUris.filter((uri) => !uri.endsWith('/'))
+  if (targets.length === 0) return new Set()
+  const expectedByDraftUri = new Map(targets.map((target) => [aiDraftResourceUri(target, podRootUri), target]))
+  const containerUri = aiDraftResourceUri(targets[0]!, podRootUri).replace(/[^/]*$/, '')
+  let listed: string[]
+  try {
+    listed = await listContainerResourceUris(db, containerUri)
+  } catch (error) {
+    if (isMissing(error)) return new Set()
+    throw error
+  }
+  const existing = listed.filter((uri) => expectedByDraftUri.has(uri))
+  const read = await Promise.all(existing.map(async (draftUri) => {
+    try {
+      const resource = await readRawTextResource(db, draftUri)
+      const draft = parseAiDraftTurtle(resource.content, resource.uri)
+      return draft.state === 'draft' && countAiDraftSpots(draft.baseContent, draft.draftContent) > 0
+        ? expectedByDraftUri.get(draftUri) ?? null
+        : null
+    } catch {
+      return null
+    }
+  }))
+  return new Set(read.filter((target): target is string => !!target))
 }
 
 async function writeDraftRecord(db: SolidDatabase, draft: AiDraft): Promise<AiDraft> {

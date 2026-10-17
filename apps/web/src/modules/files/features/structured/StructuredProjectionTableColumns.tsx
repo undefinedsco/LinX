@@ -25,6 +25,7 @@ import {
   type StructuredPredicateColumnProposal,
 } from './StructuredPredicateColumnHeader'
 import { StructuredPredicateActiveCell } from './StructuredPredicateActiveCell'
+import { StructuredRowLeading } from './StructuredRowLeading'
 import { StructuredAiCellDot } from './StructuredAiCellDot'
 import { StructuredPredicateStaticCell } from './StructuredPredicateStaticCell'
 import { aiCellKey, type AiCellChange } from '../../domain/proposal/ai-cell-change-model'
@@ -108,6 +109,9 @@ export interface StructuredProjectionTableColumnsInput {
   aiCellDots?: ReadonlyMap<string, AiCellChange>
   onUndoAiCell?: (change: AiCellChange) => void
   onSeenAiCell?: (change: AiCellChange) => void
+  /** Rows ticked for the bulk bar (R6 K6); the tick box is hidden when there is no handler. */
+  selectedSubjects?: ReadonlySet<string>
+  onToggleSubject?: (subject: string) => void
 }
 
 const structuredTableSortingFn: SortingFn<StructuredProjectionTableRow> = (left, right, columnId) => {
@@ -122,10 +126,16 @@ function openSubjectCard(projection: StructuredTableProjection, documentUri: str
   })
 }
 
+export function openStructuredSubjectCard(projection: StructuredTableProjection, documentUri: string, subject: string) {
+  openSubjectCard(projection, documentUri, subject)
+}
+
 export function buildStructuredProjectionTableColumns({
   aiCellDots,
   onUndoAiCell,
   onSeenAiCell,
+  selectedSubjects,
+  onToggleSubject,
   activeEnumCell,
   activeRelationCell,
   activeTextCell,
@@ -182,7 +192,16 @@ export function buildStructuredProjectionTableColumns({
       accessorFn: (row) => row.subject,
       size: 124,
       sortingFn: structuredTableSortingFn,
-      meta: { label: '名称', resizable: true },
+      meta: {
+        label: '名称',
+        resizable: true,
+        cellLabel: (row: StructuredProjectionTableRow) => projectStructuredSubjectCellChrome({
+          documentUri,
+          projection,
+          row,
+          rowIndex: 0,
+        }).displayLabel,
+      },
       header: () => (
         <button className="flex items-center gap-1 hover:text-foreground" onClick={() => onSort?.('subject')}>
           名称 <StructuredProjectionSortIcon columnKey="subject" sortKey={sortKey} sortDirection={sortDirection} />
@@ -196,17 +215,24 @@ export function buildStructuredProjectionTableColumns({
           rowIndex: row.index,
         })
         return (
-          <StructuredSubjectCell
-            subject={subjectChrome.subject}
-            displayLabel={subjectChrome.displayLabel}
-            rowIndex={subjectChrome.rowIndex}
-            pending={subjectChrome.pending}
-            pendingMarker={subjectChrome.pendingMarker}
-            openTarget={subjectChrome.openTarget}
-            openAffordance={subjectChrome.openAffordance}
-            onOpenSubject={onOpenSubjectResource}
-            onOpenCard={() => openSubjectCard(projection, documentUri, row.original.subject)}
-          />
+          <StructuredRowLeading
+            label={subjectChrome.displayLabel}
+            selectable={!!onToggleSubject && !subjectChrome.pending}
+            selected={!!selectedSubjects?.has(row.original.subject)}
+            onToggleSelected={() => onToggleSubject?.(row.original.subject)}
+          >
+            <StructuredSubjectCell
+              subject={subjectChrome.subject}
+              displayLabel={subjectChrome.displayLabel}
+              rowIndex={subjectChrome.rowIndex}
+              pending={subjectChrome.pending}
+              pendingMarker={subjectChrome.pendingMarker}
+              openTarget={subjectChrome.openTarget}
+              openAffordance={subjectChrome.openAffordance}
+              onOpenSubject={onOpenSubjectResource}
+              onOpenCard={() => openSubjectCard(projection, documentUri, row.original.subject)}
+            />
+          </StructuredRowLeading>
         )
       },
     },

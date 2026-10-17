@@ -39,6 +39,8 @@ import type {
 } from '../../domain/list/list-view-model'
 import type { FilesEntry } from '../../domain/resource/resource-model'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
+import { useUnconfirmedAiDraftTargets } from '../../data/queries'
+import { FILES_SEARCH_INCLUDE_SHARED_LABEL } from '../../domain/list/search-scope-model'
 import { FilesExplorerRow } from '../../ui/FilesExplorerRow'
 import { FilesOperationSheet } from '../../ui/FilesOperationSheet'
 import { FilesAddMenu } from '../add/FilesAddMenu'
@@ -253,6 +255,10 @@ export function FilesListPane(_props: MicroAppPaneProps) {
     rows: explorer.rows,
     searchText: listPane.searchText,
     currentFolderUri: listPane.currentFolderUri,
+    failedContainerCount: explorer.rows.filter((row) => row.kind === 'error').length,
+    onRetry: () => {
+      for (const row of explorer.rows) if (row.kind === 'error') explorer.retryContainer?.(row.containerUri)
+    },
   })
   const renderedRows: Array<{ row: (typeof explorer.rows)[number]; reason?: string }> = search.active
     ? search.results.map(({ row, reason }) => ({
@@ -263,6 +269,11 @@ export function FilesListPane(_props: MicroAppPaneProps) {
   const explorerEntries = explorer.rows
     .filter((row) => row.kind === 'entry')
     .map((row) => row.entry)
+  // One query for every file on screen (folder rows, tree rows and search results alike).
+  const unconfirmedDraftUris = useUnconfirmedAiDraftTargets(
+    search.active ? 'search' : (listPane.currentFolderUri ?? 'root'),
+    renderedRows.flatMap(({ row }) => (row.kind === 'entry' && row.entry.kind !== 'container' ? [row.entry.uri] : [])),
+  )
   const listSelection = useFilesListSelectionController({
     files: explorerEntries,
     openFile: explorer.openEntry,
@@ -420,6 +431,25 @@ export function FilesListPane(_props: MicroAppPaneProps) {
           {search.note ? (
             <p role="status" className="mt-0.5 text-muted-foreground">{search.note.text}</p>
           ) : null}
+          <label className="mt-1 flex items-center gap-1.5 text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={search.includeShared}
+              onChange={(event) => search.setIncludeShared(event.target.checked)}
+            />
+            {FILES_SEARCH_INCLUDE_SHARED_LABEL}
+          </label>
+          {search.noAccessLine ? (
+            <p role="status" className="mt-0.5 text-muted-foreground">{search.noAccessLine}</p>
+          ) : null}
+          {search.error ? (
+            <p role="alert" className="mt-0.5 flex items-center gap-2 text-destructive">
+              {search.error.text}
+              {search.error.retry ? (
+                <button type="button" className="text-primary hover:underline" onClick={search.error.retry}>重试</button>
+              ) : null}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {listSelection.hasBatchSelection ? (
@@ -565,6 +595,7 @@ export function FilesListPane(_props: MicroAppPaneProps) {
                     !listSelection.selectedFileId && explorerEntries[0]?.uri === file.uri
                   )}
                   favorite={listPane.isFileFavorite(file)}
+                  unconfirmed={unconfirmedDraftUris.has(file.uri)}
                   contextTarget={listSelection.contextMenuTargetUri === file.uri}
                   metadataWarning={row.metadataWarning}
                   onToggle={() => explorer.toggleFolder(file.uri)}

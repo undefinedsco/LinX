@@ -37,6 +37,7 @@ const storeState = {
   selectedThreadId: 'thread-1',
   messageAnchorId: null as string | null,
   selectThread: vi.fn(),
+  selectChat: vi.fn(),
   clearMessageAnchor: mockClearMessageAnchor,
 }
 
@@ -109,6 +110,7 @@ vi.mock('../collections', () => ({
   useChatList: () => mockUseChatList(),
   useThreadList: () => mockUseThreadList(),
   useMessageList: () => mockUseMessageList(),
+  useChatMessageRows: () => mockUseMessageList().data ?? [],
   useMessageIndex: () => mockUseMessageIndex(),
   useWorkspaceList: () => mockUseWorkspaceList(),
   useChatMutations: () => mockMutations,
@@ -155,6 +157,7 @@ vi.mock('../features/conversation/welcome/WelcomeConversation', async () => {
   }
 })
 
+import { ask, useAskLinx } from '@/lib/ask-linx'
 import { ChatContentPane, chatThreadRefsMatch, readActiveBranchSelections } from './ChatContentPane'
 
 describe('chatThreadRefsMatch', () => {
@@ -285,12 +288,32 @@ describe('ChatContentPane', () => {
       expect(screen.getByTestId('conversation-surface-stub')).toBeTruthy()
     })
 
+    it('shows the welcome on the full conversation as soon as the default thread is selected, before the thread list has it', () => {
+      arrange([])
+      mockUseThreadList.mockReturnValue({ data: [], isLoading: false, error: null, refetch: mockThreadRefetch })
+      render(<ChatContentPane theme="light" />)
+      expect(screen.getByTestId('welcome-conversation-stub')).toBeTruthy()
+      expect(screen.getByTestId('conversation-surface-stub')).toBeTruthy()
+    })
+
     it('does not show the welcome once the topic has messages', () => {
       arrange([{ id: 'm1' }])
       render(<ChatContentPane theme="light" />)
       expect(screen.queryByTestId('welcome-conversation-stub')).toBeNull()
       expect(screen.getByTestId('conversation-surface-stub')).toBeTruthy()
     })
+  })
+
+  it('opens the LinX 助手 chat when something asks LinX (问 LinX)', () => {
+    storeState.selectedChatId = 'someone-else'
+    render(<ChatContentPane theme="light" />)
+    expect(storeState.selectChat).not.toHaveBeenCalled()
+    act(() => {
+      useAskLinx.getState().listen()
+      ask({ text: '关于这段' })
+    })
+    expect(storeState.selectChat).toHaveBeenCalledWith('__secretary__/index.ttl#this')
+    useAskLinx.setState({ pending: null, listeners: 0 })
   })
 
   it('uses the chat workspace as a full-bleed operational surface', () => {
@@ -376,7 +399,8 @@ describe('ChatContentPane', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '给 LinX 助手发消息' }), { target: { value: '先写一点' } })
     expect(screen.getByRole('textbox', { name: '给 LinX 助手发消息' })).toHaveValue('先写一点')
     expect(screen.queryByText('正在准备话题...')).not.toBeInTheDocument()
-    expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+    // The default thread is created eagerly so the full conversation can take over.
+    await waitFor(() => expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(1))
   })
 
   it('creates the Secretary default thread after bootstrap settles even before the chat query returns', async () => {

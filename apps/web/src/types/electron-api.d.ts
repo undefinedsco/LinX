@@ -207,7 +207,9 @@ export interface AppAPI {
   closeConfigWindow: () => Promise<{ success: boolean }>
   onConfigWindowState: (
     callback: (state: { open: boolean; reason: 'opened' | 'closed'; ready: boolean }) => void,
-  ) => () => void
+  ) => () => void  /** Open LinX when the computer starts (desktop only). */
+  getAutoLaunch?: () => Promise<{ enabled: boolean }>
+  setAutoLaunch?: (enabled: boolean) => Promise<{ enabled: boolean }>
 }
 
 export interface AuthAPI {

@@ -1035,6 +1035,16 @@ function setupIPC(): void {
     return result.filePaths[0];
   });
 
+  // S7 开机自动打开: the operating system's login item for LinX itself.
+  ipcMain.handle('app:getAutoLaunch', () => {
+    return { enabled: app.getLoginItemSettings().openAtLogin };
+  });
+
+  ipcMain.handle('app:setAutoLaunch', (_event, enabled: unknown) => {
+    app.setLoginItemSettings({ openAtLogin: enabled === true });
+    return { enabled: app.getLoginItemSettings().openAtLogin };
+  });
+
   ipcMain.handle('app:getVersion', () => {
     return appUpdater.getCurrentVersion();
   });

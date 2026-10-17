@@ -7,8 +7,10 @@ import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { resourceMatches } from './card-model'
 import { ApprovalBody, InputBody, LoginBody } from './DecisionCards'
 
-function sameTopic(item: InboxItem, chatId: string, threadId: string): boolean {
-  return item.chatId === chatId && (!item.threadId || item.threadId === threadId) && decisionKind(item) !== null
+// The chat is one timeline over its internal threads, so a request raised in
+// any of them (a scheduled run, a successor thread) is waiting in this chat.
+function sameTopic(item: InboxItem, chatId: string): boolean {
+  return item.chatId === chatId && decisionKind(item) !== null
 }
 
 function shownInMessages(item: InboxItem, shownUris: readonly string[]): boolean {
@@ -25,7 +27,7 @@ function shownInMessages(item: InboxItem, shownUris: readonly string[]): boolean
  */
 const NO_ITEMS: never[] = []
 
-export function TailDecisions({ chatId, threadId }: { chatId: string; threadId: string }) {
+export function TailDecisions({ chatId }: { chatId: string; threadId?: string }) {
   const { data: items = NO_ITEMS } = useInboxItems('all')
   const aui = useAui()
   // Select a string, not a fresh array: a new array every snapshot makes the
@@ -38,15 +40,15 @@ export function TailDecisions({ chatId, threadId }: { chatId: string; threadId: 
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set())
 
   const topicItems = useMemo(
-    () => items.filter((item) => sameTopic(item, chatId, threadId)),
-    [chatId, items, threadId],
+    () => items.filter((item) => sameTopic(item, chatId)),
+    [chatId, items],
   )
   useEffect(() => {
     const pending = topicItems.filter(isActionableInboxItem).map((item) => item.id)
     if (pending.every((id) => seen.has(id))) return
     setSeen((current) => new Set([...current, ...pending]))
   }, [seen, topicItems])
-  useEffect(() => setSeen(new Set()), [chatId, threadId])
+  useEffect(() => setSeen(new Set()), [chatId])
 
   const visible = useMemo(
     () => topicItems.filter((item) => !shownInMessages(item, shownKey ? shownKey.split('\n') : [])

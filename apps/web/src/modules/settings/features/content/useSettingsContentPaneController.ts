@@ -4,6 +4,7 @@ import { getRuntimeShellInfo } from '@/lib/runtime-shell'
 import { useAppUpdateStatus } from '@/modules/layout/use-app-update-status'
 import { useThemePreference, type ThemePreference } from '@/modules/layout/use-theme-mode'
 import { requestOpenServiceManagement } from '../../data/platform-actions'
+import { useAutoLaunch, useStartupView } from '../../app/startup-prefs'
 import { useNotificationPrefs } from '../../app/notification-prefs'
 import { useSettingsStore } from '../../app/store'
 import { useSettingsNavigationHints } from '../list/useSettingsNavigationHints'
@@ -18,6 +19,8 @@ export function useSettingsContentPaneController({ compact = false }: { compact?
   const [themePreference, setThemePreference] = useThemePreference()
   const notificationPrefs = useNotificationPrefs((state) => state.prefs)
   const setNotificationPref = useNotificationPrefs((state) => state.setPref)
+  const autoLaunch = useAutoLaunch()
+  const [startupView, setStartupView] = useStartupView()
   const appUpdate = useAppUpdateStatus()
   const {
     status: updateStatus,
@@ -56,6 +59,9 @@ export function useSettingsContentPaneController({ compact = false }: { compact?
     themePreference,
     notificationPrefs,
     setNotificationPref,
+    autoLaunch,
+    startupView,
+    setStartupView,
     isDesktop: shell.id === 'desktop',
     updateStatus,
     updateChecking,

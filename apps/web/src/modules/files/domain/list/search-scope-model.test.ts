@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { FilesEntry } from '../resource/resource-model'
 import {
+  countFilesSearchNoAccess,
   entryInFilesSearchScope,
+  projectFilesSearchNoAccessLine,
   projectFilesSearchEmptyText,
   projectFilesSearchMatchReason,
   projectFilesSearchNote,
@@ -37,5 +39,18 @@ describe('files search scope model', () => {
     expect(projectFilesSearchNote({ offline: true }).text).toContain('没有网络')
     expect(projectFilesSearchEmptyText('我的空间', ' 轮岗表 ')).toEqual({ title: '“我的空间”里没有找到 轮岗表', description: '不代表别处没有' })
     expect(projectFilesSearchScopeLabel('folder', '志愿者')).toBe('当前文件夹：志愿者')
+  })
+})
+
+describe('search coverage lines', () => {
+  it('counts only entries the person has no permission to read', () => {
+    expect(countFilesSearchNoAccess([
+      entry({ metadataState: 'unavailable', metadataErrorKind: 'forbidden' }),
+      entry({ metadataState: 'unavailable', metadataErrorKind: 'unauthorized' }),
+      entry({ metadataState: 'unavailable', metadataErrorKind: 'network' as never }),
+      entry({ metadataState: 'available' }),
+    ])).toBe(2)
+    expect(projectFilesSearchNoAccessLine(2)).toBe('2 个没有权限，不显示')
+    expect(projectFilesSearchNoAccessLine(0)).toBeNull()
   })
 })

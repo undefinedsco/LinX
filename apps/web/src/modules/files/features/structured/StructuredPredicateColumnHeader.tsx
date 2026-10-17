@@ -6,6 +6,8 @@ import type {
 } from '../../domain/structured/structured-table'
 import type { PredicateDefinitionDraft } from '../../domain/structured/structured-predicate-draft'
 import { AddPredicateMenu } from './AddPredicateMenu'
+import { StructuredAiColumnHeaderCell } from './StructuredAiColumnHeaderCell'
+import { projectStructuredAiColumnHeaderChrome } from './structured-ai-column-header-model'
 import {
   StructuredPendingPredicateHeaderCell,
   StructuredPredicateHeaderCell,
@@ -58,6 +60,18 @@ export function StructuredPredicateColumnHeader({
     proposal,
     showNamespaces,
   })
+
+  if (header.kind === 'pending' && header.aiColumn) {
+    return (
+      <StructuredAiColumnHeaderCell
+        chrome={projectStructuredAiColumnHeaderChrome(header.aiColumn)}
+        displayLabel={header.normalizedLabel}
+        type={header.type}
+        onConfirm={() => onApprove?.()}
+        onRemove={onDiscard}
+      />
+    )
+  }
 
   if (header.kind === 'pending') {
     return (

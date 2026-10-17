@@ -104,6 +104,8 @@ describe('PrimaryLayout', () => {
   })
 
   beforeEach(() => {
+    // Panel layouts persist in localStorage; other suites share the same storage file.
+    window.localStorage.clear()
     vi.clearAllMocks()
     mockSessionState.isLoggedIn = true
     mockSessionState.sessionRequestInProgress = false

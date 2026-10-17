@@ -34,6 +34,11 @@ vi.mock('../../app/store', () => ({
 
 const mockResolveInputMutateAsync = vi.fn().mockResolvedValue(undefined)
 
+vi.mock('../../app/auto-judge-sweep', () => ({
+  useInboxAutoJudgeSweep: () => undefined,
+  useAutoJudgeSettingsSync: () => undefined,
+}))
+
 vi.mock('../../data/auto-judge', () => ({
   useInboxAutoJudgeSweep: () => undefined,
   useGrantRows: () => ({ data: [], all: [], isLoading: false }),
@@ -45,6 +50,7 @@ vi.mock('../../data/auto-judge', () => ({
 }))
 
 vi.mock('../../data/collections', () => ({
+  refreshInboxRequests: () => undefined,
   useInboxItems: () => mockUseInboxItems(),
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
   useResolveInboxInputRequest: () => ({
@@ -272,5 +278,42 @@ describe('InboxContentPane', () => {
     expect(screen.getByRole('button', { name: '提交' })).toBeDisabled()
     // Secrets only queue; they never go into the conversation.
     expect(screen.queryByRole('button', { name: '立即插话' })).not.toBeInTheDocument()
+  })
+
+  it('says an expired request can no longer be decided', () => {
+    mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({ selectedItemId: approvalItem.id }))
+    mockUseInboxItems.mockReturnValue({
+      data: [{ ...approvalItem, approval: { ...approvalItem.approval, expiresAt: '2020-01-01T00:00:00.000Z' } }],
+      isLoading: false,
+    })
+    render(<InboxContentPane />)
+    expect(screen.getByText('这个请求已经过期')).toBeInTheDocument()
+    expect(screen.queryByText('批准这一次')).not.toBeInTheDocument()
+  })
+
+  it('tells when the open request was decided somewhere else', () => {
+    mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({ selectedItemId: approvalItem.id }))
+    mockUseInboxItems.mockReturnValue({ data: [approvalItem], isLoading: false })
+    const { rerender } = render(<InboxContentPane />)
+    mockUseInboxItems.mockReturnValue({
+      data: [{ ...approvalItem, status: 'approved', chatId: 'chat-1', approval: { ...approvalItem.approval, status: 'approved', resolvedAt: '2026-03-10T12:05:00.000Z' } }],
+      isLoading: false,
+    })
+    rerender(<InboxContentPane />)
+    expect(screen.getByText('正在看的请求在别处被处理了')).toBeInTheDocument()
+    expect(screen.getByText('回到会话')).toBeInTheDocument()
+  })
+
+  it('holds decisions while offline', () => {
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true })
+    try {
+      mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({ selectedItemId: approvalItem.id }))
+      mockUseInboxItems.mockReturnValue({ data: [approvalItem], isLoading: false })
+      render(<InboxContentPane />)
+      expect(screen.getByText('没有网络，恢复后才能处理')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /批准这一次|处理中/ })).toBeDisabled()
+    } finally {
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true })
+    }
   })
 })

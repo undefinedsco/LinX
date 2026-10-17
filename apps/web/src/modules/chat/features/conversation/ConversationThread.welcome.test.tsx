@@ -7,7 +7,7 @@ vi.mock('../../store', () => ({
 }))
 vi.mock('./cards/TailDecisions', () => ({ TailDecisions: () => null }))
 vi.mock('./ui/Messages', () => ({ UserMessage: () => null, AssistantMessage: () => null }))
-vi.mock('../../collections', () => ({ useThreadList: () => ({ data: [] }) }))
+vi.mock('../../collections', () => ({ useThreadList: () => ({ data: [] }), LINX_DEFAULT_SECRETARY: { chatId: 'linx-chat' } }))
 
 import { ConversationThread } from './ConversationThread'
 

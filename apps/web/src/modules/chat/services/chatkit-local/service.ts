@@ -52,7 +52,7 @@ import {
   type AgentAiRuntimeLocation,
 } from '../../agent-runtime-location'
 import { classifyRuntimeTool } from '../../domain/runtime-tool-category'
-import { mergeThreadTimelines } from '../../domain/chat-threads'
+import { THREAD_HANDOFF_METADATA, mergeThreadTimelines } from '../../domain/chat-threads'
 import { readProjectContext, renderProjectSystemContext } from '../project-context'
 
 const LINX_PLATFORM_PROVIDER_ID = 'undefineds'
@@ -2585,6 +2585,12 @@ export class LocalChatKitService {
     }
 
     let systemPrompt = this.systemPrompt
+    // A thread the runtime started because its predecessor got long or went
+    // quiet carries a short note of where the conversation stood (chat-threads.ts).
+    const handoff = thread.metadata?.[THREAD_HANDOFF_METADATA.summary]
+    if (typeof handoff === 'string' && handoff.trim()) {
+      systemPrompt = `${systemPrompt}\n\n## 之前的对话\n这是同一段持续对话的延续。上一段的结尾是：\n${handoff.trim()}`
+    }
     const workspaceUri = typeof thread.metadata?.workspace === 'string' ? thread.metadata.workspace : null
     if (workspaceUri) {
       try {

@@ -3,6 +3,7 @@ import { Copy, FilePlus, FolderPlus, Grid3X3, List, Trash2, Upload } from 'lucid
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+import { useUnconfirmedAiDraftTargets } from '../../data/queries'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import { ResourceViewBar } from '../../ui/ResourceViewBar'
@@ -40,6 +41,7 @@ export function FolderDetailPreview({
     visibleChildren,
     viewModeOptions,
   } = useFolderDetailViewController({ children, containerUri: file.uri })
+  const unconfirmedUris = useUnconfirmedAiDraftTargets(file.uri, children.map((child) => child.uri))
   const folderSelection = useFolderDetailSelectionController({
     visibleChildren,
     sortedChildren,
@@ -206,6 +208,7 @@ export function FolderDetailPreview({
           contentState.viewMode === 'list' ? (
             <FolderDetailTreeView
               file={file}
+              unconfirmedUris={unconfirmedUris}
               rows={sortedCollectionRows}
               selectedUris={folderSelection.selectedChildUris}
               sort={sort}
@@ -225,6 +228,7 @@ export function FolderDetailPreview({
             />
           ) : (
             <FolderChildCollectionView
+              unconfirmedUris={unconfirmedUris}
               viewMode={contentState.viewMode}
               rows={sortedCollectionRows}
               selectedUris={folderSelection.selectedChildUris}

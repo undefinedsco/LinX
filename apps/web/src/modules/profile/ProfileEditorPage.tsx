@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useCardDialog } from '@/lib/card-dialog'
 import { cn } from '@/lib/utils'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import { useWhoCanSeeMe } from '@/modules/contacts'
 import { useSettingsStore } from '@/modules/settings/app/store'
 import { profileInitial, useAuthenticatedAvatar } from './avatar'
 import { AVATAR_MAX_BYTES } from './avatar-upload'
@@ -158,7 +159,8 @@ export function ProfileEditorPage(_props: MicroAppPaneProps) {
           <aside aria-label="预览" className="w-full shrink-0 lg:sticky lg:top-0 lg:w-[300px]">
             <p className="px-1 pb-1.5 text-xs text-muted-foreground">别人在联系人里看到的你</p>
             <ContactPreview editor={editor} values={previewValues} />
-            <Foot>边改边变；没填的不显示。空间里的其他内容默认只有你能看。</Foot>
+            <Foot>边改边变；没填的不显示。</Foot>
+            <WhoCanSee onOpenFiles={() => void navigate({ to: '/$microAppId', params: { microAppId: 'files' } })} />
           </aside>
         </div>
       </div>
@@ -456,5 +458,44 @@ function ContactPreview({ editor, values }: { editor: ProfileEditor; values: Pro
         </dl>
       ) : null}
     </div>
+  )
+}
+
+/** 还有谁能看到: people my public profile lists, and files and cards I shared out (opens Files). */
+function WhoCanSee({ onOpenFiles }: { onOpenFiles: () => void }) {
+  const { publicContacts, sharedWithPeople } = useWhoCanSeeMe()
+  const shown = publicContacts?.slice(0, 5) ?? []
+  return (
+    <section aria-label="还有谁能看到" className="mt-6">
+      <p className="px-1 pb-1.5 text-xs text-muted-foreground">还有谁能看到</p>
+      <div className="overflow-hidden rounded-[10px] border border-border bg-card">
+        <div className="min-h-11 px-3.5 py-2.5 text-sm">
+          <div className="flex items-center justify-between gap-2">
+            <span>公开显示的联系人</span>
+            <span className="text-[13px] text-muted-foreground">
+              {publicContacts === null ? '查不到' : `${publicContacts.length} 人`}
+            </span>
+          </div>
+          {shown.length > 0 ? (
+            <ul className="mt-1.5 flex flex-col gap-1 text-[13px] text-muted-foreground">
+              {shown.map((entry) => <li key={entry.webId} className="truncate">{entry.name}</li>)}
+              {publicContacts && publicContacts.length > shown.length ? <li>等 {publicContacts.length} 人</li> : null}
+            </ul>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="flex min-h-11 w-full items-center gap-2 border-t border-border px-3.5 text-left text-sm hover:bg-layout-list-hover"
+          onClick={onOpenFiles}
+        >
+          <span className="flex-1">共享出去的文件和卡片</span>
+          <span className="text-[13px] text-muted-foreground">
+            {sharedWithPeople === null ? '在文件里查看' : sharedWithPeople > 0 ? `${sharedWithPeople} 位联系人能看你的空间` : '在文件里查看'}
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+        </button>
+      </div>
+      <Foot>空间里的其他内容默认只有你能看。</Foot>
+    </section>
   )
 }

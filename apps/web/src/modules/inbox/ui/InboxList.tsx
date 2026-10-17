@@ -21,6 +21,8 @@ export interface InboxListProps {
   selectedIndex: number
   onItemKeyDown: (index: number, event: KeyboardEvent<HTMLButtonElement>) => void
   registerItemRef: (index: number, node: HTMLButtonElement | null) => void
+  /** No network (W7b): requests can be read but not decided. */
+  offline?: boolean
 }
 
 const EMPTY_COPY: Record<InboxFilter, { title: string; hint?: string }> = {
@@ -87,6 +89,7 @@ export function InboxList({
   selectedIndex,
   onItemKeyDown,
   registerItemRef,
+  offline = false,
 }: InboxListProps) {
   const isReview = filter === 'review'
   const isActivityLog = filter === 'audit' || isReview
@@ -121,6 +124,11 @@ export function InboxList({
         )}
       </div>
 
+      {offline ? (
+        <p role="status" className="shrink-0 border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+          没有网络，恢复后才能处理
+        </p>
+      ) : null}
       <ScrollArea className="flex-1">
         <div role="listbox" aria-label={isReview ? 'LinX 自动通过的' : isActivityLog ? '活动记录' : '收件箱'} aria-orientation="vertical" className="py-1">
           {isLoading && (
@@ -166,7 +174,7 @@ export function InboxList({
                   className="mt-0.5 truncate text-xs text-muted-foreground"
                   title={item.approvalTarget ?? undefined}
                 >
-                  <span className={cn(status.waiting && 'text-primary')}>{item.autoApproved ? 'LinX 替你批准' : status.label}</span>
+                  <span className={cn(status.waiting && 'text-primary')}>{item.autoApproved ? 'LinX 替你批准' : item.expired ? '已过期' : status.label}</span>
                   {status.label && detail ? ' · ' : ''}
                   {detail}
                 </p>

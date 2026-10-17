@@ -44,6 +44,8 @@ export interface InboxListItemView {
   approvalTarget?: string | null
   /** "LinX 替你批准" for requests LinX approved after the wait. */
   autoApproved?: boolean
+  /** Pending but past its expiry (W7b): shown as 已过期. */
+  expired?: boolean
 }
 
 /** A request LinX is waiting to approve ("LinX 会自动通过"). */

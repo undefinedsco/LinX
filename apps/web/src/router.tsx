@@ -8,6 +8,7 @@ import {
   MicroAppId,
   type MicroAppNavigationIntent,
 } from './modules/layout/micro-app-registry'
+import { rememberLastMicroApp, resolveStartupMicroAppId } from './lib/micro-apps/startup'
 import { SolidLoginOverlay } from './modules/login'
 import { formatLoginErrorForUser } from './modules/login/error-messages'
 import { consumePendingPostLoginMicroAppId, setPendingPostLoginMicroAppId } from './modules/login/login-utils'
@@ -188,6 +189,7 @@ const microAppRoute = createRoute({
     const search = useSearch({ from: microAppRoute.id }) as FilesRouteSearch
     useEffect(() => {
       setPendingPostLoginMicroAppId(microAppId)
+      rememberLastMicroApp(microAppId)
     }, [microAppId])
 
     const filesRouteBridge = useMemo(() => ({
@@ -227,9 +229,10 @@ const homeRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: () => {
+    const startupId = resolveStartupMicroAppId(isValidMicroAppId)
     throw redirect({
       to: '/$microAppId',
-      params: { microAppId: defaultMicroAppId },
+      params: { microAppId: (startupId as MicroAppId | null) ?? defaultMicroAppId },
     })
   },
   component: () => null,

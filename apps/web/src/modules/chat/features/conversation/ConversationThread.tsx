@@ -7,6 +7,7 @@ import type { PendingComposerDraft } from '../../domain/conversation-workbench'
 import { TailDecisions } from './cards/TailDecisions'
 import { Composer } from './ui/Composer'
 import { AssistantMessage, UserMessage } from './ui/Messages'
+import { useAskLinxIntoComposer } from './useAskLinxIntoComposer'
 
 /** Scrolls to a message the person jumped to from search, then lets go of the anchor. */
 function useMessageAnchor() {
@@ -47,6 +48,7 @@ export function ConversationThread({
     if (welcomeStarted && messageCount > 0) welcomeStarted()
   }, [welcomeStarted, messageCount])
   useMessageAnchor()
+  const citation = useAskLinxIntoComposer(chatId)
   const handledDraft = useRef<PendingComposerDraft | null>(null)
   useEffect(() => {
     if (!pendingComposerDraft || handledDraft.current === pendingComposerDraft) return
@@ -78,7 +80,7 @@ export function ConversationThread({
           <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />新消息
         </ThreadPrimitive.ScrollToBottom>
       </div>
-      <Composer disabled={sendDisabled} disabledReason="空间连接恢复后可继续发送" />
+      <Composer disabled={sendDisabled} disabledReason="空间连接恢复后可继续发送" citation={citation} />
     </ThreadPrimitive.Root>
   )
 }

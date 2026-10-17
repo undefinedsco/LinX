@@ -42,15 +42,29 @@ import {
   buildAutoJudgeApprovePatch,
   buildAutoJudgeReviewedPatch,
   buildAutoJudgeTakeOverPatch,
+  assessAutoJudgeConfidence,
+  buildAutoJudgeReturnedPatch,
+  buildAutoJudgeWaitingPatch,
   encodeAutoJudgeGrantTags,
   isAutoJudgeDue,
+  needsAutoJudgePlan,
+  planAutoJudge,
+  toAutoJudgeGrant,
+  type AutoJudgeWindows,
 } from '@linx/agent-runtime/auto-judge'
+import { grantAppliesToAgent, writeGrantAgentContext } from '../domain/grant-agent'
 import { approvalAutoPhase } from '../domain/auto-judge-view'
 import type { InboxItem, InboxItemCategory, InboxItemKind } from '../domain/inbox-item'
 
 export type { InboxItem, InboxItemCategory, InboxItemKind }
 
 let dbGetter: (() => SolidDatabase | null) | null = null
+
+/** Re-reads approvals and input requests from the Pod (used when a request is opened). */
+export function refreshInboxRequests() {
+  void queryClient.invalidateQueries({ queryKey: ['inbox', 'approvals'] })
+  void queryClient.invalidateQueries({ queryKey: ['inbox', 'inputRequests'] })
+}
 
 export function setInboxDatabaseGetter(getter: () => SolidDatabase | null) {
   dbGetter = getter
@@ -614,6 +628,60 @@ export const inboxOps = {
     return true
   },
 
+  /**
+   * Plans a pending request nobody has looked at yet: a grant of this
+   * assistant covers it -> LinX waits by confidence (the person's three waits,
+   * read from the Pod) and then approves; otherwise it stays with the person
+   * (and is marked returned when a grant covered it but LinX is not sure).
+   * Returns the mode that was applied, or null when nothing was planned.
+   */
+  async planApprovalAutoJudge(input: {
+    approval: ApprovalRow
+    grants: readonly GrantRow[]
+    windows: AutoJudgeWindows
+    agentIri: string
+    userWebId: string
+    podBaseUrl?: string | null
+    now?: Date
+  }): Promise<'auto' | 'returned' | null> {
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+    const now = input.now ?? new Date()
+    // Re-read: a person may have acted since the sweep picked this up.
+    const approval = (input.approval.id ? approvalCollection.state.get(input.approval.id) : null) ?? input.approval
+    if (!needsAutoJudgePlan(approval)) return null
+    const grantRows = input.grants.filter((grant) => grantAppliesToAgent(grant, [input.agentIri]))
+    const grants = grantRows.flatMap((row) => {
+      const grant = toAutoJudgeGrant(row)
+      return grant ? [grant] : []
+    })
+    const request = { target: approval.target, action: approval.action, risk: approval.risk }
+    const plan = planAutoJudge({
+      request,
+      grants,
+      confidence: assessAutoJudgeConfidence({ request, podBaseUrl: input.podBaseUrl }),
+      now,
+      windows: input.windows,
+    })
+    const grantRow = 'grantId' in plan && plan.grantId ? grantRows.find((row) => row.id === plan.grantId) : undefined
+    const grantIri = grantRow ? resolveGrantIri(db, grantRow) : undefined
+    if (plan.mode === 'auto') {
+      await updateResolvedApproval(db, approval, { ...buildAutoJudgeWaitingPatch({ approval, plan, agentIri: input.agentIri, grantIri, now }) })
+      return 'auto'
+    }
+    const returned = buildAutoJudgeReturnedPatch({
+      approval,
+      plan,
+      confidence: assessAutoJudgeConfidence({ request, podBaseUrl: input.podBaseUrl }),
+      userWebId: input.userWebId,
+      grantIri,
+      now,
+    })
+    if (!returned) return null
+    await updateResolvedApproval(db, approval, { ...returned })
+    return 'returned'
+  },
+
   /** "我来判断": the request goes back to the person, with no timer. */
   async takeOverApproval(input: { approval: ApprovalRow; userWebId: string }) {
     const db = getDb()
@@ -655,6 +723,8 @@ export const inboxOps = {
       title: input.approval.toolName,
       riskCeiling: input.approval.risk,
       tags: encodeAutoJudgeGrantTags([], input.highImpactConfirmed),
+      // Which assistant this was given to (see domain/grant-agent.ts).
+      ...(input.agentIri ? { context: writeGrantAgentContext(null, input.agentIri) } : {}),
       decisionBy: input.userWebId,
       decisionRole: 'human',
       onBehalfOf: input.userWebId,
@@ -827,7 +897,7 @@ export function useResolveInboxApproval() {
       decision: 'approved' | 'rejected'
       reason?: string
       /** "以后这类交给 LinX 判断": also grant this kind of request. */
-      grant?: { highImpactConfirmed: boolean }
+      grant?: { highImpactConfirmed: boolean; /** Assistant the grant is for; defaults to the one handling the request. */ agentIri?: string | null }
     }) => {
       const actorWebId = session.info.webId
       if (!actorWebId) {
@@ -846,6 +916,7 @@ export function useResolveInboxApproval() {
           approval: input.approval,
           userWebId: actorWebId,
           highImpactConfirmed: input.grant.highImpactConfirmed,
+          agentIri: input.grant.agentIri ?? (input.approval.assignedTo && input.approval.assignedTo !== actorWebId ? input.approval.assignedTo : null),
         })
       }
 

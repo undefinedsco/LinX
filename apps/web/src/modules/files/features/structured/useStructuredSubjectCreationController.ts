@@ -4,6 +4,7 @@ import {
   canSubmitStructuredSubjectCreation,
   createStructuredSubjectCreationState,
   planStructuredSubjectCreation,
+  structuredSubjectDraftFromName,
   projectStructuredSubjectCreationDialogModel,
   projectStructuredSubjectCreationDraftPatch,
   projectStructuredSubjectCreationExistingSubjects,
@@ -85,6 +86,27 @@ export function useStructuredSubjectCreationController({
     })
   }, [classScope, existingSubjects, pendingSubjects, stageCellValueChange, subjectDraft])
 
+  /** Adds a row named by the person (the inline last row); false when the name is empty or taken. */
+  const addSubjectByName = useCallback((name: string) => {
+    const plan = planStructuredSubjectCreation({
+      classScope,
+      existingSubjects,
+      pendingSubjects,
+      subjectDraft: structuredSubjectDraftFromName(name),
+    })
+    if (plan.kind === 'noop') return false
+    setSubjectCreationState((current) => projectStructuredSubjectCreationSubmitted({
+      current,
+      plan,
+    }))
+    stageCellValueChange({
+      subject: plan.subject,
+      predicate: plan.typePredicate,
+      nextValues: plan.typeValues,
+    })
+    return true
+  }, [classScope, existingSubjects, pendingSubjects, stageCellValueChange])
+
   const setCreateSubjectOpen = useCallback((nextCreateSubjectOpen: boolean) => {
     setSubjectCreationState((current) => projectStructuredSubjectCreationOpenPatch({
       current,
@@ -106,6 +128,7 @@ export function useStructuredSubjectCreationController({
   }, [submitCreateSubjectProposal])
 
   return {
+    addSubjectByName,
     createSubjectOpen,
     dialogModel,
     footerModel,

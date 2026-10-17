@@ -3,6 +3,7 @@ import type {
   StructuredVocabPredicateDefinition,
   VocabTermProposal,
 } from '../../domain/structured/structured-table'
+import type { AiColumnChange } from '../../domain/proposal/ai-column-change-model'
 import { readablePredicateLabel } from '../../domain/structured/structured-table-vocab'
 
 export type StructuredPredicateColumnProposal = {
@@ -16,6 +17,8 @@ export type StructuredPredicateColumnProposal = {
   enumOptions: string[]
   status: 'pending' | 'approval-staged'
   vocabProposal?: VocabTermProposal
+  /** A column LinX added (R6 K6b): shows its own header. */
+  aiColumn?: AiColumnChange
 }
 
 export type StructuredPredicateHeaderColumnModel = {
@@ -68,6 +71,7 @@ type PendingPredicateColumnHeaderModel = {
   displayLabel: string
   label: string
   normalizedLabel: string
+  aiColumn?: AiColumnChange
   openableVocabProposal?: VocabTermProposal
   predicateUri?: string
   proposalUri: string
@@ -263,6 +267,7 @@ export function projectStructuredPredicateColumnHeader({
       displayLabel,
       label: proposal.label,
       normalizedLabel: normalizedPredicateHeaderLabel(proposal.label),
+      aiColumn: proposal.aiColumn,
       openableVocabProposal: proposal.vocabProposal,
       predicateUri: proposal.predicateUri,
       proposalUri: proposal.uri,

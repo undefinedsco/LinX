@@ -4,6 +4,7 @@ import { ShellStatusBadge } from '@/components/ShellStatusBadge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import type { StartupView } from '@/lib/micro-apps/startup'
 import type { AppUpdateStatus } from '@/types/electron-api'
 import type { AppearancePreference as ThemePreference } from '../domain/notification-model'
 import type { NotificationPrefKey, NotificationPrefs } from '../domain/notification-model'
@@ -25,6 +26,10 @@ export interface SettingsContentViewProps {
     authLabel: string
   }
   notificationPrefs: NotificationPrefs
+  /** 开机自动打开: only on the desktop app (`available`). */
+  autoLaunch: { available: boolean; enabled: boolean | null; setEnabled: (enabled: boolean) => void }
+  startupView: StartupView
+  setStartupView: (view: StartupView) => void
   networkContent: ReactNode
   spaceContent?: ReactNode
   /** Narrow windows show one level at a time: the section list, then one section. */
@@ -139,7 +144,7 @@ const NOTIFICATION_ROWS: Array<{ key: NotificationPrefKey; label: string }> = [
   { key: 'showContent', label: '通知里显示内容' },
 ]
 
-function GeneralSection({ themePreference, selectTheme, notificationPrefs, setNotificationPref }: SettingsContentViewProps) {
+function GeneralSection({ themePreference, selectTheme, notificationPrefs, setNotificationPref, autoLaunch, startupView, setStartupView }: SettingsContentViewProps) {
   return (
     <>
       <SettingsGroup title="外观" note="桌面版和网页版用同一个外观设置。">
@@ -164,6 +169,30 @@ function GeneralSection({ themePreference, selectTheme, notificationPrefs, setNo
           })}
         </div>
         <SettingsRow label="语言">简体中文</SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup title="启动">
+        {autoLaunch.available ? (
+          <SettingsRow label="开机自动打开">
+            <Switch
+              aria-label="开机自动打开"
+              checked={autoLaunch.enabled === true}
+              disabled={autoLaunch.enabled === null}
+              onCheckedChange={autoLaunch.setEnabled}
+            />
+          </SettingsRow>
+        ) : null}
+        <SettingsRow label="启动时打开">
+          <select
+            aria-label="启动时打开"
+            value={startupView}
+            onChange={(event) => setStartupView(event.target.value as StartupView)}
+            className="h-7 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="last">上次的位置</option>
+            <option value="chat">聊天</option>
+          </select>
+        </SettingsRow>
       </SettingsGroup>
 
       <SettingsGroup title="通知" note="免打扰的会话不通知。关掉“显示内容”时，通知只写“你有新消息”。">

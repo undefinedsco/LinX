@@ -33,6 +33,8 @@ const mockAgentNames: Record<string, string> = {}
 
 vi.mock('../data/queries', () => ({
   useFilesAgentNames: () => mockAgentNames,
+  useUnconfirmedAiDraftTargets: () => new Set<string>(),
+  useSharedWithMe: () => ({ items: [], isLoading: false }),
   useFilesEntries: (...args: unknown[]) => mockUseFilesEntries(...args),
   useFilesExpandedContainerEntries: ({ expandedContainerUris }: { expandedContainerUris: string[] }) => {
     const results = mockUseExplorerChildQueries(expandedContainerUris.map((uri) => ({

@@ -373,3 +373,43 @@ describe('structured pending predicate columns model', () => {
     })
   })
 })
+
+describe('columns LinX added', () => {
+  const change = (state: 'unconfirmed' | 'added') => ({
+    id: 'k-1',
+    documentUri,
+    predicate: 'http://schema.org/skill',
+    label: '擅长',
+    valueType: 'text',
+    state,
+    delegated: state === 'added',
+    agentWebId: null,
+    createdAt: '2026-10-17T00:00:00.000Z',
+  })
+
+  it('shows an unconfirmed column even when no cell has a value yet', () => {
+    const visible = projectStructuredVisiblePendingPredicateProposals({
+      aiColumns: new Map([['http://schema.org/skill', change('unconfirmed')]]),
+      dismissedHydratedPredicateProposalIds: new Set(),
+      documentUri,
+      pendingPredicateProposals: [],
+      projectionPredicates: [],
+      reviewableVocabProposals: [],
+    })
+    expect(visible).toHaveLength(1)
+    expect(visible[0]).toMatchObject({ label: '擅长', aiColumn: { state: 'unconfirmed' } })
+  })
+
+  it('marks an existing column instead of adding a second one', () => {
+    const visible = projectStructuredVisiblePendingPredicateProposals({
+      aiColumns: new Map([['http://schema.org/skill', change('added')]]),
+      dismissedHydratedPredicateProposalIds: new Set(),
+      documentUri,
+      pendingPredicateProposals: [],
+      projectionPredicates: ['http://schema.org/skill'],
+      reviewableVocabProposals: [],
+    })
+    expect(visible.map((proposal) => proposal.id)).toEqual(['http://schema.org/skill'])
+    expect(visible[0]?.aiColumn?.state).toBe('added')
+  })
+})

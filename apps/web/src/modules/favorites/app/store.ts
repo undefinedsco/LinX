@@ -9,11 +9,14 @@ interface FavoriteStore {
   searchText: string
   sourceFilter: SourceFilter
   group: FavoriteGroupFilter
+  /** Right-hand preview column open (desktop widths). */
+  previewOpen: boolean
 
   select: (id: string | null) => void
   setSearchText: (val: string) => void
   setSourceFilter: (filter: SourceFilter) => void
   setGroup: (group: FavoriteGroupFilter) => void
+  setPreviewOpen: (open: boolean) => void
 }
 
 export const useFavoriteStore = create<FavoriteStore>((set) => ({
@@ -21,9 +24,11 @@ export const useFavoriteStore = create<FavoriteStore>((set) => ({
   searchText: '',
   sourceFilter: 'all',
   group: 'all',
+  previewOpen: true,
 
   select: (id) => set({ selectedFavoriteId: id }),
   setSearchText: (searchText) => set({ searchText }),
   setSourceFilter: (sourceFilter) => set({ sourceFilter }),
   setGroup: (group) => set({ group }),
+  setPreviewOpen: (previewOpen) => set({ previewOpen }),
 }))

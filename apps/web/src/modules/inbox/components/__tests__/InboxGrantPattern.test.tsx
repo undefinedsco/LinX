@@ -35,6 +35,11 @@ vi.mock('../../app/store', () => ({
   useInboxStore: (selector: (state: unknown) => unknown) => mockUseInboxStore(selector),
 }))
 
+vi.mock('../../app/auto-judge-sweep', () => ({
+  useInboxAutoJudgeSweep: () => undefined,
+  useAutoJudgeSettingsSync: () => undefined,
+}))
+
 vi.mock('../../data/auto-judge', () => ({
   useInboxAutoJudgeSweep: () => undefined,
   useGrantRows: () => ({ data: [], all: [], isLoading: false }),
@@ -46,6 +51,7 @@ vi.mock('../../data/auto-judge', () => ({
 }))
 
 vi.mock('../../data/collections', () => ({
+  refreshInboxRequests: () => undefined,
   useInboxItems: () => mockUseInboxItems(),
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
   useResolveInboxInputRequest: () => ({ mutateAsync: vi.fn(), isPending: false, error: null }),

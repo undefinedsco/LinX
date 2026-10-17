@@ -117,11 +117,15 @@ const ContactListPane = lazyPane(() =>
 const ContactDetailPane = lazyPane(() =>
   import('@/modules/contacts/features/detail/ContactDetailPane').then((mod) => ({ default: mod.ContactDetailPane })),
 )
+// K7: groups | list | preview at desktop widths; the one-level flow when compact.
 const FavoriteListPane = lazyPane(() =>
-  import('@/modules/favorites/components/FavoriteListPane').then((mod) => ({ default: mod.FavoriteListPane })),
+  import('@/modules/favorites/features/shell/FavoriteThreePane').then((mod) => ({ default: mod.FavoriteGroupsPane })),
 )
 const FavoriteContentPane = lazyPane(() =>
-  import('@/modules/favorites/components/FavoriteContentPane').then((mod) => ({ default: mod.FavoriteContentPane })),
+  import('@/modules/favorites/features/shell/FavoriteThreePane').then((mod) => ({ default: mod.FavoriteItemsPane })),
+)
+const FavoritesLayoutConfigBridge = lazyBridge(() =>
+  import('@/modules/favorites/features/shell/FavoriteThreePane').then((mod) => ({ default: mod.FavoritesLayoutConfigBridge })),
 )
 const FilesListPane = lazyPane(() =>
   import('@/modules/files/features/tree/FilesTreePane').then((mod) => ({ default: mod.FilesTreePane })),
@@ -229,6 +233,7 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     },
     ListPane: FavoriteListPane,
     ContentPane: FavoriteContentPane,
+    LayoutConfigBridge: FavoritesLayoutConfigBridge,
   },
   // R6: 我的 AI 这一轮不做；做事的方法改从聊天信息和联系人里用弹窗打开。
   // 我: the narrow-window tab (收藏、设置 live inside it).

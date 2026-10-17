@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { useLiveQuery } from '@tanstack/react-db'
 import { useMutation } from '@tanstack/react-query'
 import type { ApprovalRow, GrantRow } from '@undefineds.co/models'
-import { isAutoJudgeDue, readAutoJudgeState } from '@linx/agent-runtime/auto-judge'
+import { isAutoJudgeDue, needsAutoJudgePlan, readAutoJudgeState } from '@linx/agent-runtime/auto-judge'
+import type { AutoJudgeWindows } from '@linx/agent-runtime/auto-judge'
 import { useSession } from '@/providers/solid-session-context'
-import { useSolidDatabase } from '@/providers/solid-database-provider'
-import { approvalCollection, continueRuntimeAfterApproval, grantCollection, inboxOps } from './collections'
+import { approvalCollection, grantCollection, inboxOps } from './collections'
 
 /** How often the inbox looks for requests whose wait has run out. */
 export const AUTO_JUDGE_SWEEP_INTERVAL_MS = 30_000
@@ -21,6 +21,16 @@ export async function sweepDueAutoJudge(input: {
   approvals: readonly ApprovalRow[]
   userWebId: string
   now?: Date
+  /**
+   * With the person's three waits (from the Pod), requests nobody has planned
+   * yet are planned first: a covering grant of this assistant starts the wait.
+   */
+  planning?: {
+    grants: readonly GrantRow[]
+    windows: AutoJudgeWindows
+    agentIri: string
+    podBaseUrl?: string | null
+  }
   onApproved?: (approval: ApprovalRow) => void | Promise<void>
 }): Promise<number> {
   if (sweeping) return 0
@@ -28,6 +38,16 @@ export async function sweepDueAutoJudge(input: {
   let approved = 0
   try {
     const now = input.now ?? new Date()
+    if (input.planning) {
+      for (const approval of input.approvals) {
+        if (!needsAutoJudgePlan(approval)) continue
+        try {
+          await inboxOps.planApprovalAutoJudge({ approval, userWebId: input.userWebId, now, ...input.planning })
+        } catch (error) {
+          console.warn('[Inbox] Planning auto judge failed:', error)
+        }
+      }
+    }
     for (const approval of input.approvals) {
       if (approval.status !== 'pending' || !isAutoJudgeDue(approval, now)) continue
       try {
@@ -43,35 +63,6 @@ export async function sweepDueAutoJudge(input: {
     sweeping = false
   }
   return approved
-}
-
-/** Periodic check in the inbox module: approve due requests on the person's behalf. */
-export function useInboxAutoJudgeSweep(intervalMs: number = AUTO_JUDGE_SWEEP_INTERVAL_MS) {
-  const { session } = useSession()
-  const { db } = useSolidDatabase()
-  const approvals = useLiveQuery(approvalCollection)
-  const approvalsRef = useRef<readonly ApprovalRow[]>([])
-  approvalsRef.current = (approvals.data ?? []) as ApprovalRow[]
-  const webId = session.info.webId
-  const authFetch = session.fetch
-
-  useEffect(() => {
-    if (!webId || !db) return undefined
-    const run = () => void sweepDueAutoJudge({
-      approvals: approvalsRef.current,
-      userWebId: webId,
-      onApproved: (approval) => continueRuntimeAfterApproval({
-        approval,
-        decision: 'approved',
-        db,
-        webId,
-        authFetch,
-      }),
-    })
-    run()
-    const timer = setInterval(run, intervalMs)
-    return () => clearInterval(timer)
-  }, [authFetch, db, intervalMs, webId])
 }
 
 export function useAutoJudgeActions() {

@@ -80,6 +80,10 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: { id: 'files-tree-test-db' } }),
 }))
 
+vi.mock('../data/queries/shared-with-me-queries', () => ({
+  useSharedWithMe: () => ({ items: [], isLoading: false }),
+}))
+
 vi.mock('../data/queries/agent-name-queries', () => ({
   useFilesAgentNames: () => ({ main: 'LinX 助手', helper: 'Reviewer' }),
 }))

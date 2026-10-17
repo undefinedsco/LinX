@@ -1,7 +1,7 @@
 import { Inbox } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useInboxAutoJudgeSweep } from '../../data/auto-judge'
+import { useInboxAutoJudgeSweep } from '../../app/auto-judge-sweep'
 import { useInboxSummary } from '../../data/collections'
 
 export interface InboxRailButtonProps {

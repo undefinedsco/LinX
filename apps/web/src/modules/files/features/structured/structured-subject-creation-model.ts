@@ -122,6 +122,12 @@ export function getNextStructuredSubjectDraft(input: {
   return subject
 }
 
+/** R6 K6b: the person types a name in the last row; the card's address is made from it. */
+export function structuredSubjectDraftFromName(name: string): string {
+  const cleaned = name.trim().replace(/\s+/g, '_').replace(/[<>"{}|\\^`#]/g, '')
+  return cleaned ? `#${cleaned}` : ''
+}
+
 export function planStructuredSubjectCreation(input: {
   classScope?: string | null
   existingSubjects: readonly string[]

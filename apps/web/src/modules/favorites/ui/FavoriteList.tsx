@@ -186,6 +186,8 @@ export interface FavoriteListProps {
   counts?: Record<FavoriteGroupFilter, number>
   onGroupChange?: (group: FavoriteGroupFilter) => void
   hasAnyFavorite?: boolean
+  /** The three-pane layout keeps search in the left column. */
+  showSearch?: boolean
 }
 
 export function FavoriteList({
@@ -202,10 +204,11 @@ export function FavoriteList({
   counts,
   onGroupChange,
   hasAnyFavorite = false,
+  showSearch = true,
 }: FavoriteListProps) {
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
-      <FavoriteListHeader searchValue={searchText} onSearchChange={onSearchChange} />
+      {showSearch ? <FavoriteListHeader searchValue={searchText} onSearchChange={onSearchChange} /> : null}
 
       {counts && onGroupChange ? <FavoriteGroupNav group={group} counts={counts} onChange={onGroupChange} /> : null}
 

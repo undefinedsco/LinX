@@ -36,7 +36,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       ariaLabel: '正在同步视图配置',
       kind: 'saving',
       retryable: false,
-      title: '正在同步 .meta',
+      title: '保存中…',
     })
     expect(projectStructuredViewSaveIndicator('error', 'network unavailable')).toEqual({
       ariaLabel: '视图配置未同步，点击重试',

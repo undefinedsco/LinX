@@ -11,12 +11,14 @@ export function useFilesExplorerDataController({
   searchText,
   groups = false,
   treeOnly = false,
+  sharedWithMe,
 }: {
   entryScope: FilesEntryScope
   rootEntries: FilesEntry[]
   searchText: string
   groups?: boolean
   treeOnly?: boolean
+  sharedWithMe?: Parameters<typeof useFilesExplorerController>[0]['sharedWithMe']
 }) {
   const agentNames = useFilesAgentNames()
   const [expandedUris, setExpandedUris] = useState<Set<string>>(() => new Set())
@@ -38,6 +40,7 @@ export function useFilesExplorerDataController({
     searchText,
     treeOnly,
     groups,
+    sharedWithMe,
     agentNames,
     expandedUris,
     onExpandedUrisChange: setExpandedUris,

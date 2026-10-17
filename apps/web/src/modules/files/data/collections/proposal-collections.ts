@@ -1,3 +1,4 @@
+import { filesProposalInstanceSuffix } from '../../domain/resource/files-rdf-contract'
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
 import type { SolidDatabase } from '@undefineds.co/models'
 import {
@@ -17,9 +18,18 @@ import {
   undoAiCellChange,
   writeAiCellChange,
 } from '../proposal/ai-cell-change-commands'
+import type { AiColumnChange } from '../../domain/proposal/ai-column-change-model'
+import {
+  keepAiColumnChange,
+  markAiColumnChangeSeen,
+  readAiColumnChanges,
+  removeAiColumnChange,
+  stageAiColumnChange,
+} from '../proposal/ai-column-change-commands'
 import type { AiDraft } from '../../domain/proposal/ai-draft-model'
 import {
   keepAiDraft,
+  listUnconfirmedAiDraftTargets,
   readAiDraft,
   reapplyAiDraft,
   stageAiDraft,
@@ -492,6 +502,20 @@ export function createProposalCollections(dependencies: ProposalCollectionsDepen
       return readAiDraft(db, targetResourceUri, input.podRootUri)
     },
 
+    /** Key for "which files in this list carry an unconfirmed draft": one query per list, not per row. */
+    listQueryKey(scopeKey: string, targetResourceUris: readonly string[]): QueryKey {
+      return [...queryKeys.aiChangeProposals, 'draft-list', scopeKey, filesProposalInstanceSuffix(targetResourceUris)]
+    },
+
+    async fetchUnconfirmed(
+      targetResourceUris: readonly string[],
+      input: { db?: SolidDatabase | null; podRootUri?: string | null },
+    ): Promise<string[]> {
+      const db = input.db ?? getDb()
+      if (!db || targetResourceUris.length === 0) return []
+      return Array.from(await listUnconfirmedAiDraftTargets(db, targetResourceUris, input.podRootUri))
+    },
+
     async run(
       cacheClient: QueryClient,
       draftTarget: string,
@@ -500,6 +524,7 @@ export function createProposalCollections(dependencies: ProposalCollectionsDepen
       try {
         return await job()
       } finally {
+        await cacheClient.invalidateQueries({ queryKey: [...queryKeys.aiChangeProposals, 'draft-list'] })
         await filesResourceCacheInvalidationCollection.invalidateProposalCreate(cacheClient, {
           proposalQueryKey: aiDraftCollection.queryKey(draftTarget),
           rawTextResourceUris: [draftTarget],
@@ -580,6 +605,51 @@ export function createProposalCollections(dependencies: ProposalCollectionsDepen
 
     markSeen(input: { cacheClient: QueryClient; db?: SolidDatabase | null; change: AiCellChange; podRootUri?: string | null }) {
       return aiCellChangeCollection.run(input.cacheClient, input.change.documentUri, (db) => markAiCellChangeSeen(input.db ?? db, input))
+    },
+  }
+
+  /** R6 K6b: columns LinX added to a table: unconfirmed (dashed) or added under a grant (undoable, logged). */
+  const aiColumnChangeCollection = {
+    queryKey(documentUri: string): QueryKey {
+      return [...queryKeys.aiChangeProposals, 'columns', documentUri]
+    },
+
+    async fetch(documentUri: string, input: { db?: SolidDatabase | null; podRootUri?: string | null }) {
+      const db = input.db ?? getDb()
+      if (!db || !documentUri) return []
+      return readAiColumnChanges(db, documentUri, input.podRootUri)
+    },
+
+    async run<T>(cacheClient: QueryClient, documentUri: string, job: (db: SolidDatabase) => Promise<T>): Promise<T> {
+      const db = getDb()
+      if (!db) throw new Error('Database not connected')
+      try {
+        return await job(db)
+      } finally {
+        await filesResourceCacheInvalidationCollection.invalidateProposalCreate(cacheClient, {
+          proposalResourceUri: documentUri,
+          proposalQueryKey: aiColumnChangeCollection.queryKey(documentUri),
+          detailResourceUris: [documentUri],
+          includeInbox: false,
+        })
+        await cacheClient.invalidateQueries({ queryKey: [...queryKeys.aiChangeProposals, 'cells', documentUri] })
+      }
+    },
+
+    stage(input: Parameters<typeof stageAiColumnChange>[1] & { cacheClient: QueryClient; db?: SolidDatabase | null }) {
+      return aiColumnChangeCollection.run(input.cacheClient, input.documentUri, (db) => stageAiColumnChange(input.db ?? db, input))
+    },
+
+    keep(input: { cacheClient: QueryClient; db?: SolidDatabase | null; change: AiColumnChange; podRootUri?: string | null }) {
+      return aiColumnChangeCollection.run(input.cacheClient, input.change.documentUri, (db) => keepAiColumnChange(input.db ?? db, input))
+    },
+
+    remove(input: { cacheClient: QueryClient; db?: SolidDatabase | null; actorWebId: string; change: AiColumnChange; podRootUri?: string | null }) {
+      return aiColumnChangeCollection.run(input.cacheClient, input.change.documentUri, (db) => removeAiColumnChange(input.db ?? db, input))
+    },
+
+    markSeen(input: { cacheClient: QueryClient; db?: SolidDatabase | null; change: AiColumnChange; podRootUri?: string | null }) {
+      return aiColumnChangeCollection.run(input.cacheClient, input.change.documentUri, (db) => markAiColumnChangeSeen(input.db ?? db, input))
     },
   }
 
@@ -701,6 +771,7 @@ export function createProposalCollections(dependencies: ProposalCollectionsDepen
     aiChangeProposalCollection,
     aiDraftCollection,
     aiCellChangeCollection,
+    aiColumnChangeCollection,
     shareCollection,
   }
 }

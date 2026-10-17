@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useAskLinx } from '@/lib/ask-linx'
 
 const CHAT_SELECTION_STORAGE_KEY = 'linx:chat-selection:v1'
 
@@ -181,3 +182,8 @@ export const useChatStore = create<ChatStore>((set) => ({
 
   setListViewMode: (mode) => set({ listViewMode: mode }),
 }))
+
+// 问 LinX (`@/lib/ask-linx`): the chat module takes these requests for as long as
+// the app lives. The chat pane selects the LinX 助手 chat and its composer takes
+// the quoted prompt (ChatContentPane, useAskLinxIntoComposer).
+useAskLinx.getState().listen()

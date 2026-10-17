@@ -53,8 +53,16 @@ function badgeLabel(item: InboxItem): string {
   return '审计事件'
 }
 
+/** W7b: why this request can no longer be answered here. */
+export type InboxRequestState =
+  | { kind: 'expired' }
+  | { kind: 'elsewhere'; title: string; timeLabel: string | null }
+
 export interface InboxDetailProps {
   selectedItem: InboxItem
+  /** No network: decisions wait until it is back. */
+  offline?: boolean
+  requestState?: InboxRequestState | null
   reason: string
   setReason: (v: string) => void
   isPendingApproval: boolean
@@ -90,6 +98,8 @@ export interface InboxDetailProps {
 
 export function InboxDetail({
   selectedItem,
+  offline = false,
+  requestState = null,
   reason,
   setReason,
   isPendingApproval,
@@ -135,6 +145,28 @@ export function InboxDetail({
             </div>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
+            {offline && (
+              <p role="status" className="rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground">
+                没有网络，恢复后才能处理
+              </p>
+            )}
+            {requestState?.kind === 'expired' && (
+              <div role="status" className="rounded-xl border border-border/50 bg-muted/30 p-4">
+                <p className="text-sm font-medium text-foreground">这个请求已经过期</p>
+                <p className="mt-1 text-xs text-muted-foreground">助手没有继续做。需要的话在会话里让它重新问你。</p>
+              </div>
+            )}
+            {requestState?.kind === 'elsewhere' && (
+              <div role="status" className="space-y-2 rounded-xl border border-border/50 bg-muted/30 p-4">
+                <p className="text-sm font-medium text-foreground">正在看的请求在别处被处理了</p>
+                <p className="text-xs text-muted-foreground">
+                  {requestState.title}{requestState.timeLabel ? ` · ${requestState.timeLabel}` : ''}
+                </p>
+                {selectedItem.chatId && (
+                  <Button variant="outline" size="sm" onClick={handleOpenConversation}>回到会话</Button>
+                )}
+              </div>
+            )}
             <div>
               <div className="text-xs uppercase tracking-wide text-muted-foreground">摘要</div>
               <p className="mt-1 leading-6 text-foreground">{selectedItem.description}</p>

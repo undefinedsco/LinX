@@ -2541,6 +2541,25 @@ export function useMessageIndex(options?: { enabled?: boolean }) {
   return { ...query, data, error: null, refetch: () => messageCollection.fetch({ refetch: true }) }
 }
 
+/**
+ * Live: every message row of every internal thread of one chat (the chat is a
+ * single timeline). Pod notifications (see `chatOps.subscribeToPod`) keep the
+ * underlying collection current, so a message that lands in any thread - a
+ * scheduled run, a coding run, a group reconciler reply - shows up here.
+ */
+export function useChatMessageRows(chatId: string | null) {
+  const query = useLiveQuery(messageCollection)
+  const threads = useThreadList(chatId ?? '', { enabled: Boolean(chatId) })
+  return useMemo(() => {
+    if (!chatId) return [] as MessageRow[]
+    const threadKeys = new Set(threads.data.map((thread) => extractThreadIdFromThreadRef(thread.id) ?? thread.id))
+    return ((query.data ?? []) as MessageRow[]).filter((row) => {
+      if (!row.thread) return false
+      return threadKeys.has(extractThreadIdFromThreadRef(row.thread) ?? row.thread)
+    })
+  }, [chatId, query.data, threads.data])
+}
+
 // ============================================================================
 // Mutation Hooks (using chatOps)
 // ============================================================================

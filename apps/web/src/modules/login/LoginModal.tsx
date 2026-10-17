@@ -33,6 +33,7 @@ export function LoginModal(props: LoginModalProps) {
           authWindowStatus={props.authWindowStatus}
           connectingProvider={props.connectingProvider}
           onCancel={props.onCancelConnecting}
+          onReopen={props.onReopenAuthWindow}
         />
       ) : view === 'local' ? (
         <LocalOnboardingView
@@ -468,10 +469,12 @@ function ConnectingView({
   authWindowStatus,
   connectingProvider,
   onCancel,
+  onReopen,
 }: {
   authWindowStatus: LoginModalProps['authWindowStatus']
   connectingProvider: LoginModalProps['connectingProvider']
   onCancel: () => void
+  onReopen?: () => void
 }) {
   let title = '正在连接'
   let detail = connectingProvider
@@ -503,14 +506,23 @@ function ConnectingView({
           </div>
         ) : null}
       </div>
-      <div className="px-5 pb-5 shrink-0">
+      <div className="px-5 pb-5 shrink-0 flex gap-2">
         <button
           type="button"
           onClick={onCancel}
-          className="w-full h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+          className="flex-1 h-9 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
         >
           取消
         </button>
+        {authWindowStatus.open && onReopen ? (
+          <button
+            type="button"
+            onClick={onReopen}
+            className="flex-1 h-9 rounded-md border border-border/60 text-xs font-medium text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+          >
+            重新打开
+          </button>
+        ) : null}
       </div>
     </div>
   )
@@ -610,6 +622,7 @@ function LocalOnboardingView({
               <Loader2 className="w-6 h-6 text-primary animate-spin" />
               <p className="text-sm font-medium text-foreground">正在准备{productLabel}</p>
               <p className="max-w-[18rem] text-xs leading-5 text-muted-foreground">{progressDetail}</p>
+              {isStarting ? <PreparationProgress progress={snapshot?.progress} /> : null}
             </div>
           )}
 
@@ -841,6 +854,46 @@ function SpaceMarker({ kind, size }: { kind: SpaceMarkerKind; size: 'md' | 'lg' 
       <Icon className={size === 'lg' ? 'h-3 w-3' : 'h-2.5 w-2.5'} aria-hidden="true" />
     </span>
   )
+}
+
+/**
+ * First-time setup progress. The desktop reports a phase and, while it
+ * installs components, sometimes a percentage in its text; with no number the
+ * bar is indeterminate.
+ */
+function PreparationProgress({ progress }: { progress: NonNullable<LoginModalProps['localOnboarding']>['progress'] }) {
+  if (!progress) return null
+  const downloading = progress.phase === 'install-bun' || progress.phase === 'install-npm'
+  const percent = parsePreparationPercent(progress)
+  return (
+    <div className="flex w-full max-w-[18rem] flex-col gap-1.5">
+      <div
+        role="progressbar"
+        aria-label={downloading ? '下载组件' : '准备进度'}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent ?? undefined}
+        className="h-1 w-full overflow-hidden rounded-full bg-muted"
+      >
+        <div
+          className={cn('h-full rounded-full bg-primary', percent === null && 'w-1/3 animate-pulse')}
+          style={percent === null ? undefined : { width: `${percent}%` }}
+        />
+      </div>
+      {downloading ? (
+        <p className="text-[11px] text-muted-foreground">
+          下载组件{percent === null ? '' : ` ${percent}%`} · 只在第一次需要。准备好会自动继续登录。
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+export function parsePreparationPercent(progress: { label?: string | null; detail?: string | null }): number | null {
+  const match = /(\d{1,3})\s*%/.exec(`${progress.detail ?? ''} ${progress.label ?? ''}`)
+  if (!match) return null
+  const value = Number(match[1])
+  return value >= 0 && value <= 100 ? value : null
 }
 
 function getLocalPreparationDetail(

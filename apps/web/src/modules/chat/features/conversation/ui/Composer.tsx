@@ -1,12 +1,13 @@
 import { useState, type KeyboardEvent } from 'react'
 import { AttachmentPrimitive, ComposerPrimitive, useAui, useAuiState } from '@assistant-ui/react'
-import { AudioLines, Camera, FileText, Globe, ImagePlus, Mic, Paperclip, Send, Square, X } from 'lucide-react'
+import { AudioLines, Camera, FileText, Globe, ImagePlus, Mic, Paperclip, Quote, Send, Square, X } from 'lucide-react'
 import { Command, CommandEmpty, CommandItem, CommandList } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
 import { useThreadList } from '../../../collections'
 import { useOptionalConversationIdentity } from '../ConversationContext'
 import { useWorkbenchDialogs } from '../workbench-dialogs'
 import { SLASH_COMMANDS, useComposerTools, type SlashCommand } from './composer-tools'
+import type { ComposerCitation } from '../useAskLinxIntoComposer'
 
 function AttachmentChip() {
   const name = useAuiState((state) => state.attachment.name)
@@ -70,7 +71,7 @@ function useSlashMenu() {
 }
 
 /** 消息 · 发送 · 停止 — the WeChat-style input row. Attachments never block sending. */
-export function Composer({ disabled, disabledReason }: { disabled?: boolean; disabledReason?: string }) {
+export function Composer({ disabled, disabledReason, citation }: { disabled?: boolean; disabledReason?: string; citation?: ComposerCitation | null }) {
   const running = useAuiState((state) => state.thread.isRunning)
   const dictating = useAuiState((state) => state.composer.dictation != null)
   const { webSearch, setWebSearch, imageGeneration, setImageGeneration } = useComposerTools()
@@ -80,6 +81,15 @@ export function Composer({ disabled, disabledReason }: { disabled?: boolean; dis
     <ComposerPrimitive.Root className="border-t border-border bg-background px-4 py-3">
       <div className="mx-auto max-w-3xl">
         <div className="mb-2 flex flex-wrap gap-1.5 empty:hidden">
+          {citation ? (
+            <span className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary/10 px-2 text-xs text-primary" data-testid="composer-citation">
+              <Quote className="h-3.5 w-3.5" aria-hidden="true" />
+              <button type="button" className="max-w-[200px] truncate hover:underline" title="打开引用的内容" onClick={citation.open}>{citation.label}</button>
+              <button type="button" aria-label={`移除引用 ${citation.label}`} className="rounded p-0.5 hover:bg-background" onClick={citation.remove}>
+                <X className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </span>
+          ) : null}
           <ComposerPrimitive.Attachments components={{ Attachment: AttachmentChip }} />
         </div>
         <div className="relative">

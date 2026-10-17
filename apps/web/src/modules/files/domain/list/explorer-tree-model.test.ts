@@ -145,3 +145,40 @@ describe('assistant folder names', () => {
     expect(rows.map((row) => row.label)).toEqual(['LinX 助手', 'other'])
   })
 })
+
+describe('共享给我 group', () => {
+  const base = {
+    rootEntries: [],
+    expandedUris: new Set<string>(),
+    childEntriesByContainerUri: {},
+    loadingContainerUris: new Set<string>(),
+    errorByContainerUri: {},
+    searchText: '',
+    groups: true,
+  }
+
+  it('says no folders were found rather than claiming nothing is shared', () => {
+    const rows = projectFilesExplorerRows({ ...base, sharedWithMe: { items: [], isLoading: false } })
+    expect(rows.at(-1)).toMatchObject({ label: '没有找到别人共享给你的文件夹' })
+  })
+
+  it('shows a loading line while reading', () => {
+    const rows = projectFilesExplorerRows({ ...base, sharedWithMe: { items: [], isLoading: true } })
+    expect(rows.at(-1)).toMatchObject({ label: '正在读取…' })
+  })
+
+  it('lists shared items under who shared them', () => {
+    const rows = projectFilesExplorerRows({
+      ...base,
+      sharedWithMe: {
+        isLoading: false,
+        items: [
+          { ownerName: '周禾', uri: 'https://zhou.example/docs/', name: '活动', kind: 'folder' },
+          { ownerName: '周禾', uri: 'https://zhou.example/a.md', name: 'a.md', kind: 'file' },
+        ],
+      },
+    })
+    const labels = rows.map((row) => (row.kind === 'entry' ? `${row.depth}:${row.entry.uri}` : row.label))
+    expect(labels.slice(-4)).toEqual(['共享给我', '周禾', '1:https://zhou.example/docs/', '1:https://zhou.example/a.md'])
+  })
+})

@@ -10,19 +10,32 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { clearAccountDrafts, countAccountDrafts } from '@/modules/chat/draft-store'
+import { useRunningTaskCount } from './use-running-task-count'
 
 interface SignOutDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   accountScope: string
   onConfirm: () => void
+  /** Tasks still running; the "会继续" line shows only when there are some. */
+  runningTaskCount?: number
 }
 
 /**
  * Apple-style confirmation: says what happens to unsent drafts and to work
  * that keeps running, then gets out of the way. Drafts are kept by default.
  */
-export function SignOutDialog({ open, onOpenChange, accountScope, onConfirm }: SignOutDialogProps) {
+export function SignOutDialog(props: SignOutDialogProps) {
+  // Runs are read only while the dialog is open.
+  return props.open ? <SignOutDialogWithTasks {...props} /> : <SignOutDialogView {...props} />
+}
+
+function SignOutDialogWithTasks(props: SignOutDialogProps) {
+  const runningTaskCount = useRunningTaskCount()
+  return <SignOutDialogView {...props} runningTaskCount={props.runningTaskCount ?? runningTaskCount} />
+}
+
+function SignOutDialogView({ open, onOpenChange, accountScope, onConfirm, runningTaskCount = 0 }: SignOutDialogProps) {
   const [draftCount, setDraftCount] = useState(0)
 
   useEffect(() => {
@@ -49,10 +62,12 @@ export function SignOutDialog({ open, onOpenChange, accountScope, onConfirm }: S
               <span>{draftCount} 条没发出的草稿会留在这台电脑，只有你登录后能看到</span>
             </p>
           ) : null}
-          <p className="flex items-start gap-2">
-            <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span>正在运行的任务会继续，退出不会停止它们</span>
-          </p>
+          {runningTaskCount > 0 ? (
+            <p className="flex items-start gap-2">
+              <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span>正在运行的任务会继续，退出不会停止它们</span>
+            </p>
+          ) : null}
         </div>
         <DialogFooter className="flex-col gap-2 sm:flex-col">
           <div className="flex w-full gap-2">
