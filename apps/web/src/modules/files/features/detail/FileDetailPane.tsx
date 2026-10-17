@@ -228,13 +228,13 @@ export function FileDetailPane() {
         />
       ) : null}
       {titleSlot ? createPortal(
-        <ResourceLayoutTitle slot={titleSlot} name={file.name} subtitle={detailChrome?.subtitle} />,
+        <ResourceLayoutTitle slot={titleSlot} name={detailChrome?.title ?? file.name} subtitle={detailChrome?.subtitle} />,
         titleSlot,
       ) : null}
       {!titleSlot ? (
         <div aria-label="文件详情 head" className="flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 px-4 py-1.5">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-foreground">{file.name}</p>
+            <p className="truncate text-sm font-medium text-foreground">{detailChrome?.title ?? file.name}</p>
             {detailChrome?.subtitle ? (
               <p className="truncate text-[11px] leading-tight text-muted-foreground" title={detailChrome.subtitle}>{detailChrome.subtitle}</p>
             ) : null}

@@ -148,7 +148,7 @@ describe('Files app shell architecture boundary', () => {
     expect(desktopBranch, 'desktop Files must not keep a third persistent list/preview pane between tree and workspace').not.toMatch(/<FilesListPane(?:\s|>)/)
     expect(desktopBranch, 'desktop Files must not add a second persistent resource tree inside the workspace').not.toMatch(/<FilesTreePane(?:\s|>)/)
     expect(detailPaneSource, 'workspace title should be projected from the selected resource, not a fixed generic Files label').toContain('data-resource-title="true"')
-    expect(detailPaneSource, 'selected-resource workspace title should use the selected resource name').toContain('name={file.name}')
+    expect(detailPaneSource, 'selected-resource workspace title should use the selected resource name').toContain('name={detailChrome?.title ?? file.name}')
   })
 
   it('keeps Files routing and entry scope out of the reusable layout shell', () => {

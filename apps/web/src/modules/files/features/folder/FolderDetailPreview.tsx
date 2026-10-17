@@ -1,4 +1,5 @@
 import { Copy, FilePlus, FolderPlus, Grid3X3, List, Trash2, Upload } from 'lucide-react'
+import { useMemo } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -6,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { useUnconfirmedAiDraftTargets } from '../../data/queries'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
+import { isExplorerSystemDataFolder } from '../../domain/list/explorer-virtual-entries'
 import { ResourceViewBar } from '../../ui/ResourceViewBar'
 import { DocumentEditorModal } from '../editor/DocumentEditorModal'
 import { FolderChildCollectionView } from './FolderDetailChildViews'
@@ -27,7 +29,8 @@ export function FolderDetailPreview({
 }: {
   file: FilesDetail
 }) {
-  const children = file.childEntries ?? []
+  // LinX bookkeeping folders under .data/ stay hidden, as in the tree.
+  const children = useMemo(() => (file.childEntries ?? []).filter((child) => !isExplorerSystemDataFolder(child)), [file.childEntries])
   const {
     setSortKey,
     setViewMode,

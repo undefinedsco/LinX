@@ -1,3 +1,4 @@
+import { isExplorerSystemDataFolder } from '../../domain/list/explorer-virtual-entries'
 import {
   projectFileDetailShellState,
   type FileDetailShellTab,
@@ -66,7 +67,7 @@ export function shouldResetFileDetailHorizontalScroll({
 }
 
 function fileDetailKindLabel(file: FilesDetail): string {
-  if (file.kind === 'container') return 'Pod 容器'
+  if (file.kind === 'container') return '文件夹'
   const mime = file.mimeType ?? ''
   if (mime === 'text/markdown') return 'Markdown 文档'
   if (mime === 'text/turtle') return 'Turtle 数据'
@@ -100,13 +101,14 @@ function fileDetailModifiedLabel(modifiedAt: string | null): string | null {
 }
 
 export function projectFileDetailChrome(file: FilesDetail): {
+  title: string
   subtitle: string
   footer: string
 } {
   const subtitle = `${fileDetailKindLabel(file)} · ${fileDetailPathLabel(file.parentUri)}`
   const segments: string[] = []
   if (file.kind === 'container') {
-    segments.push(`${file.childEntries?.length ?? 0} 项`)
+    segments.push(`${(file.childEntries ?? []).filter((child) => !isExplorerSystemDataFolder(child)).length} 项`)
   } else if (file.mimeType) {
     segments.push(file.mimeType)
   }
@@ -115,6 +117,8 @@ export function projectFileDetailChrome(file: FilesDetail): {
   const modifiedLabel = fileDetailModifiedLabel(file.modifiedAt)
   if (modifiedLabel) segments.push(modifiedLabel)
   return {
+    // `.data/` is shown as 数据, as in the tree (explorer-virtual-entries).
+    title: file.kind === 'container' && /\/\.data\/?$/.test(file.uri) ? '数据' : file.name,
     subtitle,
     footer: segments.join(' · '),
   }
