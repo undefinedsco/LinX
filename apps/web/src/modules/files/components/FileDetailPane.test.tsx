@@ -5186,7 +5186,7 @@ describe('FileDetailPane', () => {
 
     expect(screen.queryByRole('button', { name: '元数据' })).not.toBeInTheDocument()
     expect(screen.getByText(/@prefix schema/)).toBeInTheDocument()
-  }, 90_000)
+  }, 240_000) // One long scenario; CI runners take ~95 s, local machines far less.
 
   it('hides 校验提醒 for rows excluded by the pending writes filter', async () => {
     const structuredSource = [
