@@ -1,10 +1,11 @@
 # LinX Web release candidate (RC).
 #
 # Rendered by .github/workflows/candidate.yml: __NAMESPACE__, __IMAGE__, __HOST__ and
-# __TLS_SECRET__ are replaced with the RC Environment's namespace, the candidate's immutable
-# image digest, the Sealos-assigned host (vars.LINX_RC_HOST, e.g. <name>.sealosgzg.site) and the
-# cluster's wildcard certificate Secret (vars.LINX_RC_TLS_SECRET, default `wildcard-cert`), then
-# the result is applied once. Do not set the image or restart the Deployment in separate steps.
+# __CERT_ISSUER__ are replaced with the RC Environment's namespace, the candidate's immutable
+# image digest, the Sealos-domain host (vars.LINX_RC_HOST, e.g. <name>.sealosgzg.site) and the
+# cert-manager Issuer that signs its certificate (vars.LINX_RC_CERT_ISSUER, default
+# `linx-letsencrypt`, the issuer already used for linx.undefineds.cn), then the result is
+# applied once. Do not set the image or restart the Deployment in separate steps.
 #
 # RC stays on the Sealos domain: no undefineds.* DNS, no shared-gateway route. Only RC-owned
 # objects live here (Deployment, Service and Ingress `linx-web-rc`).
@@ -92,13 +93,16 @@ metadata:
   labels:
     app: linx-web-rc
   annotations:
-    kubernetes.io/ingress.class: nginx
+    # The Sealos ingress has no default certificate for unknown *.sealosgzg.site hosts; like the
+    # existing Sealos-domain hosts in this namespace, the certificate comes from cert-manager.
+    cert-manager.io/issuer: __CERT_ISSUER__
     nginx.ingress.kubernetes.io/backend-protocol: HTTP
 spec:
+  ingressClassName: nginx
   tls:
     - hosts:
         - __HOST__
-      secretName: __TLS_SECRET__
+      secretName: linx-web-rc-tls
   rules:
     - host: __HOST__
       http:

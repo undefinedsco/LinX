@@ -134,7 +134,7 @@ jobs:
       # RC lives on the Sealos-assigned domain (e.g. <name>.sealosgzg.site), not ours.
       RC_HOST: ${{ vars.LINX_RC_HOST }}
       RC_URL: ${{ vars.LINX_RC_HOST && format('https://{0}', vars.LINX_RC_HOST) || '' }}
-      RC_TLS_SECRET: ${{ vars.LINX_RC_TLS_SECRET || 'wildcard-cert' }}
+      RC_CERT_ISSUER: ${{ vars.LINX_RC_CERT_ISSUER || 'linx-letsencrypt' }}
       IMAGE: ${{ format('{0}@{1}', 'ghcr.io/undefinedsco/linx-web', needs.build_image.outputs.digest) }}
     steps:
       - uses: actions/checkout@v4
@@ -159,7 +159,7 @@ jobs:
         run: |
           set -euo pipefail
           sed -e "s|__NAMESPACE__|${NAMESPACE}|g" -e "s|__IMAGE__|${IMAGE}|g" \
-            -e "s|__HOST__|${RC_HOST}|g" -e "s|__TLS_SECRET__|${RC_TLS_SECRET}|g" \
+            -e "s|__HOST__|${RC_HOST}|g" -e "s|__CERT_ISSUER__|${RC_CERT_ISSUER}|g" \
             deploy/rc/linx-web-rc.yaml > "$RUNNER_TEMP/linx-web-rc.yaml"
           if grep -q '__[A-Z]*__' "$RUNNER_TEMP/linx-web-rc.yaml"; then echo "::error::unrendered placeholder"; exit 1; fi
           kubectl apply -f "$RUNNER_TEMP/linx-web-rc.yaml"
@@ -179,7 +179,8 @@ jobs:
       - name: Static deploy check
         run: |
           set -euo pipefail
-          for attempt in 1 2 3 4 5 6; do
+          # The first run waits for cert-manager to issue the RC certificate.
+          for attempt in $(seq 1 30); do
             if node scripts/verify-web-static-deploy.mjs "$RC_URL/"; then exit 0; fi
             sleep 10
           done
