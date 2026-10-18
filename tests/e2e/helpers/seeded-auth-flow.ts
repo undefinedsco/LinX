@@ -176,7 +176,11 @@ export async function readSeededAuthDebugState(page: Page) {
   })
 }
 
-async function signInToSeededRuntime(page: Page, runtime: SeededXpodRuntime): Promise<void> {
+/** A Solid account on a provider: the seeded runtime, or a real provider such as id.undefineds.co. */
+export type ProviderAccount = Pick<SeededXpodRuntime, 'email' | 'password' | 'podName' | 'baseUrl'>
+
+/** Signs in on the provider's own login page (Community Solid Server account UI). */
+export async function signInToSeededRuntime(page: Page, runtime: ProviderAccount): Promise<void> {
   const signInGate = page.getByRole('button', { name: /Go to Sign in/i })
   if (await signInGate.isVisible({ timeout: 5_000 }).catch(() => false)) {
     await signInGate.click()
@@ -200,7 +204,8 @@ async function signInToSeededRuntime(page: Page, runtime: SeededXpodRuntime): Pr
   }, undefined, { timeout: 30_000 })
 }
 
-async function authorizeSeededRuntime(page: Page, runtime: SeededXpodRuntime): Promise<void> {
+/** Gets through the provider's consent page (creating the Pod first when the account has none). */
+export async function authorizeSeededRuntime(page: Page, runtime: ProviderAccount): Promise<void> {
   const deadline = Date.now() + 90_000
 
   while (Date.now() < deadline) {

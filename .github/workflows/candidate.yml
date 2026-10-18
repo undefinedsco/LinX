@@ -1,0 +1,279 @@
+name: Release Candidate
+
+# LinX Web release candidates (docs/RELEASE.md). Every push to `staging` builds one image,
+# deploys that exact digest to the shared RC, runs acceptance, and uploads
+# `release-acceptance-<sha>` -- the only evidence a stable promotion may use.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+# One candidate at a time; a newer push never cancels the candidate occupying RC.
+concurrency:
+  group: linx-rc-candidate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  IMAGE_REPO: ghcr.io/undefinedsco/linx-web
+  # The provider the RC build points at ("provider=undefineds.co").
+  CLOUD_IDENTITY_URL: https://id.undefineds.co
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      candidate: ${{ steps.candidate.outputs.candidate }}
+      sourceSha: ${{ steps.candidate.outputs.sourceSha }}
+      shaTag: ${{ steps.candidate.outputs.shaTag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve release candidate metadata
+        id: candidate
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          metadata="$(node scripts/release-candidate.mjs --branch "$REF_NAME" --run-number "$RUN_NUMBER" --run-attempt "$RUN_ATTEMPT" --sha "$SOURCE_SHA")"
+          echo "$metadata"
+          for key in candidate sourceSha shaTag; do
+            echo "$key=$(node -e 'console.log(JSON.parse(process.argv[1])[process.argv[2]])' "$metadata" "$key")" >> "$GITHUB_OUTPUT"
+          done
+
+  verify:
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The web suite relies on Node's --localstorage-file web storage, which Node 22
+          # keeps behind a flag; 23.6 is the version the suite is verified on.
+          node-version: 23.6
+          cache: yarn
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-engines
+      - name: Type check (web)
+        run: cd apps/web && npx tsc --noEmit -p .
+      - name: Unit tests (web)
+        env:
+          LINX_TEST_LOCALSTORAGE_FILE: ${{ runner.temp }}/linx-vitest-localstorage
+        run: cd apps/web && yarn -s test run
+      - name: Service build and tests
+        run: |
+          cd apps/service
+          npx tsc -p .
+          node --test test/*.test.cjs
+
+  # LinX against a real (seeded, SQLite) xpod started from its npm package: sign-in, chat,
+  # files, citations, withdrawal, every main surface. Covers the local/standalone space mode
+  # that the cloud-only RC cannot.
+  local_e2e:
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 23.6
+          cache: yarn
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-engines
+      - name: Install Playwright Chromium
+        run: cd tests/e2e && npx playwright install --with-deps chromium
+      - name: End-to-end against a seeded local xpod
+        env:
+          CI: '1'
+          LINX_E2E_BASE_URL: http://localhost:5199
+          LINX_E2E_REUSE_SERVER: '0'
+          LINX_E2E_SIGNED_IN_SEEDED: '1'
+        run: |
+          cd tests/e2e
+          npx playwright test --reporter=list \
+            specs/solid-auth.spec.ts \
+            specs/real-seeded-auth.spec.ts \
+            specs/r6-surfaces.spec.ts \
+            specs/ask-linx-citation.spec.ts \
+            specs/card-withdraw-and-data-folder.spec.ts \
+            specs/deployed-signed-in.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: local-e2e-results-${{ github.sha }}
+          path: tests/e2e/test-results
+          retention-days: 14
+
+  build_image:
+    needs: [metadata, verify, local_e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-engines
+      - name: Build web
+        env:
+          VITE_APP_VERSION: ${{ needs.metadata.outputs.candidate }}
+          VITE_CLOUD_IDENTITY_URL: ${{ env.CLOUD_IDENTITY_URL }}
+          VITE_RELEASE_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          yarn workspace @linx/web build
+          printf '{"version":"%s","sourceSha":"%s"}\n' \
+            "${{ needs.metadata.outputs.candidate }}" "${{ needs.metadata.outputs.sourceSha }}" \
+            > apps/web/dist/version.json
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/web/Dockerfile
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.IMAGE_REPO }}:${{ needs.metadata.outputs.shaTag }}
+            ${{ env.IMAGE_REPO }}:${{ needs.metadata.outputs.candidate }}
+
+  deploy_and_accept:
+    needs: [metadata, build_image]
+    runs-on: ubuntu-latest
+    environment: rc
+    concurrency:
+      group: linx-shared-rc
+      cancel-in-progress: false
+    env:
+      # The rc Environment's own KUBE_CONFIG_DATA, or the shared org secret GZ_KUBE_CONFIG_DATA.
+      KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA || secrets.GZ_KUBE_CONFIG_DATA }}
+      NAMESPACE: ${{ vars.SEALOS_NAMESPACE }}
+      # RC lives on the Sealos-assigned domain (e.g. <name>.sealosgzg.site), not ours.
+      RC_HOST: ${{ vars.LINX_RC_HOST }}
+      RC_URL: ${{ vars.LINX_RC_HOST && format('https://{0}', vars.LINX_RC_HOST) || '' }}
+      RC_CERT_ISSUER: ${{ vars.LINX_RC_CERT_ISSUER || 'linx-letsencrypt' }}
+      IMAGE: ${{ format('{0}@{1}', 'ghcr.io/undefinedsco/linx-web', needs.build_image.outputs.digest) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check RC prerequisites
+        run: |
+          set -euo pipefail
+          missing=0
+          [ -n "$KUBE_CONFIG_DATA" ] || { echo "::error::cluster credential missing: set KUBE_CONFIG_DATA on the rc Environment or share org secret GZ_KUBE_CONFIG_DATA with this repo"; missing=1; }
+          [ -n "$NAMESPACE" ] || { echo "::error::rc variable SEALOS_NAMESPACE is required"; missing=1; }
+          [ -n "$RC_HOST" ] || { echo "::error::rc variable LINX_RC_HOST (Sealos-assigned host) is required"; missing=1; }
+          [[ "$RC_HOST" =~ ^[a-z0-9.-]+$ ]] || { echo "::error::LINX_RC_HOST must be a bare host name"; missing=1; }
+          [[ "${{ needs.build_image.outputs.digest }}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::invalid image digest"; missing=1; }
+          exit "$missing"
+      - name: Configure kubectl
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.kube
+          printf '%s' "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl version --client
+      - name: Deploy RC image by digest (single apply)
+        run: |
+          set -euo pipefail
+          sed -e "s|__NAMESPACE__|${NAMESPACE}|g" -e "s|__IMAGE__|${IMAGE}|g" \
+            -e "s|__HOST__|${RC_HOST}|g" -e "s|__CERT_ISSUER__|${RC_CERT_ISSUER}|g" \
+            deploy/rc/linx-web-rc.yaml > "$RUNNER_TEMP/linx-web-rc.yaml"
+          if grep -q '__[A-Z]*__' "$RUNNER_TEMP/linx-web-rc.yaml"; then echo "::error::unrendered placeholder"; exit 1; fi
+          kubectl apply -f "$RUNNER_TEMP/linx-web-rc.yaml"
+          kubectl -n "$NAMESPACE" rollout status deployment/linx-web-rc --timeout=300s
+      - name: Check the running pod serves the candidate digest
+        run: |
+          set -euo pipefail
+          image_id="$(kubectl -n "$NAMESPACE" get pods -l app=linx-web-rc -o jsonpath='{.items[?(@.status.phase=="Running")].status.containerStatuses[0].imageID}')"
+          echo "$image_id"
+          [[ "$image_id" == *"${{ needs.build_image.outputs.digest }}"* ]] || { echo "::error::pod imageID digest mismatch"; exit 1; }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-engines
+      - name: Static deploy check
+        run: |
+          set -euo pipefail
+          # The first run waits for cert-manager to issue the RC certificate.
+          for attempt in $(seq 1 30); do
+            if node scripts/verify-web-static-deploy.mjs "$RC_URL/"; then exit 0; fi
+            sleep 10
+          done
+          exit 1
+      - name: Deployed-site smoke (Playwright)
+        env:
+          CI: '1'
+          LINX_E2E_BASE_URL: ${{ env.RC_URL }}
+          LINX_E2E_REUSE_SERVER: '0'
+          LINX_E2E_CLOUD_IDENTITY_URL: ${{ env.CLOUD_IDENTITY_URL }}
+          LINX_E2E_EXPECT_VERSION: ${{ needs.metadata.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          cd tests/e2e
+          npx playwright install --with-deps chromium
+          npx playwright test specs/deployed-web-smoke.spec.ts --reporter=list
+      - name: Signed-in acceptance (dedicated account)
+        env:
+          CI: '1'
+          LINX_E2E_BASE_URL: ${{ env.RC_URL }}
+          LINX_E2E_REUSE_SERVER: '0'
+          LINX_E2E_CLOUD_IDENTITY_URL: ${{ env.CLOUD_IDENTITY_URL }}
+          LINX_E2E_ACCOUNT_EMAIL: ${{ secrets.LINX_RC_ACCOUNT_EMAIL }}
+          LINX_E2E_ACCOUNT_PASSWORD: ${{ secrets.LINX_RC_ACCOUNT_PASSWORD }}
+          LINX_E2E_ACCOUNT_POD: ${{ vars.LINX_RC_ACCOUNT_POD }}
+          LINX_E2E_EXPECT_MODEL_REPLY: '1'
+        run: |
+          set -euo pipefail
+          if [ -z "$LINX_E2E_ACCOUNT_EMAIL" ] || [ -z "$LINX_E2E_ACCOUNT_PASSWORD" ]; then
+            echo "::error::rc secrets LINX_RC_ACCOUNT_EMAIL / LINX_RC_ACCOUNT_PASSWORD (dedicated acceptance account) are required"
+            exit 1
+          fi
+          cd tests/e2e
+          npx playwright test specs/deployed-signed-in.spec.ts --reporter=list
+      - name: Write acceptance record
+        run: |
+          set -euo pipefail
+          mkdir -p acceptance
+          node -e '
+            const [candidate, sourceSha, digest, rcUrl, provider, runUrl] = process.argv.slice(1)
+            const record = {
+              schema: "linx-web-release-acceptance/1",
+              candidate, sourceSha, branch: "staging",
+              image: `ghcr.io/undefinedsco/linx-web@${digest}`, digest,
+              rcUrl, provider, runUrl,
+              acceptedAt: new Date().toISOString(),
+              checks: { verify: "passed", "local-e2e": "passed", "deployed-digest": "passed", "static-deploy": "passed", "deployed-smoke": "passed", "signed-in": "passed" },
+            }
+            require("fs").writeFileSync("acceptance/release-acceptance.json", JSON.stringify(record, null, 2) + "\n")
+          ' "${{ needs.metadata.outputs.candidate }}" "${{ needs.metadata.outputs.sourceSha }}" \
+            "${{ needs.build_image.outputs.digest }}" "$RC_URL" "$CLOUD_IDENTITY_URL" \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          cat acceptance/release-acceptance.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-acceptance-${{ needs.metadata.outputs.sourceSha }}
+          path: acceptance/release-acceptance.json
+          retention-days: 90
