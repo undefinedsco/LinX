@@ -265,8 +265,18 @@ export async function authorizeSeededRuntime(page: Page, runtime: ProviderAccoun
     if (await authorizeButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await expect(missingPodMessage).toHaveCount(0)
       await expect(authorizeButton).toBeEnabled({ timeout: 20_000 })
-      await authorizeButton.click()
-      return
+      // Newer xpod loads the WebID choice after the page shows; a click before that is a no-op.
+      // Click once the page has settled, and again if the browser is still on the consent page.
+      const consentUrl = page.url()
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined)
+        if (page.url() !== consentUrl) return
+        await authorizeButton.click({ timeout: 5_000 }).catch(() => undefined)
+        const left = await page.waitForURL((url) => url.href !== consentUrl, { timeout: 15_000 })
+          .then(() => true, () => false)
+        if (left) return
+      }
+      throw new Error(`consent did not complete after 允许\n${JSON.stringify(await readSeededAuthDebugState(page), null, 2)}`)
     }
 
     await page.waitForTimeout(500)
