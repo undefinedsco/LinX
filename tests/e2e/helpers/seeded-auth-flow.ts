@@ -265,14 +265,19 @@ export async function authorizeSeededRuntime(page: Page, runtime: ProviderAccoun
     if (await authorizeButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await expect(missingPodMessage).toHaveCount(0)
       await expect(authorizeButton).toBeEnabled({ timeout: 20_000 })
-      // Newer xpod loads the WebID choice after the page shows; a click before that is a no-op.
-      // Click once the page has settled, and again if the browser is still on the consent page.
-      const consentUrl = page.url()
+      // Newer xpod's account app shows consent at .../account/ and then routes to
+      // .../oidc/consent/; a click during that hand-over is lost. Click only on the consent
+      // route, and count it done only when the browser leaves the provider (back to the app).
+      if (!new URL(page.url()).pathname.includes('/oidc/consent')) {
+        await page.waitForTimeout(500)
+        continue
+      }
+      const providerOrigin = new URL(runtime.baseUrl).origin
       for (let attempt = 0; attempt < 3; attempt += 1) {
         await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined)
-        if (page.url() !== consentUrl) return
+        if (new URL(page.url()).origin !== providerOrigin) return
         await authorizeButton.click({ timeout: 5_000 }).catch(() => undefined)
-        const left = await page.waitForURL((url) => url.href !== consentUrl, { timeout: 15_000 })
+        const left = await page.waitForURL((url) => url.origin !== providerOrigin, { timeout: 20_000 })
           .then(() => true, () => false)
         if (left) return
       }
