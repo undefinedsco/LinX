@@ -75,8 +75,46 @@ jobs:
           npx tsc -p .
           node --test test/*.test.cjs
 
+  # LinX against a real (seeded, SQLite) xpod started from its npm package: sign-in, chat,
+  # files, citations, withdrawal, every main surface. Covers the local/standalone space mode
+  # that the cloud-only RC cannot.
+  local_e2e:
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 23.6
+          cache: yarn
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-engines
+      - name: Install Playwright Chromium
+        run: cd tests/e2e && npx playwright install --with-deps chromium
+      - name: End-to-end against a seeded local xpod
+        env:
+          CI: '1'
+          LINX_E2E_BASE_URL: http://localhost:5199
+          LINX_E2E_REUSE_SERVER: '0'
+          LINX_E2E_SIGNED_IN_SEEDED: '1'
+        run: |
+          cd tests/e2e
+          npx playwright test --reporter=list \
+            specs/solid-auth.spec.ts \
+            specs/real-seeded-auth.spec.ts \
+            specs/r6-surfaces.spec.ts \
+            specs/ask-linx-citation.spec.ts \
+            specs/card-withdraw-and-data-folder.spec.ts \
+            specs/deployed-signed-in.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: local-e2e-results-${{ github.sha }}
+          path: tests/e2e/test-results
+          retention-days: 14
+
   build_image:
-    needs: [metadata, verify]
+    needs: [metadata, verify, local_e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -197,6 +235,24 @@ jobs:
           cd tests/e2e
           npx playwright install --with-deps chromium
           npx playwright test specs/deployed-web-smoke.spec.ts --reporter=list
+      - name: Signed-in acceptance (dedicated account)
+        env:
+          CI: '1'
+          LINX_E2E_BASE_URL: ${{ env.RC_URL }}
+          LINX_E2E_REUSE_SERVER: '0'
+          LINX_E2E_CLOUD_IDENTITY_URL: ${{ env.CLOUD_IDENTITY_URL }}
+          LINX_E2E_ACCOUNT_EMAIL: ${{ secrets.LINX_RC_ACCOUNT_EMAIL }}
+          LINX_E2E_ACCOUNT_PASSWORD: ${{ secrets.LINX_RC_ACCOUNT_PASSWORD }}
+          LINX_E2E_ACCOUNT_POD: ${{ vars.LINX_RC_ACCOUNT_POD }}
+          LINX_E2E_EXPECT_MODEL_REPLY: '1'
+        run: |
+          set -euo pipefail
+          if [ -z "$LINX_E2E_ACCOUNT_EMAIL" ] || [ -z "$LINX_E2E_ACCOUNT_PASSWORD" ]; then
+            echo "::error::rc secrets LINX_RC_ACCOUNT_EMAIL / LINX_RC_ACCOUNT_PASSWORD (dedicated acceptance account) are required"
+            exit 1
+          fi
+          cd tests/e2e
+          npx playwright test specs/deployed-signed-in.spec.ts --reporter=list
       - name: Write acceptance record
         run: |
           set -euo pipefail
@@ -209,7 +265,7 @@ jobs:
               image: `ghcr.io/undefinedsco/linx-web@${digest}`, digest,
               rcUrl, provider, runUrl,
               acceptedAt: new Date().toISOString(),
-              checks: { verify: "passed", "deployed-digest": "passed", "static-deploy": "passed", "deployed-smoke": "passed" },
+              checks: { verify: "passed", "local-e2e": "passed", "deployed-digest": "passed", "static-deploy": "passed", "deployed-smoke": "passed", "signed-in": "passed" },
             }
             require("fs").writeFileSync("acceptance/release-acceptance.json", JSON.stringify(record, null, 2) + "\n")
           ' "${{ needs.metadata.outputs.candidate }}" "${{ needs.metadata.outputs.sourceSha }}" \

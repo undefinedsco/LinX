@@ -9,8 +9,9 @@
 3. 每个推到 `staging` 的提交触发 `.github/workflows/candidate.yml`：
    - `metadata`：版本 = 根 `package.json` 的 `version` + `-rc.<run>`（整轮重跑为 `-rc.<run>.<attempt>`），只接受 `staging`；
    - `verify`：web 类型检查、web 全量单元测试、service 构建与测试；
+   - `local_e2e`：对一个种子化的本地 xpod（npm 包、SQLite，不需要 Docker）跑端到端：登录、各主页面、问 LinX 引用（发送 / 编辑 / 重试都带给模型）、撤回与“数据”文件夹、登录后读写 Pod；覆盖 RC（只走云端）测不到的本地 / 独立空间；
    - `build_image`：构建 web（`VITE_CLOUD_IDENTITY_URL=https://id.undefineds.co`，即 provider=undefineds.co），写入 `version.json`（版本 + 源提交），打成 `ghcr.io/undefinedsco/linx-web` 镜像，标签 `sha-<sha>` 与 RC 版本，记下 digest；
-   - `deploy_and_accept`（GitHub Environment `rc`，共享 RC 串行）：把 `deploy/rc/linx-web-rc.yaml` 按 digest 渲染后**一次** apply，等滚动完成并核对运行中的 pod 就是这个 digest；再做静态部署检查（`scripts/verify-web-static-deploy.mjs`）和部署站点冒烟（`tests/e2e/specs/deployed-web-smoke.spec.ts`：各路由 200、缺失资源 404、`version.json` 是本候选、云端登录跳到 provider）；
+   - `deploy_and_accept`（GitHub Environment `rc`，共享 RC 串行）：把 `deploy/rc/linx-web-rc.yaml` 按 digest 渲染后**一次** apply，等滚动完成并核对运行中的 pod 就是这个 digest；再做静态部署检查（`scripts/verify-web-static-deploy.mjs`）和部署站点冒烟（`tests/e2e/specs/deployed-web-smoke.spec.ts`：各路由 200、缺失资源 404、`version.json` 是本候选、云端登录跳到 provider），再用专用验收账号做登录后验收（`tests/e2e/specs/deployed-signed-in.spec.ts`：经云端空间登录、在 Pod 里写读删一个文件、发一条消息并要求模型真实回答；写入的文件放在本次运行的目录里，结束时删除）；
    - 通过后上传 `release-acceptance-<sha>`（`release-acceptance.json`：候选版本、源提交、镜像 digest、RC 地址、provider、run 链接）。这是提升生产的唯一凭证。
 4. 人工在 RC 上验收产品（按 `docs/reviews/linx-r6-product-audit-2026-10-10.md` 的清单）。
 5. 生产：在验收通过的 staging exact SHA 上打 `linx-v<version>`，用同一个 digest 更新生产 `linx-web`（不重新构建）；再把该提交 squash 同步到 `main`，提交说明里记下 staging SHA、验收 run 和 digest。生产提升工作流尚未建立，见“待补”。
@@ -26,6 +27,8 @@ GitHub Environment `rc`（Settings → Environments，deployment branch policy �
 | Secret | `KUBE_CONFIG_DATA` | base64 的广州 Sealos kubeconfig（RC 所在集群）；也可以不设，改用组织级密钥 `GZ_KUBE_CONFIG_DATA`（与 xpod 共用，需共享给 LinX 仓库） |
 | Variable | `SEALOS_NAMESPACE` | RC 所在 namespace（广州为 `ns-iknkxtc8`） |
 | Variable | `LINX_RC_HOST` | RC 用 Sealos 分配的域名（不挂我们自己的域名），例如 `linx-web-rc.sealosgzg.site`；RC 地址即 `https://<LINX_RC_HOST>` |
+| Secret | `LINX_RC_ACCOUNT_EMAIL` / `LINX_RC_ACCOUNT_PASSWORD` | RC 登录后验收用的专用账号（在 provider 上注册，只用于验收，不放真实数据） |
+| Variable | `LINX_RC_ACCOUNT_POD` | 可选，该账号的 Pod 名，默认 `acceptance`（账号还没有 Pod 时在授权页创建） |
 | Variable | `LINX_RC_CERT_ISSUER` | 可选，签发 RC 证书的 cert-manager Issuer，默认 `linx-letsencrypt`（集群里没有 Sealos 通配证书，Sealos 域名的证书都由 cert-manager 签） |
 
 另外：
