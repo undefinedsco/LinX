@@ -4533,9 +4533,13 @@ describe('FileDetailPane', () => {
     })
 
     await chooseClassScope('udfs:Workspace')
-    const reportSubjectButton = await screen.findByRole('button', { name: '../docs/report.md' })
-    const structuredViewport = reportSubjectButton.closest('[data-structured-resource-viewport="true"]') as HTMLElement | null
-    expect(structuredViewport).toBeTruthy()
+    // On a slow runner the row can render before its scroll container; wait for both.
+    const structuredViewport = await waitFor(() => {
+      const viewport = screen.getByRole('button', { name: '../docs/report.md' })
+        .closest('[data-structured-resource-viewport="true"]') as HTMLElement | null
+      expect(viewport).toBeTruthy()
+      return viewport
+    }, { timeout: 10_000 })
     structuredViewport!.scrollTop = 184
     expect(structuredViewport!.scrollTop).toBe(184)
     fireEvent.scroll(structuredViewport!)
