@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: Resolve release candidate metadata
         id: candidate
         env:
@@ -57,10 +57,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: yarn
       - name: Install dependencies
         run: yarn install --frozen-lockfile --ignore-engines
+      - name: Build workspace packages
+        # Type checking resolves @linx/stores and @linx/agent-runtime through their built
+        # output (package.json exports), as `yarn workspace @linx/web build:check` does.
+        run: |
+          yarn workspace @linx/stores build
+          yarn build:agent-runtime
       - name: Type check (web)
         run: cd apps/web && npx tsc --noEmit -p .
       - name: Unit tests (web)
@@ -83,7 +89,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: yarn
       - name: Install dependencies
         run: yarn install --frozen-lockfile --ignore-engines
@@ -111,8 +117,65 @@ jobs:
           path: tests/e2e/test-results
           retention-days: 14
 
+  # LinX against xpod's standalone deployment: the published xpod image in local mode, its
+  # own identity provider, a seeded acceptance account (tests/e2e/fixtures/standalone-seed.json).
+  standalone_e2e:
+    needs: metadata
+    runs-on: ubuntu-latest
+    env:
+      XPOD_IMAGE: ghcr.io/undefinedsco/xpod:${{ vars.XPOD_STANDALONE_TAG || '0.4.30' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - name: Start xpod standalone
+        run: |
+          set -euo pipefail
+          docker run -d --name xpod-standalone -p 5739:5739 \
+            -e XPOD_EDITION=local -e CSS_PORT=5739 -e API_PORT=5740 \
+            -e CSS_BASE_URL=http://localhost:5739 -e SOLID_OIDC_ISSUER=http://localhost:5739/ \
+            -e CSS_ALLOWED_HOSTS=localhost \
+            -e XPOD_ENCRYPTION_KEY=linx-ci-standalone-only \
+            -e CSS_SPARQL_ENDPOINT=sqlite:/app/data/standalone.sqlite \
+            -e CSS_IDENTITY_DB_URL=sqlite:/app/data/standalone-identity.sqlite \
+            -e CSS_SEED_CONFIG=/app/config/linx-seed.json \
+            -v "$PWD/tests/e2e/fixtures/standalone-seed.json:/app/config/linx-seed.json:ro" \
+            "$XPOD_IMAGE"
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-engines
+      - name: Install Playwright Chromium
+        run: cd tests/e2e && npx playwright install --with-deps chromium
+      - name: Wait for xpod standalone
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if curl -sf -o /dev/null http://localhost:5739/.well-known/openid-configuration; then echo ready; exit 0; fi
+            sleep 5
+          done
+          docker logs --tail 200 xpod-standalone
+          exit 1
+      - name: Signed-in end-to-end against standalone
+        env:
+          CI: '1'
+          LINX_E2E_BASE_URL: http://localhost:5199
+          LINX_E2E_REUSE_SERVER: '0'
+          LINX_E2E_CLOUD_IDENTITY_URL: http://localhost:5739
+          LINX_E2E_LOGIN_VIA: custom
+        run: |
+          set -euo pipefail
+          export LINX_E2E_ACCOUNT_EMAIL="$(node -p 'require("./tests/e2e/fixtures/standalone-seed.json")[0].email')"
+          export LINX_E2E_ACCOUNT_PASSWORD="$(node -p 'require("./tests/e2e/fixtures/standalone-seed.json")[0].password')"
+          export LINX_E2E_ACCOUNT_POD="$(node -p 'require("./tests/e2e/fixtures/standalone-seed.json")[0].pods[0].name')"
+          cd tests/e2e
+          npx playwright test specs/deployed-signed-in.spec.ts --reporter=list
+      - name: xpod logs
+        if: failure()
+        run: docker logs --tail 300 xpod-standalone || true
+
   build_image:
-    needs: [metadata, verify, local_e2e]
+    needs: [metadata, verify, local_e2e, standalone_e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -123,7 +186,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: yarn
       - name: Install dependencies
         run: yarn install --frozen-lockfile --ignore-engines
@@ -212,7 +275,7 @@ jobs:
           [[ "$image_id" == *"${{ needs.build_image.outputs.digest }}"* ]] || { echo "::error::pod imageID digest mismatch"; exit 1; }
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: yarn
       - name: Install dependencies
         run: yarn install --frozen-lockfile --ignore-engines
@@ -267,7 +330,7 @@ jobs:
               image: `ghcr.io/undefinedsco/linx-web@${digest}`, digest,
               rcUrl, provider, runUrl,
               acceptedAt: new Date().toISOString(),
-              checks: { verify: "passed", "local-e2e": "passed", "deployed-digest": "passed", "static-deploy": "passed", "deployed-smoke": "passed", "signed-in": "passed" },
+              checks: { verify: "passed", "local-e2e": "passed", "standalone-e2e": "passed", "deployed-digest": "passed", "static-deploy": "passed", "deployed-smoke": "passed", "signed-in": "passed" },
             }
             require("fs").writeFileSync("acceptance/release-acceptance.json", JSON.stringify(record, null, 2) + "\n")
           ' "${{ needs.metadata.outputs.candidate }}" "${{ needs.metadata.outputs.sourceSha }}" \

@@ -10,6 +10,7 @@
    - `metadata`：版本 = 根 `package.json` 的 `version` + `-rc.<run>`（整轮重跑为 `-rc.<run>.<attempt>`），只接受 `staging`；
    - `verify`：web 类型检查、web 全量单元测试、service 构建与测试；
    - `local_e2e`：对一个种子化的本地 xpod（npm 包、SQLite，不需要 Docker）跑端到端：登录、各主页面、问 LinX 引用（发送 / 编辑 / 重试都带给模型）、撤回与“数据”文件夹、登录后读写 Pod；覆盖 RC（只走云端）测不到的本地 / 独立空间；
+   - `standalone_e2e`：用已发布的 xpod 镜像（默认 `ghcr.io/undefinedsco/xpod:0.4.30`，可用 Variable `XPOD_STANDALONE_TAG` 覆盖）以 local 模式起一个独立空间（自带身份服务，种子账号见 `tests/e2e/fixtures/standalone-seed.json`，只在 CI 容器里用），经“使用其他空间”登录后读写 Pod、发消息；
    - `build_image`：构建 web（`VITE_CLOUD_IDENTITY_URL=https://id.undefineds.co`，即 provider=undefineds.co），写入 `version.json`（版本 + 源提交），打成 `ghcr.io/undefinedsco/linx-web` 镜像，标签 `sha-<sha>` 与 RC 版本，记下 digest；
    - `deploy_and_accept`（GitHub Environment `rc`，共享 RC 串行）：把 `deploy/rc/linx-web-rc.yaml` 按 digest 渲染后**一次** apply，等滚动完成并核对运行中的 pod 就是这个 digest；再做静态部署检查（`scripts/verify-web-static-deploy.mjs`）和部署站点冒烟（`tests/e2e/specs/deployed-web-smoke.spec.ts`：各路由 200、缺失资源 404、`version.json` 是本候选、云端登录跳到 provider），再用专用验收账号做登录后验收（`tests/e2e/specs/deployed-signed-in.spec.ts`：经云端空间登录、在 Pod 里写读删一个文件、发一条消息并要求模型真实回答；写入的文件放在本次运行的目录里，结束时删除）；
    - 通过后上传 `release-acceptance-<sha>`（`release-acceptance.json`：候选版本、源提交、镜像 digest、RC 地址、provider、run 链接）。这是提升生产的唯一凭证。

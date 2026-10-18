@@ -89,7 +89,7 @@ jobs:
             if (record.branch !== "staging") fail("acceptance is not from staging")
             if (!String(record.candidate).startsWith(version + "-rc.")) fail("candidate " + record.candidate + " is not " + version)
             if (!/^sha256:[0-9a-f]{64}$/.test(record.digest)) fail("invalid digest")
-            const required = ["verify", "local-e2e", "deployed-digest", "static-deploy", "deployed-smoke", "signed-in"]
+            const required = ["verify", "local-e2e", "standalone-e2e", "deployed-digest", "static-deploy", "deployed-smoke", "signed-in"]
             for (const check of required) if (record.checks?.[check] !== "passed") fail("check not passed: " + check)
             const out = require("fs").createWriteStream(process.env.GITHUB_OUTPUT, { flags: "a" })
             out.write(`digest=${record.digest}\ncandidate=${record.candidate}\nsourceSha=${sha}\n`)
@@ -159,7 +159,7 @@ jobs:
           [[ "$image_id" == *"${{ needs.verify_acceptance.outputs.digest }}"* ]] || { echo "::error::pod imageID digest mismatch"; exit 1; }
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: yarn
       - name: Install dependencies
         run: yarn install --frozen-lockfile --ignore-engines
