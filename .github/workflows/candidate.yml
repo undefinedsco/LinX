@@ -79,7 +79,7 @@ jobs:
           npx tsc -p .
           node --test test/*.test.cjs
       - name: Release script tests
-        run: node --test scripts/release-candidate.test.mjs scripts/rc-provider-seed.test.mjs
+        run: node --test scripts/release-candidate.test.mjs scripts/rc-provider-seed.test.mjs scripts/xpod-rc-provider-patch.test.mjs
 
   # LinX against a real (seeded, SQLite) xpod started from its npm package: sign-in, chat,
   # files, citations, withdrawal, every main surface. Covers the local/standalone space mode
@@ -246,9 +246,12 @@ jobs:
       RC_HOST: ${{ vars.LINX_RC_HOST }}
       RC_URL: ${{ vars.LINX_RC_HOST && format('https://{0}', vars.LINX_RC_HOST) || '' }}
       RC_CERT_ISSUER: ${{ vars.LINX_RC_CERT_ISSUER || 'linx-letsencrypt' }}
-      # Signed-in acceptance signs in to xpod's RC provider (not production id.undefineds.co) with
-      # a per-run account from xpod's RC seed; this job brings xpod-rc up for it and back down.
-      RC_PROVIDER_URL: ${{ vars.LINX_RC_PROVIDER_URL || 'https://id-rc.undefineds.cn/' }}
+      # Signed-in acceptance signs in to xpod's RC provider (not production id.undefineds.co) on
+      # its Sealos domain (deploy/rc/xpod-rc-sealos.yaml) with a per-run account from xpod's RC
+      # seed; this job brings xpod-rc up for it and puts it back afterwards.
+      RC_PROVIDER_URL: https://ids.sealosgzg.site/
+      RC_PROVIDER_API_URL: https://apis.sealosgzg.site
+      RC_PROVIDER_HOSTS: ids.sealosgzg.site,podss.sealosgzg.site,apis.sealosgzg.site
       RC_SEED_SECRET: xpod-rc-seed-linx-${{ github.run_id }}-${{ github.run_attempt }}
       IMAGE: ${{ format('{0}@{1}', 'ghcr.io/undefinedsco/linx-web', needs.build_image.outputs.digest) }}
     steps:
@@ -330,15 +333,11 @@ jobs:
           kubectl -n "$NAMESPACE" create secret generic "$RC_SEED_SECRET" --from-file=rc.json="$RUNNER_TEMP/rc.json" \
             --dry-run=client -o yaml | kubectl apply -f -
           rm -f "$RUNNER_TEMP/seed-in.json" "$RUNNER_TEMP/rc.json"
-          # One patch (seed Secret + replicas), so a single ReplicaSet runs the CSS seed initializer.
-          index="$(kubectl -n "$NAMESPACE" get deployment xpod-rc -o json | node -e '
-            const volumes = JSON.parse(require("fs").readFileSync(0, "utf8")).spec.template.spec.volumes || []
-            const index = volumes.findIndex((volume) => volume.name === "xpod-rc-seed")
-            if (index < 0) throw new Error("deployment/xpod-rc has no xpod-rc-seed volume")
-            console.log(index)')"
-          kubectl -n "$NAMESPACE" patch deployment xpod-rc --type=json -p "[
-            {\"op\":\"replace\",\"path\":\"/spec/template/spec/volumes/${index}/secret/secretName\",\"value\":\"${RC_SEED_SECRET}\"},
-            {\"op\":\"replace\",\"path\":\"/spec/replicas\",\"value\":1}]"
+          sed -e "s|__NAMESPACE__|${NAMESPACE}|g" -e "s|__CERT_ISSUER__|${RC_CERT_ISSUER}|g" deploy/rc/xpod-rc-sealos.yaml | kubectl apply -f -
+          # Saved so the cleanup step can put xpod-rc back exactly as xpod left it.
+          kubectl -n "$NAMESPACE" get deployment xpod-rc -o json > "$RUNNER_TEMP/xpod-rc-before.json"
+          kubectl -n "$NAMESPACE" patch deployment xpod-rc --type=json -p "$(node scripts/xpod-rc-provider-patch.mjs up \
+            "$RUNNER_TEMP/xpod-rc-before.json" "$RC_SEED_SECRET" "$RC_PROVIDER_URL" "$RC_PROVIDER_API_URL" "$RC_PROVIDER_HOSTS")"
           kubectl -n "$NAMESPACE" rollout status deployment/xpod-rc --timeout=1800s
           for attempt in $(seq 1 30); do
             if curl -fsS "${RC_PROVIDER_URL%/}/.well-known/openid-configuration" > /dev/null; then exit 0; fi
@@ -371,8 +370,8 @@ jobs:
           [ -f ~/.kube/config ] || exit 0
           # Only when xpod-rc still runs this job's seed: an xpod RC run that took over keeps its own.
           current="$(kubectl -n "$NAMESPACE" get deployment xpod-rc -o jsonpath='{.spec.template.spec.volumes[?(@.name=="xpod-rc-seed")].secret.secretName}' || true)"
-          if [ "$current" = "$RC_SEED_SECRET" ]; then
-            kubectl -n "$NAMESPACE" scale deployment/xpod-rc --replicas=0
+          if [ "$current" = "$RC_SEED_SECRET" ] && [ -f "$RUNNER_TEMP/xpod-rc-before.json" ]; then
+            kubectl -n "$NAMESPACE" patch deployment xpod-rc --type=json -p "$(node scripts/xpod-rc-provider-patch.mjs restore "$RUNNER_TEMP/xpod-rc-before.json")"
           fi
           kubectl -n "$NAMESPACE" delete secret "$RC_SEED_SECRET" --ignore-not-found
       - name: Write acceptance record
