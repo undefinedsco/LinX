@@ -316,23 +316,20 @@ jobs:
           npx playwright install --with-deps chromium
           npx playwright test specs/deployed-web-smoke.spec.ts --reporter=list
       - name: Bring up the xpod RC provider with a per-run seed
-        env:
-          XPOD_RC_SEED_CONFIG: ${{ secrets.XPOD_RC_SEED_CONFIG }}
         run: |
           set -euo pipefail
-          [ -n "$XPOD_RC_SEED_CONFIG" ] || { echo "::error::rc secret XPOD_RC_SEED_CONFIG (xpod's RC seed JSON with Alice and Bob) is required"; exit 1; }
           # xpod's candidate owns xpod-rc while it runs and scales it to 0 afterwards; never take it over mid-run.
           replicas="$(kubectl -n "$NAMESPACE" get deployment xpod-rc -o jsonpath='{.spec.replicas}')"
           if [ "$replicas" != "0" ]; then
             echo "::error::deployment/xpod-rc is running ($replicas replicas), probably an xpod RC run; rerun this job once it is back at 0"
             exit 1
           fi
-          printf '%s' "$XPOD_RC_SEED_CONFIG" > "$RUNNER_TEMP/seed-in.json"
-          node scripts/rc-provider-seed.mjs --input "$RUNNER_TEMP/seed-in.json" --output "$RUNNER_TEMP/rc.json" \
+          # Alice and Bob are generated for this run (random passwords, masked in the log).
+          node scripts/rc-provider-seed.mjs --output "$RUNNER_TEMP/rc.json" \
             --suffix "linx-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --github-env "$GITHUB_ENV"
           kubectl -n "$NAMESPACE" create secret generic "$RC_SEED_SECRET" --from-file=rc.json="$RUNNER_TEMP/rc.json" \
             --dry-run=client -o yaml | kubectl apply -f -
-          rm -f "$RUNNER_TEMP/seed-in.json" "$RUNNER_TEMP/rc.json"
+          rm -f "$RUNNER_TEMP/rc.json"
           sed -e "s|__NAMESPACE__|${NAMESPACE}|g" -e "s|__CERT_ISSUER__|${RC_CERT_ISSUER}|g" deploy/rc/xpod-rc-sealos.yaml | kubectl apply -f -
           # Saved so the cleanup step can put xpod-rc back exactly as xpod left it.
           kubectl -n "$NAMESPACE" get deployment xpod-rc -o json > "$RUNNER_TEMP/xpod-rc-before.json"
