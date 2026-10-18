@@ -12,7 +12,8 @@ const mockToast = vi.fn()
 const mockCreateAndStartRuntimeSession = vi.fn()
 const mockUseChatStore = vi.fn()
 const mockIsRuntimeSessionMode = vi.fn()
-const mockFetchSolidProfile = vi.fn()
+const mockLookupSolidProfile = vi.fn()
+const mockFindPersonByAccount = vi.fn()
 const mockAddFriend = vi.fn()
 const mockCreateGroupDialog = vi.fn()
 
@@ -111,11 +112,27 @@ vi.mock('../runtime-client', () => ({
   resolveLocalContainer: vi.fn(async () => 'linx://device-123/repo/linx'),
 }))
 
-vi.mock('@/modules/contacts', () => ({
+vi.mock('@/providers/solid-session-context', () => ({
+  useSession: () => ({ session: { info: { webId: 'https://me.example/profile/card#me', isLoggedIn: true } } }),
+}))
+
+vi.mock('@/modules/model-services/data/use-model-services', () => ({
+  useModelServices: () => ({ providers: {} }),
+}))
+
+// The real add-friend form runs; only the Pod-facing operations are replaced.
+vi.mock('@/modules/contacts/data/collections', () => ({
   contactOps: {
-    fetchSolidProfile: (webId: string) => mockFetchSolidProfile(webId),
+    lookupSolidProfile: (webId: string) => mockLookupSolidProfile(webId),
+    findPersonByAccount: (webId: string) => mockFindPersonByAccount(webId),
     addFriend: (input: unknown) => mockAddFriend(input),
   },
+}))
+
+vi.mock('@/modules/contacts', async () => ({
+  AddFriendForm: (await vi.importActual<typeof import('@/modules/contacts/features/add-friend/AddFriendForm')>(
+    '@/modules/contacts/features/add-friend/AddFriendForm',
+  )).AddFriendForm,
   CreateGroupDialog: (props: unknown) => {
     mockCreateGroupDialog(props)
     const { onCreated } = props as { onCreated?: (contactId: string, chatId: string) => void }
@@ -150,11 +167,15 @@ describe('AddChatDialog', () => {
     mockCreateThread.mockResolvedValue({ id: 'thread-1' })
     mockEnsureThreadWorkspace.mockResolvedValue('linx://device-123/repo/linx')
     mockIsRuntimeSessionMode.mockReturnValue(true)
-    mockFetchSolidProfile.mockResolvedValue({
-      name: 'Alice',
-      webId: 'https://alice.example/profile/card#me',
-      avatarUrl: 'alice.png',
+    mockLookupSolidProfile.mockResolvedValue({
+      status: 'found',
+      profile: {
+        name: 'Alice',
+        webId: 'https://alice.example/profile/card#me',
+        avatarUrl: 'alice.png',
+      },
     })
+    mockFindPersonByAccount.mockReturnValue(null)
     mockAddFriend.mockResolvedValue({ id: 'contact-1', chatId: 'chat-friend-1' })
   })
 
@@ -260,18 +281,18 @@ describe('AddChatDialog', () => {
     setupStore('friend')
     render(<AddChatDialog />)
 
-    fireEvent.change(screen.getByLabelText('用户地址'), {
+    fireEvent.change(screen.getByLabelText('对方的账号'), {
       target: { value: 'https://alice.example/profile/card#me' },
     })
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
 
     await waitFor(() => {
-      expect(mockFetchSolidProfile).toHaveBeenCalledWith('https://alice.example/profile/card#me')
+      expect(mockLookupSolidProfile).toHaveBeenCalledWith('https://alice.example/profile/card#me')
     })
 
     expect(await screen.findByText('Alice')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '添加为好友' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
 
     await waitFor(() => {
       expect(mockAddFriend).toHaveBeenCalledWith({
@@ -291,17 +312,64 @@ describe('AddChatDialog', () => {
 
     render(<AddChatDialog />)
 
-    fireEvent.change(screen.getByLabelText('用户地址'), {
+    fireEvent.change(screen.getByLabelText('对方的账号'), {
       target: { value: 'https://alice.example/profile/card#me' },
     })
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
 
     expect(await screen.findByText('Alice')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '添加为好友' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
 
     expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|Pod container|node\.example|\.data/i)).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['not-found', '没有找到这个账号'],
+    ['unreadable', '找到了这个账号，但对方的资料没有公开，暂时不能添加'],
+    ['unreachable', '现在连不上对方所在的服务，请稍后再试'],
+    ['offline', '没有网络，连上后再试'],
+  ])('says plainly when the lookup ends as %s', async (status, text) => {
+    setupStore('friend')
+    mockLookupSolidProfile.mockResolvedValue({ status })
+    render(<AddChatDialog />)
+
+    fireEvent.change(screen.getByLabelText('对方的账号'), { target: { value: 'alice@example.org' } })
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+
+    expect(await screen.findByText(text)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '添加' })).not.toBeInTheDocument()
+  })
+
+  it('refuses the short forms that are not accounts and your own account', async () => {
+    setupStore('friend')
+    render(<AddChatDialog />)
+
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    expect(await screen.findByText('先粘贴对方的账号')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('对方的账号'), { target: { value: 'not an account' } })
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    expect(await screen.findByText('这个账号看起来不对，请检查后再试')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('对方的账号'), { target: { value: 'https://me.example/profile/card#me' } })
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    expect(await screen.findByText('这是你自己的账号')).toBeInTheDocument()
+    expect(mockLookupSolidProfile).not.toHaveBeenCalled()
+  })
+
+  it('shows someone already in contacts as added instead of adding twice', async () => {
+    setupStore('friend')
+    mockFindPersonByAccount.mockReturnValue({ id: 'contact-9' })
+    render(<AddChatDialog />)
+
+    fireEvent.change(screen.getByLabelText('对方的账号'), { target: { value: 'alice@example.org' } })
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+
+    expect(await screen.findByText('Alice')).toBeInTheDocument()
+    expect(screen.getByText('已添加')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '添加' })).not.toBeInTheDocument()
   })
 
   it('delegates group creation to CreateGroupDialog and selects created chat', async () => {

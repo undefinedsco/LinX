@@ -27,9 +27,9 @@ afterEach(() => {
 })
 
 describe('VoiceConversationDialog', () => {
-  it('explains the ChatKit dictation fallback when live recognition is unavailable', () => {
+  it('explains the composer dictation fallback when live recognition is unavailable', () => {
     render(<VoiceConversationDialog open canSend onOpenChange={vi.fn()} onSend={vi.fn()} assistantText="" isGenerating={false} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('ChatKit 输入框内置的语音输入')
+    expect(screen.getByRole('alert')).toHaveTextContent('输入框里的语音输入')
   })
 
   it('automatically sends the final recognized utterance', async () => {
@@ -75,7 +75,7 @@ describe('VoiceConversationDialog', () => {
     expect(FakeRecognition.instance?.start).toHaveBeenCalledOnce()
   })
 
-  it('waits for the active ChatKit thread before listening and sending', async () => {
+  it('waits for the active thread before listening and sending', async () => {
     ;(window as any).webkitSpeechRecognition = FakeRecognition
     const onSend = vi.fn(async () => undefined)
     const { rerender } = render(

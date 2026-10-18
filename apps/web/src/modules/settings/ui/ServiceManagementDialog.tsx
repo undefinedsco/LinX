@@ -70,30 +70,30 @@ export function ServiceManagementDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl overflow-hidden rounded-lg border-border/30 bg-background p-0">
-        <DialogTitle className="sr-only">xpod 状态</DialogTitle>
-        <DialogDescription className="sr-only">查看本地 xpod 状态并执行明确的启动、重启、停止或升级操作。</DialogDescription>
+        <DialogTitle className="sr-only">本机服务</DialogTitle>
+        <DialogDescription className="sr-only">查看本机服务状态，并启动、重启、停止或升级。</DialogDescription>
         <div className="border-b border-border/30 bg-muted/20 p-6">
           <div className="flex items-center gap-3">
             <div className="relative flex h-9 w-9 items-center justify-center rounded-md bg-primary">
               <Server className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <div className="text-base font-semibold text-foreground">xpod 状态</div>
-              <div className="text-xs text-muted-foreground">查看本地 xpod 状态；检测到新版本时可手动升级。</div>
-              <div className="text-xs text-muted-foreground">外网访问可选配置自有域名或隧道。</div>
+              <div className="text-base font-semibold text-foreground">本机服务</div>
+              <div className="text-xs text-muted-foreground">查看本机服务的状态；有新版本时可以升级。</div>
+              <div className="text-xs text-muted-foreground">需要让外面访问时，到“外部访问”里设置。</div>
             </div>
           </div>
         </div>
 
         <div className="space-y-4 p-6">
           {!supportsServiceManagement ? (
-            <div className="text-sm text-muted-foreground">当前入口不支持 xpod 状态管理。</div>
+            <div className="text-sm text-muted-foreground">这里不能管理本机服务。</div>
           ) : null}
 
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              正在读取服务状态...
+              正在读取状态…
             </div>
           ) : null}
 
@@ -107,7 +107,7 @@ export function ServiceManagementDialog({
                   <span className="text-sm font-medium">未运行</span>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  xpod 当前没有运行。请在登录页选择本机空间或独立空间启动。
+                  本机服务没有运行。请在登录页选择本机空间或独立空间来启动。
                 </div>
               </div>
             ) : !serviceSetupReady ? null : (
@@ -253,7 +253,7 @@ export function ServiceManagementDialog({
                 <div className="rounded-md border border-border/40 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-sm font-medium">xpod runtime</div>
+                      <div className="text-sm font-medium">本机服务版本</div>
                       <div className="mt-1 flex flex-wrap gap-2">
                         <Badge variant="secondary">当前 {runtime.currentVersion || '未知'}</Badge>
                         {runtime.targetVersion ? <Badge variant="outline">目标 {runtime.targetVersion}</Badge> : null}
@@ -262,7 +262,7 @@ export function ServiceManagementDialog({
                     {canUpgradeXpod ? (
                       <Button onClick={() => void upgradeRuntime()} disabled={submitting} size="sm">
                         {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                        升级 xpod
+                        升级
                       </Button>
                     ) : <Badge variant="outline">无需升级</Badge>}
                   </div>

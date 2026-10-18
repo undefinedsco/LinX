@@ -20,11 +20,16 @@ import {
   type FolderSortState,
 } from '../../domain/folder/folder-detail-model'
 import type { FolderChildOpenTrigger } from '../../domain/folder/folder-child-open'
+import { useFilesAgentNames } from '../../data/queries/agent-name-queries'
+import { projectEntryDisplayName } from '../../domain/list/explorer-virtual-entries'
 import type { FilesDetail, FilesEntry } from '../../domain/resource/resource-model'
+import { AiDraftDot } from '../../ui/AiDraftDot'
 
 type ResourceAction = (parentFile: FilesDetail, siblingEntries: FilesEntry[], child: FilesEntry) => void
 
 type TreeSharedProps = {
+  /** Files carrying an unconfirmed LinX draft (R6 K10). */
+  unconfirmedUris?: ReadonlySet<string>
   selectedUris: ReadonlySet<string>
   sort: FolderSortState
   actionMenu: FolderChildActionMenuChrome
@@ -49,6 +54,7 @@ function TreeRow({
   parentFile: FilesDetail
   siblingEntries: FilesEntry[]
 }) {
+  const agentNames = useFilesAgentNames()
   const isContainer = child.kind === 'container'
   const row = projectFolderChildCollectionRow(child)
 
@@ -122,7 +128,8 @@ function TreeRow({
               {isContainer
                 ? <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-              <span className="truncate text-foreground/85">{child.name}</span>
+              <span className="truncate text-foreground/85" title={child.name}>{projectEntryDisplayName(child, agentNames)}</span>
+              {shared.unconfirmedUris?.has(child.uri) ? <AiDraftDot showText /> : null}
             </button>
           </ContextMenuTrigger>
           <ContextMenuContent className="w-40">

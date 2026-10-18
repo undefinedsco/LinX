@@ -1,5 +1,5 @@
 import type { StructuredVocabTermDefinition, VocabTermProposal } from '../../domain/structured/structured-table'
-import { localPredicateLabel } from '../../domain/structured/structured-table-vocab'
+import { localPredicateLabel, readablePredicateLabel } from '../../domain/structured/structured-table-vocab'
 import type { StructuredResourceViewMode } from '../../domain/structured/structured-view-metadata'
 import type {
   StructuredPredicateTypeFilter,
@@ -27,7 +27,7 @@ export function projectStructuredViewSaveIndicator(
       ariaLabel: '正在同步视图配置',
       kind: 'saving' as const,
       retryable: false,
-      title: '正在同步 .meta',
+      title: '保存中…',
     }
   }
   if (status === 'error') {
@@ -35,14 +35,14 @@ export function projectStructuredViewSaveIndicator(
       ariaLabel: '视图配置未同步，点击重试',
       kind: 'error' as const,
       retryable: true,
-      title: error || '视图配置未同步',
+      title: error || '没保存成功，点一下重试',
     }
   }
   return {
     ariaLabel: '视图配置尚未同步',
     kind: 'dirty' as const,
     retryable: false,
-    title: '等待同步 .meta',
+    title: '等着保存',
   }
 }
 
@@ -50,10 +50,10 @@ const EXTRA_VIEW_OPTIONS: Exclude<StructuredResourceViewMode, 'table'>[] = ['kan
 const PREDICATE_TYPE_FILTER_OPTIONS: StructuredPredicateTypeFilter[] = ['all', 'enum', 'boolean', 'number', 'date', 'relation', 'text']
 const VOCAB_TERM_FILTER_OPTIONS: StructuredVocabTermFilter[] = ['all', 'defined', 'observed']
 const VIEW_LABELS: Record<StructuredResourceViewMode, string> = {
-  table: 'Table',
-  kanban: 'Kanban',
-  whiteboard: 'Whiteboard',
-  raw: 'Raw',
+  table: '表格',
+  kanban: '看板',
+  whiteboard: '白板',
+  raw: '原文',
 }
 
 function projectStructuredViewModeRow(value: StructuredResourceViewMode) {
@@ -93,13 +93,13 @@ function projectStructuredByline() {
 
 function projectStructuredClassScopeMenu() {
   return {
-    headingLabel: '当前 class',
+    headingLabel: '当前类型',
   }
 }
 
 function projectStructuredSearchField() {
   return {
-    placeholder: '搜索 subject',
+    placeholder: '搜索卡片',
   }
 }
 
@@ -169,8 +169,8 @@ function projectStructuredSubjectFilterRows({
 
 function structuredSortToolLabel(sortKey: string | null | undefined, sortDirection: 'asc' | 'desc') {
   if (!sortKey) return '排序'
-  if (sortKey === 'subject') return `subject ${sortDirection === 'desc' ? '降序' : '升序'}`
-  return `${localPredicateLabel(sortKey)} ${sortDirection === 'desc' ? '降序' : '升序'}`
+  if (sortKey === 'subject') return `名称 ${sortDirection === 'desc' ? '降序' : '升序'}`
+  return `${readablePredicateLabel(sortKey)} ${sortDirection === 'desc' ? '降序' : '升序'}`
 }
 
 function projectStructuredSortTool({
@@ -191,9 +191,9 @@ function projectStructuredSortTool({
 
 function projectStructuredSortRows(schemaPredicateControls: readonly string[]) {
   return [
-    { label: 'subject', sortKey: 'subject' },
+    { label: '名称', sortKey: 'subject' },
     ...schemaPredicateControls.map((sortKey) => ({
-      label: localPredicateLabel(sortKey),
+      label: readablePredicateLabel(sortKey),
       sortKey,
     })),
   ]

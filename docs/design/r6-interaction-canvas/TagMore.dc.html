@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>看板视图、表头菜单与保存状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin:0 0 10px}
+.lane{flex:1;background:#F2EDE2;border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px;min-height:240px}
+.lh{font-size:12px;font-weight:600;color:#655D53;padding:2px 4px}
+.it{background:#FBFAF7;border:1px solid #DFDBD5;border-radius:6px;padding:6px 8px;font-size:13px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.s{font-size:12px;color:#655D53}
+.menu{background:#FBFAF7;border-radius:10px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:6px;width:240px}
+.mi{height:32px;display:flex;align-items:center;padding:0 10px;border-radius:6px;font-size:13px}
+.sep{height:1px;background:#DFDBD5;margin:4px 6px}
+.cell{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid #DFDBD5;border-radius:8px;background:#FBFAF7;font-size:13px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#655D53}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-content: start">
+  <section>
+    <h2 class="lbl">“按时段”视图（看板，拖动就改这一列的值）</h2>
+    <div style="display: flex; gap: 10px">
+      <div class="lane"><div class="lh">周六上午 · 2</div><div class="it">周禾</div><div class="it">白露</div></div>
+      <div class="lane"><div class="lh">周六下午 · 2</div><div class="it">陈一</div><div class="it">宋青</div></div>
+      <div class="lane"><div class="lh">周日上午 · 2</div><div class="it">许安</div><div class="it" style="box-shadow: 0 8px 24px rgb(43 38 33 / .14); transform: rotate(-2deg)">白露</div></div>
+      <div class="lane"><div class="lh">周日下午 · 2</div><div class="it">周禾</div><div class="it">陆川</div></div>
+    </div>
+    <div class="s" style="margin-top: 10px">看板按一个“选项”属性分列。视图是你加的，存在你的空间里，换设备还在。</div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <h2 class="lbl">点表头：这一列的菜单</h2>
+    <div class="menu" role="menu">
+      <div class="mi" style="flex-direction: column; align-items: flex-start; height: auto; padding: 6px 10px"><span style="font-weight: 600">能来的时段</span><span class="mono">terms#availableSlot</span></div>
+      <div class="sep"></div>
+      <div class="mi" role="menuitem">改显示的名字</div>
+      <div class="mi" role="menuitem">改值的类型…</div>
+      <div class="mi" role="menuitem">按它排序</div>
+      <div class="mi" role="menuitem">按它筛选</div>
+      <div class="mi" role="menuitem">隐藏这一列</div>
+      <div class="mi" role="menuitem">在词表里查看</div>
+      <div class="sep"></div>
+      <div class="mi" role="menuitem">从这张表去掉…</div>
+    </div>
+    <div class="s">“从这张表去掉”只是不显示这一列，卡片上的值保留；要彻底删属性去“词表 › 属性”。</div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <h2 class="lbl">改单元格</h2>
+    <div class="cell"><span style="flex: 1">本月已排：1</span><span class="s">保存中…</span></div>
+    <div class="cell"><span style="flex: 1">本月已排：1</span><span class="s">没保存成功</span><span class="btn">重试</span></div>
+    <div class="cell"><span style="flex: 1">本月已排：1</span><span class="s">别处刚改过，刷新后再改</span></div>
+    <div class="cell"><span style="flex: 1">联系人：周禾</span><span class="s">只读，来自联系人资料</span></div>
+    <h2 class="lbl" style="margin-top: 8px">表格的“⋯”菜单</h2>
+    <div class="menu" role="menu">
+      <div class="mi" role="menuitem">重命名表格</div>
+      <div class="mi" role="menuitem">移到…</div>
+      <div class="mi" role="menuitem">共享…</div>
+      <div class="mi" role="menuitem">导出为 CSV…</div>
+      <div class="sep"></div>
+      <div class="mi" role="menuitem" style="color: #655D53">查看原始数据</div>
+    </div>
+    <div class="s">“查看原始数据”打开 RDF 专业视图，一般用户不需要。</div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

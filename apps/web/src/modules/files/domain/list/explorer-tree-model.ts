@@ -5,6 +5,7 @@ import {
   formatFilesListSize,
   isFilesListSidecarEntry,
 } from './list-view-model'
+import { isExplorerSystemDataFolder, isExplorerTreeEntry, parseAgentHomeContainer, projectExplorerEntryLabel } from './explorer-virtual-entries'
 
 export type FilesExplorerEntryRow = {
   kind: 'entry'
@@ -14,6 +15,8 @@ export type FilesExplorerEntryRow = {
   expandable: boolean
   expanded: boolean
   iconKind: 'folder' | 'document'
+  /** Plain-word name shown in the tree (词表, 属性, 授权 …). */
+  label: string
   sizeLabel: string
   modifiedLabel: string
   metadataWarning: {
@@ -23,7 +26,7 @@ export type FilesExplorerEntryRow = {
 }
 
 export type FilesExplorerStateRow = {
-  kind: 'loading' | 'error'
+  kind: 'loading' | 'error' | 'group'
   id: string
   depth: number
   containerUri: string
@@ -39,6 +42,17 @@ export interface FilesExplorerProjectionInput {
   loadingContainerUris: ReadonlySet<string>
   errorByContainerUri: Record<string, unknown>
   searchText: string
+  /** Show only folders and data tables (R6 K0). */
+  treeOnly?: boolean
+  /** Put root rows under 我的空间 and add 共享给我 (R6 K0). */
+  groups?: boolean
+  /** Assistant folder key -> display name, so `/.data/agents/<id>/` is named by the assistant. */
+  agentNames?: Record<string, string>
+  /** Items other people shared with me, listed under 共享给我 (R6 K0), grouped by who shared them. */
+  sharedWithMe?: {
+    items: ReadonlyArray<{ ownerName: string; uri: string; name: string; kind: 'file' | 'folder' }>
+    isLoading: boolean
+  }
 }
 
 function normalizeContainerKey(uri: string): string {
@@ -77,7 +91,12 @@ function warningForEntry(entry: FilesEntry): FilesExplorerEntryRow['metadataWarn
   }
 }
 
-function projectEntryRow(entry: FilesEntry, depth: number, expandedUris: ReadonlySet<string>): FilesExplorerEntryRow {
+function projectEntryRow(
+  entry: FilesEntry,
+  depth: number,
+  expandedUris: ReadonlySet<string>,
+  agentNames?: Record<string, string>,
+): FilesExplorerEntryRow {
   const container = isContainerEntry(entry)
   const containerUri = container ? normalizeContainerKey(entry.uri) : entry.uri
   return {
@@ -88,6 +107,7 @@ function projectEntryRow(entry: FilesEntry, depth: number, expandedUris: Readonl
     expandable: container,
     expanded: container && expandedUris.has(containerUri),
     iconKind: container ? 'folder' : 'document',
+    label: (container && agentNames && agentNames[parseAgentHomeContainer(entry.uri)?.agentId ?? '']) || projectExplorerEntryLabel(entry),
     sizeLabel: formatFilesListSize(entry.size),
     modifiedLabel: formatFilesListDate(entry.modifiedAt),
     metadataWarning: warningForEntry(entry),
@@ -118,8 +138,10 @@ function projectRowsForEntries({
   normalizedSearch: string
 }): FilesExplorerRowModel[] {
   const rows: FilesExplorerRowModel[] = []
-  for (const entry of entries.filter((candidate) => !isFilesListSidecarEntry(candidate)).sort(compareEntries)) {
-    const row = projectEntryRow(entry, depth, input.expandedUris)
+  for (const entry of entries
+    .filter((candidate) => !isFilesListSidecarEntry(candidate) && !isExplorerSystemDataFolder(candidate) && (!input.treeOnly || !!normalizedSearch || isExplorerTreeEntry(candidate)))
+    .sort(compareEntries)) {
+    const row = projectEntryRow(entry, depth, input.expandedUris, input.agentNames)
     const containerUri = isContainerEntry(entry) ? normalizeContainerKey(entry.uri) : null
     const children = containerUri && input.expandedUris.has(containerUri)
       ? projectRowsForEntries({
@@ -161,10 +183,55 @@ function projectRowsForEntries({
 }
 
 export function projectFilesExplorerRows(input: FilesExplorerProjectionInput): FilesExplorerRowModel[] {
-  return projectRowsForEntries({
+  const rows = projectRowsForEntries({
     depth: 0,
     entries: input.rootEntries,
     input,
     normalizedSearch: input.searchText.trim().toLowerCase(),
   })
+  if (!input.groups || input.searchText.trim()) return rows
+  return [
+    { kind: 'group', id: 'group::mine', depth: 0, containerUri: '', label: '我的空间' },
+    ...rows,
+    { kind: 'group', id: 'group::shared', depth: 0, containerUri: '', label: '共享给我' },
+    ...projectSharedWithMeRows(input),
+  ]
+}
+
+function projectSharedWithMeRows(input: FilesExplorerProjectionInput): FilesExplorerRowModel[] {
+  const shared = input.sharedWithMe
+  if (!shared) return []
+  if (shared.isLoading && shared.items.length === 0) {
+    return [{ kind: 'loading', id: 'shared::loading', depth: 0, containerUri: '', label: '正在读取…' }]
+  }
+  if (shared.items.length === 0) {
+    return [{ kind: 'loading', id: 'shared::empty', depth: 0, containerUri: '', label: '没有找到别人共享给你的文件夹' }]
+  }
+  const owners = new Map<string, Array<(typeof shared.items)[number]>>()
+  for (const item of shared.items) owners.set(item.ownerName, [...(owners.get(item.ownerName) ?? []), item])
+  const rows: FilesExplorerRowModel[] = []
+  for (const [ownerName, items] of owners) {
+    rows.push({ kind: 'group', id: `shared::owner::${ownerName}`, depth: 0, containerUri: '', label: ownerName })
+    const entries = sharedWithMeItemsToEntries(items)
+    rows.push(...projectRowsForEntries({ depth: 1, entries, input, normalizedSearch: '' }))
+  }
+  return rows
+}
+
+/** Shared items as entries the tree and search can show like any other file or folder. */
+export function sharedWithMeItemsToEntries(
+  items: ReadonlyArray<{ ownerName: string; uri: string; name: string; kind: 'file' | 'folder' }>,
+): FilesEntry[] {
+  return items.map((item): FilesEntry => ({
+    id: item.uri,
+    uri: item.uri,
+    name: item.name,
+    kind: item.kind === 'folder' ? 'container' as const : 'resource' as const,
+    semanticKind: item.kind === 'folder' ? 'container' : 'file',
+    parentUri: '',
+    mimeType: null,
+    size: null,
+    modifiedAt: null,
+    sourceLabel: item.ownerName,
+  }))
 }

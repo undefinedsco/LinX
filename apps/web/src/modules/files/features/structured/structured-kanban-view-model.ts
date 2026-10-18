@@ -108,14 +108,73 @@ export function projectStructuredKanbanNativeDragCleared(): StructuredKanbanNati
   return createStructuredKanbanNativeDragState()
 }
 
+/**
+ * K6d: lanes added by hand are empty lanes whose id is their name and whose value
+ * is that name as a text value, so dragging a card there writes the name into the
+ * grouping property. Renamed lanes only change the label.
+ */
+/**
+ * K6d: grouping by a 选项 property shows one lane per option, empty ones included. Enum cells
+ * store the option label, so option lanes behave like lanes added by hand (`extraLanes`).
+ */
+export function mergeKanbanOptionLanes(
+  extraLanes: readonly string[] | undefined,
+  groupPredicate: string | null | undefined,
+  enumOptionsByPredicate: ReadonlyMap<string, ReadonlyArray<{ label: string }>> | undefined,
+): string[] {
+  const lanes = [...(extraLanes ?? [])]
+  if (!groupPredicate || !enumOptionsByPredicate) return lanes
+  let options = enumOptionsByPredicate.get(groupPredicate)
+  if (!options) {
+    const local = localPredicateLabel(groupPredicate)
+    for (const [key, value] of enumOptionsByPredicate) {
+      if (localPredicateLabel(key) === local) { options = value; break }
+    }
+  }
+  for (const option of options ?? []) {
+    const label = option.label.trim()
+    if (label && !lanes.includes(label)) lanes.push(label)
+  }
+  return lanes
+}
+
+export function applyStructuredKanbanLaneCustomization(
+  kanban: StructuredKanbanProjection,
+  { extraLanes = [], laneLabels = {} }: { extraLanes?: readonly string[]; laneLabels?: Record<string, string> },
+): StructuredKanbanProjection {
+  const columns = kanban.columns.map((column) => ({ ...column }))
+  if (kanban.groupPredicate) {
+    const existing = new Set(columns.map((column) => column.id))
+    for (const name of extraLanes) {
+      if (existing.has(name)) continue
+      existing.add(name)
+      const unassignedIndex = columns.findIndex((column) => column.id === 'unassigned')
+      const lane = { id: name, label: name, value: JSON.stringify(name), cards: [] }
+      if (unassignedIndex >= 0) columns.splice(unassignedIndex, 0, lane)
+      else columns.push(lane)
+    }
+  }
+  return {
+    ...kanban,
+    columns: columns.map((column) => ({
+      ...column,
+      label: laneLabels[column.id] ?? (column.id === 'unassigned' ? '未分组' : column.label),
+    })),
+  }
+}
+
 export function projectStructuredKanbanSourceModel({
   groupPredicate,
   kanbanOrder,
   projection,
+  extraLanes,
+  laneLabels,
 }: {
   projection: StructuredTableProjection
   groupPredicate: string | null
   kanbanOrder: Record<string, string[]>
+  extraLanes?: readonly string[]
+  laneLabels?: Record<string, string>
 }): {
   kanban: StructuredKanbanProjection
   chrome: StructuredKanbanChrome
@@ -125,7 +184,10 @@ export function projectStructuredKanbanSourceModel({
   groupTriggerLabel: string
   predicateOptions: StructuredKanbanPredicateOption[]
 } {
-  const kanban = projectStructuredKanban(projection, groupPredicate ?? undefined, kanbanOrder)
+  const kanban = applyStructuredKanbanLaneCustomization(
+    projectStructuredKanban(projection, groupPredicate ?? undefined, kanbanOrder),
+    { extraLanes, laneLabels },
+  )
   const predicateOptions = projection.predicates.map((predicate) => ({ predicate, label: localPredicateLabel(predicate) }))
 
   return {
@@ -133,7 +195,7 @@ export function projectStructuredKanbanSourceModel({
     chrome: projectStructuredKanbanChrome(),
     hasColumns: kanban.columns.length > 0,
     hasPredicateOptions: predicateOptions.length > 0,
-    groupLabel: kanban.groupPredicate ? `按 ${localPredicateLabel(kanban.groupPredicate)} 分组` : '按未分组展示',
+    groupLabel: kanban.groupPredicate ? `按“${localPredicateLabel(kanban.groupPredicate)}”分组` : '还没有分组，选一个属性来分列',
     groupTriggerLabel: kanban.groupPredicate ? localPredicateLabel(kanban.groupPredicate) : '分组',
     predicateOptions,
   }
@@ -141,8 +203,8 @@ export function projectStructuredKanbanSourceModel({
 
 export function projectStructuredKanbanChrome(): StructuredKanbanChrome {
   return {
-    emptyStateMessage: '没有可投影到 Kanban 的 subject。',
-    groupPredicateButtonAriaLabel: 'Kanban 分组 predicate',
+    emptyStateMessage: '这张表里还没有卡片。',
+    groupPredicateButtonAriaLabel: '看板分组',
   }
 }
 
@@ -170,7 +232,7 @@ export function projectStructuredKanbanCardVisibleTags(
 
 export function projectStructuredKanbanColumnChrome(label: string): StructuredKanbanColumnChrome {
   return {
-    ariaLabel: `Kanban column ${label}`,
+    ariaLabel: `看板列 ${label}`,
   }
 }
 
@@ -265,4 +327,22 @@ export function hasStructuredKanbanMoveTargets(
   columns: readonly StructuredKanbanMoveTargetColumn[],
 ) {
   return columns.length > 0
+}
+
+function displayKanbanFieldValue(value: string) {
+  if (value.trim().startsWith('"')) return value.replace(/^"/, '').replace(/"(?:@[A-Za-z-]+|\^\^.+)?$/, '')
+  return localPredicateLabel(value.replace(/^<|>$/g, ''))
+}
+
+/** K6d: 「属性：值」 lines shown on each card for the properties the board displays. */
+export function buildKanbanCardFactLines(
+  rows: StructuredTableProjection['rows'],
+  fields: readonly string[],
+): Map<string, string[]> {
+  if (fields.length === 0) return new Map()
+  return new Map(rows.map((row) => [row.subject, fields.flatMap((predicate) => {
+    const values = row.cells.find((cell) => cell.predicate === predicate)?.values ?? []
+    const text = values.map(displayKanbanFieldValue).filter(Boolean).join('、')
+    return text ? [`${localPredicateLabel(predicate)}：${text}`] : []
+  })]))
 }

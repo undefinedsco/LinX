@@ -70,6 +70,8 @@ export interface LoginModalProps {
   onContinueStoredAccount: () => void
   onConnect: (providerKey: string) => void
   onCancelConnecting: () => void
+  /** 重新打开 the login window (waiting-for-window screen). */
+  onReopenAuthWindow?: () => void
   onAddProvider: (url: string, label?: string) => void
   onClearError: () => void
   onDismissStorageConflict: () => void

@@ -20,7 +20,10 @@ import { projectFolderChildKeyboardNavigationPlan, type
   FolderDetailCollectionViewMode,
   FolderSortState,
 } from '../../domain/folder/folder-detail-model'
+import { useFilesAgentNames } from '../../data/queries/agent-name-queries'
+import { projectEntryDisplayName } from '../../domain/list/explorer-virtual-entries'
 import type { FilesEntry } from '../../domain/resource/resource-model'
+import { AiDraftDot } from '../../ui/AiDraftDot'
 
 export type FolderChildCollectionViewMode = FolderDetailCollectionViewMode
 
@@ -71,6 +74,7 @@ function FolderSortHeaderButton({
 }
 
 export function FolderChildCollectionView({
+  unconfirmedUris,
   viewMode,
   rows,
   selectedUris,
@@ -88,6 +92,8 @@ export function FolderChildCollectionView({
   onMove,
   onDelete,
 }: {
+  /** Files carrying an unconfirmed LinX draft (R6 K10). */
+  unconfirmedUris?: ReadonlySet<string>
   viewMode: FolderChildCollectionViewMode
   rows: FolderChildCollectionRow[]
   selectedUris: ReadonlySet<string>
@@ -105,6 +111,7 @@ export function FolderChildCollectionView({
   onMove: (child: FilesEntry) => void
   onDelete: (child: FilesEntry) => void
 }) {
+  const agentNames = useFilesAgentNames()
   const handleChildKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, child: FilesEntry) => {
     const navigationPlan = projectFolderChildKeyboardNavigationPlan({
       currentChildUri: child.uri,
@@ -196,13 +203,15 @@ export function FolderChildCollectionView({
               {viewMode === 'icons' ? (
                 <>
                   <ChildIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 truncate text-foreground/80">{child.name}</span>
+                  <span className="min-w-0 truncate text-foreground/80" title={child.name}>{projectEntryDisplayName(child, agentNames)}</span>
+                  {unconfirmedUris?.has(child.uri) ? <AiDraftDot /> : null}
                 </>
               ) : (
                 <>
                   <span className="flex min-w-0 items-center gap-2">
                     <ChildIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate text-foreground/80">{child.name}</span>
+                    <span className="truncate text-foreground/80" title={child.name}>{projectEntryDisplayName(child, agentNames)}</span>
+                    {unconfirmedUris?.has(child.uri) ? <AiDraftDot showText /> : null}
                   </span>
                   <span className="truncate text-muted-foreground">{row.typeLabel}</span>
                   <span className="truncate text-muted-foreground">{row.modifiedLabel}</span>

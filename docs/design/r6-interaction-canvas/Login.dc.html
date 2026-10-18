@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>登录 LinX</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.opt{display:flex;align-items:center;gap:14px;min-height:72px;padding:0 16px;border-bottom:1px solid #DFDBD5;text-decoration:none;color:#2B2621}
+.opt:last-child{border-bottom:0}
+.opt:hover{background:#F2EDE2}
+.ic{width:40px;height:40px;border-radius:8px;background:#E4DDDA;display:inline-flex;align-items:center;justify-content:center;flex:none;color:#2B2621}
+.t{font-size:15px;font-weight:600}
+.d{font-size:13px;color:#655D53}
+.chev{color:#87837D;margin-left:auto}
+</style>
+</helmet>
+<div class="root" style="min-height: 900px; background: #F7F4ED; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 16px; box-sizing: border-box">
+  <main aria-labelledby="login-title" style="width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center">
+      <span aria-hidden="true" style="width: 56px; height: 56px; border-radius: 14px; background: #563E84; color: #F7F4ED; display: inline-flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; letter-spacing: .5px">L</span>
+      <h1 id="login-title" style="margin: 0; font-size: 24px; font-weight: 600">登录 LinX</h1>
+      <p style="margin: 0; color: #655D53">先选你的数据放在哪里。以后可以在 设置 › 空间与服务 里查看。</p>
+    </div>
+
+    <nav aria-label="选择空间" style="background: #FBFAF7; border: 1px solid #DFDBD5; border-radius: 12px; overflow: hidden">
+      <a class="opt" href="LoginStates.dc.html">
+        <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"></path></svg></span>
+        <span style="display: flex; flex-direction: column; gap: 2px"><span class="t">云端空间</span><span class="d">用 undefineds 账号登录，数据保存在云端，换设备也能用</span></span>
+        <span class="chev" aria-hidden="true">›</span>
+      </a>
+      <a class="opt" href="LoginStates.dc.html">
+        <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg></span>
+        <span style="display: flex; flex-direction: column; gap: 2px"><span class="t">本机空间</span><span class="d">用云端账号登录，数据保存在这台电脑</span></span>
+        <span class="chev" aria-hidden="true">›</span>
+      </a>
+      <a class="opt" href="LoginStates.dc.html">
+        <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>
+        <span style="display: flex; flex-direction: column; gap: 2px"><span class="t">独立空间</span><span class="d">账号和数据都只在这台电脑，不需要网络账号</span></span>
+        <span class="chev" aria-hidden="true">›</span>
+      </a>
+    </nav>
+
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center">
+      <a href="LoginStates.dc.html" style="font-size: 13px">使用其他空间…</a>
+      <p style="margin: 0; font-size: 12px; color: #655D53">登录不会自动创建空间；需要创建时会先问你。</p>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

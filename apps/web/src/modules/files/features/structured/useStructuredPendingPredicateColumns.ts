@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { AiColumnChange } from '../../domain/proposal/ai-column-change-model'
 import {
   type StructuredVocabDefinitionIndex,
   type VocabTermProposal,
@@ -23,16 +24,22 @@ import {
 import type { StructuredPredicateColumnProposal } from './structured-predicate-column-header-model'
 
 export function useStructuredPendingPredicateColumns({
+  aiColumns,
   classScope,
   currentPodRootUri,
   documentUri,
   onCreateVocabTermProposal,
+  onKeepAiColumn,
+  onRemoveAiColumn,
   projectionPredicates,
   reviewableVocabProposals,
   targetShapesUri,
   targetVocabUri,
   vocabDefinitionIndex,
 }: {
+  aiColumns?: ReadonlyMap<string, AiColumnChange>
+  onKeepAiColumn?: (change: AiColumnChange) => void
+  onRemoveAiColumn?: (change: AiColumnChange) => void
   classScope?: string | null
   currentPodRootUri?: string | null
   documentUri: string
@@ -55,6 +62,7 @@ export function useStructuredPendingPredicateColumns({
 
   const visiblePendingPredicateProposals = useMemo(() => (
     projectStructuredVisiblePendingPredicateProposals({
+      aiColumns,
       classScope,
       dismissedHydratedPredicateProposalIds,
       documentUri,
@@ -62,7 +70,7 @@ export function useStructuredPendingPredicateColumns({
       projectionPredicates,
       reviewableVocabProposals,
     })
-  ), [classScope, dismissedHydratedPredicateProposalIds, documentUri, pendingPredicateProposals, projectionPredicates, reviewableVocabProposals])
+  ), [aiColumns, classScope, dismissedHydratedPredicateProposalIds, documentUri, pendingPredicateProposals, projectionPredicates, reviewableVocabProposals])
 
   const pendingProposalByPredicate = useMemo(
     () => projectStructuredPendingPredicateProposalByPredicate(visiblePendingPredicateProposals),
@@ -127,21 +135,34 @@ export function useStructuredPendingPredicateColumns({
   }, [currentPodRootUri, documentUri, projectionPredicates, stagePendingPredicateApproval, targetVocabUri, visiblePendingPredicateProposals, vocabDefinitionIndex?.namespaces])
 
   const approvePendingPredicateProposal = useCallback((predicate: string) => {
+    const aiColumn = findStructuredVisiblePendingPredicateProposal({ predicate, visiblePendingPredicateProposals })?.aiColumn
+    if (aiColumn) {
+      onKeepAiColumn?.(aiColumn)
+      // 保留这列: an unconfirmed column becomes a real property in the vocabulary; a column added
+      // under a grant only needs its mark cleared.
+      if (aiColumn.state === 'unconfirmed') {
+        const hydrated = findStructuredVisiblePendingPredicateProposal({ predicate, visiblePendingPredicateProposals })
+        if (hydrated && !hydrated.vocabProposal) stagePendingPredicateApproval(hydrated)
+      }
+      return
+    }
     const proposal = projectPendingPredicateApprovalProposal({
       pendingPredicateProposals,
       predicate,
     })
     if (!proposal) return
     stagePendingPredicateApproval(proposal)
-  }, [pendingPredicateProposals, stagePendingPredicateApproval])
+  }, [onKeepAiColumn, pendingPredicateProposals, stagePendingPredicateApproval, visiblePendingPredicateProposals])
 
   const discardPendingPredicateProposal = useCallback((predicate: string) => {
+    const aiColumn = findStructuredVisiblePendingPredicateProposal({ predicate, visiblePendingPredicateProposals })?.aiColumn
+    if (aiColumn) onRemoveAiColumn?.(aiColumn)
     setPendingPredicateColumnsState((current) => projectDiscardedStructuredPendingPredicateColumnsState({
       current,
       predicate,
       visiblePendingPredicateProposals,
     }))
-  }, [visiblePendingPredicateProposals])
+  }, [onRemoveAiColumn, visiblePendingPredicateProposals])
 
   const getPredicateDefinition = useCallback((predicate: string) => (
     projectStructuredPendingPredicateDefinition({

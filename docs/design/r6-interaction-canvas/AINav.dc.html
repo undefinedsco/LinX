@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>我的 AI 左边栏</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<aside aria-label="我的 AI 左边栏" style="width: 280px; min-height: 900px; box-sizing: border-box; background: #F2EDE2; border-right: 1px solid #DFDBD5; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif; color: #2B2621; font-size: 13px; line-height: 1.4">
+  <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 20px; border-bottom: 1px solid #DFDBD5; font-size: 15px; font-weight: 600">我的 AI</div>
+  <nav style="padding: 8px; display: flex; flex-direction: column; gap: 1px">
+    <sc-for list="{{items}}" as="it" hint-placeholder-count="7">
+      <sc-if value="{{it.isHead}}" hint-placeholder-val="{{ false }}">
+        <div style="padding: 12px 8px 4px; font-size: 11px; font-weight: 600; color: #655D53">{{it.label}}</div>
+      </sc-if>
+      <sc-if value="{{it.isLink}}" hint-placeholder-val="{{ true }}">
+        <a href="{{it.href}}" aria-current="{{it.cur}}" style="{{it.style}}">
+          <span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{it.label}}</span>
+          <span style="font-size: 11px; color: #655D53">{{it.note}}</span>
+        </a>
+      </sc-if>
+    </sc-for>
+  </nav>
+</aside>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"selected":{"editor":"enum","options":["overview","m1","m2","m3","grants","knowledge","model","conn","none"],"default":"overview"},"$preview":{"width":280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sel = this.props.selected ?? 'overview';
+    const base = 'display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; text-decoration: none; color: #2B2621; ';
+    const head = (label) => ({ isHead: true, isLink: false, label });
+    const link = (id, label, href, note) => ({
+      isHead: false, isLink: true, label, href, note: note ?? '',
+      cur: id === sel ? 'page' : 'false',
+      style: base + (id === sel ? 'background: #E4DDDA; font-weight: 600; box-shadow: inset 2px 0 0 #563E84;' : ''),
+    });
+    return {
+      items: [
+        link('overview', '概览', 'MyAI.dc.html'),
+        head('做事的方法'),
+        link('m1', '书店日常', 'Method.dc.html', '默认'),
+        link('m2', '志愿者排班方案', 'Method.dc.html', '有调整'),
+        link('m3', '秋季读书会报名', 'Method.dc.html', '有调整'),
+        link('grants', '授权', 'Grants.dc.html', '4'),
+        head('知识与模型'),
+        link('knowledge', '记住的', 'Card.dc.html', '12'),
+        link('model', '个人模型', 'Model.dc.html', '未训练'),
+        head('设置'),
+        link('conn', '模型连接', 'NotApplied.dc.html', '↗'),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

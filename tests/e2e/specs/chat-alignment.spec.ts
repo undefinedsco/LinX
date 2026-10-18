@@ -27,7 +27,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 function mutableChatItem(page: Page) {
-  return page.locator('[data-testid="chat-list-item"]').filter({ hasNotText: 'LinX 主理人' }).first()
+  return page.locator('[data-testid="chat-list-item"]').filter({ hasNotText: 'LinX 助手' }).first()
 }
 
 async function openChatRoute(page: Page) {

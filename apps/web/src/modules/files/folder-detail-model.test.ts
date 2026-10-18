@@ -436,7 +436,7 @@ describe('folder detail model helpers', () => {
         uploadLabel: '上传文件',
       },
       viewModeOptions: [
-        { mode: 'list', label: '列表', iconKind: 'list', active: true },
+        { mode: 'list', label: '表格', iconKind: 'list', active: true },
         { mode: 'icons', label: '网格', iconKind: 'icons', active: false },
       ],
       visibleChildCount: 2,

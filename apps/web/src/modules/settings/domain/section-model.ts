@@ -1,17 +1,32 @@
-export type SettingsSectionId = 'general' | 'updates' | 'runtime' | 'network'
+export type SettingsSectionId = 'space' | 'general' | 'models' | 'runtime' | 'network' | 'updates' | 'about'
 
-export type SettingsSectionIcon = 'palette' | 'updates' | 'runtime' | 'network'
+export type SettingsSectionIcon = 'space' | 'palette' | 'models' | 'runtime' | 'network' | 'updates' | 'about'
+
+/** S7: 空间与服务 / 通用 / 模型连接, then 这台电脑, then 关于. */
+export type SettingsSectionGroup = 'main' | 'device' | 'about'
 
 export interface SettingsSectionItem {
   id: SettingsSectionId
   title: string
-  description: string
   icon: SettingsSectionIcon
+  group: SettingsSectionGroup
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionItem[] = [
-  { id: 'general', title: '通用', description: '主题与常用入口', icon: 'palette' },
-  { id: 'updates', title: '版本更新', description: '检查新版本与发布页', icon: 'updates' },
-  { id: 'runtime', title: '运行环境', description: '当前壳与本地服务', icon: 'runtime' },
-  { id: 'network', title: '本地网络', description: '域名、隧道与可达性', icon: 'network' },
+  { id: 'space', title: '空间与服务', icon: 'space', group: 'main' },
+  { id: 'general', title: '通用', icon: 'palette', group: 'main' },
+  { id: 'models', title: '模型连接', icon: 'models', group: 'main' },
+  // 原“运行环境”“本地网络”
+  { id: 'runtime', title: '本机服务', icon: 'runtime', group: 'device' },
+  { id: 'network', title: '外部访问', icon: 'network', group: 'device' },
+  { id: 'updates', title: '版本更新', icon: 'updates', group: 'device' },
+  { id: 'about', title: '关于 LinX', icon: 'about', group: 'about' },
 ]
+
+export const SETTINGS_GROUP_LABELS: Partial<Record<SettingsSectionGroup, string>> = {
+  device: '这台电脑',
+}
+
+export function settingsSectionTitle(id: SettingsSectionId): string {
+  return SETTINGS_SECTIONS.find((section) => section.id === id)?.title ?? '设置'
+}

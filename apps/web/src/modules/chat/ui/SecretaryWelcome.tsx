@@ -63,7 +63,7 @@ export function SecretaryWelcome({
               <Bot className="size-7" aria-hidden="true" />
             </span>
             <h1 id="secretary-welcome-title" className="mt-5 text-2xl font-semibold tracking-tight text-foreground">
-              你好，我是 LinX 主理人
+              你好，我是 LinX 助手
             </h1>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
               我可以帮你整理信息、规划工作，并在当前空间中推进任务。
@@ -98,10 +98,10 @@ export function SecretaryWelcome({
           >
             <div className="relative rounded-2xl border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-primary/50 focus-within:shadow-md focus-within:shadow-primary/5 focus-within:ring-4 focus-within:ring-primary/10">
               <textarea
-                aria-label="给主理人发消息"
+                aria-label="给 LinX 助手发消息"
                 value={composerValue}
                 onChange={(event) => onComposerValueChange(event.target.value)}
-                placeholder="告诉主理人你想推进什么"
+                placeholder="告诉 LinX 助手你想做什么"
                 rows={3}
                 className="block min-h-24 w-full resize-none rounded-2xl bg-transparent px-4 pb-14 pt-4 text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/80"
               />

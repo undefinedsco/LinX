@@ -193,6 +193,92 @@ async function ensureMetadataResourceExists(db: SolidDatabase, documentUri: stri
   ].join('\n'))
 }
 
+/**
+ * The person's own edit (a table cell, a typed whiteboard edge) is written
+ * straight to the document. Only changes proposed by AI go through approval.
+ * The same Pod and resource guards apply, and an audit record keeps the trail.
+ */
+export async function writeOwnStructuredCellChange(
+  db: SolidDatabase,
+  input: {
+    actorWebId: string
+    documentUri: string
+    subject: string
+    predicate: string
+    previousValues: string[]
+    nextValues: string[]
+    /**
+     * ETag of the document version the person was looking at. The Pod's SPARQL PATCH
+     * does not fail when DELETE DATA targets a value that is already gone, so without
+     * this a stale edit would silently add a second value.
+     */
+    expectedEtag?: string | null
+    createdAt?: Date
+  },
+): Promise<void> {
+  const podBaseUrl = resolveRequiredPodBaseUrl(db)
+  const documentUri = normalizeAbsoluteIri(input.documentUri)
+  if (!documentUri.startsWith(`${podBaseUrl}/`)) {
+    throw new Error('Refusing to write a structured cell outside the current Pod.')
+  }
+  if (isLockedVocabRegistryResourceUri(documentUri)) {
+    throw new Error('Refusing to write a structured cell into the locked vocab registry.')
+  }
+  if (isFilesReservedResourceUri(documentUri) && !isMetadataResourceUri(documentUri)) {
+    throw new Error('Refusing to write a structured cell into Files-managed resources.')
+  }
+  if (!isMetadataResourceUri(documentUri) && !isEditableStructuredDataResourceUri(documentUri, podBaseUrl)) {
+    throw new Error('Refusing to write a structured cell outside editable .data resources.')
+  }
+
+  const change = {
+    documentUri,
+    subject: input.subject,
+    predicate: input.predicate,
+    previousValues: input.previousValues,
+    nextValues: input.nextValues,
+  } as StructuredCellChangeProposal
+  if (change.previousValues.length === 0 && change.nextValues.length === 0) return
+  if (isMetadataResourceUri(documentUri)) {
+    await ensureMetadataResourceExists(db, documentUri)
+  }
+  const response = await getAuthenticatedFetch(db)(documentUri, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/sparql-update',
+      ...(input.expectedEtag ? { 'If-Match': input.expectedEtag } : {}),
+    },
+    body: renderStructuredCellMetadataPatch(change),
+  })
+  if (response.status === 409 || response.status === 412) {
+    // The document changed since the person saw it.
+    throw new StructuredCellWriteConflictError()
+  }
+  if (!response.ok) {
+    throw new Error(`Cannot write structured cell: HTTP ${response.status}`)
+  }
+
+  const auditPayload = {
+    id: crypto.randomUUID(),
+    action: 'files.structured-cell.written',
+    actor: input.actorWebId,
+    actorRole: 'human',
+    entry: documentUri,
+    toolName: FILES_STRUCTURED_CELL_APPROVAL_TOOL_NAME,
+    policyVersion: FILES_STRUCTURED_CELL_APPROVAL_POLICY_VERSION,
+    createdAt: input.createdAt ?? new Date(),
+  }
+  assertInsertValuesBelongToCurrentPod(db, auditPayload)
+  await db.insert(auditResource).values(auditPayload).execute()
+}
+
+export class StructuredCellWriteConflictError extends Error {
+  constructor() {
+    super('这个单元格刚被别处改过，请刷新后再改。')
+    this.name = 'StructuredCellWriteConflictError'
+  }
+}
+
 export async function createStructuredCellChangeProposalInboxApproval(
   db: SolidDatabase,
   input: {

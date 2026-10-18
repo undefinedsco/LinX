@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>LinX 导航 rail</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<nav aria-label="主导航" style="width: 64px; min-height: 900px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 0 16px; background: #E4DDDA; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif; color: #2B2621">
+  <a href="Space.dc.html" aria-label="林舟，本机空间。打开我的卡片" title="林舟 · 本机空间" style="position: relative; display: inline-flex; text-decoration: none; margin-bottom: 16px">
+    <span style="width: 38px; height: 38px; border-radius: 6px; background: #F7F4ED; box-shadow: inset 0 0 0 1px #87837D; color: #2B2621; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600">林</span>
+    <sc-if value="{{alert}}" hint-placeholder-val="{{ false }}">
+      <span aria-label="需要处理" style="position: absolute; right: -4px; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: #563E84; color: #F7F4ED; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center">!</span>
+    </sc-if>
+  </a>
+
+  <a href="Main.dc.html" aria-label="聊天" title="聊天" aria-current="{{chatCurrent}}" style="{{chatStyle}}">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+  </a>
+  <a href="People.dc.html" aria-label="联系人" title="联系人" aria-current="{{contactsCurrent}}" style="{{contactsStyle}}">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+  </a>
+  <a href="Library.dc.html" aria-label="文件" title="文件" aria-current="{{filesCurrent}}" style="{{filesStyle}}">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"></path></svg>
+  </a>
+  <a href="Favorites.dc.html" aria-label="收藏" title="收藏" aria-current="{{favoritesCurrent}}" style="{{favoritesStyle}}">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 9.8l6.5-.9z"></path></svg>
+  </a>
+
+  <div style="flex: 1"></div>
+
+  <a href="Inbox.dc.html" aria-label="收件箱，{{inboxCount}} 项待决定" title="收件箱" aria-current="{{inboxCurrent}}" style="{{inboxStyle}}">
+    <span style="position: relative; display: inline-flex">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+      <span style="position: absolute; top: -6px; right: -9px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: #563E84; color: #F7F4ED; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">{{inboxCount}}</span>
+    </span>
+  </a>
+  <a href="Space.dc.html" aria-label="设置与更多" title="设置" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 8px; text-decoration: none; color: #655D53">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+  </a>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"active":{"editor":"enum","options":["chat","contacts","files","favorites","inbox","myai","none"],"default":"chat"},"inboxCount":{"editor":"int","default":3},"alert":{"editor":"boolean","default":false},"$preview":{"width":64,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const active = this.props.active ?? 'chat';
+    const base = 'width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 8px; text-decoration: none; ';
+    const on = base + 'background: #F7F4ED; color: #563E84; box-shadow: inset 0 0 0 1px #563E84;';
+    const off = base + 'color: #655D53;';
+    const ids = ['chat', 'contacts', 'files', 'favorites', 'inbox', 'myai'];
+    const vals = { inboxCount: this.props.inboxCount ?? 3, alert: Boolean(this.props.alert) };
+    ids.forEach((id) => {
+      vals[id + 'Style'] = active === id ? on : off;
+      vals[id + 'Current'] = active === id ? 'page' : 'false';
+    });
+    return vals;
+  }
+}
+</script>
+</body>
+</html>

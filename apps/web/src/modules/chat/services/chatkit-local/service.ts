@@ -27,6 +27,7 @@ import {
   chatResource,
   contactResource,
   extractChatIdFromChatRef,
+  grantResource,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   type AgentRow,
@@ -34,10 +35,15 @@ import {
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { readWithdrawnCards, renderWithdrawnCardsContext } from '@/lib/withdrawn-cards'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
 import { createAssistantTextDeltaEvent, createWaitingToolbarEvent } from './thread-stream-events'
 import { normalizeToolCallArguments } from './tool-call-protocol'
+import { executePodFileTool, isPodFileTool } from './pod-file-tools'
+import { toAutoJudgeGrant } from '@linx/agent-runtime/auto-judge'
+import { grantAppliesToAgent } from '@/modules/inbox/domain/grant-agent'
+import { normalizeMessageCitation, withCitedSource } from '../../domain/message-citation'
 import {
   inferMarkdownLinkAnnotations,
   mergeChatKitAnnotations,
@@ -52,6 +58,7 @@ import {
   type AgentAiRuntimeLocation,
 } from '../../agent-runtime-location'
 import { classifyRuntimeTool } from '../../domain/runtime-tool-category'
+import { THREAD_HANDOFF_METADATA, mergeThreadTimelines } from '../../domain/chat-threads'
 import { readProjectContext, renderProjectSystemContext } from '../project-context'
 
 const LINX_PLATFORM_PROVIDER_ID = 'undefineds'
@@ -78,6 +85,8 @@ type LocalChatKitStorePort = ChatKitStore<StoreContext> & {
   uploadAttachment?: (attachmentId: string, body: BodyInit, mimeType?: string, signal?: AbortSignal) => Promise<Attachment>
   readAttachmentBytes?: (attachmentId: string) => Promise<Uint8Array>
   loadAttachmentObjectUrl?: (attachmentId: string) => Promise<string>
+  resolveItemUri?: (itemId: string) => string | null
+  resolveThreadUri?: (threadId: string) => Promise<string>
 }
 
 type ModelMessage = { role: string; content: string | ModelContentPart[] }
@@ -417,6 +426,9 @@ interface ThreadAgentConfig {
   aiRuntimeLocation: AgentAiRuntimeLocation
 }
 
+/** Thread metadata: files LinX created in this chat (written directly, no draft). */
+const LINX_CREATED_FILES_KEY = 'linx_created_files'
+
 function normalizeContextRound(value: unknown): number | undefined {
   const parsed = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined
@@ -467,6 +479,19 @@ type RuntimeThreadEvent =
   | { type: 'exit'; ts: number; threadId: string; code: number | null; signal?: string }
   | { type: 'error'; ts: number; threadId: string; message: string }
 
+/**
+ * Chat Completions is the universal OpenAI-compatible baseline: a provider whose list only
+ * mentions extras (e.g. image input) still routes plain text through Chat Completions. A
+ * provider that declares Responses but not Chat Completions is Responses-only.
+ */
+function withChatCompletionsBaseline(declared: readonly string[]): string[] {
+  const capabilities = new Set(declared)
+  const responsesOnly = capabilities.has(AIConfigRuntimeCapability.responses)
+    && !capabilities.has(AIConfigRuntimeCapability.chatCompletions)
+  if (!responsesOnly) capabilities.add(AIConfigRuntimeCapability.chatCompletions)
+  return [...capabilities]
+}
+
 export class LocalChatKitService {
   private store: LocalServiceOptions['store']
   private db: SolidDatabase
@@ -516,24 +541,109 @@ export class LocalChatKitService {
     context: StoreContext,
   ): AsyncIterable<Uint8Array> {
     const encoder = new TextEncoder()
+    for await (const event of this.streamEvents(request, context)) {
+      yield encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
+    }
+  }
 
+  /**
+   * A streaming request as ChatKit stream events, for adapters that do not
+   * speak the ChatKit wire format (the AG-UI conversation surface). A failure
+   * becomes one `error` event; a cancelled request ends quietly.
+   */
+  async *streamEvents(
+    request: StreamingReq,
+    context: StoreContext,
+  ): AsyncIterable<ThreadStreamEvent> {
     try {
-      for await (const event of this.processStreaming(request, context)) {
-        yield encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
-      }
+      yield* this.processStreaming(request, context)
     } catch (error: any) {
       if (isAbortError(error)) return
       console.error('[LocalChatKitService] Streaming request failed:', error)
       const userMessage = formatErrorForUser(error, '消息生成失败。请稍后重试。')
-      const errorEvent = {
+      yield {
         type: 'error',
         error: {
           code: 'internal_error',
           message: userMessage,
         },
       }
-      yield encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`)
     }
+  }
+
+  /**
+   * The active branch of a topic as the conversation surface needs it: every
+   * item with its Pod message URI (AG-UI `messageId`), and the topic URI
+   * (AG-UI `threadId`).
+   */
+  async loadConversation(threadId: string, context: StoreContext = {}): Promise<{
+    thread: ThreadMetadata
+    threadUri: string
+    items: Array<{ item: ThreadItem; uri: string }>
+    /** Items of the versions that are not shown (edits, regenerated answers), for the branch picker. */
+    alternates: Array<{ item: ThreadItem; uri: string }>
+  }> {
+    const thread = await this.store.loadThread(threadId, context)
+    const all = await this.loadAllThreadItems(threadId, context)
+    const active = projectActiveBranchItems({ data: all }, thread.metadata?.active_branch_by_parent).data
+    const shown = new Set(active.map((item) => item.id))
+    const threadUri = (await this.store.resolveThreadUri?.(threadId)) ?? threadId
+    const withUri = (item: ThreadItem) => ({ item, uri: this.store.resolveItemUri?.(item.id) ?? item.id })
+    return {
+      thread,
+      threadUri,
+      items: active.map(withUri),
+      alternates: all.filter((item) => !shown.has(item.id)).map(withUri),
+    }
+  }
+
+  /** Ids of every thread of a chat; `currentThreadId` (where new messages go) is always included. */
+  private async chatThreadIds(chatId: string, currentThreadId: string, context: StoreContext): Promise<string[]> {
+    const listed = await this.store.loadThreads(1000, undefined, 'asc', context)
+    const ids = listed.data
+      .filter((thread) => thread.metadata?.chat_id === chatId)
+      .map((thread) => thread.id)
+    if (!ids.includes(currentThreadId)) ids.push(currentThreadId)
+    return ids
+  }
+
+  /**
+   * One continuous chat: the active branch of every thread of the chat merged
+   * in time order, each message keeping its real Pod URI and the thread it
+   * lives in. `currentThreadId` (where new messages go) is always included.
+   */
+  async loadChatConversation(chatId: string, currentThreadId: string, context: StoreContext = {}): Promise<{
+    thread: ThreadMetadata
+    threadUri: string
+    items: Array<{ item: ThreadItem; uri: string; threadId: string }>
+    alternates: Array<{ item: ThreadItem; uri: string; threadId: string }>
+  }> {
+    const ids = await this.chatThreadIds(chatId, currentThreadId, context)
+    const loaded = await Promise.all(ids.map(async (id) => ({ id, conversation: await this.loadConversation(id, context) })))
+    const current = loaded.find((entry) => entry.id === currentThreadId)!.conversation
+    const items = mergeThreadTimelines(loaded.map(({ id, conversation }) => (
+      conversation.items.map((entry) => ({ ...entry, threadId: id, createdAt: entry.item.created_at ?? 0 }))
+    ))).map(({ createdAt: _createdAt, ...entry }) => entry)
+    const alternates = loaded.flatMap(({ id, conversation }) => conversation.alternates.map((entry) => ({ ...entry, threadId: id })))
+    return { thread: current.thread, threadUri: current.threadUri, items, alternates }
+  }
+
+  /** Every file attached to, or generated in, any thread of the chat (the chat is one timeline). */
+  async loadChatAttachments(chatId: string, currentThreadId: string, context: StoreContext = {}): Promise<Attachment[]> {
+    const ids = await this.chatThreadIds(chatId, currentThreadId, context)
+    const perThread = await Promise.all(ids.map((id) => this.loadAllThreadItems(id, context)))
+    const attachments = new Map<string, Attachment>()
+    for (const item of perThread.flat()) {
+      const own = 'attachments' in item ? (item as { attachments?: Attachment[] }).attachments ?? [] : []
+      for (const attachment of own) attachments.set(attachment.id, attachment)
+      if (item.type === 'generated_image' && item.attachment) attachments.set(item.attachment.id, item.attachment)
+    }
+    return [...attachments.values()]
+  }
+
+  /** Pod message URI of an item that has been persisted or loaded here. */
+  resolveItemUri(itemId: string): string {
+    return this.store.resolveItemUri?.(itemId) ?? itemId
   }
 
   private async *processStreaming(
@@ -757,6 +867,8 @@ export class LocalChatKitService {
         params.input.inference_options,
         thread,
         context,
+        undefined,
+        params.input.citation,
       )
       const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
       if (matrixSent) {
@@ -790,6 +902,7 @@ export class LocalChatKitService {
       thread,
       context,
       parentItem,
+      params.input.citation,
     )
     const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
     if (matrixSent) {
@@ -1299,7 +1412,9 @@ export class LocalChatKitService {
         text: fullText || (isAbortError(error) ? '已停止生成。' : userFacingMessage),
         annotations: [],
       }]
-      assistantItem.status = 'incomplete'
+      // A stop keeps its partial text as 'incomplete'; a failure is marked
+      // 'failed' so a reloaded conversation can still offer 重试.
+      assistantItem.status = isAbortError(error) ? 'incomplete' : 'failed'
       await this.store.saveItem(thread.id, assistantItem, context)
       // ChatKit owns the UI transition for a cancelled request. Sending a
       // terminal item event after its fetch was aborted makes the embedded
@@ -1466,6 +1581,44 @@ export class LocalChatKitService {
     } as ThreadItem
   }
 
+  /** Runs one of LinX's file tools (see pod-file-tools.ts); the text is what the model is told. */
+  private async executePodFileToolCall(
+    thread: ThreadMetadata,
+    toolItem: { name: string; arguments: Record<string, unknown> },
+    context: StoreContext,
+  ): Promise<string> {
+    const files = await import('@/modules/files')
+    const chatId = readChatIdFromThread(thread)
+    const chat = chatId ? await this.findChatById(chatId).catch(() => null) : null
+    const agentIds: string[] = Array.isArray(chat?.participants)
+      ? chat.participants.filter((entry: unknown): entry is string => typeof entry === 'string')
+      : []
+    const rows = await this.db.select().from(grantResource).execute().catch(() => [] as any[])
+    const grants = (rows as any[])
+      .filter((row) => grantAppliesToAgent(row, agentIds))
+      .flatMap((row) => {
+        const grant = toAutoJudgeGrant(row)
+        return grant ? [grant] : []
+      })
+    const stored = thread.metadata?.[LINX_CREATED_FILES_KEY]
+    const createdByLinx = new Set<string>(Array.isArray(stored) ? stored.filter((v): v is string => typeof v === 'string') : [])
+    const sizeBefore = createdByLinx.size
+    const output = await executePodFileTool(toolItem.name, toolItem.arguments, {
+      db: this.db,
+      actorWebId: this.webId,
+      agentWebId: agentIds[0] ?? null,
+      podRootUri: resolveCurrentPodBaseUrl(this.db),
+      grants,
+      createdByLinx,
+      files: files as any,
+    })
+    if (createdByLinx.size !== sizeBefore) {
+      thread.metadata = { ...(thread.metadata ?? {}), [LINX_CREATED_FILES_KEY]: [...createdByLinx] }
+      await this.store.saveThread(thread, context)
+    }
+    return output
+  }
+
   private async finalizePendingRuntimeItem(
     threadId: string,
     assistantItem: any,
@@ -1607,6 +1760,24 @@ export class LocalChatKitService {
           const toolItem = this.createRuntimeToolCallItem(thread, event, context)
           await this.store.addThreadItem(thread.id, toolItem, context)
           yield { type: 'thread.item.added', item: toolItem }
+
+          // R6-C: LinX's file edits run here, through the draft layer, and the result goes back
+          // to the model (it must know an edit is only a draft).
+          if (isPodFileTool(event.name)) {
+            controller.abort()
+            const output = await this.executePodFileToolCall(thread, toolItem as any, context)
+            const doneItem = await this.finalizePendingRuntimeItem(
+              thread.id, assistantItem, context, fullText, fullText ? '' : '已处理文件改动。',
+            )
+            ;(doneItem as any).status = 'completed'
+            await this.store.saveItem(thread.id, doneItem, context)
+            yield { type: 'thread.item.done', item: doneItem }
+            yield* this.handleThreadsAddClientToolOutput(
+              { thread_id: thread.id, item_id: toolItem.id, output },
+              context,
+            )
+            return
+          }
 
           const pendingItem = await this.finalizePendingRuntimeItem(
             thread.id,
@@ -1750,7 +1921,15 @@ export class LocalChatKitService {
 
       if (provider === LINX_PLATFORM_PROVIDER_ID) {
         const configured = await this.resolveConfiguredProviderConfig()
-        if (configured) return configured
+        // The gateway picks the model; where it runs and how the agent behaves stay the agent's.
+        if (configured) {
+          return {
+            ...configured,
+            instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
+            contextRound: normalizeContextRound(agent.contextRound),
+            aiRuntimeLocation: readAgentAiRuntimeLocation((agent as Record<string, unknown>).metadata),
+          }
+        }
       }
 
       return {
@@ -2168,10 +2347,7 @@ export class LocalChatKitService {
     const capabilities = (await this.loadGatewayModels())
       .filter((model) => model.provider === provider)
       .flatMap((model) => model.capabilities)
-    // Chat Completions is the universal OpenAI-compatible baseline: providers
-    // whose declared list only mentions extras (e.g. image input) still route
-    // through chat completions for plain text.
-    return [...new Set([AIConfigRuntimeCapability.chatCompletions, ...capabilities])]
+    return withChatCompletionsBaseline(capabilities)
   }
 
   private async resolveModelCapabilities(providerId: string, modelId?: string | null): Promise<string[]> {
@@ -2188,7 +2364,7 @@ export class LocalChatKitService {
     const capabilities = match
       ? match.capabilities
       : entries.filter((entry) => entry.provider === provider).flatMap((entry) => entry.capabilities)
-    return [...new Set([AIConfigRuntimeCapability.chatCompletions, ...capabilities])]
+    return withChatCompletionsBaseline(capabilities)
   }
 
   private async loadGatewayModels(): Promise<Array<{ provider: string; model: string; capabilities: string[] }>> {
@@ -2219,6 +2395,10 @@ export class LocalChatKitService {
       for (const capability of stringList(entry.custom_capabilities)) capabilities.add(capability)
       if (structured.imageInput === true) capabilities.add(AIConfigRuntimeCapability.imageInput)
       if (structured.toolCalls === true) capabilities.add(AIConfigRuntimeCapability.toolCalls)
+      if (structured.imageGeneration === true) capabilities.add(AIConfigRuntimeCapability.imageGeneration)
+      if (structured.imageEditing === true) capabilities.add(AIConfigRuntimeCapability.imageEditing)
+      // Image models are recognised by name too, as resolveImageModel does.
+      if (isImageGenerationModel(model)) capabilities.add(AIConfigRuntimeCapability.imageGeneration)
       if (stringList(entry.modalities && typeof entry.modalities === 'object'
         ? (entry.modalities as Record<string, unknown>).input
         : undefined).includes('image')) {
@@ -2473,7 +2653,7 @@ export class LocalChatKitService {
     }
     for (const item of activeItems.slice(firstItemIndex)) {
       if (item.type === 'user_message') {
-        const text = extractUserMessageText((item as any).content)
+        const text = withCitedSource(extractUserMessageText((item as any).content), (item as any).citation)
         const attachmentParts = await this.buildAttachmentModelParts((item as any).attachments)
         if (text || attachmentParts.length > 0) {
           conversation.push({
@@ -2495,6 +2675,12 @@ export class LocalChatKitService {
     }
 
     let systemPrompt = this.systemPrompt
+    // A thread the runtime started because its predecessor got long or went
+    // quiet carries a short note of where the conversation stood (chat-threads.ts).
+    const handoff = thread.metadata?.[THREAD_HANDOFF_METADATA.summary]
+    if (typeof handoff === 'string' && handoff.trim()) {
+      systemPrompt = `${systemPrompt}\n\n## 之前的对话\n这是同一段持续对话的延续。上一段的结尾是：\n${handoff.trim()}`
+    }
     const workspaceUri = typeof thread.metadata?.workspace === 'string' ? thread.metadata.workspace : null
     if (workspaceUri) {
       try {
@@ -2508,10 +2694,25 @@ export class LocalChatKitService {
       }
     }
 
+    const withdrawnContext = await this.readWithdrawnCardsContext()
+    if (withdrawnContext) systemPrompt = `${systemPrompt}\n\n${withdrawnContext}`
+
     return [
       { role: 'system', content: systemPrompt },
       ...conversation,
     ]
+  }
+
+  /** K2b 撤回: cards the person withdrew stay out of new work. Null when none or unreadable. */
+  private async readWithdrawnCardsContext(): Promise<string | null> {
+    const podBaseUrl = resolveCurrentPodBaseUrl(this.db)
+    if (!podBaseUrl) return null
+    try {
+      return renderWithdrawnCardsContext(await readWithdrawnCards(podBaseUrl, this.authFetch))
+    } catch (error) {
+      console.warn('[LocalChatKitService] Withdrawn cards unavailable:', error)
+      return null
+    }
   }
 
   private async buildAttachmentModelParts(attachments: Attachment[] | undefined): Promise<ModelContentPart[]> {
@@ -2541,14 +2742,15 @@ export class LocalChatKitService {
   }
 
   private async buildRuntimeUserText(item: ThreadItem): Promise<string> {
-    const text = extractUserMessageText((item as any).content)
+    const text = withCitedSource(extractUserMessageText((item as any).content), (item as any).citation)
     const parts = await this.buildAttachmentModelParts((item as any).attachments)
     const attachmentText = parts.map((part, index) => (
       part.type === 'text'
         ? part.text
         : `[图片附件 ${index + 1} 已保存到 Pod；当前终端 runtime 仅接收文本，请在支持视觉的模型会话中分析图片内容。]`
     )).join('\n\n')
-    return [text, attachmentText].filter(Boolean).join('\n\n') || '请分析附件。'
+    const withdrawnContext = await this.readWithdrawnCardsContext()
+    return [text, attachmentText, withdrawnContext ? `（${withdrawnContext}）` : ''].filter(Boolean).join('\n\n') || '请分析附件。'
   }
 
   private async createUserMessage(
@@ -2559,6 +2761,7 @@ export class LocalChatKitService {
     thread?: ThreadMetadata,
     context: StoreContext = {},
     parentItem?: ThreadItem,
+    citation?: unknown,
   ): Promise<ThreadItem> {
     const fallbackThread = thread || {
       id: threadId,
@@ -2586,6 +2789,7 @@ export class LocalChatKitService {
       ...(inferenceOptions && Object.keys(inferenceOptions).length > 0
         ? { inference_options: inferenceOptions }
         : {}),
+      ...(normalizeMessageCitation(citation) ? { citation: normalizeMessageCitation(citation) } : {}),
       created_at: nowTimestamp(),
     } as ThreadItem
   }

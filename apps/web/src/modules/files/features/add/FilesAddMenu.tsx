@@ -2,6 +2,7 @@ import {
   FilePlus2,
   FolderPlus,
   FolderUp,
+  Table2,
   Globe2,
   Plus,
   Upload,
@@ -26,16 +27,23 @@ import {
 import type { FilesAddActionModel } from '../../domain/list/files-add-menu-model'
 import type { FilesEntry } from '../../domain/resource/resource-model'
 import { FilesOperationSheet } from '../../ui/FilesOperationSheet'
+import { NewTableDialog } from './NewTableDialog'
 import { SourceIngestForm } from '../ingest/SourceIngestAction'
 import { useFilesAddMenuController } from './useFilesAddMenuController'
 
 const actionIcons = {
   document: FilePlus2,
+  table: Table2,
   folder: FolderPlus,
   'upload-file': Upload,
   'upload-folder': FolderUp,
   web: Globe2,
 } satisfies Record<FilesAddActionModel['iconKind'], LucideIcon>
+
+function decodeContainerName(uri: string) {
+  const name = uri.replace(/\/+$/, '').split('/').pop() ?? ''
+  try { return decodeURIComponent(name) || '我的空间' } catch { return name || '我的空间' }
+}
 
 export function FilesAddMenu({
   containerUri,
@@ -95,7 +103,7 @@ export function FilesAddMenu({
             const Icon = actionIcons[action.iconKind]
             return (
               <div key={action.id}>
-                {(index === 2 || index === 4) ? <DropdownMenuSeparator /> : null}
+                {(index === 3 || index === 5) ? <DropdownMenuSeparator /> : null}
                 <DropdownMenuItem
                   disabled={action.disabled || addMenu.folderUpload.uploadPending}
                   onSelect={() => addMenu.runAction(action.id)}
@@ -124,6 +132,8 @@ export function FilesAddMenu({
         onClose={addMenu.closeOperation}
         onConfirm={() => void addMenu.confirmOperation()}
       />
+
+      <NewTableDialog table={addMenu.newTable} destinationLabel={containerUri ? decodeContainerName(containerUri) : ''} />
 
       <Dialog open={addMenu.ingest.open} onOpenChange={addMenu.ingest.setOpen}>
         <DialogContent className="w-[min(440px,calc(100vw-32px))] gap-4 rounded-xl border-border/40 p-5">

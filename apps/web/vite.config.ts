@@ -53,7 +53,6 @@ const dependencyRuntimeFingerprint = fingerprintFiles([
   aiConnectionsMainRuntime,
   aiConnectionsPanelRuntime,
 ])
-const chatkitCdnOrigin = 'https://cdn.platform.openai.com'
 
 function getPackageName(id: string): string | null {
   const marker = '/node_modules/'
@@ -127,26 +126,6 @@ function resolveVendorChunk(id: string): string | undefined {
 export default defineConfig({
   base: assetBase,
   plugins: [react()],
-  server: {
-    proxy: {
-      '/chatkit-cdn': {
-        target: chatkitCdnOrigin,
-        changeOrigin: true,
-        secure: true,
-        rewrite: (requestPath) => requestPath.replace(/^\/chatkit-cdn/, ''),
-      },
-      '/assets/ck1': {
-        target: chatkitCdnOrigin,
-        changeOrigin: true,
-        secure: true,
-      },
-      '/cdn-cgi': {
-        target: chatkitCdnOrigin,
-        changeOrigin: true,
-        secure: true,
-      },
-    },
-  },
   optimizeDeps: {
     // Workspace and normalized runtime dependencies must remain pre-bundled.
     // Include their runtime fingerprint in Vite's optimizer plugin names so

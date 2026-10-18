@@ -116,6 +116,29 @@ describe('favoriteHooks.onStarredChange', () => {
       expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
     })
 
+    it('stores a single message with snippet, author, chat and topic; tolerates missing fields', async () => {
+      const uri = 'https://alice.example/.data/chat/c1/2026/03/27/messages.ttl#m1'
+      await favoriteHooks.onStarredChange('messages', uri, true, {
+        snippet: '签到表放共享盘了',
+        authorName: '周禾',
+        chatId: 'c1',
+        chatTitle: '书店活动组',
+        threadId: 't1',
+      })
+      const inserted = mockInsert.mock.calls[0][0]
+      expect(inserted.title).toBe('签到表放共享盘了')
+      expect(inserted.snapshotContent).toBe('签到表放共享盘了')
+      expect(inserted.snapshotAuthor).toBe('周禾')
+      expect(inserted.targetUri).toBe(uri)
+      expect(JSON.parse(inserted.snapshotMeta)).toEqual({ chatId: 'c1', chatTitle: '书店活动组', threadId: 't1' })
+
+      mockInsert.mockClear()
+      await favoriteHooks.onStarredChange('messages', 'https://alice.example/m2', true)
+      const bare = mockInsert.mock.calls[0][0]
+      expect(bare.title).toBe('消息')
+      expect(bare.snapshotMeta).toBeUndefined()
+    })
+
     it('should update existing favorite when one already exists', async () => {
       // Pre-populate state with an existing favorite
       mockCollectionState.set('existing-fav', {

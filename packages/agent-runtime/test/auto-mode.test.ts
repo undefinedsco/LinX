@@ -53,6 +53,10 @@ autoModeApprovalRequestMessage,
 autoModeApprovalRisk,
 autoModeApprovalToolName,
 shouldMaterializeAutoModeGrant,
+autoModeConfidenceBand,
+isHighImpactAutoModeApprovalRequest,
+planAutoModeApprovalAutoJudge,
+resolveAutoModeSecretaryWindowMs,
 } from '../src/auto-mode'
 import {
   buildLinxSessionControlMetadata,
@@ -1398,9 +1402,12 @@ test('parses AI secretary approval and user-input recommendations conservatively
     decision: 'accept',
     confidence: 0.92,
     reason: 'safe read-only command',
-    reactionWindowMs: computeAutoModeSecretaryReactionWindowMs(0.92),
+    confidenceBand: 'high',
+    autoJudgeWindowMs: 10 * 60_000,
+    reactionWindowMs: 10 * 60_000,
     source: 'model',
   })
+  // Legacy terminal countdown helper stays available for the CLI prompt.
   expect(computeAutoModeSecretaryReactionWindowMs(0)).toBe(60000)
   expect(computeAutoModeSecretaryReactionWindowMs(1)).toBe(5000)
   expect(createFallbackAutoModeSecretaryRecommendation({
@@ -1458,5 +1465,60 @@ test('parses AI secretary approval and user-input recommendations conservatively
     confidence: 0.86,
     reason: 'The request stays inside the maintained read-only session grant.',
     source: 'model',
+  })
+})
+
+test('secretary waits by confidence instead of a 5-60 second window', () => {
+  const approvalRequest = normalizeAcpInteractionRequest({
+    method: 'session/request_permission',
+    params: {
+      toolCall: { toolCallId: 'tool_2', title: 'Run tests', kind: 'execute', rawInput: { command: 'npm test', cwd: '/tmp/demo' } },
+      options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' }],
+    },
+  })
+  if (!approvalRequest || approvalRequest.kind !== 'command-approval') {
+    throw new Error('Expected ACP command approval request')
+  }
+  const parse = (confidence: number | undefined, windows?: { high: number | null; medium: number | null; low: number | null }) => parseAutoModeSecretaryRecommendation(JSON.stringify({
+    canAutoDecide: true,
+    decision: 'accept',
+    ...(confidence === undefined ? {} : { confidence }),
+    reactionWindowMs: 1000,
+  }), { autoEnabled: true, mode: 'auto', request: approvalRequest, windows })
+
+  expect(parse(0.7)).toMatchObject({ canAutoDecide: true, confidenceBand: 'medium', autoJudgeWindowMs: 2 * 60 * 60_000, reactionWindowMs: 2 * 60 * 60_000 })
+  expect(parse(0.4)).toMatchObject({ canAutoDecide: false, confidenceBand: 'low', autoJudgeWindowMs: null })
+  expect(parse(0.4)?.reactionWindowMs).toBe(undefined)
+  // A model that does not say how sure it is never decides on its own.
+  expect(parse(undefined)).toMatchObject({ canAutoDecide: false, confidenceBand: 'low' })
+  // The user's waits (K11) apply.
+  expect(parse(0.95, { high: 60_000, medium: null, low: null })).toMatchObject({ canAutoDecide: true, reactionWindowMs: 60_000 })
+  expect(parse(0.7, { high: 60_000, medium: null, low: null })).toMatchObject({ canAutoDecide: false })
+
+  expect(resolveAutoModeSecretaryWindowMs(0.9)).toBe(10 * 60_000)
+  expect(resolveAutoModeSecretaryWindowMs(0.1)).toBe(null)
+  expect(autoModeConfidenceBand(0.6)).toBe('medium')
+})
+
+test('backend approvals plan auto-judge from grants and the coverage confidence', () => {
+  const now = new Date('2026-10-11T10:00:00.000Z')
+  const target = 'https://pod.example/alice/.data/chat/coding/index.ttl#thread-1'
+  const action = 'https://undefineds.co/ns#commandExecution'
+  const request = { kind: 'command-approval' as const, message: 'Run npm test', command: 'npm test' }
+  const grants = [{ id: 'grant-tests', target, action, riskCeiling: 'medium' }]
+
+  const plan = planAutoModeApprovalAutoJudge({ request, target, grants, coverage: { covers: true, confidence: 0.7 }, now })
+  expect(plan.mode === 'auto' && plan.decideAt.toISOString()).toBe('2026-10-11T12:00:00.000Z')
+  expect(planAutoModeApprovalAutoJudge({ request, target, grants, coverage: { covers: false, confidence: 0.99 }, now })).toEqual({ mode: 'wait-user', reason: 'no-grant' })
+  expect(planAutoModeApprovalAutoJudge({ request, target, grants, coverage: { covers: true, confidence: 0.2 }, now })).toEqual({ mode: 'wait-user', reason: 'low-confidence', grantId: 'grant-tests' })
+
+  const deleting = { ...request, command: 'rm -rf build' }
+  expect(isHighImpactAutoModeApprovalRequest(deleting)).toBe(true)
+  expect(isHighImpactAutoModeApprovalRequest({ ...request, command: 'git push origin main' })).toBe(true)
+  expect(isHighImpactAutoModeApprovalRequest(request)).toBe(false)
+  expect(planAutoModeApprovalAutoJudge({ request: deleting, target, grants, coverage: { covers: true, confidence: 0.95 }, now })).toEqual({
+    mode: 'wait-user',
+    reason: 'needs-confirmed-grant',
+    grantId: 'grant-tests',
   })
 })

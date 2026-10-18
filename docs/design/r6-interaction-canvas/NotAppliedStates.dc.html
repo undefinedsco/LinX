@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>执行条件与模型连接</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:16px;display:flex;flex-direction:column;gap:10px}
+.grp{background:#F2EDE2;border-radius:10px;overflow:hidden}
+.gr{display:flex;align-items:center;gap:8px;min-height:42px;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px}
+.gr:last-child{border-bottom:0}
+.v{color:#655D53;font-size:13px}
+.s{font-size:12px;color:#655D53}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.sys{font-size:12px;color:#655D53;text-align:center;padding:6px 0}
+.seg{display:flex;padding:2px;background:#E4DDDA;border-radius:8px}
+.seg span{flex:1;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;color:#655D53}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px">
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <div class="lbl">执行条件（从右边栏进入，和方法分开）</div>
+    <div class="sheet" role="dialog" aria-labelledby="ec-t">
+      <div id="ec-t" style="font-weight: 600">志愿者排班方案 · 执行条件</div>
+      <div class="grp">
+        <div class="gr"><span style="flex: 1">模型</span><span class="v">个人模型 v1</span><span style="color: #87837D">›</span></div>
+        <div class="gr"><span style="flex: 1">用不了时</span><span class="v">每次问我</span><span style="color: #87837D">›</span></div>
+      </div>
+      <div class="s">在哪里运行</div>
+      <div class="seg"><span>这台电脑</span><span style="background: #FBFAF7; color: #2B2621; font-weight: 600; box-shadow: 0 1px 2px rgb(43 38 33 / .1)">云端</span></div>
+      <div class="s">换模型不会改变助手的名字、头像和聊天记录</div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">完成</span></div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <div class="lbl">这次的结果怎么标</div>
+    <div class="sys">这次用的是基础模型（个人模型连不上）</div>
+    <div class="sys">个人模型已恢复，后面的回答用个人模型</div>
+    <div class="lbl" style="margin-top: 8px">修好回来</div>
+    <div style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 10px; background: #FBFAF7; border: 1px solid #DFDBD5; font-size: 13px"><span style="flex: 1">个人模型已经可以用了</span><span class="btn primary">继续刚才的工作</span></div>
+    <div class="s">已经完成的步骤不会重做</div>
+    <div class="lbl" style="margin-top: 8px">这个模型做不了这件事</div>
+    <div style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 10px; background: #FBFAF7; border: 1px solid #DFDBD5; font-size: 13px"><span style="flex: 1">个人模型不能看图片，这张截图没有读</span><span class="btn">换个模型</span></div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <div class="lbl">设置 › 模型连接（低频，放在设置里）</div>
+    <div style="background: #FBFAF7; border-radius: 12px; border: 1px solid #DFDBD5; overflow: hidden">
+      <div class="gr" style="background: #FBFAF7"><span style="flex: 1">undefineds 云端</span><span class="v">已连接</span></div>
+      <div class="gr" style="background: #FBFAF7"><span style="flex: 1">这台电脑上的模型</span><span class="v">未安装</span></div>
+      <div class="gr" style="background: #FBFAF7"><span style="flex: 1">其他服务商</span><span class="v">需要密钥</span><span style="color: #87837D">›</span></div>
+      <div class="gr" style="background: #FBFAF7; color: #563E84">+ 添加连接</div>
+    </div>
+    <div class="s">密钥、网络这些只在这里出现，不在聊天和方法里</div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

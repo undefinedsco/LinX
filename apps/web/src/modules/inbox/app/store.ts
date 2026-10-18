@@ -12,7 +12,7 @@ interface InboxStoreState {
 
 export const useInboxStore = create<InboxStoreState>((set) => ({
   selectedItemId: null,
-  filter: 'all',
+  filter: 'pending',
   selectItem: (selectedItemId) => set({ selectedItemId }),
   setFilter: (filter) => set({ filter }),
 }))

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import { createStructuredCellWriteProposal } from '../../domain/structured/structured-table'
 import { StructuredKanbanView } from './StructuredKanbanView'
+import { mergeKanbanOptionLanes } from './structured-kanban-view-model'
 import {
   StructuredProjectionWarningsAlert,
   StructuredShapeWarningsAlert,
@@ -16,6 +17,9 @@ import { StructuredSubjectPeekActions } from './StructuredSubjectPeekActions'
 import { StructuredSubjectPeekDrawer } from './StructuredSubjectPeek'
 import { StructuredWhiteboardView } from './StructuredWhiteboardView'
 import { projectStructuredResourcePreviewHeaderModel } from './structured-resource-preview-header-model'
+import { STRUCTURED_TABLE_ROW_ORDER_KEY } from './structured-row-selection-model'
+import { localRdfName } from '../../domain/card/rdf-term-tokens'
+import { useStructuredAiCellDots } from './useStructuredAiCellDots'
 import { useStructuredCellProposalWorkflowController } from './useStructuredCellProposalWorkflowController'
 import { useStructuredProjectionFilterController } from './useStructuredProjectionFilterController'
 import { useStructuredProjectionReviewController } from './useStructuredProjectionReviewController'
@@ -30,11 +34,13 @@ import { projectStructuredRelationPredicateOptions } from './structured-projecti
 
 export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   const [classScopeMenuOpen, setClassScopeMenuOpen] = useState(false)
+  const aiCellDots = useStructuredAiCellDots(file.uri)
   const {
     currentPodRootUri,
     projection,
     structuredSourceLoading,
     structuredSourceUnavailable,
+    structuredSourceEtag,
     structuredWritesSupported,
     vocabDefinitionIndex,
     vocabShapesUri,
@@ -161,6 +167,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     syncLocalCellWriteProposalsFromTable,
   } = useStructuredCellProposalWorkflowController({
     currentPodRootUri,
+    documentEtag: structuredSourceEtag,
     documentUri: file.uri,
     structuredWritesSupported,
   })
@@ -235,15 +242,47 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     if (created === false) return false
 
     if (kanbanGroupPredicate && columnId !== 'ungrouped' && columnValue) {
-      return commitViewCellWriteProposal(createStructuredCellWriteProposal({
+      return (await commitViewCellWriteProposal(createStructuredCellWriteProposal({
         documentUri: file.uri,
         subject: plan.subject,
         predicate: kanbanGroupPredicate,
         previousValues: [],
         nextValues: [columnValue],
-      }))
+      }))) !== false
     }
     return true
+  }
+  // R6 K6 bulk bar: a card is the subject, so deleting clears everything written about it, and
+  // moving to another table changes the class it belongs to.
+  const bulkMoveTargets = scopedProjection.classOptions
+    .filter((className) => className !== scopedProjection.className)
+    .map((className) => ({ id: className, label: localRdfName(className) }))
+  const rowsBySubject = new Map(projection.rows.map((row) => [row.subject, row]))
+  const deleteSubjects = async (subjects: string[]) => {
+    for (const subject of subjects) {
+      for (const cell of rowsBySubject.get(subject)?.cells ?? []) {
+        if (cell.values.length === 0) continue
+        await commitViewCellWriteProposal(createStructuredCellWriteProposal({
+          documentUri: file.uri,
+          subject,
+          predicate: cell.predicate,
+          previousValues: cell.values,
+          nextValues: [],
+        }))
+      }
+    }
+  }
+  const moveSubjects = async (subjects: string[], className: string) => {
+    for (const subject of subjects) {
+      const previous = rowsBySubject.get(subject)?.cells.find((cell) => cell.predicate === 'rdf:type')?.values ?? []
+      await commitViewCellWriteProposal(createStructuredCellWriteProposal({
+        documentUri: file.uri,
+        subject,
+        predicate: 'rdf:type',
+        previousValues: previous,
+        nextValues: [className],
+      }))
+    }
   }
   const createWhiteboardSubject = async (subject: string) => {
     const plan = planStructuredSubjectCreation({
@@ -265,6 +304,11 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     addWhiteboardSubjectFromUi(plan.subject)
     return true
   }
+
+  const kanbanLanes = useMemo(
+    () => mergeKanbanOptionLanes(kanbanBoard.extraLanes, kanbanGroupPredicate, vocabDefinitionIndex?.enumOptionsByPredicate),
+    [kanbanBoard.extraLanes, kanbanGroupPredicate, vocabDefinitionIndex?.enumOptionsByPredicate],
+  )
 
   return (
     <div className="relative min-h-full w-full min-w-0 max-w-full overflow-hidden p-2 space-y-2">
@@ -365,6 +409,17 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
             />
           ) : viewMode === 'table' ? (
             <StructuredProjectionTable
+              rowOrder={kanbanOrder[STRUCTURED_TABLE_ROW_ORDER_KEY]}
+              onRowOrderChange={(subjects) => setKanbanColumnOrderFromUi(STRUCTURED_TABLE_ROW_ORDER_KEY, subjects)}
+              bulkMoveTargets={bulkMoveTargets}
+              onDeleteSubjects={structuredWritesSupported ? deleteSubjects : undefined}
+              onMoveSubjects={structuredWritesSupported ? moveSubjects : undefined}
+              aiCellDots={aiCellDots.aiCellDots}
+              aiColumns={aiCellDots.aiColumns}
+              onKeepAiColumn={aiCellDots.onKeepAiColumn}
+              onRemoveAiColumn={aiCellDots.onRemoveAiColumn}
+              onUndoAiCell={aiCellDots.onUndoAiCell}
+              onSeenAiCell={aiCellDots.onSeenAiCell}
               documentUri={file.uri}
               projection={tableProjection}
               availablePredicates={schemaPredicateControls}
@@ -404,6 +459,10 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               laneOrder={kanbanBoard.laneOrder}
               initialCollapsedLaneIds={kanbanBoard.collapsedLaneIds}
               initialScrollLeft={kanbanBoard.scrollLeft}
+              extraLanes={kanbanLanes}
+              laneLabels={kanbanBoard.laneLabels}
+              cardFields={kanbanBoard.cardFields}
+              onBoardChange={structuredWritesSupported ? (patch) => setKanbanBoardFromUi({ ...kanbanBoard, ...patch }) : undefined}
               onGroupPredicateChange={setKanbanGroupPredicateFromUi}
               onColumnOrderChange={setKanbanColumnOrderFromUi}
               onLaneOrderChange={(laneOrder) => setKanbanBoardFromUi({ ...kanbanBoard, laneOrder })}

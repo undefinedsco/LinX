@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getCoreRowModel,
   getSortedRowModel,
@@ -8,17 +8,27 @@ import {
 } from '@tanstack/react-table'
 
 import {
-  type StructuredCellWriteProposal,
+  type StructuredCellCommitResult, type StructuredCellWriteProposal,
   type StructuredShapeValidationWarning,
   type StructuredTableProjection,
   type StructuredVocabDefinitionIndex,
   type VocabTermProposal,
 } from '../../domain/structured/structured-table'
+import type { AiCellChange } from '../../domain/proposal/ai-cell-change-model'
+import type { AiColumnChange } from '../../domain/proposal/ai-column-change-model'
 import { CompactTableShell } from '../../ui/CompactTableShell'
 import {
   buildStructuredProjectionTableColumns,
+  openStructuredSubjectCard,
   type StructuredSubjectOpenOptions,
 } from './StructuredProjectionTableColumns'
+import { StructuredSaveLine } from './StructuredSaveLine'
+import { StructuredRowBulkBar, type StructuredBulkMoveTarget } from './StructuredRowBulkBar'
+import {
+  applyStructuredRowOrder,
+  moveStructuredRow,
+  projectStructuredSelectedSubjects,
+} from './structured-row-selection-model'
 import { useStructuredCellWriteProposalController } from './useStructuredCellWriteProposalController'
 import { useStructuredCellEditWorkflowController } from './useStructuredCellEditWorkflowController'
 import { useStructuredEnumCellWorkflowController } from './useStructuredEnumCellWorkflowController'
@@ -47,6 +57,17 @@ import {
 const EMPTY_HIDDEN_PREDICATES = new Set<string>()
 
 export function StructuredProjectionTable({
+  aiCellDots,
+  aiColumns,
+  onKeepAiColumn,
+  onRemoveAiColumn,
+  onUndoAiCell,
+  onSeenAiCell,
+  rowOrder,
+  onRowOrderChange,
+  bulkMoveTargets = [],
+  onDeleteSubjects,
+  onMoveSubjects,
   documentUri,
   projection,
   availablePredicates = projection.predicates,
@@ -80,6 +101,19 @@ export function StructuredProjectionTable({
   targetVocabUri,
   targetShapesUri,
 }: {
+  aiCellDots?: ReadonlyMap<string, AiCellChange>
+  aiColumns?: ReadonlyMap<string, AiColumnChange>
+  onKeepAiColumn?: (change: AiColumnChange) => void
+  onRemoveAiColumn?: (change: AiColumnChange) => void
+  /** Hand-dragged row order (subjects); saved by the caller. Only used while no sort is on. */
+  rowOrder?: readonly string[]
+  onRowOrderChange?: (subjects: string[]) => void
+  /** Other tables a row can be moved to from the bulk bar. */
+  bulkMoveTargets?: readonly StructuredBulkMoveTarget[]
+  onDeleteSubjects?: (subjects: string[]) => void | Promise<unknown>
+  onMoveSubjects?: (subjects: string[], targetId: string) => void | Promise<unknown>
+  onUndoAiCell?: (change: AiCellChange) => void
+  onSeenAiCell?: (change: AiCellChange) => void
   documentUri: string
   projection: StructuredTableProjection
   availablePredicates?: readonly string[]
@@ -88,7 +122,7 @@ export function StructuredProjectionTable({
   sortDirection?: 'asc' | 'desc'
   onSort?: (sortKey: string) => void
   onOpenSubjectResource?: (subject: string, targetUri: string, kind: StructuredProjectionSubjectOpenKind, options?: StructuredSubjectOpenOptions) => void
-  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
   onPendingWriteSubjectsChange?: (subjects: string[]) => void
   onLocalCellWriteProposalsChange?: (proposals: StructuredCellWriteProposal[]) => void
   onCreateVocabTermProposal?: (proposal: VocabTermProposal) => boolean | Promise<boolean>
@@ -129,6 +163,8 @@ export function StructuredProjectionTable({
     getCellWriteState,
     pendingWriteSubjects,
     resolveCellValues,
+    retryFailedWrite,
+    saveState,
     stageCellWriteProposal,
   } = useStructuredCellWriteProposalController({
     documentUri,
@@ -148,6 +184,9 @@ export function StructuredProjectionTable({
     pendingProposalByPredicate,
     vocabTermProposalResourceUriForPredicate,
   } = useStructuredPendingPredicateColumns({
+    aiColumns,
+    onKeepAiColumn,
+    onRemoveAiColumn,
     classScope,
     currentPodRootUri,
     documentUri,
@@ -169,6 +208,7 @@ export function StructuredProjectionTable({
     vocabTermProposalResourceUriForPredicate,
   })
   const {
+    addSubjectByName,
     createSubjectOpen,
     dialogModel,
     footerModel,
@@ -273,8 +313,37 @@ export function StructuredProjectionTable({
     onOpenVocabTermProposal,
   })
 
+  const [selectedSubjects, setSelectedSubjects] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(() => { setSelectedSubjects(new Set()) }, [documentUri, classScope])
+  const toggleSubject = useCallback((subject: string) => {
+    setSelectedSubjects((current) => {
+      const next = new Set(current)
+      if (next.has(subject)) next.delete(subject)
+      else next.add(subject)
+      return next
+    })
+  }, [])
+  const orderedRows = useMemo(
+    () => (effectiveSortKey ? displayTableRows : applyStructuredRowOrder(displayTableRows, rowOrder)),
+    [displayTableRows, effectiveSortKey, rowOrder],
+  )
+  const selectedList = useMemo(
+    () => projectStructuredSelectedSubjects(orderedRows, selectedSubjects),
+    [orderedRows, selectedSubjects],
+  )
+  const canReorderRows = !!onRowOrderChange && !effectiveSortKey
+  const reorderRows = useCallback((activeId: string, overId: string) => {
+    const next = moveStructuredRow(orderedRows.map((row) => row.subject), activeId, overId)
+    if (next) onRowOrderChange?.(next)
+  }, [onRowOrderChange, orderedRows])
+
   const columns = useMemo(
     () => buildStructuredProjectionTableColumns({
+      selectedSubjects,
+      onToggleSubject: toggleSubject,
+      aiCellDots,
+      onUndoAiCell,
+      onSeenAiCell,
       activeEnumCell,
       activeRelationCell,
       activeTextCell,
@@ -326,6 +395,11 @@ export function StructuredProjectionTable({
       removeEnumOption,
     }),
     [
+      selectedSubjects,
+      toggleSubject,
+      aiCellDots,
+      onUndoAiCell,
+      onSeenAiCell,
       activeEnumCell,
       activeRelationCell,
       activeTextCell,
@@ -389,7 +463,7 @@ export function StructuredProjectionTable({
   )
 
   const table = useReactTable({
-    data: displayTableRows,
+    data: orderedRows,
     columns,
     columnResizeMode: 'onChange',
     state: {
@@ -409,6 +483,7 @@ export function StructuredProjectionTable({
           footerModel={footerModel}
           footerPredicates={footerPredicates}
           onOpen={openCreateSubjectDialog}
+          onAddByName={addSubjectByName}
           title={footerModel.title}
         />
       )
@@ -416,8 +491,30 @@ export function StructuredProjectionTable({
 
   return (
     <>
+      <StructuredSaveLine state={saveState} onRetry={retryFailedWrite} />
+      {selectedList.length > 0 ? (
+        <StructuredRowBulkBar
+          count={selectedList.length}
+          moveTargets={bulkMoveTargets}
+          onOpen={() => openStructuredSubjectCard(projection, documentUri, selectedList[0]!)}
+          onDelete={onDeleteSubjects ? async () => {
+            await onDeleteSubjects(selectedList)
+            setSelectedSubjects(new Set())
+          } : undefined}
+          onMove={onMoveSubjects ? async (targetId) => {
+            await onMoveSubjects(selectedList, targetId)
+            setSelectedSubjects(new Set())
+          } : undefined}
+          onClear={() => setSelectedSubjects(new Set())}
+        />
+      ) : null}
       <CompactTableShell
         table={table}
+        rowDnd={canReorderRows ? {
+          getRowId: (row) => row.subject,
+          getRowLabel: (row) => `移动 ${row.subject.replace(/^.*[#/]/, '')}`,
+          onReorder: reorderRows,
+        } : undefined}
         sortKey={effectiveSortKey}
         sortDirection={sortDirection}
         editable={editable}

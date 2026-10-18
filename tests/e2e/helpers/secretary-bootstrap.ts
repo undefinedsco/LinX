@@ -1,6 +1,8 @@
 import { expect, type Page } from '@playwright/test'
 
-const SECRETARY_LABEL = 'LinX 主理人'
+const SECRETARY_LABEL = 'LinX 助手'
+/** The chat title stored in the Pod; the UI shows it as SECRETARY_LABEL. */
+const SECRETARY_STORED_TITLE = 'LinX 主理人'
 
 function isE2eDebugEnabled(): boolean {
   return process.env.LINX_E2E_DEBUG === '1' || process.env.LINX_E2E_DEBUG === 'true'
@@ -72,7 +74,7 @@ async function readSecretaryUiState(page: Page): Promise<SecretaryUiState> {
 }
 
 async function readSecretaryState(page: Page): Promise<SecretaryState> {
-  return page.evaluate(async (secretaryLabel) => {
+  return page.evaluate(async ({ secretaryLabel, storedTitle }) => {
     const db = (window as any).__SOLID_DB__
     const podUrl = normalizePodUrl(
       (window as any).__SOLID_DB_POD_URL__
@@ -121,7 +123,7 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
       },
       {
         path: '.data/chat/__secretary__/index.ttl',
-        includes: secretaryLabel,
+        includes: storedTitle,
       },
     ]
 
@@ -181,7 +183,7 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
         hasSecretaryLabel: text.includes(secretaryLabel),
       }
     }
-  }, SECRETARY_LABEL)
+  }, { secretaryLabel: SECRETARY_LABEL, storedTitle: SECRETARY_STORED_TITLE })
 }
 
 interface SecretaryUiState {

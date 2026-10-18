@@ -231,7 +231,7 @@ export function VoiceConversationDialog(props: VoiceConversationDialogProps) {
         </DialogHeader>
         {!supported ? (
           <div role="alert" className="rounded-lg border border-warning/25 bg-warning/5 p-3 text-sm">
-            当前浏览器没有可用的实时语音识别 API。仍可使用 ChatKit 输入框内置的语音输入。
+            当前浏览器没有可用的实时语音识别 API。仍可使用输入框里的语音输入。
           </div>
         ) : (
           <div className="space-y-4">

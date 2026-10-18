@@ -1,0 +1,196 @@
+name: Promote to Production
+
+# Stable promotion of an accepted LinX Web release candidate (docs/RELEASE.md).
+# A `linx-v<version>` tag on the accepted staging commit deploys the SAME image digest that
+# passed RC acceptance to production. Nothing is rebuilt; no acceptance record, no promotion.
+
+on:
+  push:
+    tags: ['linx-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable tag to promote, e.g. linx-v0.3.34
+        required: true
+        type: string
+
+concurrency:
+  group: linx-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CLOUD_IDENTITY_URL: https://id.undefineds.co
+
+jobs:
+  verify_acceptance:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.accept.outputs.tag }}
+      version: ${{ steps.accept.outputs.version }}
+      sourceSha: ${{ steps.accept.outputs.sourceSha }}
+      digest: ${{ steps.accept.outputs.digest }}
+      candidate: ${{ steps.accept.outputs.candidate }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve the tag and its commit
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-${GITHUB_REF_NAME}}"
+          [[ "$tag" =~ ^linx-v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "::error::stable tags are linx-vX.Y.Z (got $tag)"; exit 1; }
+          sha="$(git rev-list -n 1 "refs/tags/$tag")"
+          git fetch -q origin staging
+          git merge-base --is-ancestor "$sha" origin/staging || { echo "::error::$tag is not on staging"; exit 1; }
+          pkg_version="$(git show "$sha:package.json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')"
+          [ "$pkg_version" = "${BASH_REMATCH[1]}" ] || { echo "::error::tag version ${BASH_REMATCH[1]} != package.json $pkg_version"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$pkg_version" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Find the accepted candidate run for that exact commit
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          set -euo pipefail
+          run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow candidate.yml --branch staging --commit "$SHA" --status success --limit 1 --json databaseId -q '.[0].databaseId')"
+          [ -n "$run_id" ] || { echo "::error::no successful Release Candidate run for $SHA"; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-acceptance-${{ steps.tag.outputs.sha }}
+          run-id: ${{ steps.run.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: acceptance
+      - name: Check the acceptance record
+        id: accept
+        env:
+          SHA: ${{ steps.tag.outputs.sha }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cat acceptance/release-acceptance.json
+          node -e '
+            const record = JSON.parse(require("fs").readFileSync("acceptance/release-acceptance.json", "utf8"))
+            const [sha, version] = process.argv.slice(1)
+            const fail = (m) => { console.error("::error::" + m); process.exit(1) }
+            if (record.schema !== "linx-web-release-acceptance/1") fail("unknown acceptance schema")
+            if (record.sourceSha !== sha) fail("acceptance is for another commit")
+            if (record.branch !== "staging") fail("acceptance is not from staging")
+            if (!String(record.candidate).startsWith(version + "-rc.")) fail("candidate " + record.candidate + " is not " + version)
+            if (!/^sha256:[0-9a-f]{64}$/.test(record.digest)) fail("invalid digest")
+            const required = ["verify", "local-e2e", "standalone-e2e", "deployed-digest", "static-deploy", "deployed-smoke", "signed-in"]
+            for (const check of required) if (record.checks?.[check] !== "passed") fail("check not passed: " + check)
+            const out = require("fs").createWriteStream(process.env.GITHUB_OUTPUT, { flags: "a" })
+            out.write(`digest=${record.digest}\ncandidate=${record.candidate}\nsourceSha=${sha}\n`)
+            out.end()
+          ' "$SHA" "$VERSION"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  deploy_production:
+    needs: verify_acceptance
+    runs-on: ubuntu-latest
+    environment: prd
+    permissions:
+      contents: read
+      packages: write
+    env:
+      KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+      NAMESPACE: ${{ vars.SEALOS_NAMESPACE }}
+      PROD_URL: ${{ vars.LINX_PROD_URL }}
+      IMAGE: ghcr.io/undefinedsco/linx-web@${{ needs.verify_acceptance.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify_acceptance.outputs.sourceSha }}
+      - name: Check production prerequisites
+        run: |
+          set -euo pipefail
+          missing=0
+          [ -n "$KUBE_CONFIG_DATA" ] || { echo "::error::prd secret KUBE_CONFIG_DATA is required"; missing=1; }
+          [ -n "$NAMESPACE" ] || { echo "::error::prd variable SEALOS_NAMESPACE is required"; missing=1; }
+          [ -n "$PROD_URL" ] || { echo "::error::prd variable LINX_PROD_URL is required"; missing=1; }
+          exit "$missing"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag the accepted image as the stable release
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "ghcr.io/undefinedsco/linx-web:${{ needs.verify_acceptance.outputs.version }}" \
+            -t ghcr.io/undefinedsco/linx-web:latest \
+            "$IMAGE"
+      - name: Configure kubectl
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.kube
+          printf '%s' "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+      - name: Deploy the accepted digest (replace the whole Deployment spec)
+        run: |
+          set -euo pipefail
+          sed -e "s|__NAMESPACE__|${NAMESPACE}|g" -e "s|__IMAGE__|${IMAGE}|g" \
+            -e "s|__VERSION__|${{ needs.verify_acceptance.outputs.version }}|g" \
+            -e "s|__SOURCE_SHA__|${{ needs.verify_acceptance.outputs.sourceSha }}|g" \
+            deploy/prd/linx-web.yaml > "$RUNNER_TEMP/linx-web.yaml"
+          if grep -q '__[A-Z_]*__' "$RUNNER_TEMP/linx-web.yaml"; then echo "::error::unrendered placeholder"; exit 1; fi
+          kubectl -n "$NAMESPACE" get deployment linx-web -o yaml > "$RUNNER_TEMP/linx-web.before.yaml" || true
+          kubectl replace -f "$RUNNER_TEMP/linx-web.yaml"
+          kubectl -n "$NAMESPACE" rollout status deployment/linx-web --timeout=300s
+      - name: Check the running pod serves the accepted digest
+        run: |
+          set -euo pipefail
+          image_id="$(kubectl -n "$NAMESPACE" get pods -l app=linx-web -o jsonpath='{.items[?(@.status.phase=="Running")].status.containerStatuses[0].imageID}')"
+          echo "$image_id"
+          [[ "$image_id" == *"${{ needs.verify_acceptance.outputs.digest }}"* ]] || { echo "::error::pod imageID digest mismatch"; exit 1; }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-engines
+      - name: Production static deploy check
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            if node scripts/verify-web-static-deploy.mjs "$PROD_URL/"; then exit 0; fi
+            sleep 10
+          done
+          exit 1
+      - name: Production smoke (read-only)
+        env:
+          CI: '1'
+          LINX_E2E_BASE_URL: ${{ vars.LINX_PROD_URL }}
+          LINX_E2E_REUSE_SERVER: '0'
+          LINX_E2E_CLOUD_IDENTITY_URL: ${{ env.CLOUD_IDENTITY_URL }}
+          LINX_E2E_EXPECT_VERSION: ${{ needs.verify_acceptance.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          cd tests/e2e
+          npx playwright install --with-deps chromium
+          npx playwright test specs/deployed-web-smoke.spec.ts --reporter=list
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          kubectl -n "$NAMESPACE" rollout undo deployment/linx-web || true
+          kubectl -n "$NAMESPACE" rollout status deployment/linx-web --timeout=300s || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-release-${{ needs.verify_acceptance.outputs.tag }}
+          path: ${{ runner.temp }}/linx-web*.yaml
+          retention-days: 90

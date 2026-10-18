@@ -12,6 +12,23 @@ export type VocabRegistryDiscovery = {
 
 export type VocabRegistryResourceName = 'terms.ttl' | 'shapes.ttl' | 'namespaces.ttl'
 
+/**
+ * Plain label for a predicate column (R6 K6): the vocab `rdfs:label` when known,
+ * otherwise the local name split into words ("oidcIssuer" -> "Oidc issuer").
+ * The IRI itself is never the visible label.
+ */
+export function readablePredicateLabel(predicate: string, definitionLabel?: string | null) {
+  const known = definitionLabel?.trim()
+  if (known) return known
+  const words = localPredicateLabel(predicate)
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .toLowerCase()
+  if (!words) return predicate
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 export function localPredicateLabel(predicate: string) {
   const hashIndex = predicate.lastIndexOf('#')
   if (hashIndex >= 0 && hashIndex < predicate.length - 1) return predicate.slice(hashIndex + 1)

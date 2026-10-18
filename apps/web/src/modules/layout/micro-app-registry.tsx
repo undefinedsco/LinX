@@ -8,6 +8,8 @@ import {
   Star,
   Settings as SettingsIcon,
   Bot,
+  User,
+  UserRound,
 } from 'lucide-react'
 
 export const microAppIds = [
@@ -16,6 +18,8 @@ export const microAppIds = [
   'contacts',
   'files',
   'favorites',
+  'me',
+  'profile',
   'settings',
   'model-services',
 ] as const
@@ -72,12 +76,15 @@ export interface MicroAppDefinition {
   label: string
   icon: LucideIcon
   header: MicroAppHeaderMeta
-  ListPane: MicroAppListPane
+  /** Omitted for single-page apps (for example 个人资料): no list pane, no shell head. */
+  ListPane?: MicroAppListPane
   ContentPane: MicroAppContentPane
   LayoutConfigBridge?: MicroAppLayoutConfigBridge
   Provider?: ComponentType<PropsWithChildren>
   hidePrimaryRailOnCompact?: boolean
   hideContentHeaderOnCompact?: boolean
+  /** The page draws its own head (for example 个人资料 with its back button). */
+  hideContentHeader?: boolean
 }
 
 function lazyPane<T extends ComponentType<any>>(
@@ -110,11 +117,15 @@ const ContactListPane = lazyPane(() =>
 const ContactDetailPane = lazyPane(() =>
   import('@/modules/contacts/features/detail/ContactDetailPane').then((mod) => ({ default: mod.ContactDetailPane })),
 )
+// K7: groups | list | preview at desktop widths; the one-level flow when compact.
 const FavoriteListPane = lazyPane(() =>
-  import('@/modules/favorites/components/FavoriteListPane').then((mod) => ({ default: mod.FavoriteListPane })),
+  import('@/modules/favorites/features/shell/FavoriteThreePane').then((mod) => ({ default: mod.FavoriteGroupsPane })),
 )
 const FavoriteContentPane = lazyPane(() =>
-  import('@/modules/favorites/components/FavoriteContentPane').then((mod) => ({ default: mod.FavoriteContentPane })),
+  import('@/modules/favorites/features/shell/FavoriteThreePane').then((mod) => ({ default: mod.FavoriteItemsPane })),
+)
+const FavoritesLayoutConfigBridge = lazyBridge(() =>
+  import('@/modules/favorites/features/shell/FavoriteThreePane').then((mod) => ({ default: mod.FavoritesLayoutConfigBridge })),
 )
 const FilesListPane = lazyPane(() =>
   import('@/modules/files/features/tree/FilesTreePane').then((mod) => ({ default: mod.FilesTreePane })),
@@ -127,6 +138,12 @@ const ModelServicesListPane = lazyPane(() =>
 )
 const ModelServicesContentPane = lazyPane(() =>
   import('@/modules/model-services/features/detail/ModelServicesContentPane').then((mod) => ({ default: mod.ModelServicesContentPane })),
+)
+const MePane = lazyPane(() =>
+  import('./MePage').then((mod) => ({ default: mod.MePage })),
+)
+const ProfileEditorPane = lazyPane(() =>
+  import('@/modules/profile/ProfileEditorPage').then((mod) => ({ default: mod.ProfileEditorPage })),
 )
 const SettingsListPane = lazyPane(() =>
   import('@/modules/settings/features/list/SettingsListPane').then((mod) => ({ default: mod.SettingsListPane })),
@@ -216,6 +233,30 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     },
     ListPane: FavoriteListPane,
     ContentPane: FavoriteContentPane,
+    LayoutConfigBridge: FavoritesLayoutConfigBridge,
+  },
+  // R6: 我的 AI 这一轮不做；做事的方法改从聊天信息和联系人里用弹窗打开。
+  // 我: the narrow-window tab (收藏、设置 live inside it).
+  me: {
+    id: 'me',
+    label: '我',
+    icon: User,
+    header: {
+      moduleTitle: '我',
+      moduleSubtitle: '个人资料、收藏与设置',
+    },
+    ContentPane: MePane,
+  },
+  profile: {
+    id: 'profile',
+    label: '个人资料',
+    icon: UserRound,
+    header: {
+      moduleTitle: '个人资料',
+      moduleSubtitle: '别人在联系人里看到的你',
+    },
+    ContentPane: ProfileEditorPane,
+    hideContentHeader: true,
   },
   settings: {
     id: 'settings',
@@ -232,10 +273,10 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
   },
   'model-services': {
     id: 'model-services',
-    label: '模型服务',
+    label: '模型连接',
     icon: Bot, // Using Bot icon for AI Model Services
     header: {
-      moduleTitle: '模型服务',
+      moduleTitle: '模型连接',
       moduleSubtitle: '配置 AI 提供商及模型',
       itemTitle: '提供商详情',
       itemSubtitle: 'API Key & Model Management',

@@ -8,6 +8,7 @@ import {
 } from '../../collections'
 import { useChatStore } from '../../store'
 import type { ChatDraftScope } from '../../draft-store'
+import { pickSendThread } from '../../domain/chat-threads'
 import { chatThreadRefsMatch, readActiveBranchSelections } from '../../domain/thread-selection'
 import { useSecretaryDraft } from './useSecretaryDraft'
 
@@ -76,14 +77,15 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
     if (selectedThreadId && activeThread) return
     if (normalizedThreads.length > 0) {
       setCreationFailure(null)
-      selectThread(normalizedThreads[0]._id)
+      selectThread(pickSendThread(normalizedThreads)?._id ?? normalizedThreads[0]._id)
       return
     }
-    // The welcome bootstrap may still be settling, but an explicit user
-    // submission must be allowed to create the default thread immediately.
-    // Otherwise the composer appears enabled while the pending draft waits
-    // forever for a background bootstrap promise to settle.
-    if (isSecretary && isDefaultSecretarySettling && !draftController.activePendingDraft) return
+    // R5-A: the default thread is created eagerly, even while the welcome
+    // bootstrap is still settling, so the welcome shows on the same full
+    // conversation surface (tools, `/` menu, dialogs) instead of a simplified
+    // composer. This is safe because the secretary's thread has a fixed key:
+    // creating it again is a no-op, and the remote lookup below still adopts
+    // any thread that already exists.
     if (isCreatingThreadRef.current || mutations.createThread.isPending || lastAutoCreateChatRef.current === selectedChatId) return
 
     isCreatingThreadRef.current = true
@@ -103,7 +105,7 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
     void restoreBeforeCreate.then((restored) => {
       if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
       const restoredThreads = Array.isArray(restored) ? restored : []
-      const existing = restoredThreads.find((thread) => chatThreadRefsMatch(thread.id, selectedThreadId)) ?? restoredThreads[0]
+      const existing = restoredThreads.find((thread) => chatThreadRefsMatch(thread.id, selectedThreadId)) ?? pickSendThread(restoredThreads)
       if (existing?.id) {
         selectThread(existing.id)
         isCreatingThreadRef.current = false
@@ -126,16 +128,16 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
         },
         onError: (error) => {
           if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
-          setCreationFailure({ message: error instanceof Error ? error.message : '创建话题失败', scopeKey: creationScope, chatId: creationChatId })
+          setCreationFailure({ message: error instanceof Error ? error.message : '准备聊天失败', scopeKey: creationScope, chatId: creationChatId })
           isCreatingThreadRef.current = false
         },
       })
     }).catch((error) => {
       if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
-      setCreationFailure({ message: error instanceof Error ? error.message : '恢复话题失败', scopeKey: creationScope, chatId: creationChatId })
+      setCreationFailure({ message: error instanceof Error ? error.message : '恢复聊天失败', scopeKey: creationScope, chatId: creationChatId })
       isCreatingThreadRef.current = false
     })
-  }, [activeChat, activeThread, chatsQuery.error, chatsQuery.isLoading, creationRetryKey, draftController.activePendingDraft, isDefaultSecretarySettling, isReady, isSecretary, mutations.createThread, mutations.ensureThreadWorkspace, scopeKey, selectThread, selectedChatId, selectedThreadId, threads, threadsQuery.error, threadsQuery.isLoading])
+  }, [activeChat, activeThread, chatsQuery.error, chatsQuery.isLoading, creationRetryKey, draftController.activePendingDraft, isReady, isSecretary, mutations.createThread, mutations.ensureThreadWorkspace, scopeKey, selectThread, selectedChatId, selectedThreadId, threads, threadsQuery.error, threadsQuery.isLoading])
 
   return {
     selectedChatId,

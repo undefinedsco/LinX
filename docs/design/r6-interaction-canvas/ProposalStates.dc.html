@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI 改动的状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin:0 0 8px}
+.cap{font-size:12px;color:#655D53;margin:0 0 4px}
+.bar{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 12px;border-radius:8px;background:#F2EDE2;border:1px solid #DFDBD5;font-size:13px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.s{font-size:12px;color:#655D53}
+.dot{width:8px;height:8px;border-radius:50%;background:#B9A8D6;flex:none}
+table{border-collapse:collapse;width:100%;font-size:13px;background:#FBFAF7;border:1px solid #DFDBD5}
+th,td{border-bottom:1px solid #EAE5DC;border-right:1px solid #EAE5DC;padding:0 10px;height:36px;text-align:left;white-space:nowrap}
+th{font-size:12px;color:#655D53;font-weight:400}
+.cell-ai{position:relative}
+.cell-ai::after{content:"";position:absolute;right:4px;top:4px;width:6px;height:6px;border-radius:50%;background:#B9A8D6}
+.newcol{border:1.5px dashed #B9A8D6;background:#F6F2FA}
+.tip{display:inline-flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;background:#2B2621;color:#F7F4ED;font-size:12px}
+.tip a{color:#E0DBDE;font-weight:600}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-content: start">
+  <section>
+    <h2 class="lbl">文件顶上那一行</h2>
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <div><div class="cap">没交给 LinX 判断：先当未确认草稿</div><div class="bar"><span class="dot" aria-hidden="true"></span><span style="flex: 1">LinX 改了 3 处，还没确认</span><span class="btn">撤销</span><span class="btn primary">保留</span></div></div>
+      <div><div class="cap">交给 LinX 判断：直接保留</div><div class="bar"><span class="dot" aria-hidden="true"></span><span style="flex: 1">LinX 改了 3 处，已保留</span><span class="btn">撤销</span></div></div>
+      <div><div class="cap">你接着改了</div><div class="bar"><span style="flex: 1">你在改，LinX 的 3 处一起保留了</span></div></div>
+      <div><div class="cap">撤销之后</div><div class="bar"><span style="flex: 1">已回到原样（你 9月16日 的版本）</span><span class="btn">重新应用</span></div></div>
+      <div><div class="cap">你们改到同一处</div><div class="bar"><span style="flex: 1">有 1 处和你刚改的冲突，用了你的</span></div></div>
+      <div><div class="cap">只能看的文件（别人共享的）</div><div class="bar"><span style="flex: 1">这份是周禾的，LinX 把改好的另存了一份给你</span></div></div>
+    </div>
+    <div class="s" style="margin-top: 12px; line-height: 1.7">都不进收件箱，不弹窗逐处审批。交给 LinX 时直接保留的，会记在收件箱“LinX 替你做的”里，可以复查。</div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">表格：改格子、加行，直接写入</h2>
+      <table>
+        <thead><tr><th>名称</th><th>本月已排</th><th>能来的时段</th></tr></thead>
+        <tbody>
+          <tr><td>白露</td><td class="cell-ai">1</td><td>周六上午</td></tr>
+          <tr><td>陆川</td><td class="cell-ai">3</td><td>周日下午</td></tr>
+          <tr><td class="cell-ai">程远</td><td class="cell-ai">0</td><td class="cell-ai">周日上午</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top: 8px"><span class="tip">LinX 改的 · 原来是 2 · <a href="ProposalStates.dc.html">撤销</a></span></div>
+      <div class="s" style="margin-top: 8px">小紫点是 LinX 改的格子，悬停看原值、撤销；你看过之后小点会消失。</div>
+    </div>
+    <div>
+      <h2 class="lbl">表格：加列（表头）先当未确认</h2>
+      <table>
+        <thead><tr><th>名称</th><th>本月已排</th><th class="newcol" style="color: #2B2621">≡ 擅长 <span class="s">未确认</span></th></tr></thead>
+        <tbody>
+          <tr><td>周禾</td><td>2</td><td class="newcol">摄影</td></tr>
+          <tr><td>陈一</td><td>1</td><td class="newcol">签到</td></tr>
+        </tbody>
+      </table>
+      <div style="display: flex; gap: 8px; margin-top: 8px"><span class="btn">去掉这列</span><span class="btn primary">保留这列</span></div>
+      <div class="s" style="margin-top: 8px">虚线是 LinX 加的、还没确认的列；交给它判断时直接加成普通列。</div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">聊天里怎么出现</h2>
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid #DFDBD5; border-radius: 12px; background: #F7F4ED">
+        <div style="background: #FBFAF7; border: 1px solid #DFDBD5; border-radius: 8px; padding: 8px 12px; font-size: 13px">改好了：截止提前一天，加了提醒。</div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; background: #FBFAF7; border: 1px solid #DFDBD5; font-size: 13px"><span style="flex: 1"><strong style="font-weight: 600">报名方案.md</strong><br><span class="s">改了 3 处 · 还没确认</span></span><span class="btn">撤销</span><span class="btn primary">保留</span></div>
+      </div>
+      <div class="s" style="margin-top: 8px">不打开文件也能直接保留或撤销；点文件打开弹窗看改了哪里（K10）。</div>
+    </div>
+    <div>
+      <h2 class="lbl">一直没确认</h2>
+      <div class="bar"><span class="dot" aria-hidden="true"></span><span style="flex: 1">报名方案.md 有 LinX 的改动没确认（3 天前）</span></div>
+      <div class="s" style="margin-top: 8px">只在文件列表里留一个小紫点，不催、不过期；别人看到的还是原版本。</div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

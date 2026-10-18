@@ -1,6 +1,7 @@
 import { useRouterState } from '@tanstack/react-router'
 import { useLoginController } from './controller'
 import { LoginModal } from './LoginModal'
+import { AssistantNotReadyCard } from './AssistantNotReadyCard'
 import { useSession } from '@/providers/solid-session-provider'
 
 export function LoginOverlay() {
@@ -24,6 +25,8 @@ function LoginOverlayContent({ hidden = false }: { hidden?: boolean }) {
   }
 
   return (
+    <>
+    <AssistantNotReadyCard />
     <LoginModal
       view={controller.view}
       state={session.info.isLoggedIn || controller.state !== 'authenticated'
@@ -44,6 +47,7 @@ function LoginOverlayContent({ hidden = false }: { hidden?: boolean }) {
       onSwitchAccount={controller.switchAccount}
       onConnect={controller.connect}
       onCancelConnecting={controller.cancelConnecting}
+      onReopenAuthWindow={controller.reopenAuthWindow}
       onAddProvider={controller.addProvider}
       onClearError={controller.clearError}
       onDismissStorageConflict={controller.dismissStorageConflict}
@@ -54,5 +58,6 @@ function LoginOverlayContent({ hidden = false }: { hidden?: boolean }) {
       preferredSpace={controller.preferredSpace}
       onSelectSpace={controller.selectSpace}
     />
+    </>
   )
 }

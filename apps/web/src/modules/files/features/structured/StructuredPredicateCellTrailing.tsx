@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import type { StructuredPredicateCellChrome } from './structured-projection-cell-chrome'
 import {
   PendingCellWriteButton,
@@ -48,10 +50,12 @@ export function StructuredPredicateCellPendingWriteControl({
 }
 
 export function StructuredPredicateCellTrailing({
+  aiChangeDot,
   onDiscardPendingWrite,
   pendingWrite,
   shapeWarning,
 }: {
+  aiChangeDot?: ReactNode
   onDiscardPendingWrite?: () => void
   pendingWrite?: StructuredPredicateCellPendingWriteModel | null
   shapeWarning?: StructuredPredicateCellShapeWarningModel | null
@@ -63,6 +67,7 @@ export function StructuredPredicateCellTrailing({
         pendingWrite={pendingWrite}
         onDiscardPendingWrite={onDiscardPendingWrite}
       />
+      {aiChangeDot}
     </>
   )
 }

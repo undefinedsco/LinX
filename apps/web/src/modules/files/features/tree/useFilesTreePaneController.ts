@@ -3,174 +3,126 @@ import { useCallback, useMemo, useState } from 'react'
 import { useFilesStore } from '../../app/store'
 import {
   filesFavoriteHooks,
-  useContainerChildTreeNodes,
-  useFilesEntries,
   useFilesContainerEntries,
+  useFilesCurrentPodRootUri,
+  useFilesEntries,
   useFilesFavoriteList,
-  useFilesRootNodes,
   useFilesTreeSearchEntries,
   useSelectedFilesLocation,
+  useSharedWithMe,
 } from '../../data/queries'
-import {
-  type FilesEntry,
-  type FilesTreeNode,
-} from '../../domain/resource/resource-model'
 import { projectFilesAddContainerUri } from '../../domain/list/files-add-menu-model'
+import { normalizeContainerUri } from '../../domain/resource/resource-semantics'
+import { ALL_FILES_NODE_ID, type FilesEntry } from '../../domain/resource/resource-model'
 import {
   createContainerNodeId,
   createResourceNodeId,
-  pinFavoriteTreeNodesFirst,
-  projectFilesTreeChildrenState,
   projectFilesTreeChromeModel,
-  projectFilesTreeContentState,
-  projectFilesTreeFooterLabel,
-  projectFilesTreeNodeViewState,
   projectFilesTreeSearchResults,
 } from '../../domain/resource/tree-model'
-import { projectContainerEntriesToTreeNodes } from '../../data/pod-adapter'
+import { useFilesExplorerDataController } from '../list/useFilesExplorerDataController'
 
-export type FilesTreeNodeViewModel = {
-  isSelected: boolean
-  isExpanded: boolean
-  canExpand: boolean
-  isLoading?: boolean
-  toggleLabel: string
-  onSelect: () => void
-  onToggle: () => void
-  isFavorite: boolean
-  onToggleFavorite: (() => void) | null
-  onOpenSidecar: ((action: 'meta' | 'access') => void) | null
-}
-
-function useFilesTreeNodeState(options?: { rootLoading?: boolean }) {
-  const selectedTreeNodeId = useFilesStore((state) => state.selectedTreeNodeId)
-  const expandedTreeNodeIds = useFilesStore((state) => state.expandedTreeNodeIds)
-  const selectTreeNode = useFilesStore((state) => state.selectTreeNode)
-  const toggleTreeNode = useFilesStore((state) => state.toggleTreeNode)
-  const requestSidecarAction = useFilesStore((state) => state.requestSidecarAction)
-  const { data: favorites = [] } = useFilesFavoriteList({ sourceModule: 'files' })
-
-  const projectNode = useCallback((node: FilesTreeNode): FilesTreeNodeViewModel => {
-    const isFavorite = !!node.uri && favorites.some((favorite) => favorite.sourceId === node.uri)
-    return {
-      ...projectFilesTreeNodeViewState({
-      expandedTreeNodeIds,
-      node,
-      rootLoading: options?.rootLoading,
-      selectedTreeNodeId,
-      }),
-      isFavorite,
-      onSelect: () => selectTreeNode(
-        node.id,
-        node.type === 'local-workspace' ? null : node.uri ?? null,
-      ),
-      onToggle: () => toggleTreeNode(node.id),
-      onToggleFavorite: node.uri ? () => {
-        void filesFavoriteHooks.onStarredChange('files', node.uri!, !isFavorite, {
-          title: node.label,
-          searchText: node.label,
-          snapshotMeta: JSON.stringify({ fileId: node.uri, treeNodeId: node.id }),
-        })
-      } : null,
-      onOpenSidecar: node.uri ? (action) => {
-        selectTreeNode(node.id, node.uri ?? null)
-        requestSidecarAction({ uri: node.uri!, action })
-      } : null,
-    }
-  }, [expandedTreeNodeIds, favorites, options?.rootLoading, requestSidecarAction, selectTreeNode, selectedTreeNodeId, toggleTreeNode])
-
-  return {
-    expandedTreeNodeIds,
-    favorites,
-    projectNode,
-    selectedTreeNodeId,
-    selectTreeNode,
-    toggleTreeNode,
-  }
-}
-
+/**
+ * R6 K0 desktop tree: search + folder tree (我的空间 / 共享给我) that lists containers and
+ * data tables only. It reuses the explorer projection that compact `FilesListPane` uses;
+ * selecting a folder shows its table in the workspace.
+ */
 export function useFilesTreePaneController() {
-  const { data, isLoading, error } = useFilesRootNodes()
-  const entryScope = useFilesStore((state) => state.entryScope)
-  const nodeState = useFilesTreeNodeState({ rootLoading: isLoading })
-  const chatEntriesQuery = useFilesEntries(nodeState.selectedTreeNodeId, entryScope)
-  const isChatFilesScope = entryScope === 'chat-files'
-  const treeNodes = useMemo(() => {
-    if (!isChatFilesScope) return data?.nodes ?? []
-    return projectContainerEntriesToTreeNodes(
-      (chatEntriesQuery.data ?? []).filter((entry) => entry.kind !== 'container'),
-      'chat-files',
-      data?.podRootUri ?? null,
-    )
-  }, [chatEntriesQuery.data, data?.nodes, data?.podRootUri, isChatFilesScope])
-  const treeLoading = isChatFilesScope ? chatEntriesQuery.isLoading : isLoading
-  const treeError = isChatFilesScope ? chatEntriesQuery.error : error
-  const contentState = projectFilesTreeContentState({
-    error: treeError,
-    isLoading: treeLoading,
-    treeNodes,
+  const selectedTreeNodeId = useFilesStore((state) => state.selectedTreeNodeId)
+  const selectedFileId = useFilesStore((state) => state.selectedFileId)
+  const selectTreeNode = useFilesStore((state) => state.selectTreeNode)
+  const selectFile = useFilesStore((state) => state.selectFile)
+  const { data: favorites = [] } = useFilesFavoriteList({ sourceModule: 'files' })
+  const rootEntriesQuery = useFilesEntries(ALL_FILES_NODE_ID, 'all')
+  const rootEntries = useMemo(() => rootEntriesQuery.data ?? [], [rootEntriesQuery.data])
+  const sharedWithMe = useSharedWithMe()
+  const explorer = useFilesExplorerDataController({
+    entryScope: 'all',
+    rootEntries,
+    searchText: '',
+    groups: true,
+    treeOnly: true,
+    sharedWithMe,
   })
   const chrome = useMemo(() => projectFilesTreeChromeModel(), [])
-  const footerLabel = projectFilesTreeFooterLabel({
-    selectedTreeNodeId: nodeState.selectedTreeNodeId,
-    treeNodes,
-  })
 
   const [searchText, setSearchText] = useState('')
   const searchActive = searchText.trim().length > 0
   const searchEntriesQuery = useFilesTreeSearchEntries(searchActive)
   const searchResults = useMemo(() => projectFilesTreeSearchResults({
-    entries: isChatFilesScope ? chatEntriesQuery.data ?? [] : searchEntriesQuery.data ?? [],
+    entries: searchEntriesQuery.data ?? [],
     query: searchText,
-  }), [chatEntriesQuery.data, isChatFilesScope, searchEntriesQuery.data, searchText])
-  const openSearchResult = useCallback((entry: FilesEntry) => {
+  }), [searchEntriesQuery.data, searchText])
+
+  const selectEntry = useCallback((entry: FilesEntry) => {
     if (entry.kind === 'container') {
-      nodeState.selectTreeNode(createContainerNodeId(entry.uri), entry.uri)
+      selectTreeNode(createContainerNodeId(entry.uri), entry.uri)
       return
     }
-    nodeState.selectTreeNode(createResourceNodeId(entry.uri), entry.uri)
-  }, [nodeState])
+    selectFile(entry.uri)
+  }, [selectFile, selectTreeNode])
 
-  const selection = useSelectedFilesLocation(nodeState.selectedTreeNodeId)
-  const addContainerUri = useMemo(() => projectFilesAddContainerUri(selection), [selection])
+  /** Clicking a folder shows its table and opens it in the tree. */
+  const activateEntry = useCallback((entry: FilesEntry) => {
+    selectEntry(entry)
+    if (entry.kind === 'container' && !explorer.isExpanded(entry)) explorer.toggleFolder(entry.uri)
+  }, [explorer, selectEntry])
+
+  const openSearchResult = useCallback((entry: FilesEntry) => {
+    if (entry.kind === 'container') {
+      selectTreeNode(createContainerNodeId(entry.uri), entry.uri)
+      return
+    }
+    selectTreeNode(createResourceNodeId(entry.uri), entry.uri)
+  }, [selectTreeNode])
+
+  const isEntrySelected = useCallback((entry: FilesEntry) => {
+    if (!selectedFileId) return false
+    return entry.kind === 'container'
+      ? normalizeContainerUri(entry.uri) === normalizeContainerUri(selectedFileId)
+      : entry.uri === selectedFileId
+  }, [selectedFileId])
+
+  const isEntryFavorite = useCallback(
+    (entry: FilesEntry) => favorites.some((favorite) => favorite.sourceId === entry.uri),
+    [favorites],
+  )
+  const toggleEntryFavorite = useCallback((entry: FilesEntry) => {
+    void filesFavoriteHooks.onStarredChange('files', entry.uri, !isEntryFavorite(entry), {
+      title: entry.name,
+      searchText: entry.name,
+      snapshotMeta: JSON.stringify({ fileId: entry.uri, treeNodeId: createContainerNodeId(entry.uri) }),
+    })
+  }, [isEntryFavorite])
+
+  const selection = useSelectedFilesLocation(selectedTreeNodeId)
+  const podRootUri = useFilesCurrentPodRootUri()
+  // Nothing (or a non-folder view) selected: 添加 goes to the top of 我的空间 instead of being disabled.
+  const addContainerUri = useMemo(
+    () => projectFilesAddContainerUri(selection) ?? podRootUri,
+    [podRootUri, selection],
+  )
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const addEntriesQuery = useFilesContainerEntries(addContainerUri, addMenuOpen)
 
   return {
+    activateEntry,
     addContainerUri,
     addEntries: addEntriesQuery.data ?? [],
     addMenuOpen,
     chrome,
-    contentState,
-    footerLabel,
+    explorer,
+    isEntryFavorite,
+    isEntrySelected,
     onAddMenuOpenChange: setAddMenuOpen,
     onSearchTextChange: setSearchText,
     openSearchResult,
+    rootError: rootEntriesQuery.error,
+    rootLoading: rootEntriesQuery.isLoading,
     searchActive,
-    searchLoading: searchActive && (isChatFilesScope ? chatEntriesQuery.isLoading : searchEntriesQuery.isLoading),
+    searchLoading: searchActive && searchEntriesQuery.isLoading,
     searchResults,
     searchText,
-    selectedTreeNodeId: nodeState.selectedTreeNodeId,
-    selectTreeNode: nodeState.selectTreeNode,
-    treeNodes,
-    projectNode: nodeState.projectNode,
-  }
-}
-
-export function useFilesTreeChildrenController(parentNode: FilesTreeNode) {
-  const { data: childNodes = [], isLoading } = useContainerChildTreeNodes(parentNode)
-  const nodeState = useFilesTreeNodeState()
-  const sortedChildNodes = useMemo(() => pinFavoriteTreeNodesFirst(childNodes, nodeState.favorites), [childNodes, nodeState.favorites])
-  const childrenState = projectFilesTreeChildrenState({
-    childNodes: sortedChildNodes,
-    isLoading,
-  })
-  const chrome = useMemo(() => projectFilesTreeChromeModel(), [])
-
-  return {
-    childrenState,
-    childNodes: sortedChildNodes,
-    chrome,
-    projectNode: nodeState.projectNode,
+    toggleEntryFavorite,
   }
 }

@@ -86,11 +86,17 @@ export function useStructuredViewStateController({
     [kanbanOrder, storedKanbanBoard],
   )
   const kanbanBoard = useMemo(
-    () => projectStructuredReconciledKanbanBoard({
-      groupPredicate: kanbanGroupPredicate,
-      kanbanOrder,
-      projection,
-      saved: persistedKanbanBoard,
+    () => ({
+      ...projectStructuredReconciledKanbanBoard({
+        groupPredicate: kanbanGroupPredicate,
+        kanbanOrder,
+        projection,
+        saved: persistedKanbanBoard,
+        extraLanes: persistedKanbanBoard.extraLanes,
+      }),
+      laneLabels: persistedKanbanBoard.laneLabels,
+      extraLanes: persistedKanbanBoard.extraLanes,
+      cardFields: persistedKanbanBoard.cardFields,
     }),
     [kanbanGroupPredicate, kanbanOrder, persistedKanbanBoard, projection],
   )

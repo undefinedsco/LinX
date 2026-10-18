@@ -253,6 +253,10 @@ contextBridge.exposeInMainWorld('xpodDesktop', {
       ipcRenderer.invoke('app:getConfigWindowState'),
     getUpdateStatus: (force = false): Promise<AppUpdateStatus> =>
       ipcRenderer.invoke('app:getUpdateStatus', force),
+    getAutoLaunch: (): Promise<{ enabled: boolean }> =>
+      ipcRenderer.invoke('app:getAutoLaunch'),
+    setAutoLaunch: (enabled: boolean): Promise<{ enabled: boolean }> =>
+      ipcRenderer.invoke('app:setAutoLaunch', enabled),
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke('app:openExternal', url),
     openConfigWindow: (): Promise<{ success: boolean }> =>

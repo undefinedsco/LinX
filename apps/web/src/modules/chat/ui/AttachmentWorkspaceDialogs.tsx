@@ -38,6 +38,7 @@ export function AttachmentWorkspaceDialogs({
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>会话附件</DialogTitle><DialogDescription>附件保存在当前空间，可以预览、打开或下载。</DialogDescription></DialogHeader>
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+          {attachments.length === 0 && !error ? <p className="py-6 text-center text-sm text-muted-foreground">这段聊天还没有附件</p> : null}
           <div className="grid max-h-[60vh] grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2">
             {attachments.map((attachment) => (
               <div key={attachment.id} className="overflow-hidden rounded-xl border bg-muted/20">

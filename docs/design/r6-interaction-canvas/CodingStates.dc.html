@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>编程工具状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin:0 0 8px}
+.cap{font-size:12px;color:#655D53;margin:0 0 4px}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:16px;display:flex;flex-direction:column;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.v{color:#655D53;font-size:12px}
+.strip{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border-radius:8px;background:#F2EDE2;border:1px solid #DFDBD5;font-size:13px}
+.box{background:#F7F4ED;border:1px solid #DFDBD5;border-radius:10px;overflow:hidden}
+.opt{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px}
+.opt:last-child{border-bottom:0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.dl{display:block;padding:1px 8px;white-space:pre}
+.dl.add{background:#E0DBDE;font-weight:600}
+.dl.rm{background:#EFEAE4;color:#655D53;text-decoration:line-through}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-content: start">
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">开始前：选工具和文件夹（助手提议时弹出）</h2>
+      <div class="sheet" role="dialog" aria-label="让编程工具来做">
+        <div style="font-weight: 600">让编程工具来改？</div>
+        <div class="v">用哪个</div>
+        <div class="box">
+          <label class="opt"><input type="radio" name="tool" checked style="accent-color: #563E84"><span style="flex: 1">Claude Code</span><span class="v">已登录</span></label>
+          <label class="opt"><input type="radio" name="tool" style="accent-color: #563E84"><span style="flex: 1">Codex</span><span class="v">已登录</span></label>
+          <label class="opt" style="color: #655D53"><input type="radio" name="tool" disabled><span style="flex: 1">CodeBuddy</span><a href="CodingStates.dc.html" style="font-size: 12px">去安装</a></label>
+        </div>
+        <div class="v">在哪个文件夹</div>
+        <div class="box"><div class="opt"><span style="flex: 1">书店网站</span><span class="v mono">~/Sites/bookstore</span><span class="btn">更改…</span></div></div>
+        <div class="v">它只能改这个文件夹。要运行命令、联网或碰别的地方，会先问你；也可以交给 LinX 判断。</div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">开始</span></div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">做不了的时候（一句话 + 一个动作）</h2>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div class="strip"><span style="flex: 1">网页版不能改这台电脑上的文件</span><span class="btn primary">打开桌面版</span></div>
+        <div class="strip"><span style="flex: 1">Claude Code 还没登录</span><span class="btn primary">去登录</span></div>
+        <div class="strip"><span style="flex: 1">没有“书店网站”文件夹的权限</span><span class="btn primary">重新选择</span></div>
+        <div class="strip"><span style="flex: 1">Codex 正在改这个文件夹，等它结束再开始</span><span class="btn">排队</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="lbl">运行条（标题下一行）的各种状态</h2>
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <div><div class="cap">运行中</div><div class="strip"><strong style="font-weight: 600">Claude Code</strong><span style="flex: 1">正在改报名表单</span><span class="btn">暂停</span><span class="btn">停止</span></div></div>
+      <div><div class="cap">等你允许</div><div class="strip" style="border-color: #563E84"><strong style="font-weight: 600">Claude Code</strong><span style="flex: 1">等你允许：运行 npm test</span><span class="btn primary">去处理</span></div></div>
+      <div><div class="cap">已暂停（停在两步之间，不丢进度）</div><div class="strip"><strong style="font-weight: 600">Claude Code</strong><span style="flex: 1">已暂停</span><span class="btn primary">继续</span><span class="btn">停止</span></div></div>
+      <div><div class="cap">正在停止</div><div class="strip"><strong style="font-weight: 600">Claude Code</strong><span style="flex: 1">正在停止…已经改的文件会保留</span></div></div>
+      <div><div class="cap">已停止</div><div class="strip"><strong style="font-weight: 600">Claude Code</strong><span style="flex: 1">已停止 · 改了 2 个文件</span><span class="btn">查看改动</span><span class="btn">撤销这次的改动…</span></div></div>
+      <div><div class="cap">出错退出</div><div class="strip"><strong style="font-weight: 600">Claude Code</strong><span style="flex: 1">中途出错退出了</span><span class="btn primary">重试</span><span class="btn">复制日志</span></div></div>
+      <div><div class="cap">连接断了</div><div class="strip"><strong style="font-weight: 600">Claude Code</strong><span style="flex: 1">连接断了，正在确认结果…不会重复执行</span></div></div>
+      <div><div class="cap">完成</div><div class="strip"><strong style="font-weight: 600">Claude Code</strong><span style="flex: 1">完成 · 改了 3 个文件 · 测试通过</span><span class="btn primary">查看改动</span></div></div>
+      <div class="v">运行条只在有运行时出现；运行结束一段时间后收成会话里的一条记录。</div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">查看改动</h2>
+      <div class="sheet" role="dialog" aria-label="查看改动" style="padding: 0; gap: 0; overflow: hidden">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #DFDBD5"><span class="mono" style="font-weight: 600; flex: 1">form.js</span><span class="v">1 / 3</span></div>
+        <div class="mono" style="padding: 8px 0; font-size: 12px; line-height: 1.7">
+          <span class="dl">  const total = adults</span>
+          <span class="dl rm">  return total</span>
+          <span class="dl add">  const kids = Number(form.kids || 0)</span>
+          <span class="dl add">  return total + kids</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid #DFDBD5"><span class="btn">撤销这个文件</span><span class="btn primary">下一个</span></div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">撤销这次的改动</h2>
+      <div class="sheet" role="alertdialog" style="text-align: center">
+        <div style="font-weight: 600">撤销这次改的 2 个文件？</div>
+        <div class="v" style="font-size: 13px">回到这次运行开始前的样子。你后来自己改过的地方会先给你看，不会直接覆盖。</div>
+        <div style="display: flex; gap: 8px"><span class="btn" style="flex: 1">取消</span><span class="btn" style="flex: 1; border-color: #2B2621; font-weight: 600">撤销</span></div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">用量（右边栏点开）</h2>
+      <div class="box">
+        <div class="opt"><span style="flex: 1">已经运行</span><span class="v">12 分钟</span></div>
+        <div class="opt"><span style="flex: 1">模型用量</span><span class="v">约 4.2 万 tokens</span></div>
+        <div class="opt"><span style="flex: 1">按谁的账号计</span><span class="v">你的 Claude Code 账号</span></div>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

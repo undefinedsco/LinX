@@ -1,52 +1,48 @@
+import type { ReactNode } from 'react'
 import type { FavoriteRow } from '@undefineds.co/models'
-import {
-  Star,
-  ExternalLink,
-  Trash2,
-  Calendar,
-  User,
-  FileText,
-  MessageSquare,
-  Users,
-  FolderOpen,
-  Mail,
-  GitBranch,
-} from 'lucide-react'
+import { Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  canOpenFavoriteSource,
+  canShowFavoriteSnapshot,
+  type FavoriteSourceStatus,
+} from '../domain/source-status'
+import { favoriteGroupOf } from '../domain/groups'
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
-const SOURCE_META: Record<string, { label: string; icon: typeof Star }> = {
-  chat: { label: '聊天', icon: MessageSquare },
-  contacts: { label: '联系人', icon: Users },
-  files: { label: '文件', icon: FolderOpen },
-  messages: { label: '消息', icon: Mail },
-  thread: { label: '话题', icon: GitBranch },
+const SOURCE_COPY: Record<string, { label: string; noun: string; open: string }> = {
+  chat: { label: '会话', noun: '会话', open: '在会话中查看' },
+  thread: { label: '聊天', noun: '聊天', open: '在会话中查看' },
+  messages: { label: '消息', noun: '消息', open: '在会话中查看' },
+  files: { label: '文件', noun: '文件', open: '打开文件' },
+  contacts: { label: '联系人', noun: '联系人', open: '查看联系人' },
+}
+const FALLBACK_COPY = { label: '收藏', noun: '内容', open: '打开原处' }
+
+function chatTitleOf(favorite: FavoriteRow): string | null {
+  if (!favorite.snapshotMeta) return null
+  try {
+    const parsed = JSON.parse(favorite.snapshotMeta) as { chatTitle?: unknown }
+    return typeof parsed?.chatTitle === 'string' && parsed.chatTitle ? parsed.chatTitle : null
+  } catch {
+    return null
+  }
 }
 
-function formatDate(value: unknown): string {
-  if (!value) return '未知'
+function formatDate(value: unknown): string | null {
+  if (!value) return null
   const d = value instanceof Date ? value : new Date(value as string)
-  if (Number.isNaN(d.getTime())) return '未知'
+  if (Number.isNaN(d.getTime())) return null
   return d.toLocaleString('zh-CN', {
-    year: 'numeric',
     month: 'long',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-function parseSnapshotMeta(raw?: string | null): Record<string, string> | null {
-  if (!raw) return null
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return null
-  }
 }
 
 // ============================================================================
@@ -68,98 +64,87 @@ export function EmptyState() {
 
 export function FavoriteDetail({
   favorite,
+  sourceStatus = 'unknown',
   onRemove,
   onOpenSource,
 }: {
   favorite: FavoriteRow
+  sourceStatus?: FavoriteSourceStatus
   onRemove: () => void
   onOpenSource: () => void
 }) {
-  const meta = parseSnapshotMeta(favorite.snapshotMeta)
-  const sourceMeta = SOURCE_META[favorite.sourceModule ?? '']
-  const SourceIcon = sourceMeta?.icon ?? FileText
+  const copy = favoriteGroupOf(favorite) === 'cards'
+    ? { label: '卡片', noun: '卡片', open: '查看卡片' }
+    : SOURCE_COPY[favorite.sourceModule ?? ''] ?? FALLBACK_COPY
+  const savedAt = formatDate(favorite.favoredAt)
+  const byline = [copy.label, favorite.snapshotAuthor, savedAt].filter(Boolean).join(' · ')
+  const chatTitle = chatTitleOf(favorite)
+  const showSnapshot = canShowFavoriteSnapshot(sourceStatus) && Boolean(favorite.snapshotContent)
+
+  if (sourceStatus === 'deleted') {
+    return (
+      <StateNotice
+        title={`原${copy.noun}已被删除`}
+        detail={[chatTitle ? `来自 ${chatTitle}` : null, savedAt].filter(Boolean).join(' · ') || undefined}
+        action={<Button variant="outline" size="sm" onClick={onRemove}>移除这条收藏</Button>}
+      />
+    )
+  }
+
+  if (sourceStatus === 'forbidden') {
+    return (
+      <StateNotice
+        title="没有权限了"
+        detail={`${chatTitle ? `你已不在“${chatTitle}”里，` : ''}内容不再显示。重新获得权限后会恢复`}
+        action={<Button variant="outline" size="sm" onClick={onRemove}>取消收藏</Button>}
+      />
+    )
+  }
 
   return (
     <ScrollArea className="h-full">
-      <div className="p-6 max-w-2xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-start gap-4">
-          <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-lg bg-primary/10 text-primary">
-            <SourceIcon strokeWidth={1.5} className="w-6 h-6" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-semibold text-foreground leading-tight">
-              {favorite.title}
-            </h2>
-            {sourceMeta && (
-              <span className="inline-flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                <SourceIcon strokeWidth={1.5} className="w-3 h-3" />
-                {sourceMeta.label}
-              </span>
-            )}
-          </div>
+      <div className="p-6 max-w-2xl mx-auto space-y-5">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground leading-tight">{favorite.title}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">{byline}</p>
         </div>
 
-        {/* Snapshot Content */}
-        {favorite.snapshotContent && (
-          <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
-            <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">
+        {sourceStatus === 'checking' ? (
+          <div aria-label="正在确认原内容" className="h-16 rounded-lg bg-muted/60 animate-pulse" />
+        ) : showSnapshot ? (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
               {favorite.snapshotContent}
             </p>
           </div>
-        )}
+        ) : null}
 
-        {/* Meta Info */}
-        <div className="space-y-3">
-          {favorite.snapshotAuthor && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <User strokeWidth={1.5} className="w-4 h-4 shrink-0" />
-              <span>{favorite.snapshotAuthor}</span>
-            </div>
-          )}
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Calendar strokeWidth={1.5} className="w-4 h-4 shrink-0" />
-            <span>收藏于 {formatDate(favorite.favoredAt)}</span>
-          </div>
-          {favorite.updatedAt && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Calendar strokeWidth={1.5} className="w-4 h-4 shrink-0" />
-              <span>更新于 {formatDate(favorite.updatedAt)}</span>
-            </div>
-          )}
-        </div>
+        {sourceStatus === 'offline' || sourceStatus === 'unreachable' ? (
+          <p className="text-xs text-muted-foreground">
+            {sourceStatus === 'offline' ? '没有网络' : '暂时读不到原处'}：显示的是上次看到的内容，暂时不能跳回原处
+          </p>
+        ) : null}
 
-        {/* Snapshot Meta Tags */}
-        {meta && Object.keys(meta).length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(meta).map(([key, val]) => (
-              <span
-                key={key}
-                className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-xs text-muted-foreground"
-              >
-                {key}: {val}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-3 pt-2">
-          <Button variant="outline" size="sm" onClick={onOpenSource}>
-            <ExternalLink strokeWidth={1.5} className="w-4 h-4 mr-1.5" />
-            打开原对象
+        <div className="flex items-center gap-3">
+          <Button size="sm" onClick={onOpenSource} disabled={!canOpenFavoriteSource(sourceStatus)}>
+            {copy.open}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
-            onClick={onRemove}
-          >
-            <Trash2 strokeWidth={1.5} className="w-4 h-4 mr-1.5" />
+          <Button variant="outline" size="sm" onClick={onRemove}>
             取消收藏
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground">取消收藏不会删除原{copy.noun}</p>
       </div>
     </ScrollArea>
+  )
+}
+
+function StateNotice({ title, detail, action }: { title: string; detail?: string; action: ReactNode }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      {detail ? <p className="text-xs text-muted-foreground">{detail}</p> : null}
+      <div className="mt-2">{action}</div>
+    </div>
   )
 }

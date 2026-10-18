@@ -3,7 +3,7 @@ import { contactOps } from '../../data/collections'
 import type { UnifiedContact } from '../../domain/types'
 import type { ContactDetailNotifier } from './controller-types'
 
-export type ContactDetailEditMode = 'none' | 'prompt' | 'tools' | 'alias' | 'delete'
+export type ContactDetailEditMode = 'none' | 'alias' | 'delete' | 'condition' | 'shares' | 'grants'
 
 interface ContactProfileActionsControllerOptions {
   contact: UnifiedContact | null
@@ -23,37 +23,17 @@ export function useContactProfileActionsController({
   const openEditor = useCallback((mode: ContactDetailEditMode) => setEditMode(mode), [])
 
   const handleVoiceCall = useCallback(() => {
-    notify.info('语音通话功能即将上线')
+    notify.info('暂时不能打')
   }, [notify])
 
   const handleVideoCall = useCallback(() => {
-    notify.info('视频通话功能即将上线')
+    notify.info('暂时不能打')
   }, [notify])
 
-  const handleCopyId = useCallback((id: string) => {
-    navigator.clipboard.writeText(id)
-    notify.success('已复制到剪贴板')
+  const handleCopyAddress = useCallback((webId: string) => {
+    void navigator.clipboard?.writeText(webId)
+    notify.success('已复制')
   }, [notify])
-
-  const handleToggleStar = useCallback(async () => {
-    if (!contact || !selectedId) return
-    try {
-      await contactOps.toggleStar(selectedId, !!contact.starred)
-      notify.success(contact.starred ? '已取消星标' : '已添加星标')
-    } catch {
-      notify.error('操作失败')
-    }
-  }, [contact, notify, selectedId])
-
-  const handleTogglePublic = useCallback(async (checked: boolean) => {
-    if (!contact || !selectedId) return
-    try {
-      await contactOps.updateContact(selectedId, { isPublic: checked })
-      notify.success(checked ? '已公开到个人资料' : '已设为私密')
-    } catch {
-      notify.error('操作失败')
-    }
-  }, [contact, notify, selectedId])
 
   const handleOpenAliasEdit = useCallback(() => {
     setEditingAlias(contact?.alias || '')
@@ -74,12 +54,6 @@ export function useContactProfileActionsController({
     }
   }, [closeEditor, contact, editingAlias, notify, selectedId])
 
-  const handleShare = useCallback(() => {
-    if (!contact) return
-    navigator.clipboard.writeText(contact.about || `linx://contact/${contact.id}`)
-    notify.success('联系人链接已复制')
-  }, [contact, notify])
-
   return {
     editMode,
     openEditor,
@@ -89,11 +63,8 @@ export function useContactProfileActionsController({
     isSavingProfile,
     handleVoiceCall,
     handleVideoCall,
-    handleCopyId,
-    handleToggleStar,
-    handleTogglePublic,
+    handleCopyAddress,
     handleOpenAliasEdit,
     handleSaveAlias,
-    handleShare,
   }
 }

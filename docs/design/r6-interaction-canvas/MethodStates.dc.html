@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方法状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:16px;display:flex;flex-direction:column;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.s{font-size:12px;color:#655D53}
+.del{background:#E4DDDA;text-decoration:line-through;color:#655D53;padding:0 2px}
+.ins{background:#E0DBDE;font-weight:600;padding:0 2px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #DFDBD5;border-radius:8px;font-size:13px}
+.bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;background:#FBFAF7;border:1px solid #DFDBD5;font-size:13px}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px">
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <div class="lbl">保存：先看改了什么、影响哪里</div>
+    <div class="sheet" role="dialog" aria-labelledby="ms-t">
+      <div id="ms-t" style="font-weight: 600">保存“书店日常”为 v5？</div>
+      <div style="font-size: 13px">花钱超过 <span class="del">500</span> <span class="ins">300</span> 元先问我</div>
+      <div class="s">5 项工作以后都按 v5。正在运行的“每周排班提醒”这一次仍按 v4。</div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">保存</span></div>
+    </div>
+    <div class="lbl" style="margin-top: 8px">没保存成功</div>
+    <div class="bar"><span style="flex: 1">没保存成功，改动还在</span><span class="btn primary">重试</span></div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <div class="lbl">在某项工作里改方法：先问改哪里</div>
+    <div class="sheet" role="dialog" aria-labelledby="mw-t">
+      <div id="mw-t" style="font-weight: 600">这个改动用在哪里？</div>
+      <label class="opt" style="box-shadow: inset 0 0 0 1px #563E84; background: #E9E4E4"><input type="radio" name="w" checked style="accent-color: #563E84; margin-top: 3px"><span><span style="font-weight: 500">只用于“志愿者排班方案”</span><br><span class="s">默认方法不变</span></span></label>
+      <label class="opt"><input type="radio" name="w" style="accent-color: #563E84; margin-top: 3px"><span><span style="font-weight: 500">改默认方法</span><br><span class="s">影响 5 项工作</span></span></label>
+      <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">继续</span></div>
+    </div>
+    <div class="lbl" style="margin-top: 8px">工作里的调整</div>
+    <div class="bar"><span style="flex: 1">志愿者排班方案：在默认方法上调整了 1 处</span><span class="btn">恢复成默认</span></div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <div class="lbl">默认方法和工作调整撞到同一处</div>
+    <div class="sheet">
+      <div style="font-weight: 600">“花钱上限”两边都改了</div>
+      <div class="s">默认方法：300 元 · 志愿者排班方案：1000 元</div>
+      <div style="display: flex; gap: 8px"><span class="btn" style="flex: 1">用这项工作的</span><span class="btn" style="flex: 1">用默认的</span></div>
+    </div>
+    <div class="lbl" style="margin-top: 8px">原来的三处“系统提示词”</div>
+    <div class="s">聊天头部、右栏、联系人详情里的“系统提示词”合并到这里。旧内容放进方法的“补充说明”，不会丢。</div>
+    <div class="lbl" style="margin-top: 8px">撤回不扩大权限</div>
+    <div class="s">关掉“发邮件”能力立即生效；打开它也不代表以后不问你。</div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

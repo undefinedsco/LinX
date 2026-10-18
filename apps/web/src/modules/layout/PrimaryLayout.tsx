@@ -1,11 +1,8 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import linxLogoUrl from '@/assets/linx-logo.png'
-import { Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { PanelRightClose, PanelRightOpen } from 'lucide-react'
 import {
   microAppRegistry,
   MicroAppId,
@@ -17,27 +14,28 @@ import { linxLayout } from '@/theme/spacing'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { useDefaultLayout } from 'react-resizable-panels'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { SelfProfileCard } from '@/modules/profile/SelfProfileCard'
-import { InboxBellButton } from '@/modules/inbox/components/InboxBellButton'
+import { SelfAvatar } from '@/modules/profile/SelfAvatar'
+import { useSpaceStatus } from '@/modules/profile/useSpaceStatus'
+import { useSettingsStore, type SettingsSectionId } from '@/modules/settings/store'
+import { InboxRailButton } from '@/modules/inbox/components/InboxRailButton'
 import { ServiceManagementDialog } from '@/modules/settings/features/service/ServiceManagementDialog'
-import { requestSignOut } from '@/modules/login/login-utils'
+import { AgentMethodDialogHost } from '@/modules/my-ai/features/AgentMethodDialog'
+import { requestSignOut, requestSwitchAccount } from '@/modules/login/login-utils'
 import { useSession } from '@/providers/solid-session-provider'
-import { AboutDialog } from './AboutDialog'
+import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useAppUpdateStatus } from './use-app-update-status'
 import { useThemeMode } from './use-theme-mode'
 import { OPEN_SERVICE_MANAGEMENT_EVENT } from '@/modules/settings/app/events'
-import { useLoginStore, type StoredAccount } from '@linx/stores/login'
 import { SettingsMenu } from './SettingsMenu'
+import { SignOutDialog } from './SignOutDialog'
+import { CompactTabBar } from './CompactTabBar'
+import { railNavButtonClassName } from './rail-style'
+import { useShellStore } from './shell-store'
 
 interface PrimaryLayoutProps {
   microAppId: MicroAppId
@@ -49,71 +47,48 @@ export function getMainPanelDefaultSize(isCompactViewport: boolean): '100%' | '8
 }
 
 /**
- * First releasable desktop slice:
- * keep visible navigation limited to stable day-one modules.
- * Experimental surfaces stay routeable for internal work, but are hidden from
- * the main sidebar until they reach a releasable quality bar.
+ * S0 rail: 聊天 / 联系人 / 文件 / 收藏 above, 收件箱 / 设置 below, icons only.
+ * 我的 AI is out of this round; working methods open in a dialog instead.
  */
 const primaryNavIds: MicroAppId[] = ['chat', 'contacts', 'files', 'favorites']
-const secondaryNavIds: MicroAppId[] = []
 
 function PaneFallback() {
   return <div className="h-full w-full animate-pulse bg-muted/10" />
 }
 
-// Preserve the desktop two-pane workflow in narrow side-by-side windows.
-const compactViewportQuery = '(max-width: 559px)'
+/**
+ * Width tiers (S5–S5d). Below 700 the window shows one level at a time with a
+ * bottom bar; below 1280 the right pane floats over the content; at tablet
+ * widths the left pane narrows to 240 so the content keeps ~460.
+ */
+export const compactViewportQuery = '(max-width: 699px)'
+export const narrowListViewportQuery = '(max-width: 1023px)'
+export const wideViewportQuery = '(min-width: 1280px)'
+export const NARROW_LIST_PANEL_WIDTH = 240
 
-function resolveSpaceStatus(account: StoredAccount | null): {
-  shortLabel: '本机' | '独立' | '云端'
-  fullLabel: '本机空间' | '独立空间' | '云端空间'
-} {
-  const label = account?.storageProviderLabel?.trim().toLowerCase()
-    ?? account?.issuerLabel?.trim().toLowerCase()
-  if (label === 'local') {
-    return { shortLabel: '本机', fullLabel: '本机空间' }
-  }
-  if (label === 'standalone') {
-    return { shortLabel: '独立', fullLabel: '独立空间' }
-  }
-
-  const providerUrl = account?.storageProviderUrl ?? account?.issuerUrl
-  try {
-    const hostname = providerUrl ? new URL(providerUrl).hostname : ''
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-      return { shortLabel: '独立', fullLabel: '独立空间' }
-    }
-  } catch {
-    // Invalid historical URLs are treated as cloud only for presentation; the
-    // login schema reconciliation removes them before account restoration.
-  }
-
-  return { shortLabel: '云端', fullLabel: '云端空间' }
-}
-
-function readCompactViewport() {
+function readMediaQuery(query: string, fallback: boolean) {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false
+    return fallback
   }
-  return window.matchMedia(compactViewportQuery).matches
+  return window.matchMedia(query).matches
 }
 
-function useCompactViewport() {
-  const [isCompactViewport, setIsCompactViewport] = useState(readCompactViewport)
+function useMediaQuery(query: string, fallback = false) {
+  const [matches, setMatches] = useState(() => readMediaQuery(query, fallback))
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
       return undefined
     }
 
-    const query = window.matchMedia(compactViewportQuery)
-    const updateViewport = () => setIsCompactViewport(query.matches)
-    updateViewport()
-    query.addEventListener('change', updateViewport)
-    return () => query.removeEventListener('change', updateViewport)
-  }, [])
+    const media = window.matchMedia(query)
+    const update = () => setMatches(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [query])
 
-  return isCompactViewport
+  return matches
 }
 
 // Inner component that is safe to use varying hooks because it's keyed
@@ -121,13 +96,17 @@ function MicroAppContentRenderer({
   microAppId,
   theme,
   isCompactViewport,
-  compactNavigation,
+  isNarrowList,
+  isWideViewport,
+  compactHeadActions,
   listPanelHidden = false,
 }: {
   microAppId: MicroAppId
   theme: ThemeMode
   isCompactViewport: boolean
-  compactNavigation?: React.ReactNode
+  isNarrowList: boolean
+  isWideViewport: boolean
+  compactHeadActions?: ReactNode
   listPanelHidden?: boolean
 }) {
   const activeMicroApp = microAppRegistry[microAppId]
@@ -146,15 +125,38 @@ function MicroAppContentRenderer({
     [],
   )
 
+  const showListPane = Boolean(ListPane) && !isCompactViewport && !listPanelHidden
   const rightSidebarWidth = layoutConfig?.rightSidebar ? layoutConfig.rightSidebarWidth ?? 320 : 0
-  const listPanelWidth = layoutConfig?.listPanel?.defaultWidth ?? linxLayout.listPanel.defaultWidth
-  const listPanelMinWidth = layoutConfig?.listPanel?.minWidth ?? linxLayout.listPanel.minWidth
-  const listPanelMaxWidth = layoutConfig?.listPanel?.maxWidth ?? linxLayout.listPanel.maxWidth
-  const panelIds = isCompactViewport ? ['main'] : ['list', 'main']
+  const configuredListMaxWidth = layoutConfig?.listPanel?.maxWidth ?? linxLayout.listPanel.maxWidth
+  const listPanelMaxWidth = isNarrowList ? Math.min(configuredListMaxWidth, NARROW_LIST_PANEL_WIDTH) : configuredListMaxWidth
+  const listPanelWidth = Math.min(layoutConfig?.listPanel?.defaultWidth ?? linxLayout.listPanel.defaultWidth, listPanelMaxWidth)
+  // S5d: at medium widths the left pane is a fixed 240 so its header controls fit.
+  const listPanelMinWidth = isNarrowList
+    ? listPanelMaxWidth
+    : Math.min(layoutConfig?.listPanel?.minWidth ?? linxLayout.listPanel.minWidth, listPanelMaxWidth)
+  const tier = isCompactViewport ? 'compact' : isNarrowList ? 'medium' : 'desktop'
+  const panelIds = showListPane ? ['list', 'main'] : ['main']
   const persistedLayout = useDefaultLayout({
-    id: `linx-primary-layout-${microAppId}-${isCompactViewport ? 'compact' : 'desktop'}`,
+    id: `linx-primary-layout-${microAppId}-${tier}`,
     panelIds,
   })
+  const hideHeader = Boolean(layoutConfig?.hideHeader)
+    || Boolean(activeMicroApp.hideContentHeader)
+    || (isCompactViewport && Boolean(activeMicroApp.hideContentHeaderOnCompact))
+  const rightSidebarToggle = layoutConfig?.rightSidebarToggle
+  // Below 1280 the open right pane floats over the content: Esc or a click
+  // outside closes it.
+  const rightSidebarFloating = Boolean(layoutConfig?.rightSidebar) && !isWideViewport
+  const closeFloatingSidebar = rightSidebarFloating && rightSidebarToggle?.open ? rightSidebarToggle.onToggle : undefined
+
+  useEffect(() => {
+    if (!closeFloatingSidebar) return undefined
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) closeFloatingSidebar()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [closeFloatingSidebar])
 
   const content = (
     <>
@@ -170,7 +172,7 @@ function MicroAppContentRenderer({
         onLayoutChanged={persistedLayout.onLayoutChanged}
         className="h-full w-full"
       >
-        {!isCompactViewport && !listPanelHidden ? (
+        {showListPane && ListPane ? (
           <>
             <ResizablePanel
               id="list"
@@ -204,9 +206,9 @@ function MicroAppContentRenderer({
         ) : null}
 
         <ResizablePanel id="main" defaultSize={getMainPanelDefaultSize(isCompactViewport)} className="min-w-0 overflow-hidden">
-          <section className="h-full flex bg-layout-content">
+          <section className="relative h-full flex bg-layout-content">
             <div className="flex-1 flex flex-col min-h-0">
-              {!layoutConfig?.hideHeader && !(isCompactViewport && activeMicroApp.hideContentHeaderOnCompact) && (
+              {!hideHeader && (
                 <div data-testid="micro-app-content-head" className="h-12 flex items-center border-b border-border bg-layout-content">
                   <div className="flex h-full min-w-0 flex-1 items-center">
                     {layoutConfig?.header ? layoutConfig.header : (
@@ -219,37 +221,51 @@ function MicroAppContentRenderer({
                   </div>
                   <div className="flex h-full shrink-0 items-center gap-1 px-4">
                     {layoutConfig?.topActions}
-                    {layoutConfig?.rightSidebarToggle ? (
+                    {isCompactViewport ? compactHeadActions : null}
+                    {rightSidebarToggle ? (
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        aria-label={`${layoutConfig.rightSidebarToggle.open ? '收起' : '展开'}${layoutConfig.rightSidebarToggle.label ?? '右侧面板'}`}
-                        title={`${layoutConfig.rightSidebarToggle.open ? '收起' : '展开'}${layoutConfig.rightSidebarToggle.label ?? '右侧面板'}`}
-                        aria-expanded={layoutConfig.rightSidebarToggle.open}
-                        onClick={layoutConfig.rightSidebarToggle.onToggle}
+                        aria-label={`${rightSidebarToggle.open ? '收起' : '展开'}${rightSidebarToggle.label ?? '右侧面板'}`}
+                        title={`${rightSidebarToggle.open ? '收起' : '展开'}${rightSidebarToggle.label ?? '右侧面板'}`}
+                        aria-expanded={rightSidebarToggle.open}
+                        onClick={rightSidebarToggle.onToggle}
                       >
-                        {layoutConfig.rightSidebarToggle.open ? (
+                        {rightSidebarToggle.open ? (
                           <PanelRightClose className="w-4 h-4" />
                         ) : (
                           <PanelRightOpen className="w-4 h-4" />
                         )}
                       </Button>
                     ) : null}
-                    <InboxBellButton />
                   </div>
                 </div>
               )}
               <div className="flex-1 min-h-0 flex flex-col">
                 <Suspense fallback={<PaneFallback />}>
-                  <ContentPane theme={theme} compact={isCompactViewport} compactNavigation={compactNavigation} />
+                  <ContentPane theme={theme} compact={isCompactViewport} />
                 </Suspense>
               </div>
             </div>
+            {closeFloatingSidebar ? (
+              <button
+                type="button"
+                aria-label={`关闭${rightSidebarToggle?.label ?? '右侧面板'}`}
+                tabIndex={-1}
+                data-testid="micro-app-right-sidebar-backdrop"
+                className="absolute inset-0 z-10 cursor-default bg-transparent"
+                onClick={closeFloatingSidebar}
+              />
+            ) : null}
             {layoutConfig?.rightSidebar && (
+              // Wide windows dock the right sidebar; narrower ones float it over
+              // the content so its toggle always does something visible.
               <aside
-                className="hidden xl:flex flex-col border-l border-border/50 bg-card/40"
-                style={{ width: rightSidebarWidth, minWidth: rightSidebarWidth }}
+                data-testid="micro-app-right-sidebar"
+                data-floating={rightSidebarFloating ? 'true' : undefined}
+                className="absolute inset-y-0 right-0 z-20 flex max-w-full flex-col border-l border-border/50 bg-card shadow-xl xl:static xl:z-auto xl:bg-card/40 xl:shadow-none"
+                style={{ width: rightSidebarWidth, minWidth: Math.min(rightSidebarWidth, 280) }}
               >
                 <Suspense fallback={<PaneFallback />}>
                   {layoutConfig.rightSidebar}
@@ -272,11 +288,14 @@ function MicroAppContentRenderer({
 export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   const navigate = useNavigate()
   const { session, sessionRequestInProgress } = useSession()
-  const storedAccount = useLoginStore((state) => state.storedAccount)
-  const [theme, toggleTheme] = useThemeMode()
-  const isCompactViewport = useCompactViewport()
+  const { scopeKey: databaseScopeKey } = useSolidDatabase()
+  const isSignOutOpen = useShellStore((state) => state.signOutOpen)
+  const setIsSignOutOpen = useShellStore((state) => state.setSignOutOpen)
+  const [theme] = useThemeMode()
+  const isCompactViewport = useMediaQuery(compactViewportQuery)
+  const isNarrowList = useMediaQuery(narrowListViewportQuery)
+  const isWideViewport = useMediaQuery(wideViewportQuery, true)
   const [isServiceMgmtOpen, setIsServiceMgmtOpen] = useState(false)
-  const [isAboutOpen, setIsAboutOpen] = useState(false)
   const [listPanelHidden, setListPanelHidden] = useState(false)
   useEffect(() => {
     setListPanelHidden(false)
@@ -285,16 +304,23 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   const isWorkspaceReady = session.info.isLoggedIn && !sessionRequestInProgress
 
   const primaryApps = useMemo(() => primaryNavIds.map((id) => microAppRegistry[id]), [])
-  const secondaryApps = useMemo(() => secondaryNavIds.map((id) => microAppRegistry[id]), [])
-  const aboutLabel = appUpdate.status.available ? '关于（有更新）' : '关于'
-  const spaceStatus = resolveSpaceStatus(storedAccount)
+  const space = useSpaceStatus()
+  const spaceLabel = `${space.spaceLabel}空间`
+  // The rail only speaks up when something needs attention; a healthy space
+  // shows no badge and no "connected" claim.
+  const spaceAttention = space.attention
+  const profileTriggerLabel = spaceAttention
+    ? `个人资料，${spaceLabel}，${spaceAttention.message}`
+    : `个人资料，${spaceLabel}`
+  const selectSettingsSection = useSettingsStore((state) => state.selectSection)
+  const [isProfileCardOpen, setIsProfileCardOpen] = useState(false)
 
   const handleSignOut = useCallback(() => {
-    requestSignOut()
-  }, [])
+    setIsSignOutOpen(true)
+  }, [setIsSignOutOpen])
 
   const handleNavigate = (id: MicroAppId) => {
-    if (id === microAppId && !isCompactViewport) {
+    if (id === microAppId && !isCompactViewport && microAppRegistry[id].ListPane) {
       setListPanelHidden((current) => !current)
       return
     }
@@ -302,39 +328,14 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
     navigate({ to: '/$microAppId', params: { microAppId: id } })
   }
 
+  const openSettings = (section: SettingsSectionId) => {
+    selectSettingsSection(section)
+    if (microAppId === 'settings') return
+    onNavigate?.('settings', 'default')
+    navigate({ to: '/$microAppId', params: { microAppId: 'settings' } })
+  }
+
   const sidebarWidth = linxLayout.sidebar.defaultWidth // This is the leftmost App Nav width
-  const hidePrimaryRail = Boolean(microAppRegistry[microAppId].hidePrimaryRailOnCompact && isCompactViewport)
-  const compactNavigation = isCompactViewport ? (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          aria-label="切换模块"
-          title="切换模块"
-        >
-          <Menu className="h-4 w-4" aria-hidden="true" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
-        {primaryApps.map((app) => {
-          const Icon = app.icon
-          return (
-            <DropdownMenuItem
-              key={app.id}
-              disabled={app.id === microAppId}
-              onSelect={() => handleNavigate(app.id)}
-            >
-              <Icon className="mr-2 h-4 w-4" aria-hidden="true" />
-              {app.label}
-            </DropdownMenuItem>
-          )
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  ) : undefined
 
   useEffect(() => {
     const handleOpenServiceManagement = () => {
@@ -351,78 +352,59 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
     return <div className="h-screen w-screen bg-background" />
   }
 
+  const closeCardThen = (action: () => void) => () => {
+    setIsProfileCardOpen(false)
+    action()
+  }
+
   return (
     <div className="h-screen w-screen bg-background text-foreground overflow-hidden" data-micro-app-id={microAppId}>
-      <div className="flex h-full w-full">
+      <div className={isCompactViewport ? 'flex h-full w-full flex-col' : 'flex h-full w-full'}>
         {/* Leftmost Fixed Application Navigation Sidebar */}
-        {!hidePrimaryRail ? (
+        {!isCompactViewport ? (
           <aside
             className="flex h-full flex-col bg-layout-sidebar border-r border-border/50"
             style={{ width: sidebarWidth }}
           >
-          {/* Sidebar avatar area - 56px from top to avatar's top edge */}
-          <div data-testid="primary-profile-avatar-slot" className="pt-[48px] flex flex-col items-center gap-3">
-            <Popover>
+          {/* WeChat-style rail: the person's own avatar sits at the very top. */}
+          <div data-testid="primary-profile-avatar-slot" className="pt-4 flex flex-col items-center">
+            <Popover open={isProfileCardOpen} onOpenChange={setIsProfileCardOpen}>
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label="个人资料"
-                  className="w-9 h-9 rounded-md shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all overflow-hidden"
+                  aria-label={profileTriggerLabel}
+                  title={spaceLabel}
+                  className="relative w-9 h-9 rounded-md cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all"
                 >
-                  <Avatar className="w-full h-full !rounded-md">
-                    <AvatarImage src={linxLogoUrl} alt="LinX" className="object-cover" />
-                    <AvatarFallback className="bg-primary text-primary-foreground text-lg font-bold !rounded-md">
-                      L
-                    </AvatarFallback>
-                  </Avatar>
+                  <SelfAvatar className="w-full h-full" />
+                  {spaceAttention ? (
+                    <span
+                      data-testid="primary-space-attention"
+                      data-severity={spaceAttention.severity}
+                      aria-hidden="true"
+                      className={spaceAttention.severity === 'action'
+                        ? 'absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-bold leading-none text-primary-foreground'
+                        : 'absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background bg-muted-foreground'}
+                    >
+                      {spaceAttention.severity === 'action' ? '!' : null}
+                    </span>
+                  ) : null}
                 </button>
               </PopoverTrigger>
-              <PopoverContent side="right" align="start" sideOffset={12} className="p-0 border-none shadow-xl bg-card">
-                <SelfProfileCard />
+              <PopoverContent side="right" align="start" sideOffset={12} className="w-auto border-none bg-transparent p-0 shadow-xl">
+                <SelfProfileCard
+                  onEditProfile={closeCardThen(() => handleNavigate('profile'))}
+                  onOpenSettings={closeCardThen(() => openSettings('space'))}
+                  onOpenLocalService={closeCardThen(() => openSettings('runtime'))}
+                  onConnectAi={closeCardThen(() => handleNavigate('model-services'))}
+                  onSwitchAccount={closeCardThen(requestSwitchAccount)}
+                  onSignOut={closeCardThen(handleSignOut)}
+                />
               </PopoverContent>
             </Popover>
-            <span
-              className="max-w-[48px] truncate rounded-full bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium leading-none text-muted-foreground"
-              title={`${spaceStatus.fullLabel} · 已连接`}
-              aria-label={`${spaceStatus.fullLabel}已连接`}
-            >
-              {spaceStatus.shortLabel}
-            </span>
           </div>
-          <nav className="flex-1 py-4 flex flex-col items-center gap-4">
+          <nav aria-label="主导航" className="flex-1 py-5 flex flex-col items-center gap-3">
             {primaryApps.map((app) => {
-              const Icon = app.icon
-              const isActive = app.id === microAppId
-              const navLabel = app.label
-              return (
-                <div key={app.id} className="relative">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn(
-                      "w-9 h-9 rounded-md transition-all duration-200",
-                      isActive
-                        ? "text-primary hover:bg-transparent hover:text-primary"
-                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    )}
-                    onClick={() => handleNavigate(app.id)}
-                    aria-label={navLabel}
-                    title={navLabel}
-                  >
-                    <Icon
-                      size={24}
-                      strokeWidth={isActive ? 2 : 1.5}
-                      fill={isActive ? "currentColor" : "none"}
-                      className="transition-all"
-                    />
-                  </Button>
-                </div>
-              )
-            })}
-          </nav>
-          <Separator className="bg-border/30 w-8 mx-auto" />
-          <div className="py-4 flex flex-col items-center gap-4 w-full">
-            {secondaryApps.map((app) => {
               const Icon = app.icon
               const isActive = app.id === microAppId
               return (
@@ -430,65 +412,70 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                   key={app.id}
                   variant="ghost"
                   size="icon"
-                  className={cn(
-                    "w-9 h-9 rounded-md hover:bg-transparent",
-                    isActive
-                      ? "text-primary hover:text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
+                  className={railNavButtonClassName(isActive)}
                   onClick={() => handleNavigate(app.id)}
                   aria-label={app.label}
+                  aria-current={isActive ? 'page' : undefined}
+                  title={app.label}
                 >
-                  <Icon
-                    size={24}
-                    strokeWidth={isActive ? 2 : 1.5}
-                    fill={isActive ? "currentColor" : "none"}
-                  />
+                  <Icon size={22} strokeWidth={isActive ? 2 : 1.5} aria-hidden="true" />
                 </Button>
               )
             })}
+          </nav>
+          <Separator className="bg-border/30 w-8 mx-auto" />
+          <div className="py-4 flex flex-col items-center gap-3 w-full">
+            <InboxRailButton
+              active={microAppId === 'inbox'}
+              onOpen={() => handleNavigate('inbox')}
+              className={railNavButtonClassName(microAppId === 'inbox')}
+            />
             <SettingsMenu
-              theme={theme}
-              onToggleTheme={toggleTheme}
-              onNavigate={handleNavigate}
-              onOpenServiceManagement={() => setIsServiceMgmtOpen(true)}
-              onOpenAbout={() => setIsAboutOpen(true)}
+              className={`relative ${railNavButtonClassName(microAppId === 'settings')}`}
+              onOpenSettings={() => openSettings('general')}
+              onOpenAbout={() => openSettings('about')}
               onSignOut={handleSignOut}
-              aboutLabel={aboutLabel}
+              updateAvailable={appUpdate.status.available}
             />
           </div>
           </aside>
         ) : null}
 
         {/* Resizable MicroApp Content Area */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 min-h-0">
           <MicroAppContentRenderer
             key={microAppId}
             microAppId={microAppId}
             theme={theme}
             isCompactViewport={isCompactViewport}
-            compactNavigation={compactNavigation}
+            isNarrowList={isNarrowList}
+            isWideViewport={isWideViewport}
+            compactHeadActions={(
+              <InboxRailButton
+                active={microAppId === 'inbox'}
+                onOpen={() => handleNavigate('inbox')}
+                className={railNavButtonClassName(microAppId === 'inbox')}
+              />
+            )}
             listPanelHidden={listPanelHidden}
           />
         </div>
+        {isCompactViewport ? (
+          <CompactTabBar activeId={microAppId} onNavigate={handleNavigate} />
+        ) : null}
       </div>
 
       <ServiceManagementDialog
         open={isServiceMgmtOpen}
         onOpenChange={setIsServiceMgmtOpen}
       />
-      <AboutDialog
-        open={isAboutOpen}
-        onOpenChange={setIsAboutOpen}
-        status={appUpdate.status}
-        isChecking={appUpdate.isChecking}
-        onCheckUpdates={() => {
-          void appUpdate.refresh(true, 'manual')
-        }}
-        onOpenReleasePage={() => {
-          void appUpdate.openReleasePage()
-        }}
+      <SignOutDialog
+        open={isSignOutOpen}
+        onOpenChange={setIsSignOutOpen}
+        accountScope={databaseScopeKey}
+        onConfirm={requestSignOut}
       />
+      <AgentMethodDialogHost />
     </div>
   )
 }

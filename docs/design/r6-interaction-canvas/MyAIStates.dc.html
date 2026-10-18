@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>我的 AI 状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.grp{background:#FBFAF7;border-radius:12px;overflow:hidden;border:1px solid #DFDBD5}
+.gr{display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 14px;border-bottom:1px solid #DFDBD5;font-size:13px}
+.gr:last-child{border-bottom:0}
+.s{font-size:12px;color:#655D53}
+.v{color:#655D53;font-size:12px}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:16px;display:flex;flex-direction:column;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.r{display:flex;align-items:center;gap:8px;min-height:36px;font-size:13px;border-bottom:1px solid #DFDBD5}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px">
+  <section>
+    <div class="lbl">项目记忆转成卡片</div>
+    <div class="sheet" role="dialog" aria-labelledby="pm-t">
+      <div id="pm-t" style="font-weight: 600">把 5 条项目记忆转成卡片？</div>
+      <div class="s">转成卡片后可以补来源、条件和例外，在所有工作里都能找到</div>
+      <div class="r"><input type="checkbox" checked aria-label="选择" style="accent-color: #563E84"><span style="flex: 1">报名截止设在活动前 2 天</span></div>
+      <div class="r"><input type="checkbox" checked aria-label="选择" style="accent-color: #563E84"><span style="flex: 1">海报用书店的米色模板</span></div>
+      <div class="r"><input type="checkbox" aria-label="选择" style="accent-color: #563E84"><span style="flex: 1">周禾负责对外联系</span><span class="v">已有相同卡片</span></div>
+      <div class="s">原来的项目记忆会保留，直到你删掉</div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">转成 2 张卡片</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">新用户：什么都还没调过</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1"><span style="font-weight: 500">默认方法</span><br><span class="s">先按通用方式做事，你随时可以改</span></span><span class="btn">看看</span></div>
+      <div class="gr"><span style="flex: 1"><span style="font-weight: 500">还没有卡片</span><br><span class="s">在聊天里改 AI 的结果时可以“记下来”</span></span></div>
+      <div class="gr"><span style="flex: 1"><span style="font-weight: 500">还没有训练个人模型</span><br><span class="s">不训练也能正常使用</span></span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">AI 还没连接</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1"><span style="font-weight: 500">AI 还没连接</span><br><span class="s">方法和卡片都可以先整理，连接后就能用</span></span><a class="btn primary" href="NotApplied.dc.html">去连接</a></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">有个人模型以后（概览里的这一行）</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1"><span style="font-weight: 500">个人模型 v1</span><br><span class="s">用在 2 项工作 · 10月20日启用</span></span><a class="btn" href="Model.dc.html">查看</a></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">个人模型暂时不可用</div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1"><span style="font-weight: 500">个人模型 v1 暂时连不上</span><br><span class="s">最近 2 次工作改用了基础模型</span></span><a class="btn" href="NotApplied.dc.html">查看</a></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">这里不会出现的东西</div>
+    <div class="s">训练条数进度条、“越来越懂你”、人格分数、催你去训练的提醒。</div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

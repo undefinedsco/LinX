@@ -501,6 +501,7 @@ function threadItemToMessageRecord(item: ThreadItem): {
   if (item.type === 'user_message') {
     const hasExtendedState = Array.isArray(item.attachments) && item.attachments.length > 0
       || Boolean(item.inference_options && Object.keys(item.inference_options).length > 0)
+      || Boolean((item as any).citation)
       || hasConversationMetadata
     return {
       content: (item as any).content
@@ -558,14 +559,16 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
 
   const storedThreadItem = parseStoredThreadItem(record.richContent, threadId, createdAt)
     ?? parseStoredThreadItem(record.content, threadId, createdAt)
+  const maker = typeof record.maker === 'string' && record.maker ? record.maker : undefined
   if (storedThreadItem) {
-    return storedThreadItem
+    return maker ? { ...storedThreadItem, maker } as unknown as ThreadItem : storedThreadItem
   }
 
   if (record.role === MessageRole.USER) {
     return {
       id: itemId,
       thread_id: threadId,
+      ...(maker ? { maker } : {}),
       type: 'user_message',
       content: [{ type: 'input_text', text: record.content || '' }],
       attachments: [],
@@ -575,6 +578,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
   return {
     id: itemId,
     thread_id: threadId,
+    ...(maker ? { maker } : {}),
     type: 'assistant_message',
     content: [{ type: 'output_text', text: record.content || '', annotations: [] } as any],
     attachments: [],
@@ -710,6 +714,23 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const chatId = threadRepository.chatId(thread as any) ?? DEFAULT_CHAT_ID
     this.threadChatIdCache.set(threadId, chatId)
     return chatId
+  }
+
+  /** Pod message URI of an item once it has been persisted or loaded here. */
+  resolveItemUri(itemId: string): string | null {
+    const rowId = this.messageRowIdByItemId.get(itemId)
+    if (!rowId) return null
+    try {
+      return this.resolveMessageIri({ id: rowId })
+    } catch {
+      return null
+    }
+  }
+
+  /** Topic (Thread) resource URI, the AG-UI threadId. */
+  async resolveThreadUri(threadId: string): Promise<string> {
+    const chatId = await this.getThreadChatId(threadId)
+    return this.buildThreadUri(chatId, threadId)
   }
 
   private buildThreadUri(chatId: string, threadId: string): string {

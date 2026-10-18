@@ -8,6 +8,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { FAVORITE_GROUPS, type FavoriteGroupFilter } from '../domain/groups'
 
 // ============================================================================
 // List Header
@@ -46,6 +47,46 @@ function FavoriteListHeader({
 }
 
 // ============================================================================
+// Group strip (消息 / 会话 / 文件 / 卡片 / 联系人 with counts)
+// ============================================================================
+
+function FavoriteGroupNav({
+  group,
+  counts,
+  onChange,
+}: {
+  group: FavoriteGroupFilter
+  counts: Record<FavoriteGroupFilter, number>
+  onChange: (group: FavoriteGroupFilter) => void
+}) {
+  const entries: Array<{ id: FavoriteGroupFilter; label: string }> = [{ id: 'all', label: '全部收藏' }, ...FAVORITE_GROUPS]
+  return (
+    <div role="tablist" aria-label="收藏分类" className="flex shrink-0 flex-wrap gap-1 border-b border-border/50 px-3 py-2">
+      {entries.map((entry) => {
+        const active = group === entry.id
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-label={`${entry.label} ${counts[entry.id] ?? 0}`}
+            onClick={() => onChange(entry.id)}
+            className={cn(
+              'inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-xs transition-colors',
+              active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted',
+            )}
+          >
+            {entry.label}
+            <span className="tabular-nums opacity-70">{counts[entry.id] ?? 0}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ============================================================================
 // Favorite Card Item
 // ============================================================================
 
@@ -54,6 +95,7 @@ interface FavoriteCardProps {
   snapshotContent?: string | null
   snapshotAuthor?: string | null
   formattedDate: string
+  kindLabel?: string
   isActive: boolean
   tabIndex: number
   cardRef: (node: HTMLDivElement | null) => void
@@ -66,6 +108,7 @@ function FavoriteCard({
   snapshotContent,
   snapshotAuthor,
   formattedDate,
+  kindLabel,
   isActive,
   tabIndex,
   cardRef,
@@ -106,9 +149,9 @@ function FavoriteCard({
             {snapshotContent}
           </p>
         )}
-        {snapshotAuthor && (
+        {(kindLabel || snapshotAuthor) && (
           <p className="text-[11px] text-muted-foreground/70 truncate mt-0.5">
-            {snapshotAuthor}
+            {[kindLabel, snapshotAuthor].filter(Boolean).join(' · ')}
           </p>
         )}
       </div>
@@ -126,6 +169,7 @@ export interface FavoriteListItem {
   snapshotContent?: string | null
   snapshotAuthor?: string | null
   formattedDate: string
+  kindLabel?: string
 }
 
 export interface FavoriteListProps {
@@ -138,6 +182,12 @@ export interface FavoriteListProps {
   onSelect: (id: string) => void
   onItemKeyDown: (index: number, event: KeyboardEvent<HTMLDivElement>) => void
   registerItemRef: (index: number, node: HTMLDivElement | null) => void
+  group?: FavoriteGroupFilter
+  counts?: Record<FavoriteGroupFilter, number>
+  onGroupChange?: (group: FavoriteGroupFilter) => void
+  hasAnyFavorite?: boolean
+  /** The three-pane layout keeps search in the left column. */
+  showSearch?: boolean
 }
 
 export function FavoriteList({
@@ -150,10 +200,17 @@ export function FavoriteList({
   onSelect,
   onItemKeyDown,
   registerItemRef,
+  group = 'all',
+  counts,
+  onGroupChange,
+  hasAnyFavorite = false,
+  showSearch = true,
 }: FavoriteListProps) {
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
-      <FavoriteListHeader searchValue={searchText} onSearchChange={onSearchChange} />
+      {showSearch ? <FavoriteListHeader searchValue={searchText} onSearchChange={onSearchChange} /> : null}
+
+      {counts && onGroupChange ? <FavoriteGroupNav group={group} counts={counts} onChange={onGroupChange} /> : null}
 
       <ScrollArea className="flex-1">
         {isLoading ? (
@@ -161,10 +218,20 @@ export function FavoriteList({
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...
           </div>
+        ) : !items.length && hasAnyFavorite ? (
+          <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
+            {searchText ? '没有找到相关收藏' : '这个分类里还没有收藏'}
+          </div>
         ) : !items.length ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
             <Star className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
-            暂无收藏
+            <p className="text-foreground">还没有收藏</p>
+            <p className="mt-1 text-xs">在消息上点“收藏”，或在文件、卡片上右键选“收藏”</p>
+            <div className="mx-auto mt-4 max-w-xs rounded-lg bg-muted/50 p-3 text-left text-xs leading-relaxed">
+              <p className="font-medium text-foreground">收藏 ≠ 记住</p>
+              <p className="mt-1">收藏只是书签，方便找回；不会变成知识卡片，也不会用于训练。</p>
+              <p className="mt-1">想让 LinX 以后都这样做，在那条消息上点“记住”。</p>
+            </div>
           </div>
         ) : (
           <div role="listbox" aria-label="收藏" aria-orientation="vertical" className="divide-y divide-border/30 animate-fade-in">
@@ -178,6 +245,7 @@ export function FavoriteList({
                   snapshotContent={item.snapshotContent}
                   snapshotAuthor={item.snapshotAuthor}
                   formattedDate={item.formattedDate}
+                  kindLabel={item.kindLabel}
                   isActive={selected}
                   tabIndex={tabbable ? 0 : -1}
                   cardRef={(node) => {

@@ -1,507 +1,300 @@
 /**
- * ChatRightSidebar - 右侧边栏组件
- * 
- * 包含两个可折叠区块:
- * 1. 角色设定 (System Prompt)
- * 2. 话题列表 (Threads)
- * 
- * WeChat Desktop 风格: 紧凑布局, 小圆角, 简洁
+ * ChatRightSidebar - 聊天信息 (W6 / W8 / W10 right column).
+ *
+ * Closed by default and remembered. One identity, one sidebar: assistant and
+ * person chats show the same rows; recurring topics add 计划, coding runs add
+ * 这次运行, groups switch to the 群聊信息 variant. Topics are not listed here.
  */
-
-import { useState, useMemo, type FC } from 'react'
+import { useMemo, useState, type FC } from 'react'
 import { useSession } from '@/providers/solid-session-context'
-import { 
-  User, 
-  MessageCircle, 
-  Star, 
-  Pencil, 
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  Search,
-  Check,
-  X,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useToast } from '@/components/ui/use-toast'
+import { formatModelLabel } from '@/modules/contacts/domain/contact-projection'
+import { useOpenFileEntry } from '@/modules/files/features/search/file-name-search'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { useSolidDatabase } from '@/providers/solid-database-provider'
+import { useOpenAgentMethod } from '@/modules/my-ai/app/open-method'
 import { useChatStore } from '../store'
-import { useChatList, useThreadList, useChatMutations } from '../collections'
-import { contactResource, agentResource, isAgentContact } from '@undefineds.co/models'
-import { getPrimaryParticipantUri } from '../utils/chat-participants'
-import { useEntity } from '@/lib/data/use-entity'
-import { SymphonyWorkerPanel } from '@/modules/symphony/components/SymphonyWorkerPanel'
+import { useWorkbenchDialogs } from '../features/conversation/workbench-dialogs'
+import {
+  useChatMutations,
+  useMessageIndex,
+  useThreadList,
+  chatOps,
+  messageRowMatchesThread,
+} from '../collections'
+import { deleteChatCopy, avatarTextFor } from '../domain/chat-list-model'
+import { projectChatAssets } from '../domain/chat-asset-library'
+import { useChatIdentity } from '../features/identity/useChatIdentity'
+import { useThreadSchedule } from '../features/schedule/useThreadSchedule'
+import { useRuntimeSession } from '../runtime-client'
+import { isCodingTool } from '../domain/coding-run'
+import { ChatHistorySearchDialog } from '../ui/ChatHistorySearchDialog'
+import { CodingRunInfoGroup } from '../ui/CodingRunInfoGroup'
+import { InfoGroup, InfoRow, InfoSwitchRow } from '../ui/ChatInfoParts'
+import { IdentityAvatar } from '../ui/IdentityAvatar'
+import { MemberPickerDialog, type MemberCandidate } from '../ui/MemberPickerDialog'
+import { ScheduleInfoGroup } from '../ui/ScheduleInfoGroup'
 
-// ============================================================================
-// 角色设定卡片
-// ============================================================================
-
-interface RoleSettingsCardProps {
-  systemPrompt: string
-  onEdit: (newPrompt: string) => void
+function methodSummary(instructions: unknown): string {
+  const text = typeof instructions === 'string' ? instructions.trim() : ''
+  if (!text) return '还没有写'
+  const firstLine = text.split(/\r?\n/u).find((line) => line.trim())?.trim() ?? text
+  return firstLine.length > 16 ? `${firstLine.slice(0, 16)}…` : firstLine
 }
-
-const RoleSettingsCard: FC<RoleSettingsCardProps> = ({ systemPrompt, onEdit }) => {
-  const [isOpen, setIsOpen] = useState(false)
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [editingPrompt, setEditingPrompt] = useState(systemPrompt)
-
-  const handleSave = () => {
-    onEdit(editingPrompt)
-    setIsEditDialogOpen(false)
-  }
-
-  const handleOpenEdit = () => {
-    setEditingPrompt(systemPrompt)
-    setIsEditDialogOpen(true)
-  }
-
-  return (
-    <>
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <Card className="border-border/50 shadow-none rounded-lg">
-          <CollapsibleTrigger asChild>
-            <CardHeader className="py-3 px-4 cursor-pointer hover:bg-muted/50 transition-colors">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <User className="w-4 h-4 text-muted-foreground" />
-                  系统提示词
-                </CardTitle>
-                {isOpen ? (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                )}
-              </div>
-            </CardHeader>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <CardContent className="pt-0 px-4 pb-3">
-              <div className="text-sm text-muted-foreground leading-relaxed line-clamp-3 mb-2">
-                {systemPrompt || '未设置角色提示词'}
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-primary hover:text-primary"
-                onClick={handleOpenEdit}
-              >
-                <Pencil className="w-3 h-3 mr-1" />
-                编辑
-              </Button>
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
-
-      {/* 编辑对话框 */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>编辑系统提示词</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground mb-2">
-            设置 AI 助手的角色和行为提示词
-          </p>
-          <Textarea
-            value={editingPrompt}
-            onChange={(e) => setEditingPrompt(e.target.value)}
-            placeholder="输入系统提示词..."
-            className="min-h-[120px] text-sm"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              取消
-            </Button>
-            <Button onClick={handleSave}>
-              保存
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
-}
-
-// ============================================================================
-// 话题列表卡片
-// ============================================================================
-
-interface Thread {
-  id: string
-  title: string
-  starred?: boolean
-  updatedAt?: string
-}
-
-interface ThreadListCardProps {
-  threads: Thread[]
-  selectedThreadId: string | null
-  onSelectThread: (id: string) => void
-  onStarThread: (id: string) => void
-  onRenameThread: (id: string, title: string) => Promise<void>
-  onCreateThread: () => void
-}
-
-const ThreadListCard: FC<ThreadListCardProps> = ({
-  threads,
-  selectedThreadId,
-  onSelectThread,
-  onStarThread,
-  onRenameThread,
-  onCreateThread,
-}) => {
-  const [isOpen, setIsOpen] = useState(false)
-  const [search, setSearch] = useState('')
-
-  // 排序并过滤
-  const filteredThreads = useMemo(() => {
-    let result = [...threads]
-    if (search.trim()) {
-      const s = search.toLowerCase()
-      result = result.filter(t => t.title.toLowerCase().includes(s))
-    }
-    return result.sort((a, b) => {
-      if (a.starred && !b.starred) return -1
-      if (!a.starred && b.starred) return 1
-      return 0
-    })
-  }, [threads, search])
-
-  return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <Card className="border-border/50 shadow-none rounded-lg overflow-hidden">
-        <CollapsibleTrigger asChild>
-          <CardHeader className="py-3 px-4 cursor-pointer hover:bg-muted/50 transition-colors">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <MessageCircle className="w-4 h-4 text-muted-foreground" />
-                话题列表
-                <span className="text-xs text-muted-foreground font-normal">
-                  ({threads.length})
-                </span>
-              </CardTitle>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onCreateThread()
-                  }}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </Button>
-                {isOpen ? (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                )}
-              </div>
-            </div>
-          </CardHeader>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <CardContent className="pt-0 px-2 pb-2">
-            {/* Search Input */}
-            <div className="px-2 mb-2">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索话题..."
-                  className="w-full pl-7 pr-2 py-1 text-xs bg-muted/50 border-none rounded focus:ring-1 focus:ring-primary outline-none"
-                />
-              </div>
-            </div>
-
-            <ScrollArea className="max-h-[300px]">
-              {filteredThreads.length === 0 ? (
-                <div className="text-center text-sm text-muted-foreground py-4">
-                  {search ? '未找到相关话题' : '暂无话题'}
-                </div>
-              ) : (
-                <div className="space-y-0.5">
-                  {filteredThreads.map((thread) => (
-                    <ThreadItem
-                      key={thread.id}
-                      thread={thread}
-                      isSelected={thread.id === selectedThreadId}
-                      onSelect={() => onSelectThread(thread.id)}
-                      onStar={() => onStarThread(thread.id)}
-                      onRename={(title) => onRenameThread(thread.id, title)}
-                    />
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </CollapsibleContent>
-      </Card>
-    </Collapsible>
-  )
-}
-
-interface ThreadItemProps {
-  thread: Thread
-  isSelected: boolean
-  onSelect: () => void
-  onStar: () => void
-  onRename: (title: string) => Promise<void>
-}
-
-const ThreadItem: FC<ThreadItemProps> = ({
-  thread,
-  isSelected,
-  onSelect,
-  onStar,
-  onRename,
-}) => {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(thread.title)
-  const [saving, setSaving] = useState(false)
-
-  const save = async () => {
-    const title = draft.trim()
-    if (!title || title === thread.title) {
-      setDraft(thread.title)
-      setEditing(false)
-      return
-    }
-    setSaving(true)
-    try {
-      await onRename(title)
-      setEditing(false)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div
-      onClick={onSelect}
-      className={cn(
-        'group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors',
-        isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'
-      )}
-    >
-      {/* 收藏图标 */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          onStar()
-        }}
-        className="shrink-0"
-      >
-        <Star
-          className={cn(
-            'w-3.5 h-3.5',
-            thread.starred
-              ? 'fill-primary text-primary'
-              : 'text-muted-foreground/50 hover:text-primary'
-          )}
-        />
-      </button>
-
-      {/* 标题 */}
-      {editing ? (
-        <div className="flex min-w-0 flex-1 items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <Input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') { setDraft(thread.title); setEditing(false) } }}
-            className="h-7 min-w-0 text-sm" disabled={saving} />
-          <button type="button" aria-label="保存话题名称" onClick={() => void save()} disabled={saving}><Check className="h-4 w-4" /></button>
-          <button type="button" aria-label="取消重命名" onClick={() => { setDraft(thread.title); setEditing(false) }} disabled={saving}><X className="h-4 w-4" /></button>
-        </div>
-      ) : (
-        <button type="button" className="min-w-0 flex-1 truncate text-left text-sm" onDoubleClick={(e) => { e.stopPropagation(); setDraft(thread.title); setEditing(true) }} title="双击重命名">
-          {thread.title}
-        </button>
-      )}
-    </div>
-  )
-}
-
-// ============================================================================
-// 主组件
-// ============================================================================
 
 export interface ChatRightSidebarProps {}
 
 export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   const { session } = useSession()
+  const { toast } = useToast()
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectedThreadId = useChatStore((state) => state.selectedThreadId)
-  const selectThread = useChatStore((state) => state.selectThread)
+  const selectChat = useChatStore((state) => state.selectChat)
+  const requestExecutionConditions = useChatStore((state) => state.requestExecutionConditions)
 
-  // Use new collection-based hooks
-  const { data: chats } = useChatList()
-  const { data: rawThreads } = useThreadList(selectedChatId ?? '', { enabled: !!selectedChatId })
+  const { chat, identity, agent, agentId, lookup, isSecretary } = useChatIdentity(selectedChatId)
   const mutations = useChatMutations()
+  const openAgentMethod = useOpenAgentMethod()
+  const openFileEntry = useOpenFileEntry()
+  const { db } = useSolidDatabase()
+  const podBaseUrl = db ? resolveCurrentPodBaseUrl(db) : null
 
-  // 当前选中的 Chat
-  const currentChat = useMemo(() => {
-    if (!chats || !selectedChatId) return null
-    return chats.find((c) => c.id === selectedChatId)
-  }, [chats, selectedChatId])
-
-  // 获取 Contact
-  const contactUri = getPrimaryParticipantUri(currentChat, session.info.webId)
-  const { data: contact } = useEntity(contactResource, contactUri)
-
-  // 获取 Agent（当 Contact 语义类型是 agent 时）
-  const agentUri = contact && isAgentContact(contact) ? contact.about : null
-  const { data: agent, refresh: refreshAgent } = useEntity(agentResource, agentUri)
-  const agentId = typeof agent?.id === 'string' && agent.id.length > 0
-    ? agent.id
-    : null
-
-  // 格式化话题列表
-  const threads: Thread[] = useMemo(() => {
-    if (!rawThreads) return []
-    return rawThreads.map((t) => ({
-      id: t.id ?? 'unknown',
-      title: t.title ?? '新话题',
-      starred: t.starred ?? false,
-      updatedAt: t.updatedAt ? String(t.updatedAt) : undefined,
-    }))
-  }, [rawThreads])
-
-  // 当前 Thread 工作现场（基准 page-mindset-ascii：右栏展示当前 Thread，而非仅话题列表导航）
-  const currentThread = useMemo(
-    () => threads.find((thread) => thread.id === selectedThreadId) ?? null,
-    [threads, selectedThreadId],
+  const { data: threads = [] } = useThreadList(selectedChatId ?? '', { enabled: !!selectedChatId })
+  const { data: allMessages = [] } = useMessageIndex({ enabled: Boolean(selectedChatId) })
+  const chatMessages = useMemo(() => {
+    const threadIds = (threads as Array<{ id?: string | null }>).map((thread) => thread.id).filter((id): id is string => Boolean(id))
+    return allMessages.filter((message) => threadIds.some((id) => messageRowMatchesThread(message.thread, id)))
+  }, [allMessages, threads])
+  const assetCount = useMemo(
+    () => (podBaseUrl ? projectChatAssets(chatMessages as Parameters<typeof projectChatAssets>[0], podBaseUrl).length : 0),
+    [chatMessages, podBaseUrl],
   )
 
-  // 处理编辑系统提示词 - 更新 Agent.instructions
-  const handleEditSystemPrompt = async (newPrompt: string) => {
-    if (!agentId) {
-      console.warn('No agent to update')
-      return
-    }
-    try {
-      await mutations.updateAgentInstructions.mutateAsync({
-        agentId,
-        instructions: newPrompt,
-      })
-      await refreshAgent()
-    } catch (e) {
-      console.error('Update system prompt failed:', e)
-    }
-  }
+  const isGroup = identity?.kind === 'group'
+  const isAssistant = identity?.kind === 'assistant'
+  const schedule = useThreadSchedule(isAssistant ? selectedThreadId : null)
+  const runtime = useRuntimeSession(isAssistant ? selectedThreadId : null)
+  const codingSession = runtime.runtimeSession && isCodingTool(runtime.runtimeSession.tool) ? runtime.runtimeSession : null
 
-  // 处理收藏话题 - 使用 chatOps
-  const handleStarThread = async (threadId: string) => {
-    if (!selectedChatId) return
-    const thread = threads.find(t => t.id === threadId)
-    if (!thread) return
-    try {
-      await mutations.updateThread.mutateAsync({
-        id: threadId,
-        chatId: selectedChatId,
-        starred: !thread.starred,
-      })
-    } catch (e) {
-      console.error('Star thread failed:', e)
-    }
-  }
+  const hasWorkspace = (threads as Array<{ id?: string | null; workspace?: string | null }>).some((thread) => thread.id === selectedThreadId && Boolean(thread.workspace))
+  const openDialog = useWorkbenchDialogs((state) => state.open)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [invitees, setInvitees] = useState<string[]>([])
 
-  const handleRenameThread = async (threadId: string, title: string) => {
-    if (!selectedChatId) return
-    await mutations.updateThread.mutateAsync({ id: threadId, chatId: selectedChatId, title })
-  }
-
-  // 处理新建话题 - 使用 chatOps
-  const handleCreateThread = async () => {
-    if (!selectedChatId) return
-    try {
-      const newThread = await mutations.createThread.mutateAsync({
-        chatId: selectedChatId,
-        title: `话题 ${new Date().toLocaleTimeString()}`,
-      })
-      // chatOps.createThread returns ThreadRow with id directly
-      const threadId = newThread.id
-      if (threadId) selectThread(threadId)
-    } catch (e) {
-      console.error('Create thread failed:', e)
-    }
-  }
-
-  if (!selectedChatId) {
+  if (!selectedChatId || !chat || !identity) {
     return (
-      <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         选择一个聊天
       </div>
     )
   }
 
+  const updateFlags = async (flags: { starred?: boolean; muted?: boolean; title?: string; participants?: string[] }) => {
+    try {
+      await mutations.updateChat.mutateAsync({ id: selectedChatId, ...flags } as never)
+    } catch (error) {
+      console.error('Update chat failed:', error)
+      toast({ description: '没能保存，请稍后再试。', variant: 'destructive' })
+    }
+  }
+
+  const remove = async () => {
+    try {
+      await mutations.deleteChat.mutateAsync(selectedChatId)
+      selectChat(null)
+      setConfirmRemove(false)
+    } catch (error) {
+      console.error('Remove chat failed:', error)
+      toast({ description: '没能删除这个会话，请稍后再试。', variant: 'destructive' })
+    }
+  }
+
+  const topicCount = chatOps.getThreads(selectedChatId).length
+  const removeCopy = isGroup
+    ? { title: `退出“${identity.name}”？`, description: '退出后不再收到这个群的消息，群里的文件不受影响。' }
+    : deleteChatCopy({ title: identity.name, kind: identity.kind }, topicCount)
+
+  const memberCandidates: MemberCandidate[] = lookup.contacts
+    .filter((contact) => !contact.isGroup && contact.name)
+    .map((contact) => ({
+      id: contact.about || contact.id,
+      name: contact.name,
+      kind: contact.isAssistant ? 'assistant' : 'person',
+      avatarUrl: contact.avatarUrl,
+      disabledReason: identity.counterparts.includes(contact.about || contact.id) ? '已在群里' : null,
+    }))
+  const members = identity.counterparts.map((participant) => {
+    const contact = lookup.find(participant)
+    const name = contact?.name || '群成员'
+    return { id: participant, name, kind: contact?.isAssistant ? ('assistant' as const) : ('person' as const), avatarUrl: contact?.avatarUrl }
+  })
+  const selfName = (session.info as { name?: string }).name
+
   return (
-    <div className="h-full flex flex-col bg-card/50">
-      {/* Header - 48px shell boundary; 标题反映当前对象，而非“设置”页 */}
-      <div className="h-12 px-4 flex items-center border-b border-border/50 shrink-0">
-        <h3 className="text-sm font-medium truncate">{contact?.name || agent?.name || '工作现场'}</h3>
+    <div className="flex h-full flex-col bg-layout-content">
+      <div className="flex h-12 shrink-0 items-center border-b border-border/50 px-4">
+        <h3 className="text-sm font-medium">聊天信息</h3>
       </div>
 
-      {/* Content */}
-      <ScrollArea className="flex-1 p-3">
-        <div className="space-y-3">
-          {/* 工作现场：当前对象 + 当前话题（基准：右栏是工作现场，不是说明书/配置页） */}
-          <div className="rounded-lg border border-border/50 bg-background/40 p-3 space-y-2">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">工作现场</p>
-            {contact || agent ? (
-              <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-bold text-primary">
-                  {(contact?.name || agent?.name || '?').slice(0, 1).toUpperCase()}
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{contact?.name || agent?.name}</p>
-                  <p className="truncate text-[11px] text-muted-foreground">
-                    {contact && isAgentContact(contact) ? 'Agent' : '联系人'}
-                    {agent?.provider ? ` · ${agent.provider}` : ''}
-                  </p>
+      <ScrollArea className="flex-1">
+        <div className="space-y-4 p-3">
+          {isGroup ? (
+            <>
+              <InfoGroup title={`群成员 ${identity.memberCount}`}>
+                <div className="grid grid-cols-4 gap-3 p-3">
+                  {selfName ? (
+                    <div className="flex min-w-0 flex-col items-center gap-1 text-[11px]">
+                      <IdentityAvatar kind="person" text={avatarTextFor('person', selfName)} size="member" />
+                      <span className="max-w-full truncate">{selfName}</span>
+                    </div>
+                  ) : null}
+                  {members.map((member) => (
+                    <div key={member.id} className="flex min-w-0 flex-col items-center gap-1 text-[11px]">
+                      <IdentityAvatar kind={member.kind} text={avatarTextFor(member.kind, member.name)} avatarUrl={member.avatarUrl} size="member" />
+                      <span className="max-w-full truncate">{member.name}</span>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    aria-label="邀请"
+                    onClick={() => { setInvitees([]); setInviteOpen(true) }}
+                    className="flex min-w-0 flex-col items-center gap-1 text-[11px] text-primary"
+                  >
+                    <span className="flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-primary/60 text-lg">+</span>
+                    邀请
+                  </button>
                 </div>
-              </div>
+              </InfoGroup>
+              <InfoGroup>
+                <InfoRow label="群名称" value={identity.name} onClick={() => { setNameDraft(identity.name); setRenameOpen(true) }} />
+                <InfoRow label="群里的文件" value={String(assetCount)} onClick={() => setHistoryOpen(true)} />
+                <InfoRow label="查找聊天记录" onClick={() => setHistoryOpen(true)} />
+                <InfoRow label="助手在这个群里" value="需要时接话" last />
+              </InfoGroup>
+            </>
+          ) : (
+            <>
+              <InfoGroup>
+                <div className="flex items-center gap-3 px-3 py-3">
+                  <IdentityAvatar kind={identity.kind} text={avatarTextFor(identity.kind, identity.name)} avatarUrl={identity.avatarUrl} size="member" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{identity.name}</p>
+                    <p className="text-xs text-muted-foreground">{isAssistant ? '助手' : '联系人'}</p>
+                  </div>
+                </div>
+              </InfoGroup>
+              {isAssistant && agentId ? (
+                <InfoGroup>
+                  <InfoRow label="做事的方法" value={methodSummary(agent?.instructions)} onClick={() => openAgentMethod(agentId)} />
+                  <InfoRow
+                    label="执行条件"
+                    value={formatModelLabel(agent?.model as string | undefined) ?? '默认模型'}
+                    onClick={requestExecutionConditions}
+                    last
+                  />
+                </InfoGroup>
+              ) : null}
+              {isAssistant ? <ScheduleInfoGroup state={schedule} /> : null}
+              {codingSession ? <CodingRunInfoGroup session={codingSession} agentId={agentId} /> : null}
+              <InfoGroup>
+                <InfoRow label="查找聊天记录" onClick={() => setHistoryOpen(true)} last />
+              </InfoGroup>
+            </>
+          )}
+
+          <InfoGroup title="这段聊天">
+            {hasWorkspace ? <InfoRow label="项目记忆" onClick={() => openDialog('project-context')} /> : null}
+            <InfoRow label="附件" onClick={() => openDialog('attachments')} />
+            <InfoRow label="产物" onClick={() => openDialog('artifacts')} />
+            <InfoRow label="素材" onClick={() => openDialog('assets')} />
+            <InfoRow label="分享这段聊天" onClick={() => openDialog('share')} last />
+          </InfoGroup>
+
+          <InfoGroup>
+            {!isSecretary ? (
+              <InfoSwitchRow label="标星" checked={Boolean(chat.starred)} onCheckedChange={(checked) => { void updateFlags({ starred: checked }) }} />
             ) : null}
-            {currentThread ? (
-              <div className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="shrink-0 text-muted-foreground/70">当前话题</span>
-                <span className="truncate text-foreground/80" title={currentThread.title}>{currentThread.title}</span>
-              </div>
-            ) : null}
-          </div>
+            <InfoSwitchRow label="免打扰" checked={Boolean(chat.muted)} onCheckedChange={(checked) => { void updateFlags({ muted: checked }) }} last />
+          </InfoGroup>
 
-          {/* 角色设定 */}
-          <RoleSettingsCard
-            systemPrompt={(agent?.instructions as string) || ''}
-            onEdit={handleEditSystemPrompt}
-          />
-
-          {/* 话题列表 */}
-          <ThreadListCard
-            threads={threads}
-            selectedThreadId={selectedThreadId}
-            onSelectThread={selectThread}
-            onStarThread={handleStarThread}
-            onRenameThread={handleRenameThread}
-            onCreateThread={handleCreateThread}
-          />
-
-          {/* Secretary worker 控制面 */}
-          <SymphonyWorkerPanel />
+          {!isSecretary ? (
+            <InfoGroup>
+              <InfoRow
+                label={isGroup ? '退出群聊…' : '删除会话…'}
+                tone="danger"
+                onClick={() => setConfirmRemove(true)}
+                last
+              />
+            </InfoGroup>
+          ) : null}
         </div>
       </ScrollArea>
+
+      <ChatHistorySearchDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        messages={chatMessages as never}
+        podBaseUrl={podBaseUrl}
+        onOpenAsset={(asset) => openFileEntry({
+          id: asset.url,
+          uri: asset.url,
+          name: asset.name,
+          kind: 'resource',
+          parentUri: asset.url.replace(/[^/]+$/u, ''),
+        })}
+      />
+
+      <ConfirmDialog
+        open={confirmRemove}
+        onOpenChange={setConfirmRemove}
+        title={removeCopy.title}
+        description={removeCopy.description}
+        confirmLabel={isGroup ? '退出' : '删除'}
+        destructive
+        busy={mutations.deleteChat.isPending}
+        onConfirm={() => { void remove() }}
+      />
+
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>群名称</DialogTitle></DialogHeader>
+          <Input autoFocus value={nameDraft} aria-label="群名称" onChange={(event) => setNameDraft(event.target.value)} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>取消</Button>
+            <Button
+              disabled={!nameDraft.trim()}
+              onClick={() => { void updateFlags({ title: nameDraft.trim() }).then(() => setRenameOpen(false)) }}
+            >
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <MemberPickerDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        title="邀请进群"
+        description="选择要邀请的朋友或助手。"
+        candidates={memberCandidates}
+        selected={invitees}
+        onToggle={(id) => setInvitees((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])}
+        confirmLabel={`邀请（${invitees.length} 人）`}
+        canConfirm={invitees.length > 0}
+        onConfirm={() => {
+          const participants = Array.from(new Set([...((chat.participants as string[] | undefined) ?? []), ...invitees]))
+          void updateFlags({ participants }).then(() => setInviteOpen(false))
+        }}
+      />
     </div>
   )
 }

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>会话过程与消息状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+h2{margin:0 0 12px;font-size:15px;font-weight:600}
+.lbl{font-size:12px;color:#655D53;margin-bottom:4px}
+.bar{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;border:1px solid #DFDBD5;background:#FBFAF7;font-size:13px}
+.bar .r{margin-left:auto;font-size:12px;color:#655D53;white-space:nowrap}
+.act{border:0;background:transparent;padding:0;font:inherit;font-size:12px;font-weight:600;color:#563E84;cursor:pointer;margin-left:auto;white-space:nowrap}
+.me{background:#E0DBDE;padding:9px 12px;border-radius:8px;font-size:13px}
+.ai{background:#FBFAF7;padding:9px 12px;border-radius:8px;border:1px solid #DFDBD5;font-size:13px}
+.av{width:30px;height:30px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
+.menu{background:#FBFAF7;border-radius:10px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:6px;width:160px}
+.mi{height:30px;display:flex;align-items:center;padding:0 10px;border-radius:6px;font-size:13px}
+.sep{height:1px;background:#DFDBD5;margin:4px 6px}
+.muted{color:#655D53}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px">
+  <section style="display: flex; flex-direction: column; gap: 12px">
+    <h2>AI 过程条（默认收起成一行，点开看步骤）</h2>
+    <div><div class="lbl">进行中</div><div class="bar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#563E84" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"></path></svg>正在对比三种工具<span class="r">第 2 步，共 3 步 ›</span></div></div>
+    <div><div class="lbl">等你决定</div><div class="bar" style="border-color: #563E84"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#563E84" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4M12 16h.01"></path></svg>等你决定：发送日历邀请<a class="act" href="Decision.dc.html">去处理</a></div></div>
+    <div><div class="lbl">等你补充</div><div class="bar" style="border-color: #563E84"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#563E84" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4M12 16h.01"></path></svg>等你补充：周日下午几点开始<a class="act" href="Decision.dc.html">回答</a></div></div>
+    <div><div class="lbl">某一步没成功，其余继续</div><div class="bar">一份材料打不开，已跳过，其余照常<button class="act">重试这一步</button></div></div>
+    <div><div class="lbl">正在停止（已请求，还没确认）</div><div class="bar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#655D53" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"></path></svg>正在停止…<span class="r">已完成的步骤不会撤回</span></div></div>
+    <div><div class="lbl">已停止</div><div class="bar">已停止 · 完成了 2 步，共 3 步<button class="act">从第 3 步继续</button></div></div>
+    <div><div class="lbl">连接断了，结果还不确定</div><div class="bar">连接中断，正在确认这次的结果…<span class="r">不会重复执行</span></div></div>
+    <div><div class="lbl">完成</div><div class="bar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2B2621" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>完成 · 3 步<a class="act" href="Artifact.dc.html">打开对比表</a></div></div>
+    <div><div class="lbl">这次没用个人模型</div><div class="bar">这次用的是基础模型，个人模型暂时不可用<a class="act" href="NotApplied.dc.html">为什么</a></div></div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 18px">
+    <h2>消息的状态与操作</h2>
+    <div>
+      <div class="lbl">发送中 / 没发出去</div>
+      <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end">
+        <div style="display: flex; gap: 8px; align-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#655D53" stroke-width="2" stroke-linecap="round" aria-label="发送中" role="img"><path d="M21 12a9 9 0 1 1-6.2-8.6"></path></svg><div class="me">周六上午那班要几个人？</div><span class="av" style="background: #E0DBDE">林</span></div>
+        <div style="display: flex; gap: 8px; align-items: center"><button aria-label="没发出去，点按重发" style="width: 18px; height: 18px; border-radius: 50%; border: 0; background: #2B2621; color: #F7F4ED; font-size: 12px; font-weight: 700; padding: 0; cursor: pointer">!</button><div class="me">把名单按周六周日分开</div><span class="av" style="background: #E0DBDE">林</span></div>
+        <div class="muted" style="font-size: 12px">没发出去的消息点 ! 重发，不会重复发给助手</div>
+      </div>
+    </div>
+    <div>
+      <div class="lbl">改了问题之后：新旧两版都保留</div>
+      <div style="display: flex; gap: 8px; align-items: flex-start">
+        <span class="av" style="background: #563E84; color: #F7F4ED">AI</span>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <div class="ai">共享日历最合适……</div>
+          <div class="muted" style="font-size: 12px; display: flex; gap: 8px; align-items: center"><button aria-label="上一版" style="border: 0; background: transparent; padding: 0; color: #655D53; cursor: pointer">‹</button>2 / 2<button aria-label="下一版" style="border: 0; background: transparent; padding: 0; color: #655D53; cursor: pointer">›</button></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="lbl">消息右键菜单（同微信）</div>
+      <div style="display: flex; gap: 16px; align-items: flex-start">
+        <div style="display: flex; gap: 8px; align-items: flex-start">
+          <span class="av" style="background: #563E84; color: #F7F4ED">AI</span>
+          <div class="ai" style="box-shadow: inset 0 0 0 1px #563E84">建议用共享日历加提醒……</div>
+        </div>
+        <div class="menu" role="menu">
+          <div class="mi" role="menuitem">复制</div>
+          <div class="mi" role="menuitem">引用</div>
+          <div class="mi" role="menuitem">收藏</div>
+          <div class="mi" role="menuitem">记为卡片…</div>
+          <div class="mi" role="menuitem">转发…</div>
+          <div class="mi" role="menuitem">朗读</div>
+          <div class="sep"></div>
+          <div class="mi" role="menuitem">重新回答</div>
+          <div class="mi" role="menuitem">多选</div>
+          <div class="sep"></div>
+          <div class="mi" role="menuitem">删除</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="lbl">收藏后：消息旁出现小星，点它取消</div>
+      <div style="display: flex; gap: 8px; align-items: flex-start">
+        <span class="av" style="background: #563E84; color: #F7F4ED">AI</span>
+        <div class="ai">建议用共享日历加提醒……</div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="#563E84" stroke="#563E84" stroke-width="1.5" aria-label="已收藏" role="img" style="margin-top: 10px"><path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 9.8l6.5-.9z"></path></svg>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

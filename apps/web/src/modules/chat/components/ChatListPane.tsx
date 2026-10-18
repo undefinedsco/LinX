@@ -1,982 +1,289 @@
 /**
- * ChatListPane - WeChat 桌面端风格会话列表
- * 
- * 对齐规格:
- * - 列表项高度: 64px (与 WeChat 桌面端一致)
- * - 头像: 48x48px, 圆角 4px
- * - 标题: 14px, font-weight 500
- * - 预览: 12px, 单行省略
- * - 时间: 12px, 右上角
- * - 置顶: 右上角三角标
- * - 未读: 红色圆形角标
- * - 静音: 灰色静音图标
- * 
- * 交互:
- * - 左键点击: 进入聊天
- * - 右键: 上下文菜单 (置顶、静音、标记未读、删除)
- * - 悬停: 显示更多操作按钮
+ * ChatListPane - S1 / S0b / S1b / S1c: the conversation list.
+ *
+ * One row per identity (assistant, person, group), flat 64px rows, 标星 first.
+ * Search covers conversations, topics, contacts and file names; ⌘K focuses it.
  */
-import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
+import { Check, ListFilter, Loader2, Plus, Search, ShieldAlert, User, Users, WifiOff, X } from 'lucide-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
-import { useChatStore } from '../store'
-import {
-  LINX_DEFAULT_SECRETARY,
-  isLinxDefaultSecretaryChat,
-  useChatList,
-  useChatMutations,
-  useChatInit,
-  useThreadIndex,
-  useLinxDefaultSecretaryBootstrapSettling,
-} from '../collections'
-import {
-  orderChatItems,
-  projectSecretaryListCapabilities,
-} from '../domain/secretary-entry-model'
-import {
-  projectChatListFolderSections,
-  type ChatListFolderFilter,
-} from '../domain/chat-list-folder-model'
-import { resolveThreadChatId } from '@/lib/data/resource-identity'
-import { useInboxItems } from '@/modules/inbox/collections'
-import { isActionableInboxItem } from '@/modules/inbox/utils'
+import { ContactPickerDialog } from '@/modules/contacts'
+import { useBrowserOnline } from '@/lib/use-browser-online'
 import { useToast } from '@/components/ui/use-toast'
-import { formatLoginErrorForUser } from '@/modules/login/error-messages'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import {
-  Bot,
-  Trash2,
-  MailOpen,
-  Star,
-  BellOff,
-  MoreHorizontal,
-  Search,
-  Plus,
-  X,
-  Loader2,
-  UserPlus,
-  Users,
-  User,
-  Terminal,
-  ListFilter,
-  Check,
-} from 'lucide-react'
-import { AddChatDialog } from './AddChatDialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from '@/components/ui/context-menu'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { useQuery } from '@tanstack/react-query'
-import {
-  fetchRuntimeSessionLog,
-  isRuntimeSessionMode,
-  listRuntimeSessions,
-  type RuntimeSessionRecord,
-} from '../runtime-client'
+import { useChatStore } from '../store'
+import { chatOps, useChatInit, useChatMutations } from '../collections'
+import { deleteChatCopy } from '../domain/chat-list-model'
+import { useChatListEntries } from '../features/list/useChatListEntries'
+import { GlobalSearchResults } from '../features/search/GlobalSearchResults'
+import { ChatListRow } from '../ui/ChatListRow'
+import { AddChatDialog } from './AddChatDialog'
 
-// ============================================
-// Types
-// ============================================
-
-type ConversationKind = 'one' | 'group'
-type ThreadMode = 'chat' | 'workspace'
-
-/** Workspace thread status for preview text mapping */
-type WorkspaceStatus = 'idle' | 'active' | 'waiting_approval' | 'paused' | 'completed' | 'error'
-
-interface ChatItemData {
-  id: string
-  title: string
-  preview: string
-  timestamp: string
-  starred: boolean
-  muted: boolean
-  unreadCount: number
-  providerLogo?: string
-  provider?: string
-  conversationKind: ConversationKind
-  threadMode: ThreadMode
-  /** workspace 线程状态 */
-  workspaceStatus?: WorkspaceStatus
-
-  // -- CP0: conversation/thread differentiation fields --
-
-  /** one-to-one: optional online status dot on avatar */
-  onlineStatus?: 'online' | 'offline'
-
-  /** group: participant avatar URLs for composite avatar (max 4) */
-  participantAvatars?: string[]
-  /** group: sender name prefix in preview ("Alice: ...") */
-  senderName?: string
-  /** group: @me badge */
-  mentionedMe?: boolean
-
-  /** workspace 线程工具标识 */
-  sessionTool?: string
-  runtimeSessionId?: string
-  runtimeThreadId?: string
-  pendingInboxCount?: number
-  pendingInboxVariant?: 'approval' | 'auth_required'
-  isProtected: boolean
-  canTogglePin: boolean
-  canDelete: boolean
-}
-
-// ============================================
-// Helpers
-// ============================================
-
-const formatTimestamp = (value?: unknown): string => {
-  if (!value) return ''
-  const date = value instanceof Date ? value : new Date(value as string)
-  if (Number.isNaN(date.getTime())) return ''
-  const now = Date.now()
-  const diff = now - date.getTime()
-  const sameDay = new Date(now).toDateString() === date.toDateString()
-  if (sameDay) {
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  }
-  if (diff < 7 * 24 * 60 * 60 * 1000) {
-    return date.toLocaleDateString('zh-CN', { weekday: 'short' })
-  }
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
-}
-
-/** Workspace status → preview text + color mapping.
- * 状态以中文标签 + 语义色 token 表达，不使用 emoji 作为核心状态语义（DESIGN §29/§131-135）。 */
-const WORKSPACE_STATUS_MAP: Record<WorkspaceStatus, { text: string; color: string }> = {
-  idle:               { text: '待启动',   color: 'text-muted-foreground' },
-  active:             { text: '运行中',   color: 'text-success' },
-  waiting_approval:   { text: '等待确认', color: 'text-warning' },
-  paused:             { text: '已暂停',    color: 'text-muted-foreground' },
-  completed:          { text: '已完成',   color: 'text-success' },
-  error:              { text: '错误',     color: 'text-destructive' },
-}
-
-const WORKSPACE_STATUS_PREVIEW: Record<WorkspaceStatus, string> = Object.fromEntries(
-  Object.entries(WORKSPACE_STATUS_MAP).map(([key, value]) => [key, value.text])
-) as Record<WorkspaceStatus, string>
-
-function getChatIcon(chat: Pick<ChatItemData, 'conversationKind' | 'threadMode'>) {
-  if (chat.threadMode === 'workspace') {
-    return <Terminal strokeWidth={1.5} className="w-5 h-5" />
-  }
-
-  switch (chat.conversationKind) {
-    case 'group':
-      return <Users strokeWidth={1.5} className="w-5 h-5" />
-    default:
-      return <User strokeWidth={1.5} className="w-5 h-5" />
-  }
-}
-
-/** Resolve preview text: workspace threads use status mapping, groups prefix sender name */
-function resolvePreview(chat: ChatItemData): string {
-  if (chat.pendingInboxVariant === 'auth_required') {
-    return '等待认证'
-  }
-  if (chat.pendingInboxVariant === 'approval') {
-    return `待处理授权${chat.pendingInboxCount && chat.pendingInboxCount > 1 ? ` · ${chat.pendingInboxCount} 条` : ''}`
-  }
-  if (chat.threadMode === 'workspace' && chat.workspaceStatus) {
-    return WORKSPACE_STATUS_PREVIEW[chat.workspaceStatus]
-  }
-  if (chat.conversationKind === 'group' && chat.senderName) {
-    return `${chat.senderName}: ${chat.preview}`
-  }
-  return chat.preview
-}
-
-function getWorkspaceStatusColor(status?: WorkspaceStatus): string | undefined {
-  if (!status) return undefined
-  return WORKSPACE_STATUS_MAP[status]?.color
-}
-
-function getInboxPreviewColor(variant?: ChatItemData['pendingInboxVariant']): string | undefined {
-  if (variant === 'approval') return 'text-warning'
-  if (variant === 'auth_required') return 'text-boundary'
-  return undefined
-}
-
-function compareRuntimeSessions(left: RuntimeSessionRecord, right: RuntimeSessionRecord): number {
-  const leftTime = new Date(left.lastActivityAt || left.updatedAt || left.createdAt).getTime()
-  const rightTime = new Date(right.lastActivityAt || right.updatedAt || right.createdAt).getTime()
-  return rightTime - leftTime
-}
-
-// ============================================
-// Chat Item Component - WeChat Desktop Style
-// ============================================
-
-interface ChatItemProps {
-  chat: ChatItemData
-  isActive: boolean
-  tabIndex: number
-  itemRef: (node: HTMLDivElement | null) => void
-  onRovingKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
-  onClick: () => void
-  onStar: () => void
-  onMute: () => void
-  onMarkUnread: () => void
-  onCopyLog: () => void
-  onDelete: () => void
-}
-
-function ChatItem({
-  chat,
-  isActive,
-  tabIndex,
-  itemRef,
-  onRovingKeyDown,
-  onClick,
-  onStar,
-  onMute,
-  onMarkUnread,
-  onCopyLog,
-  onDelete
-}: ChatItemProps) {
-  const [isHovering, setIsHovering] = useState(false)
-  const canDelete = chat.canDelete
-  const hasSecondaryContextActions = chat.threadMode === 'workspace' || chat.conversationKind === 'group' || canDelete
-
-  const previewColorClass = chat.threadMode === 'workspace'
-    ? getWorkspaceStatusColor(chat.workspaceStatus) ?? 'text-muted-foreground'
-    : getInboxPreviewColor(chat.pendingInboxVariant) ?? 'text-muted-foreground'
-
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          ref={itemRef}
-          data-testid="chat-list-item"
-          data-chat-id={chat.id}
-          role="option"
-          aria-label={chat.title}
-          aria-selected={isActive}
-          tabIndex={tabIndex}
-          onClick={onClick}
-          onKeyDown={(event) => {
-            if (event.target !== event.currentTarget) return
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              onClick()
-              return
-            }
-            onRovingKeyDown(event)
-          }}
-          onMouseEnter={() => setIsHovering(true)}
-          onMouseLeave={() => setIsHovering(false)}
-          className={cn(
-            // WeChat Desktop: 64px 高度, 无圆角, 紧凑间距
-            'group relative flex items-center gap-3 h-16 px-3 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
-            'transition-colors duration-150',
-            // 选中状态
-            isActive
-              ? 'bg-layout-list-selected'
-              : [
-                  // 悬停状态
-                  'hover:bg-layout-list-hover',
-                  // 标星(置顶)状态: 稍微加深背景色以示区分
-                  chat.starred ? 'bg-muted/80' : 'bg-transparent'
-                ]
-          )}
-        >
-          {/* Avatar - 48x48, 圆角 4px */}
-          <div className="relative shrink-0">
-            {chat.conversationKind === 'group' && chat.participantAvatars && chat.participantAvatars.length > 1 ? (
-              <div className="h-12 w-12 rounded-sm border border-border/30 grid grid-cols-2 grid-rows-2 gap-px overflow-hidden bg-muted">
-                {chat.participantAvatars.slice(0, 4).map((url, i) => (
-                  <Avatar key={i} className="h-full w-full rounded-none">
-                    <AvatarImage src={url} className="object-cover" />
-                    <AvatarFallback className="rounded-none bg-primary/10 text-primary text-[10px]">
-                      {getChatIcon({ conversationKind: 'group', threadMode: 'chat' })}
-                    </AvatarFallback>
-                  </Avatar>
-                ))}
-              </div>
-            ) : (
-              <Avatar className="h-12 w-12 border border-border/30 rounded-sm">
-                <AvatarImage src={chat.providerLogo} className="rounded-sm object-cover" />
-                <AvatarFallback className="rounded-sm bg-primary/10 text-primary text-sm">
-                  {chat.isProtected ? <Bot strokeWidth={1.5} className="h-5 w-5" /> : chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatIcon(chat)}
-                </AvatarFallback>
-              </Avatar>
-            )}
-
-            {chat.conversationKind === 'one' && chat.threadMode === 'chat' && chat.onlineStatus && (
-              <span className={cn(
-                'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background',
-                chat.onlineStatus === 'online' ? 'bg-success' : 'bg-muted-foreground/40'
-              )} />
-            )}
-
-            {/* 未读角标 */}
-            {chat.unreadCount > 0 && (
-              <div className={cn(
-                'absolute -top-1 -right-1 flex items-center justify-center',
-                'min-w-[18px] h-[18px] px-1 rounded-full',
-                'bg-destructive text-destructive-foreground text-[10px] font-medium',
-                'border-2 border-background'
-              )}>
-                {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
-              </div>
-            )}
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 min-w-0 py-2 relative">
-            {/* Top Row: Title + Time/Action */}
-            <div className="relative mb-0.5 h-5">
-              <div className="text-sm font-medium text-foreground truncate pr-[60px]">
-                {chat.title}
-              </div>
-
-              {/* Time or Action - Absolute Right */}
-              <div className="absolute right-0 top-0 h-full flex items-center justify-end gap-1 z-10">
-                {isHovering ? (
-                  <div className="flex items-center gap-0.5 animate-in fade-in zoom-in-95 duration-150">
-                    {chat.canTogglePin && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                        onClick={(e) => { e.stopPropagation(); onStar(); }}
-                        title={chat.starred ? '取消标星' : '标星'}
-                      >
-                        <Star strokeWidth={1.5} className={cn("w-4 h-4", chat.starred && "fill-primary text-primary")} />
-                      </Button>
-                    )}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreHorizontal strokeWidth={1.5} className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMute() }}>
-                          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-muted-foreground')} />
-                          {chat.muted ? '取消静音' : '静音'}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMarkUnread() }}>
-                          <MailOpen strokeWidth={1.5} className="mr-2 h-4 w-4" />
-                          标记未读
-                        </DropdownMenuItem>
-                        {canDelete && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
-                              onClick={(e) => { e.stopPropagation(); onDelete() }}
-                            >
-                              <Trash2 strokeWidth={1.5} className="mr-2 h-4 w-4" />
-                              删除
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                ) : (
-                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                    {chat.timestamp}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Bottom Row: Preview + Badges (spec §7.7) */}
-            <div className="flex items-center justify-between gap-2">
-              <p className={cn('text-xs truncate flex-1', previewColorClass)}>
-                {resolvePreview(chat)}
-              </p>
-              <div className="flex items-center gap-1 shrink-0">
-                {chat.conversationKind === 'group' && chat.mentionedMe && (
-                  <span className="text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary font-medium whitespace-nowrap">
-                    @我
-                  </span>
-                )}
-                {chat.muted && (
-                  <BellOff strokeWidth={1.5} className="w-3 h-3 text-muted-foreground" />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </ContextMenuTrigger>
-
-      {/* Context Menu — conversation/thread differentiated */}
-      <ContextMenuContent className="w-40">
-        {chat.canTogglePin && (
-          <ContextMenuItem onClick={onStar}>
-            <Star className={cn('mr-2 h-4 w-4', chat.starred && 'fill-primary text-primary')} />
-            {chat.starred ? '取消标星' : '标星'}
-          </ContextMenuItem>
-        )}
-        <ContextMenuItem onClick={onMute}>
-          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-muted-foreground')} />
-          {chat.muted ? '取消静音' : '静音'}
-        </ContextMenuItem>
-        {chat.threadMode !== 'workspace' && (
-          <ContextMenuItem onClick={onMarkUnread}>
-            <MailOpen strokeWidth={1.5} className="mr-2 h-4 w-4" />
-            标记未读
-          </ContextMenuItem>
-        )}
-        {hasSecondaryContextActions && <ContextMenuSeparator />}
-        {chat.threadMode === 'workspace' && (
-          <ContextMenuItem onClick={onCopyLog}>
-            <Terminal strokeWidth={1.5} className="mr-2 h-4 w-4" />
-            复制日志
-          </ContextMenuItem>
-        )}
-        {chat.conversationKind === 'group' && (
-          <ContextMenuItem disabled>
-            <Users strokeWidth={1.5} className="mr-2 h-4 w-4" />
-            群设置
-          </ContextMenuItem>
-        )}
-        {canDelete && (
-          <ContextMenuItem
-            className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
-            onClick={onDelete}
-          >
-            <Trash2 strokeWidth={1.5} className="mr-2 h-4 w-4" />
-            {chat.conversationKind === 'group' ? '退出群聊' : '删除'}
-          </ContextMenuItem>
-        )}
-      </ContextMenuContent>
-    </ContextMenu>
-  )
-}
-
-// ============================================
-// List Header Component
-// ============================================
-
-interface ListHeaderProps {
-  title?: React.ReactNode
-  searchValue: string
-  onSearchChange: (value: string) => void
-  onAddClick?: () => void
-  onAddFriend?: () => void
-  onAddGroup?: () => void
-  addButtonLabel?: string
-  variant?: 'search' | 'title'
-  filterControl?: React.ReactNode
-}
-
-function ListHeader({ 
-  title, 
-  searchValue, 
-  onSearchChange, 
-  onAddClick, 
-  onAddFriend,
-  onAddGroup,
-  addButtonLabel,
-  variant = 'title',
-  filterControl,
-}: ListHeaderProps) {
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false)
-
-  const handleCloseSearch = useCallback(() => {
-    setIsSearchExpanded(false)
-    onSearchChange('')
-  }, [onSearchChange])
-
-  // Persistent Search Mode (WeChat Style)
-  if (variant === 'search') {
-    return (
-      <div data-testid="chat-list-header" className="h-12 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
-        <div className="relative flex-1 min-w-0">
-          <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground">
-            <Search strokeWidth={1.5} className="h-3.5 w-3.5" />
-          </div>
-          <Input
-            value={searchValue}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="搜索"
-            className="pl-8 pr-8 h-8 bg-muted/50 hover:bg-muted/80 focus:bg-background rounded-sm text-xs border-0 focus-visible:ring-1 transition-colors"
-          />
-          {searchValue && (
-            <button
-              onClick={() => onSearchChange('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-muted-foreground/20 rounded-full"
-            >
-              <X strokeWidth={1.5} className="h-3 w-3 text-muted-foreground" />
-            </button>
-          )}
-        </div>
-        {filterControl}
-        {onAddClick && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 shrink-0 bg-muted/50 hover:bg-muted/80 rounded-sm"
-                title={addButtonLabel || '添加'}
-              >
-                <Plus strokeWidth={1.5} className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={onAddClick}>
-                <Bot strokeWidth={1.5} className="mr-2 h-4 w-4" />
-                <span>创建助手</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onAddFriend}>
-                <UserPlus strokeWidth={1.5} className="mr-2 h-4 w-4" />
-                <span>添加朋友</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onAddGroup}>
-                <Users strokeWidth={1.5} className="mr-2 h-4 w-4" />
-                <span>发起群聊</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
-    )
-  }
-
-  // Title Mode (with expandable search)
-  return (
-    <div data-testid="chat-list-header" className="h-12 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
-      {isSearchExpanded ? (
-        <>
-          <div className="relative flex-1 min-w-0">
-            <Search strokeWidth={1.5} className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={searchValue}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="搜索..."
-              autoFocus
-              className="pl-9 pr-8 h-8 bg-background/60 rounded text-sm border-0 focus-visible:ring-1"
-            />
-            {searchValue && (
-              <button
-                onClick={() => onSearchChange('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-muted rounded"
-              >
-                <X strokeWidth={1.5} className="h-3 w-3 text-muted-foreground" />
-              </button>
-            )}
-          </div>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={handleCloseSearch}
-            className="h-8 w-8 shrink-0"
-          >
-            <X strokeWidth={1.5} className="h-4 w-4" />
-          </Button>
-        </>
-      ) : (
-        <>
-          <div className="flex-1 min-w-0 font-medium text-sm truncate">
-            {title}
-          </div>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => setIsSearchExpanded(true)}
-            className="h-8 w-8 shrink-0 hover:bg-muted"
-          >
-            <Search strokeWidth={1.5} className="h-4 w-4 text-muted-foreground" />
-          </Button>
-          {onAddClick && (
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={onAddClick}
-              className="h-8 w-8 shrink-0 hover:bg-primary/10 hover:text-primary"
-              title={addButtonLabel || '添加'}
-            >
-              <Plus strokeWidth={1.5} className="w-4 h-4" />
-            </Button>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
-// ============================================
-// Main Component
-// ============================================
+type ListFilter = 'all' | 'unread'
 
 export interface ChatListPaneProps extends MicroAppPaneProps {}
 
 export function ChatListPane(_props: ChatListPaneProps) {
-  // Initialize chat collections with database
   useChatInit()
   const { toast } = useToast()
-  
   const search = useChatStore((state) => state.search)
   const setSearch = useChatStore((state) => state.setSearch)
+  const searchRequest = useChatStore((state) => state.searchRequest)
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectChat = useChatStore((state) => state.selectChat)
   const openAddDialog = useChatStore((state) => state.openAddDialog)
-  const [folderFilter, setFolderFilter] = useState<ChatListFolderFilter>('all')
+  const [filter, setFilter] = useState<ListFilter>('all')
   const [debouncedSearch, setDebouncedSearch] = useState(search)
+  const [isContactPickerOpen, setIsContactPickerOpen] = useState(false)
   const optionRefs = useRef<Array<HTMLDivElement | null>>([])
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const lastSearchRequest = useRef(searchRequest)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 120)
     return () => window.clearTimeout(timer)
   }, [search])
 
-  // Use new collection-based hooks
-  const { data: rawChats, isLoading: isChatsLoading } = useChatList(
-    debouncedSearch ? { search: debouncedSearch } : undefined,
-  )
-  const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
-  const runtimeMode = isRuntimeSessionMode()
-  const { data: threads = [] } = useThreadIndex({ enabled: runtimeMode })
-  const { data: inboxItems = [] } = useInboxItems('all', { enabled: !isDefaultSecretarySettling })
-  const { data: runtimeSessions = [] } = useQuery({
-    queryKey: ['runtime-sessions'],
-    queryFn: () => listRuntimeSessions(),
-    enabled: runtimeMode,
-    refetchInterval: 5000,
-  })
+  // ⌘K (wired by the shell) asks the list column to start searching.
+  useEffect(() => {
+    if (searchRequest === lastSearchRequest.current) return
+    lastSearchRequest.current = searchRequest
+    searchInputRef.current?.focus()
+    searchInputRef.current?.select()
+  }, [searchRequest])
 
-  const mutations = useChatMutations()
-
-  // 格式化 Chat 列表 - 添加标星排序
-  const chats: ChatItemData[] = useMemo(() => {
-    const sourceChats = rawChats ?? []
-
-    const threadsByChatId = new Map<string, string[]>()
-    const workspaceBackedChatIds = new Set<string>()
-    for (const thread of threads) {
-      const threadId = thread.id
-      const chatId = resolveThreadChatId(thread)
-      if (!threadId || !chatId) continue
-      const list = threadsByChatId.get(chatId) ?? []
-      list.push(threadId)
-      threadsByChatId.set(chatId, list)
-      if (thread.workspace) {
-        workspaceBackedChatIds.add(chatId)
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
       }
     }
-
-    const runtimeSessionByThreadId = new Map<string, RuntimeSessionRecord>()
-    for (const session of runtimeSessions) {
-      const previous = runtimeSessionByThreadId.get(session.threadId)
-      if (!previous || compareRuntimeSessions(previous, session) > 0) {
-        runtimeSessionByThreadId.set(session.threadId, session)
-      }
-    }
-
-    const projectedChats = orderChatItems(sourceChats).map((chat): ChatItemData => {
-      const id = chat.id ?? 'unknown'
-      const capabilities = projectSecretaryListCapabilities(chat)
-      const pendingItems = inboxItems.filter((item) => item.chatId === id)
-      const hasPendingApproval = pendingItems.some((item) => item.kind === 'approval' && item.status === 'pending')
-      const hasAuthRequired = pendingItems.some((item) => item.category === 'auth_required')
-      const pendingInboxCount = pendingItems.filter(isActionableInboxItem).length
-      const pendingInboxVariant: ChatItemData['pendingInboxVariant'] =
-        hasAuthRequired ? 'auth_required' : hasPendingApproval ? 'approval' : undefined
-      const runtimeThreadIds = threadsByChatId.get(id) ?? []
-      const linkedRuntimeSessions = runtimeThreadIds
-        .map((threadId) => runtimeSessionByThreadId.get(threadId))
-        .filter((session): session is RuntimeSessionRecord => !!session)
-        .sort(compareRuntimeSessions)
-      const runtimeSession = linkedRuntimeSessions[0]
-      const hasWorkspaceContext = workspaceBackedChatIds.has(id)
-
-      return {
-        id,
-        title: capabilities.isProtected ? LINX_DEFAULT_SECRETARY.title : chat.title ?? '未命名聊天',
-        preview: chat.lastMessagePreview ?? '暂无消息',
-        timestamp: formatTimestamp(chat.lastActiveAt ?? chat.updatedAt),
-        starred: capabilities.isPinned,
-        muted: chat.muted ?? false,
-        unreadCount: chat.unreadCount ?? 0,
-        providerLogo: chat.avatarUrl ?? undefined,
-        provider: undefined,
-        conversationKind: chat.participants && chat.participants.length > 1 ? 'group' : 'one',
-        threadMode: runtimeSession || hasWorkspaceContext ? 'workspace' : 'chat',
-        workspaceStatus: runtimeSession?.status,
-        sessionTool: runtimeSession?.tool,
-        runtimeSessionId: runtimeSession?.id,
-        runtimeThreadId: runtimeSession?.threadId,
-        pendingInboxCount,
-        pendingInboxVariant,
-        isProtected: capabilities.isProtected,
-        canTogglePin: capabilities.canTogglePin,
-        canDelete: capabilities.canDelete,
-      }
-    })
-
-    const hasSecretary = sourceChats.some((chat) => (
-      chat.id === LINX_DEFAULT_SECRETARY.chatId || isLinxDefaultSecretaryChat(chat)
-    ))
-    const normalizedSearch = search.trim().toLocaleLowerCase()
-    const matchesSecretary = normalizedSearch.length === 0
-      || LINX_DEFAULT_SECRETARY.title.toLocaleLowerCase().includes(normalizedSearch)
-
-    if (hasSecretary || !matchesSecretary) return projectedChats
-
-    // The Secretary is a built-in entry point. Keep it visible while Pod bootstrap
-    // or a remote refresh is pending; persistence remains owned by collections.
-    return [{
-      id: LINX_DEFAULT_SECRETARY.chatId,
-      title: LINX_DEFAULT_SECRETARY.title,
-      preview: '暂无消息',
-      timestamp: '',
-      starred: true,
-      muted: false,
-      unreadCount: 0,
-      conversationKind: 'one',
-      threadMode: 'chat',
-      isProtected: true,
-      canTogglePin: false,
-      canDelete: false,
-    }, ...projectedChats]
-  }, [inboxItems, rawChats, runtimeSessions, search, threads])
-
-  const chatListSections = useMemo(
-    () => projectChatListFolderSections(chats, folderFilter),
-    [chats, folderFilter],
-  )
-
-  const visibleChats = useMemo(
-    () => [...chatListSections.pinned, ...chatListSections.unpinned],
-    [chatListSections],
-  )
-  const selectedIndex = visibleChats.findIndex((c) => c.id === selectedChatId)
-
-  const registerItemRef = useCallback((index: number, node: HTMLDivElement | null) => {
-    optionRefs.current[index] = node
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  const isOnline = useBrowserOnline()
+  const mutations = useChatMutations()
+  const { entries, isLoading, isError, isForbidden, refetch } = useChatListEntries()
+
+  const visible = useMemo(
+    () => (filter === 'unread' ? entries.filter((entry) => entry.unreadCount > 0) : entries),
+    [entries, filter],
+  )
+  const selectedIndex = visible.findIndex((entry) => entry.id === selectedChatId)
+
   const onItemKeyDown = useCallback((index: number, event: KeyboardEvent<HTMLDivElement>) => {
-    let nextIndex: number
-    if (event.key === 'ArrowDown') nextIndex = Math.min(index + 1, visibleChats.length - 1)
-    else if (event.key === 'ArrowUp') nextIndex = Math.max(index - 1, 0)
-    else if (event.key === 'Home') nextIndex = 0
-    else if (event.key === 'End') nextIndex = visibleChats.length - 1
+    let next: number
+    if (event.key === 'ArrowDown') next = Math.min(index + 1, visible.length - 1)
+    else if (event.key === 'ArrowUp') next = Math.max(index - 1, 0)
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = visible.length - 1
     else return
     event.preventDefault()
-    selectChat(visibleChats[nextIndex].id)
-    optionRefs.current[nextIndex]?.focus()
-  }, [visibleChats, selectChat])
+    selectChat(visible[next].id)
+    optionRefs.current[next]?.focus()
+  }, [selectChat, visible])
 
-  // Handlers
-  const handleAddChat = useCallback(() => {
-    openAddDialog('ai')
-  }, [openAddDialog])
-
-  const handleAddFriend = useCallback(() => {
-    openAddDialog('friend')
-  }, [openAddDialog])
-
-  const handleAddGroup = useCallback(() => {
-    openAddDialog('group')
-  }, [openAddDialog])
-
-  const handleChatClick = useCallback((chatId: string) => {
-    // WeChat style: Click to select, don't enter 'topic' list view on left
-    // Topics are now in the Right Sidebar
-    selectChat(chatId) 
-  }, [selectChat])
-
-  const handleStarChat = useCallback(async (chatId: string) => {
-    const chat = chats.find(c => c.id === chatId)
-    if (!chat?.canTogglePin) return
+  const updateFlag = useCallback(async (chatId: string, values: { starred?: boolean; muted?: boolean; unreadCount?: number }) => {
     try {
-      await mutations.updateChat.mutateAsync({
-        id: chatId,
-        starred: !chat.starred,
-      })
-    } catch (e) {
-      console.error('Star chat failed:', e)
+      await mutations.updateChat.mutateAsync({ id: chatId, ...values })
+    } catch (error) {
+      console.error('Update chat failed:', error)
+      toast({ description: '没能保存，请稍后再试。', variant: 'destructive' })
     }
-  }, [chats, mutations])
+  }, [mutations.updateChat, toast])
 
-  const handleMuteChat = useCallback(async (chatId: string) => {
-    const chat = chats.find(c => c.id === chatId)
-    if (!chat) return
-    try {
-      await mutations.updateChat.mutateAsync({
-        id: chatId,
-        muted: !chat.muted,
-      })
-    } catch (e) {
-      console.error('Mute chat failed:', e)
-    }
-  }, [chats, mutations])
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null)
+  const pendingRemove = pendingRemoveId ? entries.find((entry) => entry.id === pendingRemoveId) ?? null : null
+  const pendingTopicCount = pendingRemoveId ? chatOps.getThreads(pendingRemoveId).length : 0
 
-  const handleMarkAsUnread = useCallback(async (chatId: string) => {
-    try {
-      await mutations.updateChat.mutateAsync({
-        id: chatId,
-        unreadCount: 1,
-      })
-    } catch (e) {
-      console.error('Mark as unread failed:', e)
-    }
-  }, [mutations])
-
-  const handleDeleteChat = useCallback(async (chatId: string) => {
-    const chat = chats.find(c => c.id === chatId)
-    if (!chat) return
-    if (!chat.canDelete || chat.isProtected) {
-      toast({ description: '默认助手不能删除。' })
+  const requestRemove = useCallback((chatId: string) => {
+    const entry = entries.find((item) => item.id === chatId)
+    if (!entry) return
+    if (entry.isProtected) {
+      toast({ description: 'LinX 助手不能删除。' })
       return
     }
+    // Let the menu close and hand focus back before the dialog traps it.
+    window.setTimeout(() => setPendingRemoveId(chatId), 0)
+  }, [entries, toast])
 
-    if (!confirm('确定要删除这个聊天吗？相关的话题和消息也会被删除。')) return
+  const confirmRemove = useCallback(async () => {
+    const chatId = pendingRemoveId
+    if (!chatId) return
     try {
       await mutations.deleteChat.mutateAsync(chatId)
-      if (selectedChatId === chatId) {
-        selectChat(null)
-      }
-    } catch (e) {
-      console.error('Delete chat failed:', e)
-    }
-  }, [chats, selectedChatId, mutations, selectChat, toast])
-
-  const handleCopyLog = useCallback(async (chatId: string) => {
-    const chat = chats.find((item) => item.id === chatId)
-    if (!chat?.runtimeSessionId) {
-      toast({
-        description: '当前聊天还没有可复制的运行时日志。',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    try {
-      const log = await fetchRuntimeSessionLog(chat.runtimeSessionId)
-      await navigator.clipboard.writeText(log)
-      toast({ description: '运行时日志已复制。' })
+      if (selectedChatId === chatId) selectChat(null)
+      setPendingRemoveId(null)
     } catch (error) {
-      console.error('Copy runtime session log failed:', error)
-      toast({
-        description: formatLoginErrorForUser(error, '复制运行时日志失败。请稍后重试。'),
-        variant: 'destructive',
-      })
+      console.error('Remove chat failed:', error)
+      toast({ description: '没能删除这个会话，请稍后再试。', variant: 'destructive' })
     }
-  }, [chats, toast])
+  }, [mutations.deleteChat, pendingRemoveId, selectChat, selectedChatId, toast])
 
-  const renderChatItem = (chat: ChatItemData, flatIndex: number) => {
-    const tabbable = selectedChatId === chat.id || (selectedIndex < 0 && flatIndex === 0)
-    return (
-      <ChatItem
-        key={chat.id}
-        chat={chat}
-        isActive={selectedChatId === chat.id}
-        tabIndex={tabbable ? 0 : -1}
-        itemRef={(node) => registerItemRef(flatIndex, node)}
-        onRovingKeyDown={(event) => onItemKeyDown(flatIndex, event)}
-        onClick={() => handleChatClick(chat.id)}
-        onStar={() => handleStarChat(chat.id)}
-        onMute={() => handleMuteChat(chat.id)}
-        onMarkUnread={() => handleMarkAsUnread(chat.id)}
-        onCopyLog={() => handleCopyLog(chat.id)}
-        onDelete={() => handleDeleteChat(chat.id)}
-      />
-    )
-  }
+  const removeCopy = pendingRemove
+    ? pendingRemove.kind === 'group'
+      ? { title: `退出“${pendingRemove.title}”？`, description: '退出后不再收到这个群的消息，群里的文件不受影响。' }
+      : deleteChatCopy(pendingRemove, pendingTopicCount)
+    : { title: '删除这个会话？', description: '聊天记录会被删除，不能恢复。' }
+
+  const searching = debouncedSearch.trim().length > 0
 
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
-      <ListHeader
-        title="聊天"
-        searchValue={search}
-        onSearchChange={setSearch}
-        onAddClick={handleAddChat}
-        onAddFriend={handleAddFriend}
-        onAddGroup={handleAddGroup}
-        addButtonLabel="新建聊天"
-        variant="search"
-        filterControl={(
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className={cn(
-                  'h-8 w-8 shrink-0 rounded-sm',
-                  folderFilter !== 'all' ? 'bg-primary/10 text-primary' : 'bg-muted/50 hover:bg-muted/80 text-muted-foreground',
-                )}
-                title="筛选会话"
-                aria-label="筛选会话"
-              >
-                <ListFilter strokeWidth={1.5} className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-32">
-              <DropdownMenuItem onClick={() => setFolderFilter('all')}>
-                <Check strokeWidth={1.5} className={cn('mr-2 h-4 w-4', folderFilter === 'all' ? 'opacity-100' : 'opacity-0')} />
-                <span>全部</span>
+      <div data-testid="chat-list-header" className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-layout-list-header px-3">
+        <div className="relative min-w-0 flex-1">
+          <Search strokeWidth={1.5} className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input
+            ref={searchInputRef}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Escape') setSearch('') }}
+            placeholder="搜索"
+            aria-label="搜索"
+            className="h-8 rounded-sm border-0 bg-muted/50 pl-8 pr-14 text-xs transition-colors hover:bg-muted/80 focus:bg-background focus-visible:ring-1"
+          />
+          {search ? (
+            <button
+              type="button"
+              aria-label="清除搜索"
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 hover:bg-muted-foreground/20"
+            >
+              <X strokeWidth={1.5} className="h-3 w-3 text-muted-foreground" />
+            </button>
+          ) : (
+            <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded bg-background/70 px-1 text-[10px] text-muted-foreground">⌘K</kbd>
+          )}
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              title="筛选会话"
+              aria-label="筛选会话"
+              className={cn('h-8 w-8 shrink-0 rounded-sm', filter !== 'all' ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground hover:bg-muted/80')}
+            >
+              <ListFilter strokeWidth={1.5} className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-32">
+            {([['all', '全部'], ['unread', '未读']] as const).map(([value, label]) => (
+              <DropdownMenuItem key={value} onClick={() => setFilter(value)}>
+                <Check strokeWidth={1.5} className={cn('mr-2 h-4 w-4', filter === value ? 'opacity-100' : 'opacity-0')} />
+                <span>{label}</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFolderFilter('unread')}>
-                <Check strokeWidth={1.5} className={cn('mr-2 h-4 w-4', folderFilter === 'unread' ? 'opacity-100' : 'opacity-0')} />
-                <span>未读</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      />
-      
-      <ScrollArea className="flex-1">
-        {isChatsLoading && chats.length === 0 ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            正在加载...
-          </div>
-        ) : chats.length === 0 ? (
-          <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
-            暂无聊天
-          </div>
-        ) : (
-          <div role="listbox" aria-label="聊天" aria-orientation="vertical" className="animate-fade-in">
-            {chatListSections.pinned.length > 0 ? (
-              <div role="group" aria-label="置顶" className="divide-y divide-border/30">
-                {chatListSections.pinned.map((chat, i) => renderChatItem(chat, i))}
-              </div>
-            ) : null}
-            {chatListSections.pinned.length > 0 && chatListSections.unpinned.length > 0 ? (
-              <div role="presentation" className="border-t border-border/60" />
-            ) : null}
-            {chatListSections.unpinned.length > 0 ? (
-              <div role="group" aria-label={folderFilter === 'unread' ? '未读会话' : '会话'} className="divide-y divide-border/30">
-                {chatListSections.unpinned.map((chat, i) => renderChatItem(chat, chatListSections.pinned.length + i))}
-              </div>
-            ) : null}
-            {chatListSections.pinned.length === 0 && chatListSections.unpinned.length === 0 ? (
-              <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
-                该筛选下暂无会话
-              </div>
-            ) : null}
-          </div>
-        )}
-      </ScrollArea>
-      
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon" variant="ghost" title="新建聊天" aria-label="新建聊天" className="h-8 w-8 shrink-0 rounded-sm bg-muted/50 hover:bg-muted/80">
+              <Plus strokeWidth={1.5} className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => setIsContactPickerOpen(true)}>
+              <User strokeWidth={1.5} className="mr-2 h-4 w-4" />
+              <span>找人聊天</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openAddDialog('group')}>
+              <Users strokeWidth={1.5} className="mr-2 h-4 w-4" />
+              <span>发起群聊</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {!isOnline ? (
+        <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/60 px-4 py-2 text-xs text-muted-foreground">
+          <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          网络不可用，显示的是上次的内容
+        </div>
+      ) : isForbidden ? (
+        <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/60 px-4 py-2 text-xs text-muted-foreground">
+          <ShieldAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          没有权限读取你的会话，请到“我”里检查空间授权
+        </div>
+      ) : isError ? (
+        <div role="status" className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-muted/60 px-4 py-2 text-xs text-muted-foreground">
+          会话列表没有更新成功
+          <button type="button" className="text-primary hover:underline" onClick={refetch}>重试</button>
+        </div>
+      ) : null}
+
+      {searching ? (
+        <GlobalSearchResults query={debouncedSearch} />
+      ) : (
+        <ScrollArea className="flex-1">
+          {isLoading && entries.length === 0 ? (
+            <div className="flex animate-fade-in items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              正在加载...
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="animate-fade-in px-4 py-12 text-center text-sm text-muted-foreground">
+              {filter === 'unread' ? '没有未读会话' : '还没有会话'}
+            </div>
+          ) : (
+            <div role="listbox" aria-label="聊天" aria-orientation="vertical" className="animate-fade-in divide-y divide-border/30">
+              {visible.map((entry, index) => {
+                const tabbable = selectedChatId === entry.id || (selectedIndex < 0 && index === 0)
+                return (
+                  <ChatListRow
+                    key={entry.id}
+                    entry={entry}
+                    isActive={selectedChatId === entry.id}
+                    tabIndex={tabbable ? 0 : -1}
+                    itemRef={(node) => { optionRefs.current[index] = node }}
+                    onRovingKeyDown={(event) => onItemKeyDown(index, event)}
+                    onOpen={() => selectChat(entry.id)}
+                    onToggleStar={() => { void updateFlag(entry.id, { starred: !entry.starred }) }}
+                    onMarkUnread={() => { void updateFlag(entry.id, { unreadCount: 1 }) }}
+                    onToggleMute={() => { void updateFlag(entry.id, { muted: !entry.muted }) }}
+                    onDelete={() => requestRemove(entry.id)}
+                    onLeave={() => requestRemove(entry.id)}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </ScrollArea>
+      )}
+
       <AddChatDialog />
+      <ContactPickerDialog
+        open={isContactPickerOpen}
+        onOpenChange={setIsContactPickerOpen}
+        onChatReady={(chatId) => selectChat(chatId)}
+        onAddFriend={() => openAddDialog('friend')}
+      />
+      <ConfirmDialog
+        open={pendingRemoveId !== null}
+        onOpenChange={(open) => { if (!open) setPendingRemoveId(null) }}
+        title={removeCopy.title}
+        description={removeCopy.description}
+        confirmLabel={pendingRemove?.kind === 'group' ? '退出' : '删除'}
+        destructive
+        busy={mutations.deleteChat.isPending}
+        onConfirm={() => { void confirmRemove() }}
+      />
     </div>
   )
 }

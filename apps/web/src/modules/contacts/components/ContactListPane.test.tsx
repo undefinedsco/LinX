@@ -89,8 +89,8 @@ let mockStoreState = {
   viewMode: 'view',
   select: vi.fn(),
   openCreateDialog: vi.fn(),
-  listFilter: 'all' as string,
-  setListFilter: vi.fn(),
+  entry: null as string | null,
+  openEntry: vi.fn(),
 }
 
 vi.mock('../app/store', () => ({
@@ -129,8 +129,8 @@ describe('ContactListPane', () => {
       viewMode: 'view',
       select: vi.fn(),
       openCreateDialog: vi.fn(),
-      listFilter: 'all',
-      setListFilter: vi.fn(),
+      entry: null,
+      openEntry: vi.fn(),
     }
   })
 
@@ -146,10 +146,10 @@ describe('ContactListPane', () => {
       expect(buttons.length).toBeGreaterThan(0)
     })
 
-    it('does not render the unfinished new friends entry', async () => {
+    it('puts 新的朋友 and 群聊 above the list', async () => {
       render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
-      expect(screen.queryByText('新的朋友')).not.toBeInTheDocument()
-      expect(screen.queryByText('2')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /新的朋友/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /群聊/ })).toBeInTheDocument()
     })
 
     it('renders contacts from contactOps', async () => {
@@ -246,7 +246,7 @@ describe('ContactListPane', () => {
       
       render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
       
-      expect(await screen.findByText('暂无联系人')).toBeInTheDocument()
+      expect(await screen.findByText('没有找到')).toBeInTheDocument()
     })
   })
 
@@ -259,10 +259,13 @@ describe('ContactListPane', () => {
       expect(mockStoreState.select).toHaveBeenCalledWith('mock-solid-1')
     })
 
-    it('does not expose new friends entry from the primary list surface', async () => {
+    it('opens the 新的朋友 and 群聊 entries', async () => {
       render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.queryByText('新的朋友')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: /新的朋友/ }))
+      expect(mockStoreState.openEntry).toHaveBeenCalledWith('new-friends')
+      fireEvent.click(screen.getByRole('button', { name: /群聊/ }))
+      expect(mockStoreState.openEntry).toHaveBeenCalledWith('groups')
     })
 
     it('updates search on input change', async () => {
@@ -276,12 +279,13 @@ describe('ContactListPane', () => {
   })
 
   describe('Grouping', () => {
-    it('groups starred contacts separately', async () => {
+    it('mixes people and assistants into one list', async () => {
       render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
-      
-      // Wait for contacts to load - '智能翻译官' shows as alias '翻译助手'
+
       await screen.findByText('翻译助手')
-      expect(screen.getByText('星标朋友')).toBeInTheDocument()
+      expect(screen.getAllByRole('listbox')).toHaveLength(1)
+      expect(screen.getAllByRole('option')).toHaveLength(3)
+      expect(screen.getAllByTestId('assistant-avatar')).toHaveLength(1)
     })
   })
 

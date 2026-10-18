@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>个人模型：接通后的状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:16px;display:flex;flex-direction:column;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.s{font-size:12px;color:#655D53}
+.bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;background:#FBFAF7;border:1px solid #DFDBD5;font-size:13px}
+.ans{flex:1;background:#F7F4ED;border:1px solid #DFDBD5;border-radius:8px;padding:10px;font-size:12px}
+.kv{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #DFDBD5}
+</style>
+</helmet>
+<div class="root" style="padding: 24px 32px; box-sizing: border-box; min-height: 900px">
+  <p class="s" style="margin: 0 0 16px">训练服务接通之后才会出现的状态。现在只能做到“准备材料”。</p>
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px">
+    <section style="display: flex; flex-direction: column; gap: 12px">
+      <div class="lbl">开始前确认（材料要发出去）</div>
+      <div class="sheet" role="dialog">
+        <div style="font-weight: 600">开始训练？</div>
+        <div class="kv"><span class="s">材料</span><span>卡片 12 · 改过的结果 23</span></div>
+        <div class="kv"><span class="s">发到</span><span>[训练服务名称]</span></div>
+        <div class="kv"><span class="s">费用</span><span>[按服务报价]</span></div>
+        <div class="s">训练期间可以关掉页面</div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">开始训练</span></div>
+      </div>
+      <div class="lbl">训练中</div>
+      <div class="bar"><span style="flex: 1">训练中 · 第 2 阶段，共 3 阶段</span><span class="btn">请求停止</span></div>
+      <div class="bar"><span style="flex: 1">正在停止…已请求，等服务确认</span></div>
+      <div class="bar"><span style="flex: 1">没成功：服务返回错误。材料清单还在</span><span class="btn primary">重试</span></div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 12px">
+      <div class="lbl">比较（看不出哪个是新模型）</div>
+      <div class="sheet">
+        <div class="s">第 2 个，共 5 个 · 这 5 个任务没参加训练</div>
+        <div style="font-size: 13px; font-weight: 500">新任务：读书会想做会员积分，选现成工具还是自己做？</div>
+        <div style="display: flex; gap: 8px">
+          <div class="ans"><div style="font-weight: 600; margin-bottom: 4px">回答 A</div>先用现成的会员工具试一季……</div>
+          <div class="ans"><div style="font-weight: 600; margin-bottom: 4px">回答 B</div>建议自己搭一个积分表……</div>
+        </div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap"><span class="btn">A 更像我</span><span class="btn">B 更像我</span><span class="btn">差不多</span><span class="btn">都不对</span></div>
+        <input aria-label="为什么（可选）" placeholder="为什么（可选）" style="height: 30px; border: 1px solid #DFDBD5; border-radius: 6px; background: #F7F4ED; padding: 0 8px; font: inherit; font-size: 12px">
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 12px">
+      <div class="lbl">比较完</div>
+      <div class="sheet">
+        <div style="font-weight: 600">你的选择：新模型 3 次更像你</div>
+        <div class="s">差不多 1 次，原来的更好 1 次</div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">保留原来的</span><span class="btn primary">启用…</span></div>
+      </div>
+      <div class="bar"><span style="flex: 1">新模型没有更好，继续用原来的</span><span class="btn">放弃这个候选</span></div>
+      <div class="lbl">启用到哪里</div>
+      <div class="sheet">
+        <div class="kv"><span>所有工作</span><span class="s">○</span></div>
+        <div class="kv"><span>只在“书店日常”方法里</span><span class="s">●</span></div>
+        <div class="s">以后的工作用新模型；正在运行的不受影响。随时可以退回原来的。</div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">启用</span></div>
+      </div>
+      <div class="bar"><span style="flex: 1">个人模型 v1 · 启用中</span><span class="btn">退回原来的</span></div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

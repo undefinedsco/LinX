@@ -22,6 +22,8 @@ const {
   mockToast: vi.fn(),
   mockStoreState: {
     selectedId: null as string | null,
+    entry: null as string | null,
+    openEntry: vi.fn(),
     viewMode: 'view',
     createDialogOpen: false,
     createType: null as 'agent' | 'friend' | 'group' | null,
@@ -43,7 +45,7 @@ const {
   mockCreateGroupWithChat: vi.fn(),
 }))
 
-const { mockContactCollection, mockChatCollection } = vi.hoisted(() => {
+const { mockContactCollection, mockChatCollection, mockAgentCollection } = vi.hoisted(() => {
   const createReactiveCollection = () => {
     let version = 0
     const listeners = new Set<() => void>()
@@ -65,6 +67,7 @@ const { mockContactCollection, mockChatCollection } = vi.hoisted(() => {
   return {
     mockContactCollection: createReactiveCollection(),
     mockChatCollection: createReactiveCollection(),
+    mockAgentCollection: createReactiveCollection(),
   }
 })
 const mockContactState = mockContactCollection.state
@@ -121,15 +124,22 @@ vi.mock('@/modules/chat/store', () => ({
     selector({ selectChat: mockSelectChat }),
 }))
 
+vi.mock('@/modules/my-ai', () => ({ useOpenAgentMethod: () => vi.fn() }))
+vi.mock('@/modules/inbox', () => ({ GrantsView: () => null }))
+
 vi.mock('../app/store', () => ({
   useContactStore: (selector: (state: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
 vi.mock('../data/collections', () => ({
+  agentCollection: mockAgentCollection,
   contactCollection: mockContactCollection,
   getContactsChatCollection: () => mockChatCollection,
   useContactsChatSelection: () => mockSelectChat,
   contactOps: {
+    getAuthFetch: () => vi.fn(),
+    getSpaceRootUrl: () => null,
+    getCommonGroups: () => [],
     getAll: (...args: unknown[]) => mockGetAll(...args),
     getGroupChat: (...args: unknown[]) => mockGetGroupChat(...args),
     getGroupMembers: (...args: unknown[]) => mockGetGroupMembers(...args),
@@ -329,7 +339,7 @@ describe('ContactDetailPane group flows', () => {
 
     render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
 
-    fireEvent.click(screen.getByText('聊天'))
+    fireEvent.click(screen.getByRole('button', { name: '发消息' }))
 
     expect(mockGetGroupChat).toHaveBeenCalledWith('group-1')
     expect(mockSelectChat).toHaveBeenCalledWith('chat-1')

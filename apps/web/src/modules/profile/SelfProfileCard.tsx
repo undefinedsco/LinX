@@ -1,181 +1,53 @@
-"use client";
-
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSession } from "@/providers/solid-session-context";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  type SolidProfileRow,
-  type SolidProfileUpdate,
-} from "@undefineds.co/models";
-import { Copy, RefreshCw, CheckCircle2, AlertCircle, Loader2, HardDrive, Link2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatErrorForUser } from "@/lib/user-facing-errors";
+import { useSession } from "@/providers/solid-session-context";
 import { useSolidDatabase } from "@/providers/solid-database-provider";
 import { readProfile } from "./collections";
-import { useLoginStore } from "@linx/stores/login";
+import { profileInitial, useAuthenticatedAvatar } from "./avatar";
+import { accountHandle } from "./domain/account-handle";
+import { profileDisplayName, readProfileValues } from "./domain/profile-fields";
+import type { SpaceAttentionAction } from "./domain/space-status";
+import { useSpaceStatus } from "./useSpaceStatus";
 
-// ── Helpers ──────────────────────────────────────────────────────────
-
-type ProfileFieldKey = Extract<keyof SolidProfileUpdate, string>;
-
-const genderOptions: Record<string, { label: string; icon: string; className: string }> = {
-  male:       { label: "男", icon: "♂", className: "text-muted-foreground font-medium" },
-  female:     { label: "女", icon: "♀", className: "text-muted-foreground font-medium" },
-  "non-binary": { label: "非二元", icon: "⚧", className: "text-muted-foreground font-medium" },
-};
-
-const readField = (record: SolidProfileRow | null, field: ProfileFieldKey): string => {
-  if (!record) return "";
-  const value = (record as Record<string, unknown>)[field];
-  if (typeof value === "string") return value;
-  return "";
-};
-
-function getShortId(webId: string): string {
-  try {
-    const url = new URL(webId);
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length > 0 && parts[0] !== "profile") return parts[0];
-    return url.hostname;
-  } catch {
-    return webId;
-  }
+export interface SelfProfileCardProps {
+  /** S3c 编辑个人资料 */
+  onEditProfile?: () => void
+  /** Settings › 空间与服务 */
+  onOpenSettings?: () => void
+  /** Settings › 本机服务, for "本机空间没有启动" */
+  onOpenLocalService?: () => void
+  /** Model connections, for "AI 还没连接" */
+  onConnectAi?: () => void
+  onSwitchAccount?: () => void
+  onSignOut?: () => void
+  className?: string
 }
 
-function formatRelativeTime(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  if (diff < 60_000) return "刚刚";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟前`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}小时前`;
-  return `${Math.floor(diff / 86_400_000)}天前`;
-}
-
-const avatarPreviewCache = new Map<string, string>();
-
-// ── InfoRow ──────────────────────────────────────────────────────────
-
-function InfoRow({ label, value, last }: { label: string; value: string; last?: boolean }) {
-  return (
-    <div
-      className={cn(
-        "flex items-start py-3.5 px-4",
-        !last && "border-b border-border/30",
-      )}
-    >
-      <span className="w-16 shrink-0 text-sm text-muted-foreground">{label}</span>
-      <span
-        className={cn(
-          "flex-1 min-w-0 text-sm break-all",
-          value ? "text-foreground" : "text-muted-foreground/40",
-        )}
-      >
-        {value || "未填写"}
-      </span>
-    </div>
-  );
-}
-
-type SpaceMarkerKind = "local" | "standalone";
-
-function resolveSpaceMarkerKind(storageProviderLabel?: string, storageProviderUrl?: string): SpaceMarkerKind | null {
-  const label = storageProviderLabel?.trim().toLowerCase();
-  if (label === "standalone") return "standalone";
-  if (label === "local" || label === "本机空间" || label === "本地空间") return "local";
-  if (!storageProviderUrl) return null;
-
-  try {
-    const hostname = new URL(storageProviderUrl).hostname;
-    if (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname.endsWith(".local")
-    ) {
-      return "standalone";
-    }
-    if (hostname.startsWith("node-") && hostname.endsWith(".undefineds.co")) {
-      return "local";
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function SpaceBadge({ label, markerKind }: { label: string; markerKind: SpaceMarkerKind | null }) {
-  const isLocal = markerKind === "local";
-  const isStandalone = markerKind === "standalone";
-
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        isLocal
-          ? "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300"
-          : isStandalone
-            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-            : "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-      )}
-    >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          isLocal ? "bg-sky-500" : isStandalone ? "bg-emerald-500" : "bg-sky-500",
-        )}
-      />
-      {label}
-    </span>
-  );
-}
-
-function SpaceMarker({ kind }: { kind: SpaceMarkerKind }) {
-  const isStandalone = kind === "standalone";
-  const Icon = isStandalone ? HardDrive : Link2;
-
-  return (
-    <span
-      data-profile-space-marker={kind}
-      data-profile-local-marker={kind === "local" ? true : undefined}
-      data-profile-standalone-marker={kind === "standalone" ? true : undefined}
-      className={cn(
-        "absolute bottom-1.5 right-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-[7px] border border-white/80 text-white shadow-sm dark:border-zinc-900/80",
-        isStandalone ? "bg-emerald-500" : "bg-sky-500",
-      )}
-    >
-      <Icon className="h-3 w-3" aria-hidden="true" />
-    </span>
-  );
-}
-
-function formatProviderHost(url?: string): string {
-  if (!url) return "";
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
-
-// ── Main Component ───────────────────────────────────────────────────
-
-export function SelfProfileCard() {
+/**
+ * WeChat-style personal card (S3): who you are, your account, where your data
+ * lives and your signature. A healthy space adds nothing; a problem adds one
+ * line with at most one action (S3b). Details live in Settings.
+ */
+export function SelfProfileCard({
+  onEditProfile,
+  onOpenSettings,
+  onOpenLocalService,
+  onConnectAi,
+  onSwitchAccount,
+  onSignOut,
+  className,
+}: SelfProfileCardProps = {}) {
   const { session } = useSession();
   const { db } = useSolidDatabase();
-  const storedAccount = useLoginStore((state) => state.storedAccount);
   const webId = session.info.webId || "";
-  const authFetch = session.fetch;
-
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
-  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
-  const [avatarFetchError, setAvatarFetchError] = useState(false);
-
-  // ── Profile query ──────────────────────────────────────────────────
+  const space = useSpaceStatus();
 
   const {
     data: profile,
-    dataUpdatedAt,
     isFetching,
     isLoading,
     isError,
@@ -190,224 +62,102 @@ export function SelfProfileCard() {
     enabled: !!db && !!webId,
   });
 
-  // ── Computed ───────────────────────────────────────────────────────
+  const values = useMemo(() => readProfileValues(profile as Record<string, unknown> | null | undefined), [profile]);
+  const primaryName = profileDisplayName(values);
+  const handle = accountHandle(webId);
+  const {
+    previewUrl: avatarPreviewUrl,
+    failed: avatarFetchError,
+    markFailed: markAvatarFailed,
+  } = useAuthenticatedAvatar(values.avatar, session.fetch);
 
-  const primaryName = useMemo(() => {
-    const name = readField(profile ?? null, "name").trim();
-    if (name) return name;
-    const nick = readField(profile ?? null, "nick").trim();
-    if (nick) return nick;
-    return "LinX 用户";
-  }, [profile]);
+  const actionHandlers: Record<SpaceAttentionAction, (() => void) | undefined> = {
+    "open-space-settings": onOpenSettings,
+    "open-local-service": onOpenLocalService ?? onOpenSettings,
+    "connect-ai": onConnectAi,
+  };
 
-  const avatarSrc = useMemo(() => readField(profile ?? null, "avatar").trim(), [profile]);
-  const genderValue = useMemo(() => readField(profile ?? null, "gender"), [profile]);
-  const genderInfo = genderOptions[genderValue] ?? null;
-  const shortId = useMemo(() => getShortId(webId), [webId]);
-  const nick = useMemo(() => readField(profile ?? null, "nick").trim(), [profile]);
-  const email = useMemo(() => readField(profile ?? null, "email").trim(), [profile]);
-  const phone = useMemo(() => readField(profile ?? null, "phone").trim(), [profile]);
-  const region = useMemo(() => readField(profile ?? null, "region").trim(), [profile]);
-  const note = useMemo(() => readField(profile ?? null, "note").trim(), [profile]);
-  const storageProviderLabel = storedAccount?.storageProviderLabel ?? storedAccount?.issuerLabel ?? "";
-  const storageProviderUrl = storedAccount?.storageProviderUrl ?? storedAccount?.issuerUrl;
-  const providerHost = formatProviderHost(storageProviderUrl);
-  const spaceMarkerKind = resolveSpaceMarkerKind(storageProviderLabel, storageProviderUrl);
-
-  // ── Avatar with auth fetch ─────────────────────────────────────────
-
-  useEffect(() => {
-    if (!avatarSrc || !authFetch) {
-      setAvatarPreviewUrl(null);
-      setAvatarFetchError(false);
-      return;
-    }
-
-    const cached = avatarPreviewCache.get(avatarSrc);
-    if (cached) {
-      setAvatarPreviewUrl(cached);
-      setAvatarFetchError(false);
-      return;
-    }
-
-    let cancelled = false;
-    const loadAvatar = async () => {
-      try {
-        setAvatarFetchError(false);
-        const response = await authFetch(avatarSrc, {
-          method: "GET",
-          headers: { Accept: "image/*" },
-        });
-        if (!response.ok) throw new Error(`${response.status}`);
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        avatarPreviewCache.set(avatarSrc, objectUrl);
-        if (!cancelled) {
-          setAvatarPreviewUrl(objectUrl);
-          setAvatarFetchError(false);
-        }
-      } catch {
-        if (!cancelled) setAvatarFetchError(true);
+  // A profile read failure takes priority: it is about this card itself.
+  const attentionLine = isError && !isFetching
+    ? {
+        message: formatErrorForUser(queryError, "资料没有读到。请检查当前账号和空间后重试。"),
+        actionLabel: "重试",
+        onAction: () => void refetch(),
       }
-    };
-
-    void loadAvatar();
-    return () => { cancelled = true; };
-  }, [avatarSrc, authFetch]);
-
-  // ── Actions ────────────────────────────────────────────────────────
-
-  const handleCopyId = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(webId);
-      setCopyFeedback("已复制");
-    } catch {
-      setCopyFeedback("复制失败");
-    } finally {
-      setTimeout(() => setCopyFeedback(null), 2000);
-    }
-  }, [webId]);
-
-  const handleManualSync = useCallback(() => {
-    void refetch();
-  }, [refetch]);
-
-  // ── Sync status text ───────────────────────────────────────────────
-
-  const syncStatusNode = useMemo(() => {
-    if (isFetching) {
-      return (
-        <>
-          <Loader2 className="w-3 h-3 animate-spin" />
-          <span>正在同步...</span>
-        </>
-      );
-    }
-    if (isError) {
-      return (
-        <>
-          <AlertCircle className="w-3 h-3 text-destructive/60" />
-          <span className="text-destructive/60">
-            {formatErrorForUser(queryError, "资料同步失败。请检查当前账号和空间后重试。")}
-          </span>
-          <Button
-            variant="link"
-            className="h-auto p-0 text-xs text-primary/70 hover:text-primary"
-            onClick={handleManualSync}
-          >
-            重试
-          </Button>
-        </>
-      );
-    }
-    if (dataUpdatedAt) {
-      return (
-        <>
-          <CheckCircle2 className="w-3 h-3 text-success/60" />
-          <span>已同步 · {formatRelativeTime(dataUpdatedAt)}</span>
-        </>
-      );
-    }
-    return null;
-  }, [isFetching, isError, queryError, dataUpdatedAt, handleManualSync]);
-
-  // ── Loading ────────────────────────────────────────────────────────
+    : space.attention
+      ? {
+          message: space.attention.message,
+          actionLabel: space.attention.action?.label,
+          onAction: space.attention.action ? actionHandlers[space.attention.action.id] : undefined,
+        }
+      : null;
 
   if (!webId && isLoading) {
     return (
-      <div className="w-[360px] rounded-xl bg-card border border-border/40 shadow-sm p-8 flex items-center justify-center">
+      <div className="w-[300px] rounded-xl bg-card border border-border p-8 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground/40" />
       </div>
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────
-
   return (
-    <div className="w-[360px] rounded-xl bg-card border border-border/40 shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="flex items-start gap-5 px-6 pt-6 pb-5">
-        <Avatar className="w-20 h-20 rounded-2xl border border-border/50 shadow-sm shrink-0">
+    <div
+      role="group"
+      aria-label="我的卡片"
+      className={cn("w-[300px] overflow-hidden rounded-xl border border-border bg-card", className)}
+    >
+      <div className="flex gap-3.5 px-4 pb-[18px] pt-5">
+        <Avatar className="h-14 w-14 shrink-0 rounded-lg">
           {avatarPreviewUrl && !avatarFetchError ? (
-            <AvatarImage src={avatarPreviewUrl} alt={primaryName} className="object-cover" />
-          ) : avatarSrc && !avatarFetchError ? (
-            <AvatarImage src={avatarSrc} alt={primaryName} className="object-cover" onError={() => setAvatarFetchError(true)} />
-          ) : (
-            <AvatarFallback className="text-2xl bg-primary/5 text-primary font-bold">
-              {primaryName.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          )}
-          {spaceMarkerKind ? <SpaceMarker kind={spaceMarkerKind} /> : null}
+            <AvatarImage src={avatarPreviewUrl} alt={primaryName} className="object-cover" onError={markAvatarFailed} />
+          ) : null}
+          <AvatarFallback className="!rounded-lg bg-accent text-[22px] font-semibold text-foreground">
+            {profileInitial(primaryName)}
+          </AvatarFallback>
         </Avatar>
 
-        <div className="flex-1 min-w-0 py-0.5 space-y-1.5">
-          {/* Name + Gender */}
-          <div className="flex items-center gap-1.5">
-            <h3 className="text-xl font-bold text-foreground truncate">{primaryName}</h3>
-            {genderInfo && (
-              <span className={cn("text-sm ml-0.5", genderInfo.className)}>{genderInfo.icon}</span>
-            )}
-          </div>
-
-          {/* ID row */}
-          <div className="text-sm text-muted-foreground flex items-center gap-1.5">
-            <span className="shrink-0 opacity-60">LinX 号:</span>
-            <span className="font-mono font-medium truncate" title={webId}>{shortId}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5 rounded-md hover:bg-muted-foreground/10 text-muted-foreground/50 hover:text-foreground"
-              onClick={() => void handleCopyId()}
-            >
-              <Copy className="w-3 h-3" />
-            </Button>
-            {copyFeedback && (
-              <span className="text-xs text-primary animate-in fade-in duration-200">{copyFeedback}</span>
-            )}
-            <div className="flex items-center gap-1 pl-1 border-l border-border/40">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "h-5 w-5 rounded-md hover:bg-muted-foreground/10",
-                  isError ? "text-destructive/70 hover:text-destructive" : "text-primary/70 hover:text-primary",
-                )}
-                onClick={handleManualSync}
-                disabled={isFetching}
-              >
-                <RefreshCw className={cn("w-3 h-3", isFetching && "animate-spin")} />
-              </Button>
-            </div>
-          </div>
-
-          {/* Sync status */}
-          {syncStatusNode && (
-            <div className="text-xs text-muted-foreground/60 flex items-center gap-1.5">
-              {syncStatusNode}
-            </div>
-          )}
-
-          {storageProviderLabel ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <SpaceBadge label={storageProviderLabel} markerKind={spaceMarkerKind} />
-              {providerHost ? (
-                <span className="min-w-0 truncate" title={providerHost}>
-                  {providerHost}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-0.5">
+          <h3 className="truncate text-[17px] font-semibold text-foreground">{primaryName}</h3>
+          {handle ? <p className="truncate text-[13px] text-muted-foreground">{handle}</p> : null}
+          <p className="text-[13px] text-muted-foreground">空间：{space.spaceLabel}</p>
+          {values.note ? <p className="mt-1 line-clamp-2 text-[13px] text-foreground">{values.note}</p> : null}
         </div>
       </div>
 
-      {/* Info rows */}
-      <div className="bg-card rounded-xl border-t border-border/40 overflow-hidden">
-        <InfoRow label="昵称" value={nick} />
-        <InfoRow label="邮箱" value={email} />
-        <InfoRow label="电话" value={phone} />
-        <InfoRow label="地区" value={region} />
-        <InfoRow label="签名" value={note} last />
-      </div>
+      {attentionLine ? (
+        <div role="status" className="flex items-center gap-2 border-t border-border bg-secondary px-4 py-2.5 text-[13px] text-foreground">
+          <span className="min-w-0 flex-1">{attentionLine.message}</span>
+          {attentionLine.actionLabel && attentionLine.onAction ? (
+            <button
+              type="button"
+              className="shrink-0 font-semibold text-primary hover:underline"
+              onClick={attentionLine.onAction}
+            >
+              {attentionLine.actionLabel}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <nav aria-label="账号菜单">
+        <MenuRow label="编辑个人资料" onClick={onEditProfile} />
+        <MenuRow label="设置" onClick={onOpenSettings} />
+        <MenuRow label="切换账号" onClick={onSwitchAccount} />
+        <MenuRow label="退出登录" onClick={onSignOut} />
+      </nav>
     </div>
+  );
+}
+
+function MenuRow({ label, onClick }: { label: string; onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className="flex h-10 w-full items-center border-t border-border px-4 text-left text-sm text-foreground hover:bg-layout-list-hover disabled:opacity-50"
+    >
+      {label}
+    </button>
   );
 }

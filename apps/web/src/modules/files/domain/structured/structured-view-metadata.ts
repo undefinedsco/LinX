@@ -16,6 +16,12 @@ export interface StructuredKanbanBoardMetadataV1 {
   collapsedLaneIds: string[]
   scrollLeft: number
   cardOrder: StructuredKanbanOrderState
+  /** K6d: display names the person gave lanes (the card values are not renamed). */
+  laneLabels: Record<string, string>
+  /** K6d: lanes added by hand before any card is in them; each is a value cards can be dragged into. */
+  extraLanes: string[]
+  /** K6d: properties shown on kanban cards, in order. */
+  cardFields: string[]
 }
 
 export interface StructuredWhiteboardCamera {
@@ -178,6 +184,9 @@ export function normalizeStructuredKanbanBoardMetadata(
       collapsedLaneIds: [],
       scrollLeft: 0,
       cardOrder: normalizeStructuredKanbanOrder(legacyCardOrder),
+      laneLabels: {},
+      extraLanes: [],
+      cardFields: [],
     }
   }
   const candidate = value as Record<string, unknown>
@@ -187,7 +196,19 @@ export function normalizeStructuredKanbanBoardMetadata(
     collapsedLaneIds: uniqueStrings(candidate.collapsedLaneIds),
     scrollLeft: Math.max(0, finiteRoundedNumber(candidate.scrollLeft, 0)),
     cardOrder: normalizeStructuredKanbanOrder(candidate.cardOrder),
+    laneLabels: normalizeLaneLabels(candidate.laneLabels),
+    extraLanes: uniqueStrings(candidate.extraLanes),
+    cardFields: uniqueStrings(candidate.cardFields),
   }
+}
+
+function normalizeLaneLabels(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') return {}
+  const labels: Record<string, string> = {}
+  for (const [laneId, label] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof label === 'string' && label.trim()) labels[laneId] = label.trim()
+  }
+  return labels
 }
 
 function normalizeWhiteboardCamera(value: unknown): StructuredWhiteboardCamera {

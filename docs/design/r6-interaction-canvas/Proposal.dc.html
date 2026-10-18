@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI 改的：未确认草稿</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.ib{width:30px;height:30px;border:0;border-radius:6px;background:transparent;color:#655D53;display:inline-flex;align-items:center;justify-content:center;padding:0;text-decoration:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap;text-decoration:none;line-height:1}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.v{color:#655D53}
+.av{width:36px;height:36px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;background:#563E84;color:#F7F4ED}
+.fc{display:flex;align-items:center;gap:10px;width:300px;padding:10px 12px;border-radius:8px;background:#FBFAF7;border:1px solid #DFDBD5;box-sizing:border-box}
+.ai{background:#EFE9F6;border-bottom:1.5px solid #B9A8D6;padding:0 1px}
+.tip{position:absolute;display:inline-flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;background:#2B2621;color:#F7F4ED;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;line-height:1.4;white-space:nowrap}
+.tip a{color:#E0DBDE;font-weight:600}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="chat" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="ChatList" selected="autumn" variant="normal" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：会话" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px; position: relative">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid #DFDBD5">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 600">LinX 助手</h1>
+    </header>
+    <div aria-hidden="true" style="padding: 20px 24px; display: flex; gap: 10px; align-items: flex-start">
+      <span class="av">AI</span>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="background: #FBFAF7; border: 1px solid #DFDBD5; border-radius: 8px; padding: 10px 12px">改好了：截止提前一天，加了提醒。</div>
+        <div class="fc" style="box-shadow: 0 0 0 2px #563E84"><span style="flex: 1"><strong style="font-weight: 600">报名方案.md</strong><br><span class="v" style="font-size: 12px">改了 3 处 · 还没确认</span></span></div>
+      </div>
+    </div>
+
+    <div style="position: absolute; inset: 56px 0 0 0; background: rgb(43 38 33 / .22); display: flex; justify-content: center; align-items: flex-start; padding-top: 24px">
+      <div role="dialog" aria-labelledby="pp-title" style="width: 960px; max-width: calc(100% - 48px); max-height: 820px; overflow: auto; background: #FBFAF7; border-radius: 12px; box-shadow: 0 20px 48px rgb(43 38 33 / .22); display: flex; flex-direction: column">
+        <div style="display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 16px; border-bottom: 1px solid #EAE5DC">
+          <span id="pp-title" class="v" style="font-size: 12px; flex: 1">活动 / 报名方案.md</span>
+          <a class="ib" href="FileOpen.dc.html" aria-label="展开成整页"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></a>
+          <button class="ib" aria-label="关闭"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+        </div>
+        <div role="status" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #F2EDE2; font-size: 13px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #B9A8D6" aria-hidden="true"></span>
+          <span style="flex: 1">LinX 改了 3 处，还没确认 · 你接着改就算保留</span>
+          <span class="btn">撤销</span><span class="btn primary">保留</span>
+        </div>
+        <div style="padding: 22px 48px 28px; display: flex; flex-direction: column; gap: 12px; font-size: 15px; line-height: 1.8; position: relative">
+          <h2 style="margin: 0; font-size: 24px; font-weight: 600; line-height: 1.3">秋季读书会报名方案</h2>
+          <p style="margin: 0">读书会每月一次，每次 30 人左右。报名用现成的在线表单，不另外搭系统。</p>
+          <p style="margin: 0; font-weight: 600">时间</p>
+          <p style="margin: 0">报名截止设在活动前 <span class="ai">3 天</span>，方便确认人数和准备座位。</p>
+          <span class="tip" style="left: 230px; top: 205px">原来是“2 天” · <a href="ProposalStates.dc.html">撤销这处</a></span>
+          <p style="margin: 18px 0 0">名额满了自动停止报名，候补名单放在同一张表里。<span class="ai">候补的人在有人取消时按顺序收到通知。</span></p>
+          <p style="margin: 0; font-weight: 600"><span class="ai">提醒</span></p>
+          <p style="margin: 0"><span class="ai">活动前一天给报名的人发一条提醒。</span></p>
+        </div>
+        <div class="v" style="border-top: 1px solid #EAE5DC; padding: 10px 16px; font-size: 12px">浅紫底的是 LinX 改的。你的原版本一直保留，撤销就回到原样；别人打开这份文件，在你保留之前看到的还是原版本。</div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

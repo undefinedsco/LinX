@@ -24,6 +24,8 @@ import {
   ContactType,
   isAgentContact,
   isGroupContact,
+  normalizeAIConfigProviderId,
+  normalizeAIConfigResourceId,
 } from '@undefineds.co/models'
 import type { SolidDatabase } from '@undefineds.co/models'
 import {
@@ -36,7 +38,9 @@ import {
 } from '@/lib/data/resource-identity'
 import { createAgentHome, updateAgentHomeMetadata } from '@/lib/data/agent-home'
 import { queryClient } from '@/providers/query-provider'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { buildGroupContactInfo } from '../domain/contact-projection'
+import { formatAccountAddress, isSameAccount, profileDocumentUrl } from '../domain/account-address'
 import type { GroupContactInfo } from '../domain/types'
 import {
   createAgentContactRecords,
@@ -77,6 +81,15 @@ async function findByIriCompat<T>(db: SolidDatabase, resource: unknown, iri: str
     return await (db as any).findByIri(resource as any, iri)
   }
   throw new Error('Solid database is missing findByIri support.')
+}
+
+function getAuthFetch(db: SolidDatabase): typeof fetch {
+  const candidate = (db as any).getDialect?.()?.getAuthenticatedFetch?.()
+  return typeof candidate === 'function' ? candidate : globalThis.fetch.bind(globalThis)
+}
+
+function isBrowserOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -239,6 +252,18 @@ export interface SolidProfileInfo {
   avatarUrl?: string
   inbox?: string
 }
+
+/**
+ * Result of looking up a pasted account address (W5b 添加朋友). Each outcome
+ * has its own plain-language state in the add-friend form.
+ */
+export type SolidProfileLookup =
+  | { status: 'found'; profile: SolidProfileInfo }
+  | { status: 'not-found' }
+  | { status: 'unreadable' }
+  | { status: 'unreachable' }
+  | { status: 'offline' }
+  | { status: 'not-ready' }
 
 export interface RemoteAgentInfo {
   name: string
@@ -440,38 +465,53 @@ export const contactOps = {
   },
 
   /**
-   * Delete a contact (and associated chat if any)
+   * Delete a contact. Conversations stay: "聊天记录还在" (W5c). Shares are
+   * taken back separately, by the caller, when the person asks for it.
    */
   async deleteContact(id: string): Promise<void> {
-    const contact = this.getById(id)
-    if (contact) {
-      const db = getDb()
-      if (!db) {
-        throw new Error('Solid database is not ready')
-      }
-      const chats = Array.from(getChatCollection().state.values()) as ChatRow[]
-      const participantRefs = getContactParticipantRefs(db, contact)
-
-      const linkedChats = chats.filter((chat) => {
-        if (isGroupContact(contact)) {
-          return !!contact.about && getChatRef(db, chat) === contact.about
-        }
-
-        const participants = toStringArray(chat.participants)
-        return participants.length <= 1 && hasParticipant(chat, participantRefs)
-      })
-
-      for (const chat of linkedChats) {
-        const chatTx = getChatCollection().delete(chat.id)
-        await chatTx.isPersisted.promise
-      }
-    }
-
     const tx = contactCollection.delete(id)
     await tx.isPersisted.promise
 
-    queryClient.invalidateQueries({ queryKey: ['chats'] })
     queryClient.invalidateQueries({ queryKey: ['contacts'] })
+  },
+
+  /**
+   * Change the model an assistant runs on. Only the agent's provider and
+   * model change; its name, avatar, contact and conversations stay the same.
+   */
+  async updateAgentModel(agentIdOrRef: string, provider: string, model: string): Promise<void> {
+    const targetId = asAgentId(agentIdOrRef)
+    const current = agentCollection.get(targetId) as AgentRow | undefined
+    if (!current) throw new Error(`Agent ${targetId} was not found`)
+    const changes = {
+      provider: normalizeAIConfigProviderId(provider),
+      model: normalizeAIConfigResourceId(model),
+    }
+    const db = getDb()
+    if (!db) throw new Error('Pod database is not initialized')
+    await updateAgentHomeMetadata(db, targetId, changes, current)
+    writeCollectionRow(agentCollection, { ...current, ...changes } as AgentRow, targetId)
+  },
+
+  /** The signed-in session's fetch, for reading and changing access in my space. */
+  getAuthFetch(): typeof fetch {
+    const db = getDb()
+    return db ? getAuthFetch(db) : globalThis.fetch.bind(globalThis)
+  },
+
+  /** The root of the signed-in person's space, e.g. https://alice.example/ */
+  getSpaceRootUrl(): string | null {
+    const db = getDb()
+    if (!db) return null
+    const base = resolveCurrentPodBaseUrl(db)
+    return base ? `${base}/` : null
+  },
+
+  /** A saved person whose account is this address, if any. */
+  findPersonByAccount(webId: string): ContactRow | null {
+    return this.getAll().find((contact) => (
+      !isGroupContact(contact) && !isAgentContact(contact) && isSameAccount(contact.about, webId)
+    )) ?? null
   },
 
   /**
@@ -616,6 +656,46 @@ export const contactOps = {
   // ==========================================================================
   // Solid Profile Operations
   // ==========================================================================
+
+  /**
+   * Look up a pasted account address and say plainly what happened:
+   * found, no such account, exists but its profile cannot be read, the
+   * address cannot be reached, or there is no network.
+   */
+  async lookupSolidProfile(webId: string): Promise<SolidProfileLookup> {
+    const db = getDb()
+    if (!db) return { status: 'not-ready' }
+    if (isBrowserOffline()) return { status: 'offline' }
+
+    let response: Response
+    try {
+      response = await getAuthFetch(db)(profileDocumentUrl(webId), {
+        method: 'HEAD',
+        headers: { Accept: 'text/turtle' },
+      })
+    } catch {
+      return { status: isBrowserOffline() ? 'offline' : 'unreachable' }
+    }
+    if (response.status === 404 || response.status === 410) return { status: 'not-found' }
+    if (response.status === 401 || response.status === 403) return { status: 'unreadable' }
+    if (!response.ok) return { status: 'unreachable' }
+
+    try {
+      const record = await findByIriCompat<SolidProfileRow>(db, solidProfileResource, webId)
+      if (!record) return { status: 'not-found' }
+      return {
+        status: 'found',
+        profile: {
+          name: record.name?.trim() || record.nick?.trim() || formatAccountAddress(webId) || webId,
+          webId,
+          avatarUrl: record.avatar || undefined,
+          inbox: record.inbox || undefined,
+        },
+      }
+    } catch {
+      return { status: 'unreadable' }
+    }
+  },
 
   /**
    * Fetch Solid Profile from WebID using drizzle-solid
@@ -979,6 +1059,26 @@ export const contactOps = {
       return null
     }
     return chats.find((chat: ChatRow) => getChatRef(db, chat) === groupContact.about) ?? null
+  },
+
+  /**
+   * Saved groups this person is also in ("共同群聊"), read from each group's
+   * linked chat membership.
+   */
+  getCommonGroups(contactId: string, contacts?: ContactRow[], chats?: ChatRow[]): ContactRow[] {
+    const db = getDb()
+    const contactRows = contacts ?? this.getAll()
+    const contact = contactRows.find((row) => row.id === contactId)
+    if (!db || !contact || isGroupContact(contact)) return []
+    const refs = new Set<string>([contact.id])
+    if (contact.about) refs.add(contact.about)
+    try {
+      refs.add(resolveContactIri(db, contact))
+    } catch {
+      // Without a resolvable IRI only id/about can match.
+    }
+    return contactRows.filter((row) => isGroupContact(row)
+      && this.getGroupMembers(row.id, contactRows, chats).some((member) => refs.has(member)))
   },
 
   /**

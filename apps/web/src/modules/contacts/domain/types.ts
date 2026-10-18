@@ -60,10 +60,10 @@ export interface UnifiedContact extends Omit<ContactRow, 'gender'> {
   groupInfo?: GroupContactInfo
 }
 
-/** Filter mode for the contact list view */
-export type ContactListFilter = 'all' | 'personal' | 'groups' | 'agents'
+export type SectionKey = 'letter' | 'groups'
 
-export type SectionKey = 'agents' | 'contacts' | 'starred' | 'groups'
+/** Fixed entries above the A–Z list (W5). */
+export type ContactEntry = 'new-friends' | 'groups'
 
 export interface ContactSection {
   key: SectionKey

@@ -150,11 +150,11 @@ describe('StructuredProjectionTable', () => {
       />,
     )
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
     const addPredicateMenu = screen.getByRole('menu')
     expect(within(addPredicateMenu).queryByText('Existing Predicates')).not.toBeInTheDocument()
-    expect(within(addPredicateMenu).getByPlaceholderText('选择已有 predicate 或创建')).toBeInTheDocument()
-    fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '新建 predicate' }))
+    expect(within(addPredicateMenu).getByPlaceholderText('从词表里找，或直接输入新名字')).toBeInTheDocument()
+    fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '新建一个属性' }))
 
     expect(screen.queryByRole('combobox', { name: 'Predicate type' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '类型 text' })).toHaveAttribute('aria-pressed', 'true')
@@ -173,13 +173,13 @@ describe('StructuredProjectionTable', () => {
       />,
     )
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
     const addPredicateMenu = screen.getByRole('menu')
-    fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '新建 predicate' }))
+    fireEvent.click(within(addPredicateMenu).getByRole('button', { name: '新建一个属性' }))
 
     expect(addPredicateMenu).toHaveClass('max-h-[calc(100vh-2rem)]')
     expect(addPredicateMenu).toHaveClass('overflow-y-auto')
-    expect(screen.getByRole('button', { name: '提交待确认 predicate *' })).toHaveClass('sticky')
+    expect(screen.getByRole('button', { name: '添加' }).parentElement).toHaveClass('sticky')
   })
 
   it('renders data cells with quiet borders and compact padding', () => {
@@ -208,30 +208,31 @@ describe('StructuredProjectionTable', () => {
       />,
     )
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '+ predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
 
     const addPredicateMenu = screen.getByRole('menu')
-    const createPredicate = within(addPredicateMenu).getByRole('button', { name: '新建 predicate' })
-    const titlePredicate = within(addPredicateMenu).getByRole('button', { name: '选择 predicate title' })
+    const createPredicate = within(addPredicateMenu).getByRole('button', { name: '新建一个属性' })
+    const titlePredicate = within(addPredicateMenu).getByRole('button', { name: '选择属性 title' })
     expect(titlePredicate.compareDocumentPosition(createPredicate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(within(addPredicateMenu).queryByText('Existing Predicates')).not.toBeInTheDocument()
     expect(screen.queryByText('新增 predicate')).not.toBeInTheDocument()
 
-    fireEvent.change(within(addPredicateMenu).getByPlaceholderText('选择已有 predicate 或创建'), {
+    fireEvent.change(within(addPredicateMenu).getByPlaceholderText('从词表里找，或直接输入新名字'), {
       target: { value: 'summary' },
     })
     fireEvent.click(createPredicate)
 
-    expect(screen.getByText('新建 predicate')).toBeInTheDocument()
-    expect(screen.getByText('提交后以 * 参与当前表格；审批通过前不改写 vocab。')).toBeInTheDocument()
-    expect(screen.getByLabelText('predicate 定义')).toBeInTheDocument()
-    expect(screen.getAllByText('term').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('value').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('shape').length).toBeGreaterThan(0)
-    expect(screen.getByText('描述')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '提交待确认 predicate *' })).toBeInTheDocument()
-    expect(screen.getByLabelText('predicate term')).toHaveValue('summary')
-    expect(screen.getByLabelText('predicate 标签')).toHaveValue('Summary')
+    expect(screen.getByText('新建一个属性')).toBeInTheDocument()
+    expect(screen.getByText('会放进“词表 › 属性”，别的表格也能用。')).toBeInTheDocument()
+    expect(screen.getByLabelText('属性定义')).toBeInTheDocument()
+    expect(screen.getAllByText('名字').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('值是什么').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('更多设置').length).toBeGreaterThan(0)
+    expect(screen.getByText('说明')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '添加' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '展开更多设置' }))
+    expect(screen.getByLabelText('属性代号')).toHaveValue('summary')
+    expect(screen.getByLabelText('属性名字')).toHaveValue('Summary')
   })
 
   it('opens enum and relation editors as anchored popovers that dismiss on outside click', () => {

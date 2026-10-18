@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { clearAssistantSetupFailure, reportAssistantSetupFailure } from '@/modules/login/assistant-setup'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from './query-provider'
 import { useSolidDatabase } from './solid-database-provider'
@@ -162,6 +163,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
 
         const result = await chatOps.ensureLinxWelcome({ force })
         if (isCurrentBootstrap()) {
+          clearAssistantSetupFailure()
           applyWelcomeResult(result)
         }
       })
@@ -171,6 +173,17 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
         const nextError = cause instanceof Error ? cause : new Error(String(cause))
         if (!isRecoverableSecretaryBootstrapTimeout(cause)) {
           console.warn('[PodCollectionsBootstrap] Failed to prepare LinX welcome:', nextError)
+          // S6b: tell the user once, with one action that runs the setup again.
+          reportAssistantSetupFailure({
+            detail: nextError.message,
+            retry: () => {
+              void chatOps.ensureLinxWelcome({ force: true })
+                .then(() => clearAssistantSetupFailure())
+                .catch((retryError) => reportAssistantSetupFailure({
+                  detail: retryError instanceof Error ? retryError.message : String(retryError),
+                }))
+            },
+          })
         }
         void queryClient.invalidateQueries({ queryKey: ['chats'] }).catch((error) => {
           console.warn('[PodCollectionsBootstrap] Failed to refresh chats after LinX welcome failure:', error)

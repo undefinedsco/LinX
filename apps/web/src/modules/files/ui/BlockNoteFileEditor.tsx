@@ -79,6 +79,8 @@ export function BlockNoteFileEditor({
   onSubmitProposal,
   proposalPending = false,
   proposalLabel = '审批',
+  autoSaveDelayMs,
+  hideStatusBar = false,
 }: {
   content: BlockNoteEditorContent
   className?: string
@@ -90,8 +92,13 @@ export function BlockNoteFileEditor({
   onSubmitProposal?: (text: string, documentSummary: RichTextEditorDocumentSummary) => void | Promise<void>
   proposalPending?: boolean
   proposalLabel?: string
+  /** Save on its own this long after typing stops (cards autosave); blur still saves at once. */
+  autoSaveDelayMs?: number
+  /** The host shows its own save state (the card header does). */
+  hideStatusBar?: boolean
 }) {
   const initialText = content.text ?? ''
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dirtyRef = useRef(false)
   const lastSavedTextRef = useRef<string | null>(null)
   const [saveState, setSaveState] = useState<RichTextEditorSaveState>(createRichTextEditorSaveState)
@@ -141,16 +148,41 @@ export function BlockNoteFileEditor({
     onSaveStatusChange?.(saveState.status)
   }, [onSaveStatusChange, saveState.status])
 
+  const clearAutoSaveTimer = () => {
+    if (autoSaveTimerRef.current === null) return
+    clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = null
+  }
+
+  useEffect(() => {
+    const timerRef = autoSaveTimerRef
+    return () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+    }
+  }, [])
+
   const handleChange = () => {
     const nextText = serialize(editor.document as unknown as AnyBlock[])
     const nextSaveState = projectRichTextEditorSaveStateAfterDirtyComparison(nextText !== lastSavedTextRef.current)
     dirtyRef.current = nextSaveState.isDirty
     setSaveState(nextSaveState)
+    if (!editable || !onSaveText || autoSaveDelayMs === undefined) return
+    clearAutoSaveTimer()
+    if (!nextSaveState.isDirty) return
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null
+      void saveCurrentText()
+    }, autoSaveDelayMs)
   }
 
   const handleBlur = async (event: FocusEvent<HTMLDivElement>) => {
     const nextFocusTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null
     if (nextFocusTarget && event.currentTarget.contains(nextFocusTarget)) return
+    clearAutoSaveTimer()
+    await saveCurrentText()
+  }
+
+  const saveCurrentText = async () => {
     if (!editable || !onSaveText || !dirtyRef.current) return
     const nextText = serialize(editor.document as unknown as AnyBlock[])
     if (nextText === lastSavedTextRef.current) {
@@ -205,7 +237,7 @@ export function BlockNoteFileEditor({
         onChange={handleChange}
         theme="light"
       />
-      {editable ? (
+      {editable && !(hideStatusBar && !onSubmitProposal) ? (
         <div className="flex items-center justify-between gap-2 border-t border-border/30 px-3 py-2">
           <span className="text-[11px] text-muted-foreground" data-rich-text-save-status={saveState.status}>
             {getRichTextEditorSaveStatusLabel(saveState.status)}

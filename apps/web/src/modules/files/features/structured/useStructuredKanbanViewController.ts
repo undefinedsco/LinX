@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { StructuredCellWriteProposal, StructuredTableProjection } from '../../domain/structured/structured-table'
+import type { StructuredCellCommitResult, StructuredCellWriteProposal, StructuredTableProjection } from '../../domain/structured/structured-table'
 import {
   findStructuredKanbanColumnForSubject,
   hasStructuredKanbanMoveTargets,
@@ -38,6 +38,8 @@ export function useStructuredKanbanViewController({
   kanbanOrder,
   laneOrder = [],
   initialCollapsedLaneIds = [],
+  extraLanes,
+  laneLabels,
   onColumnOrderChange,
   onLaneOrderChange,
   onCollapsedLaneIdsChange,
@@ -50,10 +52,12 @@ export function useStructuredKanbanViewController({
   kanbanOrder: Record<string, string[]>
   laneOrder?: string[]
   initialCollapsedLaneIds?: string[]
+  extraLanes?: string[]
+  laneLabels?: Record<string, string>
   onColumnOrderChange: (columnId: string, subjects: string[]) => void
   onLaneOrderChange?: (laneOrder: string[]) => void
   onCollapsedLaneIdsChange?: (collapsedLaneIds: string[]) => void
-  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
   onCreateSubject?: (input: { columnId: string; columnValue: string | null; subject: string }) => boolean | Promise<boolean>
 }) {
   const [activeDragSubject, setActiveDragSubject] = useState<string | null>(null)
@@ -69,8 +73,10 @@ export function useStructuredKanbanViewController({
       groupPredicate,
       kanbanOrder,
       projection,
+      extraLanes,
+      laneLabels,
     }),
-    [groupPredicate, kanbanOrder, projection],
+    [extraLanes, groupPredicate, kanbanOrder, laneLabels, projection],
   )
   const move = useStructuredKanbanMoveController({
     documentUri,

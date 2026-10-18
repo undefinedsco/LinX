@@ -85,7 +85,7 @@ describe('projectStructuredWhiteboardViewModel', () => {
       addSubjectButtonAriaLabel: '添加 subject 到白板',
       addSubjectButtonLabel: 'Subject',
       noAvailableSubjectOptionsLabel: '可见 subject 已全部加入白板',
-      addRelationButtonAriaLabel: '添加视觉关系',
+      addRelationButtonAriaLabel: '连接两张卡片',
       addRelationButtonLabel: '关系',
       clearSubjectsButtonAriaLabel: '清空白板 subject',
       clearSubjectsButtonLabel: '清空',

@@ -163,6 +163,7 @@ describe('file detail pane model', () => {
       size: 6144,
       modifiedAt: '2026-07-25T08:40:00.000Z',
     }))).toEqual({
+      title: 'report.md',
       subtitle: 'Markdown 文档 · /files/cards/',
       footer: 'text/markdown · 6 KB · 2026-07-25 08:40',
     })
@@ -175,8 +176,8 @@ describe('file detail pane model', () => {
       size: 0,
       modifiedAt: null,
       childEntries: [{}, {}] as FilesDetail['childEntries'],
-    })).toEqual({
-      subtitle: 'Pod 容器 · /files/',
+    })).toMatchObject({
+      subtitle: '文件夹 · /files/',
       footer: '2 项',
     })
 
@@ -185,10 +186,28 @@ describe('file detail pane model', () => {
       mimeType: 'text/turtle',
       size: null,
       modifiedAt: 'not-a-date',
-    })).toEqual({
+    })).toMatchObject({
       subtitle: 'Turtle 数据 · /files/',
       footer: 'text/turtle',
     })
+  })
+
+  it('names the .data folder 数据', () => {
+    expect(projectFileDetailChrome({
+      ...file(),
+      uri: 'https://pod.example/.data/',
+      name: '.data',
+      kind: 'container',
+      childEntries: [],
+    }).title).toBe('数据')
+    expect(projectFileDetailChrome({
+      ...file(),
+      uri: 'https://pod.example/.data/',
+      name: '.data',
+      kind: 'container',
+      parentUri: 'https://pod.example/',
+      childEntries: [],
+    }).subtitle).toBe('各应用共用的数据 · /')
   })
 
   it('projects empty state, shell fallback, and horizontal scroll reset decisions', () => {

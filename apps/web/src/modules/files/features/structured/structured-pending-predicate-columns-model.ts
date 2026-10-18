@@ -13,6 +13,7 @@ import {
   predicateUriFromDraft,
   type PredicateDefinitionDraft,
 } from '../../domain/structured/structured-predicate-draft'
+import type { AiColumnChange } from '../../domain/proposal/ai-column-change-model'
 import { localPredicateLabel } from '../../domain/structured/structured-table-vocab'
 import type { StructuredPredicateColumnProposal } from './structured-predicate-column-header-model'
 
@@ -100,6 +101,7 @@ export function projectDiscardedStructuredPendingPredicateColumnsState({
 }
 
 export function projectStructuredVisiblePendingPredicateProposals({
+  aiColumns,
   classScope,
   dismissedHydratedPredicateProposalIds,
   documentUri,
@@ -107,6 +109,7 @@ export function projectStructuredVisiblePendingPredicateProposals({
   projectionPredicates,
   reviewableVocabProposals,
 }: {
+  aiColumns?: ReadonlyMap<string, AiColumnChange>
   classScope?: string | null
   dismissedHydratedPredicateProposalIds: ReadonlySet<string>
   documentUri: string
@@ -122,6 +125,27 @@ export function projectStructuredVisiblePendingPredicateProposals({
       const columnId = predicateColumnIdForProposal(proposal, projectionPredicates)
       proposalsById.set(columnId, { ...pendingProposal, id: columnId })
     }
+  }
+  // Columns LinX added: unconfirmed (dashed) or added under a grant. They are marked even when
+  // the column already exists because LinX wrote cells into it.
+  for (const change of aiColumns?.values() ?? []) {
+    if (change.documentUri !== documentUri) continue
+    const columnId = projectionPredicates.find((predicate) => predicatesShareLocalIdentity(predicate, change.predicate)) ?? change.predicate
+    const hydrated = Array.from(proposalsById.entries()).find(([id]) => predicatesShareLocalIdentity(id, columnId))
+    const base = hydrated?.[1]
+    proposalsById.set(hydrated?.[0] ?? columnId, {
+      id: hydrated?.[0] ?? columnId,
+      label: base?.label ?? change.label,
+      uri: base?.uri ?? change.predicate,
+      predicateUri: base?.predicateUri ?? change.predicate,
+      type: base?.type ?? change.valueType,
+      description: base?.description ?? '',
+      shape: base?.shape ?? '',
+      enumOptions: base?.enumOptions ?? [],
+      status: base?.status ?? 'pending',
+      ...(base?.vocabProposal ? { vocabProposal: base.vocabProposal } : {}),
+      aiColumn: change,
+    })
   }
   for (const proposal of pendingPredicateProposals) {
     proposalsById.set(proposal.id, proposal)

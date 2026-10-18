@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>联系人</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.row{height:56px;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:0 12px;text-decoration:none;color:#2B2621}
+.row:hover{background:#E9E4E4}
+.av{width:36px;height:36px;border-radius:6px;background:#E0DBDE;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+.sec{padding:10px 12px 4px;font-size:12px;color:#655D53}
+.gl{padding:18px 4px 6px;font-size:12px;color:#655D53}
+.grp{background:#FBFAF7;border-radius:10px;overflow:hidden;border:1px solid #DFDBD5}
+.gr{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border-bottom:1px solid #DFDBD5;font-size:14px;text-decoration:none;color:#2B2621}
+.gr:last-child{border-bottom:0}
+.v{color:#655D53;font-size:13px}
+.chev{color:#87837D}
+.act{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:64px;border-radius:10px;background:#FBFAF7;border:1px solid #DFDBD5;text-decoration:none;color:#2B2621;font-size:13px}
+.act.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.seg{display:flex;padding:2px;border-radius:8px;background:#E4DDDA;gap:2px;margin:8px 12px 4px}
+.seg a{flex:1;height:26px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;text-decoration:none;color:#2B2621}
+.sw{width:34px;height:20px;border-radius:999px;position:relative;flex:none}
+.knob{position:absolute;top:2px;width:16px;height:16px;border-radius:50%;background:#F7F4ED}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="contacts" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+
+  <aside aria-label="左边栏：联系人" style="flex: 0 0 280px; box-sizing: border-box; background: #F2EDE2; border-right: 1px solid #DFDBD5; min-height: 900px">
+    <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid #DFDBD5">
+      <a href="Search.dc.html" style="flex: 1; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; background: #E4DDDA; color: #655D53; font-size: 12px; text-decoration: none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>搜索
+      </a>
+      <button aria-label="添加朋友、创建助手" style="width: 28px; height: 28px; border-radius: 6px; border: 0; background: #E4DDDA; display: inline-flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+    </div>
+    <a class="row" href="PeopleStates.dc.html"><span class="av" style="background: #E4DDDA">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M19 8v6M16 11h6"></path></svg>
+    </span><span style="flex: 1">新的朋友</span><span style="min-width: 16px; height: 16px; border-radius: 999px; background: #563E84; color: #F7F4ED; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px">1</span></a>
+    <a class="row" href="GroupChat.dc.html"><span class="av" style="background: #E4DDDA">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path></svg>
+    </span><span style="flex: 1">群聊</span><span class="v">3</span></a>
+
+    <div class="sec">C</div>
+    <a class="row" href="People.dc.html"><span class="av">陈</span>陈一</a>
+    <div class="sec">H</div>
+    <a class="row" href="PeopleSolid.dc.html"><span class="av" style="background: #563E84; color: #F7F4ED; font-size: 12px">AI</span>活动小助手</a>
+    <div class="sec">L</div>
+    <a class="row" href="PeopleStates.dc.html"><span class="av" style="background: #563E84; color: #F7F4ED; font-size: 12px">AI</span>LinX 助手</a>
+    <a class="row" href="People.dc.html"><span class="av">陆</span>陆川</a>
+    <div class="sec">S</div>
+    <a class="row" href="People.dc.html"><span class="av">宋</span>宋青</a>
+    <div class="sec">X</div>
+    <a class="row" href="People.dc.html"><span class="av">许</span>许安</a>
+    <div class="sec">Z</div>
+    <a class="row" href="People.dc.html" aria-current="true" style="background: #E4DDDA; box-shadow: inset 2px 0 0 #563E84"><span class="av">周</span>周禾</a>
+  </aside>
+
+  <main aria-label="内容栏：联系人详情" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+    <header style="height: 56px; box-sizing: border-box; border-bottom: 1px solid #DFDBD5"></header>
+    <div style="flex: 1; display: flex; justify-content: center; padding: 28px 24px 40px">
+      <div style="width: 100%; max-width: 480px; display: flex; flex-direction: column">
+        <div style="display: flex; gap: 16px; align-items: center">
+          <span class="av" style="width: 64px; height: 64px; border-radius: 8px; font-size: 24px">周</span>
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <div style="font-size: 20px; font-weight: 600">周禾</div>
+            <div class="v">zhouhe@undefineds.co</div>
+            <div class="v">备注：书店合伙人</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 20px">
+          <a class="act primary" href="Main.dc.html"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>发消息</a>
+          <a class="act" href="PeopleSolid.dc.html"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"></path></svg>语音通话</a>
+          <a class="act" href="PeopleSolid.dc.html"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 8-6 4 6 4V8z"></path><rect x="2" y="6" width="14" height="12" rx="2"></rect></svg>视频通话</a>
+        </div>
+        <a href="GroupChatStates.dc.html" style="align-self: center; margin-top: 10px; font-size: 13px">让助手一起聊…</a>
+
+        <div class="gl">备注与往来</div>
+        <div class="grp">
+          <div class="gr"><span style="flex: 1">备注和标签</span><span class="v">合伙人</span><span class="chev">›</span></div>
+          <a class="gr" href="GroupChat.dc.html"><span style="flex: 1">共同群聊</span><span class="v">书店活动组 等 2 个</span><span class="chev">›</span></a>
+        </div>
+
+        <div class="gl">TA 的空间与权限</div>
+        <div class="grp">
+          <div class="gr"><span style="flex: 1">账号</span><span class="v">zhouhe@undefineds.co</span><span class="btn" title="复制完整地址">复制地址</span></div>
+          <div class="gr"><span style="flex: 1">资料来自 TA 的公开资料</span><span class="v">2 分钟前</span><span class="btn">刷新</span></div>
+          <a class="gr" href="LibraryStates.dc.html"><span style="flex: 1">TA 共享给我的</span><span class="v">4 个文件</span><span class="chev">›</span></a>
+          <a class="gr" href="Share.dc.html"><span style="flex: 1">我共享给 TA 的</span><span class="v">3 项</span><span class="chev">›</span></a>
+          <a class="gr" href="PeopleSolid.dc.html"><span style="flex: 1">TA 在我空间里能做什么</span><span class="v">发消息、看公开资料</span><span class="chev">›</span></a>
+          <div class="gr"><span style="flex: 1">在我的公开资料里显示 TA</span><span class="sw" role="switch" aria-checked="false" aria-label="在我的公开资料里显示 TA" style="background: #87837D"><span class="knob" style="left: 2px"></span></span></div>
+        </div>
+        <div class="v" style="padding: 6px 4px 0; font-size: 12px">备注和标签只存在你的空间，TA 看不到。</div>
+
+        <div class="gl"></div>
+        <div class="grp"><a class="gr" href="PeopleSolid.dc.html" style="justify-content: center">删除联系人…</a></div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

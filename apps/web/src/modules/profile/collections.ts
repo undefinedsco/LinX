@@ -46,6 +46,19 @@ export async function readProfile(
   return await db.findByIri(solidProfileResource, webId) as SolidProfileRow | null
 }
 
+/**
+ * Writes fields straight into `profile/card#me`. An empty value removes the
+ * field (`null`), so cleared fields stop showing up in other people's apps.
+ */
+export async function updateProfile(
+  db: SolidDatabase,
+  webId: string,
+  data: Partial<SolidProfileUpdate>,
+): Promise<void> {
+  await db.updateByIri(solidProfileResource, webId, data)
+  void queryClient.invalidateQueries({ queryKey: ['profile'] })
+}
+
 // ============================================================================
 // Profile Operations (Business Logic)
 // ============================================================================
@@ -89,12 +102,7 @@ export const profileOps = {
     }
     
     try {
-      await db.updateByIri(solidProfileResource, webId, data)
-      
-      // Invalidate query cache
-      queryClient.invalidateQueries({ queryKey: ['profile'] })
-      
-      // Return updated profile
+      await updateProfile(db, webId, data)
       return await this.fetch()
     } catch (error) {
       console.error('[profileOps] Failed to update profile:', error)

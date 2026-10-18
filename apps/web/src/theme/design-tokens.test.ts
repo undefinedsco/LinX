@@ -10,11 +10,15 @@ const textarea = readFileSync('src/components/ui/textarea.tsx', 'utf8')
 const tooltip = readFileSync('src/components/ui/tooltip.tsx', 'utf8')
 
 describe('global design tokens', () => {
-  it('keeps neutral surfaces separate from the sparse purple accent', () => {
-    expect(css).toContain('--background: 0 0% 98%')
-    expect(css).toContain('--secondary: 0 0% 96%')
-    expect(css).toContain('--border: 0 0% 88%')
-    expect(css).toContain('--layout-sidebar: 0 0% 96%')
+  it('keeps warm paper surfaces separate from the sparse ink accent', () => {
+    expect(css).toContain('--background: 42 38% 95%')
+    expect(css).toContain('--secondary: 41 38% 92%')
+    expect(css).toContain('--border: 36 14% 85%')
+    expect(css).toContain('--layout-sidebar: 18 16% 87%')
+    expect(css).toContain('--primary: 261 36% 38%')
+    expect(css).toMatch(/:root,\s*\.light \{/)
+    expect(css).not.toContain('--background: 0 0% 98%')
+    expect(css).not.toContain('--layout-content: 0 0% 100%')
     expect(css).not.toContain('purple-tinted neutral')
     expect(css).not.toContain('Purple-tinted neutral')
   })

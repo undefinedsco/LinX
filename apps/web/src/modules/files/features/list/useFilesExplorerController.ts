@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useFilesStore } from '../../app/store'
 import {
   projectFilesExplorerRows,
+  type FilesExplorerProjectionInput,
   type FilesExplorerRowModel,
 } from '../../domain/list/explorer-tree-model'
 import { resolveFilesListOpenDecision, type FilesListOpenTrigger } from '../../domain/list/list-open'
@@ -18,6 +19,10 @@ export interface FilesExplorerControllerInput {
   loadingContainerUris?: ReadonlySet<string>
   errorByContainerUri?: Record<string, unknown>
   retryContainer?: (containerUri: string) => void
+  treeOnly?: boolean
+  groups?: boolean
+  agentNames?: Record<string, string>
+  sharedWithMe?: FilesExplorerProjectionInput['sharedWithMe']
 }
 
 function isContainerEntry(entry: FilesEntry) {
@@ -37,6 +42,10 @@ export function useFilesExplorerController({
   loadingContainerUris = new Set(),
   errorByContainerUri = {},
   retryContainer,
+  treeOnly = false,
+  groups = false,
+  agentNames,
+  sharedWithMe,
 }: FilesExplorerControllerInput) {
   const selectFile = useFilesStore((state) => state.selectFile)
   const clearFileSelection = useFilesStore((state) => state.clearFileSelection)
@@ -55,8 +64,12 @@ export function useFilesExplorerController({
     loadingContainerUris,
     errorByContainerUri,
     searchText,
+    treeOnly,
+    groups,
+    agentNames,
+    sharedWithMe,
     }),
-    [childEntriesByContainerUri, errorByContainerUri, expandedUris, loadingContainerUris, rootEntries, searchText],
+    [sharedWithMe, agentNames, childEntriesByContainerUri, errorByContainerUri, expandedUris, groups, loadingContainerUris, rootEntries, searchText, treeOnly],
   )
 
   const toggleFolder = useCallback((containerUri: string) => {

@@ -8,7 +8,7 @@ test('collects only same-origin assets and resolves relative paths', () => {
   const html = `
     <link rel="stylesheet" href="/assets/app.css">
     <script src="assets/app.js"></script>
-    <script src="https://cdn.example.test/chatkit.js"></script>
+    <script src="https://cdn.example.test/third-party.js"></script>
   `
 
   assert.deepEqual(collectStaticAssetUrls(html, pageUrl), [

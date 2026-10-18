@@ -122,6 +122,12 @@ export function getNextStructuredSubjectDraft(input: {
   return subject
 }
 
+/** R6 K6b: the person types a name in the last row; the card's address is made from it. */
+export function structuredSubjectDraftFromName(name: string): string {
+  const cleaned = name.trim().replace(/\s+/g, '_').replace(/[<>"{}|\\^`#]/g, '')
+  return cleaned ? `#${cleaned}` : ''
+}
+
 export function planStructuredSubjectCreation(input: {
   classScope?: string | null
   existingSubjects: readonly string[]
@@ -167,9 +173,9 @@ export function projectStructuredSubjectCreationFooterModel({
 }): StructuredSubjectCreationFooterModel {
   return {
     disabled: !classScope,
-    title: classScope ? `在 ${classScope} 中新增 subject` : '先选择 class 再新增 subject',
-    buttonAriaLabel: '+ Subject',
-    buttonLabel: 'Subject',
+    title: classScope ? `在“${classScope}”里新增一行` : '先选一个类型再新增一行',
+    buttonAriaLabel: '+ 卡片',
+    buttonLabel: '卡片',
   }
 }
 
@@ -179,8 +185,8 @@ export function projectStructuredSubjectCreationDialogModel({
   classScope?: string | null
 }): StructuredSubjectCreationDialogModel {
   return {
-    title: '新增 subject',
-    description: classScope ?? '先选择 class 再新增 subject。',
+    title: '新增一行',
+    description: classScope ?? '先选一个类型再新增一行。',
     subjectInputLabel: 'Subject',
     cancelLabel: '取消',
     submitLabel: '创建条目审批',

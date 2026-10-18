@@ -8,6 +8,7 @@ import {
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { isPodFileTool } from './pod-file-tools'
 import { queryClient } from '@/providers/query-provider'
 
 const POLICY_VERSION = 'phase4-inbox-v1'
@@ -325,6 +326,8 @@ export class RuntimeSidecarSink {
     event: Extract<RuntimeSessionEvent, { type: 'tool_call' }>,
     context: RuntimeEventContext,
   ): Promise<void> {
+    // Pod file tools run in the web executor and stage AI drafts; they are not approvals.
+    if (isPodFileTool(event.name)) return
     const eventDate = eventDateFromTs(event.ts)
     const existingApproval = await this.findApprovalByToolCall(event.requestId)
     let approvalId = existingApproval?.id

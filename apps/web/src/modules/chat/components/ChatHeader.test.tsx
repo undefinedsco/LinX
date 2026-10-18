@@ -13,7 +13,26 @@ const mockToast = vi.fn()
 const mockUseChatStore = vi.fn()
 const mockUseEntity = vi.fn()
 const mockUseChatList = vi.fn()
+const mockUseThreadList = vi.fn()
+const mockCreateThread = vi.fn()
+const mockSelectThread = vi.fn()
 const mockAgentCollectionGet = vi.fn()
+const mockOpenAgentMethod = vi.fn()
+let conditionsRequest = 0
+
+class ResizeObserverStub { observe() {} unobserve() {} disconnect() {} }
+vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+Element.prototype.scrollIntoView = vi.fn()
+
+/** 执行条件 is opened from 聊天信息; the header listens for that request. */
+function requestConditions(rerender: (ui: ReactNode) => void) {
+  conditionsRequest += 1
+  rerender(<ChatHeader />)
+}
+
+vi.mock('@/modules/my-ai/app/open-method', () => ({
+  useOpenAgentMethod: () => mockOpenAgentMethod,
+}))
 
 vi.mock('@/providers/solid-session-context', () => ({
   useSession: () => ({
@@ -121,7 +140,12 @@ vi.mock('../collections', () => ({
   },
   isLinxDefaultSecretaryChat: (chat: { title?: string } | null | undefined) => chat?.title === 'AI Secretary',
   useChatList: () => mockUseChatList(),
+  useThreadList: () => mockUseThreadList(),
   useChatMutations: () => ({
+    createThread: {
+      mutateAsync: mockCreateThread,
+      isPending: false,
+    },
     updateChat: {
       mutateAsync: mockUpdateChat,
       isPending: false,
@@ -137,6 +161,19 @@ vi.mock('../collections', () => ({
   }),
 }))
 
+vi.mock('../features/threads/useTopicStatuses', () => ({
+  useTopicStatuses: () => ({
+    byThread: new Map([['thread-2', { kind: 'decision', label: '等你决定', needsYou: true }]]),
+    byChat: new Map(),
+    runtimeByThread: new Map(),
+  }),
+}))
+
+const mockSchedule = vi.fn(() => ({ schedule: null as unknown, runs: [], setAutoRun: vi.fn(), setRepeat: vi.fn() }))
+vi.mock('../features/schedule/useThreadSchedule', () => ({
+  useThreadSchedule: () => mockSchedule(),
+}))
+
 vi.mock('../contacts-port', () => ({
   agentCollection: {
     get: (...args: unknown[]) => mockAgentCollectionGet(...args),
@@ -148,7 +185,7 @@ vi.mock('../agent-runtime-location', () => ({
   describeAgentWorkspaceAccess: (runtimeLocation: 'client' | 'server') =>
     runtimeLocation === 'server'
       ? '服务端 / xpod：空间在 server 侧按本地文件夹访问。'
-      : '客户端：通过 xpod CLI 访问空间，不把 Pod 当成本地目录。',
+      : '在这台设备上运行：设备关掉时会暂停，读写你的空间仍按你的授权来。',
 }))
 
 vi.mock('../utils/chat-participants', () => ({
@@ -180,10 +217,15 @@ describe('ChatHeader', () => {
 
     mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
       selectedChatId: 'chat-1',
+      selectedThreadId: null,
       selectChat: mockSelectChat,
+      selectThread: mockSelectThread,
       showRightSidebar: false,
       toggleRightSidebar: mockToggleRightSidebar,
+      executionConditionsRequest: conditionsRequest,
     }))
+
+    mockUseThreadList.mockReturnValue({ data: [] })
 
     mockUseChatList.mockReturnValue({
       data: [
@@ -233,6 +275,44 @@ describe('ChatHeader', () => {
     })
   })
 
+  it('shows no topic switcher beside an assistant title', () => {
+    mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedChatId: 'chat-1',
+      selectedThreadId: 'thread-1',
+      selectChat: mockSelectChat,
+      selectThread: mockSelectThread,
+      showRightSidebar: false,
+      toggleRightSidebar: mockToggleRightSidebar,
+      executionConditionsRequest: conditionsRequest,
+    }))
+    mockUseThreadList.mockReturnValue({
+      data: [
+        { id: 'thread-1', title: '比较三种工具' },
+        { id: 'thread-2', title: '排班规则草稿' },
+      ],
+    })
+
+    render(<ChatHeader />)
+
+    expect(screen.queryByRole('button', { name: /切换话题/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/比较三种工具/)).not.toBeInTheDocument()
+  })
+
+  it('shows the schedule label next to a recurring topic', () => {
+    mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedChatId: 'chat-1',
+      selectedThreadId: 'thread-1',
+      selectChat: mockSelectChat,
+      selectThread: mockSelectThread,
+      showRightSidebar: false,
+      toggleRightSidebar: mockToggleRightSidebar,
+      executionConditionsRequest: conditionsRequest,
+    }))
+    mockSchedule.mockReturnValueOnce({ schedule: { scheduleKind: 'cron', cron: '0 9 * * 1' }, runs: [], setAutoRun: vi.fn(), setRepeat: vi.fn() })
+    render(<ChatHeader />)
+    expect(screen.getByText('每周一 9:00')).toBeInTheDocument()
+  })
+
   it('returns to the chat list from the compact header', () => {
     render(<ChatHeader />)
 
@@ -272,7 +352,7 @@ describe('ChatHeader', () => {
     expect(screen.queryByTitle('显示设置')).not.toBeInTheDocument()
     expect(screen.queryByTitle('隐藏设置')).not.toBeInTheDocument()
     expect(screen.getByTitle('编辑助手设置：助手A')).toBeInTheDocument()
-    expect(screen.getByTitle('切换模型：gpt-4o-mini')).toBeInTheDocument()
+    expect(screen.queryByTitle('切换模型：gpt-4o-mini')).not.toBeInTheDocument()
   })
 
   it('updates agent profile from the header dialog', async () => {
@@ -280,7 +360,7 @@ describe('ChatHeader', () => {
 
     fireEvent.click(screen.getByText('助手A'))
     fireEvent.change(screen.getByLabelText('助手名称'), { target: { value: '新的助手名' } })
-    fireEvent.change(screen.getByLabelText('系统提示词'), { target: { value: '新的提示词' } })
+    expect(screen.queryByLabelText('系统提示词')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => {
@@ -288,7 +368,6 @@ describe('ChatHeader', () => {
         agentId: 'agent-1',
         currentAgent: expect.objectContaining({ id: 'agent-1' }),
         name: '新的助手名',
-        instructions: '新的提示词',
         aiRuntimeLocation: 'client',
         chatId: 'chat-1',
         contactId: 'contact-1',
@@ -299,10 +378,20 @@ describe('ChatHeader', () => {
     expect(mockRefreshContact).toHaveBeenCalled()
   })
 
-  it('updates model from the header dialog and derives provider', async () => {
+  it('sends method editing to the single editor in My AI', () => {
     render(<ChatHeader />)
 
-    fireEvent.click(screen.getByText('gpt-4o-mini'))
+    fireEvent.click(screen.getByText('助手A'))
+    fireEvent.click(screen.getByRole('button', { name: '在“我的 AI”里编辑' }))
+
+    expect(mockOpenAgentMethod).toHaveBeenCalledWith('agent-1')
+    expect(mockUpdateAgentProfile).not.toHaveBeenCalled()
+  })
+
+  it('updates model from the header dialog and derives provider', async () => {
+    const { rerender } = render(<ChatHeader />)
+
+    requestConditions(rerender)
     fireEvent.change(screen.getByLabelText('选择模型'), { target: { value: 'claude-3-5-sonnet-latest' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
@@ -312,8 +401,6 @@ describe('ChatHeader', () => {
         currentAgent: expect.objectContaining({ id: 'agent-1' }),
         provider: 'anthropic',
         model: 'claude-3-5-sonnet-latest',
-        chatId: 'chat-1',
-        contactId: 'contact-1',
       })
     })
 
@@ -330,6 +417,7 @@ describe('ChatHeader', () => {
       selectChat: mockSelectChat,
       showRightSidebar: false,
       toggleRightSidebar: mockToggleRightSidebar,
+      executionConditionsRequest: conditionsRequest,
     }))
     mockUseEntity.mockReturnValue({ data: null, refresh: vi.fn().mockResolvedValue(undefined) })
     mockAgentCollectionGet.mockReturnValue({
@@ -339,20 +427,26 @@ describe('ChatHeader', () => {
       model: 'linx-lite',
     })
 
-    render(<ChatHeader />)
+    const { rerender } = render(<ChatHeader />)
 
-    fireEvent.click(screen.getByText('linx-lite'))
-    expect(screen.getByText('模型设置')).toBeInTheDocument()
+    requestConditions(rerender)
+    expect(screen.getByText('执行条件')).toBeInTheDocument()
+    expect(screen.getByText(/换模型不会改变助手的名字、头像和聊天记录/)).toBeInTheDocument()
     expect(mockToast).not.toHaveBeenCalledWith(expect.objectContaining({
       title: '当前聊天没有可编辑的模型',
     }))
   })
 
-  it('updates the agent AI runtime location from the profile dialog', async () => {
-    render(<ChatHeader />)
+  it('changes where the assistant runs from 执行条件, next to the model', async () => {
+    const { rerender } = render(<ChatHeader />)
 
     fireEvent.click(screen.getByText('助手A'))
-    fireEvent.change(screen.getByLabelText('AI 运行位置'), { target: { value: 'server' } })
+    // The profile dialog is only about the assistant itself now.
+    expect(screen.queryByLabelText('在哪里运行')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+
+    requestConditions(rerender)
+    fireEvent.change(screen.getByLabelText('在哪里运行'), { target: { value: 'server' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => {

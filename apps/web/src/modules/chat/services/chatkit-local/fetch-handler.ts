@@ -23,7 +23,7 @@ import {
   setThing,
   universalAccess,
 } from '@inrupt/solid-client'
-import { nowTimestamp, type Attachment, type ThreadItem, type ThreadMetadata } from '@/lib/vendor/xpod-chatkit'
+import { nowTimestamp, type Attachment, type StreamingReq, type ThreadItem, type ThreadMetadata, type ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { LocalChatKitStore } from './store'
@@ -281,6 +281,59 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     }
     return { uri: sourceUrl.href, name: versionName, createdAt }
   }
+  const conversation: LocalConversationApi = {
+    load: (threadId, chatId) => (chatId
+      ? service.loadChatConversation(chatId, threadId, {})
+      : service.loadConversation(threadId, {})),
+    resolveItemUri: (itemId) => service.resolveItemUri(itemId),
+    async selectBranch(threadId, itemId, parentItemId) {
+      if (!isAvailable()) throw new Error('当前空间连接尚未恢复，请稍后重试。')
+      const result = await service.process(JSON.stringify({
+        type: 'threads.custom_action',
+        params: { action: { type: 'message.select_branch', payload: { thread_id: threadId, item_id: itemId, parent_item_id: parentItemId } } },
+      }), {})
+      if (result.type === 'streaming') for await (const _event of result.stream()) { /* the choice is saved once the stream ends */ }
+    },
+    listAttachments: (chatId, threadId) => service.loadChatAttachments(chatId, threadId, {}),
+    async uploadAttachment(file, signal) {
+      if (!isAvailable()) throw new Error('当前空间连接尚未恢复，请稍后重试。')
+      const created = await service.process(JSON.stringify({
+        type: 'attachments.create',
+        params: { name: file.name, mime_type: file.mimeType, size: file.blob.size },
+      }), { signal })
+      if (created.type !== 'non_streaming') throw new Error('附件创建失败')
+      const attachment = JSON.parse(created.json) as Attachment
+      return service.uploadAttachment(attachment.id, file.blob, file.mimeType, signal)
+    },
+    async feedback(threadId, itemIds, kind) {
+      if (!isAvailable()) throw new Error('当前空间连接尚未恢复，请稍后重试。')
+      const result = await service.process(JSON.stringify({
+        type: 'items.feedback',
+        params: { thread_id: threadId, item_ids: itemIds, kind },
+      }), {})
+      if (result.type !== 'non_streaming') throw new Error('反馈没有保存')
+    },
+    async *run(request, signal) {
+      if (!isAvailable()) throw new Error('当前空间连接尚未恢复，请稍后重试。')
+      const controller = new AbortController()
+      const abortFromCaller = () => controller.abort(signal?.reason)
+      signal?.addEventListener('abort', abortFromCaller, { once: true })
+      if (signal?.aborted) abortFromCaller()
+      activeStreamingControllers.add(controller)
+      notifyStreamingChange()
+      try {
+        for await (const event of service.streamEvents(request, { signal: controller.signal })) {
+          onServiceAccessRecovered?.()
+          yield event
+        }
+      } finally {
+        signal?.removeEventListener('abort', abortFromCaller)
+        activeStreamingControllers.delete(controller)
+        notifyStreamingChange()
+      }
+    },
+  }
+  localFetch.conversation = conversation
   localFetch.dispose = () => {
     interruptActiveStreams()
     store.dispose()
@@ -522,7 +575,33 @@ export type LocalChatKitFetch = typeof fetch & {
     mimeType?: string | null
     content: string
   }) => Promise<{ uri: string; name: string; createdAt: number }>
+  /**
+   * Typed access for the AG-UI conversation surface (the ChatKit wire format
+   * is not involved). Same service, same store, same abort handling.
+   */
+  conversation: LocalConversationApi
   dispose: () => void
+}
+
+export interface LocalConversationApi {
+  /** With `chatId`, every thread of the chat merged into one timeline. */
+  load: (threadId: string, chatId?: string) => Promise<{
+    thread: ThreadMetadata
+    threadUri: string
+    items: Array<{ item: ThreadItem; uri: string; threadId?: string }>
+    /** Items of the versions not shown (edited messages, regenerated answers), so the picker can offer them. */
+    alternates?: Array<{ item: ThreadItem; uri: string; threadId?: string }>
+  }>
+  resolveItemUri: (itemId: string) => string
+  /** Saves which version of a message is shown (`message.select_branch`), so the choice survives a reload. */
+  selectBranch?: (threadId: string, itemId: string, parentItemId: string) => Promise<void>
+  /** Every attachment of the chat (all its threads), for the 附件 dialog. */
+  listAttachments?: (chatId: string, threadId: string) => Promise<Attachment[]>
+  /** Two-phase upload collapsed into one call; returns the stored attachment. */
+  uploadAttachment: (file: { name: string; mimeType: string; blob: Blob }, signal?: AbortSignal) => Promise<Attachment>
+  run: (request: StreamingReq, signal?: AbortSignal) => AsyncIterable<ThreadStreamEvent>
+  /** 👍 / 👎 on saved items; written to the item's rich content in the Pod. */
+  feedback?: (threadId: string, itemIds: string[], kind: 'positive' | 'negative') => Promise<void>
 }
 
 const AI_SERVICE_RESOURCE_IDS = new Set([

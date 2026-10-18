@@ -2,6 +2,10 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// Date labels in tests are written for China time; pin it so results don't depend on the
+// machine's timezone.
+process.env.TZ = 'Asia/Shanghai'
+
 const repoRoot = path.resolve(__dirname, '../..')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
@@ -35,8 +39,6 @@ export default defineConfig({
   resolve: {
     preserveSymlinks: true,
     alias: {
-      'tldraw/tldraw.css': path.resolve(__dirname, './src/test/empty.css'),
-      'tldraw': path.resolve(__dirname, './src/test/tldraw-test-double.tsx'),
       '@/modules/files/ui/BlockNoteFileEditor': path.resolve(
         __dirname,
         './src/modules/files/ui/__tests__/fake-block-note-file-editor.tsx',

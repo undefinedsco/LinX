@@ -64,6 +64,16 @@ export type StructuredSubjectCellPendingMarker = {
   label: string
 }
 
+/** `#第一行` / `#%E7%AC%AC...` → 第一行: a row's name is the part after `#`. */
+function rowNameFromHash(hash: string) {
+  const raw = hash.replace(/^#/, '')
+  try {
+    return decodeURIComponent(raw) || hash
+  } catch {
+    return raw || hash
+  }
+}
+
 function structuredSubjectDisplayLabel(subject: string, documentUri: string) {
   if (!subject) return documentUri
   try {
@@ -72,7 +82,7 @@ function structuredSubjectDisplayLabel(subject: string, documentUri: string) {
     const subjectUrl = new URL(subject)
     const hash = subjectUrl.hash
     subjectUrl.hash = ''
-    if (hash && subjectUrl.href === documentUrl.href) return hash
+    if (hash && subjectUrl.href === documentUrl.href) return rowNameFromHash(hash)
     const segments = subjectUrl.pathname.split('/').filter(Boolean)
     const basename = segments[segments.length - 1]
     if (basename) return `${decodeURIComponent(basename)}${hash}`

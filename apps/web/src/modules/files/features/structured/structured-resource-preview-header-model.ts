@@ -16,7 +16,7 @@ export function projectStructuredResourcePreviewHeaderModel({
 
   return {
     classScopeButtonLabel: selectedClassName
-      ? `当前 class：${classScopeDisplayLabel}`
+      ? `当前类型：${classScopeDisplayLabel}`
       : '选择 class',
     classScopeDisplayLabel,
     classScopeLabel: selectedClassName ? classScopeDisplayLabel : '选择或创建 class',

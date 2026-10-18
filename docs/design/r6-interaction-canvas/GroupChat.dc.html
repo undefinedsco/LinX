@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>群聊</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.55}
+.ib{width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:#655D53;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 14px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:13px;font-weight:500;white-space:nowrap;text-decoration:none}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.av{width:36px;height:36px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;background:#E0DBDE}
+.aiav{background:#563E84;color:#F7F4ED;font-size:12px}
+.who{font-size:12px;color:#655D53;margin-bottom:2px}
+.me{background:#E0DBDE;padding:9px 12px;border-radius:8px}
+.them{background:#FBFAF7;padding:9px 12px;border-radius:8px;border:1px solid #DFDBD5}
+.sys{align-self:center;font-size:12px;color:#655D53}
+.msg{display:flex;gap:10px;align-items:flex-start}
+.col{display:flex;flex-direction:column;max-width:66%}
+.mention{color:#563E84;font-weight:600}
+.file{display:flex;align-items:center;gap:10px;width:260px;padding:10px 12px;border-radius:8px;background:#FBFAF7;border:1px solid #DFDBD5;text-decoration:none;color:#2B2621}
+.grp{background:#FBFAF7;border-radius:10px;overflow:hidden;margin:0 12px}
+.gr{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px;text-decoration:none;color:#2B2621}
+.gr:last-child{border-bottom:0}
+.gl{padding:14px 24px 6px;font-size:12px;color:#655D53}
+.v{color:#655D53;font-size:12px}
+.chev{color:#87837D}
+.sw{width:34px;height:20px;border-radius:999px;position:relative;flex:none}
+.knob{position:absolute;top:2px;width:16px;height:16px;border-radius:50%;background:#F7F4ED}
+.mem{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:#2B2621;text-decoration:none;min-width:0}
+.mem span:last-child{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="chat" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="ChatList" selected="group" variant="normal" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：群聊" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 20px; border-bottom: 1px solid #DFDBD5">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 600">书店活动组</h1>
+      <span class="v" style="font-size: 13px">8 人</span>
+      <span style="flex: 1"></span>
+      <button class="ib" aria-label="收起聊天信息" aria-expanded="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></svg></button>
+    </header>
+
+    <div style="flex: 1; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px">
+      <div class="sys">周禾 邀请 许安 加入了群聊</div>
+      <div class="msg">
+        <span class="av">周</span>
+        <div class="col">
+          <div class="who">周禾</div>
+          <div class="them">签到表放共享盘了，大家看看自己的时段</div>
+          <a class="file" href="FileOpen.dc.html" style="margin-top: 6px">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#563E84" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6M8 13h8M8 17h8"></path></svg>
+            <span style="display: flex; flex-direction: column"><span style="font-size: 13px; font-weight: 500">签到表.xlsx</span><span class="v">共享盘 / 活动 · 周禾共享</span></span>
+          </a>
+        </div>
+      </div>
+      <div class="msg">
+        <span class="av">陈</span>
+        <div class="col"><div class="who">陈一</div><div class="them">周日下午我可以</div></div>
+      </div>
+      <div class="msg" style="justify-content: flex-end">
+        <div class="col" style="align-items: flex-end"><div class="me"><span class="mention">@LinX 助手</span> 帮我们把这周排班整理一下，发在群里</div></div>
+        <span class="av">林</span>
+      </div>
+      <div class="msg">
+        <span class="av aiav">AI</span>
+        <div class="col">
+          <div class="who">LinX 助手 · 林舟的助手</div>
+          <div class="them">本周排班：<br>周六上午 周禾、白露　周六下午 陈一、宋青<br>周日上午 许安、白露　周日下午 陈一、陆川<br>周日下午原来缺 1 人，陈一刚说可以，已补上。</div>
+          <div class="v" style="margin-top: 4px">只用了这个群里的消息</div>
+        </div>
+      </div>
+      <div class="msg">
+        <span class="av">许</span>
+        <div class="col"><div class="who">许安</div><div class="them">收到，我周日上午到</div></div>
+      </div>
+    </div>
+
+    <footer style="border-top: 1px solid #DFDBD5; padding: 6px 16px 14px; display: flex; flex-direction: column; gap: 4px">
+      <div style="display: flex; gap: 2px">
+        <button class="ib" aria-label="添加文件"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"></path></svg></button>
+        <button class="ib" aria-label="提到某人"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"></path></svg></button>
+      </div>
+      <label for="gc" style="position: absolute; left: -9999px">消息</label>
+      <textarea id="gc" rows="3" placeholder="发消息；@LinX 助手 让它帮忙" style="border: 0; outline: none; resize: none; background: transparent; font: inherit; color: #2B2621; padding: 0 4px"></textarea>
+      <div style="display: flex; justify-content: flex-end"><button class="btn primary">发送</button></div>
+    </footer>
+  </main>
+
+  <aside aria-label="右边栏：群聊详情" style="flex: 0 0 300px; box-sizing: border-box; background: #F2EDE2; border-left: 1px solid #DFDBD5; min-height: 900px">
+    <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #DFDBD5; font-weight: 600">聊天信息</div>
+    <div style="margin: 14px 12px 0; padding: 14px 10px; background: #FBFAF7; border-radius: 10px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px 6px">
+      <a class="mem" href="Profile.dc.html"><span class="av">林</span><span>林舟</span></a>
+      <a class="mem" href="People.dc.html"><span class="av">周</span><span>周禾</span></a>
+      <a class="mem" href="People.dc.html"><span class="av">陈</span><span>陈一</span></a>
+      <a class="mem" href="People.dc.html"><span class="av">许</span><span>许安</span></a>
+      <a class="mem" href="People.dc.html"><span class="av">白</span><span>白露</span></a>
+      <a class="mem" href="People.dc.html"><span class="av">陆</span><span>陆川</span></a>
+      <a class="mem" href="People.dc.html"><span class="av">宋</span><span>宋青</span></a>
+      <a class="mem" href="PeopleStates.dc.html"><span class="av aiav">AI</span><span>LinX 助手</span></a>
+      <a class="mem" href="GroupChatStates.dc.html" aria-label="邀请成员"><span class="av" style="background: transparent; box-shadow: inset 0 0 0 1px #87837D; font-size: 16px">+</span><span>邀请</span></a>
+    </div>
+    <div class="gl"></div>
+    <div class="grp">
+      <a class="gr" href="GroupChatStates.dc.html"><span style="flex: 1">群名称</span><span class="v">书店活动组</span><span class="chev">›</span></a>
+      <a class="gr" href="GroupChatStates.dc.html"><span style="flex: 1">我在群里的名字</span><span class="v">林舟</span><span class="chev">›</span></a>
+    </div>
+    <div class="gl"></div>
+    <div class="grp">
+      <a class="gr" href="LibraryStates.dc.html"><span style="flex: 1">群里的文件</span><span class="v">12</span><span class="chev">›</span></a>
+      <a class="gr" href="Search.dc.html"><span style="flex: 1">查找聊天记录</span><span class="chev">›</span></a>
+      <a class="gr" href="GroupChatStates.dc.html"><span style="flex: 1">助手在这个群里</span><span class="v">需要时接话</span><span class="chev">›</span></a>
+    </div>
+    <div class="gl"></div>
+    <div class="grp">
+      <div class="gr"><span style="flex: 1">标星</span><span class="sw" role="switch" aria-checked="false" aria-label="标星" style="background: #87837D"><span class="knob" style="left: 2px"></span></span></div>
+      <div class="gr"><span style="flex: 1">免打扰</span><span class="sw" role="switch" aria-checked="false" aria-label="免打扰" style="background: #87837D"><span class="knob" style="left: 2px"></span></span></div>
+    </div>
+    <div class="gl"></div>
+    <div class="grp"><a class="gr" href="GroupChatStates.dc.html" style="justify-content: center">退出群聊…</a></div>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

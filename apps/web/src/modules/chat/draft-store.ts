@@ -51,3 +51,34 @@ export function saveChatDraft(scope: ChatDraftScope, text: string): void {
 export function clearChatDraft(scope: ChatDraftScope): void {
   saveChatDraft(scope, '')
 }
+
+function accountDraftKeys(storage: Storage, accountScope: string): string[] {
+  const prefix = `${DRAFT_STORAGE_PREFIX}:${encodeURIComponent(accountScope)}:`
+  const keys: string[] = []
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index)
+    if (key?.startsWith(prefix) && storage.getItem(key)) keys.push(key)
+  }
+  return keys
+}
+
+/** Unsent drafts that belong to one account; other accounts' drafts are never counted. */
+export function countAccountDrafts(accountScope: string): number {
+  const storage = getStorage()
+  if (!storage) return 0
+  try {
+    return accountDraftKeys(storage, accountScope).length
+  } catch {
+    return 0
+  }
+}
+
+export function clearAccountDrafts(accountScope: string): void {
+  const storage = getStorage()
+  if (!storage) return
+  try {
+    for (const key of accountDraftKeys(storage, accountScope)) storage.removeItem(key)
+  } catch {
+    // Best-effort, like saving.
+  }
+}

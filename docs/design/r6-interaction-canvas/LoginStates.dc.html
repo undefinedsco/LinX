@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>登录与空间准备状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:12px;color:#655D53;margin-bottom:6px}
+.card{background:#FBFAF7;border:1px solid #DFDBD5;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px;min-height:170px;box-sizing:border-box}
+.h{font-size:15px;font-weight:600}
+.d{font-size:13px;color:#655D53}
+.acts{display:flex;gap:8px;margin-top:auto;align-items:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 14px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:13px;font-weight:500;white-space:nowrap;text-decoration:none}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.more{font-size:12px;color:#655D53;text-decoration:underline;text-underline-offset:3px}
+.bar{height:6px;border-radius:999px;background:#E4DDDA;overflow:hidden}
+.bar span{display:block;height:100%;background:#563E84;border-radius:999px}
+.in{height:32px;border:1px solid #87837D;border-radius:6px;background:#F7F4ED;padding:0 10px;font:inherit;font-size:13px;color:#2B2621}
+.err{font-size:12px;color:#2B2621;display:flex;gap:6px;align-items:flex-start}
+.mark{width:16px;height:16px;border-radius:50%;background:#2B2621;color:#F7F4ED;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.det{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#655D53;background:#F2EDE2;border-radius:6px;padding:6px 8px}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; align-content: start">
+  <section>
+    <div class="lbl">打开 LinX：回到上次登录</div>
+    <div class="card" role="status">
+      <div class="h">正在回到上次的位置…</div>
+      <div class="bar" aria-hidden="true"><span style="width: 60%"></span></div>
+      <div class="d">林舟 · 云端空间</div>
+      <div class="acts"><a class="more" href="Login.dc.html">换个账号</a></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">等登录窗口</div>
+    <div class="card" role="status">
+      <div class="h">请在登录窗口完成</div>
+      <div class="d">完成后会自动回到这里。窗口没看到，可以再打开一次。</div>
+      <div class="acts"><span class="btn">取消</span><span class="btn primary">重新打开</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">登录窗口没打开 / 超时</div>
+    <div class="card" role="alert">
+      <div class="h">登录窗口没有打开</div>
+      <div class="d">可能被浏览器拦了，或者网络太慢。</div>
+      <div class="acts"><span class="btn primary">再试一次</span><a class="more" href="Login.dc.html">换个空间</a></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">第一次用本机空间：准备中</div>
+    <div class="card" role="status">
+      <div class="h">正在准备本机空间</div>
+      <div class="bar" aria-hidden="true"><span style="width: 42%"></span></div>
+      <div class="d">下载组件 42% · 只在第一次需要。准备好会自动继续登录。</div>
+      <div class="acts"><span class="btn">取消</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">本机空间没启动（超时 / 版本旧 / 文件坏，统一一句）</div>
+    <div class="card" role="alert">
+      <div class="h">本机空间没有启动</div>
+      <div class="d">先重新检查；还不行就重启 LinX，它会自己修复。</div>
+      <details><summary class="more">详情</summary><div class="det" style="margin-top: 6px">启动超时（30 秒）· xpod 0.9.3</div></details>
+      <div class="acts"><span class="btn primary">重新检查</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">需要创建空间（明确问，不自动建）</div>
+    <div class="card">
+      <div class="h">linzhou@undefineds.co 在这里还没有空间</div>
+      <div class="d">创建后，LinX 会把你的聊天、文件和卡片保存在这台电脑。</div>
+      <div class="acts"><span class="btn primary">在这里创建</span><a class="more" href="Login.dc.html">换个空间</a></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">空间不匹配</div>
+    <div class="card">
+      <div class="h">这个账号的数据在另一个空间</div>
+      <div class="d">linzhou@undefineds.co 的数据在“云端空间”。要去那里，还是在这里新建一个？</div>
+      <div class="acts"><span class="btn primary">去云端空间</span><span class="btn">在这里创建</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">账号不能在这个空间保存</div>
+    <div class="card" role="alert">
+      <div class="h">这个账号还不能在这里保存数据</div>
+      <div class="d">空间的管理员没有给这个账号保存的权限。</div>
+      <details><summary class="more">详情</summary><div class="det" style="margin-top: 6px">没有可写入的存储位置（storage）</div></details>
+      <div class="acts"><a class="btn primary" href="Login.dc.html">换个空间</a></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">登录过期（用着用着）</div>
+    <div class="card" role="alert">
+      <div class="h">登录已过期</div>
+      <div class="d">没发出的草稿还在这台电脑，重新登录后继续。</div>
+      <div class="acts"><span class="btn primary">重新登录</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">独立空间：起账号名</div>
+    <div class="card">
+      <label class="h" for="ln">给这台电脑上的账号起个名字</label>
+      <input id="ln" class="in" value="linzhou" aria-describedby="ln-e">
+      <div id="ln-e" class="err"><span class="mark" aria-hidden="true">!</span>这个名字已经有了。直接登录，或者换一个。</div>
+      <div class="acts"><span class="btn">直接登录</span><span class="btn primary">创建</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">使用其他空间…</div>
+    <div class="card">
+      <label class="h" for="pu">空间地址</label>
+      <input id="pu" class="in" value="https://pod.example.org" aria-describedby="pu-e">
+      <div id="pu-e" class="err"><span class="mark" aria-hidden="true">!</span>连不上这个地址。确认它在运行，再试一次。</div>
+      <div class="acts"><a class="more" href="Login.dc.html">返回</a><span class="btn primary" style="margin-left: auto">继续</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">登录成功但 LinX 没准备好</div>
+    <div class="card" role="alert">
+      <div class="h">LinX 助手没能准备好</div>
+      <div class="d">账号和空间都正常，只是助手的存放位置没建成。你的数据没有受影响。</div>
+      <details><summary class="more">详情</summary><div class="det" style="margin-top: 6px">创建 .data/agents/ 失败：HTTP 403</div></details>
+      <div class="acts"><span class="btn primary">重试</span><a class="more" href="Login.dc.html">换个空间</a></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

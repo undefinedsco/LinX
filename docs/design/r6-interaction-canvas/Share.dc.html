@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>共享</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.ib{width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:#655D53;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 14px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:13px;font-weight:500;white-space:nowrap;text-decoration:none}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.frow{display:flex;align-items:center;gap:10px;height:44px;padding:0 20px;border-bottom:1px solid #DFDBD5;font-size:14px}
+.v{color:#655D53;font-size:12px}
+.av{width:32px;height:32px;border-radius:6px;background:#E0DBDE;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.aiav{background:#563E84;color:#F7F4ED;font-size:11px}
+.pr{display:flex;align-items:center;gap:10px;min-height:52px;padding:0 4px;border-bottom:1px solid #DFDBD5}
+.pr:last-child{border-bottom:0}
+.sel{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px;border-radius:6px;border:1px solid #DFDBD5;background:#F7F4ED;font-size:12px;color:#2B2621}
+.sw{width:34px;height:20px;border-radius:999px;position:relative;flex:none;display:inline-block}
+.knob{position:absolute;top:2px;width:16px;height:16px;border-radius:50%;background:#F7F4ED}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="files" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="FilesNav" selected="f1" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：文件夹" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px; position: relative">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 20px; border-bottom: 1px solid #DFDBD5">
+      <h1 style="margin: 0; font-size: 15px; font-weight: 600">活动</h1>
+      <span class="v">你、周禾、陈一 可以访问</span>
+      <span style="flex: 1"></span>
+      <span class="btn">共享…</span>
+    </header>
+    <div aria-hidden="true">
+      <div class="frow"><span style="flex: 1">报名方案.md</span><span class="v">9月16日</span></div>
+      <div class="frow"><span style="flex: 1">三种工具对比表.md</span><span class="v">今天</span></div>
+      <div class="frow"><span style="flex: 1">活动照片</span><span class="v">5 个</span></div>
+      <div class="frow"><span style="flex: 1">活动预算.xlsx</span><span class="v">只有你能看 · 和文件夹不同</span></div>
+      <div class="frow"><span style="flex: 1">场地合同.pdf</span><span class="v">9月12日</span></div>
+    </div>
+
+    <div style="position: absolute; inset: 56px 0 0 0; background: rgb(43 38 33 / .18); display: flex; align-items: flex-start; justify-content: center; padding-top: 60px">
+      <div role="dialog" aria-labelledby="sh-t" style="width: 460px; max-width: calc(100% - 32px); background: #FBFAF7; border-radius: 12px; border: 1px solid #DFDBD5; box-shadow: 0 16px 40px rgb(43 38 33 / .18); padding: 18px 20px; display: flex; flex-direction: column; gap: 14px">
+        <div id="sh-t" style="font-weight: 600; font-size: 16px">共享“活动”文件夹</div>
+        <div style="display: flex; gap: 8px">
+          <label for="sh-add" style="position: absolute; left: -9999px">添加人</label>
+          <input id="sh-add" placeholder="联系人名字，或粘贴 WebID" style="flex: 1; height: 32px; border: 1px solid #87837D; border-radius: 6px; background: #F7F4ED; padding: 0 10px; font: inherit; font-size: 13px">
+          <span class="sel">可以查看 ▾</span>
+          <span class="btn primary">添加</span>
+        </div>
+        <div>
+          <div class="pr"><span class="av">林</span><span style="flex: 1">林舟<br><span class="v">你</span></span><span class="v">所有者</span></div>
+          <div class="pr"><span class="av">周</span><span style="flex: 1">周禾</span><span class="sel">可以编辑 ▾</span></div>
+          <div class="pr"><span class="av">陈</span><span style="flex: 1">陈一</span><span class="sel">可以查看 ▾</span></div>
+          <div class="pr"><span class="av aiav">AI</span><span style="flex: 1">LinX 助手<br><span class="v">你的助手</span></span><span class="sel">可以查看 ▾</span></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; background: #F2EDE2">
+          <span style="flex: 1; font-size: 13px">知道链接的人也能看<br><span class="v">关 · 只有上面的人能打开</span></span>
+          <span class="sw" role="switch" aria-checked="false" aria-label="知道链接的人也能看" style="background: #87837D"><span class="knob" style="left: 2px"></span></span>
+        </div>
+        <div class="v">里面的文件和卡片跟着这个文件夹共享；单独设置过的写“和文件夹不同”。</div>
+        <div style="display: flex; justify-content: space-between; gap: 8px"><span class="btn">复制链接</span><span class="btn primary">完成</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

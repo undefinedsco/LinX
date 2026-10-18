@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>加行、加列、加表</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin:0 0 8px}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:14px;display:flex;flex-direction:column;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.s{font-size:12px;color:#655D53}
+.in{height:32px;border:1px solid #87837D;border-radius:6px;background:#F7F4ED;padding:0 10px;font:inherit;font-size:13px;color:#2B2621}
+.types{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.ty{display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;border-radius:6px;font-size:13px;border:1px solid transparent}
+.ty.on{border-color:#563E84;background:#F2EDE2;font-weight:600}
+.ic{width:16px;text-align:center;color:#87837D;font-size:12px}
+.chip{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:5px;font-size:12px}
+.a{background:#F3E3C3}.b{background:#E5DDF2}.c{background:#DCE7F3}
+.mini{border:1px solid #DFDBD5;border-radius:8px;overflow:hidden;background:#F7F4ED;font-size:13px}
+.mrow{display:flex;height:34px;align-items:center;border-bottom:1px solid #EAE5DC}
+.mrow span{padding:0 10px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toast{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:#2B2621;color:#F7F4ED;font-size:12px}
+.toast a{color:#E0DBDE;font-weight:600}
+.tag{display:inline-flex;align-items:center;height:16px;padding:0 5px;border-radius:4px;background:#563E84;color:#F7F4ED;font-size:10px;font-weight:600;margin-left:4px}
+.chk{display:flex;align-items:center;gap:8px;height:28px;font-size:13px}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-content: start">
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <h2 class="lbl">加列 = 加属性：② 新建一个</h2>
+    <div class="sheet" role="dialog" aria-label="新建属性">
+      <label class="s" for="pn">名字</label>
+      <input id="pn" class="in" value="擅长" style="border-color: #563E84">
+      <div class="s">值是什么</div>
+      <div class="types">
+        <div class="ty"><span class="ic">T</span>文字</div>
+        <div class="ty"><span class="ic">#</span>数字</div>
+        <div class="ty"><span class="ic">◷</span>日期</div>
+        <div class="ty"><span class="ic">✓</span>是 / 否</div>
+        <div class="ty on"><span class="ic">≡</span>选项（可多选）</div>
+        <div class="ty"><span class="ic">@</span>联系人</div>
+        <div class="ty"><span class="ic">▤</span>另一张表的卡片</div>
+        <div class="ty"><span class="ic">↗</span>网址或文件</div>
+      </div>
+      <div class="s">选项</div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap"><span class="chip a">摄影</span><span class="chip b">布置</span><span class="chip c">签到</span><span class="chip" style="border: 1px dashed #87837D">+ 加选项</span></div>
+      <input class="in" aria-label="说明（可选）" placeholder="说明（可选）：这一列记什么">
+      <div class="s">会放进“词表 › 属性”，别的表格也能用</div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">返回</span><span class="btn primary">添加</span></div>
+    </div>
+    <h2 class="lbl" style="margin-top: 4px">③ 加好了</h2>
+    <div class="mini">
+      <div class="mrow" style="background: #F2EDE2; color: #655D53"><span>名称</span><span>能来的时段</span><span style="background: #E5DDF2; color: #2B2621; font-weight: 600; height: 34px; display: flex; align-items: center">≡ 擅长</span></div>
+      <div class="mrow" style="border-bottom: 0"><span>周禾</span><span>周六上午</span><span class="s">点一下填</span></div>
+    </div>
+    <div class="toast">已加属性“擅长” <span style="flex: 1"></span><a href="TagStates.dc.html">撤销</a></div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <h2 class="lbl">加行 = 加一张卡片</h2>
+    <div class="mini">
+      <div class="mrow"><span>陆川</span><span>周日下午</span></div>
+      <div class="mrow" style="background: #FBFAF7; box-shadow: inset 0 0 0 1px #563E84"><span>程远<span style="border-right: 1px solid #2B2621">&nbsp;</span></span><span class="s">回车再加一行</span></div>
+    </div>
+    <div class="s">在最后一行直接打名字；点右上“+ 卡片”会弹出空卡片（K2），先写标题再填属性。</div>
+
+    <h2 class="lbl" style="margin-top: 6px">加表 = 新建一张表格</h2>
+    <div class="sheet" role="dialog" aria-label="新建表格">
+      <div style="font-weight: 600">新建表格</div>
+      <label class="s" for="tn">名字</label>
+      <input id="tn" class="in" value="供应商" style="border-color: #563E84">
+      <div class="s">放在</div>
+      <div class="in" style="display: flex; align-items: center">活动 ▾</div>
+      <div class="s">先有哪几列（以后随时加）</div>
+      <div class="chk"><input type="checkbox" checked disabled>名称<span class="s">每张表都有</span></div>
+      <div class="chk"><input type="checkbox" checked style="accent-color: #563E84">联系人</div>
+      <div class="chk"><input type="checkbox" checked style="accent-color: #563E84">电话</div>
+      <div class="chk"><input type="checkbox" style="accent-color: #563E84">网址或文件</div>
+      <div class="s">建好后，“词表 › 类型”里多一个“供应商”。</div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">创建</span></div>
+    </div>
+    <div class="s">从哪里加：左边栏“+”或文件夹里的“+ 新建 › 表格”。两张表之间用“另一张表的卡片”这一列连起来。</div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <h2 class="lbl">LinX 加属性：交给它判断时，直接加</h2>
+    <div class="toast" style="background: #F2EDE2; color: #2B2621; border: 1px solid #DFDBD5"><span style="flex: 1">LinX 整理报名名单时，给“志愿者”加了一列“报名渠道”</span><a href="TagStates.dc.html" style="color: #563E84">撤销</a><a href="InboxAudit.dc.html" style="color: #563E84">看看</a></div>
+    <div class="mini">
+      <div class="mrow" style="background: #F2EDE2; color: #655D53"><span>名称</span><span>能来的时段</span><span>≡ 报名渠道<span class="tag">LinX</span></span></div>
+      <div class="mrow" style="border-bottom: 0"><span>周禾</span><span>周六上午</span><span>群里</span></div>
+    </div>
+    <div class="s">也记在收件箱的“LinX 替你批的”里，可以复查。</div>
+
+    <h2 class="lbl" style="margin-top: 6px">没交给它时：加成一列“未确认”（虚线表头）</h2>
+    <div class="mini">
+      <div class="mrow" style="background: #F2EDE2; color: #655D53"><span>名称</span><span>能来的时段</span><span style="border: 1.5px dashed #B9A8D6; background: #F6F2FA; color: #2B2621; height: 34px; display: flex; align-items: center">≡ 擅长 · 未确认</span></div>
+      <div class="mrow" style="border-bottom: 0"><span>周禾</span><span>周六上午</span><span>摄影</span></div>
+    </div>
+    <div style="display: flex; gap: 8px"><span class="btn">去掉这列</span><span class="btn primary">保留这列</span></div>
+    <div class="s">改格子、加行风险小，LinX 直接写，格子上留小紫点可撤销（K10b）。删列、改你起的名字，一定先问你。</div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -68,7 +68,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      // LINX_E2E_BROWSER_CHANNEL=chrome runs on the installed Chrome when the
+      // bundled Chromium build does not match this Playwright version.
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(process.env.LINX_E2E_BROWSER_CHANNEL ? { channel: process.env.LINX_E2E_BROWSER_CHANNEL } : {}),
+      },
     },
     // Uncomment to test on more browsers
     // {

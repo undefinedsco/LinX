@@ -12,7 +12,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
-import { SessionControlBar, type SessionStatus } from '../../components/SessionControlBar'
+import { CodingRunLine } from '../../ui/CodingRunLine'
+import { folderDisplayName, projectCodingRunLine } from '../../domain/coding-run'
 import { useChatMutations, useWorkspaceList } from '../../collections'
 import {
   fetchRuntimeSessionLog,
@@ -31,18 +32,6 @@ interface RuntimeActivity {
   label: string
   technicalName?: string
   tone: 'running' | 'waiting'
-}
-
-function mapSessionStatus(status: 'idle' | 'active' | 'paused' | 'completed' | 'error'): SessionStatus {
-  return status === 'idle' ? 'completed' : status
-}
-
-function formatDuration(updatedAt?: string) {
-  if (!updatedAt) return '刚刚'
-  const minutes = Math.floor(Math.max(0, Date.now() - new Date(updatedAt).getTime()) / 60_000)
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes} 分钟`
-  return `${Math.floor(minutes / 60)} 小时`
 }
 
 function describeRuntimeTool(name: string): RuntimeActivity {
@@ -173,10 +162,20 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
     setRuntimeError(null)
     await runtime.resumeSession.mutateAsync(runtime.runtimeSession.id)
   }, [runtime])
-  const stop = useCallback(async () => {
+  const [isStopping, setIsStopping] = useState(false)
+  const [wasStopped, setWasStopped] = useState(false)
+  const stopRun = useCallback(async () => {
     if (!runtime.runtimeSession) return
     setRuntimeError(null)
-    await runtime.stopSession.mutateAsync(runtime.runtimeSession.id)
+    setIsStopping(true)
+    try {
+      await runtime.stopSession.mutateAsync(runtime.runtimeSession.id)
+      setWasStopped(true)
+    } catch (error) {
+      setRuntimeError(formatLoginErrorForUser(error, '没能停下来，请再试一次。'))
+    } finally {
+      setIsStopping(false)
+    }
   }, [runtime])
   const copyLog = useCallback(async () => {
     if (!runtime.runtimeSession) return
@@ -194,8 +193,17 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
     runtimeSession: runtime.runtimeSession,
   }), [runtime.runtimeSession, workspaceUri, workspaces])
 
-  if (!isRuntimeSessionMode()) return null
   const current = runtime.runtimeSession
+  const runLine = projectCodingRunLine({
+    status: current?.status ?? 'idle',
+    tool: current?.tool,
+    folderName: folderDisplayName(workspaceSummary?.primaryText, current?.folderPath, current?.repoPath, current?.container),
+    activity: runtimeActivity,
+    isStopping,
+    wasStopped,
+  })
+
+  if (!isRuntimeSessionMode()) return null
   const isBusy = runtime.createSession.isPending
     || runtime.startSession.isPending
     || runtime.pauseSession.isPending
@@ -206,27 +214,20 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
     <>
       {current ? (
         <>
-          <SessionControlBar
-            title={current.title}
-            status={mapSessionStatus(current.status)}
-            tool={current.tool}
-            tokenUsage={current.tokenUsage}
-            duration={formatDuration(current.updatedAt)}
-            workspacePrimary={workspaceSummary?.primaryText}
-            workspaceSecondary={workspaceSummary ? [workspaceSummary.kindLabel, workspaceSummary.secondaryText].filter(Boolean).join(' · ') : undefined}
-            onPause={current.status === 'active' ? pause : undefined}
-            onResume={current.status === 'paused' ? resume : undefined}
-            onStop={current.status === 'active' || current.status === 'paused' ? stop : undefined}
-            onCopyLog={copyLog}
+          <CodingRunLine
+            line={runLine}
+            busy={isBusy}
+            onAction={(action) => {
+              if (action === 'pause') void pause()
+              else if (action === 'resume') void resume()
+              else if (action === 'stop') void stopRun()
+              else if (action === 'copyLog') void copyLog()
+            }}
           />
-          {runtimeActivity ? (
-            <details className="group border-b border-border/50 bg-muted/10 px-4 py-2 text-xs">
-              <summary className="flex cursor-pointer list-none items-center gap-2 text-muted-foreground marker:hidden">
-                <span className={`size-1.5 rounded-full ${runtimeActivity.tone === 'waiting' ? 'bg-warning' : 'animate-pulse bg-primary'}`} aria-hidden="true" />
-                <span>{runtimeActivity.label}</span>
-                <span className="ml-auto text-[11px] opacity-70 group-open:hidden">查看详情</span>
-              </summary>
-              {runtimeActivity.technicalName ? <p className="mt-2 pl-3.5 text-[11px] text-muted-foreground">工具：<code>{runtimeActivity.technicalName}</code></p> : null}
+          {runtimeActivity?.technicalName ? (
+            <details className="border-b border-border/50 bg-muted/10 px-4 py-1.5 text-[11px] text-muted-foreground">
+              <summary className="cursor-pointer list-none marker:hidden">查看详情</summary>
+              <p className="mt-1">工具：<code>{runtimeActivity.technicalName}</code></p>
             </details>
           ) : null}
           {connectionState === 'reconnecting' ? <div role="status" className="border-b border-warning/20 bg-warning/5 px-4 py-2 text-xs text-muted-foreground">运行时连接已中断，正在自动恢复…</div> : null}
@@ -235,8 +236,8 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
       ) : (
         <div className="flex items-center justify-between gap-3 border-b border-border/50 bg-muted/20 px-4 py-3">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">{workspaceSummary ? `当前话题已绑定${workspaceSummary.kindLabel}` : '当前话题仅保存到空间'}</p>
-            <p className="text-xs text-muted-foreground">{workspaceSummary ? [workspaceSummary.primaryText, workspaceSummary.secondaryText].filter(Boolean).join(' · ') : '需要远程运行时时，再为这个聊天话题绑定运行时会话与文件夹即可。'}</p>
+            <p className="text-sm font-medium text-foreground">{workspaceSummary ? `当前聊天已绑定${workspaceSummary.kindLabel}` : '当前聊天仅保存到空间'}</p>
+            <p className="text-xs text-muted-foreground">{workspaceSummary ? [workspaceSummary.primaryText, workspaceSummary.secondaryText].filter(Boolean).join(' · ') : '需要远程运行时时，再为这个聊天绑定运行时会话与文件夹即可。'}</p>
             {runtimeError ? <p className="mt-1 text-xs text-destructive">{runtimeError}</p> : null}
           </div>
           <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => setIsDialogOpen(true)}><PlayCircle className="mr-1 h-4 w-4" />创建运行时会话</Button>
@@ -245,7 +246,7 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>创建运行时会话</DialogTitle><DialogDescription>为当前话题绑定一个本地运行时与文件夹。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>创建运行时会话</DialogTitle><DialogDescription>为当前聊天绑定一个本地运行时与文件夹。</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2"><Label htmlFor="runtime-repo-path">仓库路径</Label><Input id="runtime-repo-path" value={repoPath} onChange={(event) => setRepoPath(event.target.value)} placeholder="例如：/Users/ganlu/develop/linx" /></div>
             <div className="space-y-2"><Label htmlFor="runtime-folder-path">文件夹路径</Label><Input id="runtime-folder-path" value={folderPath} onChange={(event) => setFolderPath(event.target.value)} placeholder="留空则默认使用仓库路径" /></div>

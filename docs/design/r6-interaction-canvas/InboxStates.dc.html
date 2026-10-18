@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>收件箱状态与活动记录</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.frame{border:1px solid #DFDBD5;border-radius:12px;overflow:hidden;background:#F2EDE2;height:360px;display:flex;flex-direction:column}
+.hd{height:48px;flex:none;display:flex;align-items:center;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px;font-weight:600}
+.row{height:56px;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #DFDBD5}
+.t{font-size:13px;font-weight:500}
+.s{font-size:12px;color:#655D53}
+.center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:16px}
+.muted{color:#655D53}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px">
+  <section>
+    <div class="lbl">没有要决定的事</div>
+    <div class="frame">
+      <div class="hd">待处理</div>
+      <div class="center"><div style="font-weight: 500">都处理完了</div><div class="s">需要你决定、回答或登录时会出现在这里</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">已处理（保留 30 天）</div>
+    <div class="frame">
+      <div class="hd" style="gap: 8px">已处理<span style="flex: 1"></span><span class="s" style="font-weight: 400">全部 · 你 · <a href="InboxAudit.dc.html">LinX 替你 3</a></span></div>
+      <div class="row"><span style="flex: 1"><span class="t">读取 去年排班表.pdf</span><br><span class="s"><span style="display: inline-flex; height: 18px; padding: 0 6px; border-radius: 4px; background: #563E84; color: #F7F4ED; font-size: 11px; font-weight: 600; align-items: center">LinX</span> 替你批准 · 10:21</span></span></div>
+      <div class="row"><span style="flex: 1"><span class="t">读取志愿者名单</span><br><span class="s">你批准了这一次 · 10:21</span></span></div>
+      <div class="row"><span style="flex: 1"><span class="t">周日下午几点开始？</span><br><span class="s">你回答了 14:00 · 10:45</span></span></div>
+      <div class="row"><span style="flex: 1"><span class="t">发送活动海报</span><br><span class="s">你拒绝了 · 昨天</span></span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">正在看的请求在别处被处理了</div>
+    <div class="frame" style="background: #F7F4ED">
+      <div class="hd" style="background: #F7F4ED">发送排班日历邀请</div>
+      <div class="center"><div style="font-weight: 500">已在会话里批准</div><div class="s">10:43 · 邀请已发出</div><a href="Decision.dc.html" style="font-size: 13px">回到会话</a></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">请求过期 / 被撤回</div>
+    <div class="frame" style="background: #F7F4ED">
+      <div class="hd" style="background: #F7F4ED">发送补位邀请</div>
+      <div class="center"><div style="font-weight: 500">这个请求已经过期</div><div class="s">助手没有发送。需要的话在会话里让它重新问你。</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">没有网络</div>
+    <div class="frame">
+      <div style="padding: 8px 12px; background: #E4DDDA; font-size: 12px">没有网络，恢复后才能处理</div>
+      <div class="row"><span style="flex: 1"><span class="t">发送排班日历邀请？</span><br><span class="s">批准 · 志愿者排班方案</span></span></div>
+      <div class="row"><span style="flex: 1"><span class="t">周日下午几点开始？</span><br><span class="s">回答 · 志愿者排班方案</span></span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">活动记录（从左边栏底部进入，不算待办）</div>
+    <div class="frame" style="background: #F7F4ED">
+      <div class="hd" style="background: #F7F4ED">活动记录</div>
+      <div class="row" style="background: #FBFAF7"><span style="flex: 1"><span class="t">LinX 助手读取了 志愿者名单.xlsx</span><br><span class="s">志愿者排班方案 · 10:21</span></span></div>
+      <div class="row" style="background: #FBFAF7"><span style="flex: 1"><span class="t">LinX 助手发送了 6 封日历邀请</span><br><span class="s">你批准 · 10:43</span></span></div>
+      <div class="row" style="background: #FBFAF7"><span style="flex: 1"><span class="t">每周排班提醒 运行完成</span><br><span class="s">10月6日 9:03</span></span></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

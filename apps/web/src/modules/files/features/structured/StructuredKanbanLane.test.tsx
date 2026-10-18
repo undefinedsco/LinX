@@ -11,7 +11,7 @@ describe('StructuredKanbanLane', () => {
           id: 'todo',
           label: 'Todo',
           value: '"Todo"',
-          ariaLabel: 'Kanban column Todo',
+          ariaLabel: '看板列 Todo',
           cardCountLabel: '2',
           cardSubjects: ['a', 'b'],
           cards: [],
@@ -25,7 +25,7 @@ describe('StructuredKanbanLane', () => {
       </StructuredKanbanLane>,
     )
 
-    expect(screen.getByLabelText('Kanban column Todo')).toHaveAttribute('data-lane-width', '288')
+    expect(screen.getByLabelText('看板列 Todo')).toHaveAttribute('data-lane-width', '288')
     expect(screen.getByText('Card body')).toBeVisible()
     expect(screen.getByRole('button', { name: '添加 Subject 到 Todo' })).toBeVisible()
 
@@ -35,7 +35,7 @@ describe('StructuredKanbanLane', () => {
           id: 'todo',
           label: 'Todo',
           value: '"Todo"',
-          ariaLabel: 'Kanban column Todo',
+          ariaLabel: '看板列 Todo',
           cardCountLabel: '2',
           cardSubjects: ['a', 'b'],
           cards: [],
@@ -49,7 +49,7 @@ describe('StructuredKanbanLane', () => {
       </StructuredKanbanLane>,
     )
 
-    expect(screen.getByLabelText('Kanban column Todo')).toHaveAttribute('data-lane-width', '56')
+    expect(screen.getByLabelText('看板列 Todo')).toHaveAttribute('data-lane-width', '56')
     expect(screen.queryByText('Card body')).not.toBeInTheDocument()
   })
 
@@ -61,7 +61,7 @@ describe('StructuredKanbanLane', () => {
           id: 'done',
           label: 'Done',
           value: '"Done"',
-          ariaLabel: 'Kanban column Done',
+          ariaLabel: '看板列 Done',
           cardCountLabel: '0',
           cardSubjects: [],
           cards: [],
@@ -94,7 +94,7 @@ describe('StructuredKanbanLane', () => {
           id: 'todo',
           label: 'Todo',
           value: '"Todo"',
-          ariaLabel: 'Kanban column Todo',
+          ariaLabel: '看板列 Todo',
           cardCountLabel: '0',
           cardSubjects: [],
           cards: [],
@@ -122,7 +122,7 @@ describe('StructuredKanbanLane', () => {
           id: 'todo',
           label: 'Todo',
           value: '"Todo"',
-          ariaLabel: 'Kanban column Todo',
+          ariaLabel: '看板列 Todo',
           cardCountLabel: '1',
           cardSubjects: ['#a'],
           cards: [],
@@ -136,6 +136,6 @@ describe('StructuredKanbanLane', () => {
     )
 
     expect(screen.getByLabelText('将卡片放入 Todo')).toBeVisible()
-    expect(screen.getByLabelText('Kanban column Todo')).toHaveAttribute('data-drop-target', 'true')
+    expect(screen.getByLabelText('看板列 Todo')).toHaveAttribute('data-drop-target', 'true')
   })
 })

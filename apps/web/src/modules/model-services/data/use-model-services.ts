@@ -5,7 +5,7 @@ import {
   type AiGatewayModel,
   type AiProviderSummary,
   createAiConnectionsClient,
-} from '@undefineds.co/ai-connections'
+} from '@undefineds.co/ai-connections/client'
 import type { AIProvider } from '../domain/types'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { useSession } from '@/providers/solid-session-context'

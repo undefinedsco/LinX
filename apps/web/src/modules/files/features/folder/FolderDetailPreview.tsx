@@ -1,10 +1,13 @@
 import { Copy, FilePlus, FolderPlus, Grid3X3, List, Trash2, Upload } from 'lucide-react'
+import { useMemo } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+import { useUnconfirmedAiDraftTargets } from '../../data/queries'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
+import { isExplorerSystemDataFolder } from '../../domain/list/explorer-virtual-entries'
 import { ResourceViewBar } from '../../ui/ResourceViewBar'
 import { DocumentEditorModal } from '../editor/DocumentEditorModal'
 import { FolderChildCollectionView } from './FolderDetailChildViews'
@@ -26,7 +29,8 @@ export function FolderDetailPreview({
 }: {
   file: FilesDetail
 }) {
-  const children = file.childEntries ?? []
+  // LinX bookkeeping folders under .data/ stay hidden, as in the tree.
+  const children = useMemo(() => (file.childEntries ?? []).filter((child) => !isExplorerSystemDataFolder(child)), [file.childEntries])
   const {
     setSortKey,
     setViewMode,
@@ -40,6 +44,7 @@ export function FolderDetailPreview({
     visibleChildren,
     viewModeOptions,
   } = useFolderDetailViewController({ children, containerUri: file.uri })
+  const unconfirmedUris = useUnconfirmedAiDraftTargets(file.uri, children.map((child) => child.uri))
   const folderSelection = useFolderDetailSelectionController({
     visibleChildren,
     sortedChildren,
@@ -48,6 +53,7 @@ export function FolderDetailPreview({
   const folderNavigation = useFolderDetailNavigationController({
     childUriSet,
     selectedChildren: folderSelection.selectedChildren,
+    siblingUris: visibleChildren.filter((child) => child.kind !== 'container').map((child) => child.uri),
   })
   const folderUpload = useFolderDetailUploadController({
     containerUri: file.uri,
@@ -205,6 +211,7 @@ export function FolderDetailPreview({
           contentState.viewMode === 'list' ? (
             <FolderDetailTreeView
               file={file}
+              unconfirmedUris={unconfirmedUris}
               rows={sortedCollectionRows}
               selectedUris={folderSelection.selectedChildUris}
               sort={sort}
@@ -224,6 +231,7 @@ export function FolderDetailPreview({
             />
           ) : (
             <FolderChildCollectionView
+              unconfirmedUris={unconfirmedUris}
               viewMode={contentState.viewMode}
               rows={sortedCollectionRows}
               selectedUris={folderSelection.selectedChildUris}

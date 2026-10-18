@@ -1,3 +1,4 @@
+import { hashText } from '../history/text-hash'
 import { localPredicateLabel, resolveLocalVocabTermUri } from './structured-table-vocab'
 
 export type PredicateDefinitionDraft = {
@@ -29,14 +30,31 @@ export const DEFAULT_PREDICATE_NAMESPACE_URIS: Record<string, string> = {
 }
 
 export const PREDICATE_VALUE_TYPE_OPTIONS = [
-  { value: 'text', label: 'Text', description: 'Plain literal' },
-  { value: 'number', label: 'Number', description: 'Numeric literal' },
-  { value: 'date', label: 'Date', description: 'Date literal' },
-  { value: 'boolean', label: 'Checkbox', description: 'Boolean' },
-  { value: 'enum', label: 'Select', description: 'Controlled value' },
-  { value: 'relation', label: 'Relation', description: 'IRI link' },
-  { value: 'url', label: 'URL', description: 'External URL' },
+  { value: 'text', label: '文字', icon: 'T', description: '一段话或几个字' },
+  { value: 'number', label: '数字', icon: '#', description: '可以算的数' },
+  { value: 'date', label: '日期', icon: '◷', description: '某一天' },
+  { value: 'boolean', label: '是 / 否', icon: '✓', description: '勾选' },
+  { value: 'enum', label: '选项（可多选）', icon: '≡', description: '从几个固定选项里选' },
+  { value: 'contact', label: '联系人', icon: '@', description: '通讯录里的人' },
+  { value: 'relation', label: '另一张表的卡片', icon: '▤', description: '连到别的表格' },
+  { value: 'url', label: '网址或文件', icon: '↗', description: '链接' },
 ] as const
+
+/**
+ * The machine name behind a column the person named in plain words. Term names
+ * in the vocabulary are ASCII, so a Chinese name becomes `p-<hash>`: stable for
+ * the same words, different for different words.
+ */
+export function autoPredicateLocalName(label: string): string {
+  const trimmed = label.trim()
+  if (!trimmed) return ''
+  const ascii = trimmed.normalize('NFKC').replace(/[^A-Za-z0-9]+/g, ' ').trim()
+  if (ascii && /^[A-Za-z0-9 ]+$/.test(trimmed.normalize('NFKC'))) {
+    const words = ascii.split(' ')
+    return words.map((word, index) => (index === 0 ? word.charAt(0).toLowerCase() + word.slice(1) : word.charAt(0).toUpperCase() + word.slice(1))).join('')
+  }
+  return `p-${hashText(trimmed.normalize('NFKC'))}`
+}
 
 export function createPredicateDefinitionDraft(classScope?: string | null): PredicateDefinitionDraft {
   return {
@@ -136,7 +154,7 @@ export function predicateShapeFromDraft(draft: PredicateDefinitionDraft) {
   if (valueType === 'date') shapeParts.push('datatype xsd:date')
   if (valueType === 'boolean') shapeParts.push('datatype xsd:boolean')
   if (valueType === 'number') shapeParts.push('datatype xsd:decimal')
-  if (valueType === 'relation' || valueType === 'resource' || valueType === 'url') shapeParts.push('range resource')
+  if (valueType === 'relation' || valueType === 'resource' || valueType === 'url' || valueType === 'contact') shapeParts.push('range resource')
   if (valueType === 'enum') {
     for (const option of enumOptionsFromDraft(draft)) {
       shapeParts.push(`option ${option}`)

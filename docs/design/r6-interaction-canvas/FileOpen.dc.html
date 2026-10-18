@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>卡片弹窗（从文件夹）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{font-size:12px;color:#655D53;font-weight:500;text-align:left;padding:8px 12px;border-bottom:1px solid #DFDBD5}
+td{padding:0 12px;height:40px;border-bottom:1px solid #EAE5DC;white-space:nowrap}
+.ib{width:30px;height:30px;border:0;border-radius:6px;background:transparent;color:#655D53;display:inline-flex;align-items:center;justify-content:center;padding:0;text-decoration:none}
+.pr{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;min-height:32px;font-size:13px}
+.pk{color:#655D53}
+.v{color:#655D53}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap;text-decoration:none}
+.hdl{position:absolute;left:-46px;top:3px;display:flex;gap:2px;color:#87837D;font-size:13px}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="files" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="FilesNav" selected="doc" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：文件夹" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px; position: relative">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid #DFDBD5">
+      <span class="v" style="font-size: 13px">我的空间 /</span>
+      <h1 style="margin: 0; font-size: 15px; font-weight: 600">活动</h1>
+    </header>
+    <div aria-hidden="true">
+      <table>
+        <thead><tr><th>名称</th><th>类型</th><th>修改</th><th>谁能看</th></tr></thead>
+        <tbody>
+          <tr><td>活动照片</td><td>文件夹</td><td>9月20日</td><td>你、周禾</td></tr>
+          <tr style="background: #E4DDDA"><td>报名方案.md</td><td>文档</td><td>9月16日</td><td>你、周禾</td></tr>
+          <tr><td>三种工具对比表.md</td><td>文档</td><td>今天</td><td>只有你</td></tr>
+          <tr><td>场地合同.pdf</td><td>PDF</td><td>9月12日</td><td>你、周禾</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="position: absolute; inset: 56px 0 0 0; background: rgb(43 38 33 / .22); display: flex; justify-content: center; align-items: flex-start; padding-top: 28px">
+      <div role="dialog" aria-labelledby="doc-title" style="width: 960px; max-width: calc(100% - 48px); max-height: 820px; overflow: auto; background: #FBFAF7; border-radius: 12px; box-shadow: 0 20px 48px rgb(43 38 33 / .22); display: flex; flex-direction: column">
+        <div style="display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 16px; border-bottom: 1px solid #EAE5DC">
+          <span class="v" style="font-size: 12px">活动 / 报名方案.md · 已保存</span>
+          <span style="flex: 1"></span>
+          <a class="btn" href="Share.dc.html">共享…</a>
+          <a class="ib" href="Proposal.dc.html" aria-label="展开成整页"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></a>
+          <a class="ib" href="FileStates.dc.html" aria-label="更多"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg></a>
+          <button class="ib" aria-label="关闭"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+        </div>
+        <div style="padding: 28px 80px 32px; display: flex; flex-direction: column; gap: 14px">
+          <h2 id="doc-title" style="margin: 0; font-size: 24px; font-weight: 600">秋季读书会报名方案</h2>
+          <div style="font-size: 15px; line-height: 1.75; display: flex; flex-direction: column; gap: 10px">
+            <p style="margin: 0">读书会每月一次，每次 30 人左右。报名用现成的在线表单，不另外搭系统。</p>
+            <p style="margin: 0; font-weight: 600">报名表要收的</p>
+            <ul style="margin: 0; padding-left: 22px"><li>名字和手机号</li><li>参加哪一场</li><li>带不带孩子，几个</li></ul>
+            <div style="position: relative; background: #F2EDE2; border-radius: 6px; padding: 2px 6px; margin: 0 -6px"><span class="hdl" aria-hidden="true"><span>+</span><span>⋮⋮</span></span>报名截止设在活动前 2 天，方便确认人数和准备座位。</div>
+            <p class="v" style="margin: 0; font-size: 13px">输入 / 插入标题、列表、表格视图、卡片链接</p>
+          </div>
+          <div style="border-top: 1px solid #EAE5DC; padding: 8px 0 0">
+            <div class="v" style="font-size: 12px; padding-bottom: 4px">属性</div>
+            <div class="pr"><span class="pk">类型</span><span>文档</span></div>
+            <div class="pr"><span class="pk">活动日期</span><span>10月26日</span></div>
+            <div class="pr"><span class="pk" style="color: #563E84">+ 属性</span><span class="v" style="font-size: 12px">文件也能加属性，存在它旁边的说明里</span></div>
+          </div>
+          <div class="v" style="border-top: 1px solid #EAE5DC; padding-top: 12px; font-size: 13px">从这里摘出 1 张卡片 · 用过它的工作：秋季读书会报名</div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

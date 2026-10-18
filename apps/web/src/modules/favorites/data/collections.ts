@@ -96,6 +96,12 @@ export const favoriteOps = {
     await tx.isPersisted.promise
   },
 
+  /** Puts a just-removed favorite back (撤销). Only the bookmark; never touches the original. */
+  async restoreFavorite(row: FavoriteRow): Promise<void> {
+    if (favoriteCollection.state.has(row.id)) return
+    const tx = favoriteCollection.insert({ ...row, updatedAt: new Date() } as FavoriteRow)
+    await tx.isPersisted.promise
+  },
 }
 
 // ============================================================================
@@ -103,11 +109,44 @@ export const favoriteOps = {
 // ============================================================================
 
 export interface StarredChangeMetadata {
-  title: string
+  /** Optional for messages: falls back to the text snippet. */
+  title?: string
   searchText?: string
   snapshotContent?: string
   snapshotAuthor?: string
-  snapshotMeta?: string
+  /** Pre-serialised scene meta (JSON string) or an object; merged with chatId/threadId below. */
+  snapshotMeta?: string | Record<string, unknown>
+  /** Where a single message lives, so 「在会话中查看」 can jump back. All optional. */
+  chatId?: string
+  chatTitle?: string
+  threadId?: string
+  /** Aliases accepted from the message toolbar. */
+  snippet?: string
+  authorName?: string
+}
+
+function serializeSnapshotMeta(metadata?: StarredChangeMetadata): string | undefined {
+  if (!metadata) return undefined
+  let base: Record<string, unknown> = {}
+  if (typeof metadata.snapshotMeta === 'string') {
+    try {
+      const parsed = JSON.parse(metadata.snapshotMeta)
+      if (parsed && typeof parsed === 'object') base = parsed as Record<string, unknown>
+    } catch {
+      return metadata.snapshotMeta
+    }
+  } else if (metadata.snapshotMeta) {
+    base = { ...metadata.snapshotMeta }
+  }
+  if (metadata.chatId) base.chatId = metadata.chatId
+  if (metadata.chatTitle) base.chatTitle = metadata.chatTitle
+  if (metadata.threadId) base.threadId = metadata.threadId
+  return Object.keys(base).length > 0 ? JSON.stringify(base) : undefined
+}
+
+function snippetTitle(text?: string): string | undefined {
+  const t = text?.replace(/\s+/gu, ' ').trim()
+  return t ? t.slice(0, 40) : undefined
 }
 
 const FAVORITE_TARGET_TYPE_BY_SOURCE: Record<SourceModule, string> = {
@@ -130,6 +169,10 @@ async function onStarredChange(
   metadata?: StarredChangeMetadata,
 ): Promise<void> {
   if (starred) {
+    const content = metadata?.snapshotContent ?? metadata?.snippet
+    const author = metadata?.snapshotAuthor ?? metadata?.authorName
+    const title = metadata?.title ?? snippetTitle(content)
+    const snapshotMeta = serializeSnapshotMeta(metadata)
     // Check if already exists (by sourceModule + sourceId)
     const existing = Array.from(favoriteCollection.state.values()).map(normalizeFavoriteRow).find(
       (f: FavoriteRow) => f.sourceModule === sourceModule && f.sourceId === sourceId,
@@ -138,11 +181,11 @@ async function onStarredChange(
     if (existing) {
       // Update existing favorite with fresh metadata
       const tx = favoriteCollection.update(existing.id, (draft: any) => {
-        if (metadata?.title) draft.title = metadata.title
+        if (title) draft.title = title
         if (metadata?.searchText) draft.searchText = metadata.searchText
-        if (metadata?.snapshotContent) draft.snapshotContent = metadata.snapshotContent
-        if (metadata?.snapshotAuthor) draft.snapshotAuthor = metadata.snapshotAuthor
-        if (metadata?.snapshotMeta) draft.snapshotMeta = metadata.snapshotMeta
+        if (content) draft.snapshotContent = content
+        if (author) draft.snapshotAuthor = author
+        if (snapshotMeta) draft.snapshotMeta = snapshotMeta
         draft.updatedAt = new Date()
       })
       await tx.isPersisted.promise
@@ -153,13 +196,13 @@ async function onStarredChange(
         targetType: FAVORITE_TARGET_TYPE_BY_SOURCE[sourceModule],
         target: sourceId,
         targetUri: sourceId,
-        title: metadata?.title ?? sourceId,
+        title: title ?? (sourceModule === 'messages' ? '消息' : sourceId),
         sourceModule,
         sourceId,
-        searchText: metadata?.searchText ?? metadata?.title ?? sourceId,
-        snapshotContent: metadata?.snapshotContent,
-        snapshotAuthor: metadata?.snapshotAuthor,
-        snapshotMeta: metadata?.snapshotMeta,
+        searchText: metadata?.searchText ?? content ?? title ?? sourceId,
+        snapshotContent: content,
+        snapshotAuthor: author,
+        snapshotMeta,
         favoredAt: new Date(),
         updatedAt: new Date(),
       }
@@ -230,5 +273,10 @@ export function useFavoriteMutations() {
   const removeFavorite = useMutation({
     mutationFn: (id: string) => favoriteOps.removeFavorite(id),
   })
-  return { removeFavorite }
+  const restoreFavorite = useMutation({
+    mutationFn: (row: FavoriteRow) => favoriteOps.restoreFavorite(row),
+  })
+  return { removeFavorite, restoreFavorite }
 }
+
+export { useFavoriteSourceStatus } from './source-status'

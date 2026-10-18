@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>我的属性</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.seg{display:inline-flex;padding:2px;border-radius:8px;background:#E4DDDA;gap:2px}
+.seg a{height:26px;padding:0 10px;border-radius:6px;display:inline-flex;align-items:center;font-size:12px;text-decoration:none;color:#2B2621}
+table{border-collapse:collapse;font-size:13px;min-width:100%}
+th{font-size:13px;color:#655D53;font-weight:400;text-align:left;padding:0 12px;height:40px;border-bottom:1px solid #DFDBD5;border-right:1px solid #EAE5DC;white-space:nowrap}
+td{padding:0 12px;height:46px;border-bottom:1px solid #EAE5DC;border-right:1px solid #EAE5DC;white-space:nowrap}
+.v{color:#655D53}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#655D53}
+.tag{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:4px;background:#E9E4E4;font-size:11px;color:#655D53;margin-left:6px}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="files" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="FilesNav" selected="vocab" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：我的属性" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 16px 0 20px">
+      <span class="v" style="font-size: 13px">词表 /</span>
+      <h1 style="margin: 0; font-size: 16px; font-weight: 600">属性</h1>
+      <span class="v" style="font-size: 12px">23 个 · 所有表格共用</span>
+    </header>
+    <div style="display: flex; align-items: center; gap: 16px; padding: 0 16px 0 20px; border-bottom: 1px solid #DFDBD5; font-size: 13px">
+      <a href="Vocab.dc.html" aria-current="page" style="display: inline-flex; align-items: center; height: 36px; color: #2B2621; font-weight: 600; text-decoration: none; border-bottom: 2px solid #2B2621">表格</a>
+      <a href="TagStates.dc.html" style="display: inline-flex; align-items: center; height: 36px; color: #655D53; text-decoration: none">+ 视图</a>
+      <span style="flex: 1"></span>
+      <span class="v">筛选</span><span class="v">排序</span><span class="v">搜索</span>
+      <span style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid #DFDBD5; background: #FBFAF7">+ 属性</span>
+    </div>
+    <div style="overflow-x: auto">
+      <table>
+        <thead><tr><th scope="col">名称</th><th scope="col">值是什么</th><th scope="col">说明</th><th scope="col">用在</th><th scope="col">地址</th></tr></thead>
+        <tbody>
+          <tr><td style="font-weight: 500">能来的时段</td><td>选项，可多选</td><td class="v">志愿者能来的时间</td><td><a href="TagTable.dc.html">志愿者</a></td><td class="mono">terms#availableSlot</td></tr>
+          <tr><td style="font-weight: 500">有经验</td><td>是 / 否</td><td class="v">做过至少一次活动</td><td><a href="TagTable.dc.html">志愿者</a></td><td class="mono">terms#experienced</td></tr>
+          <tr><td style="font-weight: 500">本月已排</td><td>数字</td><td class="v">这个月排了几次</td><td><a href="TagTable.dc.html">志愿者</a></td><td class="mono">terms#scheduledThisMonth</td></tr>
+          <tr><td style="font-weight: 500">适用于</td><td>文字</td><td class="v">判断在什么情况下成立</td><td><a href="Card.dc.html">卡片</a></td><td class="mono">terms#appliesWhen</td></tr>
+          <tr><td style="font-weight: 500">例外</td><td>文字</td><td class="v">什么时候不按这个判断</td><td><a href="Card.dc.html">卡片</a></td><td class="mono">terms#exception</td></tr>
+          <tr><td style="font-weight: 500">支持</td><td>另一张卡片</td><td class="v">白板上的连线：支持</td><td><a href="Board.dc.html">志愿者排班</a></td><td class="mono">terms#supports</td></tr>
+          <tr><td style="font-weight: 500">反对</td><td>另一张卡片</td><td class="v">白板上的连线：反对</td><td><a href="Board.dc.html">志愿者排班</a></td><td class="mono">terms#opposes</td></tr>
+          <tr><td style="font-weight: 500">联系人<span class="tag">公共</span></td><td>联系人</td><td class="v">来自公共词表，名字可以改成你习惯的</td><td>志愿者、活动</td><td class="mono">vcard:hasMember</td></tr>
+          <tr><td style="font-weight: 500">名称<span class="tag">公共</span></td><td>文字</td><td class="v">每张卡片的标题</td><td>所有表格</td><td class="mono">schema:name</td></tr>
+          <tr><td class="v">+ 新属性</td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="v" style="padding: 14px 20px; font-size: 12px; line-height: 1.7">
+      点一行打开这个属性的卡片，可以写说明、看它用在哪些表格。<br>
+      改名只改显示的名字，地址不变，已有的数据不受影响。删除前会告诉你用在几处，用着的不能删。<br>
+      “词表”就是一个普通文件夹：属性、类型（比如“志愿者”“判断”）、命名空间三份数据，都用同一个表格视图看，没有专门的页面。
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

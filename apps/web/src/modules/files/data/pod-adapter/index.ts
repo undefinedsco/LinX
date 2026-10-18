@@ -615,7 +615,7 @@ function sortEntries(entries: FilesEntry[]): FilesEntry[] {
 
 const inFlightContainerListings = new WeakMap<object, Map<string, Promise<string[]>>>()
 
-function listContainerResourceUris(db: SolidDatabase, containerUri: string): Promise<string[]> {
+export function listContainerResourceUris(db: SolidDatabase, containerUri: string): Promise<string[]> {
   const dbKey = db as object
   const normalizedContainerUri = normalizeContainerUri(containerUri)
   let listingsByUri = inFlightContainerListings.get(dbKey)

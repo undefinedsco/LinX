@@ -20,6 +20,11 @@ vi.mock('@/modules/chat/store', () => ({
 
 vi.mock('@/modules/chat/collections', () => ({
   useThreadIndex: (..._args: unknown[]) => mockUseThreadIndex(),
+  chatOps: { createUserMessage: vi.fn() },
+}))
+
+vi.mock('@/providers/solid-session-context', () => ({
+  useSession: () => ({ session: { info: { webId: 'https://alice.example/profile/card#me' } } }),
 }))
 
 vi.mock('@/modules/files/store', () => ({
@@ -30,9 +35,26 @@ vi.mock('../../app/store', () => ({
   useInboxStore: (selector: (state: unknown) => unknown) => mockUseInboxStore(selector),
 }))
 
+vi.mock('../../app/auto-judge-sweep', () => ({
+  useInboxAutoJudgeSweep: () => undefined,
+  useAutoJudgeSettingsSync: () => undefined,
+}))
+
+vi.mock('../../data/auto-judge', () => ({
+  useInboxAutoJudgeSweep: () => undefined,
+  useGrantRows: () => ({ data: [], all: [], isLoading: false }),
+  useAutoJudgeActions: () => ({
+    takeOver: { mutate: vi.fn(), isPending: false },
+    markReviewed: { mutate: vi.fn(), isPending: false },
+    revokeGrant: { mutate: vi.fn(), isPending: false },
+  }),
+}))
+
 vi.mock('../../data/collections', () => ({
+  refreshInboxRequests: () => undefined,
   useInboxItems: () => mockUseInboxItems(),
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
+  useResolveInboxInputRequest: () => ({ mutateAsync: vi.fn(), isPending: false, error: null }),
 }))
 
 import { InboxContentPane } from '../InboxContentPane'
@@ -101,7 +123,7 @@ describe('InboxContentPane approval resolution', () => {
     expect(screen.queryByLabelText('自动允许同类请求')).toBeNull()
 
     fireEvent.change(screen.getByLabelText('处理备注'), { target: { value: '可以执行' } })
-    fireEvent.click(screen.getByText('批准'))
+    fireEvent.click(screen.getByText('批准这一次'))
 
     await waitFor(() => {
       expect(mockMutateAsync).toHaveBeenCalledWith({
@@ -109,6 +131,42 @@ describe('InboxContentPane approval resolution', () => {
         decision: 'approved',
         reason: '可以执行',
       })
+    })
+  })
+
+  it('grants this kind of request when the box is ticked', async () => {
+    render(<InboxContentPane />)
+
+    fireEvent.click(screen.getByLabelText('以后这类交给 LinX 判断（授权）'))
+    fireEvent.click(screen.getByText('批准这一次'))
+
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+        decision: 'approved',
+        grant: { highImpactConfirmed: false },
+      }))
+    })
+  })
+
+  it('asks once more before granting sending, spending or deleting', async () => {
+    mockUseInboxItems.mockReturnValue({
+      data: [{
+        ...pendingApproval,
+        approval: { ...pendingApproval.approval, toolName: 'send_email', action: 'https://undefineds.co/ns#sendEmail' },
+      }],
+      isLoading: false,
+    })
+    render(<InboxContentPane />)
+
+    fireEvent.click(screen.getByLabelText('以后这类交给 LinX 判断（授权）'))
+    fireEvent.click(screen.getByText('批准这一次'))
+    expect(mockMutateAsync).not.toHaveBeenCalled()
+
+    fireEvent.click(await screen.findByText('批准并授权'))
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+        grant: { highImpactConfirmed: true },
+      }))
     })
   })
 })

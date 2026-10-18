@@ -13,10 +13,17 @@ const resourceCollectionPath = 'src/modules/files/data/collections/resource-coll
 describe('files public module exports', () => {
   it('keeps the module root export surface to micro-app entrypoints only', () => {
     expect(Object.keys(filesModule).sort()).toEqual([
+      'AiDraftMessageBar',
       'FileDetailPane',
       'FilesListPane',
       'FilesTreePane',
+      'createRawTextResource',
+      'readRawTextResource',
+      'saveRawTextResource',
+      'stageAiColumnChange',
+      'stageAiDraft',
       'useFilesStore',
+      'writeAiCellChange',
     ])
     expect(Object.keys(filesModule).filter((key) => /^use[A-Z]/.test(key))).toEqual(['useFilesStore'])
     expect(filesModule).not.toHaveProperty('getFilesEntryOpenMode')

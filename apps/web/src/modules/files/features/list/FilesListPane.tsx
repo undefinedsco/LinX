@@ -39,6 +39,8 @@ import type {
 } from '../../domain/list/list-view-model'
 import type { FilesEntry } from '../../domain/resource/resource-model'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
+import { useUnconfirmedAiDraftTargets } from '../../data/queries'
+import { FILES_SEARCH_INCLUDE_SHARED_LABEL } from '../../domain/list/search-scope-model'
 import { FilesExplorerRow } from '../../ui/FilesExplorerRow'
 import { FilesOperationSheet } from '../../ui/FilesOperationSheet'
 import { FilesAddMenu } from '../add/FilesAddMenu'
@@ -46,6 +48,9 @@ import { useFilesListPaneController } from './useFilesListPaneController'
 import { useFilesListOperationController } from './useFilesListOperationController'
 import { useFilesListSelectionController } from './useFilesListSelectionController'
 import { useFilesExplorerDataController } from './useFilesExplorerDataController'
+import { useFilesSearchController } from './useFilesSearchController'
+import { FilesBodySearchSection } from '../search/FilesBodySearchSection'
+import { useFilesBodySearch } from '../search/useFilesBodySearch'
 
 const LIST_EMPTY_STATE_ICON = {
   file: FileText,
@@ -245,10 +250,38 @@ export function FilesListPane(_props: MicroAppPaneProps) {
     entryScope: listPane.entryScope,
     rootEntries: listPane.files,
     searchText: listPane.searchText,
+    groups: listPane.showGroups,
+    treeOnly: listPane.treeOnly,
   })
+  const search = useFilesSearchController({
+    rows: explorer.rows,
+    searchText: listPane.searchText,
+    currentFolderUri: listPane.currentFolderUri,
+    failedContainerCount: explorer.rows.filter((row) => row.kind === 'error').length,
+    onRetry: () => {
+      for (const row of explorer.rows) if (row.kind === 'error') explorer.retryContainer?.(row.containerUri)
+    },
+  })
+  // K3: matches inside file text, listed under the title results.
+  const bodySearch = useFilesBodySearch(search.active ? listPane.searchText : '', {
+    scope: search.scope,
+    currentFolderUri: listPane.currentFolderUri,
+  })
+  const onlyBodyHits = search.active && bodySearch.hits.length > 0
+  const renderedRows: Array<{ row: (typeof explorer.rows)[number]; reason?: string }> = search.active
+    ? search.results.map(({ row, reason }) => ({
+        row: { ...row, depth: 0, expandable: false, expanded: false },
+        reason,
+      }))
+    : explorer.rows.map((row) => ({ row }))
   const explorerEntries = explorer.rows
     .filter((row) => row.kind === 'entry')
     .map((row) => row.entry)
+  // One query for every file on screen (folder rows, tree rows and search results alike).
+  const unconfirmedDraftUris = useUnconfirmedAiDraftTargets(
+    search.active ? 'search' : (listPane.currentFolderUri ?? 'root'),
+    renderedRows.flatMap(({ row }) => (row.kind === 'entry' && row.entry.kind !== 'container' ? [row.entry.uri] : [])),
+  )
   const listSelection = useFilesListSelectionController({
     files: explorerEntries,
     openFile: explorer.openEntry,
@@ -387,6 +420,49 @@ export function FilesListPane(_props: MicroAppPaneProps) {
           {listPane.scopeHeader.label}
         </div>
       ) : null}
+      {search.active ? (
+        <div className="shrink-0 border-b border-border/30 px-3 py-1.5 text-xs">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" aria-label="搜索范围" className="font-medium text-foreground hover:underline">
+                范围：{search.scopeLabel} ▾
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-44">
+              <DropdownMenuRadioGroup value={search.scope} onValueChange={(value) => search.setScope(value as typeof search.scope)}>
+                {search.scopeOptions.map((option) => (
+                  <DropdownMenuRadioItem key={option.id} value={option.id}>{option.label}</DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {search.note ? (
+            <p role="status" className="mt-0.5 text-muted-foreground">{search.note.text}</p>
+          ) : null}
+          <label className="mt-1 flex items-center gap-1.5 text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={search.includeShared}
+              onChange={(event) => search.setIncludeShared(event.target.checked)}
+            />
+            {FILES_SEARCH_INCLUDE_SHARED_LABEL}
+          </label>
+          {search.noAccessLine ? (
+            <p role="status" className="mt-0.5 text-muted-foreground">{search.noAccessLine}</p>
+          ) : null}
+          {search.error ? (
+            <p role="alert" className="mt-0.5 flex items-center gap-2 text-destructive">
+              {search.error.text}
+              {search.error.retry ? (
+                <button type="button" className="text-primary hover:underline" onClick={search.error.retry}>重试</button>
+              ) : null}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {search.active ? (
+        <FilesBodySearchSection query={listPane.searchText} search={bodySearch} />
+      ) : null}
       {listSelection.hasBatchSelection ? (
         <div className="flex items-center justify-between border-b border-border/50 bg-muted/20 px-4 py-2">
           <span className="text-xs font-medium text-foreground/80">{listSelection.batchSelectionLabel}</span>
@@ -433,10 +509,10 @@ export function FilesListPane(_props: MicroAppPaneProps) {
             </button>
           )}
         />
-      ) : listPane.contentState.kind === 'empty' ? (
+      ) : listPane.contentState.kind === 'empty' && onlyBodyHits ? null : listPane.contentState.kind === 'empty' ? (
         <FilesEmptyState
-          title={listPane.emptyState.title}
-          description={listPane.emptyState.description}
+          title={(!listPane.mimeTypeFilter && !listPane.tagFilter && search.emptyText?.title) || listPane.emptyState.title}
+          description={(!listPane.mimeTypeFilter && !listPane.tagFilter && search.emptyText?.description) || listPane.emptyState.description}
           icon={LIST_EMPTY_STATE_ICON[listPane.emptyState.iconKind]}
           action={listPane.searchText || listPane.mimeTypeFilter || listPane.tagFilter ? (
             <button
@@ -459,7 +535,25 @@ export function FilesListPane(_props: MicroAppPaneProps) {
       ) : (
         <ScrollArea className="flex-1">
           <div role="tree" aria-label="文件资源树" className="w-full max-w-full overflow-hidden py-1">
-            {explorer.rows.map((row) => {
+            {search.emptyText ? (
+              <FilesEmptyState
+                title={search.emptyText.title}
+                description={search.emptyText.description}
+                icon={Search}
+              />
+            ) : null}
+            {renderedRows.map(({ row, reason }) => {
+              if (row.kind === 'group') {
+                return (
+                  <div
+                    key={row.id}
+                    role="presentation"
+                    className="px-3 pb-1 pt-3 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {row.label}
+                  </div>
+                )
+              }
               if (row.kind !== 'entry') {
                 return (
                   <div
@@ -499,10 +593,10 @@ export function FilesListPane(_props: MicroAppPaneProps) {
               }
               const file = row.entry
               return (
+                <div key={row.id}>
                 <FilesExplorerRow
-                  key={row.id}
                   uri={file.uri}
-                  name={file.name}
+                  name={row.label}
                   iconKind={row.iconKind}
                   depth={row.depth}
                   expandable={row.expandable}
@@ -512,6 +606,7 @@ export function FilesListPane(_props: MicroAppPaneProps) {
                     !listSelection.selectedFileId && explorerEntries[0]?.uri === file.uri
                   )}
                   favorite={listPane.isFileFavorite(file)}
+                  unconfirmed={unconfirmedDraftUris.has(file.uri)}
                   contextTarget={listSelection.contextMenuTargetUri === file.uri}
                   metadataWarning={row.metadataWarning}
                   onToggle={() => explorer.toggleFolder(file.uri)}
@@ -524,6 +619,10 @@ export function FilesListPane(_props: MicroAppPaneProps) {
                   renderContextMenu={() => renderFileContextMenu(file)}
                   renderActionsMenu={() => renderFileActionsMenu(file)}
                 />
+                {reason ? (
+                  <p className="-mt-1 truncate pb-1 pl-11 pr-3 text-[11px] text-muted-foreground">{reason}</p>
+                ) : null}
+                </div>
               )
             })}
           </div>

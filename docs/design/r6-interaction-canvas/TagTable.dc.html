@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>表格视图</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}a:hover{color:#4B3672}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.ib{width:30px;height:30px;border:0;border-radius:6px;background:transparent;color:#655D53;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.vt{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 4px;font-size:13px;color:#655D53;text-decoration:none;border-bottom:2px solid transparent}
+.vt.on{color:#2B2621;font-weight:600;border-bottom-color:#2B2621}
+table{border-collapse:collapse;font-size:14px;min-width:100%}
+th{font-size:13px;color:#655D53;font-weight:400;text-align:left;padding:0 12px;height:40px;border-bottom:1px solid #DFDBD5;border-right:1px solid #EAE5DC;white-space:nowrap}
+td{padding:0 12px;height:46px;border-bottom:1px solid #EAE5DC;border-right:1px solid #EAE5DC;white-space:nowrap}
+.hi{display:inline-block;width:16px;margin-right:6px;color:#87837D;font-size:12px;text-align:center}
+.nm{display:flex;align-items:center;gap:8px}
+.pill{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:5px;font-size:13px;margin-right:4px}
+.a{background:#F3E3C3}.b{background:#E5DDF2}.c{background:#DCE7F3}.d{background:#DDEBDD}.e{background:#F2DCDC}
+.v{color:#655D53}
+.open{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:5px;border:1px solid #DFDBD5;background:#FBFAF7;font-size:12px;color:#2B2621;text-decoration:none}
+.menu{position:absolute;background:#FBFAF7;border:1px solid #DFDBD5;border-radius:10px;box-shadow:0 12px 32px rgb(43 38 33 / .14);padding:6px;width:300px;font-size:13px}
+.mi{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:6px}
+.mi.on{background:#E4DDDA}
+.sep{height:1px;background:#DFDBD5;margin:4px 6px}
+.k{margin-left:auto;font-size:11px;color:#655D53}
+</style>
+</helmet>
+<div class="root" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F4ED">
+  <div style="flex: 0 0 64px; align-self: stretch; background: #E4DDDA">
+    <dc-import name="Nav" active="files" inbox-count="3" hint-size="64px,900px"></dc-import>
+  </div>
+  <div style="flex: 0 0 280px; align-self: stretch; background: #F2EDE2">
+    <dc-import name="FilesNav" selected="f2" hint-size="280px,900px"></dc-import>
+  </div>
+
+  <main aria-label="内容栏：表格" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; min-height: 900px; position: relative">
+    <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 20px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#563E84" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 10h18M9 4v16"></path></svg>
+      <h1 style="margin: 0; font-size: 16px; font-weight: 600">志愿者</h1>
+      <span style="flex: 1"></span>
+      <button class="ib" aria-label="更多"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg></button>
+    </header>
+    <div style="display: flex; align-items: center; gap: 14px; padding: 0 12px 0 20px; border-bottom: 1px solid #DFDBD5">
+      <nav aria-label="视图" style="display: flex; gap: 16px">
+        <a class="vt on" href="TagTable.dc.html" aria-current="page"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 10h18M9 4v16"></path></svg>表格</a>
+        <a class="vt" href="TagStates.dc.html"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"></rect><rect x="10" y="4" width="5" height="10" rx="1"></rect><rect x="17" y="4" width="4" height="13" rx="1"></rect></svg>按时段</a>
+        <a class="vt" href="TagStates.dc.html">+ 视图</a>
+      </nav>
+      <span style="flex: 1"></span>
+      <button class="ib" aria-label="撤销">↶</button><button class="ib" aria-label="重做">↷</button>
+      <span style="width: 1px; height: 18px; background: #DFDBD5"></span>
+      <button class="ib" aria-label="筛选"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4-2v-4z"></path></svg></button>
+      <button class="ib" aria-label="排序">⇅</button>
+      <button class="ib" aria-label="在表格里搜索"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></button>
+      <span style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid #DFDBD5; background: #FBFAF7; font-size: 13px">+ 卡片</span>
+    </div>
+    <div style="overflow-x: auto">
+      <table>
+        <thead><tr>
+          <th scope="col" style="min-width: 200px; padding-left: 48px"><span class="hi">A</span>名称</th>
+          <th scope="col"><span class="hi">≡</span>能来的时段</th>
+          <th scope="col"><span class="hi">✓</span>有经验</th>
+          <th scope="col"><span class="hi">#</span>本月已排</th>
+          <th scope="col"><span class="hi">@</span>联系人</th>
+          <th scope="col" style="width: 44px; text-align: center; color: #563E84; font-size: 16px" aria-label="加属性">+</th>
+        </tr></thead>
+        <tbody>
+          <tr style="background: #F2EDE2"><td><span class="nm"><span class="v" aria-hidden="true" style="width: 14px">⋮⋮</span><input type="checkbox" aria-label="选中周禾" style="margin: 0"><span class="v" aria-hidden="true">▤</span>周禾<a class="open" href="Card.dc.html">打开</a></span></td><td><span class="pill a">周六上午</span><span class="pill b">周日下午</span></td><td>是</td><td>2</td><td><a href="People.dc.html">周禾</a></td><td></td></tr>
+          <tr><td><span class="nm" style="padding-left: 36px"><span class="v" aria-hidden="true">▤</span>陈一</span></td><td><span class="pill c">周六下午</span></td><td>是</td><td>1</td><td><a href="People.dc.html">陈一</a></td><td></td></tr>
+          <tr><td><span class="nm" style="padding-left: 36px"><span class="v" aria-hidden="true">▤</span>许安</span></td><td><span class="pill d">周日上午</span></td><td>否</td><td>1</td><td><a href="People.dc.html">许安</a></td><td></td></tr>
+          <tr><td><span class="nm" style="padding-left: 36px"><span class="v" aria-hidden="true">▤</span>白露</span></td><td><span class="pill a">周六上午</span><span class="pill d">周日上午</span></td><td>否</td><td>0</td><td class="v"></td><td></td></tr>
+          <tr><td><span class="nm" style="padding-left: 36px"><span class="v" aria-hidden="true">▤</span>陆川</span></td><td><span class="pill b">周日下午</span></td><td>是</td><td>2</td><td><a href="People.dc.html">陆川</a></td><td></td></tr>
+          <tr><td><span class="nm" style="padding-left: 36px"><span class="v" aria-hidden="true">▤</span>宋青</span></td><td><span class="pill c">周六下午</span></td><td>否</td><td>1</td><td class="v"></td><td></td></tr>
+          <tr><td class="v" style="padding-left: 48px">+ 新的一行</td><td></td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="v" style="padding: 10px 20px; font-size: 12px">一行就是一张卡片，表头就是属性。点“打开”弹出卡片（K2）。</div>
+
+    <div class="menu" role="dialog" aria-label="加属性" style="right: 16px; top: 140px">
+      <div class="mi" style="border: 1px solid #563E84; color: #655D53">找属性，或输入新名字</div>
+      <div style="padding: 8px 10px 2px; font-size: 11px; color: #655D53">词表里的属性</div>
+      <div class="mi on"><span class="hi">T</span>电话<span class="k">文字 · 用在 3 处</span></div>
+      <div class="mi"><span class="hi">◷</span>生日<span class="k">日期</span></div>
+      <div class="mi"><span class="hi">@</span>负责人<span class="k">联系人</span></div>
+      <div class="mi"><span class="hi">≡</span>状态<span class="k">选项</span></div>
+      <div class="sep"></div>
+      <div class="mi" style="color: #563E84">新建属性“擅长”…</div>
+      <div style="padding: 4px 10px 6px; font-size: 11px; color: #655D53">新建的属性放进“词表 › 属性”，别的表格也能用</div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
 }))
 
-vi.mock('@undefineds.co/ai-connections', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@undefineds.co/ai-connections')>(),
+vi.mock('@undefineds.co/ai-connections/client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@undefineds.co/ai-connections/client')>(),
   createAiConnectionsClient: mocks.createClient,
 }))
 

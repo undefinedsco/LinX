@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>白板状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin-bottom:10px}
+.pad{position:relative;height:280px;border:1px solid #DFDBD5;border-radius:12px;overflow:hidden;background-color:#F7F4ED;background-image:radial-gradient(#DFDBD5 1px,transparent 1px);background-size:20px 20px}
+.wc{position:absolute;width:180px;background:#FBFAF7;border:1px solid #DFDBD5;border-radius:8px;padding:10px 12px;font-size:13px}
+.t{font-weight:600}
+.s{font-size:12px;color:#655D53}
+.top{position:absolute;left:0;right:0;top:0;padding:8px 12px;font-size:12px;background:#E4DDDA}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px">
+  <section>
+    <div class="lbl">新白板</div>
+    <div class="pad"><div class="center"><div style="font-weight: 500">从右边卡片库把卡片拖进来</div><div class="s">或者双击空白处新建一张；文件、PDF 里的几行也能拖</div></div></div>
+  </section>
+
+  <section>
+    <div class="lbl">把卡片拖进来（同一张卡片可以在多块白板上）</div>
+    <div class="pad">
+      <div class="wc" style="left: 40px; top: 40px"><div class="t">维护成本</div><div class="s">已在“秋季读书会”白板上</div></div>
+      <div class="wc" style="left: 150px; top: 140px; box-shadow: 0 8px 24px rgb(43 38 33 / .14); opacity: .9; transform: rotate(-2deg)"><div class="t">海报先给周禾过目</div><div class="s">放开即放到这里</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">记成关系之后</div>
+    <div class="pad">
+      <div class="wc" style="left: 30px; top: 50px"><div class="t">维护成本</div></div>
+      <svg aria-hidden="true" width="100%" height="100%" style="position: absolute; inset: 0"><line x1="210" y1="80" x2="250" y2="170" stroke="#563E84" stroke-width="2"></line></svg>
+      <div style="position: absolute; left: 196px; top: 112px; padding: 1px 8px; border-radius: 999px; background: #563E84; color: #F7F4ED; font-size: 12px">支持</div>
+      <div class="wc" style="left: 180px; top: 170px"><div class="t">三种工具对比表</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">卡片被删了 / 没权限看</div>
+    <div class="pad">
+      <div class="wc" style="left: 30px; top: 50px; border-style: dashed; color: #655D53"><div class="t">这张卡片已删除</div><div class="s">只留下位置，可以移除</div></div>
+      <div class="wc" style="left: 150px; top: 160px; border-style: dashed; color: #655D53"><div class="t">没有权限查看</div><div class="s">周禾 收回了共享</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">没有网络</div>
+    <div class="pad">
+      <div class="top">没有网络，白板的改动会在恢复后保存</div>
+      <div class="wc" style="left: 40px; top: 70px"><div class="t">维护成本</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">另一台设备也在改</div>
+    <div class="pad">
+      <div class="top" style="display: flex; align-items: center; gap: 8px"><span style="flex: 1">另一台设备刚移动了 2 张卡片</span><span class="btn primary">用最新的</span><span class="btn">保留我的</span></div>
+      <div class="wc" style="left: 40px; top: 80px"><div class="t">维护成本</div></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

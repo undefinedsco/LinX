@@ -125,7 +125,7 @@ describe('LoginModal', () => {
   it('shows restoring view with spinner', () => {
     const props = createProps({ state: 'restoring' })
     render(<LoginModal {...props} />)
-    expect(screen.getByText('正在恢复登录状态...')).toBeTruthy()
+    expect(screen.getByText('正在回到上次的位置…')).toBeTruthy()
   })
 
   it('shows the storage conflict view when the current space does not match the profile binding', () => {
@@ -148,13 +148,16 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('空间不匹配')).toBeTruthy()
-    expect(screen.getByText(/当前账号绑定的是另一个空间/)).toBeTruthy()
+    expect(screen.getByText('这个账号的数据在另一个空间')).toBeTruthy()
+    expect(screen.getByText('要去那里，还是在这里新建一个？')).toBeTruthy()
+    // Addresses are technical detail: folded under 详情.
+    expect(screen.getByText('详情')).toBeTruthy()
+    expect(screen.getByText('详情').closest('details')).not.toHaveAttribute('open')
 
-    fireEvent.click(screen.getByRole('button', { name: '在当前空间创建' }))
+    fireEvent.click(screen.getByRole('button', { name: '在这里创建' }))
     expect(props.onOpenCurrentSpacePodSetup).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: '返回登录并重新选择空间' }))
+    fireEvent.click(screen.getByRole('button', { name: '换个空间' }))
     expect(props.onDismissStorageConflict).toHaveBeenCalledTimes(1)
   })
 
@@ -180,10 +183,10 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('需要创建空间')).toBeTruthy()
-    expect(screen.getByText(/这个账号还没有完成当前本机空间的创建/)).toBeTruthy()
+    expect(screen.getByText('Ganlu 在这里还没有空间')).toBeTruthy()
+    expect(screen.getByText('创建后，LinX 会把你的聊天、文件和卡片保存在这里。')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '创建当前空间' }))
+    fireEvent.click(screen.getByRole('button', { name: '在这里创建' }))
     expect(props.onOpenCurrentSpacePodSetup).toHaveBeenCalledTimes(1)
   })
 
@@ -197,7 +200,7 @@ describe('LoginModal', () => {
     })
     render(<LoginModal {...props} />)
     expect(screen.getByText('Ganlu')).toBeTruthy()
-    expect(screen.getByText('正在恢复登录状态...')).toBeTruthy()
+    expect(screen.getByText('正在回到上次的位置…')).toBeTruthy()
   })
 
   it('shows remembered account without offering a storage switch', () => {
@@ -224,7 +227,7 @@ describe('LoginModal', () => {
     fireEvent.click(screen.getByRole('button', { name: '进入' }))
     expect(props.onContinueStoredAccount).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: '切换账号' }))
+    fireEvent.click(screen.getByRole('button', { name: '换个账号' }))
     expect(props.onSwitchAccount).toHaveBeenCalledTimes(1)
   })
 
@@ -243,12 +246,12 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('会话已过期')).toBeTruthy()
-    expect(screen.getByText(/账号和已有数据不会丢失/)).toBeTruthy()
+    expect(screen.getByText('登录已过期')).toBeTruthy()
+    expect(screen.getByText('没发出的草稿还在这台电脑，重新登录后继续。')).toBeTruthy()
     expect(screen.queryByText('登录状态已失效。请重新登录。')).toBeNull()
     expect(screen.queryByRole('button', { name: '关闭错误提示' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: '进入' }))
+    fireEvent.click(screen.getByRole('button', { name: '重新登录' }))
     expect(props.onContinueStoredAccount).toHaveBeenCalledTimes(1)
   })
 
@@ -296,78 +299,53 @@ describe('LoginModal', () => {
     expect(container.querySelector('.bg-muted')).toBeTruthy()
   })
 
-  it('shows compact first login with one-tap continue and remembered space hint', () => {
+  it('asks where the data should live with three plain choices (S6)', () => {
     const props = createProps()
 
     const { container } = render(<LoginModal {...props} />)
 
-    expect(screen.getByText('LinX')).toBeTruthy()
-    expect(screen.getByText('你的数据，存在你选的地方')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '登录' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '更多选项' })).toBeTruthy()
-    expect(screen.getByText('数据保存位置：云端空间')).toBeTruthy()
-    const loginCard = container.querySelector('[data-login-card-size="compact"]')
+    expect(screen.getByRole('heading', { name: '登录 LinX' })).toBeTruthy()
+    expect(screen.getByText('先选你的数据放在哪里。以后可以在 设置 › 空间与服务 里查看。')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /云端空间.*换设备也能用/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /本机空间.*保存在这台电脑/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /独立空间.*不需要网络账号/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '使用其他空间…' })).toBeTruthy()
+    expect(screen.getByText('登录不会自动创建空间；需要创建时会先问你。')).toBeTruthy()
+    const loginCard = container.querySelector('[data-login-card-size="auto"]')
     expect(loginCard?.classList.contains('bg-card')).toBe(true)
     expect(loginCard?.classList.contains('border')).toBe(true)
-    expect(loginCard?.classList.contains('border-border/50')).toBe(true)
-    expect(loginCard?.classList.contains('warm-card')).toBe(false)
 
-    expect(screen.queryByText('使用 undefineds 账号')).toBeNull()
-    expect(screen.queryByText('选择空间')).toBeNull()
-    expect(screen.queryByText('独立空间')).toBeNull()
     expect(screen.queryByText('IDP')).toBeNull()
     expect(screen.queryByText('SP')).toBeNull()
     expect(screen.queryByText('provisionCode')).toBeNull()
   })
 
-  it('continues with the preferred provider on the welcome view', () => {
-    const props = createProps({ preferredSpace: 'local' })
-    render(<LoginModal {...props} />)
-
-    expect(screen.getByText('数据保存位置：本机空间')).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: '登录' }))
-    expect(props.onConnect).toHaveBeenCalledWith('local')
-  })
-
-  it('connects directly from the space chips in the login method list', () => {
+  it('opens the login window straight from the chosen space', () => {
     const props = createProps()
     render(<LoginModal {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '更多选项' }))
-    fireEvent.click(screen.getByRole('button', { name: '本机空间' }))
+    fireEvent.click(screen.getByRole('button', { name: /^云端空间/ }))
+    expect(props.onSelectSpace).toHaveBeenLastCalledWith('cloud')
+    expect(props.onConnect).toHaveBeenLastCalledWith('cloud')
 
-    expect(props.onSelectSpace).toHaveBeenCalledWith('local')
-    expect(props.onConnect).toHaveBeenCalledWith('local')
+    fireEvent.click(screen.getByRole('button', { name: /^本机空间/ }))
+    expect(props.onSelectSpace).toHaveBeenLastCalledWith('local')
+    expect(props.onConnect).toHaveBeenLastCalledWith('local')
+
+    fireEvent.click(screen.getByRole('button', { name: /^独立空间/ }))
+    expect(props.onConnect).toHaveBeenLastCalledWith('standalone')
   })
 
-  it('uses the same available local entry from the welcome view and method list', () => {
+  it('disables a space that this device cannot offer, and says why', () => {
     const props = createProps({
-      providers: createProps().providers.map((provider) => provider.id === 'local'
-        ? {
-            ...provider,
-            url: '',
-            storageProvider: { ...provider.storageProvider, url: '' },
-            runtime: {
-              ...provider.runtime!,
-              status: 'stopped',
-              onboarding: {
-                state: 'idle',
-                spaceKind: 'local',
-                message: '本机空间尚未运行。',
-              },
-            },
-          }
-        : provider),
+      providers: createProps().providers.filter((provider) => provider.id === 'cloud'),
     })
     render(<LoginModal {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '更多选项' }))
-    fireEvent.click(screen.getByRole('button', { name: '本机空间' }))
-
-    expect(props.onSelectSpace).toHaveBeenCalledWith('local')
-    expect(props.onConnect).toHaveBeenCalledWith('standalone')
-    expect(props.onConnect).not.toHaveBeenCalledWith('local')
+    expect(screen.getByRole('button', { name: /^本机空间/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^独立空间/ })).toBeDisabled()
+    expect(screen.getAllByText('没找到这台电脑上的 LinX 服务')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: /^云端空间/ })).toBeEnabled()
   })
 
   it('shows Local startup status inline without leaving the compact login state', () => {
@@ -381,7 +359,7 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('正在启动本机空间…')).toBeTruthy()
-    expect(screen.getByText('你的数据，存在你选的地方')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^云端空间/ })).toBeDisabled()
   })
 
   it('shows compact Local preparation copy without raw progress detail', () => {
@@ -447,10 +425,13 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('本机空间暂时不可用')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '打开设置' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '切换账号' })).toBeTruthy()
+    expect(screen.getByText('本机空间没有启动')).toBeTruthy()
+    expect(screen.getByText('先重新检查；还不行就重启 LinX，它会自己修复。不会自动换成云端空间。')).toBeTruthy()
+    // One main action; the rest sits under 详情.
+    expect(screen.getByRole('button', { name: '重新检查' })).toBeTruthy()
+    expect(screen.getByText('详情').closest('details')).not.toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: '打开本机服务设置', hidden: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '换个空间', hidden: true })).toBeTruthy()
     expect(screen.queryByText(/使用云端/)).toBeNull()
     expect(screen.queryByText(/Cannot find module/)).toBeNull()
   })
@@ -473,7 +454,7 @@ describe('LoginModal', () => {
     expect(screen.getByText('Alice')).toBeTruthy()
     expect(screen.getByText('undefineds · 本机空间')).toBeTruthy()
     expect(screen.getByRole('button', { name: '进入' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '切换账号' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '换个账号' })).toBeTruthy()
     expect(screen.queryByText('数据保存位置')).toBeNull()
     expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /本机/ })).toBeNull()
@@ -550,19 +531,19 @@ describe('LoginModal', () => {
     expect(container.querySelector('[data-account-local-marker]')).toBeNull()
   })
 
-  it('does not ship a default third-party provider catalog', () => {
+  it('keeps other Solid spaces behind 使用其他空间… and ships no third-party catalog', () => {
     render(<LoginModal {...createProps()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '更多选项' }))
+    fireEvent.click(screen.getByRole('button', { name: '使用其他空间…' }))
 
-    expect(screen.getByText('更多选项')).toBeTruthy()
-    expect(screen.getByText('LinX 账号')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '云端空间' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '本机空间' })).toBeTruthy()
-    expect(screen.getByText('添加登录方式')).toBeTruthy()
+    expect(screen.getByText('使用其他空间')).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: '空间地址' })).toBeTruthy()
     expect(screen.queryByText('Google')).toBeNull()
     expect(screen.queryByText('GitHub')).toBeNull()
     expect(screen.queryByText('企业 SSO')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+    expect(screen.getByRole('button', { name: /^云端空间/ })).toBeTruthy()
   })
 
   it('lists only configured third-party providers and connects them directly', () => {
@@ -589,25 +570,24 @@ describe('LoginModal', () => {
     })
     render(<LoginModal {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '更多选项' }))
+    fireEvent.click(screen.getByRole('button', { name: '使用其他空间…' }))
     fireEvent.click(screen.getByRole('button', { name: /Acme SSO/ }))
 
     expect(props.onConnect).toHaveBeenCalledWith('acme-sso')
   })
 
-  it('keeps an invalid custom provider URL in place and explains how to fix it', () => {
+  it('keeps an invalid custom space address in place and explains how to fix it', () => {
     const props = createProps()
     render(<LoginModal {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '更多选项' }))
-    fireEvent.click(screen.getByRole('button', { name: '添加登录方式' }))
-    fireEvent.change(screen.getByRole('textbox', { name: '登录方式地址' }), {
+    fireEvent.click(screen.getByRole('button', { name: '使用其他空间…' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '空间地址' }), {
       target: { value: 'https://' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+    fireEvent.click(screen.getByRole('button', { name: '继续' }))
 
-    expect(screen.getByRole('alert')).toHaveTextContent('请输入有效的 http(s) 地址')
-    expect(screen.getByRole('textbox', { name: '登录方式地址' })).toHaveValue('https://')
+    expect(screen.getByRole('alert')).toHaveTextContent('连不上这个地址。确认它在运行，再试一次。')
+    expect(screen.getByRole('textbox', { name: '空间地址' })).toHaveValue('https://')
     expect(props.onAddProvider).not.toHaveBeenCalled()
     expect(props.onConnect).not.toHaveBeenCalled()
   })
@@ -804,11 +784,11 @@ describe('LoginModal', () => {
       },
     })
     render(<LoginModal {...props} />)
-    expect(screen.getByText('等待登录完成')).toBeTruthy()
     expect(screen.getByText('请在登录窗口完成')).toBeTruthy()
+    expect(screen.getByText('完成后会自动回到这里。窗口没看到，可以再打开一次。')).toBeTruthy()
   })
 
-  it('labels split Local auth as Local authorization', () => {
+  it('asks to finish in the auth window for a Local space too', () => {
     const props = createProps({
       state: 'connecting',
       connectingProvider: {
@@ -824,8 +804,8 @@ describe('LoginModal', () => {
       },
     })
     render(<LoginModal {...props} />)
-    expect(screen.getByText('等待登录完成')).toBeTruthy()
     expect(screen.getByText('请在登录窗口完成')).toBeTruthy()
+    expect(screen.getByText('完成后会自动回到这里。窗口没看到，可以再打开一次。')).toBeTruthy()
   })
 
   it('shows verification copy after the auth window completes', () => {

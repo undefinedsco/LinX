@@ -10,3 +10,6 @@ export function useFilesApprovalByTarget(...args: Parameters<typeof useApprovalB
 export function useResolveFilesInboxApproval(...args: Parameters<typeof useResolveInboxApproval>) {
   return useResolveInboxApproval(...args)
 }
+
+/** 授权 under an assistant folder reuses the inbox grants table. */
+export { GrantsView as FilesGrantsView } from '@/modules/inbox'

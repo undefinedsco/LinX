@@ -109,7 +109,10 @@ async function resolveXpodRuntimeCommand(runtimeRoot: string): Promise<XpodRunti
     throw new Error(`LINX_XPOD_ROOT 不是可用的 xpod 源码目录: ${candidate}`)
   }
 
-  const packageRoot = path.resolve(repoRoot, 'node_modules', '@undefineds.co', 'xpod')
+  // LINX_XPOD_PACKAGE_ROOT points at another installed xpod package (e.g. a newer release).
+  const packageRoot = process.env.LINX_XPOD_PACKAGE_ROOT?.trim()
+    ? path.resolve(process.env.LINX_XPOD_PACKAGE_ROOT.trim())
+    : path.resolve(repoRoot, 'node_modules', '@undefineds.co', 'xpod')
   const packageEntry = path.join(packageRoot, 'dist', 'main.js')
   const configPath = path.join(packageRoot, 'config', 'local.json')
 

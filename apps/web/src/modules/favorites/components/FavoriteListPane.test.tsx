@@ -99,7 +99,7 @@ describe('FavoriteListPane', () => {
 
       render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('暂无收藏')).toBeInTheDocument()
+      expect(screen.getByText('还没有收藏')).toBeInTheDocument()
     })
 
     it('shows loading state', () => {
@@ -144,7 +144,7 @@ describe('FavoriteListPane', () => {
 
       expect(screen.getByText('My Chat')).toBeInTheDocument()
       expect(screen.getByText('Last message here')).toBeInTheDocument()
-      expect(screen.getByText('Alice')).toBeInTheDocument()
+      expect(screen.getByText('会话 · Alice')).toBeInTheDocument()
       expect(screen.getByText('Contact Bob')).toBeInTheDocument()
     })
 
@@ -188,13 +188,53 @@ describe('FavoriteListPane', () => {
     })
   })
 
-  describe('List Chrome', () => {
-    it('does not render a second source filter row', () => {
+  describe('Groups', () => {
+    const rows = [
+      { id: 'a', title: 'M1', sourceModule: 'messages', sourceId: 'x', favoredAt: new Date() },
+      { id: 'b', title: 'C1', sourceModule: 'chat', sourceId: 'y', favoredAt: new Date() },
+      { id: 'c', title: 'F1', sourceModule: 'files', sourceId: 'z', favoredAt: new Date() },
+    ]
+
+    it('shows the five groups with counts', () => {
+      mockUseFavoriteList.mockReturnValue({ data: rows, isLoading: false, error: null })
+
       render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.queryByText('全部')).not.toBeInTheDocument()
-      expect(screen.queryByText('消息')).not.toBeInTheDocument()
-      expect(mockUseFavoriteList).toHaveBeenCalledWith({ search: undefined })
+      expect(screen.getByRole('tab', { name: '全部收藏 3' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: '消息 1' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: '会话 1' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: '卡片 0' })).toBeInTheDocument()
+    })
+
+    it('lists only the selected group as a flat list', () => {
+      mockUseFavoriteList.mockReturnValue({ data: rows, isLoading: false, error: null })
+      mockUseFavoriteStore.mockImplementation((selector: (state: unknown) => unknown) => (
+        selector(createDefaultStoreState({ group: 'messages' }))
+      ))
+
+      render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('M1')).toBeInTheDocument()
+      expect(screen.queryByText('C1')).not.toBeInTheDocument()
+    })
+
+    it('changes group on tab click', () => {
+      const setGroup = vi.fn()
+      mockUseFavoriteList.mockReturnValue({ data: rows, isLoading: false, error: null })
+      mockUseFavoriteStore.mockImplementation((selector: (state: unknown) => unknown) => (
+        selector(createDefaultStoreState({ setGroup }))
+      ))
+
+      render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
+      fireEvent.click(screen.getByRole('tab', { name: '文件 1' }))
+
+      expect(setGroup).toHaveBeenCalledWith('files')
+    })
+
+    it('explains that 收藏 is not 记下来 when empty', () => {
+      render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('收藏 ≠ 记住')).toBeInTheDocument()
     })
   })
 })

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件类型、操作与状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.lbl{font-size:13px;font-weight:600;margin:0 0 8px}
+.pane{background:#FBFAF7;border:1px solid #DFDBD5;border-radius:12px;overflow:hidden}
+.ph{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-bottom:1px solid #DFDBD5;font-size:13px}
+.v{color:#655D53;font-size:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:22px 16px}
+.sheet{background:#FBFAF7;border-radius:12px;border:1px solid #DFDBD5;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:16px;display:flex;flex-direction:column;gap:10px}
+.menu{background:#FBFAF7;border:1px solid #DFDBD5;border-radius:8px;box-shadow:0 8px 24px rgb(43 38 33 / .10);padding:4px;width:200px}
+.mi{height:30px;display:flex;align-items:center;padding:0 10px;border-radius:5px;font-size:13px}
+.sep{height:1px;background:#DFDBD5;margin:4px 6px}
+.row{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border-radius:6px;font-size:13px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{border:1px solid #DFDBD5;padding:4px 8px;text-align:left}
+th{background:#F2EDE2;font-weight:600}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-content: start">
+  <section style="display: flex; flex-direction: column; gap: 20px">
+    <div>
+      <h2 class="lbl">一条规则：卡片都在弹窗里打开</h2>
+      <div class="pane">
+        <div class="ph" style="font-weight: 500">打开任何卡片</div><div class="v" style="padding: 8px 12px">文件、表格的一行、白板上的卡、聊天里的文件，都是弹窗，不离开当前位置；要整页就点弹窗右上“展开”</div>
+        <div class="ph" style="font-weight: 500; border-top: 1px solid #DFDBD5">左边树</div><div class="v" style="padding: 8px 12px">只放文件夹和表格（像 Finder 侧栏），点了在内容栏显示里面的东西</div>
+        <div class="ph" style="font-weight: 500; border-top: 1px solid #DFDBD5">在列表里单击</div><div class="v" style="padding: 8px 12px">只是选中，右边预览；音视频在预览里就能播</div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">媒体：普通播放器；AI 引用某一刻时从那里播</h2>
+      <div class="pane">
+        <div class="ph"><span style="flex: 1; font-weight: 500">讲座录音.m4a</span><span class="v">58 分钟</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; margin: 12px; padding: 8px 10px; border-radius: 8px; background: #F2EDE2">
+          <span class="btn" aria-label="播放" style="width: 28px; padding: 0">▶</span>
+          <span style="flex: 1; height: 4px; border-radius: 2px; background: #E4DDDA; position: relative"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: 18%; background: #563E84; border-radius: 2px"></span></span>
+          <span class="v">03:12 / 58:40</span>
+        </div>
+        <div class="v" style="padding: 0 12px 12px">从聊天里点“讲座录音 · 03:40”进来，就从 03:40 开始播。听写的文字只给 AI 用，这里不显示。</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 14px">
+    <h2 class="lbl" style="margin: 0">打不开的时候（一句话 + 一个动作）</h2>
+    <div class="pane"><div class="center"><div style="font-weight: 600">这种文件不能在这里打开</div><div class="v">书店账本.numbers</div><div style="display: flex; gap: 8px"><span class="btn primary">下载</span><span class="btn">用其他应用打开</span></div><div class="v">“用其他应用打开”只在桌面版有</div></div></div>
+    <div class="pane"><div class="center"><div style="font-weight: 600">文件太大，不预览</div><div class="v">活动录像.mov · 1.2 GB（超过 25 MB 不预览）</div><span class="btn primary">下载</span></div></div>
+    <div class="pane"><div class="center"><div style="font-weight: 600">没读到这个文件</div><div class="v">可能是网络问题，文件本身没事</div><span class="btn primary">重试</span></div></div>
+    <div class="pane"><div class="center"><div style="font-weight: 600">没有权限查看</div><div class="v">周禾 收回了这个文件的共享</div></div></div>
+    <div class="pane"><div class="center"><div style="font-weight: 600">这个文件已经删除</div><div class="v">从会话或收藏点进来时会看到</div><span class="btn">回到文件夹</span></div></div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 20px">
+    <div>
+      <h2 class="lbl">“⋯”菜单（列表里右键也是这些）</h2>
+      <div class="menu" role="menu">
+        <div class="mi" role="menuitem">重命名</div>
+        <div class="mi" role="menuitem">移动到…</div>
+        <div class="mi" role="menuitem">复制一份</div>
+        <div class="mi" role="menuitem">复制链接</div>
+        <div class="mi" role="menuitem">共享…</div>
+        <div class="mi" role="menuitem">下载</div>
+        <div class="sep"></div>
+        <div class="mi" role="menuitem">删除…</div>
+      </div>
+      <div class="v" style="margin-top: 6px">复制的链接只有能看这个文件的人才能打开</div>
+    </div>
+    <div>
+      <h2 class="lbl">删除</h2>
+      <div class="sheet" role="alertdialog" style="text-align: center">
+        <div style="font-weight: 600">删除“报名方案.md”？</div>
+        <div class="v" style="font-size: 13px">删除后不能恢复。从它摘出的 1 张卡片会保留；用过它的工作里会显示“文件已删除”。</div>
+        <div style="display: flex; gap: 8px"><span class="btn" style="flex: 1">取消</span><span class="btn" style="flex: 1; border-color: #2B2621; font-weight: 600">删除</span></div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">移动到… / 已有同名</h2>
+      <div class="sheet" role="dialog" aria-label="移动到">
+        <div class="row v">活动（现在在这里）</div>
+        <div class="row" style="background: #E4DDDA">志愿者</div>
+        <div class="row">聊天文件</div>
+        <div class="row v">新文件夹…</div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px"><span class="btn">取消</span><span class="btn primary">移动</span></div>
+      </div>
+      <div class="sheet" role="alertdialog" style="text-align: center; margin-top: 10px">
+        <div style="font-weight: 600">“志愿者”里已经有“报名方案.md”</div>
+        <div style="display: flex; gap: 8px"><span class="btn" style="flex: 1">两个都保留</span><span class="btn" style="flex: 1">替换</span></div>
+        <span class="btn" style="border: 0; background: transparent; color: #655D53">取消</span>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

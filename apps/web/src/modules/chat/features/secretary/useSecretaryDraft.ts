@@ -30,10 +30,10 @@ export function useSecretaryDraft({ scopeKey, draftScope, selectedChatId, webId,
     saveChatDraft(draftScope, text)
   }, [draftScope])
 
-  const submitDraft = useCallback(() => {
-    const text = draft.trim()
+  const submitDraft = useCallback((options?: { text?: string; autoSend?: boolean }) => {
+    const text = (options?.text ?? draft).trim()
     if (!text || !selectedChatId || !webId) return
-    setPendingDraft({ text, attempt: 0, chatId: selectedChatId, scopeKey })
+    setPendingDraft({ text, attempt: 0, chatId: selectedChatId, scopeKey, ...(options?.autoSend ? { autoSend: true } : {}) })
     setHandoffFailure(null)
     onSubmit()
   }, [draft, onSubmit, scopeKey, selectedChatId, webId])
@@ -54,7 +54,7 @@ export function useSecretaryDraft({ scopeKey, draftScope, selectedChatId, webId,
 
   const failDraftHandoff = useCallback((failed: PendingComposerDraft) => {
     if (activeScopeRef.current !== failed.scopeKey) return
-    setHandoffFailure({ message: '无法将草稿填入当前话题。草稿仍保留，可重试。', scopeKey: failed.scopeKey, chatId: failed.chatId })
+    setHandoffFailure({ message: '无法将草稿填入当前聊天。草稿仍保留，可重试。', scopeKey: failed.scopeKey, chatId: failed.chatId })
   }, [])
 
   return {

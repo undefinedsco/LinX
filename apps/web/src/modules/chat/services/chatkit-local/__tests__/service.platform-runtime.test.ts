@@ -104,6 +104,55 @@ vi.mock('@/lib/vendor/xpod-chatkit', () => ({
 
 import { LocalChatKitService } from '../service'
 
+/**
+ * The gateway's model list (`/v1/models`) is where the service reads capabilities. Each mock
+ * Pod states what its provider can do (`providerCapabilities`); the test gateway lists the
+ * agent's model with those capabilities. The LinX platform model declares Responses and
+ * web search, as the real gateway does.
+ */
+let gatewayModels: Array<Record<string, unknown>> = []
+
+/**
+ * Besides the model call the service looks up the model list (capabilities) and the
+ * withdrawn-cards list. These tests are about model traffic, so the side lookups get
+ * answers from the test gateway here and only model requests reach the test's fetch mock.
+ */
+function modelTraffic(fetchMock: (...args: any[]) => any) {
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (/\/v1\/models$/.test(url)) {
+      // A test that declares model capabilities answers /v1/models itself; ask its
+      // implementation directly so the lookup is not recorded as model traffic.
+      const implementation = (fetchMock as any).getMockImplementation?.()
+      const own = implementation ? await implementation(input, init) : null
+      // Read a clone: a queued response may be the one the real call receives later.
+      const text = own instanceof Response && own.ok ? await own.clone().text() : ''
+      let declared = false
+      try { declared = Array.isArray(JSON.parse(text)?.data) } catch { declared = false }
+      return new Response(declared ? text : JSON.stringify({ data: gatewayModels }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (url.endsWith('/settings/linx/withdrawn-cards.ttl')) return new Response('', { status: 404 })
+    return fetchMock(input, init)
+  }
+}
+
+/**
+ * Progress text the person sees: before the answer starts, `respond` shows progress in the
+ * 处理中 status widget (replaced in place); later it passes progress_update events through.
+ */
+function progressTexts(events: any[]): string[] {
+  const texts: string[] = []
+  for (const event of events) {
+    if (event?.type === 'progress_update' && typeof event.text === 'string') texts.push(event.text)
+    const widget = event?.item?.type === 'widget' ? event.item.widget : null
+    const statusRow = widget?.children?.[0]
+    if (statusRow?.children?.[0]?.name === 'spinner' && typeof statusRow.children[1]?.value === 'string') {
+      texts.push(statusRow.children[1].value)
+    }
+  }
+  return texts
+}
+
 function createSseResponse(chunks: string[]) {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
@@ -252,6 +301,11 @@ function createMockDb(
     about: options.contactAbout ?? 'agent-1/',
     contactType: 'agent',
   }
+  gatewayModels = options.providerCapabilities
+    ? [{ id: `${agent.provider}/${agent.model}`, owned_by: agent.provider, capabilities: options.providerCapabilities }]
+    : agent.provider === 'undefineds'
+      ? [{ id: `undefineds/${agent.model}`, owned_by: 'undefineds', capabilities: ['chat_completions', 'responses', 'responses_web_search'] }]
+      : []
   const agentRow = {
     id: 'agent-1/',
     provider: agent.provider,
@@ -398,7 +452,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -427,7 +481,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -458,7 +512,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -498,7 +552,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -549,7 +603,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -565,11 +619,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       tool_choice: 'auto',
     }))
     expect(body).not.toHaveProperty('temperature')
-    expect(events).toContainEqual({
-      type: 'progress_update',
-      icon: 'search',
-      text: '正在搜索网络并整理来源…',
-    })
+    expect(progressTexts(events)).toContain('正在搜索网络并整理来源…')
     expect(findAssistantDone(events)?.item?.content?.[0]).toEqual({
       type: 'output_text',
       text: '今日结果',
@@ -613,7 +663,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -648,7 +698,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -668,18 +718,14 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
 
-    expect(events).toContainEqual({
-      type: 'progress_update',
-      icon: 'search',
-      text: '联网搜索失败',
-    })
+    expect(progressTexts(events)).toContain('联网搜索失败')
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({
         text: '联网搜索暂不可用。请检查本地 xpod 的 AI 上游配置后重试。',
       })],
@@ -720,7 +766,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
@@ -753,19 +799,15 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { tool_choice: { id: 'web_search' } })
 
     expect(authFetch).not.toHaveBeenCalled()
-    expect(events).toContainEqual({
-      type: 'progress_update',
-      icon: 'search',
-      text: '联网搜索失败',
-    })
+    expect(progressTexts(events)).toContain('联网搜索失败')
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({
         text: expect.stringContaining('未声明 Responses API 能力'),
       })],
@@ -787,7 +829,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -834,7 +876,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -864,7 +906,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await collectStreamEvents(await service.process(JSON.stringify({
@@ -880,7 +922,7 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     expect(authFetch).not.toHaveBeenCalled()
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({ text: expect.stringContaining('未声明 图片输入 能力') })],
     }))
   })
@@ -895,7 +937,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: vi.fn() as any,
+      authFetch: modelTraffic(vi.fn()) as any,
       attachmentThreadId: 'thread-1',
     })
 
@@ -932,7 +974,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
       attachmentThreadId: 'thread-1',
     })
 
@@ -967,7 +1009,7 @@ describe('LocalChatKitService platform runtime routing', () => {
         store: store as any,
         db: createMockDb({ provider: 'custom', model }) as any,
         webId: 'https://id.undefineds.co/profile/card#me',
-        authFetch: authFetch as any,
+        authFetch: modelTraffic(authFetch) as any,
         attachmentThreadId: 'thread-1',
       })
       await service.process(JSON.stringify({
@@ -1001,7 +1043,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: vi.fn() as any,
+      authFetch: modelTraffic(vi.fn()) as any,
     })
 
     const result = await service.process(JSON.stringify({
@@ -1030,7 +1072,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: vi.fn() as any,
+      authFetch: modelTraffic(vi.fn()) as any,
       attachmentThreadId: 'thread-1',
     })
 
@@ -1076,7 +1118,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1128,14 +1170,14 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
     const completed = findAssistantDone(events)?.item
 
     expect(completed).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({ text: '已生成部分。' })],
     }))
     expect(events).toContainEqual(expect.objectContaining({
@@ -1171,7 +1213,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1205,7 +1247,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1231,13 +1273,13 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'http://localhost:5737/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
 
     expect(findAssistantDone(events)?.item).toEqual(expect.objectContaining({
-      status: 'incomplete',
+      status: 'failed',
       content: [expect.objectContaining({
         text: expect.stringContaining('服务没有返回内容'),
       })],
@@ -1264,7 +1306,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     await sendMessage(service)
@@ -1310,7 +1352,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1345,14 +1387,14 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
 
     expect(authFetch).not.toHaveBeenCalled()
     expect(browserFetch).not.toHaveBeenCalledWith('/api/ai/chat/completions', expect.anything())
-    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.status).toBe('failed')
     expect(events).toContainEqual(expect.objectContaining({
       type: 'error',
       error: expect.objectContaining({
@@ -1372,12 +1414,12 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { model: 'linx-lite' })
 
-    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.status).toBe('failed')
     expect(findAssistantDone(events)?.item?.content?.[0]?.text)
       .toBe('网络或 AI 上游暂不可用，请稍后重试。')
     expect(events.some((event) => event.type === 'error')).toBe(false)
@@ -1396,7 +1438,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { model: 'linx-lite' })
@@ -1426,7 +1468,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
       onServiceAccessRequired,
     })
 
@@ -1451,7 +1493,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     await sendMessage(service, { model: 'linx' })
@@ -1483,7 +1525,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     await sendMessage(service)
@@ -1519,7 +1561,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       }
       return new Response('', { status: 404 })
     })
-    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: modelTraffic(authFetch) as any })
 
     const events = await sendMessage(service, {
       model: 'linx-lite',
@@ -1578,7 +1620,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, { model: 'gpt-image-1' })
@@ -1604,17 +1646,13 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
 
     expect(authFetch).toHaveBeenCalledTimes(2)
-    expect(events).toContainEqual({
-      type: 'progress_update',
-      icon: 'refresh',
-      text: '服务暂未返回内容，正在重试…',
-    })
+    expect(progressTexts(events)).toContain('服务暂未返回内容，正在重试…')
     expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('第二次返回正常')
     expect(findAssistantDone(events)?.item?.status).toBe('completed')
   })
@@ -1634,7 +1672,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       return new Response('', { status: 404 })
     })
     const downloadFetch = vi.spyOn(globalThis, 'fetch')
-    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: modelTraffic(authFetch) as any })
 
     const events = await sendMessage(service, {
       model: 'linx-lite',
@@ -1672,7 +1710,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       return new Response('', { status: 404 })
     })
     const downloadFetch = vi.spyOn(globalThis, 'fetch')
-    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: modelTraffic(authFetch) as any })
 
     await sendMessage(service, {
       model: 'linx-lite',
@@ -1701,7 +1739,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service, {
@@ -1713,7 +1751,8 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: 'error',
-        error: expect.objectContaining({ message: expect.stringContaining('可用的图片生成模型') }),
+        // Refused either because the provider declares no image generation or no model offers it.
+        error: expect.objectContaining({ message: expect.stringMatching(/图片生成/u) }),
       }),
     ]))
   })
@@ -1751,7 +1790,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       }
       return new Response('', { status: 404 })
     })
-    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: authFetch as any })
+    const service = new LocalChatKitService({ store, db: db as any, webId: 'https://id.undefineds.co/profile/card#me', authFetch: modelTraffic(authFetch) as any })
 
     const events = await collectStreamEvents(await service.process(JSON.stringify({
       type: 'threads.add_user_message',
@@ -1794,7 +1833,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1829,7 +1868,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1871,7 +1910,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -1922,7 +1961,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     await sendMessage(service)
@@ -1948,7 +1987,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
     await sendMessage(service)
     const persistedItems = (await originalLoadItems()).data
@@ -1998,7 +2037,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -2026,7 +2065,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
@@ -2054,13 +2093,13 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
 
     expect(providerFetch).not.toHaveBeenCalled()
-    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.status).toBe('failed')
     expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('消息生成失败。请稍后重试。')
     expect(events).toContainEqual(expect.objectContaining({
       type: 'error',
@@ -2093,13 +2132,13 @@ describe('LocalChatKitService platform runtime routing', () => {
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/profile/card#me',
-      authFetch: authFetch as any,
+      authFetch: modelTraffic(authFetch) as any,
     })
 
     const events = await sendMessage(service)
 
     expect(providerFetch).not.toHaveBeenCalled()
-    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.status).toBe('failed')
     expect(events).toContainEqual(expect.objectContaining({
       type: 'error',
       error: expect.objectContaining({

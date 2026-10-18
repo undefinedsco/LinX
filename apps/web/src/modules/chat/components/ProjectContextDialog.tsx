@@ -76,7 +76,7 @@ export function ProjectContextDialog(props: ProjectContextDialogProps) {
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>项目上下文与记忆</DialogTitle>
-          <DialogDescription>同一工作区绑定的多个话题共享这些内容。模型每轮使用前都会读取；你可以随时查看、修改或关闭记忆。</DialogDescription>
+          <DialogDescription>同一工作区里的对话共享这些内容。模型每轮使用前都会读取；你可以随时查看、修改或关闭记忆。</DialogDescription>
         </DialogHeader>
         {loading ? <div role="status" className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />正在读取项目上下文…</div> : (
           <div className="space-y-5">

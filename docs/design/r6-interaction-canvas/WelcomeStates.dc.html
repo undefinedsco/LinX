@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>欢迎之后</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+a{color:#563E84;text-underline-offset:3px}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.55}
+.lbl{font-size:13px;font-weight:600;margin:0 0 8px}
+.box{border:1px solid #DFDBD5;border-radius:12px;background:#F7F4ED;padding:14px;display:flex;flex-direction:column;gap:10px}
+.msg{display:flex;gap:8px;align-items:flex-start}
+.av{width:30px;height:30px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;background:#563E84;color:#F7F4ED}
+.ai{background:#FBFAF7;padding:8px 12px;border-radius:8px;border:1px solid #DFDBD5;font-size:13px}
+.me{background:#E0DBDE;padding:8px 12px;border-radius:8px;font-size:13px;align-self:flex-end}
+.chip{display:inline-flex;align-items:center;height:28px;padding:0 10px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;font-size:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:12px;font-weight:500;white-space:nowrap}
+.btn.primary{background:#563E84;border-color:#563E84;color:#F7F4ED}
+.v{color:#655D53;font-size:12px}
+.hd{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border-bottom:1px solid #DFDBD5;font-size:13px;margin:-14px -14px 0}
+</style>
+</helmet>
+<div class="root" style="padding: 28px 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-content: start">
+  <section>
+    <h2 class="lbl">起好名字之后</h2>
+    <div class="box">
+      <div class="hd"><strong style="font-weight: 600">小舟</strong><span class="v"># 你好</span></div>
+      <div class="me">叫你小舟吧</div>
+      <div class="msg"><span class="av">AI</span><div class="ai">好，以后我叫小舟。想先做点什么？</div></div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; padding-left: 38px">
+        <span class="chip">比较几个方案</span><span class="chip">整理一份名单</span><span class="chip">每周提醒我一件事</span><span class="chip">拉我进群</span>
+      </div>
+      <div class="v">点一个就直接发出去；会话列表、联系人里的名字同时改成“小舟”。</div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">不起名字（点“就叫 LinX 助手”或直接打字）</h2>
+      <div class="box">
+        <div class="msg"><span class="av">AI</span><div class="ai">好的。想改名字时，在聊天信息里点我的名字。</div></div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">AI 还没连接</h2>
+      <div class="box">
+        <div class="msg"><span class="av">AI</span><div class="ai">介绍照常显示。最后多一句：要先连上 AI 模型，我才能帮你干活。</div></div>
+        <div style="display: flex; gap: 8px; padding-left: 38px"><span class="btn primary">去连接</span><span class="btn">先看看</span></div>
+        <div class="v">名字可以先起好；连上之后直接能用。</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 22px">
+    <div>
+      <h2 class="lbl">第二次打开</h2>
+      <div class="box">
+        <div class="v" style="font-size: 13px">不再打招呼，直接回到上次聊到的地方（同 S1“已回到上次的位置”）。</div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">换了一台设备 / 换成桌面版</h2>
+      <div class="box">
+        <div class="v" style="font-size: 13px">欢迎只出现一次，记在你的空间里；换设备登录同一个账号不会再出现。</div>
+      </div>
+    </div>
+    <div>
+      <h2 class="lbl">名字已经被你的另一个助手用了</h2>
+      <div class="box">
+        <div class="msg"><span class="av">AI</span><div class="ai">“活动小助手”已经有了，换一个吧，免得在列表里分不清。</div></div>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

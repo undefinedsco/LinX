@@ -3,7 +3,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import type { StructuredWhiteboardVisualRelation } from '../../domain/structured/structured-projections'
 import {
   createStructuredCellWriteProposal,
-  type StructuredCellWriteProposal,
+  type StructuredCellCommitResult, type StructuredCellWriteProposal,
   type StructuredTableProjection,
 } from '../../domain/structured/structured-table'
 import {
@@ -22,6 +22,13 @@ import {
   projectStructuredWhiteboardVisualRelationsAfterSave,
 } from './structured-whiteboard-relation-model'
 
+const GENERIC_RELATION_PREDICATE = 'http://purl.org/dc/terms/relation'
+
+function matchesRelationPredicate(cellPredicate: string, predicate: string): boolean {
+  if (cellPredicate === predicate) return true
+  return predicate === GENERIC_RELATION_PREDICATE && cellPredicate === 'dcterms:relation'
+}
+
 export function useStructuredWhiteboardRelationController({
   documentUri,
   projection,
@@ -36,7 +43,7 @@ export function useStructuredWhiteboardRelationController({
   relationPredicateOptions?: readonly string[]
   relationSubjectOptions: readonly string[]
   visualRelations: readonly StructuredWhiteboardVisualRelation[]
-  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => boolean | Promise<boolean>
+  onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
   onVisualRelationsChange?: (relations: StructuredWhiteboardVisualRelation[]) => void
 }) {
   const [relationEditorState, setRelationEditorState] = useState(createStructuredWhiteboardRelationEditorState)
@@ -167,14 +174,18 @@ export function useStructuredWhiteboardRelationController({
   }, [publishVisualRelations, updateRelationEditorState])
 
   const saveRelation = useCallback(async () => {
-    if (!relationPredicate) {
+    const canWriteRelation = Boolean(documentUri && projection && onCommitCellWriteProposal)
+    // An edge between two cards is data: without a chosen type it is stored as a
+    // generic "related to" relation instead of living only in this browser.
+    const predicate = relationPredicate || (canWriteRelation ? GENERIC_RELATION_PREDICATE : '')
+    if (!predicate) {
       saveVisualRelation()
       return true
     }
     if (!documentUri || !projection || !onCommitCellWriteProposal || !relationFrom || !relationTo) return false
     const previousValues = projection.rows
       .find((row) => row.subject === relationFrom)
-      ?.cells.find((cell) => cell.predicate === relationPredicate)
+      ?.cells.find((cell) => matchesRelationPredicate(cell.predicate, predicate))
       ?.values ?? []
     const targetValue = relationTo.startsWith('<') || relationTo.startsWith('_:')
       ? relationTo
@@ -189,7 +200,7 @@ export function useStructuredWhiteboardRelationController({
     const optimisticRelation = projectStructuredWhiteboardRelationDraft({
       editingRelationId: editor.editingRelationId,
       relationFrom,
-      relationLabel: editor.relationLabel.trim() || relationPredicate,
+      relationLabel: editor.relationLabel.trim() || relationPredicate || '相关',
       relationTo,
       visualRelations: visualRelationsRef.current,
     })
@@ -205,7 +216,7 @@ export function useStructuredWhiteboardRelationController({
       const saved = await onCommitCellWriteProposal(createStructuredCellWriteProposal({
         documentUri,
         subject: relationFrom,
-        predicate: relationPredicate,
+        predicate,
         previousValues: [...previousValues],
         nextValues,
       }))
@@ -214,10 +225,14 @@ export function useStructuredWhiteboardRelationController({
         setRelationSaveError('关系写入失败，请重试')
         return false
       }
-      publishVisualRelations(projectStructuredWhiteboardVisualRelationsAfterRemove({
-        relationId: optimisticRelation.id,
-        visualRelations: visualRelationsRef.current,
-      }))
+      // The stored relation now draws the edge. A free-text label without a chosen
+      // type has nowhere to live in the data yet, so only the label stays local.
+      if (relationPredicate || !editor.relationLabel.trim()) {
+        publishVisualRelations(projectStructuredWhiteboardVisualRelationsAfterRemove({
+          relationId: optimisticRelation.id,
+          visualRelations: visualRelationsRef.current,
+        }))
+      }
       updateRelationEditorState((current) => projectStructuredWhiteboardRelationEditorSaved(current))
       setRelationPredicate('')
       return true

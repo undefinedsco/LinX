@@ -10,7 +10,7 @@ export async function loginToSeededXpod(page: Page, runtime: SeededXpodRuntime):
 
   const providerOrigin = new URL(runtime.baseUrl).origin
   const appOrigin = new URL(page.url()).origin
-  await page.getByRole('dialog', { name: '登录 LinX' }).getByRole('button', { name: '连接' }).click()
+  await page.getByRole('dialog', { name: '登录 LinX' }).getByRole('button', { name: '继续' }).click()
 
   await expect.poll(async () => {
     const currentUrl = new URL(page.url())
@@ -176,20 +176,26 @@ export async function readSeededAuthDebugState(page: Page) {
   })
 }
 
-async function signInToSeededRuntime(page: Page, runtime: SeededXpodRuntime): Promise<void> {
+/** A Solid account on a provider: the seeded runtime, or a real provider such as id.undefineds.co. */
+export type ProviderAccount = Pick<SeededXpodRuntime, 'email' | 'password' | 'podName' | 'baseUrl'>
+
+/** Signs in on the provider's own login page (Community Solid Server account UI). */
+export async function signInToSeededRuntime(page: Page, runtime: ProviderAccount): Promise<void> {
   const signInGate = page.getByRole('button', { name: /Go to Sign in/i })
   if (await signInGate.isVisible({ timeout: 5_000 }).catch(() => false)) {
     await signInGate.click()
   }
 
-  const emailInput = page.getByPlaceholder(/Email(?: address)?/i)
-  const passwordInput = page.getByPlaceholder(/^Password$/i)
+  // Older xpod builds show the Community Solid Server form (English placeholders); newer ones
+  // show xpod's own account form (labels 邮箱 / 密码, button 登录).
+  const emailInput = page.getByPlaceholder(/Email(?: address)?/i).or(page.getByLabel(/^(邮箱|Email)$/i)).first()
+  const passwordInput = page.getByPlaceholder(/^Password$/i).or(page.getByLabel(/^(密码|Password)$/i)).first()
 
   await emailInput.waitFor({ state: 'visible', timeout: 20_000 })
   await emailInput.fill(runtime.email)
   await passwordInput.fill(runtime.password)
 
-  await page.getByRole('button', { name: /^Sign in$/i }).click()
+  await page.getByRole('button', { name: /^(Sign in|登录)$/i }).first().click()
   await page.waitForFunction(() => {
     const path = window.location.pathname
     const password = document.querySelector('input[type="password"]') as HTMLInputElement | null
@@ -200,11 +206,12 @@ async function signInToSeededRuntime(page: Page, runtime: SeededXpodRuntime): Pr
   }, undefined, { timeout: 30_000 })
 }
 
-async function authorizeSeededRuntime(page: Page, runtime: SeededXpodRuntime): Promise<void> {
+/** Gets through the provider's consent page (creating the Pod first when the account has none). */
+export async function authorizeSeededRuntime(page: Page, runtime: ProviderAccount): Promise<void> {
   const deadline = Date.now() + 90_000
 
   while (Date.now() < deadline) {
-    const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
+    const authorizeButton = page.getByRole('button', { name: /^(Authorize|允许访问|允许)$/i }).first()
     const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
     const createPodButton = page.getByRole('button', { name: /^Create Pod$/i })
     const addPodButton = page.getByRole('button', { name: /Add Pod/i })
@@ -258,8 +265,23 @@ async function authorizeSeededRuntime(page: Page, runtime: SeededXpodRuntime): P
     if (await authorizeButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await expect(missingPodMessage).toHaveCount(0)
       await expect(authorizeButton).toBeEnabled({ timeout: 20_000 })
-      await authorizeButton.click()
-      return
+      // Newer xpod's account app shows consent at .../account/ and then routes to
+      // .../oidc/consent/; a click during that hand-over is lost. Click only on the consent
+      // route, and count it done only when the browser leaves the provider (back to the app).
+      if (!new URL(page.url()).pathname.includes('/oidc/consent')) {
+        await page.waitForTimeout(500)
+        continue
+      }
+      const providerOrigin = new URL(runtime.baseUrl).origin
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined)
+        if (new URL(page.url()).origin !== providerOrigin) return
+        await authorizeButton.click({ timeout: 5_000 }).catch(() => undefined)
+        const left = await page.waitForURL((url) => url.origin !== providerOrigin, { timeout: 20_000 })
+          .then(() => true, () => false)
+        if (left) return
+      }
+      throw new Error(`consent did not complete after 允许\n${JSON.stringify(await readSeededAuthDebugState(page), null, 2)}`)
     }
 
     await page.waitForTimeout(500)
@@ -290,7 +312,7 @@ async function waitForPodCreationOutcome(page: Page, expectedPodUrl: string): Pr
       return
     }
 
-    const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
+    const authorizeButton = page.getByRole('button', { name: /^(Authorize|允许访问|允许)$/i }).first()
     const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
     if (
       page.url().includes('/.account/oidc/consent/')

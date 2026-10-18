@@ -267,7 +267,7 @@ export function projectStructuredWhiteboardRelationEditorChrome({
     labelFieldLabel: '标签',
     labelFieldAriaLabel: 'Relation label',
     labelFieldPlaceholder: '视觉关系',
-    saveButtonLabel: editingRelationId ? '保存视觉关系' : '创建视觉关系',
+    saveButtonLabel: editingRelationId ? '保存连接' : '连接',
     cancelButtonLabel: '取消',
     cancelButtonAriaLabel: '取消视觉关系',
   }

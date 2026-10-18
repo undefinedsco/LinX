@@ -90,6 +90,33 @@ describe('LocalChatKitService P0 data and cancellation', () => {
     expect(JSON.parse((loaded as any).json).items.data.map((item: any) => item.id)).toEqual(['root', 'branch-b', 'answer-b'])
   })
 
+  it('hands back the versions that are not shown, and the files of every thread of a chat', async () => {
+    const threads: Record<string, any> = {
+      t1: { id: 't1', status: { type: 'active' }, metadata: { chat_id: 'c1', active_branch_by_parent: { root: 'b' } } },
+      t2: { id: 't2', status: { type: 'active' }, metadata: { chat_id: 'c1' } },
+    }
+    const pdf = { id: 'att-1', type: 'file', name: 'a.pdf', mime_type: 'application/pdf' }
+    const png = { id: 'att-2', type: 'image', name: 'b.png', mime_type: 'image/png' }
+    const itemsOf: Record<string, any[]> = {
+      t1: [
+        { id: 'a', type: 'user_message', parent_item_id: 'root', attachments: [pdf] },
+        { id: 'b', type: 'user_message', parent_item_id: 'root', attachments: [] },
+      ],
+      t2: [{ id: 'c', type: 'user_message', attachments: [png, pdf] }],
+    }
+    const store = createStore({
+      loadThread: vi.fn(async (id: string) => threads[id]),
+      loadThreads: vi.fn(async () => ({ data: Object.values(threads), has_more: false })),
+      loadThreadItems: vi.fn(async (id: string) => ({ data: itemsOf[id], has_more: false })),
+    })
+    const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any })
+    const loaded = await service.loadChatConversation('c1', 't2', {})
+    expect(loaded.items.map((entry) => entry.item.id)).toEqual(['b', 'c'])
+    expect(loaded.alternates.map((entry) => [entry.item.id, entry.threadId])).toEqual([['a', 't1']])
+    const attachments = await service.loadChatAttachments('c1', 't2', {})
+    expect(attachments.map((attachment) => attachment.id).sort()).toEqual(['att-1', 'att-2'])
+  })
+
   it('matches legacy short parent ids to resource-relative branch ids', async () => {
     const originalId = 'chat/demo/messages.ttl#user-1'
     const thread = {
@@ -249,6 +276,35 @@ describe('LocalChatKitService P0 data and cancellation', () => {
     }), {})
     expect(events).toContainEqual(expect.objectContaining({ type: 'thread.updated' }))
     expect(events).toContainEqual(expect.objectContaining({ type: 'thread.item.added' }))
+  })
+
+  it('keeps the 问 LinX citation when a message is edited or its answer regenerated', async () => {
+    const citation = { sourceUri: 'https://pod.example/notes/a.md', title: '会议纪要', locator: { line: 5 } }
+    const item = { id: 'user-1', thread_id: 'thread-1', type: 'user_message', content: [{ type: 'input_text', text: 'old' }], citation }
+    const thread = { id: 'thread-1', status: { type: 'active' }, metadata: {} }
+    const store = createStore({
+      loadItem: vi.fn(async () => ({ ...item })),
+      saveItem: vi.fn(async () => undefined),
+      loadThread: vi.fn(async () => thread),
+      saveThread: vi.fn(async () => undefined),
+      loadThreadItems: vi.fn(async () => ({ data: [item], has_more: false })),
+      generateItemId: vi.fn(() => 'user-branch-1'),
+    })
+    const service = new LocalChatKitService({ store, db, webId: 'https://id.example/alice#me', authFetch: vi.fn() as any }) as any
+    service.respond = vi.fn(async function* () {
+      yield { type: 'thread.item.done', item: { id: 'assistant-1', type: 'assistant_message', content: [] } }
+    })
+    const run = async (action: unknown) => {
+      const result = await service.process(JSON.stringify({ type: 'threads.custom_action', params: { action } }), {})
+      if (result.type === 'streaming') for await (const _chunk of result.stream()) { /* drain */ }
+    }
+
+    await run({ type: 'message.edit', payload: { thread_id: 'thread-1', item_id: 'user-1', text: 'new', regenerate: true } })
+    expect(store.saveItem).toHaveBeenCalledWith('thread-1', expect.objectContaining({ id: 'user-branch-1', citation }), {})
+    expect(service.respond).toHaveBeenLastCalledWith(thread, expect.objectContaining({ id: 'user-branch-1', citation }), {}, undefined, { selectResponseBranch: true })
+
+    await run({ type: 'message.regenerate', payload: { thread_id: 'thread-1', item_id: 'user-1' } })
+    expect(service.respond).toHaveBeenLastCalledWith(thread, expect.objectContaining({ id: 'user-1', citation }), {}, undefined, { selectResponseBranch: true })
   })
 
   it('regenerates a sibling answer from the selected user message', async () => {

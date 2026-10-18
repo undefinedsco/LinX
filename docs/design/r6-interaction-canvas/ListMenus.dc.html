@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>列表交互细节</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#F7F4ED}
+.root{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Segoe UI',sans-serif;color:#2B2621;font-size:14px;line-height:1.5}
+.cap{font-size:13px;font-weight:600;margin:0 0 10px}
+.panel{position:relative;height:380px;border:1px solid #DFDBD5;border-radius:10px;overflow:hidden;background:#F7F4ED}
+.menu{position:absolute;background:#FBFAF7;border-radius:10px;box-shadow:0 1px 2px rgb(43 38 33 / .06),0 8px 24px rgb(43 38 33 / .08);border:1px solid #DFDBD5;padding:6px;min-width:200px}
+.mi{display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:6px;font-size:13px}
+.mi.on{background:#E4DDDA}
+.sep{height:1px;background:#DFDBD5;margin:4px 6px}
+.k{margin-left:auto;font-size:11px;color:#655D53}
+.row{height:64px;display:flex;align-items:center;gap:10px;padding:0 12px}
+.av{width:40px;height:40px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 14px;border-radius:6px;border:1px solid #87837D;background:#FBFAF7;color:#2B2621;font:inherit;font-size:13px;font-weight:500}
+.muted{color:#655D53}
+</style>
+</helmet>
+<div class="root" style="padding: 32px; box-sizing: border-box; min-height: 900px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+
+  <section>
+    <h2 class="cap">① 新建（列表顶部“+”）</h2>
+    <div class="panel">
+      <div style="width: 280px; height: 100%; background: #F2EDE2; border-right: 1px solid #DFDBD5">
+        <div style="height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid #DFDBD5">
+          <span style="flex: 1; height: 28px; border-radius: 6px; background: #E4DDDA; display: flex; align-items: center; padding: 0 8px; font-size: 12px; color: #655D53">搜索</span>
+          <span style="width: 28px; height: 28px; border-radius: 6px; background: #563E84; color: #F7F4ED; display: inline-flex; align-items: center; justify-content: center">+</span>
+        </div>
+      </div>
+      <div class="menu" role="menu" style="left: 210px; top: 52px">
+        <div class="mi on" role="menuitem">新的 AI 工作<span class="k">⌘N</span></div>
+        <div class="mi" role="menuitem">找人聊天</div>
+        <div class="mi" role="menuitem">发起群聊</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="cap">② 会话右键菜单</h2>
+    <div class="panel">
+      <div style="width: 280px; height: 100%; background: #F2EDE2; border-right: 1px solid #DFDBD5; padding-top: 12px">
+        <div class="row" style="background: #E4DDDA">
+          <span class="av" style="background: #E0DBDE">周</span>
+          <span style="flex: 1"><span style="font-weight: 500">周禾</span><br><span style="font-size: 12px" class="muted">好，周五对一下报名名单</span></span>
+        </div>
+        <div class="row">
+          <span class="av" style="background: #563E84; color: #F7F4ED">AI</span>
+          <span style="flex: 1"><span style="font-weight: 500">LinX 助手</span><br><span style="font-size: 12px; color: #563E84"># 志愿者排班方案 · 等你决定</span></span>
+        </div>
+      </div>
+      <div class="menu" role="menu" style="left: 200px; top: 48px">
+        <div class="mi" role="menuitem">取消标星</div>
+        <div class="mi" role="menuitem">标为未读</div>
+        <div class="mi" role="menuitem">免打扰</div>
+        <div class="sep"></div>
+        <div class="mi" role="menuitem">导出聊天记录…</div>
+        <div class="sep"></div>
+        <div class="mi" role="menuitem">删除会话…</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="cap">③ 话题切换（2026-10-13 已取消：和 AI 一直聊，不分话题）</h2>
+    <div class="panel">
+      <div style="height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid #DFDBD5">
+        <span style="font-size: 15px; font-weight: 600">LinX 助手</span>
+      </div>
+      <div class="menu" role="listbox" aria-label="话题" style="left: 110px; top: 50px; width: 300px">
+        <div class="mi" style="color: #655D53">搜索话题</div>
+        <div class="mi on" role="option" aria-selected="true"><span style="width: 14px">✓</span># 志愿者排班方案<span class="k">等你决定</span></div>
+        <div class="mi" role="option"><span style="width: 14px"></span># 每周排班提醒<span class="k">每周一</span></div>
+        <div class="mi" role="option"><span style="width: 14px"></span># 书店网站改版<span class="k">9月29日</span></div>
+        <div class="mi" role="option"><span style="width: 14px"></span># 排班规则<span class="k">昨天</span></div>
+        <div class="sep"></div>
+        <div class="mi" role="menuitem">+ 新话题</div>
+        <div class="mi" role="menuitem">管理话题…</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="cap">④ 删除确认</h2>
+    <div class="panel" style="display: flex; align-items: center; justify-content: center; background: rgba(43, 38, 33, 0.22)">
+      <div role="alertdialog" aria-labelledby="del-t" style="width: 360px; background: #FBFAF7; border-radius: 12px; padding: 20px; box-shadow: 0 8px 24px rgb(43 38 33 / .12); display: flex; flex-direction: column; gap: 10px; text-align: center">
+        <div id="del-t" style="font-weight: 600; font-size: 15px">删除和周禾的会话？</div>
+        <div class="muted" style="font-size: 13px">聊天记录会被删除，不能恢复。发过的文件和知识卡片不受影响。LinX 助手的会话不能删。</div>
+        <div style="display: flex; gap: 8px; margin-top: 6px">
+          <button class="btn" style="flex: 1">取消</button>
+          <button class="btn" style="flex: 1; border-color: #2B2621; font-weight: 600">删除</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

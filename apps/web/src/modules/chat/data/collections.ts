@@ -1550,8 +1550,6 @@ export interface UpdateAgentModelInput {
   currentAgent?: AgentRow
   provider: string
   model: string
-  chatId?: string
-  contactId?: string
 }
 
 /**
@@ -2202,42 +2200,27 @@ export const chatOps = {
   },
 
   /**
-   * Update an agent's model (and avatarUrl when provider changes)
-   * Also updates the related Chat's avatarUrl for list display
+   * Update an agent's model. The model is a replaceable execution condition:
+   * the assistant's name, avatar and chats keep their identity (R6 LS03).
    */
   async updateAgentModel(
     agentId: string,
     provider: string,
     model: string,
-    chatId?: string,
-    contactId?: string,
     currentAgent?: AgentRow,
   ): Promise<void> {
-    const providerInfo = getAgentProviderInfo(provider)
     const providerRef = normalizeAIConfigProviderId(provider)
     const modelRef = normalizeAIConfigResourceId(model)
     const current = (agentCollection.get(agentId) as AgentRow | undefined) ?? currentAgent
     if (!current) throw new Error(`Agent ${agentId} was not found`)
-    const providerChanged = normalizeAIConfigProviderId(current.provider || '') !== provider
     const changes: Parameters<typeof updateAgentHomeMetadata>[2] = {
       provider: providerRef,
       model: modelRef,
     }
-    if (providerChanged && providerInfo?.logoUrl) changes.avatarUrl = providerInfo.logoUrl
     const db = getDb()
     if (!db) throw new Error('Pod database is not initialized')
     await updateAgentHomeMetadata(db, agentId as any, changes, current)
     writeCollectionRow(agentCollection, { ...current, ...changes } as AgentRow, agentId)
-
-    if (contactId && providerInfo?.logoUrl) {
-      await updateLinkedContact(db, contactId, { avatarUrl: providerInfo.logoUrl })
-    }
-    
-    // Also update Chat avatarUrl if chatId provided and provider changed
-    if (chatId && providerInfo?.logoUrl) {
-      await this.updateChat(chatId, { avatarUrl: providerInfo.logoUrl })
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-    }
   },
 
   // ==========================================================================
@@ -2558,6 +2541,25 @@ export function useMessageIndex(options?: { enabled?: boolean }) {
   return { ...query, data, error: null, refetch: () => messageCollection.fetch({ refetch: true }) }
 }
 
+/**
+ * Live: every message row of every internal thread of one chat (the chat is a
+ * single timeline). Pod notifications (see `chatOps.subscribeToPod`) keep the
+ * underlying collection current, so a message that lands in any thread - a
+ * scheduled run, a coding run, a group reconciler reply - shows up here.
+ */
+export function useChatMessageRows(chatId: string | null) {
+  const query = useLiveQuery(messageCollection)
+  const threads = useThreadList(chatId ?? '', { enabled: Boolean(chatId) })
+  return useMemo(() => {
+    if (!chatId) return [] as MessageRow[]
+    const threadKeys = new Set(threads.data.map((thread) => extractThreadIdFromThreadRef(thread.id) ?? thread.id))
+    return ((query.data ?? []) as MessageRow[]).filter((row) => {
+      if (!row.thread) return false
+      return threadKeys.has(extractThreadIdFromThreadRef(row.thread) ?? row.thread)
+    })
+  }, [chatId, query.data, threads.data])
+}
+
 // ============================================================================
 // Mutation Hooks (using chatOps)
 // ============================================================================
@@ -2646,8 +2648,8 @@ export function useChatMutations() {
   })
 
   const updateAgentModel = useMutation({
-    mutationFn: ({ agentId, provider, model, chatId, contactId, currentAgent }: UpdateAgentModelInput) =>
-      chatOps.updateAgentModel(agentId, provider, model, chatId, contactId, currentAgent),
+    mutationFn: ({ agentId, provider, model, currentAgent }: UpdateAgentModelInput) =>
+      chatOps.updateAgentModel(agentId, provider, model, currentAgent),
   })
 
   return {

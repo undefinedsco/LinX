@@ -1,376 +1,596 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Tldraw } from 'tldraw'
-import 'tldraw/tldraw.css'
-import { X } from 'lucide-react'
+import '@xyflow/react/dist/style.css'
 
-import type { StructuredWhiteboardVisualRelation } from '../../../domain/structured/structured-projections'
-import type {
-  StructuredWhiteboardPosition,
-  StructuredWhiteboardSnapshotV1,
-} from '../../../domain/structured/structured-view-metadata'
-import type {
-  StructuredWhiteboardRelationEditorChrome,
-  StructuredWhiteboardVisualRelationChip,
-} from '../structured-whiteboard-relation-model'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import {
+  Background,
+  ConnectionMode,
+  Controls,
+  MiniMap,
+  Panel,
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  useStore,
+  type Connection,
+  type EdgeChange,
+  type NodeChange,
+} from '@xyflow/react'
+
+import { useCardDialog } from '@/lib/card-dialog'
+import { useWhiteboardSpace } from '../../../data/queries'
+import { projectWhiteboardUsedOnLabel } from '../../../domain/structured/whiteboard-space-index'
+import type { StructuredCardProjection } from '../../../domain/structured/structured-projections'
+import {
+  WHITEBOARD_CARD_DEFAULT_SIZE,
+  WHITEBOARD_SECTION_COLORS,
+  WHITEBOARD_SECTION_DEFAULT_SIZE,
+  WHITEBOARD_TEXT_DEFAULT_SIZE,
+  createWhiteboardCanvasId,
+  createWhiteboardCardNode,
+  resolveWhiteboardCardNodeUri,
+  resolveWhiteboardSubjectUri,
+  whiteboardCanvasResourceUri,
+  type WhiteboardCanvas,
+  type WhiteboardCanvasNode,
+  type WhiteboardCanvasSide,
+} from '../../../domain/structured/structured-whiteboard-canvas'
 import type { StructuredWhiteboardViewModel } from '../structured-whiteboard-view-model'
-import type { StructuredWhiteboardSubjectOpenOptions } from '../useStructuredWhiteboardViewController'
-import { LinxSubjectShapeUtil } from './linx-subject-shape'
-import { LinxGroupShapeUtil } from './linx-group-shape'
-import { LinxWhiteboardContextMenu } from './LinxWhiteboardContextMenu'
-import { LinxWhiteboardToolbar } from './LinxWhiteboardToolbar'
-import { useLinxWhiteboardController } from './useLinxWhiteboardController'
+import type { useWhiteboardCanvasState } from './useWhiteboardCanvasState'
+import {
+  WhiteboardCardNode,
+  WhiteboardNodeContext,
+  WhiteboardSectionNode,
+  type WhiteboardNodeActions,
+} from './WhiteboardNodes'
+import {
+  WHITEBOARD_LIBRARY_DRAG_TYPE,
+  WhiteboardLibraryPanel,
+  type WhiteboardLibraryItem,
+  type WhiteboardLibraryTab,
+} from './WhiteboardLibraryPanel'
+import { WhiteboardFilesSource } from './WhiteboardFilesSource'
+import { WhiteboardRelationPicker } from './WhiteboardRelationPicker'
+import { WhiteboardToolbar, type WhiteboardTool } from './WhiteboardToolbar'
+import {
+  WHITEBOARD_SIDES,
+  addCanvasEdge,
+  addCanvasNode,
+  fileNameFromUri,
+  moveCanvasNodes,
+  nodesInsideSection,
+  patchCanvasNode,
+  removeCanvasEdges,
+  removeCanvasNodes,
+  toFlowEdges,
+  toFlowNodes,
+  type WhiteboardCardContent,
+} from './whiteboard-flow'
 
-const tldrawLicenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY?.trim() || undefined
+const NODE_TYPES = { card: WhiteboardCardNode, section: WhiteboardSectionNode }
 
-type LinxWhiteboardCanvasRelationProps = {
-  canSaveRelation?: boolean
-  canSaveVisualRelation?: boolean
-  hasVisualRelationChips?: boolean
-  relationEditorChrome?: StructuredWhiteboardRelationEditorChrome
-  relationEditorOpen?: boolean
-  relationFrom?: string
-  relationLabel?: string
-  relationPredicate?: string
+export type WhiteboardCanvasState = ReturnType<typeof useWhiteboardCanvasState>
+
+export interface LinxWhiteboardRelationController {
   relationPredicateOptions?: readonly string[]
-  relationSaving?: boolean
   relationSaveError?: string | null
-  relationSubjectOptions?: string[]
-  relationTo?: string
-  relationToOptions?: string[]
-  visualRelationChips?: StructuredWhiteboardVisualRelationChip[]
-  cancelRelationEditor?: () => void
-  openRelationEditorFor?: (relation: StructuredWhiteboardVisualRelation) => void
   openRelationEditorBetween?: (from: string, to: string) => void
-  removeVisualRelation?: (relationId: string) => void
-  saveRelation?: () => boolean | Promise<boolean>
-  updateRelationFrom?: (value: string) => void
-  updateRelationLabel?: (value: string) => void
   updateRelationPredicate?: (value: string) => void
-  updateRelationTo?: (value: string) => void
+  relationFrom?: string
+  relationTo?: string
+  relationPredicate?: string
+  saveRelation?: () => boolean | Promise<boolean>
+  cancelRelationEditor?: () => void
 }
 
-export function LinxWhiteboardCanvas({
-  model,
-  snapshot,
-  onAddSubject,
-  onCreateSubject,
-  onClearSubjects,
-  onNodePositionChange,
-  onRemoveSubject,
-  onSnapshotChange,
-  onOpenRelationEditor,
-  onOpenSubject,
-  relation,
-}: {
+export interface LinxWhiteboardCanvasProps {
+  documentUri: string
   model: StructuredWhiteboardViewModel
-  snapshot?: StructuredWhiteboardSnapshotV1
-  onAddSubject?: (subject: string) => void
-  onCreateSubject?: (subject: string) => boolean | Promise<boolean>
-  onClearSubjects?: () => void
-  onNodePositionChange?: (subject: string, position: StructuredWhiteboardPosition) => void
-  onRemoveSubject?: (subject: string) => void
-  onSnapshotChange?: (snapshot: StructuredWhiteboardSnapshotV1) => void
-  onOpenRelationEditor: () => void
-  onOpenSubject?: (subject: string, options?: StructuredWhiteboardSubjectOpenOptions) => void
-  relation?: LinxWhiteboardCanvasRelationProps
-}) {
-  const [contextMenu, setContextMenu] = useState<{ left: number; top: number; selectedCount: number } | null>(null)
-  const [quickAddPlacement, setQuickAddPlacement] = useState<{
-    page: StructuredWhiteboardPosition
-    screen: { x: number; y: number }
-  } | null>(null)
-  const [quickAddOpen, setQuickAddOpen] = useState(false)
-  const onOpenSubjectRef = useRef(onOpenSubject)
-  const openRelationEditorBetweenRef = useRef(relation?.openRelationEditorBetween)
-  onOpenSubjectRef.current = onOpenSubject
-  openRelationEditorBetweenRef.current = relation?.openRelationEditorBetween
-  const canvas = useLinxWhiteboardController({
-    model,
-    snapshot,
-    onNodePositionChange,
-    onRemoveSubject,
-    onRestoreSubject: onAddSubject,
-    onSnapshotChange,
-  })
-  const shapeUtils = useMemo(() => {
-    class FilesLinxSubjectShapeUtil extends LinxSubjectShapeUtil {
-      static override onOpenSubject = (subject: string, options?: StructuredWhiteboardSubjectOpenOptions) => (
-        onOpenSubjectRef.current?.(subject, options)
-      )
-      static override onConnectSubject = (from: string, to: string) => (
-        openRelationEditorBetweenRef.current?.(from, to)
-      )
-    }
-    return [FilesLinxSubjectShapeUtil, LinxGroupShapeUtil]
-  }, [])
+  cards: readonly StructuredCardProjection[]
+  canvasState: WhiteboardCanvasState
+  relation?: LinxWhiteboardRelationController
+  onCommitCardBody?: (subject: string, markdown: string) => void | Promise<void>
+}
 
-  useEffect(() => {
-    canvas.syncSnapshot()
-  }, [canvas])
+function isSide(value: string | null | undefined): value is WhiteboardCanvasSide {
+  return WHITEBOARD_SIDES.includes(value as WhiteboardCanvasSide)
+}
 
-  useEffect(() => {
-    let wasMobile = window.innerWidth < 640
-    if (wasMobile) requestAnimationFrame(canvas.fitContent)
-    const fitWhenEnteringMobile = () => {
-      const isMobile = window.innerWidth < 640
-      if (isMobile && !wasMobile) requestAnimationFrame(canvas.fitContent)
-      wasMobile = isMobile
-    }
-    window.addEventListener('resize', fitWhenEnteringMobile)
-    return () => window.removeEventListener('resize', fitWhenEnteringMobile)
-  }, [canvas.fitContent])
+const STATUS_TEXT: Partial<Record<WhiteboardCanvasState['status'], string>> = {
+  saved: '已保存到你的空间',
+  saving: '正在保存…',
+}
 
-  useEffect(() => {
-    if (!contextMenu) return
-    const close = () => setContextMenu(null)
-    document.addEventListener('pointerdown', close)
-    window.addEventListener('blur', close)
-    return () => {
-      document.removeEventListener('pointerdown', close)
-      window.removeEventListener('blur', close)
-    }
-  }, [contextMenu])
-
-  const runContextAction = (action: () => void) => {
-    action()
-    setContextMenu(null)
-  }
-
+export function LinxWhiteboardCanvas(props: LinxWhiteboardCanvasProps) {
   return (
-    <div
-      className="relative -mx-2 h-[calc(100vh-12rem)] min-h-[480px] overflow-hidden border-y border-border/10 bg-background"
-      data-whiteboard-canvas-scroll="true"
-      onKeyDownCapture={(event) => {
-        const target = event.target as HTMLElement
-        if (target.matches('input, textarea, [contenteditable="true"]')) return
-        if (!(event.metaKey || event.ctrlKey) || event.altKey) return
-        if (event.key.toLowerCase() === 'c') {
-          event.preventDefault()
-          canvas.copySelection()
-          return
-        }
-        if (event.key.toLowerCase() === 'v') {
-          event.preventDefault()
-          canvas.pasteSelection()
-        }
-      }}
-      onDoubleClick={(event) => {
-        const target = event.target as HTMLElement
-        if (target.closest('[data-whiteboard-subject-shape], [data-whiteboard-toolbar-scroll]')) return
-        if (model.availableRows.length === 0 && !onCreateSubject) return
-        event.preventDefault()
-        const point = canvas.screenToPage({ x: event.clientX, y: event.clientY })
-        setQuickAddPlacement({
-          page: { x: Math.round(point.x), y: Math.round(point.y) },
-          screen: { x: event.clientX, y: event.clientY },
-        })
-        setQuickAddOpen(true)
-      }}
-      onContextMenuCapture={(event) => {
-        if ((event.target as HTMLElement).closest('[data-whiteboard-toolbar-scroll]')) return
-        const selectedCount = canvas.selectedShapeCount()
-        if (selectedCount === 0) return
-        event.preventDefault()
-        const bounds = event.currentTarget.getBoundingClientRect()
-        setContextMenu({
-          left: Math.max(8, Math.min(event.clientX - bounds.left, bounds.width - 176)),
-          top: Math.max(8, Math.min(event.clientY - bounds.top, bounds.height - 320)),
-          selectedCount,
-        })
-      }}
-    >
-      <Tldraw
-        hideUi
-        licenseKey={tldrawLicenseKey}
-        onMount={canvas.handleMount}
-        shapeUtils={shapeUtils}
-        components={{
-          ContextMenu: null,
-          InFrontOfTheCanvas: () => (
-            <LinxWhiteboardToolbar
-              availableRows={model.availableRows}
-              canClearSubjects={model.canClearSubjects}
-              canCreateVisualRelation={model.canCreateVisualRelation}
-              cardCountLabel={model.cardCountLabel}
-              chrome={model.chrome}
-              nodes={model.nodes}
-              onAddSubject={(subject) => {
-                onAddSubject?.(subject)
-                if (quickAddPlacement) onNodePositionChange?.(subject, quickAddPlacement.page)
-                setQuickAddPlacement(null)
-                setQuickAddOpen(false)
-              }}
-              onCreateSubject={async (subject) => {
-                if (!onCreateSubject) return false
-                const created = await onCreateSubject(subject)
-                if (created === false) return false
-                if (quickAddPlacement) onNodePositionChange?.(subject, quickAddPlacement.page)
-                setQuickAddPlacement(null)
-                setQuickAddOpen(false)
-                return true
-              }}
-              onQuickAddDismiss={() => {
-                setQuickAddPlacement(null)
-                setQuickAddOpen(false)
-              }}
-              onClearSubjects={onClearSubjects}
-              onGroupSelection={canvas.groupSelection}
-              onHandTool={canvas.handTool}
-              onOpenRelationEditor={onOpenRelationEditor}
-              onResetZoom={canvas.resetZoom}
-              onSearchSubject={canvas.focusSubject}
-              onSelectTool={canvas.selectTool}
-              onZoomIn={canvas.zoomIn}
-              onZoomOut={canvas.zoomOut}
-              addMenuOpen={quickAddOpen}
-              onAddMenuOpenChange={setQuickAddOpen}
-              quickAddScreenPoint={quickAddPlacement?.screen}
-            />
-          ),
-        }}
-      />
-      {contextMenu ? (
-        <LinxWhiteboardContextMenu
-          {...contextMenu}
-          onAlignLeft={() => runContextAction(() => canvas.alignSelection('left'))}
-          onBringToFront={() => runContextAction(canvas.bringSelectionToFront)}
-          onDelete={() => runContextAction(canvas.deleteSelection)}
-          onDistributeHorizontal={() => runContextAction(() => canvas.distributeSelection('horizontal'))}
-          onDistributeVertical={() => runContextAction(() => canvas.distributeSelection('vertical'))}
-          onDuplicate={() => runContextAction(canvas.duplicateSelection)}
-          onGroup={() => runContextAction(canvas.groupSelection)}
-          onRedo={() => runContextAction(canvas.redo)}
-          onSendToBack={() => runContextAction(canvas.sendSelectionToBack)}
-          onUndo={() => runContextAction(canvas.undo)}
-        />
-      ) : null}
-      {model.isCanvasEmpty ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-muted-foreground">
-          {model.chrome.emptyCanvasMessage}
-        </div>
-      ) : null}
-      {relation?.hasVisualRelationChips ? (
-        <div className="absolute left-2 top-12 z-20 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-          {relation.visualRelationChips?.map((relationChip) => (
-            <span
-              key={relationChip.id}
-              data-whiteboard-relation-source="visual"
-              className="inline-flex overflow-hidden rounded border border-border/40 bg-background/95"
-            >
-              <button
-                type="button"
-                aria-label={relationChip.editAriaLabel}
-                className="px-2 py-1 hover:bg-muted/70"
-                onClick={() => relation.openRelationEditorFor?.(relationChip.relation)}
-              >
-                {relationChip.label}
-              </button>
-              <button
-                type="button"
-                aria-label={relationChip.deleteAriaLabel}
-                className="inline-flex w-6 items-center justify-center border-l border-border/30 text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                onClick={() => relation.removeVisualRelation?.(relationChip.id)}
-              >
-                <X className="h-3 w-3" aria-hidden="true" />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {relation?.relationEditorOpen && relation.relationEditorChrome ? (
-        <form
-          className="absolute right-3 top-12 z-20 grid w-[min(360px,calc(100%-1.5rem))] gap-2 rounded-md border border-border/40 bg-popover p-2 text-xs shadow-sm"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void relation.saveRelation?.()
-          }}
-        >
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="grid gap-1">
-              <span className="text-[10px] font-medium uppercase text-muted-foreground">
-                {relation.relationEditorChrome.fromFieldLabel}
-              </span>
-              <select
-                aria-label={relation.relationEditorChrome.fromFieldAriaLabel}
-                className="h-7 rounded border border-border/40 bg-background px-2 text-[11px] outline-none"
-                value={relation.relationFrom}
-                onChange={(event) => relation.updateRelationFrom?.(event.target.value)}
-              >
-                {relation.relationSubjectOptions?.map((subject) => (
-                  <option key={subject} value={subject}>{subject}</option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1">
-              <span className="text-[10px] font-medium uppercase text-muted-foreground">
-                {relation.relationEditorChrome.toFieldLabel}
-              </span>
-              <select
-                aria-label={relation.relationEditorChrome.toFieldAriaLabel}
-                className="h-7 rounded border border-border/40 bg-background px-2 text-[11px] outline-none"
-                value={relation.relationTo}
-                onChange={(event) => relation.updateRelationTo?.(event.target.value)}
-              >
-                {relation.relationToOptions?.map((subject) => (
-                  <option key={subject} value={subject}>{subject}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <label className="grid gap-1">
-            <span className="text-[10px] font-medium uppercase text-muted-foreground">写入方式</span>
-            <select
-              aria-label="Relation predicate"
-              className="h-7 rounded border border-border/40 bg-background px-2 text-[11px] outline-none"
-              value={relation.relationPredicate}
-              onChange={(event) => relation.updateRelationPredicate?.(event.target.value)}
-            >
-              <option value="">仅白板视觉关系</option>
-              {relation.relationPredicateOptions?.map((predicate) => (
-                <option key={predicate} value={predicate}>{predicate}</option>
-              ))}
-            </select>
-          </label>
-          {!relation.relationPredicate ? (
-            <label className="grid gap-1">
-              <span className="text-[10px] font-medium uppercase text-muted-foreground">
-                {relation.relationEditorChrome.labelFieldLabel}
-              </span>
-              <input
-                aria-label={relation.relationEditorChrome.labelFieldAriaLabel}
-                className="h-7 rounded border border-border/40 bg-background px-2 text-[11px] outline-none"
-                value={relation.relationLabel}
-                onChange={(event) => relation.updateRelationLabel?.(event.target.value)}
-                placeholder={relation.relationEditorChrome.labelFieldPlaceholder}
-              />
-            </label>
-          ) : null}
-          {relation.relationSaveError ? (
-            <p role="alert" className="text-[10px] text-destructive">{relation.relationSaveError}</p>
-          ) : null}
-          <div className="flex items-center justify-end gap-1">
-            <button
-              type="button"
-              aria-label={relation.relationEditorChrome.cancelButtonAriaLabel}
-              className="h-7 rounded bg-muted px-2 text-[11px] text-foreground hover:bg-muted/70"
-              onClick={relation.cancelRelationEditor}
-            >
-              {relation.relationEditorChrome.cancelButtonLabel}
-            </button>
-            <button
-              type="submit"
-              className="h-7 rounded bg-primary px-2 text-[11px] text-primary-foreground disabled:opacity-40"
-              disabled={!relation.canSaveRelation}
-            >
-              {relation.relationSaving
-                ? '提交中…'
-                : relation.relationPredicate
-                  ? '提交待确认关系'
-                  : relation.relationEditorChrome.saveButtonLabel}
-            </button>
-          </div>
-        </form>
-      ) : null}
-    </div>
+    <ReactFlowProvider>
+      <WhiteboardCanvasInner {...props} />
+    </ReactFlowProvider>
   )
 }
+
+function ZoomPercent() {
+  const zoom = useStore((state) => state.transform[2])
+  return <span className="rounded-md bg-card px-2 py-1 text-xs text-muted-foreground shadow">{Math.round(zoom * 100)}%</span>
+}
+
+function WhiteboardCanvasInner({
+  documentUri,
+  model,
+  cards,
+  canvasState,
+  relation,
+  onCommitCardBody,
+}: LinxWhiteboardCanvasProps) {
+  const { canvas, updateCanvas, status, conflict, takeLatest, keepMine, podRootUri } = canvasState
+  const flow = useReactFlow()
+  const openCardDialog = useCardDialog((state) => state.open)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ id: string; origin: Map<string, { x: number; y: number }>; start: { x: number; y: number } } | null>(null)
+  const canvasRef = useRef(canvas)
+  canvasRef.current = canvas
+
+  const [tool, setTool] = useState<WhiteboardTool>('select')
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [libraryTab, setLibraryTab] = useState<WhiteboardLibraryTab>('cards')
+  const [libraryOpen, setLibraryOpen] = useState(() => canvas.nodes.length === 0)
+  const [picker, setPicker] = useState<{ edgeId: string; left: number; top: number } | null>(null)
+  const [pendingRelation, setPendingRelation] = useState<{ edgeId: string; from: string; to: string; predicate: string } | null>(null)
+
+  // --- the rest of the space: other tables' rows and the other boards -------------------
+  const documentBaseUri = documentUri.split('#')[0]
+  const holdsOtherTableCards = useMemo(() => canvas.nodes.some((node) => {
+    if (node.type !== 'file') return false
+    const uri = resolveWhiteboardCardNodeUri(node, podRootUri)
+    return Boolean(uri && uri.includes('#') && uri.split('#')[0] !== documentBaseUri)
+  }), [canvas.nodes, documentBaseUri, podRootUri])
+  const space = useWhiteboardSpace({
+    enabled: libraryOpen || holdsOtherTableCards,
+    documentUri,
+    currentBoardUri: podRootUri ? whiteboardCanvasResourceUri(podRootUri, documentUri) : null,
+  })
+
+  // --- what each canvas node shows --------------------------------------------------
+  const cardByUri = useMemo(() => {
+    const map = new Map<string, StructuredCardProjection>()
+    for (const card of cards) map.set(resolveWhiteboardSubjectUri(card.subject, documentUri), card)
+    return map
+  }, [cards, documentUri])
+  const documentBase = documentUri.split('#')[0]
+
+  const contentOf = useCallback((node: WhiteboardCanvasNode): WhiteboardCardContent => {
+    if (node.type === 'text') {
+      return { kind: 'text', title: '', body: node.text, className: null, state: 'ok', uri: null, subject: null }
+    }
+    const uri = resolveWhiteboardCardNodeUri(node, podRootUri)
+    if (!uri) return { kind: 'file', title: '', body: '', className: null, state: 'ok', uri: null, subject: null }
+    const card = cardByUri.get(uri)
+    if (card) {
+      return { kind: 'row', title: card.title, body: card.summary, className: card.className, state: 'ok', uri, subject: card.subject }
+    }
+    const otherRow = space.rowByUri.get(uri)
+    if (otherRow) {
+      return { kind: 'row', title: otherRow.title, body: otherRow.summary, className: otherRow.className, state: 'ok', uri, subject: null }
+    }
+    if (uri.split('#')[0] === documentBase && uri.includes('#')) {
+      return { kind: 'row', title: '', body: '', className: null, state: 'deleted', uri, subject: null }
+    }
+    return { kind: 'file', title: fileNameFromUri(uri), body: '', className: null, state: 'ok', uri, subject: null }
+  }, [cardByUri, documentBase, podRootUri, space.rowByUri])
+
+  const nodeIdBySubject = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const node of canvas.nodes) {
+      const content = contentOf(node)
+      if (content.subject) map.set(content.subject, node.id)
+    }
+    return map
+  }, [canvas.nodes, contentOf])
+
+  const flowNodes = useMemo(() => toFlowNodes(canvas, contentOf, selectedIds), [canvas, contentOf, selectedIds])
+  const flowEdges = useMemo(
+    () => toFlowEdges(canvas, model.relations, nodeIdBySubject),
+    [canvas, model.relations, nodeIdBySubject],
+  )
+
+  // --- editing -------------------------------------------------------------------------
+  const commitBody = useCallback((id: string, markdown: string) => {
+    const node = canvasRef.current.nodes.find((candidate) => candidate.id === id)
+    setEditingId(null)
+    if (!node) return
+    if (node.type === 'text') {
+      updateCanvas((current) => patchCanvasNode(current, id, { text: markdown }))
+      return
+    }
+    const content = contentOf(node)
+    if (content.subject) void onCommitCardBody?.(content.subject, markdown)
+  }, [contentOf, onCommitCardBody, updateCanvas])
+
+  const cardUrisInOrder = useCallback(() => (
+    [...canvasRef.current.nodes]
+      .map((node) => contentOf(node))
+      .filter((content) => content.uri && content.state === 'ok')
+      .map((content) => content.uri as string)
+  ), [contentOf])
+
+  const openCard = useCallback((id: string) => {
+    const node = canvasRef.current.nodes.find((candidate) => candidate.id === id)
+    if (!node) return
+    const uri = contentOf(node).uri
+    if (!uri) return
+    openCardDialog({ uri, siblings: cardUrisInOrder(), from: 'whiteboard' })
+  }, [cardUrisInOrder, contentOf, openCardDialog])
+
+  const actions = useMemo<WhiteboardNodeActions>(() => ({
+    editingId,
+    connecting: tool === 'connect',
+    startEdit: setEditingId,
+    stopEdit: () => setEditingId(null),
+    commitBody,
+    openCard,
+    renameSection: (id, label) => updateCanvas((current) => patchCanvasNode(current, id, { label })),
+    recolorSection: (id, color) => updateCanvas((current) => patchCanvasNode(current, id, { color })),
+    canEdit: (id) => {
+      const node = canvasRef.current.nodes.find((candidate) => candidate.id === id)
+      if (!node) return false
+      if (node.type === 'text') return true
+      return Boolean(onCommitCardBody && contentOf(node).subject)
+    },
+  }), [commitBody, contentOf, editingId, onCommitCardBody, openCard, tool, updateCanvas])
+
+  // --- node / edge changes from React Flow -----------------------------------------
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    const removed = new Set<string>()
+    const selection = { next: null as Set<string> | null }
+    for (const change of changes) {
+      if (change.type === 'select') {
+        selection.next ??= new Set(selectedIds)
+        if (change.selected) selection.next.add(change.id)
+        else selection.next.delete(change.id)
+      } else if (change.type === 'remove') {
+        removed.add(change.id)
+      } else if (change.type === 'position' && change.position) {
+        const current = canvasRef.current
+        const target = current.nodes.find((node) => node.id === change.id)
+        if (!target) continue
+        if (change.dragging) {
+          if (!dragRef.current || dragRef.current.id !== change.id) {
+            const inside = target.type === 'group' ? nodesInsideSection(current, target.id) : []
+            const origin = new Map<string, { x: number; y: number }>()
+            for (const id of [target.id, ...inside]) {
+              const node = current.nodes.find((candidate) => candidate.id === id)
+              if (node) origin.set(id, { x: node.x, y: node.y })
+            }
+            dragRef.current = { id: change.id, origin, start: { x: target.x, y: target.y } }
+          }
+          const drag = dragRef.current
+          const dx = change.position.x - drag.start.x
+          const dy = change.position.y - drag.start.y
+          const moves = new Map<string, { x: number; y: number }>()
+          drag.origin.forEach((origin, id) => moves.set(id, { x: origin.x + dx, y: origin.y + dy }))
+          updateCanvas((existing) => moveCanvasNodes(existing, moves))
+        } else {
+          dragRef.current = null
+          updateCanvas((existing) => moveCanvasNodes(existing, new Map([[change.id, change.position as { x: number; y: number }]])))
+        }
+      } else if (change.type === 'dimensions' && change.setAttributes && change.dimensions) {
+        const { width, height } = change.dimensions
+        updateCanvas((existing) => patchCanvasNode(existing, change.id, { width: Math.round(width), height: Math.round(height) }))
+      }
+    }
+    if (selection.next) setSelectedIds(selection.next)
+    if (removed.size > 0) updateCanvas((existing) => removeCanvasNodes(existing, removed))
+  }, [selectedIds, updateCanvas])
+
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    const removed = new Set(changes.filter((change) => change.type === 'remove').map((change) => change.id))
+    if (removed.size > 0) updateCanvas((existing) => removeCanvasEdges(existing, removed))
+  }, [updateCanvas])
+
+  // --- adding things -------------------------------------------------------------------
+  const takenIds = () => new Set([...canvasRef.current.nodes.map((n) => n.id), ...canvasRef.current.edges.map((e) => e.id)])
+
+  const viewportCenter = useCallback(() => {
+    const bounds = wrapperRef.current?.getBoundingClientRect()
+    return flow.screenToFlowPosition({
+      x: (bounds?.left ?? 0) + (bounds?.width ?? 600) / 2,
+      y: (bounds?.top ?? 0) + (bounds?.height ?? 400) / 2,
+    })
+  }, [flow])
+
+  const addTextNode = useCallback((at?: { x: number; y: number }, size: { width: number; height: number } = WHITEBOARD_CARD_DEFAULT_SIZE) => {
+    const point = at ?? viewportCenter()
+    const id = createWhiteboardCanvasId('text', takenIds())
+    updateCanvas((current) => addCanvasNode(current, {
+      id, type: 'text', text: '', x: Math.round(point.x), y: Math.round(point.y), width: size.width, height: size.height,
+    }))
+    setSelectedIds(new Set([id]))
+    setEditingId(id)
+  }, [updateCanvas, viewportCenter])
+
+  const addCardByUri = useCallback((uri: string, at?: { x: number; y: number }) => {
+    const point = at ?? viewportCenter()
+    const exists = canvasRef.current.nodes.some((node) => resolveWhiteboardCardNodeUri(node, podRootUri) === uri)
+    // The same card may sit on a board twice only when dropped on purpose; keep an offset.
+    const offset = exists ? 24 : 0
+    const id = createWhiteboardCanvasId('card', takenIds())
+    updateCanvas((current) => addCanvasNode(current, createWhiteboardCardNode({
+      id, cardUri: uri, podRootUri, position: { x: point.x + offset, y: point.y + offset },
+    })))
+  }, [podRootUri, updateCanvas, viewportCenter])
+
+  const addSection = useCallback(() => {
+    const picked = canvasRef.current.nodes.filter((node) => selectedIds.has(node.id) && node.type !== 'group')
+    const id = createWhiteboardCanvasId('section', takenIds())
+    const color = WHITEBOARD_SECTION_COLORS[canvasRef.current.nodes.filter((n) => n.type === 'group').length % WHITEBOARD_SECTION_COLORS.length]
+    let geometry: { x: number; y: number; width: number; height: number }
+    if (picked.length > 0) {
+      const left = Math.min(...picked.map((n) => n.x))
+      const top = Math.min(...picked.map((n) => n.y))
+      const right = Math.max(...picked.map((n) => n.x + n.width))
+      const bottom = Math.max(...picked.map((n) => n.y + n.height))
+      geometry = { x: left - 24, y: top - 40, width: right - left + 48, height: bottom - top + 64 }
+    } else {
+      const center = viewportCenter()
+      geometry = {
+        x: Math.round(center.x - WHITEBOARD_SECTION_DEFAULT_SIZE.width / 2),
+        y: Math.round(center.y - WHITEBOARD_SECTION_DEFAULT_SIZE.height / 2),
+        ...WHITEBOARD_SECTION_DEFAULT_SIZE,
+      }
+    }
+    updateCanvas((current) => addCanvasNode(current, { id, type: 'group', label: '新区块', color, ...geometry }))
+  }, [selectedIds, updateCanvas, viewportCenter])
+
+  const onDrop = useCallback((event: DragEvent) => {
+    const raw = event.dataTransfer.getData(WHITEBOARD_LIBRARY_DRAG_TYPE)
+    if (!raw) return
+    event.preventDefault()
+    try {
+      const item = JSON.parse(raw) as WhiteboardLibraryItem
+      addCardByUri(item.uri, flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }))
+    } catch {
+      // Ignore drags that are not from the card library.
+    }
+  }, [addCardByUri, flow])
+
+  // --- connecting ----------------------------------------------------------------------
+  const onConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target || connection.source === connection.target) return
+    const id = createWhiteboardCanvasId('edge', takenIds())
+    updateCanvas((current) => addCanvasEdge(current, {
+      id,
+      fromNode: connection.source,
+      toNode: connection.target,
+      ...(isSide(connection.sourceHandle) ? { fromSide: connection.sourceHandle } : {}),
+      ...(isSide(connection.targetHandle) ? { toSide: connection.targetHandle } : {}),
+      toEnd: 'arrow',
+    }))
+    const a = flow.getInternalNode(connection.source)
+    const b = flow.getInternalNode(connection.target)
+    const mid = a && b
+      ? { x: (a.internals.positionAbsolute.x + b.internals.positionAbsolute.x) / 2 + (b.measured.width ?? 0) / 2, y: (a.internals.positionAbsolute.y + b.internals.positionAbsolute.y) / 2 }
+      : viewportCenter()
+    const screen = flow.flowToScreenPosition(mid)
+    const bounds = wrapperRef.current?.getBoundingClientRect()
+    setPicker({ edgeId: id, left: Math.max(8, screen.x - (bounds?.left ?? 0)), top: Math.max(8, screen.y - (bounds?.top ?? 0)) })
+    setTool('select')
+  }, [flow, updateCanvas, viewportCenter])
+
+  const pickerEdge = picker ? canvas.edges.find((edge) => edge.id === picker.edgeId) : null
+  const pickerSubjects = useMemo(() => {
+    if (!pickerEdge) return null
+    const from = canvas.nodes.find((n) => n.id === pickerEdge.fromNode)
+    const to = canvas.nodes.find((n) => n.id === pickerEdge.toNode)
+    const fromSubject = from ? contentOf(from).subject : null
+    const toSubject = to ? contentOf(to).subject : null
+    return fromSubject && toSubject ? { from: fromSubject, to: toSubject } : null
+  }, [canvas.nodes, contentOf, pickerEdge])
+
+  const chooseRelation = (predicate: string) => {
+    if (!picker || !pickerSubjects || !relation?.openRelationEditorBetween) return
+    relation.openRelationEditorBetween(pickerSubjects.from, pickerSubjects.to)
+    relation.updateRelationPredicate?.(predicate)
+    setPendingRelation({ edgeId: picker.edgeId, from: pickerSubjects.from, to: pickerSubjects.to, predicate })
+  }
+
+  // Write the relation once the controller holds the chosen cards and property.
+  useEffect(() => {
+    if (!pendingRelation || !relation) return
+    if (relation.relationFrom !== pendingRelation.from
+      || relation.relationTo !== pendingRelation.to
+      || relation.relationPredicate !== pendingRelation.predicate) return
+    const { edgeId } = pendingRelation
+    setPendingRelation(null)
+    void (async () => {
+      const saved = await relation.saveRelation?.()
+      if (saved === false) return
+      updateCanvas((current) => removeCanvasEdges(current, new Set([edgeId])))
+      setPicker(null)
+    })()
+  }, [pendingRelation, relation, updateCanvas])
+
+  // --- keyboard, double click ------------------------------------------------------------
+  const selectedCardIds = [...selectedIds].filter((id) => canvas.nodes.some((n) => n.id === id && n.type !== 'group'))
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const target = event.target as HTMLElement
+    if (target.closest('input, textarea, [contenteditable="true"], [data-whiteboard-body-editor]')) return
+    if (event.key === ' ' && selectedCardIds.length === 1) {
+      event.preventDefault()
+      openCard(selectedCardIds[0])
+    }
+  }
+
+  const onDoubleClick = (event: React.MouseEvent) => {
+    const target = event.target as HTMLElement
+    if (!target.classList.contains('react-flow__pane')) return
+    addTextNode(flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }))
+  }
+
+  // --- library ----------------------------------------------------------------------------
+  const libraryCards = useMemo<WhiteboardLibraryItem[]>(() => {
+    const onBoard = new Set([...nodeIdBySubject.keys()])
+    return cards
+      .filter((card) => !onBoard.has(card.subject))
+      .map((card) => ({
+        uri: resolveWhiteboardSubjectUri(card.subject, documentUri),
+        title: card.title || '未命名卡片',
+        subtitle: card.summary || card.className || undefined,
+        usedOn: projectWhiteboardUsedOnLabel(space.boardsByCard.get(resolveWhiteboardSubjectUri(card.subject, documentUri))) ?? undefined,
+      }))
+  }, [cards, documentUri, nodeIdBySubject, space.boardsByCard])
+
+  const libraryRows = useMemo<WhiteboardLibraryItem[]>(() => {
+    const onBoard = new Set(canvas.nodes.map((node) => resolveWhiteboardCardNodeUri(node, podRootUri)))
+    return space.rows
+      .filter((row) => !onBoard.has(row.uri))
+      .map((row) => ({
+        uri: row.uri,
+        title: row.title,
+        subtitle: row.subtitle,
+        usedOn: projectWhiteboardUsedOnLabel(space.boardsByCard.get(row.uri)) ?? undefined,
+      }))
+  }, [canvas.nodes, podRootUri, space.boardsByCard, space.rows])
+
+  const findItems = useMemo(() => canvas.nodes
+    .filter((node) => node.type !== 'group')
+    .map((node) => {
+      const content = contentOf(node)
+      return { id: node.id, title: content.title || content.body.slice(0, 24) || '空白卡片' }
+    }), [canvas.nodes, contentOf])
+
+  const banner = (() => {
+    if (status === 'offline') return '没有网络，白板的改动会在恢复后保存'
+    if (status === 'readonly') return '没有权限保存这块白板'
+    if (status === 'unreadable') return '这块白板的文件读不出来，先不会覆盖它'
+    return null
+  })()
+
+  return (
+    <WhiteboardNodeContext.Provider value={actions}>
+      <div
+        ref={wrapperRef}
+        data-whiteboard-canvas-scroll="true"
+        className="relative -mx-2 h-[calc(100vh-12rem)] min-h-[480px] overflow-hidden border-y border-border/10 bg-background"
+        onKeyDown={onKeyDown}
+        onDoubleClick={onDoubleClick}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes(WHITEBOARD_LIBRARY_DRAG_TYPE)) event.preventDefault()
+        }}
+        onDrop={onDrop}
+      >
+        <ReactFlow
+          nodes={flowNodes}
+          edges={flowEdges}
+          nodeTypes={NODE_TYPES}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onEdgeClick={(event, edge) => {
+            if ((edge.data as { source?: string } | undefined)?.source !== 'view') return
+            const bounds = wrapperRef.current?.getBoundingClientRect()
+            setPicker({ edgeId: edge.id, left: event.clientX - (bounds?.left ?? 0), top: event.clientY - (bounds?.top ?? 0) })
+          }}
+          onPaneClick={() => { setPicker(null); setEditingId(null) }}
+          connectionMode={ConnectionMode.Loose}
+          panActivationKeyCode={null}
+          zoomOnDoubleClick={false}
+          deleteKeyCode={['Backspace', 'Delete']}
+          fitView={canvas.nodes.length > 0}
+          minZoom={0.1}
+          maxZoom={2}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={20} size={1} />
+          <MiniMap pannable zoomable style={{ bottom: 44 }} />
+          <Controls position="bottom-right" orientation="horizontal" showInteractive={false} />
+          <Panel position="bottom-right" style={{ marginRight: 128 }}><ZoomPercent /></Panel>
+        </ReactFlow>
+
+        <WhiteboardToolbar
+          tool={tool}
+          libraryOpen={libraryOpen}
+          findItems={findItems}
+          onTool={setTool}
+          onAddCard={() => addTextNode()}
+          onToggleLibrary={(tab) => {
+            setLibraryTab(tab)
+            setLibraryOpen((open) => (tab === libraryTab ? !open : true))
+          }}
+          onAddText={() => addTextNode(undefined, WHITEBOARD_TEXT_DEFAULT_SIZE)}
+          onAddSection={addSection}
+          onFocusItem={(id) => {
+            setSelectedIds(new Set([id]))
+            void flow.fitView({ nodes: [{ id }], duration: 200, maxZoom: 1.2 })
+          }}
+          onFit={() => { void flow.fitView({ duration: 200 }) }}
+          onDeleteSelection={() => {
+            const ids = new Set(selectedIds)
+            updateCanvas((current) => removeCanvasNodes(current, ids))
+            setSelectedIds(new Set())
+          }}
+        />
+
+        {libraryOpen ? (
+          <WhiteboardFilesSource enabled={libraryTab === 'files'}>
+            {(libraryFiles) => (
+              <WhiteboardLibraryPanel
+                tab={libraryTab}
+                cards={libraryCards}
+                rows={libraryRows}
+                loadingRows={space.loading}
+                files={libraryFiles}
+                onTab={setLibraryTab}
+                onAdd={(item) => addCardByUri(item.uri)}
+                onClose={() => setLibraryOpen(false)}
+              />
+            )}
+          </WhiteboardFilesSource>
+        ) : null}
+
+        {canvas.nodes.length === 0 ? (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 px-4 text-center">
+            <p className="text-sm font-semibold">新白板</p>
+            <p className="text-xs text-muted-foreground">从右边卡片库把卡片拖进来，或者双击空白处新建一张；文件、PDF 里的几行也能拖</p>
+          </div>
+        ) : null}
+
+        {banner ? (
+          <div role="status" className="absolute inset-x-0 top-0 z-10 bg-muted px-3 py-2 text-xs">{banner}</div>
+        ) : null}
+        {status === 'conflict' && conflict ? (
+          <div role="status" className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 bg-muted px-3 py-2 text-xs">
+            <span>
+              {conflict.moved > 0
+                ? `另一台设备刚移动了 ${conflict.moved} 张卡片`
+                : '另一台设备刚改了这块白板'}
+            </span>
+            <button type="button" className="rounded-md bg-primary px-2 py-1 text-primary-foreground" onClick={takeLatest}>用最新的</button>
+            <button type="button" className="rounded-md border border-border bg-card px-2 py-1" onClick={keepMine}>保留我的</button>
+          </div>
+        ) : null}
+        {STATUS_TEXT[status] ? (
+          <span className="pointer-events-none absolute left-3 top-2 z-10 text-[11px] text-muted-foreground">{STATUS_TEXT[status]}</span>
+        ) : null}
+
+        {picker && pickerEdge ? (
+          <WhiteboardRelationPicker
+            left={picker.left}
+            top={picker.top}
+            canWriteRelation={Boolean(pickerSubjects && relation?.openRelationEditorBetween)}
+            otherPredicates={relation?.relationPredicateOptions ?? []}
+            saveError={relation?.relationSaveError}
+            onChoose={chooseRelation}
+            onViewOnly={() => setPicker(null)}
+            onRemove={() => {
+              updateCanvas((current) => removeCanvasEdges(current, new Set([pickerEdge.id])))
+              setPicker(null)
+            }}
+          />
+        ) : null}
+      </div>
+    </WhiteboardNodeContext.Provider>
+  )
+}
+
+export type { WhiteboardCanvas }

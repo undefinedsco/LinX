@@ -5,6 +5,7 @@ import { useMutation } from '@tanstack/react-query'
 import {
   approvalResource,
   auditResource,
+  grantResource,
   extractApprovalIdFromApprovalRef,
   extractAuditIdFromAuditRef,
   extractChatThreadRef,
@@ -16,6 +17,8 @@ import {
   type ApprovalRow,
   type AuditInsert,
   type AuditRow,
+  type GrantInsert,
+  type GrantRow,
   type InboxNotificationInsert,
   type InboxNotificationRow,
   type InputRequestInsert,
@@ -31,13 +34,38 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { continueRuntimeToolCallFromInbox } from '@/modules/chat/services/chatkit-local/runtime-tool-response'
 import { filesProposalApplicationCollection } from '@/modules/files/data/proposal/proposal-application-collection'
 import type { InboxFilter } from '../domain/utils'
-import { countActionableInboxItems, filterInboxItems } from '../domain/utils'
+import { countActionableInboxItems, countAutoWaitingInboxItems, filterInboxItems, isAutoApprovedInboxItem } from '../domain/utils'
 import { buildAuditPresentation, createResolvedAuthTimestampsIndex } from '../domain/presentation'
+import {
+  AUTO_JUDGE_AUDIT_ACTION,
+  AUTO_JUDGE_POLICY_VERSION,
+  buildAutoJudgeApprovePatch,
+  buildAutoJudgeReviewedPatch,
+  buildAutoJudgeTakeOverPatch,
+  assessAutoJudgeConfidence,
+  buildAutoJudgeReturnedPatch,
+  buildAutoJudgeWaitingPatch,
+  encodeAutoJudgeGrantTags,
+  isAutoJudgeDue,
+  needsAutoJudgePlan,
+  planAutoJudge,
+  toAutoJudgeGrant,
+  type AutoJudgeWindows,
+} from '@linx/agent-runtime/auto-judge'
+import { grantAppliesToAgent, writeGrantAgentContext } from '../domain/grant-agent'
+import { grantShapeForApproval, isFileEditApproval, proposalResourceOfApproval, readProposalFileTarget } from '../domain/grant-shape'
+import { approvalAutoPhase } from '../domain/auto-judge-view'
 import type { InboxItem, InboxItemCategory, InboxItemKind } from '../domain/inbox-item'
 
 export type { InboxItem, InboxItemCategory, InboxItemKind }
 
 let dbGetter: (() => SolidDatabase | null) | null = null
+
+/** Re-reads approvals and input requests from the Pod (used when a request is opened). */
+export function refreshInboxRequests() {
+  void queryClient.invalidateQueries({ queryKey: ['inbox', 'approvals'] })
+  void queryClient.invalidateQueries({ queryKey: ['inbox', 'inputRequests'] })
+}
 
 export function setInboxDatabaseGetter(getter: () => SolidDatabase | null) {
   dbGetter = getter
@@ -77,6 +105,24 @@ export const auditCollection = createPodCollection<typeof auditResource, AuditRo
   },
   getKey: (item) => {
     if (!item.id) throw new Error('Audit record is missing id')
+    return item.id
+  },
+})
+
+/** Grants (/settings/autonomy/grants/): what LinX may decide for the person. */
+export const grantCollection = createPodCollection<typeof grantResource, GrantRow, GrantInsert>({
+  resource: grantResource,
+  queryKey: ['inbox', 'grants'],
+  queryClient,
+  getDb,
+  orderBy: { column: 'createdAt', direction: 'desc' },
+  window: {
+    limit: 100,
+    orderBy: [{ column: 'createdAt', direction: 'desc' }],
+    maxResidentPages: 3,
+  },
+  getKey: (item) => {
+    if (!item.id) throw new Error('Grant record is missing id')
     return item.id
   },
 })
@@ -183,6 +229,53 @@ async function updateResolvedApproval(
   await updateApprovalByIri(db, approval, patch)
 }
 
+function resolveInputRequestIri(db: SolidDatabase, inputRequest: InputRequestRow): string {
+  if (!inputRequest.id) {
+    throw new Error('InputRequest row is missing id.')
+  }
+  return db.resolveRowIri(inputRequestResource as any, {
+    id: inputRequest.id,
+    createdAt: inputRequest.createdAt ?? new Date(),
+  } as any)
+}
+
+async function updateResolvedInputRequest(
+  db: SolidDatabase,
+  inputRequest: InputRequestRow,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  if (!inputRequest.id) {
+    throw new Error('InputRequest row is missing id.')
+  }
+  if (inputRequestCollection.state.has(inputRequest.id)) {
+    const tx = inputRequestCollection.update(inputRequest.id, (draft: InputRequestRow) => {
+      Object.assign(draft, patch)
+    })
+    await tx.isPersisted.promise
+    return
+  }
+  assertUpdateValuesBelongToCurrentPod(db, inputRequest)
+  await updateExactRecord(db, inputRequestResource as any, resolveInputRequestIri(db, inputRequest), patch)
+}
+
+function resolveGrantIri(db: SolidDatabase, grant: GrantRow): string {
+  if (!grant.id) throw new Error('Grant row is missing id.')
+  return db.resolveRowIri(grantResource as any, {
+    id: grant.id,
+    createdAt: grant.createdAt ?? new Date(),
+  } as any)
+}
+
+function readAutoJudgeGrantId(approval: ApprovalRow): string | null {
+  try {
+    const parsed = JSON.parse(approval.context ?? '') as { linxAutoJudge?: { grantId?: unknown } }
+    const grantId = parsed?.linxAutoJudge?.grantId
+    return typeof grantId === 'string' ? grantId : null
+  } catch {
+    return null
+  }
+}
+
 function makeAuditUri(db: SolidDatabase, auditId: string, createdAt: Date | string | number = new Date()): string {
   const podBaseUrl = resolveCurrentPodBaseUrl(db)
   if (!podBaseUrl) {
@@ -266,6 +359,7 @@ function buildInboxItems(
         description: buildApprovalDescription(approval),
         timestamp: String(notification.createdAt ?? approval.resolvedAt ?? approval.createdAt ?? ''),
         status: approval.status,
+        autoPhase: approvalAutoPhase(approval),
         approval,
         notification,
         chatId: threadRef.chatId,
@@ -345,6 +439,7 @@ function buildInboxItems(
       description: buildApprovalDescription(approval),
       timestamp: String(approval.resolvedAt ?? approval.createdAt ?? ''),
       status: approval.status,
+      autoPhase: approvalAutoPhase(approval),
       approval,
       chatId: threadRef.chatId,
       threadId: threadRef.threadId,
@@ -410,6 +505,7 @@ export const inboxOps = {
     const unsubscribes = await Promise.all([
       approvalCollection.subscribeToPod(db),
       auditCollection.subscribeToPod(db),
+      grantCollection.subscribeToPod(db),
       inboxNotificationCollection.subscribeToPod(db),
       inputRequestCollection.subscribeToPod(db),
     ])
@@ -480,6 +576,227 @@ export const inboxOps = {
     const notificationTx = inboxNotificationCollection.insert(notificationPayload as InboxNotificationRow)
     await notificationTx.isPersisted.promise
   },
+
+  /**
+   * The wait elapsed and nobody acted: LinX approves on the person's behalf.
+   * Records who decided (`decisionBy` = the LinX assistant, `decisionRole` =
+   * secretary, `onBehalfOf` = the person) and a reviewable audit entry.
+   * Returns false when the request was already handled or is not due.
+   */
+  async autoApproveApproval(input: { approval: ApprovalRow; userWebId: string; now?: Date }): Promise<boolean> {
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+    const now = input.now ?? new Date()
+    // Re-read: a person may have acted since the sweep picked this up.
+    const approval = (input.approval.id ? approvalCollection.state.get(input.approval.id) : null) ?? input.approval
+    if (approval.status !== 'pending' || !isAutoJudgeDue(approval, now)) return false
+    const agentIri = approval.assignedTo
+    if (!agentIri) return false
+    const patch = buildAutoJudgeApprovePatch({ approval, agentIri, userWebId: input.userWebId, now })
+    if (!patch) return false
+
+    await filesProposalApplicationCollection.applyApprovalDecision({ db, approval, decision: 'approved' })
+    await updateResolvedApproval(db, approval, { ...patch })
+
+    const auditId = crypto.randomUUID()
+    const auditUri = makeAuditUri(db, auditId, now)
+    const grantId = readAutoJudgeGrantId(approval)
+    const grantRow = grantId ? grantCollection.state.get(grantId) : null
+    const grantIri = grantRow ? resolveGrantIri(db, grantRow) : undefined
+    const auditPayload = {
+      id: auditId,
+      action: AUTO_JUDGE_AUDIT_ACTION,
+      actor: agentIri,
+      actorRole: 'secretary',
+      onBehalfOf: input.userWebId,
+      session: approval.session,
+      chat: approval.chat,
+      thread: approval.thread,
+      toolCallId: approval.toolCallId,
+      approval: resolveApprovalIri(db, approval),
+      toolName: approval.toolName,
+      entry: approval.thread || approval.target,
+      ...(grantIri ? { policy: grantIri } : {}),
+      policyVersion: AUTO_JUDGE_POLICY_VERSION,
+      createdAt: now,
+    }
+    assertInsertValuesBelongToCurrentPod(db, auditPayload)
+    await auditCollection.insert(auditPayload as AuditRow).isPersisted.promise
+
+    const notificationPayload = { id: crypto.randomUUID(), actor: agentIri, object: auditUri, createdAt: now }
+    assertInsertValuesBelongToCurrentPod(db, notificationPayload)
+    await inboxNotificationCollection.insert(notificationPayload as InboxNotificationRow).isPersisted.promise
+    return true
+  },
+
+  /**
+   * Plans a pending request nobody has looked at yet: a grant of this
+   * assistant covers it -> LinX waits by confidence (the person's three waits,
+   * read from the Pod) and then approves; otherwise it stays with the person
+   * (and is marked returned when a grant covered it but LinX is not sure).
+   * Returns the mode that was applied, or null when nothing was planned.
+   */
+  async planApprovalAutoJudge(input: {
+    approval: ApprovalRow
+    grants: readonly GrantRow[]
+    windows: AutoJudgeWindows
+    agentIri: string
+    userWebId: string
+    podBaseUrl?: string | null
+    now?: Date
+  }): Promise<'auto' | 'returned' | null> {
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+    const now = input.now ?? new Date()
+    // Re-read: a person may have acted since the sweep picked this up.
+    const approval = (input.approval.id ? approvalCollection.state.get(input.approval.id) : null) ?? input.approval
+    if (!needsAutoJudgePlan(approval)) return null
+    const grantRows = input.grants.filter((grant) => grantAppliesToAgent(grant, [input.agentIri]))
+    const grants = grantRows.flatMap((row) => {
+      const grant = toAutoJudgeGrant(row)
+      return grant ? [grant] : []
+    })
+    const request = { target: approval.target, action: approval.action, risk: approval.risk }
+    const plan = planAutoJudge({
+      request,
+      grants,
+      confidence: assessAutoJudgeConfidence({ request, podBaseUrl: input.podBaseUrl }),
+      now,
+      windows: input.windows,
+    })
+    const grantRow = 'grantId' in plan && plan.grantId ? grantRows.find((row) => row.id === plan.grantId) : undefined
+    const grantIri = grantRow ? resolveGrantIri(db, grantRow) : undefined
+    if (plan.mode === 'auto') {
+      await updateResolvedApproval(db, approval, { ...buildAutoJudgeWaitingPatch({ approval, plan, agentIri: input.agentIri, grantIri, now }) })
+      return 'auto'
+    }
+    const returned = buildAutoJudgeReturnedPatch({
+      approval,
+      plan,
+      confidence: assessAutoJudgeConfidence({ request, podBaseUrl: input.podBaseUrl }),
+      userWebId: input.userWebId,
+      grantIri,
+      now,
+    })
+    if (!returned) return null
+    await updateResolvedApproval(db, approval, { ...returned })
+    return 'returned'
+  },
+
+  /** "我来判断": the request goes back to the person, with no timer. */
+  async takeOverApproval(input: { approval: ApprovalRow; userWebId: string }) {
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+    const patch = buildAutoJudgeTakeOverPatch({ approval: input.approval, userWebId: input.userWebId, now: new Date() })
+    if (!patch) return
+    await updateResolvedApproval(db, input.approval, { ...patch })
+  },
+
+  /** "没问题" in the review: remember the person looked at it. */
+  async markAutoApprovalReviewed(input: { approval: ApprovalRow; userWebId: string }) {
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+    const patch = buildAutoJudgeReviewedPatch({ approval: input.approval, userWebId: input.userWebId, now: new Date() })
+    if (!patch) return
+    await updateResolvedApproval(db, input.approval, { ...patch })
+  },
+
+  /**
+   * "以后这类交给 LinX 判断": a grant for this kind of request. The grant covers
+   * the whole document the request touches (not just one fragment). Spending,
+   * deleting and sending out are tagged as confirmed separately.
+   */
+  async createGrantFromApproval(input: {
+    approval: ApprovalRow
+    userWebId: string
+    highImpactConfirmed: boolean
+    agentIri?: string | null
+    /** The file a file-edit approval touches, when the caller knows it (see domain/grant-shape.ts). */
+    fileTarget?: string | null
+  }): Promise<GrantRow> {
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+    const now = new Date()
+    const shape = grantShapeForApproval(input.approval, input.fileTarget)
+    const target = shape.target.split('#', 1)[0] || shape.target
+    const payload = {
+      id: crypto.randomUUID(),
+      target,
+      action: shape.action,
+      effect: 'allow',
+      title: input.approval.toolName,
+      riskCeiling: input.approval.risk,
+      tags: encodeAutoJudgeGrantTags([], input.highImpactConfirmed),
+      // Which assistant this was given to (see domain/grant-agent.ts).
+      ...(input.agentIri ? { context: writeGrantAgentContext(null, input.agentIri) } : {}),
+      decisionBy: input.userWebId,
+      decisionRole: 'human',
+      onBehalfOf: input.userWebId,
+      createdAt: now,
+    }
+    assertInsertValuesBelongToCurrentPod(db, payload)
+    await grantCollection.insert(payload as GrantRow).isPersisted.promise
+    return payload as GrantRow
+  },
+
+  /** 收回: LinX stops deciding this kind of request; what it already did stays. */
+  async revokeGrant(input: { grant: GrantRow }) {
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+    if (!input.grant.id) throw new Error('Grant row is missing id.')
+    const patch = { revokedAt: new Date() }
+    if (grantCollection.state.has(input.grant.id)) {
+      await grantCollection.update(input.grant.id, (draft: GrantRow) => {
+        Object.assign(draft, patch)
+      }).isPersisted.promise
+      return
+    }
+    assertUpdateValuesBelongToCurrentPod(db, input.grant)
+    await updateExactRecord(db, grantResource as any, resolveGrantIri(db, input.grant), patch)
+  },
+
+  /**
+   * Answers an InputRequest on its own resource. The waiting runtime owns
+   * continuation: it observes the resolved status and response on the same
+   * request, so the inbox never replays the run or creates a new one.
+   */
+  async resolveInputRequest(input: {
+    inputRequest: InputRequestRow
+    response: string
+    actorWebId: string
+  }) {
+    const db = getDb()
+    if (!db) {
+      throw new Error('Database not connected')
+    }
+    const response = input.response.trim()
+    if (!response) {
+      throw new Error('Input response is empty')
+    }
+
+    const now = new Date()
+    await updateResolvedInputRequest(db, input.inputRequest, {
+      status: 'resolved',
+      response,
+      answeredBy: input.actorWebId,
+      resolvedAt: now,
+    })
+
+    const auditPayload = {
+      id: crypto.randomUUID(),
+      action: 'inbox.input_request.resolved',
+      actor: input.actorWebId,
+      actorRole: 'human',
+      session: input.inputRequest.session,
+      chat: input.inputRequest.chat,
+      thread: input.inputRequest.thread,
+      entry: input.inputRequest.thread || input.inputRequest.run || input.inputRequest.task || resolveInputRequestIri(db, input.inputRequest),
+      createdAt: now,
+    }
+    assertInsertValuesBelongToCurrentPod(db, auditPayload)
+    const auditTx = auditCollection.insert(auditPayload as AuditRow)
+    await auditTx.isPersisted.promise
+  },
 }
 
 export function useInboxItems(filter: InboxFilter = 'all', options?: { enabled?: boolean }) {
@@ -523,7 +840,68 @@ export function useInboxSummary() {
     total: items.length,
     pending: countActionableInboxItems(items),
     audit: items.filter((item) => item.kind === 'audit').length,
+    autoWaiting: countAutoWaitingInboxItems(items),
+    autoApproved: items.filter(isAutoApprovedInboxItem).length,
   }), [items])
+}
+
+export function useResolveInboxInputRequest() {
+  const { session } = useSession()
+
+  return useMutation({
+    mutationFn: async (input: { inputRequest: InputRequestRow; response: string }) => {
+      const actorWebId = session.info.webId
+      if (!actorWebId) {
+        throw new Error('Solid session is not ready')
+      }
+      await inboxOps.resolveInputRequest({
+        inputRequest: input.inputRequest,
+        response: input.response,
+        actorWebId,
+      })
+    },
+  })
+}
+
+/** Lets a waiting runtime tool call continue once its approval is decided (service mode only). */
+export async function continueRuntimeAfterApproval(input: {
+  approval: ApprovalRow
+  decision: 'approved' | 'rejected'
+  reason?: string
+  db: SolidDatabase | null
+  webId: string
+  authFetch?: typeof fetch
+}): Promise<void> {
+  const runtimeSessionId = extractRuntimeSessionIdFromRef(input.approval.session)
+  const threadId = extractApprovalRuntimeThreadId(input.approval)
+  const isServiceMode = typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
+  if (!(runtimeSessionId && threadId && isServiceMode && input.approval.toolCallId && input.db && input.authFetch)) return
+  try {
+    await continueRuntimeToolCallFromInbox({
+      db: input.db,
+      webId: input.webId,
+      authFetch: input.authFetch,
+      threadId,
+      toolCallId: input.approval.toolCallId,
+      output: buildRuntimeToolResponse(input.decision, input.reason),
+    })
+    await queryClient.invalidateQueries({ queryKey: ['threads', threadId, 'messages'] })
+  } catch (error) {
+    console.warn('[Inbox] Failed to resume runtime tool call:', error)
+  }
+}
+
+/** The file a proposal approval is about, read from the stored proposal; null when unknown. */
+export async function readApprovalFileTarget(approval: ApprovalRow, authFetch: typeof fetch): Promise<string | null> {
+  if (!isFileEditApproval(approval)) return null
+  const proposal = proposalResourceOfApproval(approval)
+  if (!proposal) return null
+  try {
+    const response = await authFetch(proposal, { headers: { Accept: 'text/turtle' } })
+    return response.ok ? readProposalFileTarget(await response.text()) : null
+  } catch {
+    return null
+  }
 }
 
 export function useResolveInboxApproval() {
@@ -535,6 +913,14 @@ export function useResolveInboxApproval() {
       approval: ApprovalRow
       decision: 'approved' | 'rejected'
       reason?: string
+      /** "以后这类交给 LinX 判断": also grant this kind of request. */
+      grant?: {
+        highImpactConfirmed: boolean
+        /** Assistant the grant is for; defaults to the one handling the request. */
+        agentIri?: string | null
+        /** The file a file-edit approval touches; read from the proposal when omitted. */
+        fileTarget?: string | null
+      }
     }) => {
       const actorWebId = session.info.webId
       if (!actorWebId) {
@@ -548,25 +934,26 @@ export function useResolveInboxApproval() {
         reason: input.reason,
       })
 
-      const runtimeSessionId = extractRuntimeSessionIdFromRef(input.approval.session)
-      const threadId = extractApprovalRuntimeThreadId(input.approval)
-      const isServiceMode = typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
-      if (runtimeSessionId && threadId && isServiceMode && input.approval.toolCallId && db && session.fetch) {
-        try {
-          await continueRuntimeToolCallFromInbox({
-            db,
-            webId: actorWebId,
-            authFetch: session.fetch,
-            threadId,
-            toolCallId: input.approval.toolCallId,
-            output: buildRuntimeToolResponse(input.decision, input.reason),
-          })
-
-          await queryClient.invalidateQueries({ queryKey: ['threads', threadId, 'messages'] })
-        } catch (error) {
-          console.warn('[Inbox] Failed to resume runtime tool call:', error)
-        }
+      if (input.grant && input.decision === 'approved') {
+        const fileTarget = input.grant.fileTarget ?? await readApprovalFileTarget(input.approval, session.fetch)
+        await inboxOps.createGrantFromApproval({
+          fileTarget,
+          approval: input.approval,
+          userWebId: actorWebId,
+          highImpactConfirmed: input.grant.highImpactConfirmed,
+          agentIri: input.grant.agentIri ?? (input.approval.assignedTo && input.approval.assignedTo !== actorWebId ? input.approval.assignedTo : null),
+        })
       }
+
+      await continueRuntimeAfterApproval({
+        approval: input.approval,
+        decision: input.decision,
+        reason: input.reason,
+        db,
+        webId: actorWebId,
+        authFetch: session.fetch,
+      })
     },
   })
 }
+export { grantShapeForApproval } from '../domain/grant-shape'

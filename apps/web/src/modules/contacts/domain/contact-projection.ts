@@ -1,6 +1,5 @@
 import {
   ContactGender,
-  ContactType,
   isAgentContact,
   isGroupContact,
   normalizeContactGender,
@@ -8,15 +7,19 @@ import {
   type ContactRow,
 } from '@undefineds.co/models'
 import type {
-  ContactListFilter,
   ContactSection,
   GroupContactInfo,
   UnifiedContact,
 } from './types'
+import { formatAccountAddress } from './account-address'
+import { displayAssistantName } from '@/lib/assistant-name'
 
 export interface ContactListProjection {
+  /** One A–Z list where people and assistants sit together. */
   sections: ContactSection[]
   letters: string[]
+  /** Saved groups live behind the "群聊" entry, not in the A–Z list. */
+  groups: UnifiedContact[]
 }
 
 export interface ContactProjectionOptions {
@@ -25,13 +28,58 @@ export interface ContactProjectionOptions {
 }
 
 export interface ContactListProjectionOptions {
-  filter: ContactListFilter
   groupInfoById?: ReadonlyMap<string, GroupContactInfo>
 }
 
+// First syllable of each pinyin initial in the zh pinyin collation order.
+// A collator lookup keeps Chinese names under their pinyin letter (陈 → C)
+// without shipping a pinyin dictionary. Polyphonic surnames use their common
+// reading (曾 → C), as most phone contact lists do.
+const PINYIN_BOUNDARIES = ['阿', '八', '嚓', '哒', '妸', '发', '旮', '哈', '丌', '咔', '垃', '呣', '拏', '噢', '妑', '七', '呥', '仨', '他', '屲', '夕', '丫', '帀'] as const
+const PINYIN_LETTERS = 'ABCDEFGHJKLMNOPQRSTWXYZ'
+const HAN_CHARACTER = /\p{Script=Han}/u
+
+let pinyinCollator: Intl.Collator | null | undefined
+function getPinyinCollator(): Intl.Collator | null {
+  if (pinyinCollator !== undefined) return pinyinCollator
+  try {
+    pinyinCollator = new Intl.Collator('zh-Hans-CN-u-co-pinyin', { sensitivity: 'base', numeric: true })
+  } catch {
+    pinyinCollator = null
+  }
+  return pinyinCollator
+}
+
+function pinyinInitial(character: string): string {
+  const collator = getPinyinCollator()
+  if (!collator) return '#'
+  let letter = '#'
+  for (let index = 0; index < PINYIN_BOUNDARIES.length; index += 1) {
+    if (collator.compare(character, PINYIN_BOUNDARIES[index]) < 0) break
+    letter = PINYIN_LETTERS[index]
+  }
+  return letter
+}
+
 export function getContactInitial(name: string): string {
-  const first = name.trim().charAt(0).toUpperCase()
-  return /[A-Z]/.test(first) ? first : '#'
+  const first = name.trim().charAt(0)
+  const upper = first.toUpperCase()
+  if (/[A-Z]/.test(upper)) return upper
+  if (HAN_CHARACTER.test(first)) return pinyinInitial(first)
+  return '#'
+}
+
+function startsWithLatin(name: string): boolean {
+  return /^[A-Za-z]/.test(name.trim())
+}
+
+/** Latin names first inside a letter, then Chinese names in pinyin order. */
+export function compareContactNames(left: string, right: string): number {
+  const leftLatin = startsWithLatin(left)
+  const rightLatin = startsWithLatin(right)
+  if (leftLatin !== rightLatin) return leftLatin ? -1 : 1
+  const collator = getPinyinCollator()
+  return collator ? collator.compare(left, right) : left.localeCompare(right)
 }
 
 export function isContactGroup(contact: Pick<ContactRow, 'contactType' | 'rdfType'>): boolean {
@@ -49,20 +97,16 @@ function getContactSourceType(contact: ContactRow): UnifiedContact['sourceType']
 }
 
 function getContactSubtitle(
-  contact: ContactRow,
   isGroup: boolean,
-  sourceType: UnifiedContact['sourceType'],
   options: ContactProjectionOptions,
 ): string | undefined {
+  // List rows are names only (W5); groups add a member summary.
   if (isGroup && options.groupInfo) {
     const preview = options.groupInfo.memberPreview.slice(0, 2).join('、')
     return preview
       ? `${options.groupInfo.memberCount}人 · ${preview}`
       : `${options.groupInfo.memberCount}人`
   }
-  if (sourceType === 'agent' && options.agentConfig?.model) return options.agentConfig.model
-  if (contact.note) return contact.note
-  if (contact.about && contact.contactType === ContactType.SOLID) return contact.about
   return undefined
 }
 
@@ -70,8 +114,9 @@ export function projectContact(
   contact: ContactRow,
   options: ContactProjectionOptions = {},
 ): UnifiedContact {
-  const displayName = contact.alias || contact.name || 'Unknown'
   const sourceType = getContactSourceType(contact)
+  const storedName = contact.alias?.trim() || contact.name?.trim() || formatAccountAddress(contact.about) || '未命名'
+  const displayName = sourceType === 'agent' ? displayAssistantName(storedName) : storedName
   const isGroup = isContactGroup(contact)
 
   return {
@@ -83,7 +128,7 @@ export function projectContact(
     displayName,
     displayAvatar: contact.avatarUrl || '',
     initial: getContactInitial(displayName),
-    subtitle: getContactSubtitle(contact, isGroup, sourceType, options),
+    subtitle: getContactSubtitle(isGroup, options),
     isGroup,
     sourceType,
     agentConfig: options.agentConfig,
@@ -130,51 +175,37 @@ export function getShortContactId(id: string): string {
   }
 }
 
-function matchesFilter(contact: UnifiedContact, filter: ContactListFilter): boolean {
-  if (filter === 'all') return true
-  if (filter === 'personal') return contact.contactType === ContactType.SOLID && !contact.isGroup
-  if (filter === 'agents') return contact.sourceType === 'agent'
-  return contact.isGroup
+function sortByDisplayName(contacts: UnifiedContact[]): UnifiedContact[] {
+  return [...contacts].sort((left, right) => compareContactNames(left.displayName, right.displayName))
 }
 
-function sortByDisplayName(contacts: UnifiedContact[]): UnifiedContact[] {
-  return [...contacts].sort((left, right) => left.displayName.localeCompare(right.displayName))
+function compareLetters(left: string, right: string): number {
+  if (left === '#') return 1
+  if (right === '#') return -1
+  return left.localeCompare(right)
 }
 
 export function buildContactListProjection(
   contacts: readonly ContactRow[],
-  options: ContactListProjectionOptions,
+  options: ContactListProjectionOptions = {},
 ): ContactListProjection {
-  const projected = contacts
-    .map((contact) => projectContact(contact, {
-      groupInfo: options.groupInfoById?.get(contact.id),
-    }))
-    .filter((contact) => matchesFilter(contact, options.filter))
+  const projected = contacts.map((contact) => projectContact(contact, {
+    groupInfo: options.groupInfoById?.get(contact.id),
+  }))
 
-  const starred = projected.filter((contact) => contact.starred)
-  const groups = projected.filter((contact) => contact.isGroup && !contact.starred)
-  const agents = projected.filter((contact) => contact.sourceType === 'agent' && !contact.starred)
-  const personal = projected.filter(
-    (contact) => !contact.isGroup && contact.sourceType !== 'agent' && !contact.starred,
-  )
+  const groups = sortByDisplayName(projected.filter((contact) => contact.isGroup))
+  const people = projected.filter((contact) => !contact.isGroup)
   const alphabetical = new Map<string, UnifiedContact[]>()
 
-  for (const contact of personal) {
+  for (const contact of people) {
     alphabetical.set(contact.initial, [...(alphabetical.get(contact.initial) ?? []), contact])
   }
 
-  const sortedLetters = [...alphabetical.keys()].sort((left, right) => {
-    if (left === '#') return 1
-    if (right === '#') return -1
-    return left.localeCompare(right)
-  })
+  const sortedLetters = [...alphabetical.keys()].sort(compareLetters)
 
   const sections: ContactSection[] = [
-    ...(starred.length ? [{ key: 'starred' as const, title: '星标朋友', items: starred }] : []),
-    ...(groups.length ? [{ key: 'groups' as const, title: `群组 (${groups.length})`, items: sortByDisplayName(groups) }] : []),
-    ...(agents.length ? [{ key: 'agents' as const, title: `AI 助手 (${agents.length})`, items: sortByDisplayName(agents) }] : []),
     ...sortedLetters.map((letter) => ({
-      key: 'contacts' as const,
+      key: 'letter' as const,
       title: letter,
       items: sortByDisplayName(alphabetical.get(letter) ?? []),
     })),
@@ -182,13 +213,30 @@ export function buildContactListProjection(
 
   return {
     sections,
-    letters: [
-      ...(starred.length ? ['⭐'] : []),
-      ...(groups.length ? ['群'] : []),
-      ...(agents.length ? ['AI'] : []),
-      ...sortedLetters,
-    ],
+    letters: sortedLetters,
+    groups,
   }
+}
+
+const RECENT_FRIEND_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+
+/**
+ * "新的朋友": people you added recently. Incoming friend requests are not
+ * modelled yet, so only real, already-added contacts show up here.
+ */
+export function buildRecentFriends(
+  contacts: readonly ContactRow[],
+  now: Date = new Date(),
+): UnifiedContact[] {
+  return contacts
+    .map((contact) => projectContact(contact))
+    .filter((contact) => !contact.isGroup && contact.sourceType !== 'agent')
+    .filter((contact) => {
+      const created = contact.createdAt ? new Date(contact.createdAt).getTime() : Number.NaN
+      return Number.isFinite(created) && now.getTime() - created <= RECENT_FRIEND_WINDOW_MS && created <= now.getTime()
+    })
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 20)
 }
 
 function getFallbackMemberLabel(memberRef: string): string {
@@ -231,4 +279,17 @@ export function buildGroupContactInfo(input: {
     isOwner: !!input.currentUserRef && input.roleMap[input.currentUserRef] === 'owner',
     memberPreview,
   }
+}
+
+/**
+ * Models are stored as provider resource IRIs (…/providers/x.ttl#model-id).
+ * People only need the model's own name.
+ */
+export function formatModelLabel(model: string | null | undefined): string | null {
+  if (typeof model !== 'string' || !model.trim()) return null
+  const value = model.trim()
+  const hashIndex = value.lastIndexOf('#')
+  if (hashIndex >= 0 && hashIndex < value.length - 1) return value.slice(hashIndex + 1)
+  if (/^https?:\/\//i.test(value)) return value.split('/').filter(Boolean).pop() ?? value
+  return value
 }

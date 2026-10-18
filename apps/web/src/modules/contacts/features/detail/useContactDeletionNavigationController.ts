@@ -51,7 +51,7 @@ export function useContactDeletionNavigationController({
     }
   }, [contact, navigateToChat, notify, persistedContact, selectedId])
 
-  const handleDelete = useCallback(async () => {
+  const handleDelete = useCallback(async (beforeDelete?: () => Promise<boolean>) => {
     if (!contact || !selectedId) return
     // 纵深防御：即便绕过 UI 直接调用，默认助手也不可删除
     if (isDefaultSecretaryContactId(selectedId)) {
@@ -60,6 +60,8 @@ export function useContactDeletionNavigationController({
     }
     setIsDeleting(true)
     try {
+      // 收回共享没成功就先不删，免得留下收不回的共享。
+      if (beforeDelete && !(await beforeDelete())) return
       await contactOps.deleteContact(selectedId)
       notify.success('联系人已删除')
       selectContact(null)

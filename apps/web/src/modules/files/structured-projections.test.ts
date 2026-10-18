@@ -93,8 +93,8 @@ describe('structured projections', () => {
     const kanban = projectStructuredKanban(projection)
     const whiteboard = projectStructuredWhiteboard(projection)
 
-    expect(kanban.columns[0].cards[0].title).toBe('#Audit')
-    expect(whiteboard.nodes[0].title).toBe('#Audit')
+    expect(kanban.columns[0].cards[0].title).toBe('Audit')
+    expect(whiteboard.nodes[0].title).toBe('Audit')
   })
 
   it('projects subject-to-subject objects into whiteboard relation lines', () => {
@@ -207,7 +207,7 @@ describe('structured projections', () => {
     expect(kanban.columns.map((column) => column.label)).toEqual(['drafting', 'release'])
   })
 
-  it('preserves canonical Kanban column values for IRI-backed grouping predicates', () => {
+  it('preserves canonical 看板列 values for IRI-backed grouping predicates', () => {
     const projection = projectTurtleTable(`
 @prefix udfs: <https://undefineds.co/vocab/> .
 <#one> a udfs:Task ; title "Draft" ; status <https://example.com/status/todo> .
