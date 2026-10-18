@@ -1,0 +1,53 @@
+# Sealos-domain entrances to xpod's RC provider for LinX RC acceptance.
+#
+# xpod's shared gateway already routes ids / podss / apis.sealosgzg.site to deployment/xpod-rc
+# (xpod scripts/update-gateway-rc-configmap.cjs); these Ingresses only expose them, with
+# certificates from the LinX cert-manager Issuer. candidate.yml applies this before it brings
+# xpod-rc up with CSS_BASE_URL=https://ids.sealosgzg.site.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: xpod-rc-sealos
+  namespace: __NAMESPACE__
+  labels:
+    app.kubernetes.io/part-of: linx-rc
+  annotations:
+    cert-manager.io/issuer: __CERT_ISSUER__
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    nginx.ingress.kubernetes.io/proxy-body-size: 64m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [ids.sealosgzg.site, podss.sealosgzg.site, apis.sealosgzg.site]
+      secretName: xpod-rc-sealos-tls
+  rules:
+    - host: ids.sealosgzg.site
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: xpod-rc-gateway
+                port:
+                  name: id
+    - host: podss.sealosgzg.site
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: xpod-rc-gateway
+                port:
+                  name: pods
+    - host: apis.sealosgzg.site
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: xpod-rc-gateway
+                port:
+                  name: api

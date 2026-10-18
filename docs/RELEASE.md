@@ -12,7 +12,7 @@
    - `local_e2e`：对一个种子化的本地 xpod（npm 包、SQLite，不需要 Docker）跑端到端：登录、各主页面、问 LinX 引用（发送 / 编辑 / 重试都带给模型）、撤回与“数据”文件夹、登录后读写 Pod；覆盖 RC（只走云端）测不到的本地 / 独立空间；
    - `standalone_e2e`：用已发布的 xpod 镜像（默认 `ghcr.io/undefinedsco/xpod:0.4.30`，可用 Variable `XPOD_STANDALONE_TAG` 覆盖）以 local 模式起一个独立空间（自带身份服务，种子账号见 `tests/e2e/fixtures/standalone-seed.json`，只在 CI 容器里用），经“使用其他空间”登录后读写 Pod、发消息；
    - `build_image`：构建 web（`VITE_CLOUD_IDENTITY_URL=https://id.undefineds.co`，即 provider=undefineds.co），写入 `version.json`（版本 + 源提交），打成 `ghcr.io/undefinedsco/linx-web` 镜像，标签 `sha-<sha>` 与 RC 版本，记下 digest；
-   - `deploy_and_accept`（GitHub Environment `rc`，共享 RC 串行）：把 `deploy/rc/linx-web-rc.yaml` 按 digest 渲染后**一次** apply，等滚动完成并核对运行中的 pod 就是这个 digest；再做静态部署检查（`scripts/verify-web-static-deploy.mjs`）和部署站点冒烟（`tests/e2e/specs/deployed-web-smoke.spec.ts`：各路由 200、缺失资源 404、`version.json` 是本候选、云端登录跳到 provider），再做登录后验收：把 xpod 的 RC provider（`deployment/xpod-rc`，`https://id-rc.undefineds.cn`，平时由 xpod 的 RC 流程缩到 0）用本次运行专属的 seed Secret（`xpod-rc-seed-linx-<run>-<attempt>`，由 `scripts/rc-provider-seed.mjs` 从 `XPOD_RC_SEED_CONFIG` 给每个账号和 Pod 加后缀生成）一次 patch 拉起，用其中 Alice 账号经“使用其他空间”登录 RC 站点（`tests/e2e/specs/deployed-signed-in.spec.ts`：在 Pod 里写读删一个文件、发一条消息并要求模型真实回答；写入的文件放在本次运行的目录里，结束时删除）；结束后（无论成败）若 xpod-rc 仍挂着本次的 seed 就缩回 0，并删掉该 Secret。xpod-rc 正在运行（xpod 的 RC 在用）时本步直接失败，等它缩回 0 后重跑；
+   - `deploy_and_accept`（GitHub Environment `rc`，共享 RC 串行）：把 `deploy/rc/linx-web-rc.yaml` 按 digest 渲染后**一次** apply，等滚动完成并核对运行中的 pod 就是这个 digest；再做静态部署检查（`scripts/verify-web-static-deploy.mjs`）和部署站点冒烟（`tests/e2e/specs/deployed-web-smoke.spec.ts`：各路由 200、缺失资源 404、`version.json` 是本候选、云端登录跳到 provider），再做登录后验收：把 xpod 的 RC provider（`deployment/xpod-rc`，平时由 xpod 的 RC 流程缩到 0）经 Sealos 域名 `ids` / `podss` / `apis.sealosgzg.site`（`deploy/rc/xpod-rc-sealos.yaml`，xpod 网关已有这三条路由）拉起：用本次运行专属的 seed Secret（`xpod-rc-seed-linx-<run>-<attempt>`，由 `scripts/rc-provider-seed.mjs` 从 `XPOD_RC_SEED_CONFIG` 给每个账号和 Pod 加后缀生成）并把 `CSS_BASE_URL` 等身份地址临时指向 Sealos 域名，一次 patch（`scripts/xpod-rc-provider-patch.mjs`）完成；用其中 Alice 账号经“使用其他空间”登录 RC 站点（`tests/e2e/specs/deployed-signed-in.spec.ts`：在 Pod 里写读删一个文件、发一条消息并要求模型真实回答；写入的文件放在本次运行的目录里，结束时删除）；结束后（无论成败）若 xpod-rc 仍挂着本次的 seed，就把 seed 和环境变量还原并缩回 0，再删掉该 Secret。xpod-rc 正在运行（xpod 的 RC 在用）时本步直接失败，等它缩回 0 后重跑；
    - 通过后上传 `release-acceptance-<sha>`（`release-acceptance.json`：候选版本、源提交、镜像 digest、RC 地址、provider、run 链接）。这是提升生产的唯一凭证。
 4. 人工在 RC 上验收产品（按 `docs/reviews/linx-r6-product-audit-2026-10-10.md` 的清单）。
 5. 生产：在验收通过的 staging exact SHA 上打 `linx-v<version>`（版本 = 根 `package.json`）。`.github/workflows/promote.yml` 随之运行：
@@ -34,7 +34,6 @@ GitHub Environment `rc`（Settings → Environments，deployment branch policy �
 | Variable | `SEALOS_NAMESPACE` | RC 所在 namespace（广州为 `ns-iknkxtc8`） |
 | Variable | `LINX_RC_HOST` | RC 用 Sealos 分配的域名（不挂我们自己的域名），例如 `linx-web-rc.sealosgzg.site`；RC 地址即 `https://<LINX_RC_HOST>` |
 | Secret | `XPOD_RC_SEED_CONFIG` | 与 xpod 仓库 `rc` 环境同名 Secret 相同的 seed JSON（含 Alice、Bob 账号和 Pod 名）；登录后验收用其中的 Alice |
-| Variable | `LINX_RC_PROVIDER_URL` | 可选，登录后验收用的 provider，默认 `https://id-rc.undefineds.cn/` |
 | Variable | `LINX_RC_EXPECT_MODEL_REPLY` | 可选，默认 `1`：要求消息得到模型真实回答 |
 | Variable | `LINX_RC_CERT_ISSUER` | 可选，签发 RC 证书的 cert-manager Issuer，默认 `linx-letsencrypt`（集群里没有 Sealos 通配证书，Sealos 域名的证书都由 cert-manager 签） |
 
