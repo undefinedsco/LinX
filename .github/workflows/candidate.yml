@@ -173,6 +173,12 @@ jobs:
       - name: xpod logs
         if: failure()
         run: docker logs --tail 300 xpod-standalone || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: standalone-e2e-results-${{ github.sha }}
+          path: tests/e2e/test-results
+          retention-days: 14
 
   build_image:
     needs: [metadata, verify, local_e2e, standalone_e2e]
@@ -318,6 +324,12 @@ jobs:
           fi
           cd tests/e2e
           npx playwright test specs/deployed-signed-in.spec.ts --reporter=list
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: rc-acceptance-results-${{ github.sha }}
+          path: tests/e2e/test-results
+          retention-days: 14
       - name: Write acceptance record
         run: |
           set -euo pipefail

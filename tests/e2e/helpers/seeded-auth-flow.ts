@@ -186,14 +186,16 @@ export async function signInToSeededRuntime(page: Page, runtime: ProviderAccount
     await signInGate.click()
   }
 
-  const emailInput = page.getByPlaceholder(/Email(?: address)?/i)
-  const passwordInput = page.getByPlaceholder(/^Password$/i)
+  // Older xpod builds show the Community Solid Server form (English placeholders); newer ones
+  // show xpod's own account form (labels 邮箱 / 密码, button 登录).
+  const emailInput = page.getByPlaceholder(/Email(?: address)?/i).or(page.getByLabel(/^(邮箱|Email)$/i)).first()
+  const passwordInput = page.getByPlaceholder(/^Password$/i).or(page.getByLabel(/^(密码|Password)$/i)).first()
 
   await emailInput.waitFor({ state: 'visible', timeout: 20_000 })
   await emailInput.fill(runtime.email)
   await passwordInput.fill(runtime.password)
 
-  await page.getByRole('button', { name: /^Sign in$/i }).click()
+  await page.getByRole('button', { name: /^(Sign in|登录)$/i }).first().click()
   await page.waitForFunction(() => {
     const path = window.location.pathname
     const password = document.querySelector('input[type="password"]') as HTMLInputElement | null
@@ -209,7 +211,7 @@ export async function authorizeSeededRuntime(page: Page, runtime: ProviderAccoun
   const deadline = Date.now() + 90_000
 
   while (Date.now() < deadline) {
-    const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
+    const authorizeButton = page.getByRole('button', { name: /^(Authorize|允许访问|允许)$/i }).first()
     const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
     const createPodButton = page.getByRole('button', { name: /^Create Pod$/i })
     const addPodButton = page.getByRole('button', { name: /Add Pod/i })
@@ -295,7 +297,7 @@ async function waitForPodCreationOutcome(page: Page, expectedPodUrl: string): Pr
       return
     }
 
-    const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
+    const authorizeButton = page.getByRole('button', { name: /^(Authorize|允许访问|允许)$/i }).first()
     const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
     if (
       page.url().includes('/.account/oidc/consent/')
