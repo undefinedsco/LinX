@@ -78,6 +78,8 @@ jobs:
           cd apps/service
           npx tsc -p .
           node --test test/*.test.cjs
+      - name: Release script tests
+        run: node --test scripts/release-candidate.test.mjs scripts/rc-provider-seed.test.mjs
 
   # LinX against a real (seeded, SQLite) xpod started from its npm package: sign-in, chat,
   # files, citations, withdrawal, every main surface. Covers the local/standalone space mode
@@ -244,6 +246,10 @@ jobs:
       RC_HOST: ${{ vars.LINX_RC_HOST }}
       RC_URL: ${{ vars.LINX_RC_HOST && format('https://{0}', vars.LINX_RC_HOST) || '' }}
       RC_CERT_ISSUER: ${{ vars.LINX_RC_CERT_ISSUER || 'linx-letsencrypt' }}
+      # Signed-in acceptance signs in to xpod's RC provider (not production id.undefineds.co) with
+      # a per-run account from xpod's RC seed; this job brings xpod-rc up for it and back down.
+      RC_PROVIDER_URL: ${{ vars.LINX_RC_PROVIDER_URL || 'https://id-rc.undefineds.cn/' }}
+      RC_SEED_SECRET: xpod-rc-seed-linx-${{ github.run_id }}-${{ github.run_attempt }}
       IMAGE: ${{ format('{0}@{1}', 'ghcr.io/undefinedsco/linx-web', needs.build_image.outputs.digest) }}
     steps:
       - uses: actions/checkout@v4
@@ -306,22 +312,50 @@ jobs:
           cd tests/e2e
           npx playwright install --with-deps chromium
           npx playwright test specs/deployed-web-smoke.spec.ts --reporter=list
-      - name: Signed-in acceptance (dedicated account)
+      - name: Bring up the xpod RC provider with a per-run seed
+        env:
+          XPOD_RC_SEED_CONFIG: ${{ secrets.XPOD_RC_SEED_CONFIG }}
+        run: |
+          set -euo pipefail
+          [ -n "$XPOD_RC_SEED_CONFIG" ] || { echo "::error::rc secret XPOD_RC_SEED_CONFIG (xpod's RC seed JSON with Alice and Bob) is required"; exit 1; }
+          # xpod's candidate owns xpod-rc while it runs and scales it to 0 afterwards; never take it over mid-run.
+          replicas="$(kubectl -n "$NAMESPACE" get deployment xpod-rc -o jsonpath='{.spec.replicas}')"
+          if [ "$replicas" != "0" ]; then
+            echo "::error::deployment/xpod-rc is running ($replicas replicas), probably an xpod RC run; rerun this job once it is back at 0"
+            exit 1
+          fi
+          printf '%s' "$XPOD_RC_SEED_CONFIG" > "$RUNNER_TEMP/seed-in.json"
+          node scripts/rc-provider-seed.mjs --input "$RUNNER_TEMP/seed-in.json" --output "$RUNNER_TEMP/rc.json" \
+            --suffix "linx-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --github-env "$GITHUB_ENV"
+          kubectl -n "$NAMESPACE" create secret generic "$RC_SEED_SECRET" --from-file=rc.json="$RUNNER_TEMP/rc.json" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          rm -f "$RUNNER_TEMP/seed-in.json" "$RUNNER_TEMP/rc.json"
+          # One patch (seed Secret + replicas), so a single ReplicaSet runs the CSS seed initializer.
+          index="$(kubectl -n "$NAMESPACE" get deployment xpod-rc -o json | node -e '
+            const volumes = JSON.parse(require("fs").readFileSync(0, "utf8")).spec.template.spec.volumes || []
+            const index = volumes.findIndex((volume) => volume.name === "xpod-rc-seed")
+            if (index < 0) throw new Error("deployment/xpod-rc has no xpod-rc-seed volume")
+            console.log(index)')"
+          kubectl -n "$NAMESPACE" patch deployment xpod-rc --type=json -p "[
+            {\"op\":\"replace\",\"path\":\"/spec/template/spec/volumes/${index}/secret/secretName\",\"value\":\"${RC_SEED_SECRET}\"},
+            {\"op\":\"replace\",\"path\":\"/spec/replicas\",\"value\":1}]"
+          kubectl -n "$NAMESPACE" rollout status deployment/xpod-rc --timeout=1800s
+          for attempt in $(seq 1 30); do
+            if curl -fsS "${RC_PROVIDER_URL%/}/.well-known/openid-configuration" > /dev/null; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::${RC_PROVIDER_URL} did not serve OpenID discovery"
+          exit 1
+      - name: Signed-in acceptance (xpod RC seed account)
         env:
           CI: '1'
           LINX_E2E_BASE_URL: ${{ env.RC_URL }}
           LINX_E2E_REUSE_SERVER: '0'
-          LINX_E2E_CLOUD_IDENTITY_URL: ${{ env.CLOUD_IDENTITY_URL }}
-          LINX_E2E_ACCOUNT_EMAIL: ${{ secrets.LINX_RC_ACCOUNT_EMAIL }}
-          LINX_E2E_ACCOUNT_PASSWORD: ${{ secrets.LINX_RC_ACCOUNT_PASSWORD }}
-          LINX_E2E_ACCOUNT_POD: ${{ vars.LINX_RC_ACCOUNT_POD }}
-          LINX_E2E_EXPECT_MODEL_REPLY: '1'
+          LINX_E2E_CLOUD_IDENTITY_URL: ${{ env.RC_PROVIDER_URL }}
+          LINX_E2E_LOGIN_VIA: custom
+          LINX_E2E_EXPECT_MODEL_REPLY: ${{ vars.LINX_RC_EXPECT_MODEL_REPLY || '1' }}
         run: |
           set -euo pipefail
-          if [ -z "$LINX_E2E_ACCOUNT_EMAIL" ] || [ -z "$LINX_E2E_ACCOUNT_PASSWORD" ]; then
-            echo "::error::rc secrets LINX_RC_ACCOUNT_EMAIL / LINX_RC_ACCOUNT_PASSWORD (dedicated acceptance account) are required"
-            exit 1
-          fi
           cd tests/e2e
           npx playwright test specs/deployed-signed-in.spec.ts --reporter=list
       - uses: actions/upload-artifact@v4
@@ -330,6 +364,17 @@ jobs:
           name: rc-acceptance-results-${{ github.sha }}
           path: tests/e2e/test-results
           retention-days: 14
+      - name: Scale the xpod RC provider back down
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -f ~/.kube/config ] || exit 0
+          # Only when xpod-rc still runs this job's seed: an xpod RC run that took over keeps its own.
+          current="$(kubectl -n "$NAMESPACE" get deployment xpod-rc -o jsonpath='{.spec.template.spec.volumes[?(@.name=="xpod-rc-seed")].secret.secretName}' || true)"
+          if [ "$current" = "$RC_SEED_SECRET" ]; then
+            kubectl -n "$NAMESPACE" scale deployment/xpod-rc --replicas=0
+          fi
+          kubectl -n "$NAMESPACE" delete secret "$RC_SEED_SECRET" --ignore-not-found
       - name: Write acceptance record
         run: |
           set -euo pipefail
@@ -346,7 +391,7 @@ jobs:
             }
             require("fs").writeFileSync("acceptance/release-acceptance.json", JSON.stringify(record, null, 2) + "\n")
           ' "${{ needs.metadata.outputs.candidate }}" "${{ needs.metadata.outputs.sourceSha }}" \
-            "${{ needs.build_image.outputs.digest }}" "$RC_URL" "$CLOUD_IDENTITY_URL" \
+            "${{ needs.build_image.outputs.digest }}" "$RC_URL" "$RC_PROVIDER_URL" \
             "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           cat acceptance/release-acceptance.json
       - uses: actions/upload-artifact@v4
