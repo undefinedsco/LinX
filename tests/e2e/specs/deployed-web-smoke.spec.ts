@@ -37,8 +37,18 @@ test('the site and client-side routes load', async ({ page, request }) => {
     // candidate.yml writes version.json next to the build (version + source commit).
     const version = await request.get('/version.json')
     expect(version.status()).toBe(200)
-    expect((await version.json()).version, 'the site must serve the candidate being accepted').toBe(expectedVersion)
+    const info = await version.json()
+    expect(info.version, 'the site must serve the candidate being accepted').toBe(expectedVersion)
+    // Module files (the pdf.js worker) must be served as JavaScript, or browsers refuse them.
+    for (const modulePath of info.modules ?? []) {
+      const moduleResponse = await request.get(modulePath)
+      expect(moduleResponse.status(), modulePath).toBe(200)
+      expect(moduleResponse.headers()['content-type'] ?? '', modulePath).toContain('javascript')
+    }
   }
+  const home = await request.get('/')
+  expect(home.headers()['x-content-type-options']).toBe('nosniff')
+  expect(home.headers()['referrer-policy']).toBe('same-origin')
 })
 
 test('cloud login goes to the configured provider', async ({ page, request }) => {

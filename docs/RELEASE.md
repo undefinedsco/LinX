@@ -14,7 +14,12 @@
    - `deploy_and_accept`（GitHub Environment `rc`，共享 RC 串行）：把 `deploy/rc/linx-web-rc.yaml` 按 digest 渲染后**一次** apply，等滚动完成并核对运行中的 pod 就是这个 digest；再做静态部署检查（`scripts/verify-web-static-deploy.mjs`）和部署站点冒烟（`tests/e2e/specs/deployed-web-smoke.spec.ts`：各路由 200、缺失资源 404、`version.json` 是本候选、云端登录跳到 provider），再用专用验收账号做登录后验收（`tests/e2e/specs/deployed-signed-in.spec.ts`：经云端空间登录、在 Pod 里写读删一个文件、发一条消息并要求模型真实回答；写入的文件放在本次运行的目录里，结束时删除）；
    - 通过后上传 `release-acceptance-<sha>`（`release-acceptance.json`：候选版本、源提交、镜像 digest、RC 地址、provider、run 链接）。这是提升生产的唯一凭证。
 4. 人工在 RC 上验收产品（按 `docs/reviews/linx-r6-product-audit-2026-10-10.md` 的清单）。
-5. 生产：在验收通过的 staging exact SHA 上打 `linx-v<version>`，用同一个 digest 更新生产 `linx-web`（不重新构建）；再把该提交 squash 同步到 `main`，提交说明里记下 staging SHA、验收 run 和 digest。生产提升工作流尚未建立，见“待补”。
+5. 生产：在验收通过的 staging exact SHA 上打 `linx-v<version>`（版本 = 根 `package.json`）。`.github/workflows/promote.yml` 随之运行：
+   - 核对标签在 `staging` 上、版本与 `package.json` 一致，找到该提交成功的 RC run，下载 `release-acceptance-<sha>`，要求全部检查为 passed；
+   - 把验收过的 digest 加打 `<version>` 和 `latest` 标签（不重新构建）；
+   - 用 `deploy/prd/linx-web.yaml` 按该 digest `kubectl replace` 生产 Deployment `linx-web`（名字、`app: linx-web` 选择器和 8080 端口不变，Service 和网关路由不用动；文件来自镜像，不再挂 PVC `linx-web-content`），等滚动完成，核对 pod 的 digest；
+   - 对生产地址做静态部署检查和只读冒烟；任何一步失败就 `rollout undo` 回到上一个版本。
+   之后把该提交 squash 同步到 `main`，提交说明里记下 staging SHA、验收 run、digest 和上一个同步点。
 
 修复同样先合入 `staging` 生成新候选；不在 RC 上热改、换镜像，不借旧候选的验收记录。
 
@@ -36,7 +41,18 @@ GitHub Environment `rc`（Settings → Environments，deployment branch policy �
 - 域名：RC 只用 Sealos 自己的域名，由 `deploy/rc/linx-web-rc.yaml` 里的 Ingress 直接指到 `linx-web-rc`，不用改 DNS，也不经过共享网关（homepage 仓库的路由表不用动）。
 - 镜像拉取：`ghcr.io/undefinedsco/linx-web` 首次推送后默认是私有包；要么在 GitHub 把它设为公开，要么在 namespace 里配 GHCR 拉取凭据并加到 `deploy/rc/linx-web-rc.yaml` 的 `imagePullSecrets`。
 
-## 待补
+## 生产环境需要先配好
 
-- 生产提升工作流：校验 stable tag 指向带 `release-acceptance-<sha>` 的 staging 提交，用记录里的 digest 更新生产 `linx-web`（目前生产是 nginx 读 PVC `linx-web-content`，清单在 homepage 仓库，需要改为按镜像 digest 部署，或由提升流程把同一镜像里的文件同步进 PVC）。
-- 桌面安装包仍走手动 `Release` 工作流（`.github/workflows/release.yml`），不在本流程内。
+GitHub Environment `prd`（deployment branch/tag policy 限定 `linx-v*` 标签）：
+
+| 类型 | 名称 | 说明 |
+| --- | --- | --- |
+| Secret | `KUBE_CONFIG_DATA` | base64 的广州 Sealos kubeconfig（生产 `linx-web` 所在集群） |
+| Variable | `SEALOS_NAMESPACE` | `ns-iknkxtc8` |
+| Variable | `LINX_PROD_URL` | `https://linx.undefineds.cn` |
+
+生产清单从此由本仓库管理（`deploy/prd/linx-web.yaml`）；homepage 仓库里的 `deploy/k8s/linx-web-renamed.yaml` 只作历史记录，不要再用它 apply，否则会把 Deployment 改回挂 PVC 的旧形态。
+
+## 不在本流程内
+
+- 桌面安装包仍走手动 `Release` 工作流（`.github/workflows/release.yml`）。
