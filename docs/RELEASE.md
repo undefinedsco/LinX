@@ -23,7 +23,7 @@ GitHub Environment `rc`（Settings → Environments，deployment branch policy �
 
 | 类型 | 名称 | 说明 |
 | --- | --- | --- |
-| Secret | `KUBE_CONFIG_DATA` | base64 的广州 Sealos kubeconfig（RC 所在集群） |
+| Secret | `KUBE_CONFIG_DATA` | base64 的广州 Sealos kubeconfig（RC 所在集群）；也可以不设，改用组织级密钥 `GZ_KUBE_CONFIG_DATA`（与 xpod 共用，需共享给 LinX 仓库） |
 | Variable | `SEALOS_NAMESPACE` | RC 所在 namespace（广州为 `ns-iknkxtc8`） |
 | Variable | `LINX_RC_HOST` | RC 用 Sealos 分配的域名（不挂我们自己的域名），例如 `linx-web-rc.sealosgzg.site`；RC 地址即 `https://<LINX_RC_HOST>` |
 | Variable | `LINX_RC_TLS_SECRET` | 可选，Sealos 通配证书所在的 Secret，默认 `wildcard-cert` |
