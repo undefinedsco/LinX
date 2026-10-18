@@ -13,6 +13,9 @@ import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seede
  *   LINX_E2E_ACCOUNT_EMAIL / LINX_E2E_ACCOUNT_PASSWORD   the acceptance account
  *   LINX_E2E_EXPECT_MODEL_REPLY=1  require a real model answer
  *
+ * Standalone — the same account variables plus LINX_E2E_LOGIN_VIA=custom: signs in to a
+ *   standalone xpod (its own identity provider) through 使用其他空间.
+ *
  * Local — LINX_E2E_SIGNED_IN_SEEDED=1 starts a seeded xpod and signs in through 使用其他空间
  * (no model is configured there, so the chat check stops at the sent message).
  *
@@ -34,7 +37,7 @@ test.beforeAll(async () => {
   const identity = process.env.LINX_E2E_CLOUD_IDENTITY_URL?.trim()
   if (email && password && identity) {
     account = { email, password, podName: process.env.LINX_E2E_ACCOUNT_POD?.trim() || 'acceptance', baseUrl: identity.replace(/\/?$/, '/') }
-    loginVia = 'cloud'
+    loginVia = process.env.LINX_E2E_LOGIN_VIA === 'custom' ? 'custom' : 'cloud'
     return
   }
   if (process.env.LINX_E2E_SIGNED_IN_SEEDED === '1') {

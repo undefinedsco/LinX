@@ -1,0 +1,11 @@
+[
+  {
+    "email": "acceptance@linx.local",
+    "password": "Linx--Dn9h9qfOvDZwAxEoP7wx_2a",
+    "pods": [
+      {
+        "name": "acceptance"
+      }
+    ]
+  }
+]
