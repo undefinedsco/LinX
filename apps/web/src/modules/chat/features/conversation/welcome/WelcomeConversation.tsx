@@ -7,6 +7,7 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { SecretaryWelcome, type SecretaryWelcomeProps } from '../../../ui/SecretaryWelcome'
 import { NamingCard } from '../cards/OtherCards'
 import { ConversationProvider, useConversationIdentity, useResolveConversationIdentity } from '../ConversationContext'
+import { setPendingWelcomeTexts } from './pending-welcome'
 import { hasBeenWelcomed, markWelcomed } from './welcome-state'
 
 export const WELCOME_SUGGESTIONS = [
@@ -23,6 +24,18 @@ const ABILITIES: Array<[string, string]> = [
   ['和朋友一起', '把我拉进群，群里谁都能叫我'],
 ]
 
+/** The welcome as plain text: what gets saved into the thread once it is over. */
+export const WELCOME_INTRO_TEXT = [
+  '你好，我是你的助手。我能帮你：',
+  ...ABILITIES.map(([title, text]) => `- **${title}**：${text}`),
+  '',
+  '你的聊天、文件和我记下的东西，都存在你自己的空间里。',
+].join('\n')
+
+export function welcomeNamedText(name: string): string {
+  return `好，以后我叫${name}。想先做点什么？`
+}
+
 function AssistantBubble({ children, name }: { children: React.ReactNode; name: string }) {
   return (
     <div className="flex items-start gap-2.5">
@@ -30,6 +43,18 @@ function AssistantBubble({ children, name }: { children: React.ReactNode; name: 
         AI
       </span>
       <div className="max-w-[72%] space-y-2">{children}</div>
+    </div>
+  )
+}
+
+export function WelcomeSuggestions({ onSuggestion }: { onSuggestion: (suggestion: (typeof WELCOME_SUGGESTIONS)[number]) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {WELCOME_SUGGESTIONS.map((suggestion) => (
+        <Button key={suggestion.id} size="sm" variant="outline" onClick={() => onSuggestion(suggestion)}>
+          {suggestion.label}
+        </Button>
+      ))}
     </div>
   )
 }
@@ -59,14 +84,8 @@ export function WelcomeIntro({ name, agentUri, named, onNamed, onSuggestion }: {
           <NamingCard uri={agentUri} onNamed={onNamed} />
         ) : (
           <>
-            <div className="rounded-lg border border-border bg-card px-3 py-2 text-sm">好，以后我叫{named}。想先做点什么？</div>
-            <div className="flex flex-wrap gap-2">
-              {WELCOME_SUGGESTIONS.map((suggestion) => (
-                <Button key={suggestion.id} size="sm" variant="outline" onClick={() => onSuggestion(suggestion)}>
-                  {suggestion.label}
-                </Button>
-              ))}
-            </div>
+            <div className="rounded-lg border border-border bg-card px-3 py-2 text-sm">{welcomeNamedText(named)}</div>
+            <WelcomeSuggestions onSuggestion={onSuggestion} />
           </>
         )}
       </AssistantBubble>
@@ -74,9 +93,24 @@ export function WelcomeIntro({ name, agentUri, named, onNamed, onSuggestion }: {
   )
 }
 
-/** What the conversation shows above an empty thread while the welcome is due. */
+/**
+ * What the conversation shows around an empty thread while the welcome is due.
+ * The welcome is first drawn by the UI; as soon as it has something to keep
+ * (the person named the assistant, or sent a first message) it is saved into
+ * the thread as real assistant messages, so it stays in the timeline and in the
+ * chat list preview. `persisted` flips once that is done.
+ */
 export interface InlineWelcome {
+  /** The assistant's first words, before they are saved into the thread. */
   content: (start: (prompt: string) => void) => ReactNode
+  /** Ways to start, shown under the saved messages until the first message is sent. */
+  suggestions: (start: (prompt: string) => void) => ReactNode
+  /** The name the person gave, once they did. */
+  named: string | null
+  /** The assistant's welcome messages as plain text, oldest first. */
+  texts: () => string[]
+  persisted: boolean
+  onPersisted: () => void
   /** The first message went out: the welcome is over. */
   onStarted: () => void
 }
@@ -122,6 +156,7 @@ function InlineWelcomeContent({ named, onNamed, start }: { named: string | null;
 export function InlineWelcomeHost({ render }: { render: (welcome: InlineWelcome | undefined) => ReactNode }) {
   const { phase, finish } = useWelcomePhase()
   const [named, setNamed] = useState<string | null>(null)
+  const [persisted, setPersisted] = useState(false)
   if (phase !== 'first') return <>{render(undefined)}</>
   return (
     <>
@@ -129,6 +164,11 @@ export function InlineWelcomeHost({ render }: { render: (welcome: InlineWelcome 
         content: (start) => (
           <InlineWelcomeContent named={named} onNamed={(value) => { setNamed(value); finish() }} start={start} />
         ),
+        suggestions: (start) => <WelcomeSuggestions onSuggestion={(suggestion) => start(suggestion.prompt)} />,
+        named,
+        texts: () => [WELCOME_INTRO_TEXT, ...(named ? [welcomeNamedText(named)] : [])],
+        persisted,
+        onPersisted: () => setPersisted(true),
         onStarted: () => finish(true),
       })}
     </>
@@ -150,6 +190,11 @@ export function WelcomeConversation(props: SecretaryWelcomeProps & { chatId: str
   if (phase === 'done') return <SecretaryWelcome {...props} />
 
   const canSend = props.composerValue.trim().length > 0 && !props.isSubmitting
+  // Leaving starts the first topic; its surface saves what was said here.
+  const leave = () => {
+    setPendingWelcomeTexts(props.chatId, [WELCOME_INTRO_TEXT, ...(named ? [welcomeNamedText(named)] : [])])
+    finish(true)
+  }
   return (
     <ConversationProvider value={identity}>
       <section data-testid="welcome-conversation" className="flex h-full min-h-0 flex-1 flex-col bg-background">
@@ -160,7 +205,7 @@ export function WelcomeConversation(props: SecretaryWelcomeProps & { chatId: str
               agentUri={identity.agentUri}
               named={named}
               onNamed={(value) => { setNamed(value); finish() }}
-              onSuggestion={(suggestion) => { finish(true); props.onStarterAction(suggestion) }}
+              onSuggestion={(suggestion) => { leave(); props.onStarterAction(suggestion) }}
             />
           </div>
         </div>
@@ -175,13 +220,13 @@ export function WelcomeConversation(props: SecretaryWelcomeProps & { chatId: str
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && canSend) {
                   event.preventDefault()
-                  finish(true)
+                  leave()
                   props.onSubmit()
                 }
               }}
               className="min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm outline-none"
             />
-            <Button size="sm" disabled={!canSend} onClick={() => { finish(true); props.onSubmit() }}>
+            <Button size="sm" disabled={!canSend} onClick={() => { leave(); props.onSubmit() }}>
               <Send className="mr-1 h-3.5 w-3.5" aria-hidden="true" />发送
             </Button>
           </div>

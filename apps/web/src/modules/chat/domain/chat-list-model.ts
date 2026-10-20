@@ -54,12 +54,18 @@ export function unreadBadgeText(count: number): string | null {
   return count > 99 ? '99+' : String(Math.floor(count))
 }
 
+/**
+ * LinX 助手 greets first, so its row never reads as empty, even before the
+ * welcome has been saved into the chat as messages.
+ */
+export const LINX_ASSISTANT_GREETING = '想先做点什么？'
+
 export function projectChatListEntry(source: ChatListEntrySource, now: number = Date.now()): ChatListEntry {
   const topic = source.headlineTopic
   // The state of the chat (running, needs you...), never a topic name.
   const preview = topic
     ? topic.status.label
-    : source.preview?.trim() || '还没有消息'
+    : source.preview?.trim() || (source.isProtected ? LINX_ASSISTANT_GREETING : '还没有消息')
   return {
     id: source.id,
     title: source.title,
