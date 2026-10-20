@@ -371,6 +371,39 @@ describe('PrimaryLayout', () => {
     useFilesStore.setState({ metaSidebarOpen: false })
   })
 
+  it('shows the right sidebar as a full-width task view with a back button on compact widths', async () => {
+    const { useFilesStore } = await import('@/modules/files/app/store')
+    useFilesStore.setState({ metaSidebarOpen: true })
+    const previousMatchMedia = window.matchMedia
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query.includes('max-width: 699px'),
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+
+    try {
+      render(<PrimaryLayout microAppId="files" />)
+      const sidebar = await screen.findByTestId('micro-app-right-sidebar')
+      expect(sidebar.style.width).toBe('100%')
+      expect(screen.queryByTestId('micro-app-right-sidebar-backdrop')).toBeNull()
+      screen.getByTestId('micro-app-right-sidebar-back').click()
+      await waitFor(() => {
+        expect(useFilesStore.getState().metaSidebarOpen).toBe(false)
+      })
+    } finally {
+      Object.defineProperty(window, 'matchMedia', { writable: true, value: previousMatchMedia })
+      useFilesStore.setState({ metaSidebarOpen: false })
+    }
+  })
+
   it('hides the application shell after sign out', () => {
     mockSessionState.isLoggedIn = false
 

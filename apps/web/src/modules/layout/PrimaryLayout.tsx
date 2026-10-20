@@ -2,7 +2,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } f
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { ArrowLeft, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import {
   microAppRegistry,
   MicroAppId,
@@ -248,7 +248,7 @@ function MicroAppContentRenderer({
                 </Suspense>
               </div>
             </div>
-            {closeFloatingSidebar ? (
+            {closeFloatingSidebar && !isCompactViewport ? (
               <button
                 type="button"
                 aria-label={`关闭${rightSidebarToggle?.label ?? '右侧面板'}`}
@@ -265,11 +265,32 @@ function MicroAppContentRenderer({
                 data-testid="micro-app-right-sidebar"
                 data-floating={rightSidebarFloating ? 'true' : undefined}
                 className="absolute inset-y-0 right-0 z-20 flex max-w-full flex-col border-l border-border/50 bg-card shadow-xl xl:static xl:z-auto xl:bg-card/40 xl:shadow-none"
-                style={{ width: rightSidebarWidth, minWidth: Math.min(rightSidebarWidth, 280) }}
+                style={isCompactViewport
+                  ? { width: '100%' }
+                  : { width: rightSidebarWidth, minWidth: Math.min(rightSidebarWidth, 280) }}
               >
-                <Suspense fallback={<PaneFallback />}>
-                  {layoutConfig.rightSidebar}
-                </Suspense>
+                {isCompactViewport && rightSidebarToggle ? (
+                  // Compact windows show the right pane as its own task view
+                  // with an explicit way back.
+                  <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2 text-xs"
+                      aria-label={`返回，关闭${rightSidebarToggle.label ?? '右侧面板'}`}
+                      data-testid="micro-app-right-sidebar-back"
+                      onClick={rightSidebarToggle.onToggle}
+                    >
+                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                      返回
+                    </Button>
+                  </div>
+                ) : null}
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <Suspense fallback={<PaneFallback />}>
+                    {layoutConfig.rightSidebar}
+                  </Suspense>
+                </div>
               </aside>
             )}
           </section>
