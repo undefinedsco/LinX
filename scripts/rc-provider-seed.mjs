@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seed for the xpod RC provider (id-rc.undefineds.cn) that LinX RC acceptance signs in to.
+ * Seed for the xpod RC provider (ids.sealosgzg.site) that LinX RC acceptance signs in to.
  *
  * Each run generates its own Alice and Bob (random passwords, test-only) in the seed account
  * format of xpod's CSS_SEED_CONFIG, and gives every account and Pod a per-run suffix, as xpod's
