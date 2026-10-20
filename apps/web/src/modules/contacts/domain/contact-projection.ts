@@ -281,15 +281,23 @@ export function buildGroupContactInfo(input: {
   }
 }
 
+/** Platform model ids are internal identifiers; people see these names instead. */
+const MODEL_DISPLAY_LABELS: Readonly<Record<string, string>> = {
+  'linx-lite': 'LinX 轻量版',
+  linx: 'LinX 标准版',
+}
+
 /**
  * Models are stored as provider resource IRIs (…/providers/x.ttl#model-id).
- * People only need the model's own name.
+ * People only need the model's own name; known platform ids get a readable Chinese label,
+ * anything else keeps its own name.
  */
 export function formatModelLabel(model: string | null | undefined): string | null {
   if (typeof model !== 'string' || !model.trim()) return null
   const value = model.trim()
   const hashIndex = value.lastIndexOf('#')
-  if (hashIndex >= 0 && hashIndex < value.length - 1) return value.slice(hashIndex + 1)
-  if (/^https?:\/\//i.test(value)) return value.split('/').filter(Boolean).pop() ?? value
-  return value
+  let name = value
+  if (hashIndex >= 0 && hashIndex < value.length - 1) name = value.slice(hashIndex + 1)
+  else if (/^https?:\/\//i.test(value)) name = value.split('/').filter(Boolean).pop() ?? value
+  return MODEL_DISPLAY_LABELS[name.replace(/^undefineds\//, '')] ?? name
 }

@@ -12,6 +12,7 @@ import {
   getEntryName,
   getParentContainerUri,
   isFilesSidecarSemanticKind,
+  isPodSystemContainer,
   isTextLikeMimeType,
   normalizeContainerUri,
   resolveFilesResourceSidecars,
@@ -651,6 +652,7 @@ async function listContainerEntryStubs(
     const kind: FilesEntryKind = normalizedUri.endsWith('/') ? 'container' : 'resource'
     const semanticKind = classifyFilesEntry(normalizedUri, kind === 'container', podRootUri)
     if (isFilesSidecarSemanticKind(semanticKind)) return []
+    if (kind === 'container' && isPodSystemContainer(normalizedUri, podRootUri)) return []
     return [{
       id: normalizedUri,
       uri: normalizedUri,
@@ -696,6 +698,25 @@ export async function listContainerEntries(
   return Promise.all(entries.map((entry) => enrichEntryWithMetadata(db, entry)))
 }
 
+/** How long the current-topic folder may delay the Pod root listing before it is left out. */
+const SECONDARY_SOURCE_TIMEOUT_MS = 2_000
+
+/**
+ * The current topic's folder only adds entries next to the Pod root's own. It may not exist yet
+ * (a new topic's workspace is created lazily) or answer slowly, so it never fails or holds back the root listing.
+ */
+async function listSecondarySourceEntries(listing: Promise<FilesEntry[]>): Promise<FilesEntry[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<FilesEntry[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), SECONDARY_SOURCE_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([listing.catch(() => [] as FilesEntry[]), timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function listAllBrowsableEntries(
   db: SolidDatabase,
   workspaceUri?: string | null,
@@ -717,7 +738,9 @@ export async function listAllBrowsableEntries(
   }
 
   const listings = await Promise.all(
-    sources.map((source) => listContainerEntries(db, source.uri, source.label)),
+    sources.map((source, index) => index === sources.length - 1
+      ? listContainerEntries(db, source.uri, source.label)
+      : listSecondarySourceEntries(listContainerEntries(db, source.uri, source.label))),
   )
   for (const entries of listings) {
     for (const entry of entries) {
@@ -797,7 +820,7 @@ export async function buildRootNodes(
         uri: workspaceUri,
       }
     } else {
-      workspaceEntries = await listContainerEntryStubs(db, workspaceUri, '当前话题')
+      workspaceEntries = await listSecondarySourceEntries(listContainerEntryStubs(db, workspaceUri, '当前话题'))
       workspaceCount = workspaceEntries.length
       workspaceNode = {
         id: createWorkspaceNodeId(workspaceUri),
