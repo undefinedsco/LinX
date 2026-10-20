@@ -13,17 +13,17 @@ export function useWelcomePersistence({ localFetch, threadId, chatId, refresh }:
   chatId: string
   refresh: () => Promise<void>
 }) {
-  const persistWelcome = useCallback(async (texts: string[]) => {
+  const persistWelcome = useCallback(async (texts: string[], before?: number) => {
     const append = localFetch.conversation.appendAssistantMessages
     if (!append) throw new Error('welcome persistence is unavailable')
-    await append(threadId, texts)
+    await append(threadId, texts, before)
     await refresh()
   }, [localFetch, threadId, refresh])
 
   useEffect(() => {
-    const texts = takePendingWelcomeTexts(chatId)
-    if (!texts) return
-    void persistWelcome(texts).catch(() => setPendingWelcomeTexts(chatId, texts))
+    const welcome = takePendingWelcomeTexts(chatId)
+    if (!welcome) return
+    void persistWelcome(welcome.texts, welcome.before).catch(() => setPendingWelcomeTexts(chatId, welcome))
   }, [persistWelcome, chatId])
 
   return persistWelcome

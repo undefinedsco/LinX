@@ -7,7 +7,7 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { SecretaryWelcome, type SecretaryWelcomeProps } from '../../../ui/SecretaryWelcome'
 import { NamingCard } from '../cards/OtherCards'
 import { ConversationProvider, useConversationIdentity, useResolveConversationIdentity } from '../ConversationContext'
-import { setPendingWelcomeTexts } from './pending-welcome'
+import { setPendingWelcomeTexts, welcomeClockSeconds } from './pending-welcome'
 import { hasBeenWelcomed, markWelcomed } from './welcome-state'
 
 export const WELCOME_SUGGESTIONS = [
@@ -192,7 +192,10 @@ export function WelcomeConversation(props: SecretaryWelcomeProps & { chatId: str
   const canSend = props.composerValue.trim().length > 0 && !props.isSubmitting
   // Leaving starts the first topic; its surface saves what was said here.
   const leave = () => {
-    setPendingWelcomeTexts(props.chatId, [WELCOME_INTRO_TEXT, ...(named ? [welcomeNamedText(named)] : [])])
+    setPendingWelcomeTexts(props.chatId, {
+      texts: [WELCOME_INTRO_TEXT, ...(named ? [welcomeNamedText(named)] : [])],
+      before: welcomeClockSeconds(),
+    })
     finish(true)
   }
   return (

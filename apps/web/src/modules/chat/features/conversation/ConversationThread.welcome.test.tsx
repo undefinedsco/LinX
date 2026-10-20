@@ -84,7 +84,7 @@ describe('welcome inside the conversation', () => {
     const onPersist = vi.fn(async () => undefined)
     render(<Harness onStarted={onStarted} onPersist={onPersist} />)
     fireEvent.click(screen.getByText('起名'))
-    await waitFor(() => expect(onPersist).toHaveBeenCalledWith(['intro', 'named:小助']))
+    await waitFor(() => expect(onPersist).toHaveBeenCalledWith(['intro', 'named:小助'], expect.any(Number)))
     await waitFor(() => expect(screen.getByText('开始建议')).toBeTruthy())
     expect(screen.queryByText('起名')).toBeNull()
     expect(onStarted).not.toHaveBeenCalled()

@@ -632,14 +632,16 @@ export class LocalChatKitService {
    * Writes assistant messages that are not model output (the first-run welcome)
    * into the thread, so they persist and show up in the chat list preview like
    * any other message. They are placed just before the thread's earliest
-   * existing message, or at "now" in an empty thread, keeping their own order.
+   * existing message and before `before` (seconds; when the welcome was shown,
+   * so a first message that is still being saved cannot end up ahead of it),
+   * or at "now" in an empty thread, keeping their own order.
    */
-  async appendAssistantMessages(threadId: string, texts: readonly string[], context: StoreContext = {}): Promise<void> {
+  async appendAssistantMessages(threadId: string, texts: readonly string[], context: StoreContext = {}, before?: number): Promise<void> {
     const entries = texts.map((text) => text.trim()).filter(Boolean)
     if (entries.length === 0) return
     const thread = await this.store.loadThread(threadId, context)
     const existing = await this.loadAllThreadItems(threadId, context)
-    const earliest = existing.reduce((min, item) => Math.min(min, item.created_at ?? min), Number.POSITIVE_INFINITY)
+    const earliest = existing.reduce((min, item) => Math.min(min, item.created_at ?? min), before ?? Number.POSITIVE_INFINITY)
     const base = Number.isFinite(earliest) ? earliest - entries.length : nowTimestamp() - entries.length + 1
     for (const [index, text] of entries.entries()) {
       await this.store.addThreadItem(threadId, {

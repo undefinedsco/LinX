@@ -2169,4 +2169,20 @@ describe('LocalChatKitService welcome messages', () => {
     expect(saved[0].created_at).toBeLessThan(saved[1].created_at)
     expect(saved[1].created_at).toBeLessThan(100)
   })
+
+  it('stays ahead of a first message that is not saved yet when given when the welcome showed', async () => {
+    const store = createMockStore([])
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: createMockDb({ provider: 'openai', model: 'gpt-4o-mini' }) as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: vi.fn() as any,
+    })
+
+    // The welcome showed at 500; the person's first message (created at 500 or later) is still being written.
+    await service.appendAssistantMessages('thread-1', ['你好，我是你的助手', '好，以后我叫LinX 助手。想先做点什么？'], {}, 500)
+
+    const saved = store.addThreadItem.mock.calls.map(([, item]: any[]) => item)
+    expect(saved.map((item) => item.created_at)).toEqual([498, 499])
+  })
 })

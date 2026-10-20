@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { InlineWelcome } from './welcome/WelcomeConversation'
+import { welcomeClockSeconds } from './welcome/pending-welcome'
 import { ThreadPrimitive, useAui, useAuiState } from '@assistant-ui/react'
 import { ArrowDown } from 'lucide-react'
 import { useChatStore } from '../../store'
@@ -41,12 +42,17 @@ export function ConversationThread({
   onComposerDraftApplied: (draft: PendingComposerDraft) => void
   welcome?: InlineWelcome
   /** Saves the welcome into the thread as assistant messages and shows them in the timeline. */
-  onPersistWelcome?: (texts: string[]) => Promise<void>
+  onPersistWelcome?: (texts: string[], before?: number) => Promise<void>
 }) {
   const aui = useAui()
   const userStarted = useAuiState((state) => state.thread.messages.some((message) => message.role === 'user'))
   const [persistFailed, setPersistFailed] = useState(false)
   const persistingRef = useRef(false)
+  // When the welcome first showed: everything the person sends comes after it,
+  // so the saved welcome is placed before this even if their first message is
+  // still being written when the welcome is saved.
+  const welcomeShownAt = useRef<number | null>(null)
+  if (welcome && welcomeShownAt.current === null) welcomeShownAt.current = welcomeClockSeconds()
   // The welcome becomes real messages as soon as it has something to keep: the
   // person named the assistant, or sent a first message. Until then (and while
   // saving) the UI version stays on screen, so nothing blinks out.
@@ -54,7 +60,7 @@ export function ConversationThread({
     if (!welcome || welcome.persisted || persistingRef.current || !onPersistWelcome) return
     if (welcome.named === null && !userStarted) return
     persistingRef.current = true
-    void onPersistWelcome(welcome.texts())
+    void onPersistWelcome(welcome.texts(), welcomeShownAt.current ?? undefined)
       .then(() => welcome.onPersisted())
       .catch(() => setPersistFailed(true))
   }, [welcome, userStarted, onPersistWelcome])
