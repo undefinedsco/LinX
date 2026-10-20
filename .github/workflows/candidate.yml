@@ -395,3 +395,10 @@ jobs:
           name: release-acceptance-${{ needs.metadata.outputs.sourceSha }}
           path: acceptance/release-acceptance.json
           retention-days: 90
+      - name: Scale the RC site down
+        if: always()
+        run: |
+          set -euo pipefail
+          # The RC site runs only while it is being accepted; Service, Ingress and certificate stay.
+          [ -f ~/.kube/config ] || exit 0
+          kubectl -n "$NAMESPACE" scale deployment/linx-web-rc --replicas=0 || true
