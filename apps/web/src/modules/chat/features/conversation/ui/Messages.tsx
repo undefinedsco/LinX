@@ -61,10 +61,10 @@ function FileChip() {
 
 function BranchPicker() {
   return (
-    <BranchPickerPrimitive.Root hideWhenSingleBranch className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-      <BranchPickerPrimitive.Previous className="rounded p-0.5 hover:bg-muted" aria-label="上一个版本"><ChevronLeft className="h-3.5 w-3.5" /></BranchPickerPrimitive.Previous>
-      <span><BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count /></span>
-      <BranchPickerPrimitive.Next className="rounded p-0.5 hover:bg-muted" aria-label="下一个版本"><ChevronRight className="h-3.5 w-3.5" /></BranchPickerPrimitive.Next>
+    <BranchPickerPrimitive.Root hideWhenSingleBranch className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
+      <BranchPickerPrimitive.Previous className="shrink-0 rounded p-0.5 hover:bg-muted" aria-label="上一个版本"><ChevronLeft className="h-3.5 w-3.5" /></BranchPickerPrimitive.Previous>
+      <span className="whitespace-nowrap"><BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count /></span>
+      <BranchPickerPrimitive.Next className="shrink-0 rounded p-0.5 hover:bg-muted" aria-label="下一个版本"><ChevronRight className="h-3.5 w-3.5" /></BranchPickerPrimitive.Next>
     </BranchPickerPrimitive.Root>
   )
 }
