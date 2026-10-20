@@ -176,6 +176,25 @@ export async function readSeededAuthDebugState(page: Page) {
   })
 }
 
+/**
+ * Waits until the app's Solid database is usable from the page (`__SOLID_DB__`
+ * exists, is ready and exposes the authenticated fetch). The secretary can be
+ * visible a moment before that, so tests that evaluate against `__SOLID_DB__`
+ * must wait for it instead of assuming it.
+ */
+export async function waitForSolidDbReady(page: Page, timeout = 60_000): Promise<void> {
+  await expect.poll(async () => page.evaluate(() => {
+    const w = window as any
+    return w.__SOLID_DB_STATUS__ === 'ready'
+      && typeof w.__SOLID_DB_POD_URL__ === 'string'
+      && w.__SOLID_DB_POD_URL__.length > 0
+      && typeof w.__SOLID_DB__?.getDialect?.()?.getAuthenticatedFetch?.() === 'function'
+  }).catch(() => false), {
+    timeout,
+    message: 'window.__SOLID_DB__ never became ready',
+  }).toBe(true)
+}
+
 /** A Solid account on a provider: the seeded runtime, or a real provider such as id.undefineds.co. */
 export type ProviderAccount = Pick<SeededXpodRuntime, 'email' | 'password' | 'podName' | 'baseUrl'>
 

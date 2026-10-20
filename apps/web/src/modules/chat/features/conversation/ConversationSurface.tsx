@@ -21,6 +21,7 @@ import { ConversationThread } from './ConversationThread'
 import { localAttachmentAdapter } from './local-attachments'
 import { createFeedbackAdapter } from './ui/message-actions/feedback'
 import type { InlineWelcome } from './welcome/WelcomeConversation'
+import { useWelcomePersistence } from './welcome/useWelcomePersistence'
 import { ConversationDialogs } from './ConversationDialogs'
 import { usePersistVersionChoice } from './usePersistVersionChoice'
 import { useWorkbenchDialogs } from './workbench-dialogs'
@@ -128,6 +129,10 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
     }
   }, [agent, toRepository])
 
+  const persistWelcome = useWelcomePersistence({
+    localFetch, threadId: anchorThreadId, chatId: props.selectedChatId, refresh: refreshFromPod,
+  })
+
   const { isOnline: online, synchronize } = useChatConnectivity({
     podBaseUrl,
     sessionFetch,
@@ -170,6 +175,7 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
               threadId={props.selectedThreadId}
               sendDisabled={props.sendDisabled}
               welcome={props.welcome}
+              onPersistWelcome={persistWelcome}
               pendingComposerDraft={props.pendingComposerDraft}
               onComposerDraftApplied={props.onComposerDraftApplied}
             />

@@ -295,6 +295,10 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
       if (result.type === 'streaming') for await (const _event of result.stream()) { /* the choice is saved once the stream ends */ }
     },
     listAttachments: (chatId, threadId) => service.loadChatAttachments(chatId, threadId, {}),
+    async appendAssistantMessages(threadId, texts) {
+      if (!isAvailable()) throw new Error('当前空间连接尚未恢复，请稍后重试。')
+      await service.appendAssistantMessages(threadId, texts, {})
+    },
     async uploadAttachment(file, signal) {
       if (!isAvailable()) throw new Error('当前空间连接尚未恢复，请稍后重试。')
       const created = await service.process(JSON.stringify({
@@ -597,6 +601,8 @@ export interface LocalConversationApi {
   selectBranch?: (threadId: string, itemId: string, parentItemId: string) => Promise<void>
   /** Every attachment of the chat (all its threads), for the 附件 dialog. */
   listAttachments?: (chatId: string, threadId: string) => Promise<Attachment[]>
+  /** Saves assistant-authored messages that are not model output (the welcome) into the thread. */
+  appendAssistantMessages?: (threadId: string, texts: readonly string[]) => Promise<void>
   /** Two-phase upload collapsed into one call; returns the stored attachment. */
   uploadAttachment: (file: { name: string; mimeType: string; blob: Blob }, signal?: AbortSignal) => Promise<Attachment>
   run: (request: StreamingReq, signal?: AbortSignal) => AsyncIterable<ThreadStreamEvent>
