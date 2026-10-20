@@ -628,34 +628,6 @@ export class LocalChatKitService {
     return { thread: current.thread, threadUri: current.threadUri, items, alternates }
   }
 
-  /**
-   * Writes assistant messages that are not model output (the first-run welcome)
-   * into the thread, so they persist and show up in the chat list preview like
-   * any other message. They are placed just before the thread's earliest
-   * existing message and before `before` (seconds; when the welcome was shown,
-   * so a first message that is still being saved cannot end up ahead of it),
-   * or at "now" in an empty thread, keeping their own order.
-   */
-  async appendAssistantMessages(threadId: string, texts: readonly string[], context: StoreContext = {}, before?: number): Promise<void> {
-    const entries = texts.map((text) => text.trim()).filter(Boolean)
-    if (entries.length === 0) return
-    const thread = await this.store.loadThread(threadId, context)
-    const existing = await this.loadAllThreadItems(threadId, context)
-    const earliest = existing.reduce((min, item) => Math.min(min, item.created_at ?? min), before ?? Number.POSITIVE_INFINITY)
-    const base = Number.isFinite(earliest) ? earliest - entries.length : nowTimestamp() - entries.length + 1
-    for (const [index, text] of entries.entries()) {
-      await this.store.addThreadItem(threadId, {
-        id: this.store.generateItemId('assistant_message', thread, context),
-        thread_id: threadId,
-        type: 'assistant_message',
-        content: [{ type: 'output_text', text, annotations: [] }],
-        attachments: [],
-        status: 'completed',
-        created_at: base + index,
-      } as ThreadItem, context)
-    }
-  }
-
   /** Every file attached to, or generated in, any thread of the chat (the chat is one timeline). */
   async loadChatAttachments(chatId: string, currentThreadId: string, context: StoreContext = {}): Promise<Attachment[]> {
     const ids = await this.chatThreadIds(chatId, currentThreadId, context)
