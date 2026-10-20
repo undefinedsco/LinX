@@ -541,6 +541,10 @@ describe('LoginModal', () => {
     expect(screen.queryByText('Google')).toBeNull()
     expect(screen.queryByText('GitHub')).toBeNull()
     expect(screen.queryByText('企业 SSO')).toBeNull()
+    // No configured providers: no empty flex-1 list, so the card fits its content.
+    const otherView = document.querySelector('[data-login-view="other"]') as HTMLElement
+    expect(otherView.className).not.toContain('h-full')
+    expect(otherView.querySelector('.flex-1')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: '返回' }))
     expect(screen.getByRole('button', { name: /^云端空间/ })).toBeTruthy()

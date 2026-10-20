@@ -141,6 +141,20 @@ function getPodRelativePath(uri: string, podRootUri: string): string {
   }
 }
 
+/**
+ * Pod-root containers that LinX/models create for app-internal data (`agents/`, `profile/`,
+ * `settings/`, `inbox/`; see the `base` of the @undefineds.co/models schemas). The app reads them
+ * through its collections; they are not part of the person's own files, so Files never lists them.
+ * The person's data lives under `.data/` (shown as 数据).
+ */
+const POD_SYSTEM_CONTAINER_NAMES: ReadonlySet<string> = new Set(['agents', 'profile', 'settings', 'inbox'])
+
+export function isPodSystemContainer(uri: string, podRootUri: string): boolean {
+  if (!uri.endsWith('/')) return false
+  const segments = getPodRelativePath(uri, podRootUri).split('/').filter(Boolean)
+  return segments.length === 1 && POD_SYSTEM_CONTAINER_NAMES.has(segments[0])
+}
+
 export function classifyFilesEntry(uri: string, isContainer: boolean, podRootUri: string, mimeType?: string | null): FilesEntrySemanticKind {
   const relativePath = getPodRelativePath(uri, podRootUri)
   const normalizedPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`

@@ -2075,7 +2075,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       expect.objectContaining({ method: 'POST' }),
     )
     expect(providerFetch).not.toHaveBeenCalled()
-    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('消息生成失败。请稍后重试。')
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('还没有连接 AI 模型。请到 设置 → 模型连接 添加一个模型后再试。')
   })
 
   it('surfaces shared credential query failures instead of pretending the API key is missing', async () => {
@@ -2146,5 +2146,43 @@ describe('LocalChatKitService platform runtime routing', () => {
         message: '消息生成失败。请稍后重试。',
       }),
     }))
+  })
+})
+
+describe('LocalChatKitService welcome messages', () => {
+  it('saves assistant welcome messages before the earliest message, in order', async () => {
+    const store = createMockStore([
+      { id: 'user-1', thread_id: 'thread-1', type: 'user_message', content: [{ type: 'input_text', text: '帮我整理待办' }], attachments: [], created_at: 100 },
+    ])
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: createMockDb({ provider: 'openai', model: 'gpt-4o-mini' }) as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: vi.fn() as any,
+    })
+
+    await service.appendAssistantMessages('thread-1', ['你好，我是你的助手', '好，以后我叫LinX 助手。想先做点什么？'])
+
+    const saved = store.addThreadItem.mock.calls.map(([, item]: any[]) => item)
+    expect(saved.map((item) => item.content[0].text)).toEqual(['你好，我是你的助手', '好，以后我叫LinX 助手。想先做点什么？'])
+    expect(saved.every((item) => item.type === 'assistant_message' && item.status === 'completed')).toBe(true)
+    expect(saved[0].created_at).toBeLessThan(saved[1].created_at)
+    expect(saved[1].created_at).toBeLessThan(100)
+  })
+
+  it('stays ahead of a first message that is not saved yet when given when the welcome showed', async () => {
+    const store = createMockStore([])
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: createMockDb({ provider: 'openai', model: 'gpt-4o-mini' }) as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: vi.fn() as any,
+    })
+
+    // The welcome showed at 500; the person's first message (created at 500 or later) is still being written.
+    await service.appendAssistantMessages('thread-1', ['你好，我是你的助手', '好，以后我叫LinX 助手。想先做点什么？'], {}, 500)
+
+    const saved = store.addThreadItem.mock.calls.map(([, item]: any[]) => item)
+    expect(saved.map((item) => item.created_at)).toEqual([498, 499])
   })
 })
