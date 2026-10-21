@@ -82,7 +82,7 @@ export function projectStructuredSubjectPeekBodyModel(peek: StructuredSubjectPee
     sourceRows,
     sourceValue: peek.source ?? '',
     termFactRows,
-    typeLabel: peek.className ? localPredicateLabel(normalizeStructuredCellResourceValue(peek.className)) : '',
+    typeLabel: peek.typeName || (peek.className ? localPredicateLabel(normalizeStructuredCellResourceValue(peek.className)) : ''),
   }
 }
 

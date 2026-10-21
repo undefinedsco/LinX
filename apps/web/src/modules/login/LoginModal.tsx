@@ -982,16 +982,16 @@ function getRememberedAccountBindingLabel(account: NonNullable<LoginModalProps['
   const issuer = resolveRememberedIssuerLabel(account)
   const marker = resolveStoredAccountSpaceMarker(account)
 
-  if (marker === 'local') return `${issuer} · 本机空间`
-  if (marker === 'standalone') return `${issuer} · 独立空间`
+  if (marker === 'local') return issuer === '本机空间' ? issuer : `${issuer} · 本机空间`
+  if (marker === 'standalone') return issuer === '独立空间' ? issuer : `${issuer} · 独立空间`
 
   const storageLabel = account.storageProviderLabel?.toLowerCase()
   const storageUrl = account.storageProviderUrl ?? ''
   if (storageLabel === 'cloud' || /undefineds\.co/i.test(storageUrl)) {
-    return `${issuer} · 云端空间`
+    return issuer === '云端' ? '云端空间' : `${issuer} · 云端空间`
   }
 
-  return account.storageProviderLabel ? `${issuer} · ${account.storageProviderLabel}` : issuer
+  return account.storageProviderLabel ? `${issuer} · ${localizeAccountLabel(account.storageProviderLabel)}` : issuer
 }
 
 function resolveRememberedIssuerLabel(account: NonNullable<LoginModalProps['storedAccount']>): string {
@@ -999,7 +999,17 @@ function resolveRememberedIssuerLabel(account: NonNullable<LoginModalProps['stor
     return 'undefineds'
   }
 
-  return account.issuerLabel || '账号'
+  return localizeAccountLabel(account.issuerLabel) || '账号'
+}
+
+/** Stored labels are English keys (`Standalone`, `Local`, `Cloud`); the card shows Chinese only. */
+function localizeAccountLabel(label?: string): string | undefined {
+  switch (label?.trim().toLowerCase()) {
+    case 'standalone': return '独立空间'
+    case 'local': return '本机空间'
+    case 'cloud': return '云端'
+    default: return label
+  }
 }
 
 function isStandaloneAccountUrl(url?: string): boolean {

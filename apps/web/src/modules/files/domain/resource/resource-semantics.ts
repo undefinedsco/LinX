@@ -149,10 +149,53 @@ function getPodRelativePath(uri: string, podRootUri: string): string {
  */
 const POD_SYSTEM_CONTAINER_NAMES: ReadonlySet<string> = new Set(['agents', 'profile', 'settings', 'inbox'])
 
+/**
+ * The name a person sees for a document, table or card: no `.md` / `.ttl` extension.
+ * Other files (images, PDFs) keep theirs, and `.data` reads as 数据.
+ */
+export function displayResourceName(name: string): string {
+  if (name === '.data') return '数据'
+  const stripped = name.replace(/\.card\.ttl$/i, '').replace(/\.(ttl|md|markdown)$/i, '')
+  return stripped || name
+}
+
+/**
+ * Where a resource lives, in words ("我的空间 / 数据"): decoded folder names, no scheme, host
+ * or percent-encoding. `containerUri` is the folder that holds the resource.
+ */
+export function displayContainerLocation(containerUri: string, podRootUri?: string | null): string {
+  const root = podRootUri ? normalizeContainerUri(podRootUri) : null
+  const container = normalizeContainerUri(containerUri)
+  let relative: string[]
+  try {
+    const containerPath = new URL(container).pathname
+    const rootPath = root ? new URL(root).pathname : '/'
+    relative = containerPath.startsWith(rootPath)
+      ? containerPath.slice(rootPath.length).split('/').filter(Boolean)
+      : containerPath.split('/').filter(Boolean)
+  } catch {
+    relative = container.split('/').filter(Boolean)
+  }
+  const names = relative.map((segment) => {
+    try {
+      return displayResourceName(decodeURIComponent(segment))
+    } catch {
+      return displayResourceName(segment)
+    }
+  })
+  return ['我的空间', ...names].join(' / ')
+}
+
 export function isPodSystemContainer(uri: string, podRootUri: string): boolean {
   if (!uri.endsWith('/')) return false
   const segments = getPodRelativePath(uri, podRootUri).split('/').filter(Boolean)
   return segments.length === 1 && POD_SYSTEM_CONTAINER_NAMES.has(segments[0])
+}
+
+/** True for anything inside a Pod-root system container (`agents/`, `profile/`, `settings/`, `inbox/`). */
+export function isInsidePodSystemContainer(uri: string, podRootUri: string): boolean {
+  const first = getPodRelativePath(uri, podRootUri).split('/').filter(Boolean)[0]
+  return first !== undefined && POD_SYSTEM_CONTAINER_NAMES.has(first) && getPodRelativePath(uri, podRootUri).split('/').filter(Boolean).length > 1
 }
 
 export function classifyFilesEntry(uri: string, isContainer: boolean, podRootUri: string, mimeType?: string | null): FilesEntrySemanticKind {

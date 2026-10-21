@@ -125,8 +125,9 @@ export function projectStructuredSubjectCellPendingMarker({
 }): StructuredSubjectCellPendingMarker | null {
   return pending
     ? {
-        displayLabel: `${displayLabel}*`,
-        label: '待确认 subject',
+        // A new row is named by what the person typed, not by its `#fragment` address.
+        displayLabel: displayLabel.startsWith('#') ? rowNameFromHash(displayLabel) : displayLabel,
+        label: '待确认',
       }
     : null
 }

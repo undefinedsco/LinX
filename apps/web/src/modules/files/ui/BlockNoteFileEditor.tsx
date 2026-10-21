@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FocusEvent } from 'react'
 import { BlockNoteView } from '@blocknote/mantine'
+import { zh } from '@blocknote/core/locales'
 import { useCreateBlockNote } from '@blocknote/react'
 import '@blocknote/mantine/style.css'
 
@@ -103,7 +104,7 @@ export function BlockNoteFileEditor({
   const lastSavedTextRef = useRef<string | null>(null)
   const [saveState, setSaveState] = useState<RichTextEditorSaveState>(createRichTextEditorSaveState)
 
-  const editor = useCreateBlockNote()
+  const editor = useCreateBlockNote({ dictionary: zh })
 
   const serialize = (blocks: readonly AnyBlock[]): string => {
     if (content.saveFormat === 'plain-text') {

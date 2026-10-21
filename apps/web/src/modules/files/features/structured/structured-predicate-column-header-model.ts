@@ -139,7 +139,7 @@ function predicateDefinitionRuleText(definition: StructuredVocabPredicateDefinit
   if (shapeRules.length > 0) {
     return shapeRules.map((rule) => rule.constraint || rule.label || rule.uri).filter(Boolean).join(' · ')
   }
-  return definition?.shape || '使用默认 predicate 规则'
+  return definition?.shape || '使用默认规则'
 }
 
 function pendingFieldStatusLabel(status: 'pending' | 'approval-staged') {
@@ -151,7 +151,7 @@ function normalizedPredicateHeaderLabel(label: string) {
 }
 
 function pendingPredicateHeaderLabel(label: string) {
-  return label.endsWith('*') ? label : `${label}*`
+  return normalizedPredicateHeaderLabel(label)
 }
 
 export function projectStructuredDefinedPredicateHeaderChrome({
@@ -167,8 +167,8 @@ export function projectStructuredDefinedPredicateHeaderChrome({
     },
     menu: {
       actions: {
-        copyPredicate: { label: '复制 predicate URI' },
-        openPredicate: { label: '打开 predicate URI' },
+        copyPredicate: { label: '复制字段标识' },
+        openPredicate: { label: '打开字段定义' },
         shapeRuleActions: shapeRuleActions.map((rule) => ({
           uri: rule.uri,
           label: `打开规则 ${rule.label}`,
@@ -177,11 +177,11 @@ export function projectStructuredDefinedPredicateHeaderChrome({
       actionsHeading: '链接操作',
       rows: {
         description: { label: '说明' },
-        predicate: { label: 'predicate' },
-        rule: { label: '规则与形状' },
+        predicate: { label: '字段' },
+        rule: { label: '规则' },
         status: { label: '状态' },
       },
-      title: 'Predicate 定义',
+      title: '字段说明',
     },
     sortButton: {
       ariaLabel: `Sort ${normalizedLabel}`,
@@ -201,7 +201,7 @@ export function projectStructuredPendingPredicateHeaderChrome({
   return {
     menu: {
       actions: {
-        discard: { label: '放弃 predicate' },
+        discard: { label: '放弃此字段' },
         openProposal: hasVocabProposal ? { label: '打开审批记录' } : null,
         submit: status === 'pending' ? { label: '提交审核' } : null,
       },
@@ -209,15 +209,15 @@ export function projectStructuredPendingPredicateHeaderChrome({
       rows: {
         approvalRecord: { label: '审批记录' },
         description: { label: '说明' },
-        predicate: { label: 'predicate' },
-        rule: { label: '规则与形状' },
+        predicate: { label: '字段' },
+        rule: { label: '规则' },
         status: { label: '状态' },
-        uri: { label: 'URI' },
+        uri: { label: '专业标识' },
       },
-      title: '待确认 predicate',
+      title: '待确认字段',
     },
     trigger: {
-      ariaLabel: `待确认 predicate ${normalizedLabel}`,
+      ariaLabel: `待确认字段 ${normalizedLabel}`,
     },
   }
 }
@@ -271,7 +271,7 @@ export function projectStructuredPredicateColumnHeader({
       openableVocabProposal: proposal.vocabProposal,
       predicateUri: proposal.predicateUri,
       proposalUri: proposal.uri,
-      ruleText: proposal.shape || '使用默认 predicate 规则',
+      ruleText: proposal.shape || '使用默认规则',
       shape: proposal.shape,
       status: proposal.status,
       statusLabel: pendingFieldStatusLabel(proposal.status),

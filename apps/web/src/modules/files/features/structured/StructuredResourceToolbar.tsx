@@ -404,7 +404,7 @@ export function StructuredResourceToolbar({
                   {toolbarModel.extraViewTrigger.label}
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="min-w-[8rem] border-border bg-popover text-popover-foreground shadow-lg">
                 {toolbarModel.extraViewOptionRows.map((row) => (
                   <DropdownMenuItem key={row.value} onSelect={() => onViewModeChange(row.value)}>
                     {row.label}

@@ -26,6 +26,8 @@ export type StructuredSubjectPeek = {
   scrollTop: number
   title: string
   className: string
+  /** The table this card belongs to, shown as its type. */
+  typeName?: string
   summary: string
   source: string
   sourceLinkedCard?: {
@@ -270,14 +272,26 @@ export function resolveStructuredRelationOpenTarget(
   return null
 }
 
+/** `…#%E7%AC%AC…` → 第…: the part after `#` (or the last path segment), decoded. */
+function readableSubjectName(subject: string): string {
+  const raw = localPredicateLabel(subject)
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 export function deriveStructuredSubjectPeekFacts({
   projection,
   visibleProjection,
   subject,
+  tableName,
 }: {
   projection: StructuredTableProjection
   visibleProjection: StructuredTableProjection
   subject: string
+  tableName?: string
 }) {
   const sourceRow = projection.rows.find((row) => row.subject === subject)
   const visibleRow = visibleProjection.rows.find((row) => row.subject === subject)
@@ -311,8 +325,9 @@ export function deriveStructuredSubjectPeekFacts({
     .slice(0, 6)
 
   return {
-    title: title || localPredicateLabel(subject),
+    title: title || readableSubjectName(subject),
     className,
+    typeName: tableName,
     summary,
     source,
     sourceLinkedCard,

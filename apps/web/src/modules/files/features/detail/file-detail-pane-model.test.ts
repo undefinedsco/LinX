@@ -163,9 +163,9 @@ describe('file detail pane model', () => {
       size: 6144,
       modifiedAt: '2026-07-25T08:40:00.000Z',
     }))).toEqual({
-      title: 'report.md',
-      subtitle: 'Markdown 文档 · /files/cards/',
-      footer: 'text/markdown · 6 KB · 2026-07-25 08:40',
+      title: 'report',
+      subtitle: '文档 · 我的空间 / files / cards',
+      footer: '6 KB · 2026-07-25 08:40',
     })
 
     expect(projectFileDetailChrome({
@@ -177,7 +177,7 @@ describe('file detail pane model', () => {
       modifiedAt: null,
       childEntries: [{}, {}] as FilesDetail['childEntries'],
     })).toMatchObject({
-      subtitle: '文件夹 · /files/',
+      subtitle: '文件夹 · 我的空间 / files',
       footer: '2 项',
     })
 
@@ -187,8 +187,23 @@ describe('file detail pane model', () => {
       size: null,
       modifiedAt: 'not-a-date',
     })).toMatchObject({
-      subtitle: 'Turtle 数据 · /files/',
-      footer: 'text/turtle',
+      subtitle: '表格 · 我的空间 / files',
+      footer: '',
+    })
+  })
+
+  it('shows a table by its name and a readable location, never the extension or encoded path', () => {
+    expect(projectFileDetailChrome(file({
+      mimeType: 'text/turtle',
+      name: '任务.ttl',
+      uri: 'https://pod.example/test/.data/%E4%BB%BB%E5%8A%A1.ttl',
+      parentUri: 'https://pod.example/test/.data/',
+      size: null,
+      modifiedAt: null,
+    }), 'https://pod.example/test/')).toEqual({
+      title: '任务',
+      subtitle: '表格 · 我的空间 / 数据',
+      footer: '120 B',
     })
   })
 
@@ -207,7 +222,7 @@ describe('file detail pane model', () => {
       kind: 'container',
       parentUri: 'https://pod.example/',
       childEntries: [],
-    }).subtitle).toBe('各应用共用的数据 · /')
+    }).subtitle).toBe('各应用共用的数据 · 我的空间')
   })
 
   it('projects empty state, shell fallback, and horizontal scroll reset decisions', () => {

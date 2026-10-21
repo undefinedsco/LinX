@@ -74,7 +74,7 @@ describe('CardDialogHost', () => {
     act(() => {
       useCardDialog.getState().open({ uri: DOC, siblings: ['https://pod.example/notes/a.md', DOC, 'https://pod.example/notes/z.md'] })
     })
-    expect(await screen.findByText('notes / plan.md')).toBeInTheDocument()
+    expect(await screen.findByText('notes / plan')).toBeInTheDocument()
     expect(screen.getByText('2 / 3')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '下一张' }))
     expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/notes/z.md')

@@ -23,6 +23,7 @@ import {
 } from '../../domain/folder/folder-operation-model'
 import type { FilesDetail, FilesEntry } from '../../domain/resource/resource-model'
 import { createContainerNodeId } from '../../domain/resource/tree-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export function useFolderDetailOperationController({
   file,
@@ -175,7 +176,7 @@ export function useFolderDetailOperationController({
       toast({ description: submitPlan.successMessage })
     } catch (error) {
       toast({
-        description: `${submitPlan.failureActionLabel}失败：${error instanceof Error ? error.message : '未知错误'}`,
+        description: `${submitPlan.failureActionLabel}失败：${formatFilesErrorForUser(error, '未知错误')}`,
         variant: 'destructive',
       })
     }

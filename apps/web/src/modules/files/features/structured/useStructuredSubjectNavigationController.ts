@@ -5,6 +5,7 @@ import { useFilesRouteBridge } from '../../app/FilesRouteContext'
 import { createFilesStructuredSubjectRouteState, pushStructuredSubjectRoute } from '../../app/route-state'
 import { useFilesStore } from '../../app/store'
 import type { FilesDetail } from '../../domain/resource/resource-model'
+import { displayResourceName, getEntryName } from '../../domain/resource/resource-semantics'
 import type { StructuredResourceViewMode, StructuredSortDirection } from '../../domain/structured/structured-view-metadata'
 import type { StructuredTableProjection } from '../../domain/structured/structured-table'
 import {
@@ -137,9 +138,10 @@ export function useStructuredSubjectNavigationController({
         projection,
         visibleProjection: viewMode === 'table' ? tableProjection : effectiveViewProjection,
         subject,
+        tableName: displayResourceName(getEntryName(file.uri.split('#')[0] ?? file.uri)),
       }),
     })
-  }, [currentStructuredScrollTop, effectiveViewProjection, navigateStructuredSubject, projection, tableProjection, viewMode])
+  }, [currentStructuredScrollTop, effectiveViewProjection, navigateStructuredSubject, file.uri, projection, tableProjection, viewMode])
 
   const openAlternativeViewSubject = useCallback((subject: string, options?: StructuredSubjectOpenOptions) => {
     const openRequest = projectStructuredAlternativeSubjectOpenRequest({

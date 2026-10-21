@@ -13,8 +13,8 @@ export function projectStructuredSubjectPeekDrawerChrome(
   const isTerm = peek.kind === 'term'
   const isExternal = peek.kind === 'external'
   return {
-    closeAriaLabel: isTerm ? 'Close term peek' : 'Close subject peek',
-    drawerAriaLabel: isTerm ? 'Structured term peek' : 'Structured subject peek',
+    closeAriaLabel: isTerm ? '关闭定义预览' : '关闭卡片预览',
+    drawerAriaLabel: isTerm ? '定义预览' : '卡片预览',
     iconKind: isExternal ? 'external-link' : 'info',
     title: isTerm ? '定义预览' : isExternal ? '链接预览' : '卡片预览',
   }

@@ -82,7 +82,7 @@ export interface WhiteboardCanvas {
 export const WHITEBOARD_CANVAS_FORMAT_VERSION = 1
 export const WHITEBOARD_CANVAS_MIME_TYPE = 'application/json'
 
-export const WHITEBOARD_CARD_DEFAULT_SIZE = { width: 240, height: 140 } as const
+export const WHITEBOARD_CARD_DEFAULT_SIZE = { width: 300, height: 180 } as const
 export const WHITEBOARD_TEXT_DEFAULT_SIZE = { width: 220, height: 60 } as const
 export const WHITEBOARD_SECTION_DEFAULT_SIZE = { width: 420, height: 280 } as const
 
@@ -387,6 +387,59 @@ export function createWhiteboardCardNode({
   return target.subpath
     ? { ...geometry, type: 'file', file: target.file, subpath: target.subpath }
     : { ...geometry, type: 'file', file: target.file }
+}
+
+export interface WhiteboardArea {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+const WHITEBOARD_PLACEMENT_GAP = 24
+
+function overlapsAny(
+  nodes: readonly WhiteboardCanvasNode[],
+  x: number,
+  y: number,
+  size: { width: number; height: number },
+): boolean {
+  return nodes.some((node) => (
+    node.type !== 'group'
+    && x < node.x + node.width + WHITEBOARD_PLACEMENT_GAP / 2
+    && x + size.width + WHITEBOARD_PLACEMENT_GAP / 2 > node.x
+    && y < node.y + node.height + WHITEBOARD_PLACEMENT_GAP / 2
+    && y + size.height + WHITEBOARD_PLACEMENT_GAP / 2 > node.y
+  ))
+}
+
+/**
+ * Where a new card goes so it does not cover another one: the first free slot, left to right and
+ * top to bottom, inside the visible `area`. When the area is full the card goes below everything.
+ */
+export function findFreeWhiteboardPosition({
+  nodes,
+  area,
+  size = WHITEBOARD_CARD_DEFAULT_SIZE,
+}: {
+  nodes: readonly WhiteboardCanvasNode[]
+  area: WhiteboardArea
+  size?: { width: number; height: number }
+}): { x: number; y: number } {
+  const stepX = size.width + WHITEBOARD_PLACEMENT_GAP
+  const stepY = size.height + WHITEBOARD_PLACEMENT_GAP
+  const left = Math.round(area.x + WHITEBOARD_PLACEMENT_GAP)
+  const top = Math.round(area.y + WHITEBOARD_PLACEMENT_GAP)
+  const right = area.x + area.width - WHITEBOARD_PLACEMENT_GAP
+  const bottom = area.y + area.height - WHITEBOARD_PLACEMENT_GAP
+  for (let y = top; y + size.height <= bottom; y += stepY) {
+    for (let x = left; x + size.width <= right; x += stepX) {
+      if (!overlapsAny(nodes, x, y, size)) return { x, y }
+    }
+  }
+  const cards = nodes.filter((node) => node.type !== 'group')
+  const lowest = cards.length > 0 ? Math.max(...cards.map((node) => node.y + node.height)) : top
+  return { x: left, y: Math.max(top, lowest + WHITEBOARD_PLACEMENT_GAP) }
 }
 
 export function createWhiteboardCanvasId(prefix: string, taken: ReadonlySet<string>, seed = Date.now()): string {

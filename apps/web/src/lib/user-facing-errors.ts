@@ -41,6 +41,26 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
     return '登录状态已失效。请重新登录。'
   }
 
+  // Writes from the Files tables and documents (structured-cell approval commands).
+  if (/refusing to write a structured cell/.test(normalized)) {
+    return '这个位置不能直接修改。请到“数据”里的表格中编辑。'
+  }
+
+  const structuredWriteStatus = /cannot write structured cell:\s*http\s*(\d{3})/.exec(normalized)
+  if (structuredWriteStatus) {
+    const status = Number(structuredWriteStatus[1])
+    if (status === 401) return '登录状态已失效。请重新登录。'
+    if (status === 403) return '你没有修改这里的权限。'
+    if (status === 409 || status === 412) return '这里刚被别处改过。请刷新后再改。'
+    if (status >= 500) return '服务暂时没有响应。请稍后重试。'
+    return '没能保存这个单元格。请检查填写的内容后重试。'
+  }
+
+  // A bare browser network failure (no sign-in context): the request never reached the server.
+  if (/^(?:typeerror:\s*)?(?:failed to fetch|load failed|network request failed|networkerror when attempting to fetch resource\.?)$/.test(normalized)) {
+    return '网络连接不稳定，操作没有完成。请检查网络后重试。'
+  }
+
   if (/email_unverified|verify_required/.test(normalized)) {
     return '请先验证邮箱。打开注册邮箱里的验证邮件后，再回到 LinX 重试。'
   }
@@ -247,6 +267,30 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
   }
 
   return fallback
+}
+
+/**
+ * Errors from reading and writing the person's own files, documents and tables. Plain HTTP
+ * failures read as what happened to the file, not as a sign-in problem; anything else falls
+ * through to the app-wide formatter.
+ */
+export function formatFilesErrorForUser(error: unknown, fallback = '操作没有完成，请重试。'): string {
+  const message = safeDecodeURIComponent(extractErrorMessage(error)).trim()
+  const status = /structured cell/i.test(message) ? undefined : /\bHTTP\s*:?\s*(\d{3})\b/i.exec(message)?.[1]
+  if (status && !isSolidAuthorizationExpired(error)) {
+    const code = Number(status)
+    if (code === 401) return '登录状态已失效。请重新登录。'
+    if (code === 403) return '你没有修改这里的权限。'
+    if (code === 404) return '找不到这个文件，它可能已被移动或删除。'
+    if (code === 409 || code === 412) return '这里刚被别处改过。请刷新后再试。'
+    if (code === 413 || code === 507) return '文件太大或空间已满，没有保存。'
+    if (code >= 500) return '服务暂时没有响应。请稍后重试。'
+    if (code >= 400) return fallback
+  }
+  if (/service unavailable/i.test(message)) return '服务暂时没有响应。请稍后重试。'
+  if (/\b(?:pod\s+)?write failed\b/i.test(message)) return '没有保存成功。请检查网络后重试。'
+  if (/\b(?:pod\s+)?read failed\b/i.test(message)) return '没能读取这个文件。请检查网络后重试。'
+  return formatErrorForUser(error, fallback)
 }
 
 export function createUserFacingError(error: unknown, fallback: string): Error {

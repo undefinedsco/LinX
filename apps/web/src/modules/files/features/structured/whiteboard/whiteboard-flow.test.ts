@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { WhiteboardCanvas } from '../../../domain/structured/structured-whiteboard-canvas'
+import { findFreeWhiteboardPosition, type WhiteboardCanvas } from '../../../domain/structured/structured-whiteboard-canvas'
 import {
   moveCanvasNodes,
   nodesInsideSection,
@@ -50,5 +50,25 @@ describe('whiteboard flow mapping', () => {
   it('drops lines when a card is removed and names relations without IRIs', () => {
     expect(removeCanvasNodes(canvas, new Set(['c2'])).edges).toHaveLength(0)
     expect(whiteboardRelationLabel('http://example.org/vocab/hasPart')).toBe('has Part')
+  })
+})
+
+describe('findFreeWhiteboardPosition', () => {
+  const card = (id: string, x: number, y: number) => ({ id, type: 'file', file: 'a.md', x, y, width: 300, height: 180 }) as never
+
+  it('puts the first card at the top-left of the visible area', () => {
+    expect(findFreeWhiteboardPosition({ nodes: [], area: { x: 0, y: 0, width: 1000, height: 600 } })).toEqual({ x: 24, y: 24 })
+  })
+
+  it('moves along to the next free slot instead of covering a card', () => {
+    const position = findFreeWhiteboardPosition({ nodes: [card('a', 24, 24)], area: { x: 0, y: 0, width: 1000, height: 600 } })
+    expect(position.x).toBeGreaterThanOrEqual(24 + 300)
+    expect(position.y).toBe(24)
+  })
+
+  it('stays inside the visible area and falls back to below the cards when it is full', () => {
+    const full = [card('a', 24, 24), card('b', 348, 24), card('c', 24, 228), card('d', 348, 228)]
+    const position = findFreeWhiteboardPosition({ nodes: full, area: { x: 0, y: 0, width: 700, height: 440 } })
+    expect(position).toEqual({ x: 24, y: 228 + 180 + 24 })
   })
 })
