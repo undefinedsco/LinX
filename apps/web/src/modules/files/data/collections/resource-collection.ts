@@ -10,6 +10,7 @@ import {
   createFolderResource,
   createRawTextResource,
   deleteFileResource,
+  invalidateContainerListingCache,
   listAllBrowsableEntries,
   listContainerChildNodes,
   listContainerEntries,
@@ -46,6 +47,13 @@ export function createResourceCollection(dependencies: ResourceCollectionDepende
     const db = dbOverride ?? getDb()
     if (!db) throw new Error('Database not connected')
     return db
+  }
+
+  /** Runs a write, then drops the listing cache so the refetch that follows sees it. */
+  async function afterListingWrite<T>(db: SolidDatabase, write: Promise<T>): Promise<T> {
+    const result = await write
+    await invalidateContainerListingCache(db)
+    return result
   }
 
   return {
@@ -154,7 +162,8 @@ export function createResourceCollection(dependencies: ResourceCollectionDepende
       content: string,
       dbOverride?: SolidDatabase | null,
     ): Promise<FilesRawTextResource> {
-      return createRawTextResource(requireFilesDb(dbOverride), resource, content)
+      const db = requireFilesDb(dbOverride)
+      return afterListingWrite(db, createRawTextResource(db, resource, content))
     },
 
     async createBlob(
@@ -162,23 +171,28 @@ export function createResourceCollection(dependencies: ResourceCollectionDepende
       content: Blob,
       dbOverride?: SolidDatabase | null,
     ): Promise<FilesDetail> {
-      return createBlobResource(requireFilesDb(dbOverride), resource, content)
+      const db = requireFilesDb(dbOverride)
+      return afterListingWrite(db, createBlobResource(db, resource, content))
     },
 
     async copy(input: FilesResourceTransferInput, dbOverride?: SolidDatabase | null): Promise<FilesDetail> {
-      return copyFileResource(requireFilesDb(dbOverride), input)
+      const db = requireFilesDb(dbOverride)
+      return afterListingWrite(db, copyFileResource(db, input))
     },
 
     async move(input: FilesResourceTransferInput, dbOverride?: SolidDatabase | null): Promise<FilesDetail> {
-      return moveFileResource(requireFilesDb(dbOverride), input)
+      const db = requireFilesDb(dbOverride)
+      return afterListingWrite(db, moveFileResource(db, input))
     },
 
     async delete(resourceUri: string, dbOverride?: SolidDatabase | null): Promise<void> {
-      await deleteFileResource(requireFilesDb(dbOverride), resourceUri)
+      const db = requireFilesDb(dbOverride)
+      await afterListingWrite(db, deleteFileResource(db, resourceUri))
     },
 
     async createFolder(input: FilesFolderCreateInput, dbOverride?: SolidDatabase | null): Promise<FilesDetail> {
-      return createFolderResource(requireFilesDb(dbOverride), input)
+      const db = requireFilesDb(dbOverride)
+      return afterListingWrite(db, createFolderResource(db, input))
     },
 
     getParentContainerUri,

@@ -584,7 +584,7 @@ describe('structured cell change approvals', () => {
     }
 
     await expect(approveStructuredCellChangeProposalFromInbox(db as any, proposal.id))
-      .rejects.toThrow('Refusing to approve structured cell proposal outside editable .data resources.')
+      .rejects.toThrow(/公开区或系统保留区/)
     expect(authFetch).toHaveBeenCalledTimes(1)
     expect(authFetch.mock.calls[0]?.[0]).toBe(proposal.proposalResourceUri)
   })

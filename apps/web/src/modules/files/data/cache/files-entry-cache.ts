@@ -22,6 +22,8 @@ export type FilesEntryCacheQueryRoots = {
   entries: QueryKey
   containerEntries: QueryKey
   children: QueryKey
+  /** The Pod root listing the tree is seeded from; it must be refreshed together with the entry lists. */
+  roots: QueryKey
   detail: QueryKey
   rawText: QueryKey
   metaSidecar: QueryKey
@@ -136,6 +138,7 @@ export function createFilesEntryCacheCollection(
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.roots }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, resourceUri] }),
         parentContainerUri
           ? cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, parentContainerUri] })
@@ -193,6 +196,7 @@ export function createFilesEntryCacheCollection(
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.roots }),
         options.includeRawText
           ? cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, resourceUri] })
           : Promise.resolve(),
@@ -235,6 +239,7 @@ export function createFilesEntryCacheCollection(
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.roots }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, input.sourceUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, input.destinationUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, input.sourceUri] }),
@@ -257,6 +262,7 @@ export function createFilesEntryCacheCollection(
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.roots }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, resourceUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, resourceUri] }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.metaSidecar, resourceUri, 'resource'] }),
@@ -299,6 +305,7 @@ export function createFilesEntryCacheCollection(
         cacheClient.invalidateQueries({ queryKey: queryKeys.entries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
+        cacheClient.invalidateQueries({ queryKey: queryKeys.roots }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.detail }),
         cacheClient.invalidateQueries({ queryKey: [...queryKeys.detail, input.containerUri] }),
         folder
