@@ -7,7 +7,7 @@
 export const RDF_NS = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
 export const RDF_TYPE_IRI = `${RDF_NS}type`
 
-const WELL_KNOWN_PREFIXES: Record<string, string> = {
+export const WELL_KNOWN_PREFIXES: Record<string, string> = {
   rdf: RDF_NS,
   rdfs: 'http://www.w3.org/2000/01/rdf-schema#',
   xsd: 'http://www.w3.org/2001/XMLSchema#',

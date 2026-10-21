@@ -99,7 +99,7 @@ export function useFilesTreePaneController() {
   const podRootUri = useFilesCurrentPodRootUri()
   // Nothing (or a non-folder view) selected: 添加 goes to the top of 我的空间 instead of being disabled.
   const addContainerUri = useMemo(
-    () => projectFilesAddContainerUri(selection) ?? podRootUri,
+    () => projectFilesAddContainerUri(selection, podRootUri),
     [podRootUri, selection],
   )
   const [addMenuOpen, setAddMenuOpen] = useState(false)

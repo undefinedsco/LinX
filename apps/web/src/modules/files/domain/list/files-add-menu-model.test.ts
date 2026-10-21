@@ -32,4 +32,14 @@ describe('Files add menu model', () => {
       containerUri: 'https://pod.example/public/',
     })).toBe('https://pod.example/public/')
   })
+
+  it('falls back to the Pod root as a container, also for a path-based Pod', () => {
+    // The Pod base has no trailing slash; without one, new URL('a.md', base) lands on the server origin.
+    const target = projectFilesAddContainerUri({ kind: 'all' }, 'http://localhost:3000/test')
+    expect(target).toBe('http://localhost:3000/test/')
+    expect(new URL('会议纪要.md', target!).toString()).toBe(`http://localhost:3000/test/${encodeURIComponent('会议纪要.md')}`)
+    expect(projectFilesAddContainerUri({ kind: 'all' }, 'http://localhost:3000/test/')).toBe('http://localhost:3000/test/')
+    expect(projectFilesAddContainerUri({ kind: 'container', containerUri: 'http://localhost:3000/test/work/' }, 'http://localhost:3000/test'))
+      .toBe('http://localhost:3000/test/work/')
+  })
 })

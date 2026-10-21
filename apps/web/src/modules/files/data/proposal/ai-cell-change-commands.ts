@@ -1,4 +1,5 @@
 import type { SolidDatabase } from '@undefineds.co/models'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { createRawTextResource, readRawTextResource, saveRawTextResource } from '../pod-adapter'
 import {
   aiCellChangeLogUri,
@@ -20,7 +21,7 @@ export async function readAiCellChanges(
   podRootUri?: string | null,
 ): Promise<AiCellChange[]> {
   try {
-    const log = await readRawTextResource(db, aiCellChangeLogUri(documentUri, podRootUri))
+    const log = await readRawTextResource(db, aiCellChangeLogUri(documentUri, podRootUri ?? resolveCurrentPodBaseUrl(db)))
     return parseAiCellChangeLogTurtle(log.content)
   } catch (error) {
     if (isMissing(error)) return []
@@ -34,7 +35,7 @@ async function updateLog(
   podRootUri: string | null | undefined,
   update: (changes: AiCellChange[]) => AiCellChange[],
 ) {
-  const logUri = aiCellChangeLogUri(documentUri, podRootUri)
+  const logUri = aiCellChangeLogUri(documentUri, podRootUri ?? resolveCurrentPodBaseUrl(db))
   let existing: Awaited<ReturnType<typeof readRawTextResource>> | null = null
   try {
     existing = await readRawTextResource(db, logUri)

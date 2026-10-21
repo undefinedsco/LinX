@@ -6,6 +6,7 @@ type PodDialectLike = {
   getPodUrl?: () => string
   getAuthenticatedFetch?: () => typeof fetch
   listContainerResources?: (containerUrl: string) => Promise<string[]>
+  sparqlExecutor?: { invalidateHttpCache?: (url?: string) => Promise<void> }
 }
 
 function getDialect(db: SolidDatabase | null | undefined): PodDialectLike | null {
@@ -35,4 +36,18 @@ export function getContainerLister(db: SolidDatabase): (containerUrl: string) =>
     throw new Error('drizzle-solid 当前未暴露容器列举能力。')
   }
   return listContainerResources.bind(dialect)
+}
+
+/**
+ * Container listings go through drizzle-solid's query engine, which keeps fetched documents in an
+ * HTTP cache. Files writes (create, make folder, remove, move) use the authenticated fetch directly
+ * and bypass it, so a listing taken right after a write would still miss the new resource.
+ * drizzle-solid drops that cache itself after its own writes; this does the same after Files' raw writes.
+ */
+export async function invalidateContainerListingCache(db: SolidDatabase, containerUri?: string): Promise<void> {
+  try {
+    await getDialect(db)?.sparqlExecutor?.invalidateHttpCache?.(containerUri)
+  } catch (error) {
+    console.warn('[files] 容器列表缓存清理失败', error)
+  }
 }

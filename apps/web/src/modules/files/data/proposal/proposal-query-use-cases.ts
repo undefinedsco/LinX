@@ -6,6 +6,7 @@ export type PendingApprovalProjection = {
   toolName?: string | null
   action?: string | null
   target?: unknown
+  createdAt?: Date | string | number | null
 }
 
 type FetchPendingApprovals = () => Promise<PendingApprovalProjection[]>
@@ -36,8 +37,14 @@ async function fetchPendingProposalTargets(
   action: string,
 ): Promise<string[]> {
   const approvals = await fetchApprovals()
+  const time = (approval: PendingApprovalProjection) => {
+    const value = approval.createdAt == null ? Number.NaN : new Date(approval.createdAt).getTime()
+    return Number.isNaN(value) ? 0 : value
+  }
+  // Oldest first, so columns come back in the order the person entered them (the Pod returns rows unordered).
   return Array.from(new Set(
-    approvals
+    [...approvals]
+      .sort((left, right) => time(left) - time(right))
       .filter((approval) => (
         approval.status === 'pending'
         && approval.toolName === toolName
