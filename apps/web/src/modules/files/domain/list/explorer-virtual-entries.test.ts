@@ -61,7 +61,7 @@ describe('explorer virtual entries', () => {
       treeOnly: true,
       groups: true,
     })
-    expect(rows.map((row) => (row.kind === 'entry' ? row.label : row.label))).toEqual(['我的空间', 'docs', 'people.ttl', '共享给我'])
+    expect(rows.map((row) => (row.kind === 'entry' ? row.label : row.label))).toEqual(['我的空间', 'docs', 'people', '共享给我'])
   })
 
   it('shows the assistant name for assistant folders in folder views only', () => {
@@ -79,5 +79,15 @@ describe('explorer virtual entries', () => {
     expect(isExplorerSystemDataFolder({ kind: 'container', uri: HOME })).toBe(false)
     expect(isExplorerSystemDataFolder({ kind: 'container', uri: 'https://pod.example/.data/agents/' })).toBe(false)
     expect(isExplorerSystemDataFolder({ kind: 'resource', uri: 'https://pod.example/.data/views/board.canvas' })).toBe(false)
+  })
+
+  it('hides the extension of documents and tables in tree and folder rows, but not of folders or other files', () => {
+    const doc = entry({ uri: 'https://pod.example/notes/%E4%BC%9A%E8%AE%AE%E7%BA%AA%E8%A6%81.md', name: '会议纪要.md' })
+    const table = entry({ uri: 'https://pod.example/.data/%E4%BB%BB%E5%8A%A1.ttl', name: '任务.ttl', semanticKind: 'structured-data' })
+    const image = entry({ uri: 'https://pod.example/a.png', name: 'a.png' })
+    expect(projectExplorerEntryLabel(doc)).toBe('会议纪要')
+    expect(projectExplorerEntryLabel(table)).toBe('任务')
+    expect(projectEntryDisplayName(doc)).toBe('会议纪要')
+    expect(projectEntryDisplayName(image)).toBe('a.png')
   })
 })

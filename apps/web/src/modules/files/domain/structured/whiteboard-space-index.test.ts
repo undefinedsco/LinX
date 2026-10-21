@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildWhiteboardCardIndex,
+  projectWhiteboardLibraryFiles,
   isWhiteboardSpaceTableEntry,
   projectWhiteboardSpaceRows,
   projectWhiteboardUsedOnLabel,
@@ -9,6 +10,33 @@ import {
 } from './whiteboard-space-index'
 
 const POD = 'https://pod.example/'
+
+describe('whiteboard library files', () => {
+  const entry = (path: string, semanticKind: string, mimeType: string) => ({
+    uri: `${POD}${path}`,
+    id: path,
+    name: decodeURIComponent(path.split('/').pop() ?? path),
+    kind: 'resource' as const,
+    semanticKind,
+    mimeType,
+  }) as never
+
+  it('lists only the person\'s own documents, tables and cards, without extensions', () => {
+    const files = projectWhiteboardLibraryFiles([
+      entry('notes/%E4%BC%9A%E8%AE%AE%E7%BA%AA%E8%A6%81.md', 'file', 'text/markdown'),
+      entry('.data/%E4%BB%BB%E5%8A%A1.ttl', 'structured-data', 'text/turtle'),
+      entry('README', 'file', 'text/markdown'),
+      entry('.vocab/terms.ttl', 'vocab-terms', 'text/turtle'),
+      entry('.data/proposals/term--0kzs7y0.ttl', 'structured-data', 'text/turtle'),
+      entry('agents/secretary/notes.md', 'file', 'text/markdown'),
+      entry('notes/a.md.meta', 'meta-sidecar', 'text/turtle'),
+    ], POD)
+    expect(files).toEqual([
+      { uri: `${POD}notes/%E4%BC%9A%E8%AE%AE%E7%BA%AA%E8%A6%81.md`, title: '会议纪要', subtitle: '我的空间 / notes' },
+      { uri: `${POD}.data/%E4%BB%BB%E5%8A%A1.ttl`, title: '任务', subtitle: '我的空间 / 数据' },
+    ])
+  })
+})
 
 describe('whiteboard space index', () => {
   it('lists rows of other tables, not this one', () => {

@@ -12,6 +12,7 @@ import {
   projectAiDraftSegments,
   type AiDraft,
 } from '../../domain/proposal/ai-draft-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 type DraftAction = 'keep' | 'undo' | 'reapply' | { undoSpot: number }
 
@@ -29,7 +30,7 @@ function useDraftActions(draft: AiDraft | null | undefined) {
       } catch (error) {
         toast({
           title: '没处理成功',
-          description: error instanceof Error ? error.message : undefined,
+          description: formatFilesErrorForUser(error, '没处理成功，请重试。'),
           variant: 'destructive',
         })
       }

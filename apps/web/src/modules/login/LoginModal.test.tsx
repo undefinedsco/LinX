@@ -218,7 +218,7 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('Ganlu')).toBeTruthy()
-    expect(screen.getByText('Cloud · 云端空间')).toBeTruthy()
+    expect(screen.getByText('云端空间')).toBeTruthy()
     expect(screen.getByRole('button', { name: '进入' })).toBeTruthy()
     expect(screen.queryByText('数据保存位置')).toBeNull()
     expect(screen.queryByRole('button', { name: /云端/ })).toBeNull()
@@ -497,6 +497,8 @@ describe('LoginModal', () => {
 
     expect(container.querySelector('[data-account-standalone-marker]')).toBeTruthy()
     expect(container.querySelector('[data-account-local-marker]')).toBeNull()
+    expect(container.textContent).not.toContain('Standalone')
+    expect(container.textContent).toContain('独立空间')
   })
 
   it('treats localhost fallback accounts as Standalone instead of Local', () => {

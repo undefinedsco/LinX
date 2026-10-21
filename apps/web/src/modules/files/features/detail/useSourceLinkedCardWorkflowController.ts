@@ -27,6 +27,7 @@ import {
   resolveSourceLinkedCardBodyUri,
   selectCurrentSourceUpdateProposal,
 } from './source-linked-card-workflow-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export function useSourceLinkedCardWorkflowController(file: FilesDetail) {
   const { toast } = useToast()
@@ -126,7 +127,7 @@ export function useSourceLinkedCardWorkflowController(file: FilesDetail) {
           : '来源无变化',
       })
     } catch (error) {
-      const reason = error instanceof Error ? error.message : '来源刷新失败'
+      const reason = formatFilesErrorForUser(error, '来源刷新失败')
       setSourceActionError(`刷新来源失败：${reason}`)
     }
   }, [bodyUri, descriptor, file, refreshSource, toast])
@@ -163,7 +164,7 @@ export function useSourceLinkedCardWorkflowController(file: FilesDetail) {
       })
       toast({ description: '本地编辑已保留，Ingest 审批已创建' })
     } catch (error) {
-      const reason = error instanceof Error ? error.message : '审批状态更新失败'
+      const reason = formatFilesErrorForUser(error, '审批状态更新失败')
       setSourceActionError(`保留本地编辑失败：${reason}`)
     }
   }, [createSourceProposal, descriptor, expectedSourceProposal, resolveSourceApproval, sourceApprovalQuery.data, toast])
@@ -183,7 +184,7 @@ export function useSourceLinkedCardWorkflowController(file: FilesDetail) {
           : `已加入 Ingest 队列：${nextRange.start}..${nextRange.end}`,
       })
     } catch (error) {
-      const reason = error instanceof Error ? error.message : '队列更新失败'
+      const reason = formatFilesErrorForUser(error, '队列更新失败')
       setSourceActionError(`Ingest 下一段失败：${reason}`)
     }
   }, [requestSourceIngestRange, sourceIngestManifest, toast])
@@ -199,7 +200,7 @@ export function useSourceLinkedCardWorkflowController(file: FilesDetail) {
       })
       toast({ description: `已加入 Ingest 队列：全部 ${ranges.length} 段` })
     } catch (error) {
-      const reason = error instanceof Error ? error.message : '队列更新失败'
+      const reason = formatFilesErrorForUser(error, '队列更新失败')
       setSourceActionError(`Ingest 全部失败：${reason}`)
     }
   }, [requestSourceIngestRange, sourceIngestManifest, toast])

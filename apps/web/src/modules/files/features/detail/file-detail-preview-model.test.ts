@@ -40,23 +40,14 @@ describe('file detail preview model', () => {
       uri: 'https://pod.example/files/note.md',
     }))
 
-    expect(model.title).toBe('note.md')
-    expect(model.facts).toEqual([
-      'text/markdown',
-      '1.5 KB',
-      '2026/6/29 18:00:00',
-    ])
-    expect(model.rows).toEqual([
-      {
-        kind: 'uri',
-        label: 'URI',
-        value: 'https://pod.example/files/note.md',
-      },
-      {
-        kind: 'description',
-        label: '内容',
-        value: '完整内容将在弹出的文件详情中读取。',
-      },
+    expect(model.title).toBe('note')
+    expect(model.facts).toEqual(['文档', '2026/6/29 18:00:00'])
+    expect(model.rows).toEqual([])
+    expect(model.renderMarkdown).toBe(true)
+    expect(model.technicalRows).toEqual([
+      { kind: 'description', label: '类型', value: 'text/markdown' },
+      { kind: 'description', label: '大小', value: '1.5 KB' },
+      { kind: 'uri', label: '地址', value: 'https://pod.example/files/note.md' },
     ])
     expect(model.openLabel).toBe('打开文件详情')
   })

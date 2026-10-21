@@ -140,9 +140,9 @@ export function projectFolderChildOperationSheetModel(
       }
     case 'create-markdown':
       return {
-        title: '新建 Markdown 文件',
-        description: '在当前文件夹中创建一个可编辑 Markdown 文件。',
-        inputLabel: '文件名',
+        title: '新建文档',
+        description: '在当前文件夹中创建一个可编辑的文档。',
+        inputLabel: '标题',
         confirmLabel: '创建',
         confirmTone: 'primary',
         requiresInput: true,
@@ -178,6 +178,14 @@ export function projectFolderChildOperationConfirmChrome({
   }
 }
 
+/** "未命名文档", then "未命名文档 2"… when the folder already has one; `extension` is hidden from the title. */
+function uniqueDefaultName(base: string, siblings: FilesEntry[], extension = ''): string {
+  const taken = new Set(siblings.map((child) => child.name))
+  let candidate = base
+  for (let index = 2; taken.has(`${candidate}${extension}`); index += 1) candidate = `${base} ${index}`
+  return candidate
+}
+
 export function getFolderChildOperationInitialValue({
   operation,
   visibleChildren,
@@ -190,8 +198,8 @@ export function getFolderChildOperationInitialValue({
   if (operation.type === 'copy') {
     return buildFolderChildCopyName(operation.child, operation.siblingEntries ?? visibleChildren)
   }
-  if (operation.type === 'create-folder') return 'Untitled folder'
-  if (operation.type === 'create-markdown') return 'Untitled.md'
+  if (operation.type === 'create-folder') return uniqueDefaultName('未命名文件夹', visibleChildren)
+  if (operation.type === 'create-markdown') return uniqueDefaultName('未命名文档', visibleChildren, '.md')
   return ''
 }
 
@@ -291,7 +299,7 @@ export function planFolderChildCreateMarkdownResource({
   const resourceUri = new URL(fileName, containerUri).toString()
   if (children.some((child) => child.name === fileName || child.uri === resourceUri)) return null
 
-  const title = fileName.replace(/\.md$/i, '').trim() || 'Untitled'
+  const title = fileName.replace(/\.md$/i, '').trim() || '未命名文档'
   return {
     resource: {
       uri: resourceUri,

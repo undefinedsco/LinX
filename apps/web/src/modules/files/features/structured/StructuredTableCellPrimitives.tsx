@@ -224,7 +224,7 @@ export function StructuredPendingPredicateHeaderCell({
         >
           <StructuredPredicateTypeIcon typeLabel={type} />
           <span className="min-w-0 truncate">{displayLabel}</span>
-          <span aria-hidden="true" className="shrink-0 text-[10px] text-muted-foreground">未确认</span>
+          <span aria-hidden="true" className="shrink-0 text-[10px] text-muted-foreground">待确认</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">

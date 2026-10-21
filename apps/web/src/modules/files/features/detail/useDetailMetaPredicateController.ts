@@ -25,6 +25,7 @@ import {
   type DetailPendingMetaPredicateProposalMap,
 } from '../../domain/detail/detail-metadata-editor-model'
 import { createStructuredCellChangeProposal } from '../../domain/proposal/structured-cell-approval-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 type CommitMetaPredicateInput = {
   predicateKey: DetailMetaPredicateKey
@@ -156,7 +157,7 @@ export function useDetailMetaPredicateController({
       toast({ description: 'meta predicate 更改已提交审核' })
     } catch (error) {
       patchMetaPredicateStatus(predicateKey, 'error')
-      const description = error instanceof Error ? error.message : 'meta predicate 更改提交审核失败'
+      const description = formatFilesErrorForUser(error, 'meta predicate 更改提交审核失败')
       toast({ description, variant: 'destructive' })
     }
   }

@@ -33,6 +33,7 @@ import {
   type FileEditorSourceLinkedDescriptor,
 } from './file-editor-sheet-model'
 import { projectFileEditorRawSourceState } from './file-editor-raw-source-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export type { FileEditorSourceLinkedDescriptor } from './file-editor-sheet-model'
 
@@ -156,9 +157,7 @@ export function useFileEditorSheetController({
     } catch (error) {
       const description = error instanceof FilesSaveConflictError
         ? '保存冲突：远端内容已变化，请重新读取后再保存。'
-        : error instanceof Error
-          ? error.message
-          : '保存失败'
+        : formatFilesErrorForUser(error, '保存失败')
       toast({ description, variant: 'destructive' })
       throw error
     }
@@ -190,7 +189,7 @@ export function useFileEditorSheetController({
         }))
         toast({ description: 'Ingest 审批已提交' })
       } catch (error) {
-        const description = error instanceof Error ? error.message : 'Ingest 审批提交失败'
+        const description = formatFilesErrorForUser(error, 'Ingest 审批提交失败')
         toast({ description, variant: 'destructive' })
       }
       return
@@ -212,7 +211,7 @@ export function useFileEditorSheetController({
       }))
       toast({ description: 'AI 修改审批已提交' })
     } catch (error) {
-      const description = error instanceof Error ? error.message : 'AI 修改审批提交失败'
+      const description = formatFilesErrorForUser(error, 'AI 修改审批提交失败')
       toast({ description, variant: 'destructive' })
     }
   }, [

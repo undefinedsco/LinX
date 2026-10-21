@@ -7,6 +7,7 @@ import {
   useCreateRawTextResource,
 } from '../../data/queries'
 import { projectFolderUploadBatchPlan } from '../../domain/folder/folder-upload-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export function useFolderDetailUploadController({
   containerUri,
@@ -73,7 +74,7 @@ export function useFolderDetailUploadController({
     } catch (error) {
       setUploadProgress(null)
       toast({
-        description: `上传失败：${error instanceof Error ? error.message : '未知错误'}`,
+        description: `上传失败：${formatFilesErrorForUser(error, '未知错误')}`,
         variant: 'destructive',
       })
     }

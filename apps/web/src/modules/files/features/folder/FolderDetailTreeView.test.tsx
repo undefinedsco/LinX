@@ -101,7 +101,7 @@ describe('FolderDetailTreeView', () => {
     const guide = entry('guide.md')
     const { onOpen } = renderView({ children: [guide] })
 
-    const guideButton = screen.getByRole('button', { name: /guide\.md/ })
+    const guideButton = screen.getByRole('button', { name: /guide/ })
     fireEvent.click(guideButton)
     expect(onOpen).toHaveBeenCalledWith(guide, 'click')
 

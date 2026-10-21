@@ -8,7 +8,14 @@
  * data layer (react-query, one minute); nothing here is stored.
  */
 import type { FilesEntry } from '../resource/resource-model'
-import { getEntryName, getFilesEntryOpenMode } from '../resource/resource-semantics'
+import {
+  displayContainerLocation,
+  displayResourceName,
+  getEntryName,
+  getFilesEntryOpenMode,
+  getParentContainerUri,
+  isInsidePodSystemContainer,
+} from '../resource/resource-semantics'
 import type { StructuredCardProjection } from './structured-projections'
 import {
   parseWhiteboardCanvas,
@@ -29,6 +36,43 @@ export function isWhiteboardSpaceTableEntry(
   if (INTERNAL_PATHS.some((part) => entry.uri.includes(part))) return false
   if (/\.(meta|acl)$/i.test(entry.uri)) return false
   return getFilesEntryOpenMode(entry) === 'structured-data-table'
+}
+
+const LIBRARY_BOOKKEEPING_PATH = /\/\.data\/(?:proposals|history|views|inbox|ingest|index|approvals)\//
+const LIBRARY_DOCUMENT_NAME = /\.(?:md|markdown|txt|pdf|png|jpe?g|gif|webp|svg)$/i
+
+export interface WhiteboardLibraryFile {
+  uri: string
+  title: string
+  subtitle: string
+}
+
+/**
+ * Files the card library's 文件 tab lists: the person's own documents, tables and cards.
+ * System containers, vocabulary and proposal records, sidecars and the Pod's README stay out.
+ */
+export function projectWhiteboardLibraryFiles(
+  entries: readonly FilesEntry[],
+  podRootUri: string | null | undefined,
+): WhiteboardLibraryFile[] {
+  const root = podRootUri ?? null
+  return entries
+    .filter((entry) => {
+      if (entry.kind === 'container') return false
+      if (entry.semanticKind === 'meta-sidecar' || entry.semanticKind === 'access-policy-sidecar') return false
+      if (entry.semanticKind.startsWith('vocab-')) return false
+      if (INTERNAL_PATHS.some((part) => entry.uri.includes(part)) || LIBRARY_BOOKKEEPING_PATH.test(entry.uri)) return false
+      if (root && isInsidePodSystemContainer(entry.uri, root)) return false
+      if (/\/\.(?:well-known|meta|acl|acr)(?:\/|$)/.test(entry.uri) || /^README(?:\.[a-z]+)?$/i.test(entry.name)) return false
+      if (/^term--/.test(entry.name) || /\/\.data\/[^/]*(?:proposal|vocab)[^/]*\//i.test(entry.uri)) return false
+      if (entry.semanticKind === 'structured-data' || entry.semanticKind === 'source-linked-card') return true
+      return LIBRARY_DOCUMENT_NAME.test(entry.name)
+    })
+    .map((entry) => ({
+      uri: entry.uri,
+      title: displayResourceName(entry.name),
+      subtitle: displayContainerLocation(getParentContainerUri(entry.uri) ?? entry.uri, root),
+    }))
 }
 
 export function whiteboardTableLabel(tableUri: string): string {

@@ -138,7 +138,7 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
         {card.subject?.photoUri ? (
           <img src={card.subject.photoUri} alt={card.title} data-card-photo="true" className="mb-4 h-20 w-20 rounded-full object-cover" />
         ) : null}
-        <div ref={bodyRef}>
+        <div ref={bodyRef} className="relative">
           <CardSelectionToolbar
             selection={selection}
             onAsk={(quote) => { void card.askLinx(quote) }}

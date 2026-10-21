@@ -66,7 +66,7 @@ describe('StructuredPredicateColumnHeader', () => {
       }))
 
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for status' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '打开 predicate URI' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: '打开字段定义' }))
       expect(onOpenPredicateDefinition).toHaveBeenCalledWith('https://pod.example/.vocab/terms.ttl#status')
 
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for status' }))
@@ -74,7 +74,7 @@ describe('StructuredPredicateColumnHeader', () => {
       expect(onOpenPredicateShapeRule).toHaveBeenCalledWith('https://pod.example/.vocab/shapes.ttl#status-required')
 
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for status' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '复制 predicate URI' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: '复制字段标识' }))
       expect(onCopyPredicate).toHaveBeenCalledWith('https://pod.example/.vocab/terms.ttl#status')
       expect(writeText).not.toHaveBeenCalled()
       expect(windowOpen).not.toHaveBeenCalled()
@@ -110,7 +110,7 @@ describe('StructuredPredicateColumnHeader', () => {
       onOpenVocabTermProposal,
     }))
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '待确认 predicate status' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '待确认字段 status' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '打开审批记录' }))
 
     expect(onOpenVocabTermProposal).toHaveBeenCalledWith(vocabProposal)

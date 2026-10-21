@@ -24,6 +24,7 @@ import {
   projectStructuredCellProposalWorkflowStateTableSubjects,
   projectStructuredCellProposalWorkflowStateViewProposal,
 } from './structured-cell-proposal-workflow-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export function useStructuredCellProposalWorkflowController({
   currentPodRootUri,
@@ -100,7 +101,7 @@ export function useStructuredCellProposalWorkflowController({
         })
         return 'written' as const
       } catch (error) {
-        toast({ description: error instanceof Error ? error.message : '保存失败，请重试。', variant: 'destructive' })
+        toast({ description: formatFilesErrorForUser(error, '保存失败，请重试。'), variant: 'destructive' })
         return false
       }
     }
@@ -120,9 +121,7 @@ export function useStructuredCellProposalWorkflowController({
     } catch (error) {
       const description = error instanceof FilesSaveConflictError
         ? '审批记录已存在：请打开现有审批记录继续审阅。'
-        : error instanceof Error
-          ? error.message
-          : '创建单元格变更审批失败'
+        : formatFilesErrorForUser(error, '创建单元格变更审批失败')
       toast({ description, variant: 'destructive' })
       return false
     }

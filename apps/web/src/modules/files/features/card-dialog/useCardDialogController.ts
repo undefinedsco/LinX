@@ -49,7 +49,7 @@ import {
   type CardHistory,
   type CardSnapshot,
 } from '../../domain/history/card-history'
-import { getEntryName } from '../../domain/resource/resource-semantics'
+import { displayResourceName, getEntryName } from '../../domain/resource/resource-semantics'
 import { projectStructuredResourceTable } from '../../domain/structured/structured-table'
 
 export function useCardDialogController(request: CardDialogRequest) {
@@ -133,7 +133,7 @@ export function useCardDialogController(request: CardDialogRequest) {
     if (uri) openCard({ ...request, uri, locator: undefined })
   }, [openCard, request])
 
-  const title = subject?.title ?? (detail ? getEntryName(detail.uri) : getEntryName(target.documentUri))
+  const title = subject?.title ?? displayResourceName(detail ? getEntryName(detail.uri) : getEntryName(target.documentUri))
   const pathLabel = projectCardPathLabel({ uri: request.uri, podRootUri, title: subject?.title })
 
   const blocking = (() => {
@@ -310,7 +310,7 @@ export function useCardDialogController(request: CardDialogRequest) {
         resource: { uri: `${root}${encodeURIComponent('摘录')}/${encodeURIComponent(note.fileName)}`, mimeType: 'text/markdown' },
         content: note.content,
       })
-      toast({ title: '已做成卡片', description: `放在“我的空间 / 摘录”里：${note.fileName}` })
+      toast({ title: '已做成卡片', description: `放在“我的空间 / 摘录”里：${displayResourceName(note.fileName)}` })
     } catch (_error) {
       toast({ title: '没做成卡片', variant: 'destructive' })
     }

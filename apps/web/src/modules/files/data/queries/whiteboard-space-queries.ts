@@ -115,3 +115,50 @@ export function useWhiteboardSpace({
     loading: enabled && (entries.isLoading || tableQueries.some((query) => query.isLoading)),
   }
 }
+
+const PREVIEWABLE_FILE = /\.(?:md|markdown|txt)$/i
+const FILE_PREVIEW_MAX_FILES = 40
+
+/** Plain words from a markdown file: no heading marks, links or emphasis, at most `maxChars`. */
+export function projectWhiteboardFilePreview(markdown: string, title: string, maxChars = 240): string {
+  const lines = markdown
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line
+      .replace(/^\s{0,3}#{1,6}\s+/, '')
+      .replace(/^\s*>\s?/, '')
+      .replace(/^\s*[-*+]\s+/, '')
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/[*_`~]+/g, '')
+      .trim())
+    .filter(Boolean)
+  if (lines[0] === title) lines.shift()
+  const text = lines.join('\n')
+  return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text
+}
+
+/** Reads the first lines of the document files that sit on a board, for the card body preview. */
+export function useWhiteboardFilePreviews(fileUris: readonly string[]): ReadonlyMap<string, string> {
+  const { db } = useSolidDatabase()
+  const uris = useMemo(
+    () => [...new Set(fileUris.filter((uri) => !uri.includes('#') && PREVIEWABLE_FILE.test(uri.split('?')[0] ?? uri)))]
+      .slice(0, FILE_PREVIEW_MAX_FILES),
+    [fileUris],
+  )
+  const queries = useQueries({
+    queries: uris.map((uri) => filesResourceQueryCollection.rawText({ fileUri: uri, enabled: true, db })),
+  })
+  const key = queries.map((query) => `${query.dataUpdatedAt}`).join(',')
+  return useMemo(() => {
+    const previews = new Map<string, string>()
+    queries.forEach((query, index) => {
+      const uri = uris[index]
+      if (!uri || !query.data) return
+      const name = decodeURIComponent((uri.split('/').pop() ?? '').replace(/\.[^.]+$/, ''))
+      previews.set(uri, projectWhiteboardFilePreview(query.data.content, name))
+    })
+    return previews
+    // queries changes identity every render; key tracks its content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uris, key])
+}

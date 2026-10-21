@@ -17,7 +17,8 @@ import {
 } from '@xyflow/react'
 
 import { useCardDialog } from '@/lib/card-dialog'
-import { useWhiteboardSpace } from '../../../data/queries'
+import { useWhiteboardFilePreviews, useWhiteboardSpace } from '../../../data/queries'
+import { displayResourceName } from '../../../domain/resource/resource-semantics'
 import { projectWhiteboardUsedOnLabel } from '../../../domain/structured/whiteboard-space-index'
 import type { StructuredCardProjection } from '../../../domain/structured/structured-projections'
 import {
@@ -27,6 +28,7 @@ import {
   WHITEBOARD_TEXT_DEFAULT_SIZE,
   createWhiteboardCanvasId,
   createWhiteboardCardNode,
+  findFreeWhiteboardPosition,
   resolveWhiteboardCardNodeUri,
   resolveWhiteboardSubjectUri,
   whiteboardCanvasResourceUri,
@@ -95,6 +97,11 @@ function isSide(value: string | null | undefined): value is WhiteboardCanvasSide
   return WHITEBOARD_SIDES.includes(value as WhiteboardCanvasSide)
 }
 
+/** Matches the library panel's `w-72`. */
+const LIBRARY_PANEL_WIDTH = 288
+/** The floating tool palette on the left edge of the board. */
+const TOOLBAR_INSET = 80
+
 const STATUS_TEXT: Partial<Record<WhiteboardCanvasState['status'], string>> = {
   saved: '已保存到你的空间',
   saving: '正在保存…',
@@ -129,6 +136,8 @@ function WhiteboardCanvasInner({
   const canvasRef = useRef(canvas)
   canvasRef.current = canvas
 
+  // Fit the board to its cards when it opens, not every time the first card is added to an empty one.
+  const [fitOnOpen] = useState(() => canvas.nodes.length > 0)
   const [tool, setTool] = useState<WhiteboardTool>('select')
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -157,6 +166,13 @@ function WhiteboardCanvasInner({
     return map
   }, [cards, documentUri])
   const documentBase = documentUri.split('#')[0]
+  const filePreviews = useWhiteboardFilePreviews(useMemo(
+    () => canvas.nodes.flatMap((node) => {
+      const uri = node.type === 'group' || node.type === 'text' ? null : resolveWhiteboardCardNodeUri(node, podRootUri)
+      return uri ? [uri] : []
+    }),
+    [canvas.nodes, podRootUri],
+  ))
 
   const contentOf = useCallback((node: WhiteboardCanvasNode): WhiteboardCardContent => {
     if (node.type === 'text') {
@@ -175,8 +191,8 @@ function WhiteboardCanvasInner({
     if (uri.split('#')[0] === documentBase && uri.includes('#')) {
       return { kind: 'row', title: '', body: '', className: null, state: 'deleted', uri, subject: null }
     }
-    return { kind: 'file', title: fileNameFromUri(uri), body: '', className: null, state: 'ok', uri, subject: null }
-  }, [cardByUri, documentBase, podRootUri, space.rowByUri])
+    return { kind: 'file', title: displayResourceName(fileNameFromUri(uri)), body: filePreviews.get(uri) ?? '', className: null, state: 'ok', uri, subject: null }
+  }, [cardByUri, documentBase, filePreviews, podRootUri, space.rowByUri])
 
   const nodeIdBySubject = useMemo(() => {
     const map = new Map<string, string>()
@@ -298,26 +314,34 @@ function WhiteboardCanvasInner({
     })
   }, [flow])
 
+  /** The part of the board the person sees: the canvas minus the card library covering its right side. */
+  const visibleFlowArea = useCallback(() => {
+    const bounds = wrapperRef.current?.getBoundingClientRect()
+    const width = Math.max(240, (bounds?.width ?? 800) - TOOLBAR_INSET - (libraryOpen ? LIBRARY_PANEL_WIDTH : 0))
+    // The tool palette floats over the left edge, so new cards start to its right.
+    const topLeft = flow.screenToFlowPosition({ x: (bounds?.left ?? 0) + TOOLBAR_INSET, y: bounds?.top ?? 0 })
+    const bottomRight = flow.screenToFlowPosition({ x: (bounds?.left ?? 0) + TOOLBAR_INSET + width, y: (bounds?.top ?? 0) + (bounds?.height ?? 480) })
+    return { x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y }
+  }, [flow, libraryOpen])
+
   const addTextNode = useCallback((at?: { x: number; y: number }, size: { width: number; height: number } = WHITEBOARD_CARD_DEFAULT_SIZE) => {
-    const point = at ?? viewportCenter()
+    const point = at ?? findFreeWhiteboardPosition({ nodes: canvasRef.current.nodes, area: visibleFlowArea(), size })
     const id = createWhiteboardCanvasId('text', takenIds())
     updateCanvas((current) => addCanvasNode(current, {
       id, type: 'text', text: '', x: Math.round(point.x), y: Math.round(point.y), width: size.width, height: size.height,
     }))
     setSelectedIds(new Set([id]))
     setEditingId(id)
-  }, [updateCanvas, viewportCenter])
+  }, [updateCanvas, visibleFlowArea])
 
   const addCardByUri = useCallback((uri: string, at?: { x: number; y: number }) => {
-    const point = at ?? viewportCenter()
-    const exists = canvasRef.current.nodes.some((node) => resolveWhiteboardCardNodeUri(node, podRootUri) === uri)
-    // The same card may sit on a board twice only when dropped on purpose; keep an offset.
-    const offset = exists ? 24 : 0
+    // Dropped on purpose: where the pointer is. Added by click: the next free spot in view.
+    const point = at ?? findFreeWhiteboardPosition({ nodes: canvasRef.current.nodes, area: visibleFlowArea() })
     const id = createWhiteboardCanvasId('card', takenIds())
     updateCanvas((current) => addCanvasNode(current, createWhiteboardCardNode({
-      id, cardUri: uri, podRootUri, position: { x: point.x + offset, y: point.y + offset },
+      id, cardUri: uri, podRootUri, position: point,
     })))
-  }, [podRootUri, updateCanvas, viewportCenter])
+  }, [podRootUri, updateCanvas, visibleFlowArea])
 
   const addSection = useCallback(() => {
     const picked = canvasRef.current.nodes.filter((node) => selectedIds.has(node.id) && node.type !== 'group')
@@ -496,7 +520,8 @@ function WhiteboardCanvasInner({
           panActivationKeyCode={null}
           zoomOnDoubleClick={false}
           deleteKeyCode={['Backspace', 'Delete']}
-          fitView={canvas.nodes.length > 0}
+          fitView={fitOnOpen}
+          fitViewOptions={{ maxZoom: 1, padding: 0.15 }}
           minZoom={0.1}
           maxZoom={2}
           proOptions={{ hideAttribution: true }}

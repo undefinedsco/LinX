@@ -27,6 +27,7 @@ import {
 } from '../../domain/resource/access-policy-dialog-model'
 import type { FilesEntry } from '../../domain/resource/resource-model'
 import { resolveFilesResourceSidecars, resolveFilesSidecarOwnerTarget } from '../../domain/resource/resource-semantics'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export type ResourceSidecarActionTarget = Pick<FilesEntry, 'uri' | 'kind' | 'semanticKind'>
 
@@ -124,7 +125,7 @@ export function useAccessPolicyDialogController({
     try {
       await createAccessProposal.mutateAsync(proposal)
     } catch (error) {
-      const description = error instanceof Error ? error.message : '创建权限申请失败'
+      const description = formatFilesErrorForUser(error, '创建权限申请失败')
       toast({ description, variant: 'destructive' })
       return
     }

@@ -34,7 +34,7 @@ describe('FilesBodySearchSection', () => {
     const section = screen.getByRole('region', { name: '正文里的结果' })
     expect(section).toHaveTextContent('还有 3 个文件的正文没建索引，只按名字找')
     expect(section).toHaveTextContent('正文里有 “排班” · 第 4 行')
-    fireEvent.click(screen.getByText('纪要.md'))
+    fireEvent.click(screen.getByText('纪要'))
     expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({ uri: 'u1', line: 4 }))
   })
 
