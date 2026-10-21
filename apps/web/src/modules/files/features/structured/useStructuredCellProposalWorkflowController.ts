@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useToast } from '@/components/ui/use-toast'
 
@@ -41,6 +41,9 @@ export function useStructuredCellProposalWorkflowController({
   const writeOwnCellChange = useWriteOwnStructuredCellChange()
   const pendingStructuredCellProposalsQuery = usePendingStructuredCellChangeProposals(documentUri, structuredWritesSupported)
   const { toast } = useToast()
+  // Our own write moves the document on, so a second write against the same loaded version
+  // (a multi-card move, quick edits) must not be refused as "changed elsewhere".
+  const etagWrittenAgainstRef = useRef<string | null>(null)
   const [cellProposalWorkflowState, setCellProposalWorkflowState] = useState(createStructuredCellProposalWorkflowState)
   const {
     localCellWriteProposals,
@@ -70,6 +73,7 @@ export function useStructuredCellProposalWorkflowController({
 
   useEffect(() => {
     setCellProposalWorkflowState((current) => projectStructuredCellProposalWorkflowStateReset(current))
+    etagWrittenAgainstRef.current = null
   }, [documentUri])
 
   const setLocalPendingWriteSubjectsFromTable = useCallback((subjects: string[]) => {
@@ -97,8 +101,9 @@ export function useStructuredCellProposalWorkflowController({
           predicate: proposal.predicate,
           previousValues: proposal.previousValues,
           nextValues: proposal.nextValues,
-          expectedEtag: documentEtag,
+          expectedEtag: documentEtag && etagWrittenAgainstRef.current === documentEtag ? null : documentEtag,
         })
+        etagWrittenAgainstRef.current = documentEtag
         return 'written' as const
       } catch (error) {
         toast({ description: formatFilesErrorForUser(error, '保存失败，请重试。'), variant: 'destructive' })

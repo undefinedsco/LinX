@@ -40,11 +40,6 @@ const actionIcons = {
   web: Globe2,
 } satisfies Record<FilesAddActionModel['iconKind'], LucideIcon>
 
-function decodeContainerName(uri: string) {
-  const name = uri.replace(/\/+$/, '').split('/').pop() ?? ''
-  try { return decodeURIComponent(name) || '我的空间' } catch { return name || '我的空间' }
-}
-
 export function FilesAddMenu({
   containerUri,
   entries,
@@ -133,7 +128,7 @@ export function FilesAddMenu({
         onConfirm={() => void addMenu.confirmOperation()}
       />
 
-      <NewTableDialog table={addMenu.newTable} destinationLabel={containerUri ? decodeContainerName(containerUri) : ''} />
+      <NewTableDialog table={addMenu.newTable} destinationLabel={addMenu.menu.locationLabel} />
 
       <Dialog open={addMenu.ingest.open} onOpenChange={addMenu.ingest.setOpen}>
         <DialogContent className="w-[min(440px,calc(100vw-32px))] gap-4 rounded-xl border-border/40 p-5">

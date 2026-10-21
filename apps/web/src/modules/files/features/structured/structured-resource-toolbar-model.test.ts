@@ -109,19 +109,19 @@ describe('projectStructuredResourceToolbarModel', () => {
         headingLabel: '当前类型',
       },
       classCreateControl: {
-        ariaLabel: '创建 class',
+        ariaLabel: '创建类型',
         expanded: true,
-        inputAriaLabel: '新 class URI',
+        inputAriaLabel: '新类型的地址',
         placeholder: 'udfs:Note',
         stateLabel: '收起',
         submitLabel: '创建',
-        toggleLabel: '创建 class',
-        uriLabel: 'class URI',
+        toggleLabel: '创建类型',
+        uriLabel: '类型的地址',
       },
       classDefinitionPanel: {
         headingLabel: 'Task',
         rows: [
-          { key: 'scope', text: '此视图只展示该 class 的 predicate。' },
+          { key: 'scope', text: '此视图只展示该类型的属性。' },
           { key: 'description', text: '描述：Cards grouped as tasks' },
           { key: 'status', text: '状态：defined' },
         ],
@@ -142,9 +142,9 @@ describe('projectStructuredResourceToolbarModel', () => {
         label: '视图',
       },
       filterSectionLabels: {
-        subject: '行（subject）',
+        subject: '行',
         namespace: '列 · 命名空间',
-        predicateType: '列 · predicate 类型',
+        predicateType: '列 · 值的类型',
         vocabTerm: '列 · 词表定义',
       },
       hasActiveFilters: true,
@@ -158,9 +158,9 @@ describe('projectStructuredResourceToolbarModel', () => {
         ariaLabel: '结构化表工具',
       },
       subjectFilterRows: [
-        { id: 'warningRowsOnly', checked: true, label: '有校验提醒的 subject' },
-        { id: 'pendingWritesOnly', checked: false, label: '有待确认更改的 subject' },
-        { id: 'sourceUpdatesOnly', checked: false, label: '有 Ingest 更新的 subject' },
+        { id: 'warningRowsOnly', checked: true, label: '有校验提醒的行' },
+        { id: 'pendingWritesOnly', checked: false, label: '有待确认更改的行' },
+        { id: 'sourceUpdatesOnly', checked: false, label: '有导入更新的行' },
       ],
       namespaceSwitchChecked: false,
       namespaceSwitch: {
@@ -182,12 +182,12 @@ describe('projectStructuredResourceToolbarModel', () => {
           canSubmit: true,
           discardButtonLabel: '放弃',
           displayLabel: 'DraftTask*',
-          discardLabel: '放弃 class DraftTask',
+          discardLabel: '放弃类型 DraftTask',
           id: 'draft-class',
           label: 'DraftTask',
           openApprovalLabel: null,
           status: 'pending',
-          submitLabel: '提交待确认 class *',
+          submitLabel: '提交待确认类型 *',
           uri: 'https://schema.org/DraftTask',
         },
         {
@@ -197,10 +197,10 @@ describe('projectStructuredResourceToolbarModel', () => {
           canSubmit: false,
           discardButtonLabel: '放弃',
           displayLabel: 'Accepted*',
-          discardLabel: '放弃 class Accepted',
+          discardLabel: '放弃类型 Accepted',
           id: 'accepted-class',
           label: 'Accepted',
-          openApprovalLabel: '打开 class 审批记录 Accepted',
+          openApprovalLabel: '打开类型审批记录 Accepted',
           status: 'approval-staged',
           submitLabel: null,
           uri: 'https://schema.org/AcceptedTask',
@@ -208,16 +208,16 @@ describe('projectStructuredResourceToolbarModel', () => {
       ],
       predicateTypeFilterRows: [
         { value: 'all', label: '全部类型', checked: false },
-        { value: 'enum', label: 'enum', checked: false },
-        { value: 'boolean', label: 'boolean', checked: false },
-        { value: 'number', label: 'number', checked: false },
-        { value: 'date', label: 'date', checked: false },
-        { value: 'relation', label: 'relation', checked: true },
-        { value: 'text', label: 'text', checked: false },
+        { value: 'enum', label: '选项', checked: false },
+        { value: 'boolean', label: '是 / 否', checked: false },
+        { value: 'number', label: '数字', checked: false },
+        { value: 'date', label: '日期', checked: false },
+        { value: 'relation', label: '联系人或卡片', checked: true },
+        { value: 'text', label: '文字', checked: false },
       ],
       predicateVisibilityRows: [
-        { label: 'dateCreated', predicate: 'https://schema.org/dateCreated', visible: false },
-        { label: 'name', predicate: 'https://schema.org/name', visible: true },
+        { label: 'Date created', predicate: 'https://schema.org/dateCreated', visible: false },
+        { label: 'Name', predicate: 'https://schema.org/name', visible: true },
       ],
       sortRows: [
         { label: '名称', sortKey: 'subject' },
@@ -275,8 +275,8 @@ describe('projectStructuredResourceToolbarModel', () => {
       sortToolLabel: 'Date created 降序',
       vocabTermFilterRows: [
         { value: 'all', label: '全部词表定义', checked: false },
-        { value: 'defined', label: '已定义 predicate', checked: true },
-        { value: 'observed', label: '仅观察到 predicate', checked: false },
+        { value: 'defined', label: '已定义的属性', checked: true },
+        { value: 'observed', label: '仅数据里出现的属性', checked: false },
       ],
     })
   })
@@ -317,19 +317,19 @@ describe('projectStructuredResourceToolbarModel', () => {
       ariaLabel: '结构化资源信息',
     })
     expect(model.subjectFilterRows).toEqual([
-      { id: 'warningRowsOnly', checked: false, label: '有校验提醒的 subject' },
-      { id: 'pendingWritesOnly', checked: false, label: '有待确认更改的 subject' },
-      { id: 'sourceUpdatesOnly', checked: false, label: '有 Ingest 更新的 subject' },
+      { id: 'warningRowsOnly', checked: false, label: '有校验提醒的行' },
+      { id: 'pendingWritesOnly', checked: false, label: '有待确认更改的行' },
+      { id: 'sourceUpdatesOnly', checked: false, label: '有导入更新的行' },
     ])
     expect(model.classCreateControl).toEqual({
-      ariaLabel: '创建 class',
+      ariaLabel: '创建类型',
       expanded: false,
-      inputAriaLabel: '新 class URI',
+      inputAriaLabel: '新类型的地址',
       placeholder: 'udfs:Note',
       stateLabel: '展开',
       submitLabel: '创建',
-      toggleLabel: '创建 class',
-      uriLabel: 'class URI',
+      toggleLabel: '创建类型',
+      uriLabel: '类型的地址',
     })
     expect(model.classScopeMenu).toEqual({
       headingLabel: '当前类型',
@@ -337,10 +337,10 @@ describe('projectStructuredResourceToolbarModel', () => {
     expect(model.classDefinitionPanel).toEqual({
       headingLabel: null,
       rows: [
-        { key: 'scope', text: '此视图只展示该 class 的 predicate。' },
-        { key: 'description', text: '描述：先选择或创建 class，再添加 scoped subject。' },
+        { key: 'scope', text: '此视图只展示该类型的属性。' },
+        { key: 'description', text: '描述：先选择或创建类型，再添加行。' },
       ],
-      uri: '未选择 class',
+      uri: '未选择类型',
     })
     expect(model.classDefinitionControl).toEqual({
       ariaLabel: '定义',
@@ -360,9 +360,9 @@ describe('projectStructuredResourceToolbarModel', () => {
       label: '视图',
     })
     expect(model.filterSectionLabels).toEqual({
-      subject: '行（subject）',
+      subject: '行',
       namespace: '列 · 命名空间',
-      predicateType: '列 · predicate 类型',
+      predicateType: '列 · 值的类型',
       vocabTerm: '列 · 词表定义',
     })
     expect(model.filterTool).toEqual({

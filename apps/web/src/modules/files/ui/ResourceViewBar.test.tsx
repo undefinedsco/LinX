@@ -28,7 +28,7 @@ describe('ResourceViewBar', () => {
     expect(toolbar).toHaveAttribute('data-resource-view-bar', 'true')
     expect(toolbar).toHaveClass('flex', 'h-10', 'items-center')
 
-    const viewGroup = within(toolbar).getByLabelText('View options')
+    const viewGroup = within(toolbar).getByLabelText('视图选项')
     expect(within(viewGroup).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
       '列表',
       '网格',
@@ -37,7 +37,7 @@ describe('ResourceViewBar', () => {
     expect(screen.getByRole('button', { name: '列表' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: '网格' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getAllByRole('button', { name: '添加视图' })).toHaveLength(1)
-    expect(within(toolbar).getByLabelText('Resource view actions')).toContainElement(screen.getByRole('button', { name: '搜索' }))
+    expect(within(toolbar).getByLabelText('视图操作')).toContainElement(screen.getByRole('button', { name: '搜索' }))
 
     fireEvent.click(screen.getByRole('button', { name: '网格' }))
     fireEvent.click(screen.getByRole('button', { name: '添加视图' }))

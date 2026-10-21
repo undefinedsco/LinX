@@ -8,6 +8,8 @@ import type {
 } from '../../domain/structured/structured-table'
 import {
   createStructuredProjectionFilterState,
+  structuredOptionPredicates,
+  structuredPredicateLabelResolver,
   projectStructuredExistingPredicateSelection,
   projectStructuredProjectionFilterNamespaceVisibility,
   projectStructuredProjectionFilterStateDocumentReset,
@@ -201,5 +203,25 @@ describe('structured projection filter model', () => {
       filterState: initialState,
       shouldRevealPredicate: true,
     })
+  })
+})
+
+describe('property names and option properties', () => {
+  const index = {
+    predicates: new Map([
+      ['stage', { label: '阶段', valueType: 'enum' }],
+      ['points', { label: '点数', valueType: 'number' }],
+    ]),
+  } as unknown as StructuredVocabDefinitionIndex
+
+  it('names a property by its vocab label, falling back to a readable local name', () => {
+    const label = structuredPredicateLabelResolver(index)
+    expect(label('https://undefineds.co/vocab/stage')).toBe('阶段')
+    expect(label('https://undefineds.co/vocab/dateCreated')).toBe('Date created')
+  })
+
+  it('lists the option (enum) properties only', () => {
+    expect(structuredOptionPredicates(['https://x/stage', 'https://x/points', 'https://x/other'], index)).toEqual(['https://x/stage'])
+    expect(structuredOptionPredicates(['stage'], undefined)).toEqual([])
   })
 })

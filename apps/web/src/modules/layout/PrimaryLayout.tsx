@@ -207,7 +207,7 @@ function MicroAppContentRenderer({
 
         <ResizablePanel id="main" defaultSize={getMainPanelDefaultSize(isCompactViewport)} className="min-w-0 overflow-hidden">
           <section className="relative h-full flex bg-layout-content">
-            <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col min-h-0 min-w-0">
               {!hideHeader && (
                 <div data-testid="micro-app-content-head" className="h-12 flex items-center border-b border-border bg-layout-content">
                   <div className="flex h-full min-w-0 flex-1 items-center">
@@ -242,7 +242,7 @@ function MicroAppContentRenderer({
                   </div>
                 </div>
               )}
-              <div className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 min-w-0 flex flex-col">
                 <Suspense fallback={<PaneFallback />}>
                   <ContentPane theme={theme} compact={isCompactViewport} />
                 </Suspense>

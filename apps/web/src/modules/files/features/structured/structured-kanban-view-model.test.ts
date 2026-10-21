@@ -85,8 +85,8 @@ describe('structured-kanban-view-model', () => {
     expect(displayColumns.map((column) => column.ariaLabel)).toEqual(['看板列 Todo', '看板列 Done'])
     expect(displayColumns[0]?.cardSubjects).toEqual(['#a', '#b'])
     expect(displayColumns[0]?.cards[0]).toMatchObject({
-      openAriaLabel: '打开 subject #a',
-      moveButtonAriaLabel: 'Move #a',
+      openAriaLabel: '打开 Alpha',
+      moveButtonAriaLabel: '移动 Alpha',
       visibleTags: ['urgent', 'design', 'review'],
     })
     expect(cardBySubject.get('#a')?.title).toBe('Alpha')

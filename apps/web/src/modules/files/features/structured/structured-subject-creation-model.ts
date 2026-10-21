@@ -99,6 +99,28 @@ export function projectStructuredSubjectCreationSubmitted({
   }
 }
 
+/**
+ * A row typed in the table is staged as `#名字`, while the projection reports the resolved
+ * address (`<document>#名字`, possibly percent-encoded). Both name the same row.
+ */
+export function structuredSubjectKey(subject: string, documentUri?: string): string {
+  const isLocal = subject.startsWith('#') || (documentUri !== undefined && subject.startsWith(`${documentUri}#`))
+  if (!isLocal) return subject
+  const fragment = subject.slice(subject.indexOf('#') + 1)
+  try { return `#${decodeURIComponent(fragment)}` } catch { return `#${fragment}` }
+}
+
+/** Drops pending rows whose write has landed (the projection now lists the subject). */
+export function projectStructuredSubjectCreationSettled(
+  current: StructuredSubjectCreationState,
+  existingSubjects: readonly string[],
+  documentUri?: string,
+): StructuredSubjectCreationState {
+  const existing = new Set(existingSubjects.map((subject) => structuredSubjectKey(subject, documentUri)))
+  const pendingSubjects = current.pendingSubjects.filter((subject) => !existing.has(structuredSubjectKey(subject, documentUri)))
+  return pendingSubjects.length === current.pendingSubjects.length ? current : { ...current, pendingSubjects }
+}
+
 export function projectStructuredSubjectCreationExistingSubjects(
   projectionRows: readonly { subject: string }[],
 ): string[] {
@@ -130,6 +152,7 @@ export function structuredSubjectDraftFromName(name: string): string {
 
 export function planStructuredSubjectCreation(input: {
   classScope?: string | null
+  documentUri?: string
   existingSubjects: readonly string[]
   pendingSubjects: readonly string[]
   subjectDraft: string
@@ -138,7 +161,9 @@ export function planStructuredSubjectCreation(input: {
 
   const subject = input.subjectDraft.trim()
   if (!subject) return { kind: 'noop', reason: 'empty-subject' }
-  if (input.existingSubjects.includes(subject) || input.pendingSubjects.includes(subject)) {
+  const key = structuredSubjectKey(subject, input.documentUri)
+  const taken = [...input.existingSubjects, ...input.pendingSubjects]
+  if (taken.some((existing) => structuredSubjectKey(existing, input.documentUri) === key)) {
     return { kind: 'noop', reason: 'duplicate-subject' }
   }
 
@@ -159,6 +184,7 @@ export function projectStagedStructuredPendingSubjects(input: {
 
 export function canSubmitStructuredSubjectCreation(input: {
   classScope?: string | null
+  documentUri?: string
   existingSubjects: readonly string[]
   pendingSubjects: readonly string[]
   subjectDraft: string

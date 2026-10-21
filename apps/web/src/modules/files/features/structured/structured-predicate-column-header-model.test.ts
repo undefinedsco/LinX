@@ -148,7 +148,7 @@ describe('projectStructuredPredicateColumnHeader', () => {
       }],
     })).toEqual({
       definitionTrigger: {
-        ariaLabel: 'Open definition for reviewStatus',
+        ariaLabel: '查看 reviewStatus 的说明',
       },
       menu: {
         actions: {
@@ -169,7 +169,7 @@ describe('projectStructuredPredicateColumnHeader', () => {
         title: '字段说明',
       },
       sortButton: {
-        ariaLabel: 'Sort reviewStatus',
+        ariaLabel: '按 reviewStatus 排序',
       },
     })
   })

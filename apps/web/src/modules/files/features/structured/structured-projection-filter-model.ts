@@ -14,7 +14,8 @@ import {
   type StructuredPredicateTypeFilter,
   type StructuredVocabTermFilter,
 } from '../../domain/structured/structured-view-projection'
-import { localPredicateLabel } from '../../domain/structured/structured-table-vocab'
+import { isStructuredCellEnumDefinition } from '../../domain/structured/structured-cell-editor-plan'
+import { localPredicateLabel, readablePredicateLabel } from '../../domain/structured/structured-table-vocab'
 import type { StructuredSortDirection } from '../../domain/structured/structured-view-metadata'
 
 export type {
@@ -27,6 +28,29 @@ export type StructuredProjectionFilterState = {
   predicateTypeFilter: StructuredPredicateTypeFilter
   showNamespaces: boolean
   vocabTermFilter: StructuredVocabTermFilter
+}
+
+function lookupPredicateDefinition(predicate: string, vocabDefinitionIndex?: StructuredVocabDefinitionIndex) {
+  return vocabDefinitionIndex?.predicates.get(predicate)
+    ?? vocabDefinitionIndex?.predicates.get(localPredicateLabel(predicate))
+}
+
+/**
+ * The name a person sees for a property: the vocab label ("阶段") when the property is defined,
+ * otherwise its readable local name. Menus and headers must agree on it.
+ */
+export function structuredPredicateLabelResolver(
+  vocabDefinitionIndex?: StructuredVocabDefinitionIndex,
+): (predicate: string) => string {
+  return (predicate) => readablePredicateLabel(predicate, lookupPredicateDefinition(predicate, vocabDefinitionIndex)?.label)
+}
+
+/** Option (enum) properties of the table: the ones a board can be split into lanes by. */
+export function structuredOptionPredicates(
+  predicates: readonly string[],
+  vocabDefinitionIndex?: StructuredVocabDefinitionIndex,
+): string[] {
+  return predicates.filter((predicate) => isStructuredCellEnumDefinition(lookupPredicateDefinition(predicate, vocabDefinitionIndex)))
 }
 
 export function createStructuredProjectionFilterState(): StructuredProjectionFilterState {

@@ -52,9 +52,9 @@ describe('projectStructuredResourcePreviewHeaderModel', () => {
       pendingClassScopeProposal: undefined,
       selectedClassName: null,
     })).toEqual({
-      classScopeButtonLabel: '选择 class',
-      classScopeDisplayLabel: '选择或创建 class',
-      classScopeLabel: '选择或创建 class',
+      classScopeButtonLabel: '选择类型',
+      classScopeDisplayLabel: '选择或创建类型',
+      classScopeLabel: '选择或创建类型',
     })
   })
 })

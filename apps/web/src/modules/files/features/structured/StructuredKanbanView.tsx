@@ -28,6 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { localPredicateLabel } from '../../domain/structured/structured-table-vocab'
 import { buildKanbanCardFactLines } from './structured-kanban-view-model'
 import { StructuredKanbanAddLane } from './StructuredKanbanAddLane'
 import { StructuredSaveLine } from './StructuredSaveLine'
@@ -53,6 +54,8 @@ export function StructuredKanbanView({
   extraLanes,
   laneLabels,
   cardFields,
+  predicateLabel = localPredicateLabel,
+  optionPredicates = [],
   onBoardChange,
   onGroupPredicateChange,
   onColumnOrderChange,
@@ -74,6 +77,10 @@ export function StructuredKanbanView({
   extraLanes?: string[]
   laneLabels?: Record<string, string>
   cardFields?: string[]
+  /** The name shown for a property (its vocab label); defaults to the readable local name. */
+  predicateLabel?: (predicate: string) => string
+  /** Option properties, listed first in the grouping menu: a board splits lanes by an option. */
+  optionPredicates?: readonly string[]
   onBoardChange?: (patch: { extraLanes?: string[]; laneLabels?: Record<string, string>; cardFields?: string[] }) => void
   onGroupPredicateChange: (predicate: string | null) => void
   onColumnOrderChange: (columnId: string, subjects: string[]) => void
@@ -118,9 +125,17 @@ export function StructuredKanbanView({
   })
   const cardFieldList = useMemo(() => cardFields ?? [], [cardFields])
   const factsBySubject = useMemo(
-    () => buildKanbanCardFactLines(projection.rows, cardFieldList),
-    [cardFieldList, projection.rows],
+    () => buildKanbanCardFactLines(projection.rows, cardFieldList, predicateLabel),
+    [cardFieldList, predicateLabel, projection.rows],
   )
+  const groupOptions = useMemo(() => {
+    const options = kanban.predicateOptions.map(({ predicate }) => ({ predicate, label: predicateLabel(predicate) }))
+    return {
+      option: options.filter(({ predicate }) => optionPredicates.includes(predicate)),
+      other: options.filter(({ predicate }) => !optionPredicates.includes(predicate)),
+    }
+  }, [kanban.predicateOptions, optionPredicates, predicateLabel])
+  const groupLabel = groupPredicate ? `按“${predicateLabel(groupPredicate)}”分组` : kanban.groupLabel
   useEffect(() => {
     const board = horizontalBoardRef.current
     if (!board || typeof initialScrollLeft !== 'number') return
@@ -154,7 +169,7 @@ export function StructuredKanbanView({
     <div className="min-w-0 space-y-2">
       <div className="flex min-w-0 items-center gap-1.5">
         <p className="min-w-0 truncate text-[11px] text-muted-foreground">
-          {kanban.groupLabel}
+          {groupLabel}
         </p>
         {kanban.selectedCardCount > 1 ? (
           <span className="text-[11px] text-primary">已选 {kanban.selectedCardCount}</span>
@@ -165,18 +180,21 @@ export function StructuredKanbanView({
               <button
                 aria-label={kanban.chrome.groupPredicateButtonAriaLabel}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                title={kanban.groupTriggerLabel}
+                title={groupPredicate ? predicateLabel(groupPredicate) : kanban.groupTriggerLabel}
               >
                 <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">分组依据</DropdownMenuLabel>
-              {kanban.predicateOptions.map(({ predicate, label }) => (
-                <DropdownMenuItem key={predicate} onSelect={() => onGroupPredicateChange(predicate)}>
-                  <span className="flex-1">{label}</span>
-                  {predicate === groupPredicate ? <Check className="ml-2 h-3.5 w-3.5" aria-hidden="true" /> : null}
-                </DropdownMenuItem>
+              {[...groupOptions.option, ...groupOptions.other].map(({ predicate, label }, index) => (
+                <Fragment key={predicate}>
+                  {index === groupOptions.option.length && index > 0 ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuItem onSelect={() => onGroupPredicateChange(predicate)}>
+                    <span className="flex-1">{label}</span>
+                    {predicate === groupPredicate ? <Check className="ml-2 h-3.5 w-3.5" aria-hidden="true" /> : null}
+                  </DropdownMenuItem>
+                </Fragment>
               ))}
               {groupPredicate ? (
                 <>
@@ -188,7 +206,7 @@ export function StructuredKanbanView({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">卡片上显示</DropdownMenuLabel>
-                  {kanban.predicateOptions.map(({ predicate, label }) => (
+                  {groupOptions.option.concat(groupOptions.other).map(({ predicate, label }) => (
                     <DropdownMenuCheckboxItem
                       key={`field:${predicate}`}
                       checked={cardFieldList.includes(predicate)}
