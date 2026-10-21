@@ -13,7 +13,7 @@ describe('Files add menu model', () => {
   it('offers document, folder, local upload, and web actions for a concrete folder', () => {
     const model = projectFilesAddMenuModel('https://pod.example/public/docs/')
 
-    expect(model.destinationLabel).toBe('添加到 https://pod.example/public/docs/')
+    expect(model.destinationLabel).toBe('添加到 我的空间 / public / docs')
     expect(model.actions.map(({ id, label }) => ({ id, label }))).toEqual([
       { id: 'create-document', label: '新建文档' },
       { id: 'create-table', label: '新建表格' },
@@ -41,5 +41,13 @@ describe('Files add menu model', () => {
     expect(projectFilesAddContainerUri({ kind: 'all' }, 'http://localhost:3000/test/')).toBe('http://localhost:3000/test/')
     expect(projectFilesAddContainerUri({ kind: 'container', containerUri: 'http://localhost:3000/test/work/' }, 'http://localhost:3000/test'))
       .toBe('http://localhost:3000/test/work/')
+  })
+
+  it('names the destination in words, relative to the Pod root', () => {
+    const model = projectFilesAddMenuModel('http://localhost:3000/test/.data/', 'http://localhost:3000/test')
+
+    expect(model.destinationLabel).toBe('添加到 我的空间 / 数据')
+    expect(model.locationLabel).toBe('我的空间 / 数据')
+    expect(projectFilesAddMenuModel('http://localhost:3000/test/', 'http://localhost:3000/test').destinationLabel).toBe('添加到 我的空间')
   })
 })

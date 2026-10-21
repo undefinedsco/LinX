@@ -12,13 +12,13 @@ export function projectStructuredResourcePreviewHeaderModel({
 }) {
   const classScopeDisplayLabel = selectedClassName
     ? classDefinition?.label || pendingClassScopeProposal?.label || localPredicateLabel(selectedClassName)
-    : '选择或创建 class'
+    : '选择或创建类型'
 
   return {
     classScopeButtonLabel: selectedClassName
       ? `当前类型：${classScopeDisplayLabel}`
-      : '选择 class',
+      : '选择类型',
     classScopeDisplayLabel,
-    classScopeLabel: selectedClassName ? classScopeDisplayLabel : '选择或创建 class',
+    classScopeLabel: selectedClassName ? classScopeDisplayLabel : '选择或创建类型',
   }
 }

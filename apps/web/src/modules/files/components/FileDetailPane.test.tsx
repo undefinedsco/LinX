@@ -4372,7 +4372,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
     const chooseClassScope = async (className: string) => {
       await act(async () => {
-        fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+        fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
       })
       const displayName = className.includes(':') ? className.split(':').pop()! : className
       await act(async () => {
@@ -4403,17 +4403,17 @@ describe('FileDetailPane', () => {
     const classScopeButton = screen.getByRole('button', { name: '当前类型：Workspace' })
     expect(classScopeButton).toBeInTheDocument()
     expect(within(classScopeButton).queryByText('Workspace')).not.toBeInTheDocument()
-    expect(screen.getByText(/4 行 · \d+ predicate/)).toBeInTheDocument()
+    expect(screen.getByText(/4 行 · \d+ 个属性/)).toBeInTheDocument()
     expect(screen.getByText('1 个校验提醒')).toBeInTheDocument()
     expect(screen.getByText('#Workspace tags has 2 values; maxCount is 1.')).toBeInTheDocument()
     expect(screen.getByLabelText('Shape warning for tags on #Workspace')).toBeInTheDocument()
-    await chooseStructuredFilterCheckbox('有校验提醒的 subject')
+    await chooseStructuredFilterCheckbox('有校验提醒的行')
     expect(screen.getByRole('button', { name: '#Workspace' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
     expect(screen.getByText('1 个校验提醒')).toBeInTheDocument()
-    await chooseStructuredFilterCheckbox('有校验提醒的 subject')
+    await chooseStructuredFilterCheckbox('有校验提醒的行')
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
-    await chooseStructuredFilterItem('enum')
+    await chooseStructuredFilterItem('选项')
     expect(screen.getByRole('columnheader', { name: /tags/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /mode/i })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: /title/i })).not.toBeInTheDocument()
@@ -4425,14 +4425,14 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('columnheader', { name: /title/i })).not.toBeInTheDocument()
     await chooseStructuredFilterItem('全部命名空间')
     expect(screen.getByRole('columnheader', { name: /title/i })).toBeInTheDocument()
-    await chooseStructuredFilterItem('已定义 predicate')
+    await chooseStructuredFilterItem('已定义的属性')
     expect(screen.getByRole('columnheader', { name: /title/i })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /tags/i })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: /date ?modified/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: /status/i })).not.toBeInTheDocument()
     await chooseStructuredFilterItem('全部词表定义')
     expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '表格' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '+ 视图' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '预览' })).not.toBeInTheDocument()
@@ -4646,18 +4646,18 @@ describe('FileDetailPane', () => {
     })
 
     await chooseClassScope('udfs:Workspace')
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('button', { name: '定义' }))
     await waitFor(() => {
       expect(screen.getByText('描述：Personal workspace class.')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByRole('button', { name: '创建 class' }))
-    fireEvent.change(screen.getByLabelText('新 class URI'), {
+    fireEvent.click(screen.getByRole('button', { name: '创建类型' }))
+    fireEvent.change(screen.getByLabelText('新类型的地址'), {
       target: { value: 'udfs:Note' },
     })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
     expect(screen.getByText('note*')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认 class *' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交待确认类型 *' }))
     await waitFor(() => {
       expect(mockCreateInboxApproval).toHaveBeenCalledWith(expect.objectContaining({
         id: expect.stringMatching(/^https:\/\/pod\.example\/\.data\/proposals\/vocab\/note-[a-z0-9]{7}\.ttl#proposal$/),
@@ -4677,7 +4677,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('#Workspace')).toBeInTheDocument()
     expect(screen.getAllByText('tags').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Status')).toBeInTheDocument()
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for title' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 title 的说明' }))
     expect(screen.getByText('字段说明')).toBeInTheDocument()
     expect(screen.getByText('Human readable subject title.')).toBeInTheDocument()
     expect(screen.getByText('text')).toBeInTheDocument()
@@ -4698,12 +4698,12 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('columnheader', { name: /schema:dateModified/i })).not.toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
-    const dateModifiedVisibilityItem = screen.getByRole('menuitemcheckbox', { name: 'dateModified' })
+    const dateModifiedVisibilityItem = screen.getByRole('menuitemcheckbox', { name: 'Date modified' })
     expect(dateModifiedVisibilityItem).toHaveAttribute('aria-checked', 'true')
     fireEvent.click(dateModifiedVisibilityItem)
     expect(screen.queryByRole('columnheader', { name: /date ?modified/i })).not.toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'dateModified' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Date modified' }))
     expect(screen.getByRole('columnheader', { name: /date ?modified/i })).toBeInTheDocument()
     const subjectHeader = screen.getByRole('columnheader', { name: /名称/ })
     const subjectResize = screen.getByRole('separator', { name: '调整 名称 列宽' })
@@ -4743,11 +4743,11 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('status', { name: 'Pending approval for title on #Workspace' })).not.toBeInTheDocument()
     // The person's own edit is already written, so nothing is waiting for confirmation.
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的 subject' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
     expect(screen.queryByRole('button', { name: '#Workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的 subject' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
     expect(mockMutateRaw).not.toHaveBeenCalled()
     mockWriteOwnStructuredCellChange.mockClear()
@@ -4962,7 +4962,7 @@ describe('FileDetailPane', () => {
     expect(mockMutateRaw).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: '+ 属性' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '+ 卡片' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'class' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'report.md' })).toBeInTheDocument()
 
@@ -4976,8 +4976,10 @@ describe('FileDetailPane', () => {
     fireEvent.change(subjectInput, { target: { value: '#InboxRule' } })
     fireEvent.click(within(createSubjectDialog).getByRole('button', { name: '创建条目审批' }))
 
-    expect(screen.getByText('InboxRule')).toBeInTheDocument()
-    expect(screen.getByText('待确认')).toBeInTheDocument()
+    // The new row shows once: the staged write already puts it in the table, so there is no
+    // second greyed "待确认" copy of it next to the saved row.
+    expect(screen.getAllByRole('row').filter((row) => row.textContent?.includes('InboxRule'))).toHaveLength(1)
+    expect(screen.queryByText('待确认')).not.toBeInTheDocument()
     await waitFor(() => {
       expect(mockWriteOwnStructuredCellChange).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -5120,7 +5122,7 @@ describe('FileDetailPane', () => {
     fireEvent.change(screen.getByPlaceholderText('搜索卡片'), {
       target: { value: '' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Sort title' }))
+    fireEvent.click(screen.getByRole('button', { name: '按 title 排序' }))
 
     expect(useFilesStore.getState().structuredSortKey).toBe('title')
 
@@ -5151,7 +5153,7 @@ describe('FileDetailPane', () => {
     expect(otherKanbanCard).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByLabelText('卡片预览')).not.toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Move #Other' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /^移动 .*Other/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 read-only' }))
 
     await waitFor(() => {
@@ -5305,7 +5307,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('1 个校验提醒')).toBeInTheDocument()
     expect(screen.getByText('#Workspace tags has 2 values; maxCount is 1.')).toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的 subject' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
 
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Workspace' })).not.toBeInTheDocument()
@@ -5415,7 +5417,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('button', { name: 'Discard pending write for title on #Other' })).toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的 subject' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
 
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Workspace' })).not.toBeInTheDocument()
@@ -5504,7 +5506,7 @@ describe('FileDetailPane', () => {
 
     expect(mockUseRawTextResource).toHaveBeenCalledWith('https://schema.example/vocab/terms.ttl', true)
     expect(mockUseRawTextResource).toHaveBeenCalledWith('https://schema.example/vocab/shapes.ttl', true)
-    fireEvent.pointerDown(await screen.findByRole('button', { name: 'Open definition for Shared summary' }))
+    fireEvent.pointerDown(await screen.findByRole('button', { name: '查看 Shared summary 的说明' }))
     expect(screen.getByText('Definition from discovered Type Index.')).toBeInTheDocument()
   })
 
@@ -5561,7 +5563,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     const classScopeMenu = screen.getByRole('menu')
     expect(within(classScopeMenu).getByRole('menuitem', { name: 'Workspace' })).toBeInTheDocument()
     expect(within(classScopeMenu).queryByRole('menuitem', { name: 'core' })).not.toBeInTheDocument()
@@ -5655,10 +5657,10 @@ describe('FileDetailPane', () => {
       fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
     })
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有 Ingest 更新的 subject' }))
+      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有导入更新的行' }))
     })
 
-    expect(screen.getByText(/仅 Ingest 更新/)).toBeInTheDocument()
+    expect(screen.getByText(/仅导入更新/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '../docs/report.md' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
   })
@@ -5731,9 +5733,9 @@ describe('FileDetailPane', () => {
     expect(mockUsePendingSourceUpdateProposals).toHaveBeenCalledWith('https://pod.example/.data/workspaces/ws-1/state.ttl', true)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有 Ingest 更新的 subject' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有导入更新的行' }))
 
-    expect(screen.getByText(/仅 Ingest 更新/)).toBeInTheDocument()
+    expect(screen.getByText(/仅导入更新/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '../docs/report.md' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
 
@@ -5792,8 +5794,8 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.queryByRole('button', { name: '+ 卡片' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '选择或创建 class' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '选择 class' })).toHaveAttribute('title', '选择或创建 class')
+    expect(screen.getByRole('button', { name: '选择或创建类型' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择类型' })).toHaveAttribute('title', '选择或创建类型')
     expect(screen.queryByRole('columnheader', { name: /title/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Loose' })).not.toBeInTheDocument()
     expect(screen.queryByRole('cell', { name: '"Loose"' })).not.toBeInTheDocument()
@@ -5844,13 +5846,13 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '选择 class' }))
-    expect(screen.queryByLabelText('新 class URI')).not.toBeInTheDocument()
+    fireEvent.pointerDown(screen.getByRole('button', { name: '选择类型' }))
+    expect(screen.queryByLabelText('新类型的地址')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '定义' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '创建 class' }))
+    fireEvent.click(screen.getByRole('button', { name: '创建类型' }))
 
-    expect(screen.getByLabelText('新 class URI')).toBeInTheDocument()
+    expect(screen.getByLabelText('新类型的地址')).toBeInTheDocument()
   })
 
   it('lets pending class proposals become the active class scope before approval', () => {
@@ -5896,9 +5898,9 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '选择 class' }))
-    fireEvent.click(screen.getByRole('button', { name: '创建 class' }))
-    fireEvent.change(screen.getByLabelText('新 class URI'), { target: { value: 'udfs:Workspace' } })
+    fireEvent.pointerDown(screen.getByRole('button', { name: '选择类型' }))
+    fireEvent.click(screen.getByRole('button', { name: '创建类型' }))
+    fireEvent.change(screen.getByLabelText('新类型的地址'), { target: { value: 'udfs:Workspace' } })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
     const pendingClassOption = screen.getByRole('menuitem', { name: 'workspace*' })
     fireEvent.click(pendingClassOption)
@@ -5951,9 +5953,9 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '选择 class' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '选择类型' }))
     expect(screen.queryByRole('button', { name: '定义' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('新 class URI')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('新类型的地址')).not.toBeInTheDocument()
   })
 
   it('does not report a required predicate as missing when the populated column is hidden', () => {
@@ -6028,9 +6030,9 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.queryByText(/校验提醒/)).not.toBeInTheDocument()
-    expect(screen.getByText(/2 predicates/)).toBeInTheDocument()
+    expect(screen.getByText(/2 个属性/)).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: /owner/i })).not.toBeInTheDocument()
-    expect(screen.getByText(/2 predicates.*1 hidden predicate/)).toBeInTheDocument()
+    expect(screen.getByText(/2 个属性.*1 个属性已隐藏/)).toBeInTheDocument()
     expect(screen.queryByText(/校验提醒/)).not.toBeInTheDocument()
   })
 
@@ -6183,7 +6185,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByText(/校验提醒/)).not.toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有校验提醒的 subject' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有校验提醒的行' }))
 
     expect(screen.queryByRole('row', { name: /#Workspace/ })).not.toBeInTheDocument()
   })
@@ -7990,7 +7992,7 @@ describe('FileDetailPane', () => {
     vi.useFakeTimers()
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Project' }))
 
     await vi.advanceTimersByTimeAsync(900)
@@ -8208,8 +8210,8 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.getByText('这个文档还没有数据')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '创建 class' })).toBeInTheDocument()
-    expect(screen.queryByText('尚未选择 class')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '创建类型' })).toBeInTheDocument()
+    expect(screen.queryByText('尚未选择类型')).not.toBeInTheDocument()
   })
 
   it('opens fragment subjects as term definitions before navigating to the resource file', () => {
@@ -8334,7 +8336,7 @@ describe('FileDetailPane', () => {
 
     const { rerender } = render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
@@ -8414,7 +8416,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
 
     expect(mockUsePendingStructuredCellChangeProposals).toHaveBeenCalledWith(
@@ -8428,7 +8430,7 @@ describe('FileDetailPane', () => {
     expect(mockMutateRaw).not.toHaveBeenCalled()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的 subject' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
 
     expect(screen.getByRole('button', { name: '#Workspace' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
@@ -8795,11 +8797,11 @@ describe('FileDetailPane', () => {
     expect(summaryHeaders).toHaveLength(1)
     expect(summaryHeaders[0]).toHaveTextContent('Summary')
     expect(screen.getByRole('cell', { name: 'Existing' })).toBeInTheDocument()
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     expect(screen.getByText('Note*')).toBeInTheDocument()
     expect(screen.getByText('审批记录已准备')).toBeInTheDocument()
     expect(screen.queryByText('待确认词表变更')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '打开 class 审批记录 Note' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开类型审批记录 Note' }))
     expect(window.open).toHaveBeenCalledWith(
       pendingClassProposal.proposalResourceUri,
       '_blank',
@@ -8897,7 +8899,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(await screen.findByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /(?:当前类型|选择类型)/ }))
     expect(screen.getByText('Note*')).toBeInTheDocument()
   })
 
@@ -8943,18 +8945,18 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(await screen.findByRole('button', { name: /(?:当前类型|选择 class)/ }))
-    fireEvent.click(screen.getByRole('button', { name: '创建 class' }))
-    fireEvent.change(screen.getByLabelText('新 class URI'), { target: { value: 'udfs:Note' } })
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /(?:当前类型|选择类型)/ }))
+    fireEvent.click(screen.getByRole('button', { name: '创建类型' }))
+    fireEvent.change(screen.getByLabelText('新类型的地址'), { target: { value: 'udfs:Note' } })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
-    fireEvent.change(screen.getByLabelText('新 class URI'), { target: { value: 'https://schema.example/terms#Note' } })
+    fireEvent.change(screen.getByLabelText('新类型的地址'), { target: { value: 'https://schema.example/terms#Note' } })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
 
     expect(screen.getAllByText('note*')).toHaveLength(1)
     expect(screen.queryByText('udfs:Note*')).not.toBeInTheDocument()
     expect(screen.queryByText('https://schema.example/terms#Note*')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认 class *' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交待确认类型 *' }))
     await waitFor(() => {
       expect(mockCreateInboxApproval).toHaveBeenCalledTimes(1)
     })
@@ -9004,7 +9006,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
@@ -9058,7 +9060,7 @@ describe('FileDetailPane', () => {
     applyOwnWritesToDocument()
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
@@ -9117,7 +9119,7 @@ describe('FileDetailPane', () => {
     applyOwnWritesToDocument()
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'Files' }))
     const titleInput = screen.getByRole('textbox', { name: '编辑 #Workspace 的 title' })
@@ -9230,11 +9232,11 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
     fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mode' }))
     mockMutateRaw.mockClear()
     mockWriteOwnStructuredCellChange.mockClear()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Move #Other' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /^移动 .*Other/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 read/write' }))
 
     await waitFor(() => {
@@ -9289,8 +9291,8 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
     fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Move #Other' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mode' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /^移动 .*Other/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 read/write' }))
 
     await waitFor(() => {
@@ -9352,11 +9354,11 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
     fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'status' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Status' }))
     mockMutateRaw.mockClear()
     mockWriteOwnStructuredCellChange.mockClear()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Move #Other' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /^移动 .*Other/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 todo' }))
 
     await waitFor(() => {
@@ -9407,7 +9409,7 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
     fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mode' }))
     mockMutateRaw.mockClear()
     mockWriteOwnStructuredCellChange.mockClear()
 
@@ -9574,10 +9576,10 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
     fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mode' }))
     mockMutateRaw.mockClear()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Move #Other' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /^移动 .*Other/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: '移动到 read/write' }))
 
     await waitFor(() => {
@@ -9629,7 +9631,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open predicate #Other' }))
 
@@ -9696,7 +9698,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     const workspaceRow = screen.getAllByRole('row').find((candidate) => within(candidate).queryByRole('cell', { name: '#Workspace' }))
     expect(workspaceRow).toBeDefined()
@@ -9751,7 +9753,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     fireEvent.click(screen.getByRole('cell', { name: 'report.pdf' }))
     fireEvent.click(screen.getByRole('button', { name: '清空 #Workspace 的 source' }))
@@ -9800,7 +9802,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择 class)/ }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /(?:当前类型|选择类型)/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Workspace' }))
     const otherRow = screen.getAllByRole('row').find((candidate) => within(candidate).queryByRole('cell', { name: '#Other' }))
     expect(otherRow).toBeDefined()
@@ -10001,11 +10003,11 @@ describe('FileDetailPane', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: '+ 视图' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '看板' }))
     fireEvent.pointerDown(screen.getByRole('button', { name: /看板分组/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'mode' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mode' }))
 
     expect(screen.getByLabelText('看板列 read')).toBeInTheDocument()
     expect(screen.getByLabelText('看板列 read/write')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Move #Other' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^移动 .*Other/ })).not.toBeInTheDocument()
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
     expect(mockMutateRaw).not.toHaveBeenCalled()
   })

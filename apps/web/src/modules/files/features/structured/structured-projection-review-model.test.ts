@@ -126,7 +126,7 @@ describe('projectStructuredProjectionReviewModel', () => {
     expect(model.tableProjection).toBe(projection)
     expect(model.shapeWarnings).toEqual([])
     expect(model.structuredStatus).toBe(
-      '2 行 · 2 predicates · schema 命名空间 · 仅观察到 predicate · text · 仅待确认更改 · 仅 Ingest 更新 · 1 hidden predicate',
+      '2 行 · 2 个属性 · schema 命名空间 · 仅数据里出现的属性 · text · 仅待确认更改 · 仅导入更新 · 1 个属性已隐藏',
     )
   })
 
@@ -150,6 +150,6 @@ describe('projectStructuredProjectionReviewModel', () => {
     })
 
     expect(model.tableProjection.rows).toEqual([])
-    expect(model.structuredStatus).toBe('0 行 · 2 predicates · 仅校验提醒')
+    expect(model.structuredStatus).toBe('0 行 · 2 个属性 · 仅校验提醒')
   })
 })

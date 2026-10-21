@@ -11,6 +11,8 @@ import {
   projectStructuredProjectionFilterStateDocumentReset,
   projectStructuredProjectionFilterStatePatch,
   projectStructuredProjectionFilterModel,
+  structuredOptionPredicates,
+  structuredPredicateLabelResolver,
   type StructuredPredicateTypeFilter,
   type StructuredVocabTermFilter,
 } from './structured-projection-filter-model'
@@ -107,6 +109,12 @@ export function useStructuredProjectionFilterController({
     vocabDefinitionIndex,
   ])
 
+  const predicateLabel = useMemo(() => structuredPredicateLabelResolver(vocabDefinitionIndex), [vocabDefinitionIndex])
+  const optionPredicates = useMemo(
+    () => structuredOptionPredicates(projection.predicates, vocabDefinitionIndex),
+    [projection.predicates, vocabDefinitionIndex],
+  )
+
   useEffect(() => {
     setFilterState((current) => projectStructuredProjectionFilterStateDocumentReset(current))
   }, [documentUri])
@@ -114,6 +122,8 @@ export function useStructuredProjectionFilterController({
   return {
     availablePredicateNamespaces,
     classDefinition,
+    optionPredicates,
+    predicateLabel,
     predicateNamespaceFilter: filterState.predicateNamespaceFilter,
     predicateTypeFilter: filterState.predicateTypeFilter,
     schemaPredicateControls,

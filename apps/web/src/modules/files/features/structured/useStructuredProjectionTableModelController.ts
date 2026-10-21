@@ -40,12 +40,13 @@ export function useStructuredProjectionTableModelController({
   const tableRows = useMemo(
     () => buildStructuredProjectionTableRows({
       classScope,
+      documentUri,
       pendingPredicateIds,
       pendingSubjects,
       projection,
       resolveCellValues,
     }),
-    [classScope, pendingPredicateIds, pendingSubjects, projection, resolveCellValues],
+    [classScope, documentUri, pendingPredicateIds, pendingSubjects, projection, resolveCellValues],
   )
   const displayTableRows = useMemo(
     () => projectStructuredDisplayTableRows({

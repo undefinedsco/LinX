@@ -923,10 +923,10 @@ describe('StructuredTableCellPrimitives', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sort reviewStatus' }))
+    fireEvent.click(screen.getByRole('button', { name: '按 reviewStatus 排序' }))
     expect(onSort).toHaveBeenCalledTimes(1)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for reviewStatus' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 reviewStatus 的说明' }))
     expect(onSort).toHaveBeenCalledTimes(1)
     const definitionMenu = screen.getByRole('menu')
     expect(within(definitionMenu).getByText('字段说明')).toBeInTheDocument()
@@ -943,11 +943,11 @@ describe('StructuredTableCellPrimitives', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '复制字段标识' }))
     expect(onCopyPredicate).toHaveBeenCalledWith('https://schema.org/reviewStatus')
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for reviewStatus' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 reviewStatus 的说明' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '打开字段定义' }))
     expect(onOpenPredicate).toHaveBeenCalledWith('https://schema.org/reviewStatus')
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for reviewStatus' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 reviewStatus 的说明' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '打开规则 Required' }))
     expect(onOpenShapeRule).toHaveBeenCalledWith('https://pod.example/.vocab/shapes.ttl#reviewStatus-required')
   })

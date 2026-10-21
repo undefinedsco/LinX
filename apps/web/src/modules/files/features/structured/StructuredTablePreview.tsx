@@ -29,7 +29,7 @@ import { useStructuredSubjectNavigationController } from './useStructuredSubject
 import { useStructuredVocabProposalWorkflowController } from './useStructuredVocabProposalWorkflowController'
 import { useStructuredViewportController } from './useStructuredViewportController'
 import { useStructuredViewStateController } from './useStructuredViewStateController'
-import { planStructuredSubjectCreation } from './structured-subject-creation-model'
+import { planStructuredSubjectCreation, structuredSubjectDraftFromName } from './structured-subject-creation-model'
 import { projectStructuredRelationPredicateOptions } from './structured-projection-filter-model'
 
 export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
@@ -94,6 +94,8 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   const {
     availablePredicateNamespaces,
     classDefinition,
+    optionPredicates,
+    predicateLabel,
     predicateNamespaceFilter,
     predicateTypeFilter,
     schemaPredicateControls,
@@ -226,9 +228,11 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   }) => {
     const plan = planStructuredSubjectCreation({
       classScope: scopedProjection.className,
+      documentUri: file.uri,
       existingSubjects: effectiveViewProjection.rows.map((row) => row.subject),
       pendingSubjects: [...allPendingWriteSubjects],
-      subjectDraft: subject,
+      // A card is typed by its name; its address is made from it (same as 新的一行).
+      subjectDraft: structuredSubjectDraftFromName(subject),
     })
     if (plan.kind !== 'create') return false
 
@@ -287,9 +291,11 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   const createWhiteboardSubject = async (subject: string) => {
     const plan = planStructuredSubjectCreation({
       classScope: scopedProjection.className,
+      documentUri: file.uri,
       existingSubjects: effectiveViewProjection.rows.map((row) => row.subject),
       pendingSubjects: [...allPendingWriteSubjects],
-      subjectDraft: subject,
+      // A card is typed by its name; its address is made from it (same as 新的一行).
+      subjectDraft: structuredSubjectDraftFromName(subject),
     })
     if (plan.kind !== 'create') return false
 
@@ -359,6 +365,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           vocabTermFilter={vocabTermFilter}
           onVocabTermFilterChange={setVocabTermFilter}
           schemaPredicateControls={schemaPredicateControls}
+          predicateLabel={predicateLabel}
           structuredSortKey={structuredSortKey}
           structuredSortDirection={structuredSortDirection}
           onSort={setStructuredSortFromUi}
@@ -378,7 +385,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           ) : viewMode === 'table' && projection.rows.length === 0 && !scopedProjection.className ? (
             <FilesEmptyState
               title="这个文档还没有数据"
-              description="文档中还没有任何 subject。先创建一个 class，再为该 class 添加 subject。"
+              description="文档中还没有任何行。先创建一个类型，再往里添加行。"
               action={(
                 <Button
                   type="button"
@@ -387,14 +394,14 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
                   className="h-7 text-xs"
                   onClick={() => setClassScopeMenuOpen(true)}
                 >
-                  创建 class
+                  创建类型
                 </Button>
               )}
             />
           ) : viewMode === 'table' && !scopedProjection.className ? (
             <FilesEmptyState
-              title="尚未选择 class"
-              description="先选择或创建一个 class，再查看该 class 的 subject 和 predicate。"
+              title="尚未选择类型"
+              description="先选择或创建一个类型，再查看这个类型的行和属性。"
               action={(
                 <Button
                   type="button"
@@ -403,7 +410,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
                   className="h-7 text-xs"
                   onClick={() => setClassScopeMenuOpen(true)}
                 >
-                  选择或创建 class
+                  选择或创建类型
                 </Button>
               )}
             />
@@ -462,6 +469,8 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               extraLanes={kanbanLanes}
               laneLabels={kanbanBoard.laneLabels}
               cardFields={kanbanBoard.cardFields}
+              predicateLabel={predicateLabel}
+              optionPredicates={optionPredicates}
               onBoardChange={structuredWritesSupported ? (patch) => setKanbanBoardFromUi({ ...kanbanBoard, ...patch }) : undefined}
               onGroupPredicateChange={setKanbanGroupPredicateFromUi}
               onColumnOrderChange={setKanbanColumnOrderFromUi}

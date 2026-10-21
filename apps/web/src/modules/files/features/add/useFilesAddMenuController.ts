@@ -67,7 +67,7 @@ export function useFilesAddMenuController({
     setTableColumns([{ label: '', type: 'text' }])
   }, [])
   const [operationState, setOperationState] = useState(createFolderChildOperationState)
-  const menu = projectFilesAddMenuModel(containerUri)
+  const menu = projectFilesAddMenuModel(containerUri, podRootUri)
   const operation = operationState.operation
   const operationSheet = projectFolderChildOperationSheetModel(operation)
   const pending = createFolder.isPending || createRawText.isPending

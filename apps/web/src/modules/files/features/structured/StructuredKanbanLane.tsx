@@ -132,7 +132,7 @@ export function StructuredKanbanLane({
       <div className="sticky top-0 z-10 flex min-h-10 items-center justify-between gap-2 border-b border-border/40 bg-background/95 px-2 py-1.5">
         <button
           type="button"
-          aria-label={`Reorder lane ${column.label}`}
+          aria-label={`调整 ${column.label} 的顺序`}
           title="拖动调整列的顺序"
           className="inline-flex h-6 w-6 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
           data-kanban-lane-handle="true"
@@ -215,7 +215,7 @@ export function StructuredKanbanLane({
             <div className="space-y-1">
               <input
                 autoFocus
-                aria-label={`Subject title for ${column.label}`}
+                aria-label={`${column.label} 里新卡片的标题`}
                 aria-invalid={creatingError ? 'true' : undefined}
                 className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
                 value={draft}
@@ -234,7 +234,7 @@ export function StructuredKanbanLane({
           ) : onQuickCreate ? (
             <button
               type="button"
-              aria-label={`添加 Subject 到 ${column.label}`}
+              aria-label={`添加卡片到 ${column.label}`}
               className="flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => setCreating(true)}
             >
