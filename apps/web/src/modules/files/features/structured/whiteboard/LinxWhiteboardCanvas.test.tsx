@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../data/queries', () => ({
   useWhiteboardSpace: () => mocks.space,
-  useFilesPodSearchEntries: () => ({ data: [{ uri: 'https://pod.example/docs/plan.md', name: 'plan.md', kind: 'file' }] }),
+  useFilesPodSearchEntries: () => ({ data: [{ uri: 'https://pod.example/docs/plan.md', name: 'plan.md', kind: 'resource', semanticKind: 'file', mimeType: 'text/markdown' }] }),
+  useFilesCurrentPodRootUri: () => 'https://pod.example/',
+  useWhiteboardFilePreviews: () => new Map<string, string>(),
 }))
 
 const POD = 'https://pod.example/'
@@ -96,7 +98,7 @@ describe('LinxWhiteboardCanvas', () => {
   it('lists Pod files in the library files tab', () => {
     render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={cards} canvasState={makeState({ nodes: [], edges: [] })} />)
     fireEvent.click(screen.getByRole('button', { name: '文件' }))
-    expect(screen.getByText('plan.md')).toBeTruthy()
+    expect(screen.getByText('plan')).toBeTruthy()
   })
 
   it('lists rows of other tables and says which cards are already on another board', () => {

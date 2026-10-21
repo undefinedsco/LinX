@@ -34,7 +34,7 @@ async function openNoteFromSearch(page: Page) {
   const hits = page.getByRole('region', { name: '正文里的结果' })
   await expect(hits.getByRole('button').first()).toBeVisible({ timeout: 30_000 })
   await hits.getByRole('button').first().click()
-  await expect(page.getByRole('dialog').getByText('meeting-notes.md').first()).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('dialog').getByText('meeting-notes', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
 }
 
 test.beforeAll(async () => {

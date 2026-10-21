@@ -12,6 +12,7 @@ import { useFilesStore, type FileDetailTab } from '../../app/store'
 import {
   filesFavoriteHooks,
   useFileDetail,
+  useFilesCurrentPodRootUri,
   useFilesFavoriteList,
 } from '../../data/queries'
 import { createContainerNodeId } from '../../domain/resource/tree-model'
@@ -41,6 +42,7 @@ export function useFileDetailPaneController() {
   const setMetaSidebarOpen = useFilesStore((state) => state.setMetaSidebarOpen)
   const filesRouteBridge = useFilesRouteBridge()
   const { data: file, isLoading, error, refetch } = useFileDetail(selectedFileId)
+  const podRootUri = useFilesCurrentPodRootUri()
   const { data: favorites = [] } = useFilesFavoriteList({ sourceModule: 'files' })
   const detailScrollAreaRef = useRef<HTMLDivElement | null>(null)
   const previousSelectedFileIdRef = useRef(selectedFileId)
@@ -126,7 +128,7 @@ export function useFileDetailPaneController() {
     file,
     returnContext: structuredSubjectReturnContext,
   })
-  const detailChrome = file ? projectFileDetailChrome(file) : null
+  const detailChrome = file ? projectFileDetailChrome(file, podRootUri) : null
 
   const consumeRequestedSidecarAction = useCallback((): 'access' | null => {
     if (!sidecarActionRequest || sidecarActionRequest.uri !== selectedFileId) return null

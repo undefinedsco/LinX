@@ -4,6 +4,7 @@ import {
   type FileDetailShellTab,
 } from '../../domain/detail/file-detail-shell-model'
 import { getFilesDetailErrorState } from '../../domain/resource/files-error-state'
+import { displayContainerLocation, displayResourceName } from '../../domain/resource/resource-semantics'
 import type { FilesDetail, FilesEntry } from '../../domain/resource/resource-model'
 
 type FavoriteSource = {
@@ -66,26 +67,21 @@ export function shouldResetFileDetailHorizontalScroll({
   return true
 }
 
+function fileDetailPathLabel(containerUri: string, podRootUri?: string | null): string {
+  return displayContainerLocation(containerUri, podRootUri)
+}
+
 function fileDetailKindLabel(file: FilesDetail): string {
   // `.data/` is the Pod's shared business-data area: LinX and other Solid apps store records here.
   if (file.kind === 'container' && /\/\.data\/?$/.test(file.uri)) return '各应用共用的数据'
   if (file.kind === 'container') return '文件夹'
   const mime = file.mimeType ?? ''
-  if (mime === 'text/markdown') return 'Markdown 文档'
-  if (mime === 'text/turtle') return 'Turtle 数据'
-  if (mime === 'application/json') return 'JSON 数据'
+  if (mime === 'text/markdown') return '文档'
+  if (mime === 'text/turtle') return '表格'
+  if (mime === 'application/json') return '数据文件'
   if (mime.startsWith('text/')) return '文本文档'
   if (mime.startsWith('image/')) return '图片'
-  if (mime) return mime
-  return '资源'
-}
-
-function fileDetailPathLabel(uri: string): string {
-  try {
-    return new URL(uri).pathname
-  } catch {
-    return uri
-  }
+  return '文件'
 }
 
 function fileDetailSizeLabel(size: number | null): string | null {
@@ -102,25 +98,23 @@ function fileDetailModifiedLabel(modifiedAt: string | null): string | null {
   return modifiedAt.slice(0, 16).replace('T', ' ')
 }
 
-export function projectFileDetailChrome(file: FilesDetail): {
+export function projectFileDetailChrome(file: FilesDetail, podRootUri?: string | null): {
   title: string
   subtitle: string
   footer: string
 } {
-  const subtitle = `${fileDetailKindLabel(file)} · ${fileDetailPathLabel(file.parentUri)}`
+  const subtitle = `${fileDetailKindLabel(file)} · ${fileDetailPathLabel(file.parentUri, podRootUri)}`
   const segments: string[] = []
   if (file.kind === 'container') {
     segments.push(`${(file.childEntries ?? []).filter((child) => !isExplorerSystemDataFolder(child)).length} 项`)
-  } else if (file.mimeType) {
-    segments.push(file.mimeType)
   }
   const sizeLabel = file.kind === 'container' ? null : fileDetailSizeLabel(file.size)
   if (sizeLabel) segments.push(sizeLabel)
   const modifiedLabel = fileDetailModifiedLabel(file.modifiedAt)
   if (modifiedLabel) segments.push(modifiedLabel)
   return {
-    // `.data/` is shown as 数据, as in the tree (explorer-virtual-entries).
-    title: file.kind === 'container' && /\/\.data\/?$/.test(file.uri) ? '数据' : file.name,
+    // `.data/` is shown as 数据, as in the tree (explorer-virtual-entries); documents and tables lose their extension.
+    title: file.kind === 'container' ? (/\/\.data\/?$/.test(file.uri) ? '数据' : file.name) : displayResourceName(file.name),
     subtitle,
     footer: segments.join(' · '),
   }

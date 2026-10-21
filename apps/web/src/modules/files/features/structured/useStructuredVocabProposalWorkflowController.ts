@@ -26,6 +26,7 @@ import {
   projectStructuredVocabProposalWorkflowStateReset,
   projectStructuredVisiblePendingClassProposals,
 } from './structured-vocab-proposal-workflow-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export function useStructuredVocabProposalWorkflowController({
   classOptions,
@@ -95,9 +96,7 @@ export function useStructuredVocabProposalWorkflowController({
     } catch (error) {
       const description = error instanceof FilesSaveConflictError
         ? '审批记录已存在：请打开现有审批记录继续审阅。'
-        : error instanceof Error
-          ? error.message
-          : '创建词表变更失败'
+        : formatFilesErrorForUser(error, '创建词表变更失败')
       toast({ description, variant: 'destructive' })
       return false
     }

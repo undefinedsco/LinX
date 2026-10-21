@@ -22,8 +22,8 @@ const basePeek: NonNullable<StructuredSubjectPeek> = {
 describe('projectStructuredSubjectPeekDrawerChrome', () => {
   it('projects drawer title, aria labels, and icon kind for resource subjects', () => {
     expect(projectStructuredSubjectPeekDrawerChrome(basePeek)).toEqual({
-      closeAriaLabel: 'Close subject peek',
-      drawerAriaLabel: 'Structured subject peek',
+      closeAriaLabel: '关闭卡片预览',
+      drawerAriaLabel: '卡片预览',
       iconKind: 'info',
       title: '卡片预览',
     })
@@ -34,8 +34,8 @@ describe('projectStructuredSubjectPeekDrawerChrome', () => {
       ...basePeek,
       kind: 'term',
     })).toEqual({
-      closeAriaLabel: 'Close term peek',
-      drawerAriaLabel: 'Structured term peek',
+      closeAriaLabel: '关闭定义预览',
+      drawerAriaLabel: '定义预览',
       iconKind: 'info',
       title: '定义预览',
     })
@@ -44,8 +44,8 @@ describe('projectStructuredSubjectPeekDrawerChrome', () => {
       ...basePeek,
       kind: 'external',
     })).toEqual({
-      closeAriaLabel: 'Close subject peek',
-      drawerAriaLabel: 'Structured subject peek',
+      closeAriaLabel: '关闭卡片预览',
+      drawerAriaLabel: '卡片预览',
       iconKind: 'external-link',
       title: '链接预览',
     })

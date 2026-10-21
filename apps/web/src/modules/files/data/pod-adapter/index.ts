@@ -47,6 +47,7 @@ import {
   getAuthenticatedFetch,
   getContainerLister,
   getPodRootUri,
+  invalidateContainerListingCache,
 } from './pod-runtime'
 import {
   createContainerNodeId,
@@ -59,6 +60,7 @@ import {
 } from '../../domain/resource/tree-model'
 
 export {
+  invalidateContainerListingCache,
   AGENTS_ROOT_NODE_ID,
   ALL_FILES_NODE_ID,
   FilesResourceReadError,

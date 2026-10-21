@@ -1,4 +1,5 @@
 import { FileText } from 'lucide-react'
+import { displayResourceName } from '../../domain/resource/resource-semantics'
 import type { FilesSearchScopeId } from '../../domain/list/search-scope-model'
 import { useFilesBodySearch, useOpenBodyHit, type FilesBodySearch } from './useFilesBodySearch'
 
@@ -46,7 +47,7 @@ export function FilesBodySearchSection({
           >
             <FileText strokeWidth={1.5} className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm text-foreground">{hit.title}</span>
+              <span className="block truncate text-sm text-foreground">{displayResourceName(hit.title)}</span>
               <span className="block truncate text-xs text-muted-foreground">
                 {before}<mark className="bg-transparent font-medium text-foreground">{match}</mark>{after}
               </span>

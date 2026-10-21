@@ -175,10 +175,10 @@ async function openKanbanBoard(page: Page, resourceUri: string, fileName: string
     const { useFilesStore } = await import('/src/modules/files/store.ts')
     useFilesStore.getState().selectFile(selectedResourceUri)
   }, { selectedResourceUri: resourceUri })
-  await expect(page.getByRole('heading', { name: fileName })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('heading', { name: fileName.replace(/\.ttl$/, '') })).toBeVisible({ timeout: 30_000 })
 
   await page.getByRole('button', { name: '+ 视图' }).click()
-  await page.getByRole('menuitem', { name: 'Kanban' }).click()
+  await page.getByRole('menuitem', { name: '看板' }).click()
   await page.getByRole('button', { name: 'Kanban 分组 predicate' }).click()
   await page.getByRole('menuitem', { name: 'mode' }).click()
   await expect(page.getByLabel('Kanban column queue')).toBeVisible({ timeout: 30_000 })

@@ -1,5 +1,5 @@
 import type { FilesEntry } from '../resource/resource-model'
-import { normalizeContainerUri } from '../resource/resource-semantics'
+import { displayResourceName, normalizeContainerUri } from '../resource/resource-semantics'
 
 /** R6 K0: the tree shows folders and tables, and a few built-in views under each assistant folder. */
 
@@ -80,7 +80,7 @@ export function projectExplorerEntryLabel(entry: FilesEntry): string {
   if (vocabLabel) return vocabLabel
   if (entry.kind === 'container' && /\/\.vocab\/$/.test(normalizeContainerUri(entry.uri))) return '词表'
   if (entry.kind === 'container' && /\/\.data\/$/.test(normalizeContainerUri(entry.uri))) return '数据'
-  return entry.name
+  return entry.kind === 'resource' ? displayResourceName(entry.name) : entry.name
 }
 
 /** Row name in folder views: assistant home folders show the assistant's name, other entries keep their own. */
@@ -89,7 +89,7 @@ export function projectEntryDisplayName(entry: FilesEntry, agentNames?: Record<s
     const agentId = parseAgentHomeContainer(entry.uri)?.agentId
     if (agentId && agentNames[agentId]) return agentNames[agentId]
   }
-  return entry.name
+  return entry.kind === 'resource' ? displayResourceName(entry.name) : entry.name
 }
 
 /** The tree lists folders and data tables only; other files are reached through their folder's table. */

@@ -19,6 +19,7 @@ import {
   type FilesListOperation,
 } from '../../domain/list/files-list-operation-model'
 import type { FilesEntry } from '../../domain/resource/resource-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export function useFilesListOperationController({
   baseEntries,
@@ -108,7 +109,7 @@ export function useFilesListOperationController({
       toast({ description: filesToDelete.length > 1 ? `已删除 ${filesToDelete.length} 项` : '文件已删除' })
     } catch (error) {
       toast({
-        description: `删除失败：${error instanceof Error ? error.message : '未知错误'}`,
+        description: `删除失败：${formatFilesErrorForUser(error, '未知错误')}`,
         variant: 'destructive',
       })
     }
@@ -151,7 +152,7 @@ export function useFilesListOperationController({
       toast({ description: '文件移动已开始' })
     } catch (error) {
       toast({
-        description: `${operation.type === 'delete' ? '删除' : operation.type === 'rename' ? '重命名' : operation.type === 'copy' ? '复制' : '移动'}失败：${error instanceof Error ? error.message : '未知错误'}`,
+        description: `${operation.type === 'delete' ? '删除' : operation.type === 'rename' ? '重命名' : operation.type === 'copy' ? '复制' : '移动'}失败：${formatFilesErrorForUser(error, '未知错误')}`,
         variant: 'destructive',
       })
     }

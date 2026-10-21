@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { auditResource } from '@undefineds.co/models'
 import {
+  renderStructuredCellMetadataPatch,
   StructuredCellWriteConflictError,
   writeOwnStructuredCellChange,
 } from './data/proposal/structured-cell-approval-commands'
@@ -62,6 +63,14 @@ describe("writing the person's own structured edits", () => {
     })
   })
 
+  it('adds values without a version check, so rows added one after another all save', async () => {
+    const { db, patches } = createDb(205)
+
+    await writeOwnStructuredCellChange(db, { ...change, previousValues: [], expectedEtag: '"v1"' })
+
+    expect(patches[0].headers['If-Match']).toBeUndefined()
+  })
+
   it('only writes over the version the person saw', async () => {
     const { db, patches, inserts } = createDb(412)
 
@@ -81,7 +90,46 @@ describe("writing the person's own structured edits", () => {
     await expect(writeOwnStructuredCellChange(db, { ...change, documentUri: 'https://pod.example/.vocab/terms.ttl' }))
       .rejects.toThrow(/vocab registry/)
     await expect(writeOwnStructuredCellChange(db, { ...change, documentUri: 'https://pod.example/public/notes.ttl' }))
-      .rejects.toThrow(/outside editable \.data resources/)
+      .rejects.toThrow(/公开区或系统保留区/)
     expect(patches).toHaveLength(0)
+  })
+
+  it('writes tables the person made in an ordinary private folder', async () => {
+    const { db, patches } = createDb()
+
+    await writeOwnStructuredCellChange(db, { ...change, documentUri: 'https://pod.example/work/%E4%BB%BB%E5%8A%A1.ttl' })
+
+    expect(patches).toHaveLength(1)
+  })
+
+  it('declares every prefix its update uses (a new row is typed with rdf:type)', () => {
+    const body = renderStructuredCellMetadataPatch({
+      documentUri,
+      subject: '#row-1',
+      predicate: 'rdf:type',
+      previousValues: [],
+      nextValues: ['https://pod.example/.vocab/terms.ttl#p-1', '<https://pod.example/.vocab/Task>', '"3"^^xsd:integer', 'schema:Thing'],
+    } as any)
+    const declared = new Set([...body.matchAll(/^PREFIX\s+([\w-]+):/gm)].map((match) => match[1]))
+    const operations = body.split('\n').filter((line) => /^\s+\S+ \S+ .+ \.$/.test(line)).join('\n')
+    const used = new Set(
+      [...operations.replace(/"(?:[^"\\]|\\.)*"/g, '""').replace(/<[^>]*>/g, '<>').matchAll(/(?:^|[\s^])([A-Za-z][\w-]*):[\w-]/g)]
+        .map((match) => match[1]),
+    )
+    // Bare IRIs become `<iri>`; `http:` is not a prefix.
+    expect(body).toContain('<#row-1> rdf:type <https://pod.example/.vocab/terms.ttl#p-1> .')
+    expect(used.has('http')).toBe(false)
+    const literals = renderStructuredCellMetadataPatch({
+      documentUri, subject: '#o1', predicate: 'https://example.org/ns#amount', previousValues: ['10'], nextValues: ['99', 'true', '-1.5e3'],
+    } as any)
+    expect(literals).toContain('<#o1> <https://example.org/ns#amount> 10 .')
+    expect(literals).toContain('<#o1> <https://example.org/ns#amount> 99 .')
+    expect(literals).toContain('<#o1> <https://example.org/ns#amount> true .')
+    expect(literals).toContain('<#o1> <https://example.org/ns#amount> -1.5e3 .')
+    expect(used.has('https')).toBe(false)
+    expect(used.has('rdf')).toBe(true)
+    expect(body).toContain('"3"^^<http://www.w3.org/2001/XMLSchema#integer>')
+    expect(body).toContain('<http://schema.org/Thing>')
+    for (const prefix of used) expect(declared.has(prefix)).toBe(true)
   })
 })

@@ -1,5 +1,5 @@
 import { FilesResourceReadError, type FilesEntry } from '../resource/resource-model'
-import { getEntryName, getFilesEntryOpenMode, getParentContainerUri, normalizeContainerUri } from '../resource/resource-semantics'
+import { displayResourceName, getEntryName, getFilesEntryOpenMode, getParentContainerUri, normalizeContainerUri } from '../resource/resource-semantics'
 import { readablePredicateLabel } from '../structured/structured-table-vocab'
 import type { StructuredTableProjection, StructuredTableRow } from '../structured/structured-table'
 import {
@@ -138,7 +138,7 @@ export function projectCardPathLabel({
     : podRootUri && normalizeContainerUri(parentUri) === normalizeContainerUri(podRootUri)
       ? '我的空间'
       : getEntryName(parentUri)
-  const name = getEntryName(target.documentUri)
+  const name = displayResourceName(getEntryName(target.documentUri))
   return parentLabel ? `${parentLabel} / ${name}` : name
 }
 

@@ -10,6 +10,7 @@ import {
   loadLocalStructuredViewMetadata,
   saveLocalStructuredViewMetadata,
 } from './local-structured-view-metadata-store'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export function useStructuredViewMetadataController({
   currentViewMetadata,
@@ -137,7 +138,7 @@ export function useStructuredViewMetadataController({
         setViewMetadataSaveError(null)
         setLocalStoreRevision((current) => current + 1)
       } catch (error) {
-        const description = error instanceof Error ? error.message : '保存视图配置失败'
+        const description = formatFilesErrorForUser(error, '保存视图配置失败')
         setViewMetadataSaveStatus('error')
         setViewMetadataSaveError(description)
         failedViewMetadataSignatureRef.current = currentSignature

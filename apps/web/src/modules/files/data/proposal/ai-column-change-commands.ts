@@ -1,4 +1,5 @@
 import { auditResource, type SolidDatabase } from '@undefineds.co/models'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { assertInsertValuesBelongToCurrentPod } from '@/lib/data/pod-write-guard'
 import { createRawTextResource, readRawTextResource, saveRawTextResource } from '../pod-adapter'
 import {
@@ -24,7 +25,7 @@ export async function readAiColumnChanges(
   podRootUri?: string | null,
 ): Promise<AiColumnChange[]> {
   try {
-    const log = await readRawTextResource(db, aiColumnChangeLogUri(documentUri, podRootUri))
+    const log = await readRawTextResource(db, aiColumnChangeLogUri(documentUri, podRootUri ?? resolveCurrentPodBaseUrl(db)))
     return parseAiColumnChangeLogTurtle(log.content)
   } catch (error) {
     if (isMissing(error)) return []
@@ -38,7 +39,7 @@ async function updateLog(
   podRootUri: string | null | undefined,
   update: (changes: AiColumnChange[]) => AiColumnChange[],
 ) {
-  const logUri = aiColumnChangeLogUri(documentUri, podRootUri)
+  const logUri = aiColumnChangeLogUri(documentUri, podRootUri ?? resolveCurrentPodBaseUrl(db))
   let existing: Awaited<ReturnType<typeof readRawTextResource>> | null = null
   try {
     existing = await readRawTextResource(db, logUri)
