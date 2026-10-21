@@ -10,6 +10,7 @@ vi.mock('./ui/Messages', () => ({ UserMessage: () => null, AssistantMessage: () 
 vi.mock('../../collections', () => ({ useThreadList: () => ({ data: [] }), LINX_DEFAULT_SECRETARY: { chatId: 'linx-chat' } }))
 
 import { ConversationThread } from './ConversationThread'
+import { ConversationProvider, type ConversationIdentity } from './ConversationContext'
 
 function Harness({ onStarted }: { onStarted: () => void }) {
   const runtime = useLocalRuntime({ run: async () => ({ content: [{ type: 'text', text: 'ok' }] }) })
@@ -38,5 +39,22 @@ describe('welcome inside the conversation', () => {
     fireEvent.click(screen.getByText('比较几个方案'))
     await waitFor(() => expect(onStarted).toHaveBeenCalled())
     expect(screen.queryByText('比较几个方案', { selector: 'button' })).toBeNull()
+  })
+
+  it('keeps the assistant\'s first words at the top of LinX 助手\'s chat once the welcome is over', () => {
+    globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as never
+    const identity = { chatId: 'c', threadId: 't', threadUri: null, agentId: null, agentUri: null, agentName: 'LinX 助手', contactId: null, isSecretary: true, isGroup: false, podBaseUrl: null, rememberedUrl: null } as unknown as ConversationIdentity
+    function Secretary() {
+      const runtime = useLocalRuntime({ run: async () => ({ content: [{ type: 'text', text: 'ok' }] }) })
+      return (
+        <ConversationProvider value={identity}>
+          <AssistantRuntimeProvider runtime={runtime}>
+            <ConversationThread chatId="c" threadId="t" sendDisabled={false} pendingComposerDraft={null} onComposerDraftApplied={() => undefined} />
+          </AssistantRuntimeProvider>
+        </ConversationProvider>
+      )
+    }
+    render(<Secretary />)
+    expect(screen.getByTestId('welcome-intro-static').textContent).toContain('你好，我是你的助手')
   })
 })

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { fillCustomLoginProvider, getLoginDialog, selectLoginSpace } from '../helpers/login-ui'
-import { authorizeSeededRuntime, signInToSeededRuntime, type ProviderAccount } from '../helpers/seeded-auth-flow'
+import { authorizeSeededRuntime, signInToSeededRuntime, waitForSolidDbReady, type ProviderAccount } from '../helpers/seeded-auth-flow'
 import { expectSecretaryVisible } from '../helpers/secretary-bootstrap'
 import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seeded-xpod-runtime'
 
@@ -67,10 +67,12 @@ async function signIn(page: Page) {
   await authorizeSeededRuntime(page, account!)
   await page.waitForURL((url) => url.origin !== providerOrigin, { timeout: 60_000 })
   await expectSecretaryVisible(page, 90_000)
+  await waitForSolidDbReady(page)
 }
 
 /** The app's own authenticated fetch against the signed-in Pod. */
 async function pod(page: Page, method: 'GET' | 'PUT' | 'DELETE', path: string, body?: string) {
+  await waitForSolidDbReady(page)
   return page.evaluate(async ({ method, path, body }) => {
     const w = window as any
     const authFetch = w.__SOLID_DB__.getDialect().getAuthenticatedFetch()

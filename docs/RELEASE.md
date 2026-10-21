@@ -14,7 +14,7 @@
    - `build_image`：构建 web（`VITE_CLOUD_IDENTITY_URL=https://id.undefineds.co`，即 provider=undefineds.co），写入 `version.json`（版本 + 源提交），打成 `ghcr.io/undefinedsco/linx-web` 镜像，标签 `sha-<sha>` 与 RC 版本，记下 digest；
    - `deploy_and_accept`（GitHub Environment `rc`，共享 RC 串行）：把 `deploy/rc/linx-web-rc.yaml` 按 digest 渲染后**一次** apply，等滚动完成并核对运行中的 pod 就是这个 digest；再做静态部署检查（`scripts/verify-web-static-deploy.mjs`）和部署站点冒烟（`tests/e2e/specs/deployed-web-smoke.spec.ts`：各路由 200、缺失资源 404、`version.json` 是本候选、云端登录跳到 provider），再做登录后验收：把 xpod 的 RC provider（`deployment/xpod-rc`，平时由 xpod 的 RC 流程缩到 0）经 Sealos 域名 `ids` / `podss` / `apis.sealosgzg.site`（`deploy/rc/xpod-rc-sealos.yaml`，xpod 网关已有这三条路由）拉起：用本次运行专属的 seed Secret（`xpod-rc-seed-linx-<run>-<attempt>`：`scripts/rc-provider-seed.mjs` 每轮生成 Alice、Bob 和随机密码，账号和 Pod 加本轮后缀；只用于验收，不需要维护任何账号 Secret）并把 `CSS_BASE_URL` 等身份地址临时指向 Sealos 域名，一次 patch（`scripts/xpod-rc-provider-patch.mjs`）完成；用其中 Alice 账号经“使用其他空间”登录 RC 站点（`tests/e2e/specs/deployed-signed-in.spec.ts`：在 Pod 里写读删一个文件、发一条消息并要求模型真实回答；写入的文件放在本次运行的目录里，结束时删除）；结束后（无论成败）若 xpod-rc 仍挂着本次的 seed，就把 seed 和环境变量还原并缩回 0，再删掉该 Secret。xpod-rc 正在运行（xpod 的 RC 在用）时本步直接失败，等它缩回 0 后重跑；
    - 通过后上传 `release-acceptance-<sha>`（`release-acceptance.json`：候选版本、源提交、镜像 digest、RC 地址、provider、run 链接）。这是提升生产的唯一凭证。
-4. 人工在 RC 上验收产品（按 `docs/reviews/linx-r6-product-audit-2026-10-10.md` 的清单）。
+4. 人工在 RC 上验收产品（按 `docs/reviews/linx-r6-product-audit-2026-10-10.md` 的清单）。RC 用完即清：`deploy_and_accept` 结束时（无论成败）把 `linx-web-rc` 缩到 0，xpod-rc 也还原到 0；Service、Ingress 和证书保留。人工验收前先 `kubectl -n ns-iknkxtc8 scale deployment/linx-web-rc --replicas=1`，看完再缩回 0。
 5. 生产：在验收通过的 staging exact SHA 上打 `linx-v<version>`（版本 = 根 `package.json`）。`.github/workflows/promote.yml` 随之运行：
    - 核对标签在 `staging` 上、版本与 `package.json` 一致，找到该提交成功的 RC run，下载 `release-acceptance-<sha>`，要求全部检查为 passed；
    - 把验收过的 digest 加打 `<version>` 和 `latest` 标签（不重新构建）；
@@ -32,7 +32,7 @@ GitHub Environment `rc`（Settings → Environments，deployment branch policy �
 | --- | --- | --- |
 | Secret | `KUBE_CONFIG_DATA` | base64 的广州 Sealos kubeconfig（RC 所在集群）；也可以不设，改用组织级密钥 `GZ_KUBE_CONFIG_DATA`（与 xpod 共用，需共享给 LinX 仓库） |
 | Variable | `SEALOS_NAMESPACE` | RC 所在 namespace（广州为 `ns-iknkxtc8`） |
-| Variable | `LINX_RC_HOST` | RC 用 Sealos 分配的域名（不挂我们自己的域名），例如 `linx-web-rc.sealosgzg.site`；RC 地址即 `https://<LINX_RC_HOST>` |
+| Variable | `LINX_RC_HOST` | RC 用 Sealos 分配的域名（不挂我们自己的域名），现在是 `linx.sealosgzg.site`；RC 地址即 `https://<LINX_RC_HOST>` |
 | Variable | `LINX_RC_EXPECT_MODEL_REPLY` | 可选，默认 `1`：要求消息得到模型真实回答 |
 | Variable | `LINX_RC_CERT_ISSUER` | 可选，签发 RC 证书的 cert-manager Issuer，默认 `linx-letsencrypt`（集群里没有 Sealos 通配证书，Sealos 域名的证书都由 cert-manager 签） |
 

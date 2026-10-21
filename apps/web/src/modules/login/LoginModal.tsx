@@ -18,7 +18,7 @@ export function LoginModal(props: LoginModalProps) {
   if (state === 'authenticated' && !storageConflict) return null
 
   return (
-    <LoginCardShell cardSize="auto" cardClassName="min-h-[400px] max-h-[calc(100vh-32px)]">
+    <LoginCardShell cardSize="auto" cardClassName="min-h-[400px] max-h-[calc(100vh-32px)] has-[[data-login-view=other]]:min-h-0">
       {storageConflict ? (
         <StorageConflictView
           storedAccount={props.storedAccount}
@@ -395,7 +395,7 @@ function OtherSpaceView({
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full px-5 py-5">
+    <div data-login-view="other" className="flex-1 flex flex-col px-5 py-5">
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -409,7 +409,8 @@ function OtherSpaceView({
       </div>
       <h2 className="mt-3 text-base font-semibold text-foreground">使用其他空间</h2>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">已有 Solid 空间的话，粘贴它的地址。</p>
-      <div className="mt-4 flex-1 space-y-2 overflow-y-auto">
+      {configuredProviders.length > 0 ? (
+      <div className="mt-4 space-y-2 overflow-y-auto">
         {configuredProviders.map((provider) => (
           <button
             key={provider.id}
@@ -427,6 +428,7 @@ function OtherSpaceView({
           </button>
         ))}
       </div>
+      ) : null}
       <div className="mt-4 space-y-2">
         <input
           autoFocus

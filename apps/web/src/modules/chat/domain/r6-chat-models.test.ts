@@ -55,6 +55,12 @@ describe('chat list model', () => {
     const group = projectChatListEntry({ id: 'g', title: '书店活动组', kind: 'group', starred: false, muted: false, unreadCount: 0, isProtected: false })
     expect(group.canLeave).toBe(true)
   })
+  it('shows the latest message as preview, and greets instead of "还没有消息" for LinX 助手', () => {
+    const base = { id: 'x', title: 'LinX 助手', kind: 'assistant' as const, starred: true, muted: false, unreadCount: 0, isProtected: true }
+    expect(projectChatListEntry({ ...base, preview: '好，以后我叫LinX 助手。想先做点什么？' }).preview).toBe('好，以后我叫LinX 助手。想先做点什么？')
+    expect(projectChatListEntry({ ...base, preview: null }).preview).toBe('想先做点什么？')
+    expect(projectChatListEntry({ ...base, id: 'p', kind: 'person', isProtected: false }).preview).toBe('还没有消息')
+  })
   it('formats 昨天', () => {
     const now = new Date('2026-10-12T10:00:00').getTime()
     expect(formatListTime('2026-10-11T23:00:00', now)).toBe('昨天')

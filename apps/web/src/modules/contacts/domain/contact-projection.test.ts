@@ -100,7 +100,9 @@ describe('contact projections', () => {
 
 describe('formatModelLabel', () => {
   it('shows the model name instead of its provider resource IRI', () => {
-    expect(formatModelLabel('http://localhost:44180/test/settings/providers/undefineds.ttl#linx-lite')).toBe('linx-lite')
+    expect(formatModelLabel('http://localhost:44180/test/settings/providers/undefineds.ttl#linx-lite')).toBe('LinX 轻量版')
+    expect(formatModelLabel('linx-lite')).toBe('LinX 轻量版')
+    expect(formatModelLabel('undefineds/linx')).toBe('LinX 标准版')
     expect(formatModelLabel('https://pod.example/settings/models/gpt-4o')).toBe('gpt-4o')
     expect(formatModelLabel('openai/gpt-4o')).toBe('openai/gpt-4o')
     expect(formatModelLabel('')).toBeNull()

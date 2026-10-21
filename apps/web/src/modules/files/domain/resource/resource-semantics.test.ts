@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { shouldRequestEditableSheetForStructuredSubjectTarget } from './resource-semantics'
+import { isPodSystemContainer, shouldRequestEditableSheetForStructuredSubjectTarget } from './resource-semantics'
 
 describe('Files resource semantics', () => {
   it('keeps structured RDF subject targets embedded instead of opening an editable sheet', () => {
@@ -23,6 +23,16 @@ describe('Files resource semantics', () => {
       'mailto:team@example.com',
     ]) {
       expect(shouldRequestEditableSheetForStructuredSubjectTarget(uri), uri).toBe(true)
+    }
+  })
+
+  it('marks only pod-root app containers as system containers', () => {
+    const root = 'https://pod.example/alice/'
+    for (const name of ['agents', 'profile', 'settings', 'inbox']) {
+      expect(isPodSystemContainer(`${root}${name}/`, root), name).toBe(true)
+    }
+    for (const uri of [`${root}.data/`, `${root}notes/`, `${root}notes/settings/`, `${root}.data/agents/`, `${root}settings`]) {
+      expect(isPodSystemContainer(uri, root), uri).toBe(false)
     }
   })
 })

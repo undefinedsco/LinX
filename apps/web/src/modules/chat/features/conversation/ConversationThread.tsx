@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import type { InlineWelcome } from './welcome/WelcomeConversation'
+import { WelcomeIntroStatic, type InlineWelcome } from './welcome/WelcomeConversation'
+import { useOptionalConversationIdentity } from './ConversationContext'
 import { ThreadPrimitive, useAui, useAuiState } from '@assistant-ui/react'
 import { ArrowDown } from 'lucide-react'
 import { useChatStore } from '../../store'
@@ -41,6 +42,7 @@ export function ConversationThread({
   welcome?: InlineWelcome
 }) {
   const aui = useAui()
+  const identity = useOptionalConversationIdentity()
   const messageCount = useAuiState((state) => state.thread.messages.length)
   const welcomeActive = Boolean(welcome) && messageCount === 0
   const welcomeStarted = welcome?.onStarted
@@ -67,7 +69,7 @@ export function ConversationThread({
             if (sendDisabled) return
             aui.composer().setText(prompt)
             aui.composer().send()
-          }) : null}
+          }) : identity?.isSecretary ? <WelcomeIntroStatic name={identity.agentName} /> : null}
           <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
           <TailDecisions chatId={chatId} threadId={threadId} />
         </div>

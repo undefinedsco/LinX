@@ -83,6 +83,10 @@ export function formatErrorForUser(error: unknown, fallback = '操作失败，�
     return '登录页面暂时打不开。请检查网络，或回到“选择空间”重试。'
   }
 
+  if (/model_not_configured|no ai (provider|model)|no (model|provider)s? (is |are )?(configured|connected)|ai (provider|model) (is )?not configured/.test(normalized)) {
+    return '还没有连接 AI 模型。请到 设置 → 模型连接 添加一个模型后再试。'
+  }
+
   if (/api key|invalid key|missing key|incorrect api key|authentication.*key|invalid_api_key/.test(normalized)) {
     return '密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。'
   }

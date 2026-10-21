@@ -34,6 +34,29 @@ function AssistantBubble({ children, name }: { children: React.ReactNode; name: 
   )
 }
 
+function IntroBubble({ name }: { name: string }) {
+  return (
+    <AssistantBubble name={name}>
+      <div className="rounded-lg border border-border bg-card px-3 py-2 text-sm leading-relaxed">
+        <p>你好，我是你的助手。我能帮你：</p>
+        <ul className="mt-1 space-y-0.5">
+          {ABILITIES.map(([title, text]) => <li key={title}><strong>{title}</strong>：{text}</li>)}
+        </ul>
+        <p className="mt-2 text-muted-foreground">你的聊天、文件和我记下的东西，都存在你自己的空间里。</p>
+      </div>
+    </AssistantBubble>
+  )
+}
+
+/**
+ * The assistant's first words, kept at the top of LinX 助手's chat once the welcome is over,
+ * so the conversation still starts where it started. Drawn, not stored: the welcome is not
+ * model output and must not take part in branches or retries.
+ */
+export function WelcomeIntroStatic({ name }: { name: string }) {
+  return <div data-testid="welcome-intro-static"><IntroBubble name={name} /></div>
+}
+
 /** The assistant's first words: what it can do, a naming card, then a few ways to start. */
 export function WelcomeIntro({ name, agentUri, named, onNamed, onSuggestion }: {
   name: string
@@ -45,15 +68,7 @@ export function WelcomeIntro({ name, agentUri, named, onNamed, onSuggestion }: {
   return (
     <>
       <p className="text-center text-xs text-muted-foreground">你的空间已经准备好，{name}也在了</p>
-      <AssistantBubble name={name}>
-        <div className="rounded-lg border border-border bg-card px-3 py-2 text-sm leading-relaxed">
-          <p>你好，我是你的助手。我能帮你：</p>
-          <ul className="mt-1 space-y-0.5">
-            {ABILITIES.map(([title, text]) => <li key={title}><strong>{title}</strong>：{text}</li>)}
-          </ul>
-          <p className="mt-2 text-muted-foreground">你的聊天、文件和我记下的东西，都存在你自己的空间里。</p>
-        </div>
-      </AssistantBubble>
+      <IntroBubble name={name} />
       <AssistantBubble name={name}>
         {named === null ? (
           <NamingCard uri={agentUri} onNamed={onNamed} />

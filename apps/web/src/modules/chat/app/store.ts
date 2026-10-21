@@ -110,6 +110,11 @@ interface ChatStore {
   setListViewMode: (mode: ListViewMode) => void
 }
 
+function isCompactViewport() {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 699px)').matches
+}
+
 export const useChatStore = create<ChatStore>((set) => ({
   selectedChatId: storedSelection.selectedChatId,
   selectedThreadId: storedSelection.selectedThreadId,
@@ -120,7 +125,9 @@ export const useChatStore = create<ChatStore>((set) => ({
   listViewMode: 'chats',
   isAddDialogOpen: false,
   addDialogMode: 'ai',
-  showRightSidebar: readStoredChatInfoOpen(),
+  // Compact windows show 聊天信息 as a full-screen task view, so a remembered
+  // desktop "open" must not cover the chat on entry.
+  showRightSidebar: readStoredChatInfoOpen() && !isCompactViewport(),
   executionConditionsRequest: 0,
   searchRequest: 0,
 
