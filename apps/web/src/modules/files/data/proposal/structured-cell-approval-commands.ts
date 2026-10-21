@@ -258,7 +258,10 @@ export async function writeOwnStructuredCellChange(
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/sparql-update',
-      ...(input.expectedEtag ? { 'If-Match': input.expectedEtag } : {}),
+      // Only an edit that removes old values needs the version check (see expectedEtag). A pure
+      // addition, such as a new row, must not be refused because the person's previous write
+      // already moved the document on.
+      ...(input.expectedEtag && change.previousValues.length > 0 ? { 'If-Match': input.expectedEtag } : {}),
     },
     body: renderStructuredCellMetadataPatch(change),
   })

@@ -63,6 +63,14 @@ describe("writing the person's own structured edits", () => {
     })
   })
 
+  it('adds values without a version check, so rows added one after another all save', async () => {
+    const { db, patches } = createDb(205)
+
+    await writeOwnStructuredCellChange(db, { ...change, previousValues: [], expectedEtag: '"v1"' })
+
+    expect(patches[0].headers['If-Match']).toBeUndefined()
+  })
+
   it('only writes over the version the person saw', async () => {
     const { db, patches, inserts } = createDb(412)
 
