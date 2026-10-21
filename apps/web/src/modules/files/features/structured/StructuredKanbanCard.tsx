@@ -107,7 +107,7 @@ export function StructuredKanbanCard({
   const retryAction = pendingMove?.retryable && onRetryMove && !overlay ? (
     <button
       type="button"
-      aria-label={`重试移动 ${card.subject}`}
+      aria-label={`重试移动 ${card.title}`}
       title="重试移动"
       data-structured-card-action="true"
       className="inline-flex h-6 w-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"

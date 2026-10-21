@@ -27,7 +27,7 @@ describe('StructuredKanbanLane', () => {
 
     expect(screen.getByLabelText('看板列 Todo')).toHaveAttribute('data-lane-width', '288')
     expect(screen.getByText('Card body')).toBeVisible()
-    expect(screen.getByRole('button', { name: '添加 Subject 到 Todo' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '添加卡片到 Todo' })).toBeVisible()
 
     rerender(
       <StructuredKanbanLane
@@ -73,18 +73,18 @@ describe('StructuredKanbanLane', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '添加 Subject 到 Done' }))
-    const input = screen.getByRole('textbox', { name: 'Subject title for Done' })
+    fireEvent.click(screen.getByRole('button', { name: '添加卡片到 Done' }))
+    const input = screen.getByRole('textbox', { name: 'Done 里新卡片的标题' })
     fireEvent.change(input, { target: { value: 'New subject' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
     expect(onQuickCreate).toHaveBeenCalledWith('done', 'New subject')
 
-    await waitFor(() => expect(screen.getByRole('button', { name: '添加 Subject 到 Done' })).toBeVisible())
-    fireEvent.click(screen.getByRole('button', { name: '添加 Subject 到 Done' }))
-    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Subject title for Done' }), { key: 'Escape' })
+    await waitFor(() => expect(screen.getByRole('button', { name: '添加卡片到 Done' })).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: '添加卡片到 Done' }))
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Done 里新卡片的标题' }), { key: 'Escape' })
 
-    expect(screen.queryByRole('textbox', { name: 'Subject title for Done' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Done 里新卡片的标题' })).not.toBeInTheDocument()
   })
 
   it('keeps the quick-create draft visible when creation fails', async () => {
@@ -106,13 +106,13 @@ describe('StructuredKanbanLane', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '添加 Subject 到 Todo' }))
-    const input = screen.getByRole('textbox', { name: 'Subject title for Todo' })
+    fireEvent.click(screen.getByRole('button', { name: '添加卡片到 Todo' }))
+    const input = screen.getByRole('textbox', { name: 'Todo 里新卡片的标题' })
     fireEvent.change(input, { target: { value: 'Keep me' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
     await waitFor(() => expect(screen.getByText('创建失败，请重试')).toBeVisible())
-    expect(screen.getByRole('textbox', { name: 'Subject title for Todo' })).toHaveValue('Keep me')
+    expect(screen.getByRole('textbox', { name: 'Todo 里新卡片的标题' })).toHaveValue('Keep me')
   })
 
   it('shows an explicit insertion marker while a card is over the lane', () => {

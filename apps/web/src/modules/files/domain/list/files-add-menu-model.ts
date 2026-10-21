@@ -1,3 +1,5 @@
+import { displayContainerLocation } from '../resource/resource-semantics'
+
 export type FilesAddActionId =
   | 'create-document'
   | 'create-table'
@@ -16,6 +18,8 @@ export type FilesAddActionModel = {
 export type FilesAddMenuModel = {
   triggerLabel: string
   destinationLabel: string
+  /** Readable location ("我的空间 / 数据"), empty when no folder is chosen. */
+  locationLabel: string
   actions: FilesAddActionModel[]
 }
 
@@ -33,11 +37,13 @@ export function projectFilesAddContainerUri(location: FilesAddLocation, podRootU
   return podRootUri ? (podRootUri.endsWith('/') ? podRootUri : `${podRootUri}/`) : null
 }
 
-export function projectFilesAddMenuModel(containerUri: string | null): FilesAddMenuModel {
+export function projectFilesAddMenuModel(containerUri: string | null, podRootUri?: string | null): FilesAddMenuModel {
   const disabled = !containerUri
+  const locationLabel = containerUri ? displayContainerLocation(containerUri, podRootUri) : ''
   return {
     triggerLabel: '添加',
-    destinationLabel: containerUri ? `添加到 ${containerUri}` : '先选择一个文件夹',
+    destinationLabel: containerUri ? `添加到 ${locationLabel}` : '先选择一个文件夹',
+    locationLabel,
     actions: [
       { id: 'create-document', label: '新建文档', iconKind: 'document', disabled },
       { id: 'create-table', label: '新建表格', iconKind: 'table', disabled },

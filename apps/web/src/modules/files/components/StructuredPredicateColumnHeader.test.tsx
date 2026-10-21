@@ -65,15 +65,15 @@ describe('StructuredPredicateColumnHeader', () => {
         onOpenPredicateShapeRule,
       }))
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for status' }))
+      fireEvent.pointerDown(screen.getByRole('button', { name: '查看 status 的说明' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '打开字段定义' }))
       expect(onOpenPredicateDefinition).toHaveBeenCalledWith('https://pod.example/.vocab/terms.ttl#status')
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for status' }))
+      fireEvent.pointerDown(screen.getByRole('button', { name: '查看 status 的说明' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '打开规则 Required' }))
       expect(onOpenPredicateShapeRule).toHaveBeenCalledWith('https://pod.example/.vocab/shapes.ttl#status-required')
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for status' }))
+      fireEvent.pointerDown(screen.getByRole('button', { name: '查看 status 的说明' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '复制字段标识' }))
       expect(onCopyPredicate).toHaveBeenCalledWith('https://pod.example/.vocab/terms.ttl#status')
       expect(writeText).not.toHaveBeenCalled()

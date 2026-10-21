@@ -91,6 +91,9 @@ test('creates at the top of 我的空间, builds an ordered table, and keeps edi
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible({ timeout: 20_000 })
   }
   await expect(page.getByText('没保存成功')).toHaveCount(0)
+  // Each new row shows once: no second greyed "待确认" copy next to the saved row.
+  await expect(page.getByRole('row').filter({ hasText: '买菜' })).toHaveCount(1)
+  await expect(page.getByRole('row').filter({ hasText: '写周报' })).toHaveCount(1)
   await expect.poll(async () => decodeURIComponent((await pod(page, encodeURIComponent('任务.ttl'))).text), { timeout: 20_000 }).toContain('#写周报')
 
 

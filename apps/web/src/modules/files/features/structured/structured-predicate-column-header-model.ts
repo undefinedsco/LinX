@@ -163,7 +163,7 @@ export function projectStructuredDefinedPredicateHeaderChrome({
 }): StructuredDefinedPredicateHeaderChrome {
   return {
     definitionTrigger: {
-      ariaLabel: `Open definition for ${normalizedLabel}`,
+      ariaLabel: `查看 ${normalizedLabel} 的说明`,
     },
     menu: {
       actions: {
@@ -184,7 +184,7 @@ export function projectStructuredDefinedPredicateHeaderChrome({
       title: '字段说明',
     },
     sortButton: {
-      ariaLabel: `Sort ${normalizedLabel}`,
+      ariaLabel: `按 ${normalizedLabel} 排序`,
     },
   }
 }

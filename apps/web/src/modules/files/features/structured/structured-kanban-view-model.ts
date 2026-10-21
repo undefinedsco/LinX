@@ -218,7 +218,7 @@ export function projectStructuredKanbanDisplayColumns(
     cardSubjects: column.cards.map((card) => card.subject),
     cards: column.cards.map((card) => ({
       ...card,
-      ...projectStructuredKanbanCardChrome(card.subject),
+      ...projectStructuredKanbanCardChrome(card.title),
       visibleTags: projectStructuredKanbanCardVisibleTags(card),
     })),
   }))
@@ -236,10 +236,10 @@ export function projectStructuredKanbanColumnChrome(label: string): StructuredKa
   }
 }
 
-export function projectStructuredKanbanCardChrome(subject: string): StructuredKanbanCardChrome {
+export function projectStructuredKanbanCardChrome(title: string): StructuredKanbanCardChrome {
   return {
-    openAriaLabel: `打开 subject ${subject}`,
-    moveButtonAriaLabel: `Move ${subject}`,
+    openAriaLabel: `打开 ${title}`,
+    moveButtonAriaLabel: `移动 ${title}`,
   }
 }
 
@@ -338,11 +338,12 @@ function displayKanbanFieldValue(value: string) {
 export function buildKanbanCardFactLines(
   rows: StructuredTableProjection['rows'],
   fields: readonly string[],
+  predicateLabel: (predicate: string) => string = localPredicateLabel,
 ): Map<string, string[]> {
   if (fields.length === 0) return new Map()
   return new Map(rows.map((row) => [row.subject, fields.flatMap((predicate) => {
     const values = row.cells.find((cell) => cell.predicate === predicate)?.values ?? []
     const text = values.map(displayKanbanFieldValue).filter(Boolean).join('、')
-    return text ? [`${localPredicateLabel(predicate)}：${text}`] : []
+    return text ? [`${predicateLabel(predicate)}：${text}`] : []
   })]))
 }
