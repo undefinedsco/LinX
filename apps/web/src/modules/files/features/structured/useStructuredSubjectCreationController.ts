@@ -12,6 +12,7 @@ import {
   projectStructuredSubjectCreationOpenPatch,
   projectStructuredSubjectCreationOpened,
   projectStructuredSubjectCreationReset,
+  projectStructuredSubjectCreationSettled,
   projectStructuredSubjectCreationSubmitted,
 } from './structured-subject-creation-model'
 import {
@@ -44,6 +45,7 @@ export function useStructuredSubjectCreationController({
   )
   const submitDisabled = !canSubmitStructuredSubjectCreation({
     classScope,
+    documentUri,
     existingSubjects,
     pendingSubjects,
     subjectDraft,
@@ -59,6 +61,10 @@ export function useStructuredSubjectCreationController({
     setSubjectCreationState((current) => projectStructuredSubjectCreationReset(current))
   }, [documentUri])
 
+  useEffect(() => {
+    setSubjectCreationState((current) => projectStructuredSubjectCreationSettled(current, existingSubjects, documentUri))
+  }, [documentUri, existingSubjects])
+
   const openCreateSubjectDialog = useCallback(() => {
     if (!classScope) return
     setSubjectCreationState((current) => projectStructuredSubjectCreationOpened({
@@ -70,6 +76,7 @@ export function useStructuredSubjectCreationController({
   const submitCreateSubjectProposal = useCallback(() => {
     const plan = planStructuredSubjectCreation({
       classScope,
+      documentUri,
       existingSubjects,
       pendingSubjects,
       subjectDraft,
@@ -84,12 +91,13 @@ export function useStructuredSubjectCreationController({
       predicate: plan.typePredicate,
       nextValues: plan.typeValues,
     })
-  }, [classScope, existingSubjects, pendingSubjects, stageCellValueChange, subjectDraft])
+  }, [classScope, documentUri, existingSubjects, pendingSubjects, stageCellValueChange, subjectDraft])
 
   /** Adds a row named by the person (the inline last row); false when the name is empty or taken. */
   const addSubjectByName = useCallback((name: string) => {
     const plan = planStructuredSubjectCreation({
       classScope,
+      documentUri,
       existingSubjects,
       pendingSubjects,
       subjectDraft: structuredSubjectDraftFromName(name),
@@ -105,7 +113,7 @@ export function useStructuredSubjectCreationController({
       nextValues: plan.typeValues,
     })
     return true
-  }, [classScope, existingSubjects, pendingSubjects, stageCellValueChange])
+  }, [classScope, documentUri, existingSubjects, pendingSubjects, stageCellValueChange])
 
   const setCreateSubjectOpen = useCallback((nextCreateSubjectOpen: boolean) => {
     setSubjectCreationState((current) => projectStructuredSubjectCreationOpenPatch({

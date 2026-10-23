@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 export function ModeCard({
   title,
@@ -36,6 +38,42 @@ export function DetailRows({ rows }: { rows: [string, string][] }) {
           <span className="break-all text-right text-foreground/80">{value}</span>
         </div>
       ))}
+    </div>
+  )
+}
+
+const MARKDOWN_PROSE = 'text-sm leading-6 text-foreground/90 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-foreground/70 [&_h1]:mb-2 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_p]:my-1.5 [&_table]:my-2 [&_td]:border [&_td]:px-2 [&_th]:border [&_th]:px-2 [&_a]:text-primary [&_a]:underline-offset-2 hover:[&_a]:underline'
+
+/** A markdown document, rendered. Links go through `onOpenLink` so Pod links open as cards. */
+export function MarkdownPreview({
+  text,
+  onOpenLink,
+}: {
+  text: string | null
+  onOpenLink?: (href: string) => boolean
+}) {
+  if (!text) return null
+  return (
+    <div className={MARKDOWN_PROSE} data-markdown-preview="true">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(event) => {
+                if (href && onOpenLink?.(href)) event.preventDefault()
+              }}
+            >
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   )
 }

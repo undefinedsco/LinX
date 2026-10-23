@@ -77,6 +77,7 @@ export function StructuredResourceToolbar({
   vocabTermFilter,
   onVocabTermFilterChange,
   schemaPredicateControls,
+  predicateLabel,
   structuredSortKey,
   structuredSortDirection,
   onSort,
@@ -125,6 +126,7 @@ export function StructuredResourceToolbar({
   vocabTermFilter: StructuredVocabTermFilter
   onVocabTermFilterChange: (value: StructuredVocabTermFilter) => void
   schemaPredicateControls: readonly string[]
+  predicateLabel?: (predicate: string) => string
   structuredSortKey: string | null
   structuredSortDirection: 'asc' | 'desc'
   onSort: (sortKey: string, sortDirection: 'asc' | 'desc') => void
@@ -166,6 +168,7 @@ export function StructuredResourceToolbar({
     hiddenPredicates,
     openViews,
     pendingWritesOnly,
+    predicateLabel,
     predicateNamespaceFilter,
     predicateTypeFilter,
     schemaPredicateControls,
@@ -404,7 +407,7 @@ export function StructuredResourceToolbar({
                   {toolbarModel.extraViewTrigger.label}
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="min-w-[8rem] border-border bg-popover text-popover-foreground shadow-lg">
                 {toolbarModel.extraViewOptionRows.map((row) => (
                   <DropdownMenuItem key={row.value} onSelect={() => onViewModeChange(row.value)}>
                     {row.label}
@@ -581,8 +584,8 @@ export function StructuredResourceToolbar({
                     显示命名空间
                   </DropdownMenuCheckboxItem>
                 ) : null}
-                <div className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  predicate
+                <div className="px-2 pb-1 pt-2 text-[10px] font-medium tracking-wide text-muted-foreground">
+                  属性
                 </div>
                 {toolbarModel.predicateVisibilityRows.map((row) => (
                   <DropdownMenuCheckboxItem

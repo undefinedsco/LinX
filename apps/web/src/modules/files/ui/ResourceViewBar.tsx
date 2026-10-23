@@ -47,7 +47,7 @@ export function ResourceViewBar<ViewId extends string = string>({
       className={cn('flex h-10 min-w-0 items-center gap-1 overflow-hidden border-b border-border/30', className)}
     >
       {children ?? <><div
-        aria-label="View options"
+        aria-label="视图选项"
         data-resource-view-bar-section="views"
         className="order-1 flex min-w-0 items-center gap-0.5 overflow-x-auto"
       >
@@ -87,7 +87,7 @@ export function ResourceViewBar<ViewId extends string = string>({
       </div>
       {rightActions ? (
         <div
-          aria-label="Resource view actions"
+          aria-label="视图操作"
           data-resource-view-bar-section="actions"
           className="order-[3] ml-auto flex min-w-0 shrink-0 items-center gap-1"
         >

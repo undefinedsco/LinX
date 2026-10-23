@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useToast } from '@/components/ui/use-toast'
 
@@ -24,6 +24,7 @@ import {
   projectStructuredCellProposalWorkflowStateTableSubjects,
   projectStructuredCellProposalWorkflowStateViewProposal,
 } from './structured-cell-proposal-workflow-model'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export function useStructuredCellProposalWorkflowController({
   currentPodRootUri,
@@ -40,6 +41,9 @@ export function useStructuredCellProposalWorkflowController({
   const writeOwnCellChange = useWriteOwnStructuredCellChange()
   const pendingStructuredCellProposalsQuery = usePendingStructuredCellChangeProposals(documentUri, structuredWritesSupported)
   const { toast } = useToast()
+  // Our own write moves the document on, so a second write against the same loaded version
+  // (a multi-card move, quick edits) must not be refused as "changed elsewhere".
+  const etagWrittenAgainstRef = useRef<string | null>(null)
   const [cellProposalWorkflowState, setCellProposalWorkflowState] = useState(createStructuredCellProposalWorkflowState)
   const {
     localCellWriteProposals,
@@ -69,6 +73,7 @@ export function useStructuredCellProposalWorkflowController({
 
   useEffect(() => {
     setCellProposalWorkflowState((current) => projectStructuredCellProposalWorkflowStateReset(current))
+    etagWrittenAgainstRef.current = null
   }, [documentUri])
 
   const setLocalPendingWriteSubjectsFromTable = useCallback((subjects: string[]) => {
@@ -96,11 +101,12 @@ export function useStructuredCellProposalWorkflowController({
           predicate: proposal.predicate,
           previousValues: proposal.previousValues,
           nextValues: proposal.nextValues,
-          expectedEtag: documentEtag,
+          expectedEtag: documentEtag && etagWrittenAgainstRef.current === documentEtag ? null : documentEtag,
         })
+        etagWrittenAgainstRef.current = documentEtag
         return 'written' as const
       } catch (error) {
-        toast({ description: error instanceof Error ? error.message : '保存失败，请重试。', variant: 'destructive' })
+        toast({ description: formatFilesErrorForUser(error, '保存失败，请重试。'), variant: 'destructive' })
         return false
       }
     }
@@ -120,9 +126,7 @@ export function useStructuredCellProposalWorkflowController({
     } catch (error) {
       const description = error instanceof FilesSaveConflictError
         ? '审批记录已存在：请打开现有审批记录继续审阅。'
-        : error instanceof Error
-          ? error.message
-          : '创建单元格变更审批失败'
+        : formatFilesErrorForUser(error, '创建单元格变更审批失败')
       toast({ description, variant: 'destructive' })
       return false
     }

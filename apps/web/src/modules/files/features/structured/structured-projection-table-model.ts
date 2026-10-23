@@ -2,6 +2,7 @@ import type {
   StructuredShapeValidationWarning,
   StructuredTableProjection,
 } from '../../domain/structured/structured-table'
+import { structuredSubjectKey } from './structured-subject-creation-model'
 import { documentCellKey } from '../../domain/structured/structured-table-cell-model'
 
 export type StructuredProjectionTableRow = {
@@ -23,8 +24,10 @@ export function buildStructuredProjectionTableRows(input: {
   pendingPredicateIds: readonly string[]
   pendingSubjects: readonly string[]
   classScope?: string | null
+  documentUri?: string
   resolveCellValues: StructuredProjectionCellValueResolver
 }): StructuredProjectionTableRow[] {
+  const persistedSubjects = new Set(input.projection.rows.map((row) => structuredSubjectKey(row.subject, input.documentUri)))
   return [
     ...input.projection.rows.map((row) => ({
       subject: row.subject,
@@ -45,7 +48,9 @@ export function buildStructuredProjectionTableRows(input: {
           .map((predicate) => [predicate, []])),
       },
     })),
-    ...input.pendingSubjects.map((subject) => {
+    // A pending row is an overlay for a write that has not landed yet; once the projection has the
+    // subject, the saved row replaces it instead of showing a second, greyed copy.
+    ...input.pendingSubjects.filter((subject) => !persistedSubjects.has(structuredSubjectKey(subject, input.documentUri))).map((subject) => {
       const pendingCells: Record<string, string[]> = input.classScope ? { 'rdf:type': [input.classScope] } : {}
       return {
         subject,

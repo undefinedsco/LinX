@@ -923,16 +923,16 @@ describe('StructuredTableCellPrimitives', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sort reviewStatus' }))
+    fireEvent.click(screen.getByRole('button', { name: '按 reviewStatus 排序' }))
     expect(onSort).toHaveBeenCalledTimes(1)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for reviewStatus' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 reviewStatus 的说明' }))
     expect(onSort).toHaveBeenCalledTimes(1)
     const definitionMenu = screen.getByRole('menu')
-    expect(within(definitionMenu).getByText('Predicate 定义')).toBeInTheDocument()
+    expect(within(definitionMenu).getByText('字段说明')).toBeInTheDocument()
     expect(within(definitionMenu).getByText('reviewStatus')).toBeInTheDocument()
     expect(within(definitionMenu).getByText('enum')).toBeInTheDocument()
-    expect(within(definitionMenu).getByText('规则与形状')).toBeInTheDocument()
+    expect(within(definitionMenu).getByText('规则')).toBeInTheDocument()
     expect(within(definitionMenu).getByText('required')).toBeInTheDocument()
     expect(within(definitionMenu).getByText('Review workflow status')).toBeInTheDocument()
     expect(within(definitionMenu).getByText('active')).toBeInTheDocument()
@@ -940,14 +940,14 @@ describe('StructuredTableCellPrimitives', () => {
     expect(screen.queryByText('https://schema.org/reviewStatus')).not.toBeInTheDocument()
     expect(screen.queryByText('https://pod.example/.vocab/terms.ttl#reviewStatus')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('menuitem', { name: '复制 predicate URI' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '复制字段标识' }))
     expect(onCopyPredicate).toHaveBeenCalledWith('https://schema.org/reviewStatus')
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for reviewStatus' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '打开 predicate URI' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 reviewStatus 的说明' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '打开字段定义' }))
     expect(onOpenPredicate).toHaveBeenCalledWith('https://schema.org/reviewStatus')
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Open definition for reviewStatus' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 reviewStatus 的说明' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '打开规则 Required' }))
     expect(onOpenShapeRule).toHaveBeenCalledWith('https://pod.example/.vocab/shapes.ttl#reviewStatus-required')
   })
@@ -981,18 +981,18 @@ describe('StructuredTableCellPrimitives', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: '待确认 predicate summary' })).toHaveTextContent('summary*')
+    expect(screen.getByRole('button', { name: '待确认字段 summary' })).toHaveTextContent('summary*')
     expect(screen.queryByText('https://pod.example/.data/proposals/vocab/summary.ttl')).not.toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '待确认 predicate summary' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '待确认字段 summary' }))
 
     const pendingMenu = screen.getByRole('menu')
-    expect(within(pendingMenu).getByText('待确认 predicate')).toBeInTheDocument()
+    expect(within(pendingMenu).getByText('待确认字段')).toBeInTheDocument()
     expect(within(pendingMenu).getAllByText('summary*').length).toBeGreaterThanOrEqual(1)
     expect(within(pendingMenu).getByText('text')).toBeInTheDocument()
     expect(within(pendingMenu).getByText('https://schema.org/summary')).toBeInTheDocument()
     expect(within(pendingMenu).getByText('Short card summary')).toBeInTheDocument()
-    expect(within(pendingMenu).getByText('规则与形状')).toBeInTheDocument()
+    expect(within(pendingMenu).getByText('规则')).toBeInTheDocument()
     expect(within(pendingMenu).getByText('required')).toBeInTheDocument()
     expect(within(pendingMenu).getByText('待提交')).toBeInTheDocument()
     expect(within(pendingMenu).getByText('已提交审批记录；词表未变更。')).toBeInTheDocument()
@@ -1004,12 +1004,12 @@ describe('StructuredTableCellPrimitives', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '提交审核' }))
     expect(onSubmit).toHaveBeenCalledTimes(1)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '待确认 predicate summary' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '待确认字段 summary' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '打开审批记录' }))
     expect(onOpenProposal).toHaveBeenCalledTimes(1)
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: '待确认 predicate summary' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '放弃 predicate' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '待确认字段 summary' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '放弃此字段' }))
     expect(onDiscard).toHaveBeenCalledTimes(1)
   })
 })

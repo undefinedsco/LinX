@@ -57,15 +57,21 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('@/providers/solid-session-provider', () => ({
-  useSession: () => ({
-    session: {
-      info: {
-        isLoggedIn: mockSessionState.isLoggedIn,
-      },
+const mockUseSession = vi.hoisted(() => () => ({
+  session: {
+    info: {
+      isLoggedIn: mockSessionState.isLoggedIn,
     },
-    sessionRequestInProgress: mockSessionState.sessionRequestInProgress,
-  }),
+  },
+  sessionRequestInProgress: mockSessionState.sessionRequestInProgress,
+}))
+
+vi.mock('@/providers/solid-session-provider', () => ({ useSession: mockUseSession }))
+// Components such as ChatHeader read the session from the context module directly; without this
+// the real hook throws "useSession must be used inside SolidSessionProvider" whenever they render.
+vi.mock('@/providers/solid-session-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/providers/solid-session-context')>()),
+  useSession: mockUseSession,
 }))
 
 vi.mock('@/modules/inbox/collections', () => ({

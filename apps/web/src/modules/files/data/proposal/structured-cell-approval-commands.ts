@@ -7,6 +7,8 @@ import {
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { assertInsertValuesBelongToCurrentPod } from '@/lib/data/pod-write-guard'
 import { createRawTextResource, readRawTextResource } from '../pod-adapter'
+import { toPatchValueToken, WELL_KNOWN_PREFIXES } from '../../domain/card/rdf-term-tokens'
+import { supportsStructuredWriteProposals } from '../../domain/structured/structured-write-capability'
 import { isFilesReservedResourceUri } from '../../domain/resource/files-rdf-contract'
 import {
   FILES_STRUCTURED_CELL_APPROVAL_ACTION,
@@ -42,8 +44,12 @@ function isLockedVocabRegistryResourceUri(resourceUri: string): boolean {
   }
 }
 
-function isEditableStructuredDataResourceUri(resourceUri: string, podBaseUrl: string): boolean {
-  return normalizeAbsoluteIri(resourceUri).startsWith(`${podBaseUrl}/.data/`)
+/**
+ * Tables the person made anywhere in their private Pod are editable. What stays locked is the
+ * same set the Files UI treats as read-only: public, vocab registry, Files-managed and sidecars.
+ */
+function isEditableStructuredResourceUri(resourceUri: string): boolean {
+  return supportsStructuredWriteProposals({ uri: normalizeAbsoluteIri(resourceUri), mimeType: 'text/turtle' })
 }
 
 function resolveRequiredPodBaseUrl(db: SolidDatabase): string {
@@ -79,8 +85,8 @@ function assertStructuredCellProposalTargetsCurrentPod(db: SolidDatabase, propos
   if (isFilesReservedResourceUri(documentUri) && !isMetadataResourceUri(documentUri)) {
     throw new Error('Refusing to approve structured cell proposal against Files-managed resources.')
   }
-  if (!isMetadataResourceUri(documentUri) && !isEditableStructuredDataResourceUri(documentUri, podBaseUrl)) {
-    throw new Error('Refusing to approve structured cell proposal outside editable .data resources.')
+  if (!isMetadataResourceUri(documentUri) && !isEditableStructuredResourceUri(documentUri)) {
+    throw new Error('这个文件在公开区或系统保留区，不能在这里修改。请把它放到自己的私人文件夹里再改。')
   }
 }
 
@@ -117,11 +123,18 @@ function sparqlPredicateToken(predicate: string) {
   return predicate
 }
 
-function renderStructuredCellMetadataPatch(proposal: StructuredCellChangeProposal) {
+export function renderStructuredCellMetadataPatch(proposal: StructuredCellChangeProposal) {
   const subject = sparqlSubjectToken(proposal.subject)
   const predicate = sparqlPredicateToken(proposal.predicate)
-  const deleteTriples = proposal.previousValues.map((value) => `  ${subject} ${predicate} ${value} .`)
-  const insertTriples = proposal.nextValues.map((value) => `  ${subject} ${predicate} ${value} .`)
+  // A value may be a literal, `<iri>`, a bare IRI (a vocab term the row is typed with) or a prefixed name.
+  // Bare numbers and booleans are SPARQL literals as they are.
+  const valueToken = (value: string) => (
+    /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$|^(?:true|false)$/.test(value.trim())
+      ? value.trim()
+      : toPatchValueToken(value, proposal.documentUri)
+  )
+  const deleteTriples = proposal.previousValues.map((value) => `  ${subject} ${predicate} ${valueToken(value)} .`)
+  const insertTriples = proposal.nextValues.map((value) => `  ${subject} ${predicate} ${valueToken(value)} .`)
   const operations = [
     deleteTriples.length > 0
       ? ['DELETE DATA {', ...deleteTriples, '}'].join('\n')
@@ -133,9 +146,8 @@ function renderStructuredCellMetadataPatch(proposal: StructuredCellChangeProposa
 
   return [
     `BASE <${proposal.documentUri}>`,
-    'PREFIX dcterms: <http://purl.org/dc/terms/>',
-    'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>',
-    'PREFIX udfs: <https://undefineds.co/vocab/>',
+    // Projection tokens use any well-known prefix (`rdf:type`, `xsd:` datatypes, ...); an undeclared one is a 400.
+    ...Object.entries(WELL_KNOWN_PREFIXES).map(([prefix, iri]) => `PREFIX ${prefix}: <${iri}>`),
     '',
     operations.join(' ;\n'),
   ].join('\n')
@@ -227,8 +239,8 @@ export async function writeOwnStructuredCellChange(
   if (isFilesReservedResourceUri(documentUri) && !isMetadataResourceUri(documentUri)) {
     throw new Error('Refusing to write a structured cell into Files-managed resources.')
   }
-  if (!isMetadataResourceUri(documentUri) && !isEditableStructuredDataResourceUri(documentUri, podBaseUrl)) {
-    throw new Error('Refusing to write a structured cell outside editable .data resources.')
+  if (!isMetadataResourceUri(documentUri) && !isEditableStructuredResourceUri(documentUri)) {
+    throw new Error('这个文件在公开区或系统保留区，不能在这里修改。请把它放到自己的私人文件夹里再改。')
   }
 
   const change = {
@@ -246,7 +258,10 @@ export async function writeOwnStructuredCellChange(
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/sparql-update',
-      ...(input.expectedEtag ? { 'If-Match': input.expectedEtag } : {}),
+      // Only an edit that removes old values needs the version check (see expectedEtag). A pure
+      // addition, such as a new row, must not be refused because the person's previous write
+      // already moved the document on.
+      ...(input.expectedEtag && change.previousValues.length > 0 ? { 'If-Match': input.expectedEtag } : {}),
     },
     body: renderStructuredCellMetadataPatch(change),
   })

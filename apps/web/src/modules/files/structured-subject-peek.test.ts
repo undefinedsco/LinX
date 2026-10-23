@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveStructuredRelationOpenTarget } from './domain/structured/structured-subject-peek'
+import { deriveStructuredSubjectPeekFacts, resolveStructuredRelationOpenTarget } from './domain/structured/structured-subject-peek'
 
 const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
 
@@ -31,5 +31,20 @@ describe('structured subject and relation open targets', () => {
       kind: 'term',
       canNavigateDirectly: false,
     })
+  })
+})
+
+describe('structured subject peek facts', () => {
+  const projection = { prefixes: {}, predicates: [], rows: [{ subject: '#%E7%AC%AC%E4%B8%80%E8%A1%8C', cells: [] }], warnings: [] } as never
+
+  it('decodes an untitled row name and names the table as its type', () => {
+    const facts = deriveStructuredSubjectPeekFacts({
+      projection,
+      visibleProjection: projection,
+      subject: '#%E7%AC%AC%E4%B8%80%E8%A1%8C',
+      tableName: '任务',
+    })
+    expect(facts.title).toBe('第一行')
+    expect(facts.typeName).toBe('任务')
   })
 })

@@ -30,6 +30,7 @@ import { projectFilesAddMenuModel, type FilesAddActionId } from '../../domain/li
 import type { FilesEntry } from '../../domain/resource/resource-model'
 import { useFolderDetailUploadController } from '../folder/useFolderDetailUploadController'
 import { useSourceIngestToolbarController } from '../ingest/useSourceIngestToolbarController'
+import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
 
 export function useFilesAddMenuController({
   containerUri,
@@ -66,7 +67,7 @@ export function useFilesAddMenuController({
     setTableColumns([{ label: '', type: 'text' }])
   }, [])
   const [operationState, setOperationState] = useState(createFolderChildOperationState)
-  const menu = projectFilesAddMenuModel(containerUri)
+  const menu = projectFilesAddMenuModel(containerUri, podRootUri)
   const operation = operationState.operation
   const operationSheet = projectFolderChildOperationSheetModel(operation)
   const pending = createFolder.isPending || createRawText.isPending
@@ -155,7 +156,7 @@ export function useFilesAddMenuController({
       toast({ description: submitPlan.successMessage })
     } catch (error) {
       toast({
-        description: `创建失败：${error instanceof Error ? error.message : '未知错误'}`,
+        description: `创建失败：${formatFilesErrorForUser(error, '未知错误')}`,
         variant: 'destructive',
       })
     }
@@ -203,7 +204,7 @@ export function useFilesAddMenuController({
       toast({ description: proposalFailed ? '表格建好了，部分列没能登记到词表，可以在表格里再加。' : `已新建表格“${tableName.trim()}”` })
     } catch (error) {
       toast({
-        description: `创建失败：${error instanceof Error ? error.message : '未知错误'}`,
+        description: `创建失败：${formatFilesErrorForUser(error, '未知错误')}`,
         variant: 'destructive',
       })
     } finally {

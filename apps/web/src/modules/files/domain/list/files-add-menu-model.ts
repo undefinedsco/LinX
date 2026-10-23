@@ -1,3 +1,5 @@
+import { displayContainerLocation } from '../resource/resource-semantics'
+
 export type FilesAddActionId =
   | 'create-document'
   | 'create-table'
@@ -16,6 +18,8 @@ export type FilesAddActionModel = {
 export type FilesAddMenuModel = {
   triggerLabel: string
   destinationLabel: string
+  /** Readable location ("我的空间 / 数据"), empty when no folder is chosen. */
+  locationLabel: string
   actions: FilesAddActionModel[]
 }
 
@@ -23,15 +27,23 @@ export type FilesAddLocation =
   | { kind: 'all' | 'recent' | 'local-workspace' }
   | { kind: 'container'; containerUri?: string }
 
-export function projectFilesAddContainerUri(location: FilesAddLocation): string | null {
-  return location.kind === 'container' && location.containerUri ? location.containerUri : null
+/**
+ * Where 添加 writes. With no folder selected it falls back to the top of the Pod. The Pod base
+ * has no trailing slash (and may be path-based, `/test`), so it is made a container first;
+ * otherwise `new URL(name, base)` resolves against the server origin and escapes the Pod.
+ */
+export function projectFilesAddContainerUri(location: FilesAddLocation, podRootUri?: string | null): string | null {
+  if (location.kind === 'container' && location.containerUri) return location.containerUri
+  return podRootUri ? (podRootUri.endsWith('/') ? podRootUri : `${podRootUri}/`) : null
 }
 
-export function projectFilesAddMenuModel(containerUri: string | null): FilesAddMenuModel {
+export function projectFilesAddMenuModel(containerUri: string | null, podRootUri?: string | null): FilesAddMenuModel {
   const disabled = !containerUri
+  const locationLabel = containerUri ? displayContainerLocation(containerUri, podRootUri) : ''
   return {
     triggerLabel: '添加',
-    destinationLabel: containerUri ? `添加到 ${containerUri}` : '先选择一个文件夹',
+    destinationLabel: containerUri ? `添加到 ${locationLabel}` : '先选择一个文件夹',
+    locationLabel,
     actions: [
       { id: 'create-document', label: '新建文档', iconKind: 'document', disabled },
       { id: 'create-table', label: '新建表格', iconKind: 'table', disabled },

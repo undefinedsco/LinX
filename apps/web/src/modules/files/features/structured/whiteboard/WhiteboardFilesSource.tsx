@@ -1,15 +1,18 @@
 import { useMemo, type ReactNode } from 'react'
 
-import { useFilesPodSearchEntries } from '../../../data/queries'
+import { useFilesCurrentPodRootUri, useFilesPodSearchEntries } from '../../../data/queries'
+import { projectWhiteboardLibraryFiles } from '../../../domain/structured/whiteboard-space-index'
 import type { WhiteboardLibraryItem } from './WhiteboardLibraryPanel'
 
 const NO_FILES: WhiteboardLibraryItem[] = []
 
 function PodFiles({ children }: { children: (files: WhiteboardLibraryItem[]) => ReactNode }) {
   const entries = useFilesPodSearchEntries(true)
-  const files = useMemo(() => (entries.data ?? [])
-    .filter((entry) => entry.kind !== 'container')
-    .map((entry) => ({ uri: entry.uri, title: entry.name })), [entries.data])
+  const podRootUri = useFilesCurrentPodRootUri()
+  const files = useMemo(
+    () => projectWhiteboardLibraryFiles(entries.data ?? [], podRootUri),
+    [entries.data, podRootUri],
+  )
   return <>{children(files)}</>
 }
 

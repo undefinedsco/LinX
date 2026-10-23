@@ -61,7 +61,7 @@ describe('FolderColumnPanel', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /readme\.md/ }))
+    fireEvent.click(screen.getByRole('button', { name: /readme/ }))
 
     expect(onOpen).toHaveBeenCalledWith(child, 'click')
   })

@@ -305,7 +305,7 @@ const FOLDER_DETAIL_VIEW_MODE_OPTIONS: Array<Omit<FolderDetailViewModeOption, 'a
 
 const FOLDER_DETAIL_TOOLBAR_CHROME: FolderDetailToolbarChrome = {
   createFolderLabel: '新建文件夹',
-  createMarkdownLabel: '新建 Markdown 文件',
+  createMarkdownLabel: '新建文档',
   uploadInputLabel: '选择上传文件',
   uploadLabel: '上传文件',
 }

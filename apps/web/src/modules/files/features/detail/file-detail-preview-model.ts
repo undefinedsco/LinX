@@ -5,6 +5,7 @@ import {
 } from '../../domain/detail/detail-metadata'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import {
+  displayResourceName,
   getFilesEntryOpenMode,
   getFilesEntrySemanticLabel,
   getFilesOpenModeLabel,
@@ -21,7 +22,11 @@ export type EditableFilePreviewModel = {
   title: string
   facts: string[]
   rows: EditableFilePreviewRow[]
+  /** MIME type, byte size and address: only shown behind the 详细信息 toggle (专业视图). */
+  technicalRows: EditableFilePreviewRow[]
   openLabel: string
+  /** Rendered markdown for documents, raw text otherwise. */
+  renderMarkdown: boolean
 }
 
 export type FileDetailSidecarPreviewRow = {
@@ -97,27 +102,28 @@ export type AuthenticatedImagePreviewRenderState =
     objectUrl: string
   }
 
+function editableFileKindLabel(mimeType: string | null): string {
+  const mime = mimeType?.split(';')[0]?.trim().toLowerCase() ?? ''
+  if (mime === 'text/markdown' || mime === 'text/x-markdown') return '文档'
+  if (mime.startsWith('text/')) return '文本'
+  return '文件'
+}
+
 export function projectEditableFilePreviewModel(file: FilesDetail): EditableFilePreviewModel {
   return {
     facts: [
-      file.mimeType ?? 'file',
-      formatBytes(file.size),
+      editableFileKindLabel(file.mimeType),
       formatDateTime(file.modifiedAt),
     ].filter((item) => item !== '—'),
     openLabel: '打开文件详情',
-    rows: [
-      {
-        kind: 'uri',
-        label: 'URI',
-        value: file.uri,
-      },
-      {
-        kind: 'description',
-        label: '内容',
-        value: '完整内容将在弹出的文件详情中读取。',
-      },
-    ],
-    title: file.name,
+    renderMarkdown: editableFileKindLabel(file.mimeType) === '文档',
+    rows: [],
+    technicalRows: ([
+      { kind: 'description', label: '类型', value: file.mimeType ?? 'file' },
+      { kind: 'description', label: '大小', value: formatBytes(file.size) },
+      { kind: 'uri', label: '地址', value: file.uri },
+    ] satisfies EditableFilePreviewRow[]).filter((row) => row.value !== '—'),
+    title: displayResourceName(file.name),
   }
 }
 

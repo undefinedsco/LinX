@@ -26,7 +26,15 @@ export function useCardTextSelection(container: React.RefObject<HTMLElement | nu
       return
     }
     const rect = range.getBoundingClientRect()
-    setSelection({ text, left: rect.left + rect.width / 2, top: Math.max(8, rect.top - 40) })
+    // Relative to the card body (the popup is a transformed element, so viewport coordinates
+    // would land at its edge), and below the passage: the editor's own formatting bar sits above it.
+    const origin = root.getBoundingClientRect()
+    const half = 100
+    setSelection({
+      text,
+      left: Math.min(Math.max(rect.left - origin.left + rect.width / 2, half), Math.max(half, origin.width - half)),
+      top: rect.bottom - origin.top + 8,
+    })
   }, [container])
 
   useEffect(() => {
@@ -50,7 +58,7 @@ export function useCardTextSelection(container: React.RefObject<HTMLElement | nu
   return { selection, clear: () => setSelection(null) }
 }
 
-/** 问 LinX · 做成卡片 · 复制链接 — floats above the selected passage (K5). */
+/** 问 LinX · 做成卡片 · 复制链接 — floats just below the selected passage (K5). */
 export function CardSelectionToolbar({
   selection,
   onAsk,
@@ -73,7 +81,7 @@ export function CardSelectionToolbar({
       role="toolbar"
       aria-label="选中的文字"
       data-card-selection-toolbar="true"
-      className="fixed z-[70] flex -translate-x-1/2 items-center gap-0.5 rounded-lg border border-border/60 bg-popover p-1 text-xs shadow-md"
+      className="absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground shadow-lg ring-1 ring-black/5"
       style={{ left: selection.left, top: selection.top }}
       onMouseDown={(event) => event.preventDefault()}
     >
@@ -81,7 +89,7 @@ export function CardSelectionToolbar({
         <button
           key={label}
           type="button"
-          className="rounded-md px-2 py-1 hover:bg-muted"
+          className="rounded-md px-2.5 py-1.5 font-medium hover:bg-muted"
           onClick={() => handler(selection.text)}
         >
           {label}

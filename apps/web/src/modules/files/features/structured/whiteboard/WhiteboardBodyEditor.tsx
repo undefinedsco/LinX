@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { BlockNoteView } from '@blocknote/mantine'
+import { zh } from '@blocknote/core/locales'
 import { useCreateBlockNote } from '@blocknote/react'
 import '@blocknote/mantine/style.css'
 
@@ -16,7 +17,7 @@ export default function WhiteboardBodyEditor({
   onCommit: (markdown: string) => void
   onCancel: () => void
 }) {
-  const editor = useCreateBlockNote()
+  const editor = useCreateBlockNote({ dictionary: zh })
   const doneRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
 

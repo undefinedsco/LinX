@@ -1,7 +1,8 @@
 import { FileText, Pencil, SquareArrowOutUpRight } from 'lucide-react'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { useCardDialog } from '@/lib/card-dialog'
 
 import {
   getFilesEntryOpenMode,
@@ -12,7 +13,7 @@ import { StructuredResourcePreview } from '../structured/StructuredTablePreview'
 import { DocumentEditorModal } from '../editor/DocumentEditorModal'
 import { FileEditorSurface, type FileEditorSurfaceHandle } from '../editor/FileEditorSurface'
 import { SourceLinkedCardPreview } from './FileDetailSourceLinkedCardPreview'
-import { ModeCard, RawTextBlock } from '../../ui/FileDetailPreviewPrimitives'
+import { MarkdownPreview, ModeCard, RawTextBlock } from '../../ui/FileDetailPreviewPrimitives'
 import { FolderDetailPreview } from '../folder/FolderDetailPreview'
 import { useEditableFilePreviewController } from './useEditableFilePreviewController'
 import { useAuthenticatedImagePreviewController } from './useAuthenticatedImagePreviewController'
@@ -24,6 +25,22 @@ import {
   projectReadonlyFilePreviewModel,
   type MediaFilePreviewModel,
 } from './file-detail-preview-model'
+
+/** A Pod link inside a document (e.g. 来源：会议纪要 · 第 5 行) opens as a card at that spot. */
+function openPodLinkAsCard(href: string): boolean {
+  let url: URL
+  try {
+    url = new URL(href)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
+  if (url.origin === window.location.origin) return false
+  const line = /^#line=(\d+)$/.exec(url.hash)
+  const base = `${url.origin}${url.pathname}`
+  useCardDialog.getState().open({ uri: line ? base : href, locator: line ? { line: Number(line[1]) } : undefined })
+  return true
+}
 
 function EditableFilePreview({
   file,
@@ -46,6 +63,7 @@ function EditableFilePreview({
     onOpenSheet,
   })
   const editablePreview = projectEditableFilePreviewModel(file)
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   if (editing) {
     return (
@@ -123,23 +141,36 @@ function EditableFilePreview({
           </div>
         </div>
         <div className="mt-4 space-y-3">
-          <RawTextBlock text={file.previewText} />
+          {editablePreview.renderMarkdown
+            ? <MarkdownPreview text={file.previewText} onOpenLink={openPodLinkAsCard} />
+            : <RawTextBlock text={file.previewText} />}
           {!file.previewText ? (
             <ModeCard title="正文暂不可用" description="可以打开文件详情继续编辑，或稍后重试读取。" />
           ) : null}
-          <dl className="grid gap-2 text-xs">
-            {editablePreview.rows.filter((row) => row.label !== '内容').map((row) => (
-              <div key={row.label} className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
-                <dt className="text-muted-foreground">{row.label}</dt>
-                <dd
-                  className={row.kind === 'uri' ? 'truncate text-foreground/80' : 'text-foreground/80'}
-                  title={row.kind === 'uri' ? row.value : undefined}
-                >
-                  {row.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <div className="border-t border-border/30 pt-2">
+            <button
+              type="button"
+              aria-expanded={detailsOpen}
+              className="text-[11px] text-muted-foreground hover:text-foreground"
+              onClick={() => setDetailsOpen((open) => !open)}
+            >
+              {detailsOpen ? '收起详细信息' : '详细信息'}
+            </button>
+            {detailsOpen ? (
+              <dl className="mt-2 grid gap-2 text-xs">
+                {editablePreview.technicalRows.map((row) => (
+                  <div key={row.label} className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
+                    <dt className="text-muted-foreground">{row.label}</dt>
+                    <dd
+                      className={row.kind === 'uri' ? 'break-all text-foreground/80' : 'text-foreground/80'}
+                    >
+                      {row.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+          </div>
         </div>
         <DocumentEditorModal
           file={file}

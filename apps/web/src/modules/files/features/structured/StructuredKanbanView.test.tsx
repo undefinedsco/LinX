@@ -47,7 +47,7 @@ describe('StructuredKanbanView', () => {
     expect(container.querySelector('[data-kanban-board="horizontal"]')).toBeInTheDocument()
     expect(screen.getByLabelText('看板列 Todo')).toHaveAttribute('data-lane-width', '288')
     expect(screen.getByText('Alpha')).toBeVisible()
-    expect(screen.getByRole('button', { name: '添加 Subject 到 Todo' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '添加卡片到 Todo' })).toBeVisible()
   })
 
   it('applies persisted chrome state and reports settled horizontal scroll', () => {
@@ -101,7 +101,7 @@ describe('StructuredKanbanView', () => {
       />,
     )
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder lane Done' }), { key: 'ArrowLeft' })
+    fireEvent.keyDown(screen.getByRole('button', { name: '调整 Done 的顺序' }), { key: 'ArrowLeft' })
 
     expect(onLaneOrderChange).toHaveBeenCalledWith(['Done', 'Todo'])
   })
@@ -237,7 +237,7 @@ describe('StructuredKanbanView', () => {
       />,
     )
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Move #a' }), {
+    fireEvent.pointerDown(screen.getAllByRole('button', { name: /^移动 / })[0], {
       button: 0,
       ctrlKey: false,
     })
@@ -264,8 +264,8 @@ describe('StructuredKanbanView', () => {
     )
 
     expect(screen.getByRole('button', { name: '看板分组' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '添加 Subject 到 未分组' }))
-    const input = screen.getByRole('textbox', { name: 'Subject title for 未分组' })
+    fireEvent.click(screen.getByRole('button', { name: '添加卡片到 未分组' }))
+    const input = screen.getByRole('textbox', { name: '未分组 里新卡片的标题' })
     fireEvent.change(input, { target: { value: '#first' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
@@ -278,4 +278,24 @@ describe('StructuredKanbanView', () => {
     })
   })
 
+
+  it('offers option properties first in the grouping menu, named as the table headers are', () => {
+    render(
+      <StructuredKanbanView
+        documentUri="https://pod.example/tasks.ttl"
+        projection={projection}
+        groupPredicate={null}
+        kanbanOrder={{}}
+        predicateLabel={(predicate) => ({ status: '阶段', 'schema:name': '名字' } as Record<string, string>)[predicate] ?? predicate}
+        optionPredicates={['status']}
+        onGroupPredicateChange={vi.fn()}
+        onColumnOrderChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '看板分组' }), { button: 0, ctrlKey: false })
+    const items = screen.getAllByRole('menuitem').map((item) => item.textContent)
+    expect(items.slice(0, 2)).toEqual(['阶段', '名字'])
+    expect(items).not.toContain('status')
+  })
 })

@@ -9,6 +9,7 @@ import {
   projectStructuredSubjectCreationOpenPatch,
   projectStructuredSubjectCreationOpened,
   projectStructuredSubjectCreationReset,
+  projectStructuredSubjectCreationSettled,
   projectStructuredSubjectCreationSubmitted,
 } from './structured-subject-creation-model'
 
@@ -107,5 +108,12 @@ describe('structured-subject-creation-model', () => {
       cancelLabel: '取消',
       submitLabel: '创建条目审批',
     })
+  })
+
+  it('drops pending subjects once the projection lists them', () => {
+    const current = { createSubjectOpen: false, pendingSubjects: ['#A', '#B'], subjectDraft: '' }
+
+    expect(projectStructuredSubjectCreationSettled(current, ['#A']).pendingSubjects).toEqual(['#B'])
+    expect(projectStructuredSubjectCreationSettled(current, ['#C'])).toBe(current)
   })
 })

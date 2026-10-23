@@ -182,8 +182,8 @@ describe('projectStructuredSubjectCellChrome', () => {
         canNavigateDirectly: false,
       },
       pendingMarker: {
-        displayLabel: '#Task*',
-        label: '待确认 subject',
+        displayLabel: 'Task',
+        label: '待确认',
       },
     })
   })

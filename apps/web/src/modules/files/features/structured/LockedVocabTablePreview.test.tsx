@@ -68,7 +68,7 @@ describe('LockedVocabTablePreview', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Open term Status' })[1])
 
-    const peek = screen.getByLabelText('Structured term peek')
+    const peek = screen.getByLabelText('定义预览')
     expect(within(peek).getByText('定义预览')).toBeInTheDocument()
     expect(within(peek).getByText('Status')).toBeInTheDocument()
   })

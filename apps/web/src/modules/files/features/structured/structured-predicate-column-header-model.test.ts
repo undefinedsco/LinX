@@ -91,7 +91,7 @@ describe('projectStructuredPredicateColumnHeader', () => {
       description: '用于编辑、校验、选项和链接行为。',
       displayLabel: 'Review status',
       normalizedLabel: 'Review status',
-      ruleText: '使用默认 predicate 规则',
+      ruleText: '使用默认规则',
       shapeRuleActions: [],
       statusLabel: '已识别',
       typeLabel: 'number',
@@ -120,7 +120,7 @@ describe('projectStructuredPredicateColumnHeader', () => {
     })).toEqual({
       kind: 'pending',
       description: 'Task status.',
-      displayLabel: 'status*',
+      displayLabel: 'status',
       label: 'status*',
       normalizedLabel: 'status',
       openableVocabProposal: vocabProposal,
@@ -148,12 +148,12 @@ describe('projectStructuredPredicateColumnHeader', () => {
       }],
     })).toEqual({
       definitionTrigger: {
-        ariaLabel: 'Open definition for reviewStatus',
+        ariaLabel: '查看 reviewStatus 的说明',
       },
       menu: {
         actions: {
-          copyPredicate: { label: '复制 predicate URI' },
-          openPredicate: { label: '打开 predicate URI' },
+          copyPredicate: { label: '复制字段标识' },
+          openPredicate: { label: '打开字段定义' },
           shapeRuleActions: [{
             uri: 'https://pod.example/.vocab/shapes.ttl#reviewStatus-required',
             label: '打开规则 Required',
@@ -162,14 +162,14 @@ describe('projectStructuredPredicateColumnHeader', () => {
         actionsHeading: '链接操作',
         rows: {
           description: { label: '说明' },
-          predicate: { label: 'predicate' },
-          rule: { label: '规则与形状' },
+          predicate: { label: '字段' },
+          rule: { label: '规则' },
           status: { label: '状态' },
         },
-        title: 'Predicate 定义',
+        title: '字段说明',
       },
       sortButton: {
-        ariaLabel: 'Sort reviewStatus',
+        ariaLabel: '按 reviewStatus 排序',
       },
     })
   })
@@ -182,7 +182,7 @@ describe('projectStructuredPredicateColumnHeader', () => {
     })).toEqual({
       menu: {
         actions: {
-          discard: { label: '放弃 predicate' },
+          discard: { label: '放弃此字段' },
           openProposal: { label: '打开审批记录' },
           submit: { label: '提交审核' },
         },
@@ -190,15 +190,15 @@ describe('projectStructuredPredicateColumnHeader', () => {
         rows: {
           approvalRecord: { label: '审批记录' },
           description: { label: '说明' },
-          predicate: { label: 'predicate' },
-          rule: { label: '规则与形状' },
+          predicate: { label: '字段' },
+          rule: { label: '规则' },
           status: { label: '状态' },
-          uri: { label: 'URI' },
+          uri: { label: '专业标识' },
         },
-        title: '待确认 predicate',
+        title: '待确认字段',
       },
       trigger: {
-        ariaLabel: '待确认 predicate summary',
+        ariaLabel: '待确认字段 summary',
       },
     })
 

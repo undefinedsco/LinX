@@ -111,6 +111,9 @@ jobs:
             specs/r6-surfaces.spec.ts \
             specs/ask-linx-citation.spec.ts \
             specs/card-withdraw-and-data-folder.spec.ts \
+            specs/chat-welcome-history.spec.ts \
+            specs/files-table-edit.spec.ts \
+            specs/files-kanban-interactions.spec.ts \
             specs/deployed-signed-in.spec.ts
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -239,8 +242,7 @@ jobs:
       group: linx-shared-rc
       cancel-in-progress: false
     env:
-      # The rc Environment's own KUBE_CONFIG_DATA, or the shared org secret GZ_KUBE_CONFIG_DATA.
-      KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA || secrets.GZ_KUBE_CONFIG_DATA }}
+      KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
       NAMESPACE: ${{ vars.SEALOS_NAMESPACE }}
       # RC lives on the Sealos-assigned domain (e.g. <name>.sealosgzg.site), not ours.
       RC_HOST: ${{ vars.LINX_RC_HOST }}
@@ -260,7 +262,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          [ -n "$KUBE_CONFIG_DATA" ] || { echo "::error::cluster credential missing: set KUBE_CONFIG_DATA on the rc Environment or share org secret GZ_KUBE_CONFIG_DATA with this repo"; missing=1; }
+          [ -n "$KUBE_CONFIG_DATA" ] || { echo "::error::cluster credential missing: set KUBE_CONFIG_DATA (base64 kubeconfig) on the rc Environment"; missing=1; }
           [ -n "$NAMESPACE" ] || { echo "::error::rc variable SEALOS_NAMESPACE is required"; missing=1; }
           [ -n "$RC_HOST" ] || { echo "::error::rc variable LINX_RC_HOST (Sealos-assigned host) is required"; missing=1; }
           [[ "$RC_HOST" =~ ^[a-z0-9.-]+$ ]] || { echo "::error::LINX_RC_HOST must be a bare host name"; missing=1; }

@@ -173,19 +173,19 @@ function projectStructuredProjectionReviewStatus({
     `${tableProjection.rows.length} 行`,
     formatPredicateCount(tableProjection.predicates.length),
     predicateNamespaceFilter ? `${predicateNamespaceFilter} 命名空间` : null,
-    vocabTermFilter !== 'all' ? `${vocabTermFilter === 'defined' ? '已定义 predicate' : '仅观察到 predicate'}` : null,
+    vocabTermFilter !== 'all' ? `${vocabTermFilter === 'defined' ? '已定义的属性' : '仅数据里出现的属性'}` : null,
     predicateTypeFilter !== 'all' ? predicateTypeFilter : null,
     warningRowsOnly ? '仅校验提醒' : null,
     pendingWritesOnly ? '仅待确认更改' : null,
-    sourceUpdatesOnly ? '仅 Ingest 更新' : null,
+    sourceUpdatesOnly ? '仅导入更新' : null,
     hiddenPredicates.size > 0 ? formatHiddenPredicateCount(hiddenPredicates.size) : null,
   ].filter(Boolean).join(' · ')
 }
 
 function formatPredicateCount(count: number) {
-  return `${count} predicate${count === 1 ? '' : 's'}`
+  return `${count} 个属性`
 }
 
 function formatHiddenPredicateCount(count: number) {
-  return `${count} hidden predicate${count === 1 ? '' : 's'}`
+  return `${count} 个属性已隐藏`
 }

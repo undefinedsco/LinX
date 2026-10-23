@@ -13,7 +13,7 @@ describe('Files add menu model', () => {
   it('offers document, folder, local upload, and web actions for a concrete folder', () => {
     const model = projectFilesAddMenuModel('https://pod.example/public/docs/')
 
-    expect(model.destinationLabel).toBe('添加到 https://pod.example/public/docs/')
+    expect(model.destinationLabel).toBe('添加到 我的空间 / public / docs')
     expect(model.actions.map(({ id, label }) => ({ id, label }))).toEqual([
       { id: 'create-document', label: '新建文档' },
       { id: 'create-table', label: '新建表格' },
@@ -31,5 +31,23 @@ describe('Files add menu model', () => {
       kind: 'container',
       containerUri: 'https://pod.example/public/',
     })).toBe('https://pod.example/public/')
+  })
+
+  it('falls back to the Pod root as a container, also for a path-based Pod', () => {
+    // The Pod base has no trailing slash; without one, new URL('a.md', base) lands on the server origin.
+    const target = projectFilesAddContainerUri({ kind: 'all' }, 'http://localhost:3000/test')
+    expect(target).toBe('http://localhost:3000/test/')
+    expect(new URL('会议纪要.md', target!).toString()).toBe(`http://localhost:3000/test/${encodeURIComponent('会议纪要.md')}`)
+    expect(projectFilesAddContainerUri({ kind: 'all' }, 'http://localhost:3000/test/')).toBe('http://localhost:3000/test/')
+    expect(projectFilesAddContainerUri({ kind: 'container', containerUri: 'http://localhost:3000/test/work/' }, 'http://localhost:3000/test'))
+      .toBe('http://localhost:3000/test/work/')
+  })
+
+  it('names the destination in words, relative to the Pod root', () => {
+    const model = projectFilesAddMenuModel('http://localhost:3000/test/.data/', 'http://localhost:3000/test')
+
+    expect(model.destinationLabel).toBe('添加到 我的空间 / 数据')
+    expect(model.locationLabel).toBe('我的空间 / 数据')
+    expect(projectFilesAddMenuModel('http://localhost:3000/test/', 'http://localhost:3000/test').destinationLabel).toBe('添加到 我的空间')
   })
 })

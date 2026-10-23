@@ -134,10 +134,10 @@ describe('folder operation model', () => {
     expect(projectFolderChildOperationSheetModel({ type: 'create-markdown' }))
       .toEqual(expect.objectContaining({
         confirmLabel: '创建',
-        description: '在当前文件夹中创建一个可编辑 Markdown 文件。',
-        inputLabel: '文件名',
+        description: '在当前文件夹中创建一个可编辑的文档。',
+        inputLabel: '标题',
         requiresInput: true,
-        title: '新建 Markdown 文件',
+        title: '新建文档',
       }))
     expect(projectFolderChildOperationSheetModel(null)).toBeNull()
     const renameSheet = projectFolderChildOperationSheetModel({ type: 'rename', child: readme })
@@ -174,11 +174,16 @@ describe('folder operation model', () => {
     expect(getFolderChildOperationInitialValue({
       operation: { type: 'create-folder' },
       visibleChildren: [readme],
-    })).toBe('Untitled folder')
+    })).toBe('未命名文件夹')
     expect(getFolderChildOperationInitialValue({
       operation: { type: 'create-markdown' },
       visibleChildren: [readme],
-    })).toBe('Untitled.md')
+    })).toBe('未命名文档')
+    // The title field never shows the .md extension; a taken name gets a number.
+    expect(getFolderChildOperationInitialValue({
+      operation: { type: 'create-markdown' },
+      visibleChildren: [readme, { ...readme, name: '未命名文档.md', uri: 'https://pod.example/files/未命名文档.md' }],
+    })).toBe('未命名文档 2')
 
     expect(projectFolderChildOperationDestination({
       operation: { type: 'rename', child: readme },

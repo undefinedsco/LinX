@@ -71,7 +71,7 @@ function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
 
   const renderDetailSurface = (className?: string) => (
     <section
-      className={cn('relative min-h-0 flex-1 flex-col bg-background', className)}
+      className={cn('relative min-h-0 min-w-0 flex-1 flex-col bg-background', className)}
       aria-label="文件工作区"
     >
       {entryScope === 'chat-files' ? (

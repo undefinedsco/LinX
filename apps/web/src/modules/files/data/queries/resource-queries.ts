@@ -130,7 +130,7 @@ export function useFilesEntries(selectedTreeNodeId: string | null, entryScope: F
   return useQuery<FilesEntry[]>({
     ...queryOptions,
     initialData: rootEntries,
-    initialDataUpdatedAt: rootEntries ? Date.now() : undefined,
+    initialDataUpdatedAt: rootEntries ? rootQuery.dataUpdatedAt : undefined,
     select: isContainerProjection && selection.containerUri === workspaceUri
       ? (entries) => entries.map((entry) => ({ ...entry, sourceLabel: '当前话题' }))
       : undefined,
