@@ -25,16 +25,29 @@ import {
   projectStructuredCellProposalWorkflowStateViewProposal,
 } from './structured-cell-proposal-workflow-model'
 import { formatFilesErrorForUser } from '@/lib/user-facing-errors'
+import {
+  useStructuredEditHistoryController,
+  type StructuredEditLatestDocument,
+  type StructuredEditWriteOptions,
+} from './useStructuredEditHistoryController'
+import type { StructuredEditChange, StructuredEditValueCanonicalizer } from './structured-edit-history-model'
 
 export function useStructuredCellProposalWorkflowController({
+  canonicalizeValue,
   currentPodRootUri,
   documentEtag = null,
   documentUri,
+  predicateLabel,
+  readLatest,
   structuredWritesSupported,
 }: {
+  canonicalizeValue?: StructuredEditValueCanonicalizer
   currentPodRootUri?: string | null
   documentEtag?: string | null
   documentUri: string
+  predicateLabel?: (predicate: string) => string
+  /** Reads the document again; 撤销 / 重做 compare with it before writing. */
+  readLatest?: () => Promise<StructuredEditLatestDocument | null>
   structuredWritesSupported: boolean
 }) {
   const createCellProposal = useCreateStructuredCellChangeProposal()
@@ -90,20 +103,49 @@ export function useStructuredCellProposalWorkflowController({
     }))
   }, [])
 
-  const commitCellWriteProposal = useCallback(async (proposal: StructuredCellWriteProposal): Promise<StructuredCellCommitResult> => {
+  const writeOwnChange = useCallback(async (change: StructuredEditChange, options?: StructuredEditWriteOptions) => {
+    await writeOwnCellChange.mutateAsync({
+      documentUri,
+      subject: change.subject,
+      predicate: change.predicate,
+      previousValues: change.previousValues,
+      nextValues: change.nextValues,
+      expectedEtag: options && 'expectedEtag' in options
+        ? options.expectedEtag
+        : documentEtag && etagWrittenAgainstRef.current === documentEtag ? null : documentEtag,
+    })
+    etagWrittenAgainstRef.current = documentEtag
+  }, [documentEtag, documentUri, writeOwnCellChange])
+
+  const notifyEditHistory = useCallback((description: string, options?: { destructive?: boolean }) => {
+    toast({ description, ...(options?.destructive ? { variant: 'destructive' as const } : {}) })
+  }, [toast])
+  const editHistory = useStructuredEditHistoryController({
+    canonicalizeValue,
+    documentUri,
+    notify: notifyEditHistory,
+    predicateLabel,
+    readLatest,
+    writeChange: writeOwnChange,
+  })
+  const { recordChange } = editHistory
+
+  const commitCellWriteProposal = useCallback(async (
+    proposal: StructuredCellWriteProposal,
+    options: { recordHistory?: boolean } = {},
+  ): Promise<StructuredCellCommitResult> => {
     // The person's own edit is written directly. A new vocabulary term still needs
     // its own approval, so that case keeps the proposal path.
     if (!proposal.vocabTermProposalResourceUri) {
       try {
-        await writeOwnCellChange.mutateAsync({
-          documentUri: proposal.documentUri,
+        const change = {
           subject: proposal.subject,
           predicate: proposal.predicate,
           previousValues: proposal.previousValues,
           nextValues: proposal.nextValues,
-          expectedEtag: documentEtag && etagWrittenAgainstRef.current === documentEtag ? null : documentEtag,
-        })
-        etagWrittenAgainstRef.current = documentEtag
+        }
+        await writeOwnChange({ ...change })
+        if (options.recordHistory !== false) recordChange(change)
         return 'written' as const
       } catch (error) {
         toast({ description: formatFilesErrorForUser(error, '保存失败，请重试。'), variant: 'destructive' })
@@ -130,10 +172,13 @@ export function useStructuredCellProposalWorkflowController({
       toast({ description, variant: 'destructive' })
       return false
     }
-  }, [createCellProposal, currentPodRootUri, documentEtag, toast, writeOwnCellChange])
+  }, [createCellProposal, currentPodRootUri, recordChange, toast, writeOwnChange])
 
-  const commitViewCellWriteProposal = useCallback(async (proposal: StructuredCellWriteProposal) => {
-    const saved = await commitCellWriteProposal(proposal)
+  const commitViewCellWriteProposal = useCallback(async (
+    proposal: StructuredCellWriteProposal,
+    options?: { recordHistory?: boolean },
+  ) => {
+    const saved = await commitCellWriteProposal(proposal, options)
     // Only changes waiting for approval are tracked as pending.
     if (saved === true) {
       setCellProposalWorkflowState((current) => projectStructuredCellProposalWorkflowStateViewProposal({
@@ -148,6 +193,7 @@ export function useStructuredCellProposalWorkflowController({
     allPendingWriteSubjects,
     commitCellWriteProposal,
     commitViewCellWriteProposal,
+    editHistory,
     effectiveCellWriteProposals,
     persistedCellWriteProposals,
     setLocalPendingWriteSubjectsFromTable,
