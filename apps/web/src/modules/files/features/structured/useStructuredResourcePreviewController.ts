@@ -1,71 +1,45 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 
-import { useFilesCurrentPodRootUri, useFilesVocabRegistryDiscovery, useRawTextResource } from '../../data/queries'
+import { useRawTextResource } from '../../data/queries'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import {
   projectStructuredResourceTable,
 } from '../../domain/structured/structured-table'
 import { supportsStructuredWriteProposals } from '../../domain/structured/structured-write-capability'
-import {
-  projectStructuredResourcePreviewSource,
-  projectStructuredResourcePreviewVocabDefinitionIndex,
-  projectStructuredResourcePreviewVocabUris,
-} from './structured-resource-preview-model'
+import { projectStructuredResourcePreviewSource } from './structured-resource-preview-model'
+import { useStructuredVocabContext } from './useStructuredVocabContext'
 
 export function useStructuredResourcePreviewController(file: FilesDetail) {
-  const currentPodRootUri = useFilesCurrentPodRootUri()
   const rawQuery = useRawTextResource(file.uri)
-  const fallbackVocabUris = projectStructuredResourcePreviewVocabUris({
-    currentPodRootUri,
-    documentUri: file.uri,
-    vocabDiscovery: null,
-  })
   const structuredSource = projectStructuredResourcePreviewSource({ file, rawResource: rawQuery })
   const enrichmentEnabled = structuredSource !== null && structuredSource !== undefined
-  const vocabDiscoveryQuery = useFilesVocabRegistryDiscovery({
-    enabled: enrichmentEnabled,
-    localVocabUri: fallbackVocabUris.localVocabUri,
-  })
   const {
-    vocabNamespacesUri,
+    currentPodRootUri,
+    vocabDefinitionIndex,
     vocabShapesUri,
     vocabTermsUri,
-  } = projectStructuredResourcePreviewVocabUris({
-    currentPodRootUri,
-    documentUri: file.uri,
-    vocabDiscovery: vocabDiscoveryQuery.data,
-  })
-  const vocabTermsQuery = useRawTextResource(vocabTermsUri, enrichmentEnabled)
-  const vocabShapesQuery = useRawTextResource(vocabShapesUri, enrichmentEnabled)
-  const vocabNamespacesQuery = useRawTextResource(vocabNamespacesUri, enrichmentEnabled)
-  const vocabDefinitionIndex = useMemo(() => (
-    projectStructuredResourcePreviewVocabDefinitionIndex({
-      terms: {
-        uri: vocabTermsUri,
-        mimeType: vocabTermsQuery.data?.mimeType,
-        content: vocabTermsQuery.data?.content,
-      },
-      shapes: {
-        uri: vocabShapesUri,
-        mimeType: vocabShapesQuery.data?.mimeType,
-        content: vocabShapesQuery.data?.content,
-      },
-      namespaces: {
-        uri: vocabNamespacesUri,
-        mimeType: vocabNamespacesQuery.data?.mimeType,
-        content: vocabNamespacesQuery.data?.content,
-      },
-    })
-  ), [vocabNamespacesQuery.data?.content, vocabNamespacesQuery.data?.mimeType, vocabNamespacesUri, vocabShapesQuery.data?.content, vocabShapesQuery.data?.mimeType, vocabShapesUri, vocabTermsQuery.data?.content, vocabTermsQuery.data?.mimeType, vocabTermsUri])
+  } = useStructuredVocabContext({ documentUri: file.uri, enabled: enrichmentEnabled })
   const projection = useMemo(() => projectStructuredResourceTable({
     uri: file.uri,
     mimeType: file.mimeType,
     source: structuredSource,
   }), [file.mimeType, file.uri, structuredSource])
 
+  const { refetch: refetchRaw } = rawQuery
+  /** Reads the document again, ahead of the table's own refresh: its rows and the version they came from. */
+  const readLatestProjection = useCallback(async () => {
+    const latest = (await refetchRaw()).data
+    if (!latest || latest.uri !== file.uri) return null
+    return {
+      etag: latest.etag ?? null,
+      projection: projectStructuredResourceTable({ uri: file.uri, mimeType: file.mimeType, source: latest.content }),
+    }
+  }, [file.mimeType, file.uri, refetchRaw])
+
   return {
     currentPodRootUri,
     projection,
+    readLatestProjection,
     structuredWritesSupported: supportsStructuredWriteProposals(file),
     // The version the table shows; direct writes are refused if the document moved on.
     structuredSourceEtag: rawQuery.data?.etag ?? null,

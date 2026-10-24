@@ -1,8 +1,21 @@
 import { FilesResourceReadError, type FilesEntry } from '../resource/resource-model'
 import { displayResourceName, getEntryName, getFilesEntryOpenMode, getParentContainerUri, normalizeContainerUri } from '../resource/resource-semantics'
 import { readablePredicateLabel } from '../structured/structured-table-vocab'
-import type { StructuredTableProjection, StructuredTableRow } from '../structured/structured-table'
 import {
+  isStructuredCardBodyPredicate,
+  lookupPredicateDefinition,
+  projectStructuredClassScope,
+  projectStructuredVocabSchemaColumns,
+  type StructuredTableProjection,
+  type StructuredTableRow,
+  type StructuredVocabDefinitionIndex,
+} from '../structured/structured-table'
+import {
+  resolveStructuredCellEditorPlan,
+  type StructuredCellEditorValueKind,
+} from '../structured/structured-cell-editor-plan'
+import {
+  CARD_BODY_PREDICATE_IRI,
   RDF_TYPE_IRI,
   displayRdfValue,
   expandRdfIri,
@@ -323,6 +336,7 @@ const TITLE_PREDICATES = [
 ]
 
 const BODY_PREDICATES = [
+  CARD_BODY_PREDICATE_IRI,
   'https://www.w3.org/ns/activitystreams#content',
   'http://schema.org/text',
   'http://rdfs.org/sioc/ns#content',
@@ -347,7 +361,7 @@ const FOAF_PRIMARY_TOPIC_IRI = 'http://xmlns.com/foaf/0.1/primaryTopic'
 
 const AS_NOTE_IRI = 'https://www.w3.org/ns/activitystreams#Note'
 const DEFAULT_NOTE_BODY_PREDICATE = 'https://www.w3.org/ns/activitystreams#content'
-const DEFAULT_BODY_PREDICATE = 'http://schema.org/text'
+const DEFAULT_BODY_PREDICATE = CARD_BODY_PREDICATE_IRI
 
 const KNOWN_PREDICATE_LABELS: Record<string, string> = {
   'http://schema.org/name': '名称',
@@ -444,6 +458,7 @@ export interface CardSubjectModel {
   properties: CardPropertyModel[]
   /** Avatar URL when the subject has one (web links only). */
   photoUri: string | null
+  photoPredicate: string | null
 }
 
 export type CardPredicateLabeler = (predicateIri: string) => string | null | undefined
@@ -533,6 +548,7 @@ export function projectCardSubjectModel({
     // The row's own address, as written in the document, so edits patch the right subject.
     subjectIri: rowSubjectIri(row, documentUri, prefixes),
     photoUri: photoIri && /^https?:\/\//.test(photoIri) ? photoIri : null,
+    photoPredicate: photoCell?.predicate ?? null,
     title,
     titlePredicate: titleCell?.predicate ?? null,
     bodyPredicate,
@@ -548,6 +564,117 @@ export function projectCardSubjectModel({
       ))
       .map((cell) => cellModel(cell.predicate, cell.values, documentUri, prefixes, labeler)),
   }
+}
+
+// ---------------------------------------------------------------------------
+// The table's columns as the card's properties (R6 K2)
+// ---------------------------------------------------------------------------
+
+export interface CardColumnModel extends CardPropertyModel {
+  /** The same editor kinds the table cells use. */
+  editorKind: StructuredCellEditorValueKind
+  /** What the editor starts with (plain text, not RDF tokens). */
+  editorValues: string[]
+  /** Choices for an option column. */
+  options: string[]
+}
+
+function columnEditorValues(plan: ReturnType<typeof resolveStructuredCellEditorPlan>, property: CardPropertyModel): {
+  kind: StructuredCellEditorValueKind
+  values: string[]
+} {
+  if (plan.kind === 'scalar') return { kind: plan.scalarKind, values: plan.value ? [plan.value] : [] }
+  if (plan.kind === 'boolean') return { kind: 'boolean', values: [plan.value] }
+  if (plan.kind === 'relation') return { kind: 'relation', values: property.links.filter((link): link is string => !!link) }
+  if (plan.kind === 'enum') return { kind: plan.multi ? 'multi-select' : 'enum', values: [...property.displayValues] }
+  return { kind: 'text', values: [...property.displayValues] }
+}
+
+/**
+ * The columns of the table this card is a row of, in the table's order, each with the editor the
+ * table would use. The title, the body, the avatar and the type are shown elsewhere in the card.
+ */
+export function projectCardColumns({
+  projection,
+  documentUri,
+  subject,
+  vocabDefinitionIndex,
+}: {
+  projection: StructuredTableProjection
+  documentUri: string
+  subject: CardSubjectModel
+  vocabDefinitionIndex?: StructuredVocabDefinitionIndex
+}): CardColumnModel[] {
+  const row = findCardSubjectRow(projection, documentUri, subject.subjectIri)
+  if (!row) return []
+  const prefixes = projection.prefixes
+  const rowClass = row.cells.find((cell) => cell.predicate === 'rdf:type')?.values[0] ?? null
+  const scoped = rowClass ? projectStructuredClassScope(projection, rowClass) : projection
+  const columns = vocabDefinitionIndex
+    ? projectStructuredVocabSchemaColumns(scoped, vocabDefinitionIndex, rowClass).predicates
+    : scoped.predicates
+  const hidden = new Set<string | null>([RDF_TYPE_IRI, subject.titlePredicate, subject.bodyPredicate, subject.photoPredicate])
+  const seen = new Set<string>()
+  const result: CardColumnModel[] = []
+  for (const column of columns) {
+    const predicate = expandRdfIri(column, documentUri, prefixes)
+    if (hidden.has(predicate) || seen.has(predicate) || isStructuredCardBodyPredicate(column, prefixes)) continue
+    seen.add(predicate)
+    const definition = vocabDefinitionIndex
+      ? lookupPredicateDefinition(vocabDefinitionIndex, column) ?? lookupPredicateDefinition(vocabDefinitionIndex, predicate)
+      : undefined
+    const labeler: CardPredicateLabeler = () => definition?.label
+    const existing = subject.properties.find((property) => property.predicate === predicate)
+    const property = existing ?? cellModel(predicate, [], documentUri, prefixes, labeler)
+    const rawValues = row.cells.find((cell) => expandRdfIri(cell.predicate, documentUri, prefixes) === predicate)?.values ?? []
+    const editor = columnEditorValues(resolveStructuredCellEditorPlan(definition, rawValues), property)
+    const definitionOptions = (
+      vocabDefinitionIndex?.enumOptionsByPredicate.get(column)
+      ?? vocabDefinitionIndex?.enumOptionsByPredicate.get(predicate)
+      ?? []
+    ).map((option) => option.label).filter(Boolean)
+    const observed = editor.kind === 'enum' || editor.kind === 'multi-select'
+      ? projection.rows.flatMap((candidate) => (
+        candidate.cells
+          .filter((cell) => expandRdfIri(cell.predicate, documentUri, prefixes) === predicate)
+          .flatMap((cell) => cell.values.map(displayRdfValue))
+      ))
+      : []
+    result.push({
+      ...property,
+      label: definition?.label?.trim() || property.label,
+      editorKind: editor.kind,
+      editorValues: editor.values,
+      options: Array.from(new Set([...definitionOptions, ...observed].filter(Boolean))),
+    })
+  }
+  return result
+}
+
+/** The class (as the table spells it) a card's row is typed with: the scope its columns belong to. */
+export function projectCardRowClass(projection: StructuredTableProjection, documentUri: string, subjectIri: string): string | null {
+  const row = findCardSubjectRow(projection, documentUri, subjectIri)
+  return row?.cells.find((cell) => cell.predicate === 'rdf:type')?.values[0] ?? null
+}
+
+/**
+ * The write for a column edited in the card: null when nothing changed. `nextTokens` are what the
+ * table's value editor commits (`"text"`, `<link>`, `5`, `"2026-10-01"^^xsd:date`).
+ */
+export function planCardColumnWrite({
+  column,
+  nextTokens,
+  documentUri,
+  prefixes,
+}: {
+  column: CardColumnModel
+  nextTokens: readonly string[]
+  documentUri: string
+  prefixes: RdfPrefixes
+}): CardValueWritePlan | null {
+  const next = nextTokens.map((token) => toPatchValueToken(token, documentUri, prefixes))
+  if (next.length === column.valueTokens.length && next.every((token, index) => token === column.valueTokens[index])) return null
+  return { previousValues: [...column.valueTokens], nextValues: next }
 }
 
 /** Every row of a table as a card URI, in table order — the ‹ › order of a table card. */
@@ -720,21 +847,11 @@ export function planCardBodyWrite({
   return { previousValues: [...previousValueTokens], nextValues }
 }
 
-/** Where a property the person names in a card lives: the shared vocabulary (词表 › 属性). */
 /** Why a new card could not be made, in words a person can act on. */
 export function projectNewCardMessage(reason: 'empty' | 'duplicate' | 'unavailable'): string {
   if (reason === 'duplicate') return '已经有同名的卡片了，换个名字吧'
   if (reason === 'empty') return '先给卡片起个名字'
   return '没能创建这张卡片，稍后再试'
-}
-
-export function projectNewCardPropertyIri(label: string, vocabTermsUri: string): string {
-  const slug = label
-    .trim()
-    .normalize('NFKC')
-    .replace(/[\s/\\#?]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return `${vocabTermsUri}#${encodeURIComponent(slug || 'property')}`
 }
 
 // ---------------------------------------------------------------------------

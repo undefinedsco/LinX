@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import type { FilesDetail } from '../../domain/resource/resource-model'
@@ -34,6 +34,7 @@ import { useStructuredViewportController } from './useStructuredViewportControll
 import { useStructuredViewStateController } from './useStructuredViewStateController'
 import { planStructuredSubjectCreation, structuredSubjectDraftFromName } from './structured-subject-creation-model'
 import { projectStructuredRelationPredicateOptions } from './structured-projection-filter-model'
+import { createStructuredEditValueCanonicalizer, isStructuredTextEditorTarget, readStructuredEditCellValues, planStructuredEditHistoryShortcut } from './structured-edit-history-model'
 
 export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   const [classScopeMenuOpen, setClassScopeMenuOpen] = useState(false)
@@ -41,6 +42,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   const {
     currentPodRootUri,
     projection,
+    readLatestProjection,
     structuredSourceLoading,
     structuredSourceUnavailable,
     structuredSourceEtag,
@@ -69,6 +71,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     setColumnFilterFromUi,
     setColumnLabelFromUi,
     setColumnRemovedFromUi,
+    restoreRemovedColumnFromUi,
     setKanbanColumnOrderFromUi,
     setKanbanBoardFromUi,
     setKanbanGroupPredicateFromUi,
@@ -179,7 +182,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   })
   const selectExistingPredicateFromMenu = (predicate: string) => {
     // 加属性 brings back a column that was taken off this table.
-    if (removedPredicates.has(predicate)) setColumnRemovedFromUi(predicate, false)
+    restoreRemovedColumnFromUi(predicate)
     selectExistingPredicate(predicate)
   }
   const toolbarPredicateControls = schemaPredicateControls.filter((predicate) => !removedPredicates.has(predicate))
@@ -201,10 +204,29 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     projection: unfilteredTableProjection,
     structuredWritesSupported,
   })
+  const readLatestForEditHistory = useCallback(async () => {
+    const latest = await readLatestProjection()
+    if (!latest) return null
+    return {
+      etag: latest.etag,
+      read: (subject: string, predicate: string) => readStructuredEditCellValues({
+        documentUri: file.uri,
+        predicate,
+        prefixes: latest.projection.prefixes,
+        rows: latest.projection.rows,
+        subject,
+      }),
+    }
+  }, [file.uri, readLatestProjection])
+  const canonicalizeEditValue = useMemo(
+    () => createStructuredEditValueCanonicalizer({ documentUri: file.uri, prefixes: projection.prefixes }),
+    [file.uri, projection.prefixes],
+  )
   const {
     allPendingWriteSubjects,
     commitCellWriteProposal,
     commitViewCellWriteProposal,
+    editHistory,
     effectiveCellWriteProposals,
     persistedCellWriteProposals,
     setLocalPendingWriteSubjectsFromTable,
@@ -213,6 +235,9 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     currentPodRootUri,
     documentEtag: structuredSourceEtag,
     documentUri: file.uri,
+    canonicalizeValue: canonicalizeEditValue,
+    predicateLabel: columnLabelOf,
+    readLatest: readLatestForEditHistory,
     structuredWritesSupported,
   })
   const {
@@ -278,25 +303,28 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     })
     if (plan.kind !== 'create') return false
 
-    const created = await commitViewCellWriteProposal(createStructuredCellWriteProposal({
-      documentUri: file.uri,
-      subject: plan.subject,
-      predicate: plan.typePredicate,
-      previousValues: [],
-      nextValues: plan.typeValues,
-    }))
-    if (created === false) return false
-
-    if (kanbanGroupPredicate && columnId !== 'ungrouped' && columnValue) {
-      return (await commitViewCellWriteProposal(createStructuredCellWriteProposal({
+    // The card and its lane are two writes; 撤销 takes both back as one step.
+    return editHistory.recordGroup(`添加「${localRdfName(plan.subject)}」`, async () => {
+      const created = await commitViewCellWriteProposal(createStructuredCellWriteProposal({
         documentUri: file.uri,
         subject: plan.subject,
-        predicate: kanbanGroupPredicate,
+        predicate: plan.typePredicate,
         previousValues: [],
-        nextValues: [columnValue],
-      }))) !== false
-    }
-    return true
+        nextValues: plan.typeValues,
+      }))
+      if (created === false) return false
+
+      if (kanbanGroupPredicate && columnId !== 'ungrouped' && columnValue) {
+        return (await commitViewCellWriteProposal(createStructuredCellWriteProposal({
+          documentUri: file.uri,
+          subject: plan.subject,
+          predicate: kanbanGroupPredicate,
+          previousValues: [],
+          nextValues: [columnValue],
+        }))) !== false
+      }
+      return true
+    })
   }
   // R6 K6 bulk bar: a card is the subject, so deleting clears everything written about it, and
   // moving to another table changes the class it belongs to.
@@ -304,32 +332,38 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     .filter((className) => className !== scopedProjection.className)
     .map((className) => ({ id: className, label: localRdfName(className) }))
   const rowsBySubject = new Map(projection.rows.map((row) => [row.subject, row]))
-  const deleteSubjects = async (subjects: string[]) => {
-    for (const subject of subjects) {
-      for (const cell of rowsBySubject.get(subject)?.cells ?? []) {
-        if (cell.values.length === 0) continue
+  const deleteSubjects = async (subjects: string[]) => editHistory.recordGroup(
+    subjects.length === 1 ? `删除「${localRdfName(subjects[0] ?? '')}」` : `删除 ${subjects.length} 张卡片`,
+    async () => {
+      for (const subject of subjects) {
+        for (const cell of rowsBySubject.get(subject)?.cells ?? []) {
+          if (cell.values.length === 0) continue
+          await commitViewCellWriteProposal(createStructuredCellWriteProposal({
+            documentUri: file.uri,
+            subject,
+            predicate: cell.predicate,
+            previousValues: cell.values,
+            nextValues: [],
+          }))
+        }
+      }
+    },
+  )
+  const moveSubjects = async (subjects: string[], className: string) => editHistory.recordGroup(
+    `移动 ${subjects.length} 张卡片到 ${localRdfName(className)}`,
+    async () => {
+      for (const subject of subjects) {
+        const previous = rowsBySubject.get(subject)?.cells.find((cell) => cell.predicate === 'rdf:type')?.values ?? []
         await commitViewCellWriteProposal(createStructuredCellWriteProposal({
           documentUri: file.uri,
           subject,
-          predicate: cell.predicate,
-          previousValues: cell.values,
-          nextValues: [],
+          predicate: 'rdf:type',
+          previousValues: previous,
+          nextValues: [className],
         }))
       }
-    }
-  }
-  const moveSubjects = async (subjects: string[], className: string) => {
-    for (const subject of subjects) {
-      const previous = rowsBySubject.get(subject)?.cells.find((cell) => cell.predicate === 'rdf:type')?.values ?? []
-      await commitViewCellWriteProposal(createStructuredCellWriteProposal({
-        documentUri: file.uri,
-        subject,
-        predicate: 'rdf:type',
-        previousValues: previous,
-        nextValues: [className],
-      }))
-    }
-  }
+    },
+  )
   const createWhiteboardSubject = async (subject: string) => {
     const plan = planStructuredSubjectCreation({
       classScope: scopedProjection.className,
@@ -347,10 +381,29 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
       predicate: plan.typePredicate,
       previousValues: [],
       nextValues: plan.typeValues,
-    }))
+    }), { recordHistory: false })
     if (created === false) return false
     addWhiteboardSubjectFromUi(plan.subject)
     return true
+  }
+
+  // Cmd/Ctrl+Z while the table has focus and no text editor is active.
+  const handleEditHistoryShortcut = (event: KeyboardEvent<HTMLElement>) => {
+    if (!structuredWritesSupported) return
+    const direction = planStructuredEditHistoryShortcut({
+      key: event.key,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      defaultPrevented: event.defaultPrevented,
+      targetIsTextEditor: isStructuredTextEditorTarget(event.target),
+    })
+    if (!direction) return
+    event.preventDefault()
+    if (direction === 'undo' ? editHistory.canUndo : editHistory.canRedo) {
+      void (direction === 'undo' ? editHistory.undo() : editHistory.redo())
+    }
   }
 
   const kanbanLanes = useMemo(
@@ -385,9 +438,12 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
         data-structured-resource-viewport="true"
         aria-label={structuredViewport.chrome.viewport.ariaLabel}
         className="max-h-full w-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden bg-background px-2 py-2"
+        tabIndex={-1}
+        style={{ outline: 'none' }}
         onScroll={structuredViewport.handleStructuredViewportScroll}
         onClickCapture={structuredViewport.recordStructuredViewportScrollTop}
         onKeyDownCapture={structuredViewport.recordStructuredViewportScrollTop}
+        onKeyDown={handleEditHistoryShortcut}
       >
         <StructuredResourceToolbar
           columnFilterMenu={viewMode === 'table' ? toolbarFilterMenu : undefined}
@@ -439,6 +495,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           viewMetadataSaveStatus={viewMetadataSaveStatus}
           viewMetadataSaveError={viewMetadataSaveError}
           onRetryViewMetadataSave={retryViewMetadataSave}
+          editHistory={structuredWritesSupported ? editHistory : undefined}
         />
         {viewMode === 'table' ? (
           <StructuredColumnFilterChips

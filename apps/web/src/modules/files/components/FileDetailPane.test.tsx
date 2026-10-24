@@ -8938,10 +8938,13 @@ describe('FileDetailPane', () => {
       fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
       expect(screen.queryByRole('menuitemcheckbox', { name: 'tags' })).not.toBeInTheDocument()
       fireEvent.keyDown(document.body, { key: 'Escape' })
+      // Let the 列显示 menu finish closing first: on slow runners its close otherwise dismisses the
+      // + 属性 menu that opens right after, and the click lands on a row that is already gone.
+      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 
       // ... but 加属性 offers it again.
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
-      fireEvent.click(await screen.findByRole('button', { name: /tags/ }))
+      fireEvent.click(within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' }))
       expect(await screen.findByRole('button', { name: 'tags 列菜单' })).toBeInTheDocument()
       expect(useFilesStore.getState().structuredColumnViewByDocument[documentUri]?.removed).toEqual([])
     })

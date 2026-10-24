@@ -991,7 +991,11 @@ describe('Files features boundary', () => {
     ) return
 
     const featureSource = readFileSync(structuredFeaturePath, 'utf8')
-    const controllerSource = readFileSync(structuredResourcePreviewControllerFeaturePath, 'utf8')
+    // The vocabulary reads moved into a hook the card dialog shares with the table.
+    const controllerSource = [
+      readFileSync(structuredResourcePreviewControllerFeaturePath, 'utf8'),
+      readFileSync('src/modules/files/features/structured/useStructuredVocabContext.ts', 'utf8'),
+    ].join('\n')
     const resourcePreviewModelSource = readFileSync(structuredResourcePreviewModelFeaturePath, 'utf8')
     const projectionFilterControllerSource = readFileSync(structuredProjectionFilterControllerFeaturePath, 'utf8')
     const projectionFilterModelSource = readFileSync(structuredProjectionFilterModelFeaturePath, 'utf8')

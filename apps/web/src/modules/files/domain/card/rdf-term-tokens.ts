@@ -22,6 +22,17 @@ export const WELL_KNOWN_PREFIXES: Record<string, string> = {
   udfs: 'https://undefineds.co/vocab/',
 }
 
+/**
+ * The card's rich-text body (R6 K2). It is the card's own text, not a table property, so tables never
+ * list it as a column. `schema:text` is how earlier builds stored it and is treated the same way.
+ */
+export const CARD_BODY_PREDICATE_IRI = 'https://undefineds.co/vocab/body'
+export const CARD_BODY_HIDDEN_COLUMN_IRIS: readonly string[] = [
+  CARD_BODY_PREDICATE_IRI,
+  'http://schema.org/text',
+  'https://schema.org/text',
+]
+
 const ABSOLUTE_IRI_PATTERN = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//
 const PREFIXED_NAME_PATTERN = /^([A-Za-z][\w-]*)?:([^\s<>"]*)$/
 const TYPED_LITERAL_PATTERN = /^("(?:[^"\\]|\\.)*")\^\^(?:<([^>]+)>|([A-Za-z][\w.-]*:[\w.-]+))$/
@@ -60,13 +71,21 @@ export function expandRdfIri(token: string, documentUri: string, prefixes: RdfPr
   }
 }
 
+/** Turtle's bare literals: numbers and `true` / `false` are values, not links. */
+const BARE_LITERAL_PATTERN = /^(?:true|false|[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)$/
+
+export function isRdfBareLiteralToken(token: string) {
+  return BARE_LITERAL_PATTERN.test(token.trim())
+}
+
 export function isRdfLiteralToken(token: string) {
-  return token.trim().startsWith('"')
+  return token.trim().startsWith('"') || isRdfBareLiteralToken(token)
 }
 
 /** A value token ready for a SPARQL PATCH: literals keep their quotes, resources become `<iri>`. */
 export function toPatchValueToken(token: string, documentUri: string, prefixes: RdfPrefixes = {}): string {
   const trimmed = token.trim()
+  if (isRdfBareLiteralToken(trimmed)) return trimmed
   if (!isRdfLiteralToken(trimmed)) return `<${expandRdfIri(trimmed, documentUri, prefixes)}>`
   const typed = trimmed.match(TYPED_LITERAL_PATTERN)
   if (typed) {
@@ -84,6 +103,7 @@ export function rdfLiteralToken(value: string) {
 /** Human-readable text for a projection value token. */
 export function displayRdfValue(token: string): string {
   const trimmed = token.trim()
+  if (isRdfBareLiteralToken(trimmed)) return trimmed
   if (isRdfLiteralToken(trimmed)) {
     const typed = trimmed.match(TYPED_LITERAL_PATTERN)
     const lang = trimmed.match(LANG_LITERAL_PATTERN)

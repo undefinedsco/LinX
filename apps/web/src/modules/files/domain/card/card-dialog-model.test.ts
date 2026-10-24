@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { projectStructuredResourceTable } from '../structured/structured-table'
+import { projectStructuredClassScope, projectStructuredResourceTable } from '../structured/structured-table'
 import {
   findCardLocatorLines,
   formatCardTimestamp,
@@ -9,6 +9,9 @@ import {
   projectCardQuotedPrompt,
   projectCardDocumentOverview,
   projectCardSubjectModel,
+  projectCardColumns,
+  projectCardRowClass,
+  planCardColumnWrite,
   parseCardTarget,
   planCardBodyWrite,
   planCardValueWrite,
@@ -124,5 +127,90 @@ describe('a card whose address is spelled two ways', () => {
       expect(model?.subjectIri).toBe(`${doc}#周末读书会`)
       expect(model?.title).toBe('周末读书会')
     }
+  })
+})
+
+describe('a card body is not a table column', () => {
+  const uri = 'https://pod.example/cards/t.ttl'
+  const source = `@prefix schema: <http://schema.org/>.
+@prefix udfs: <https://undefineds.co/vocab/>.
+<#a> a schema:Thing; schema:name "旧卡"; schema:text "早先存的正文"; schema:author "我".
+<#b> a schema:Thing; schema:name "新卡"; udfs:body "新正文"; schema:author "你".`
+  const projection = projectStructuredResourceTable({ uri, mimeType: 'text/turtle', source })
+
+  it('keeps both the current and the earlier body predicate out of the columns', () => {
+    const scoped = projectStructuredClassScope(projection, 'schema:Thing')
+    expect(scoped.predicates).toContain('schema:author')
+    expect(scoped.predicates).not.toContain('schema:text')
+    expect(scoped.predicates).not.toContain('udfs:body')
+  })
+
+  it('still reads the body from either spelling and writes new bodies to the dedicated predicate', () => {
+    expect(projectCardSubjectModel({ projection, documentUri: uri, subjectIri: `${uri}#a` })).toMatchObject({
+      bodyPredicate: 'http://schema.org/text',
+      bodyText: '早先存的正文',
+    })
+    expect(projectCardSubjectModel({ projection, documentUri: uri, subjectIri: `${uri}#b` })).toMatchObject({
+      bodyPredicate: 'https://undefineds.co/vocab/body',
+      bodyText: '新正文',
+    })
+    const empty = projectStructuredResourceTable({ uri, mimeType: 'text/turtle', source: '<#c> <http://schema.org/name> "空卡".' })
+    expect(projectCardSubjectModel({ projection: empty, documentUri: uri, subjectIri: `${uri}#c` })?.bodyPredicate)
+      .toBe('https://undefineds.co/vocab/body')
+  })
+
+  it('does not list the body among the properties', () => {
+    const model = projectCardSubjectModel({ projection, documentUri: uri, subjectIri: `${uri}#b` })
+    expect(model?.properties.map((property) => property.label)).not.toContain('正文')
+  })
+})
+
+describe('the table columns as the card properties', () => {
+  const uri = 'https://pod.example/cards/t.ttl'
+  const source = `@prefix schema: <http://schema.org/>.
+@prefix udfs: <https://undefineds.co/vocab/>.
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+<#a> a schema:Thing; schema:name "旧卡"; schema:text "正文"; udfs:stage "进行中"; udfs:score 5; udfs:done true; udfs:due "2026-10-01"^^xsd:date; schema:url <https://a.example/>.
+<#b> a schema:Thing; schema:name "新卡"; udfs:stage "待办".`
+  const projection = projectStructuredResourceTable({ uri, mimeType: 'text/turtle', source })
+  const subject = (id: string) => projectCardSubjectModel({ projection, documentUri: uri, subjectIri: `${uri}#${id}` })!
+  const columns = (id: string) => projectCardColumns({ projection, documentUri: uri, subject: subject(id) })
+  const find = (id: string, suffix: string) => columns(id).find((column) => column.predicate.endsWith(suffix))!
+
+  it('lists every column of the table, also the ones this card has no value for, never the title or body', () => {
+    const predicates = columns('b').map((column) => column.predicate)
+    expect(predicates).toEqual(expect.arrayContaining([
+      'https://undefineds.co/vocab/stage',
+      'https://undefineds.co/vocab/score',
+      'https://undefineds.co/vocab/due',
+      'http://schema.org/url',
+    ]))
+    expect(predicates).not.toContain('http://schema.org/name')
+    expect(predicates).not.toContain('http://schema.org/text')
+    expect(predicates).not.toContain('https://undefineds.co/vocab/body')
+    expect(find('b', '/score').valueTokens).toEqual([])
+  })
+
+  it('picks the table cell editor by the value', () => {
+    expect(find('a', '/score')).toMatchObject({ editorKind: 'number', editorValues: ['5'], isResource: false })
+    expect(find('a', '/done')).toMatchObject({ editorKind: 'boolean', editorValues: ['true'] })
+    expect(find('a', '/due')).toMatchObject({ editorKind: 'date', editorValues: ['2026-10-01'] })
+    expect(find('a', '/url')).toMatchObject({ editorKind: 'relation', editorValues: ['https://a.example/'] })
+    expect(find('a', '/stage')).toMatchObject({ editorKind: 'text', editorValues: ['进行中'] })
+  })
+
+  it('turns what the editor commits into patch tokens, and nothing when unchanged', () => {
+    const prefixes = projection.prefixes
+    const plan = (suffix: string, nextTokens: string[]) => planCardColumnWrite({ column: find('a', suffix), nextTokens, documentUri: uri, prefixes })
+    expect(plan('/score', ['7'])).toEqual({ previousValues: ['5'], nextValues: ['7'] })
+    expect(plan('/score', ['5'])).toBeNull()
+    expect(plan('/done', ['false'])).toEqual({ previousValues: ['true'], nextValues: ['false'] })
+    expect(plan('/due', ['"2026-11-02"^^xsd:date'])?.nextValues).toEqual(['"2026-11-02"^^<http://www.w3.org/2001/XMLSchema#date>'])
+    expect(plan('/stage', ['"完成"'])?.nextValues).toEqual(['"完成"'])
+    expect(plan('/url', ['<https://b.example/>'])?.nextValues).toEqual(['<https://b.example/>'])
+  })
+
+  it('names the class a card is typed with, for the columns it adds', () => {
+    expect(projectCardRowClass(projection, uri, `${uri}#a`)).toBe('schema:Thing')
   })
 })
