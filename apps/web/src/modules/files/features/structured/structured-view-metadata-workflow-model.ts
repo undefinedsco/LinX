@@ -1,5 +1,6 @@
 import type { FilesStructuredViewMetadataSidecar } from '../../domain/resource/resource-model'
 import {
+  normalizeStructuredColumnView,
   normalizeStructuredKanbanBoardMetadata,
   normalizeStructuredOpenViews,
   normalizeStructuredWhiteboardSnapshotMetadata,
@@ -16,6 +17,7 @@ export function structuredViewMetadataSignature(metadata: StructuredViewMetadata
     positions: metadata.whiteboard.positions,
     visualRelations: metadata.whiteboard.visualRelations ?? [],
   })
+  const columnView = normalizeStructuredColumnView(metadata.columnView)
   return JSON.stringify({
     documentUri: metadata.documentUri,
     viewMode: metadata.viewMode,
@@ -32,6 +34,11 @@ export function structuredViewMetadataSignature(metadata: StructuredViewMetadata
       cardOrder: sortedRecordEntries(kanbanBoard.cardOrder).map(([columnId, subjects]) => [columnId, [...subjects]]),
     },
     columnSizing: sortedRecordEntries(metadata.columnSizing),
+    columnView: {
+      filters: [...columnView.filters].sort((left, right) => left.predicate.localeCompare(right.predicate)),
+      labels: sortedRecordEntries(columnView.labels),
+      removed: [...columnView.removed].sort(),
+    },
     whiteboard: {
       selectedSubjects: [...metadata.whiteboard.selectedSubjects],
       positions: sortedRecordEntries(metadata.whiteboard.positions),
@@ -59,6 +66,7 @@ export function defaultStructuredViewMetadataSignature(documentUri: string) {
     kanbanGroupPredicate: null,
     kanbanOrder: {},
     columnSizing: {},
+    columnView: { filters: [], labels: {}, removed: [] },
     whiteboard: {
       selectedSubjects: [],
       positions: {},

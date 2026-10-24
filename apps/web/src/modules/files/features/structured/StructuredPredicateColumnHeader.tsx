@@ -8,12 +8,13 @@ import type { PredicateDefinitionDraft } from '../../domain/structured/structure
 import { AddPredicateMenu } from './AddPredicateMenu'
 import { StructuredAiColumnHeaderCell } from './StructuredAiColumnHeaderCell'
 import { projectStructuredAiColumnHeaderChrome } from './structured-ai-column-header-model'
+import { StructuredPendingPredicateHeaderCell } from './StructuredTableCellPrimitives'
 import {
-  StructuredPendingPredicateHeaderCell,
-  StructuredPredicateHeaderCell,
-} from './StructuredTableCellPrimitives'
+  StructuredColumnHeaderCell,
+  type StructuredColumnHeaderActions,
+} from './StructuredColumnHeaderCell'
+import type { StructuredColumnSortState } from './structured-column-header-menu-model'
 import {
-  projectStructuredDefinedPredicateHeaderChrome,
   projectStructuredPredicateColumnHeader,
   projectStructuredPendingPredicateHeaderChrome,
   type StructuredPredicateColumnProposal,
@@ -22,38 +23,39 @@ import {
 export type { StructuredPredicateColumnProposal } from './structured-predicate-column-header-model'
 
 export function StructuredPredicateColumnHeader({
+  actions,
   definition,
+  editable = false,
+  labelOverride,
   observedValues,
   onApprove,
-  onCanCreateVocabTermProposal,
-  onCopyPredicate,
   onDiscard,
-  onOpenPredicateDefinition,
-  onOpenPredicateShapeRule,
   onOpenVocabTermProposal,
   predicate,
   proposal,
   showNamespaces = false,
+  sort = null,
   sortIcon,
-  onSort,
+  termIsEditable = false,
 }: {
+  /** What the column's menu can do (K6d); the menu is the header of every ordinary column. */
+  actions: StructuredColumnHeaderActions
   definition?: StructuredVocabPredicateDefinition
+  editable?: boolean
+  /** The name the person gave this column in this table. */
+  labelOverride?: string
   observedValues: string[]
   onApprove?: () => void
-  onCanCreateVocabTermProposal?: boolean
-  onCopyPredicate?: (predicateUri: string) => void
   onDiscard: () => void
-  onOpenPredicateDefinition?: (predicateUri: string) => void
-  onOpenPredicateShapeRule?: (shapeRuleUri: string) => void
   onOpenVocabTermProposal?: (proposal: VocabTermProposal) => void
   predicate: string
   proposal?: StructuredPredicateColumnProposal
   showNamespaces?: boolean
+  sort?: StructuredColumnSortState
   sortIcon: ReactNode
-  onSort?: () => void
+  termIsEditable?: boolean
 }) {
   const header = projectStructuredPredicateColumnHeader({
-    canCreateVocabTermProposal: onCanCreateVocabTermProposal,
     definition,
     observedValues,
     predicate,
@@ -79,7 +81,6 @@ export function StructuredPredicateColumnHeader({
         chrome={projectStructuredPendingPredicateHeaderChrome({
           hasVocabProposal: Boolean(header.vocabProposal),
           normalizedLabel: header.normalizedLabel,
-          status: header.status,
         })}
         displayLabel={header.displayLabel}
         proposalUri={header.proposalUri}
@@ -99,23 +100,16 @@ export function StructuredPredicateColumnHeader({
   }
 
   return (
-    <StructuredPredicateHeaderCell
-      chrome={projectStructuredDefinedPredicateHeaderChrome({
-        normalizedLabel: header.normalizedLabel,
-        shapeRuleActions: header.shapeRuleActions,
-      })}
+    <StructuredColumnHeaderCell
+      actions={actions}
+      description={definition?.description || undefined}
+      editable={editable}
+      label={labelOverride || header.normalizedLabel}
       predicate={header.predicate}
-      displayLabel={header.displayLabel}
-      normalizedLabel={header.normalizedLabel}
-      typeLabel={header.typeLabel}
-      description={header.description}
-      ruleText={header.ruleText}
-      statusLabel={header.statusLabel}
+      sort={sort}
       sortIcon={sortIcon}
-      onSort={onSort}
-      onCopyPredicate={onCopyPredicate}
-      onOpenPredicate={onOpenPredicateDefinition}
-      onOpenShapeRule={onOpenPredicateShapeRule}
+      termIsEditable={termIsEditable}
+      typeLabel={header.typeLabel}
     />
   )
 }

@@ -10,6 +10,7 @@ import {
   createStructuredPendingPredicateColumnProposalFromDraft,
   findStructuredVisiblePendingPredicateProposal,
   projectApprovedStructuredPendingPredicateColumnsState,
+  projectConfirmedStructuredPendingPredicateColumnsState,
   projectDiscardedStructuredPendingPredicateColumnsState,
   projectPendingPredicateApprovalProposal,
   projectStagedStructuredPendingPredicateColumnsState,
@@ -28,6 +29,7 @@ export function useStructuredPendingPredicateColumns({
   classScope,
   currentPodRootUri,
   documentUri,
+  onConfirmVocabTerm,
   onCreateVocabTermProposal,
   onKeepAiColumn,
   onRemoveAiColumn,
@@ -43,6 +45,8 @@ export function useStructuredPendingPredicateColumns({
   classScope?: string | null
   currentPodRootUri?: string | null
   documentUri: string
+  /** The person's own column goes straight into the vocabulary; only LinX's columns wait for approval. */
+  onConfirmVocabTerm?: (proposal: VocabTermProposal, options?: { resolveRecord?: boolean }) => boolean | Promise<boolean>
   onCreateVocabTermProposal?: (proposal: VocabTermProposal) => boolean | Promise<boolean>
   projectionPredicates: readonly string[]
   reviewableVocabProposals: readonly VocabTermProposal[]
@@ -76,6 +80,13 @@ export function useStructuredPendingPredicateColumns({
     () => projectStructuredPendingPredicateProposalByPredicate(visiblePendingPredicateProposals),
     [visiblePendingPredicateProposals],
   )
+  /** The names of the person's own new columns that the table has not listed yet (cells are labelled with them). */
+  const confirmedLabelByPredicate = useMemo(
+    () => new Map(visiblePendingPredicateProposals
+      .filter((proposal) => proposal.status === 'confirmed')
+      .map((proposal) => [proposal.id, { label: proposal.label }] as const)),
+    [visiblePendingPredicateProposals],
+  )
   const pendingPredicateIds = useMemo(
     () => projectStructuredPendingPredicateIds(visiblePendingPredicateProposals),
     [visiblePendingPredicateProposals],
@@ -96,7 +107,39 @@ export function useStructuredPendingPredicateColumns({
     })
   ), [pendingProposalByPredicate, visiblePendingPredicateProposals])
 
+  const confirmPendingPredicate = useCallback((proposal: StructuredPredicateColumnProposal) => {
+    if (!onConfirmVocabTerm) return
+    // An older column still has its approval record: keep that record's identity and close it.
+    const existingRecord = proposal.vocabProposal
+    const vocabProposal = existingRecord ?? createStructuredPendingPredicateApprovalProposal({
+      documentUri,
+      classScope: classScope ?? null,
+      currentPodRootUri,
+      proposal,
+      targetShapesUri,
+      targetVocabUri,
+    })
+    // Optimistic: the column is usable at once; it goes away again if the vocabulary refuses it.
+    setPendingPredicateColumnsState((current) => projectConfirmedStructuredPendingPredicateColumnsState({
+      current,
+      proposal,
+      hydratedProposalId: existingRecord ? existingRecord.id : null,
+    }))
+    void Promise.resolve(onConfirmVocabTerm(vocabProposal, { resolveRecord: !!existingRecord })).then((saved) => {
+      if (saved) return
+      setPendingPredicateColumnsState((current) => projectDiscardedStructuredPendingPredicateColumnsState({
+        current,
+        predicate: proposal.id,
+        visiblePendingPredicateProposals: [],
+      }))
+    })
+  }, [classScope, currentPodRootUri, documentUri, onConfirmVocabTerm, targetShapesUri, targetVocabUri])
+
   const stagePendingPredicateApproval = useCallback((proposal: StructuredPredicateColumnProposal) => {
+    if (onConfirmVocabTerm) {
+      confirmPendingPredicate(proposal)
+      return
+    }
     if (!onCreateVocabTermProposal) return
     const vocabProposal = createStructuredPendingPredicateApprovalProposal({
       documentUri,
@@ -114,7 +157,7 @@ export function useStructuredPendingPredicateColumns({
         vocabProposal,
       }))
     })
-  }, [classScope, currentPodRootUri, documentUri, onCreateVocabTermProposal, targetShapesUri, targetVocabUri])
+  }, [classScope, confirmPendingPredicate, currentPodRootUri, documentUri, onConfirmVocabTerm, onCreateVocabTermProposal, targetShapesUri, targetVocabUri])
 
   const createPendingPredicateProposal = useCallback((draft: StructuredPendingPredicateDefinitionDraft) => {
     const pendingProposal = createStructuredPendingPredicateColumnProposalFromDraft({
@@ -146,11 +189,12 @@ export function useStructuredPendingPredicateColumns({
       }
       return
     }
+    // 保留这列 on a column made earlier (its approval record may still be waiting in the inbox).
     const proposal = projectPendingPredicateApprovalProposal({
       pendingPredicateProposals,
       predicate,
-    })
-    if (!proposal) return
+    }) ?? findStructuredVisiblePendingPredicateProposal({ predicate, visiblePendingPredicateProposals })
+    if (!proposal || proposal.status === 'confirmed') return
     stagePendingPredicateApproval(proposal)
   }, [onKeepAiColumn, pendingPredicateProposals, stagePendingPredicateApproval, visiblePendingPredicateProposals])
 
@@ -174,6 +218,7 @@ export function useStructuredPendingPredicateColumns({
 
   return {
     approvePendingPredicateProposal,
+    confirmedLabelByPredicate,
     createPendingPredicateProposal,
     discardPendingPredicateProposal,
     findVisiblePendingPredicateProposal,

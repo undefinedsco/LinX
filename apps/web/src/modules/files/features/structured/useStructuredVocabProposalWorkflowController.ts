@@ -4,6 +4,7 @@ import { useToast } from '@/components/ui/use-toast'
 
 import { openFilesExternalUri } from '../../app/platform-actions'
 import {
+  useConfirmVocabTerm,
   useCreateVocabTermProposalInboxApproval,
   usePendingVocabTermProposals,
 } from '../../data/queries'
@@ -46,6 +47,7 @@ export function useStructuredVocabProposalWorkflowController({
   targetVocabUri: string
 }) {
   const createInboxApproval = useCreateVocabTermProposalInboxApproval()
+  const confirmTerm = useConfirmVocabTerm()
   const pendingVocabTermProposalsQuery = usePendingVocabTermProposals(documentUri, structuredWritesSupported)
   const { toast } = useToast()
   const [vocabProposalWorkflowState, setVocabProposalWorkflowState] = useState(createStructuredVocabProposalWorkflowState)
@@ -101,6 +103,21 @@ export function useStructuredVocabProposalWorkflowController({
       return false
     }
   }, [createInboxApproval, toast])
+
+  /**
+   * A column or option the person adds is theirs to decide: it goes straight into the vocabulary,
+   * no inbox item. `resolveRecord` closes the approval record of an older column that was waiting
+   * there. Only what LinX proposes keeps the 待确认 + 收件箱 flow.
+   */
+  const confirmVocabTerm = useCallback(async (proposal: VocabTermProposal, options?: { resolveRecord?: boolean }) => {
+    try {
+      await confirmTerm.mutateAsync({ proposal, resolveRecord: options?.resolveRecord })
+      return true
+    } catch (error) {
+      toast({ description: formatFilesErrorForUser(error, '保存失败，请重试。'), variant: 'destructive' })
+      return false
+    }
+  }, [confirmTerm, toast])
 
   const createPendingClassProposal = useCallback((draftUri: string) => {
     const pendingClass = createPendingClassProposalFromDraft({
@@ -163,6 +180,7 @@ export function useStructuredVocabProposalWorkflowController({
 
   return {
     approvePendingClassProposal,
+    confirmVocabTerm,
     createPendingClassProposal,
     createVocabProposalResource,
     discardPendingClassProposal,

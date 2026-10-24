@@ -19,11 +19,13 @@ import { shouldRequestEditableSheetForStructuredSubjectTarget } from '../domain/
 import { parseTreeNodeId } from '../domain/resource/tree-model'
 import {
   DEFAULT_STRUCTURED_VIEW_CONFIG,
+  EMPTY_STRUCTURED_COLUMN_VIEW,
   normalizeStructuredOpenViews,
   normalizeStructuredViewConfig,
   normalizeStructuredWhiteboardLayouts,
   type StructuredKanbanBoardMetadataV1,
   type StructuredColumnSizingState,
+  type StructuredColumnViewState,
   type StructuredKanbanOrderState,
   type StructuredResourceViewMode,
   type StructuredSortDirection,
@@ -33,6 +35,7 @@ import {
 } from '../domain/structured/structured-view-metadata'
 export type {
   StructuredColumnSizingState,
+  StructuredColumnViewState,
   StructuredKanbanOrderState,
   StructuredResourceViewMode,
   StructuredSortDirection,
@@ -87,6 +90,9 @@ export interface FilesSidecarActionRequest {
 export type StructuredColumnSizingUpdater =
   | StructuredColumnSizingState
   | ((old: StructuredColumnSizingState) => StructuredColumnSizingState)
+export type StructuredColumnViewUpdater =
+  | StructuredColumnViewState
+  | ((old: StructuredColumnViewState) => StructuredColumnViewState)
 export interface StructuredSubjectReturnContext {
   documentUri: string
   subject: string
@@ -159,6 +165,7 @@ interface FilesStore {
   structuredViewConfigsByDocument: Record<string, StructuredViewConfig>
   structuredViewDirtyDocuments: Set<string>
   structuredColumnSizingByDocument: Record<string, StructuredColumnSizingState>
+  structuredColumnViewByDocument: Record<string, StructuredColumnViewState>
   structuredWhiteboardLayoutsByDocument: Record<string, Record<string, StructuredWhiteboardPosition>>
   structuredWhiteboardSubjectsByDocument: Record<string, string[]>
   structuredWhiteboardRelationsByDocument: Record<string, StructuredWhiteboardVisualRelation[]>
@@ -204,9 +211,10 @@ interface FilesStore {
   setStructuredClassScope: (className: string | null) => void
   setStructuredSearchText: (searchText: string) => void
   setStructuredSortKey: (sortKey: string) => void
-  setStructuredSort: (sortKey: string, sortDirection: StructuredSortDirection) => void
+  setStructuredSort: (sortKey: string | null, sortDirection: StructuredSortDirection) => void
   toggleStructuredPredicateVisibility: (predicate: string) => void
   setStructuredColumnSizing: (documentUri: string, updater: StructuredColumnSizingUpdater) => void
+  setStructuredColumnView: (documentUri: string, updater: StructuredColumnViewUpdater) => void
   hydrateStructuredViewMetadata: (metadata: StructuredViewMetadataHydrationInput, whiteboardLayoutKey: string) => void
   markStructuredViewMetadataDirty: (documentUri: string) => void
   clearStructuredViewMetadataDirty: (documentUri: string) => void
@@ -279,6 +287,7 @@ function structuredConfigFromState(state: FilesStore): StructuredViewConfig {
     kanbanGroupPredicate: state.structuredKanbanGroupPredicate,
     kanbanOrder: documentUri ? state.structuredKanbanOrderByDocument[documentUri] ?? {} : {},
     columnSizing: documentUri ? state.structuredColumnSizingByDocument[documentUri] ?? {} : {},
+    columnView: documentUri ? state.structuredColumnViewByDocument[documentUri] ?? EMPTY_STRUCTURED_COLUMN_VIEW : EMPTY_STRUCTURED_COLUMN_VIEW,
   }
 }
 
@@ -355,6 +364,9 @@ export const useFilesStore = create<FilesStore>((set) => ({
   structuredViewDirtyDocuments: new Set<string>(),
   structuredColumnSizingByDocument: Object.fromEntries(
     Object.entries(readStructuredViewConfigsFromStorage()).map(([documentUri, config]) => [documentUri, config.columnSizing]),
+  ),
+  structuredColumnViewByDocument: Object.fromEntries(
+    Object.entries(readStructuredViewConfigsFromStorage()).map(([documentUri, config]) => [documentUri, config.columnView]),
   ),
   structuredWhiteboardLayoutsByDocument: readStructuredWhiteboardLayoutsFromStorage(),
   structuredWhiteboardSubjectsByDocument: {},
@@ -623,9 +635,24 @@ export const useFilesStore = create<FilesStore>((set) => ({
         },
       }
     }),
+  setStructuredColumnView: (documentUri, updater) =>
+    set((state) => {
+      const currentView = state.structuredColumnViewByDocument[documentUri] ?? EMPTY_STRUCTURED_COLUMN_VIEW
+      const nextView = typeof updater === 'function' ? updater(currentView) : updater
+      return {
+        structuredViewConfigsByDocument: updateStructuredViewConfig(state, documentUri, {
+          columnView: nextView,
+        }),
+        structuredColumnViewByDocument: {
+          ...state.structuredColumnViewByDocument,
+          [documentUri]: nextView,
+        },
+      }
+    }),
   hydrateStructuredViewMetadata: (metadata, whiteboardLayoutKey) =>
     set((state) => {
       const openViews = normalizeStructuredOpenViews(metadata.openViews, metadata.viewMode)
+      const columnView = metadata.columnView ?? EMPTY_STRUCTURED_COLUMN_VIEW
       const nextConfig: StructuredViewConfig = {
         viewMode: metadata.viewMode,
         openViews,
@@ -637,6 +664,7 @@ export const useFilesStore = create<FilesStore>((set) => ({
         kanbanGroupPredicate: metadata.kanbanGroupPredicate,
         kanbanOrder: metadata.kanbanOrder,
         columnSizing: metadata.columnSizing,
+        columnView,
       }
       const nextConfigs = {
         ...state.structuredViewConfigsByDocument,
@@ -665,6 +693,10 @@ export const useFilesStore = create<FilesStore>((set) => ({
         structuredColumnSizingByDocument: {
           ...state.structuredColumnSizingByDocument,
           [metadata.documentUri]: metadata.columnSizing,
+        },
+        structuredColumnViewByDocument: {
+          ...state.structuredColumnViewByDocument,
+          [metadata.documentUri]: columnView,
         },
         structuredKanbanOrderByDocument: {
           ...state.structuredKanbanOrderByDocument,

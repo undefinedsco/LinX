@@ -60,6 +60,38 @@ describe('local structured view metadata store', () => {
     })
   })
 
+  it('loads saved column settings and drops malformed ones', () => {
+    window.localStorage.setItem(
+      `linx-files:structured-view:${encodeURIComponent(firstDocument)}`,
+      JSON.stringify({
+        columnView: {
+          filters: [
+            { predicate: 'status', kind: 'values', values: ['进行中'] },
+            { predicate: 'broken', kind: 'range' },
+            'nonsense',
+          ],
+          labels: { status: ' 进度 ', bad: 3 },
+          removed: ['old', 9],
+        },
+      }),
+    )
+
+    expect(loadLocalStructuredViewMetadata(firstDocument)?.columnView).toEqual({
+      filters: [{ predicate: 'status', kind: 'values', values: ['进行中'] }],
+      labels: { status: '进度' },
+      removed: ['old'],
+    })
+  })
+
+  it('has no column settings for a view saved before they existed', () => {
+    window.localStorage.setItem(
+      `linx-files:structured-view:${encodeURIComponent(firstDocument)}`,
+      JSON.stringify({ hiddenPredicates: ['name'] }),
+    )
+
+    expect(loadLocalStructuredViewMetadata(firstDocument)?.columnView).toEqual({ filters: [], labels: {}, removed: [] })
+  })
+
   it('isolates metadata by document URI', () => {
     saveLocalStructuredViewMetadata(firstDocument, {
       documentUri: firstDocument,

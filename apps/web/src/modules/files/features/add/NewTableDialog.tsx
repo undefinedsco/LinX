@@ -70,7 +70,7 @@ export function NewTableDialog({ table, destinationLabel }: { table: NewTableDia
           ))}
           <Button size="sm" variant="ghost" className="justify-start" onClick={table.addColumn}><Plus className="mr-1 h-3.5 w-3.5" />加一列</Button>
         </div>
-        <p className="text-xs text-muted-foreground">新的类型和列会先记成“未确认”，确认后进入“词表”，别的表格也能用。</p>
+        <p className="text-xs text-muted-foreground">类型和列会放进“词表”，别的表格也能用。</p>
         {table.message ? <p role="alert" className="text-xs text-destructive">{table.message}</p> : null}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" disabled={table.pending} onClick={table.cancel}>取消</Button>

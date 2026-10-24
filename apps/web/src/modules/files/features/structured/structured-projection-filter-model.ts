@@ -14,6 +14,10 @@ import {
   type StructuredPredicateTypeFilter,
   type StructuredVocabTermFilter,
 } from '../../domain/structured/structured-view-projection'
+import {
+  applyStructuredColumnFilters,
+  type StructuredColumnFilter,
+} from '../../domain/structured/structured-column-filter'
 import { isStructuredCellEnumDefinition } from '../../domain/structured/structured-cell-editor-plan'
 import { localPredicateLabel, readablePredicateLabel } from '../../domain/structured/structured-table-vocab'
 import type { StructuredSortDirection } from '../../domain/structured/structured-view-metadata'
@@ -124,6 +128,7 @@ export function projectStructuredProjectionFilterStateForExistingPredicate({
 }
 
 export function projectStructuredProjectionFilterModel({
+  columnFilters = [],
   classScope,
   predicateNamespaceFilter,
   predicateTypeFilter,
@@ -134,6 +139,8 @@ export function projectStructuredProjectionFilterModel({
   vocabDefinitionIndex,
   vocabTermFilter,
 }: {
+  /** The person's per-column filters (K6d 按它筛选): they hide rows in every view of the table. */
+  columnFilters?: readonly StructuredColumnFilter[]
   classScope: string | null
   predicateNamespaceFilter: string | null
   predicateTypeFilter: StructuredPredicateTypeFilter
@@ -154,13 +161,16 @@ export function projectStructuredProjectionFilterModel({
   const availablePredicateNamespaces = Array.from(new Set(
     schemaProjection.predicates.map((predicate) => structuredPredicateNamespace(predicate, vocabDefinitionIndex.namespaces)),
   )).sort((left, right) => left.localeCompare(right))
-  const viewProjection = projectStructuredTableView(schemaProjection, {
+  const filteredSchemaProjection = columnFilters.length > 0
+    ? { ...schemaProjection, rows: applyStructuredColumnFilters(schemaProjection.rows, columnFilters) }
+    : schemaProjection
+  const viewProjection = projectStructuredTableView(filteredSchemaProjection, {
     searchText: structuredSearchText,
     sortKey: structuredSortKey,
     sortDirection: structuredSortDirection,
   })
   const tableNamespaceFilteredProjection = projectStructuredPredicateNamespaceFilter(
-    schemaProjection,
+    filteredSchemaProjection,
     predicateNamespaceFilter,
     vocabDefinitionIndex.namespaces,
   )

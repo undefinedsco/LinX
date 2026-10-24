@@ -14,7 +14,6 @@ import {
 import { projectStructuredPredicateValueEditorChrome } from './structured-predicate-value-editor-model'
 import {
   projectStructuredPredicateTypeIconKind,
-  type StructuredDefinedPredicateHeaderChrome,
   type StructuredPendingPredicateHeaderChrome,
 } from './structured-predicate-column-header-model'
 import {
@@ -79,105 +78,6 @@ const TYPE_ICONS = {
 export function StructuredPredicateTypeIcon({ typeLabel }: { typeLabel: string }) {
   const Icon = TYPE_ICONS[projectStructuredPredicateTypeIconKind(typeLabel)]
   return <Icon className="h-3 w-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />
-}
-
-export function StructuredPredicateHeaderCell({
-  chrome,
-  predicate,
-  displayLabel,
-  normalizedLabel,
-  typeLabel,
-  description,
-  ruleText,
-  statusLabel,
-  sortIcon,
-  onSort,
-  onCopyPredicate,
-  onOpenPredicate,
-  onOpenShapeRule,
-}: {
-  chrome: StructuredDefinedPredicateHeaderChrome
-  predicate: string
-  displayLabel: string
-  normalizedLabel: string
-  typeLabel: string
-  description: string
-  ruleText: string
-  statusLabel: string
-  sortIcon?: ReactNode
-  onSort?: () => void
-  onCopyPredicate?: (predicate: string) => void
-  onOpenPredicate?: (predicate: string) => void
-  onOpenShapeRule?: (shapeRuleUri: string) => void
-}) {
-  return (
-    <div className="flex min-w-0 items-center gap-1">
-      <button
-        type="button"
-        className="flex min-w-0 items-center gap-1 hover:text-foreground"
-        title={predicate}
-        aria-label={chrome.sortButton.ariaLabel}
-        onClick={onSort}
-      >
-        <StructuredPredicateTypeIcon typeLabel={typeLabel} />
-        <span className="min-w-0 truncate">{displayLabel}</span>
-        {sortIcon}
-      </button>
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={chrome.definitionTrigger.ariaLabel}
-            className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 hover:bg-muted/70 hover:text-foreground"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <Info className="h-3 w-3" aria-hidden="true" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-72">
-          <div className="px-2 py-1.5 text-xs">
-            <p className="font-medium text-foreground">{chrome.menu.title}</p>
-            <div className="mt-2 border-y border-border/20">
-              <PredicateDefinitionRow label={chrome.menu.rows.predicate.label}>
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <p className="min-w-0 truncate font-medium">{normalizedLabel}</p>
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {typeLabel}
-                  </span>
-                </div>
-              </PredicateDefinitionRow>
-              <PredicateDefinitionRow label={chrome.menu.rows.description.label}>
-                <p className="leading-relaxed text-muted-foreground">{description}</p>
-              </PredicateDefinitionRow>
-              <PredicateDefinitionRow label={chrome.menu.rows.rule.label}>
-                <p>{ruleText}</p>
-              </PredicateDefinitionRow>
-              <PredicateDefinitionRow label={chrome.menu.rows.status.label}>
-                <p>{statusLabel}</p>
-              </PredicateDefinitionRow>
-            </div>
-          </div>
-          <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {chrome.menu.actionsHeading}
-          </div>
-          <DropdownMenuItem onSelect={() => onCopyPredicate?.(predicate)}>
-            {chrome.menu.actions.copyPredicate.label}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onOpenPredicate?.(predicate)}>
-            {chrome.menu.actions.openPredicate.label}
-          </DropdownMenuItem>
-          {chrome.menu.actions.shapeRuleActions.map((rule) => (
-            <DropdownMenuItem
-              key={rule.uri}
-              onSelect={() => onOpenShapeRule?.(rule.uri)}
-            >
-              {rule.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  )
 }
 
 export function StructuredPendingPredicateHeaderCell({

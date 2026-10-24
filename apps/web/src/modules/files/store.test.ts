@@ -19,6 +19,7 @@ beforeEach(() => {
     structuredViewConfigsByDocument: {},
     structuredViewDirtyDocuments: new Set<string>(),
     structuredColumnSizingByDocument: {},
+    structuredColumnViewByDocument: {},
     structuredWhiteboardLayoutsByDocument: {},
     structuredWhiteboardSubjectsByDocument: {},
     structuredWhiteboardRelationsByDocument: {},
@@ -116,6 +117,68 @@ describe('files store whiteboard layout persistence', () => {
     expect(useFilesStore.getState().structuredKanbanOrderByDocument[stateUri]).toEqual({
       'read/write': ['#Other', '#Workspace'],
     })
+  })
+
+  it('keeps what the person did to a table\'s columns with that table and saves it with the view', () => {
+    const stateUri = 'https://pod.example/.data/state.ttl'
+    const otherUri = 'https://pod.example/.data/other.ttl'
+    useFilesStore.getState().selectFile(stateUri)
+
+    useFilesStore.getState().setStructuredColumnView(stateUri, (current) => ({
+      ...current,
+      filters: [{ predicate: 'status', kind: 'values', values: ['进行中'] }],
+      labels: { status: '进度' },
+      removed: ['note'],
+    }))
+
+    expect(useFilesStore.getState().structuredColumnViewByDocument[stateUri]).toEqual({
+      filters: [{ predicate: 'status', kind: 'values', values: ['进行中'] }],
+      labels: { status: '进度' },
+      removed: ['note'],
+    })
+    // Another table is not affected ...
+    expect(useFilesStore.getState().structuredColumnViewByDocument[otherUri]).toBeUndefined()
+    // ... and the view is saved on this device, so it is still there after a reload.
+    const saved = JSON.parse(localStorage.getItem('linx.files.structuredViewConfigs.v1') ?? '{}')
+    expect(saved[stateUri].columnView).toEqual({
+      filters: [{ predicate: 'status', kind: 'values', values: ['进行中'] }],
+      labels: { status: '进度' },
+      removed: ['note'],
+    })
+
+    useFilesStore.getState().setStructuredColumnView(stateUri, { filters: [], labels: {}, removed: [] })
+    expect(useFilesStore.getState().structuredViewConfigsByDocument[stateUri]?.columnView).toEqual({ filters: [], labels: {}, removed: [] })
+  })
+
+  it('hydrates saved column filters, names and removed columns, and tolerates metadata saved before they existed', () => {
+    const documentUri = 'https://pod.example/.data/state.ttl'
+    const base = {
+      documentUri,
+      viewMode: 'table' as const,
+      openViews: [],
+      classScope: null,
+      searchText: '',
+      sortKey: null,
+      sortDirection: 'asc' as const,
+      hiddenPredicates: [],
+      kanbanGroupPredicate: null,
+      kanbanOrder: {},
+      columnSizing: {},
+      whiteboard: { selectedSubjects: [], positions: {} },
+    }
+
+    useFilesStore.getState().hydrateStructuredViewMetadata({
+      ...base,
+      columnView: { filters: [{ predicate: 'amount', kind: 'range', min: '10', max: null }], labels: { amount: '金额' }, removed: [] },
+    }, `${documentUri}::layout`)
+    expect(useFilesStore.getState().structuredColumnViewByDocument[documentUri]).toEqual({
+      filters: [{ predicate: 'amount', kind: 'range', min: '10', max: null }],
+      labels: { amount: '金额' },
+      removed: [],
+    })
+
+    useFilesStore.getState().hydrateStructuredViewMetadata(base as never, `${documentUri}::layout`)
+    expect(useFilesStore.getState().structuredColumnViewByDocument[documentUri]).toEqual({ filters: [], labels: {}, removed: [] })
   })
 
   it('accumulates opened structured views and restores them per document', () => {

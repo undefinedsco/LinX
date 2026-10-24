@@ -37,9 +37,14 @@ test.describe('Files table and 看板 browser interactions', () => {
       .slice(1)
       .map((text) => text.match(/^(Alpha|Beta|Gamma|Delta|Eps)/)?.[1])
       .filter(Boolean)
-    await page.getByRole('button', { name: '按 点数 排序' }).click()
+    // (R6 K6d: the header opens the column's menu; 按它排序 picks the direction.)
+    await page.getByRole('button', { name: '点数 列菜单' }).click()
+    await page.getByRole('menuitem', { name: '按它排序' }).click()
+    await page.getByRole('menuitem', { name: '升序（小到大）' }).click()
     await expect.poll(rowNames).toEqual(['Delta', 'Beta', 'Eps', 'Alpha', 'Gamma'])
-    await page.getByRole('button', { name: '按 点数 排序' }).click()
+    await page.getByRole('button', { name: '点数 列菜单' }).click()
+    await page.getByRole('menuitem', { name: '按它排序' }).click()
+    await page.getByRole('menuitem', { name: '降序（大到小）' }).click()
     await expect.poll(rowNames).toEqual(['Gamma', 'Alpha', 'Eps', 'Beta', 'Delta'])
 
     // The sort menu uses the same names as the headers.
@@ -80,6 +85,8 @@ test.describe('Files table and 看板 browser interactions', () => {
 
     // A card move is a real write: it survives a reload.
     await expect.poll(async () => podText(page, board.resourceUri), { timeout: 30_000 }).toMatch(/Alpha[\s\S]*?"进行中"/)
+    // The view is saved a moment after the last change (autosave debounce).
+    await page.waitForTimeout(2000)
     await page.reload()
     await openTable(page, board)
     // The 看板 view and its grouping are saved with the table: it reopens as a board.

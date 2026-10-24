@@ -71,6 +71,8 @@ export interface LockedVocabRegistryRow {
   maxCount?: string
   datatype?: string
   pattern?: string
+  /** When the term or rule was written (ISO time); columns are listed in the order they were added. */
+  created?: string
   prefix: string
   namespace: string
 }
@@ -84,6 +86,8 @@ export interface StructuredVocabShapeRuleDefinition {
   maxCount?: number
   datatype?: string
   pattern?: string
+  /** ISO time the rule was written. */
+  created?: string
   status: string
 }
 
@@ -442,6 +446,11 @@ function vocabTermRdfClass(termKind: VocabTermProposal['termKind']): string {
   }
 }
 
+/** The address of the rule that scopes a column to a table; `-<table>` is added when the column already has one. */
+export function vocabShapeRuleUri(proposal: VocabTermProposal): string {
+  return shapeRuleUri(proposal)
+}
+
 function shapeRuleUri(proposal: VocabTermProposal): string {
   const local = localTermName(proposal.termUri)
     .trim()
@@ -493,9 +502,17 @@ function renderApprovedVocabShapeNTriples(proposal: VocabTermProposal, ruleUri: 
   return lines.join('\n')
 }
 
-export function renderApprovedVocabShapeProposalNTriples(proposal: VocabTermProposal): string {
-  if (!proposal.shape.trim()) return ''
-  return renderApprovedVocabShapeNTriples(proposal, shapeRuleUri(proposal))
+/**
+ * Only a property (a column) gets a rule that scopes it to a table. A type or an option has none:
+ * with one, it would be listed as a column of the table it belongs to.
+ */
+function vocabTermHasShapeRule(proposal: VocabTermProposal): boolean {
+  return proposal.termKind === 'predicate' && !!proposal.shape.trim()
+}
+
+export function renderApprovedVocabShapeProposalNTriples(proposal: VocabTermProposal, ruleUri?: string): string {
+  if (!vocabTermHasShapeRule(proposal)) return ''
+  return renderApprovedVocabShapeNTriples(proposal, ruleUri ?? shapeRuleUri(proposal))
 }
 
 export function applyApprovedVocabTermProposalToTurtle(sourceText: string, proposal: VocabTermProposal): string {
@@ -534,7 +551,7 @@ export function applyApprovedVocabTermProposalToTurtle(sourceText: string, propo
 }
 
 export function applyApprovedVocabShapeProposalToTurtle(sourceText: string, proposal: VocabTermProposal): string {
-  if (!proposal.shape.trim()) return sourceText
+  if (!vocabTermHasShapeRule(proposal)) return sourceText
 
   const ruleUri = shapeRuleUri(proposal)
   if (sourceText.includes(`<${ruleUri}>`) || sourceText.includes(ruleUri)) {
@@ -1384,6 +1401,7 @@ export function projectStructuredVocabSchemaColumns<TProjection extends Structur
   classScope: string | null,
 ): TProjection {
   const predicates = [...projection.predicates]
+  const appendedRules = new Map<string, readonly StructuredVocabShapeRuleDefinition[]>()
   const seenKeys = new Set<string>()
   const seenRuleUris = new Set<string>()
 
@@ -1407,6 +1425,7 @@ export function projectStructuredVocabSchemaColumns<TProjection extends Structur
     }
     if (hasPredicateAlias(predicate)) return
     predicates.push(predicate)
+    appendedRules.set(predicate, activeRules)
     markPredicate(predicate)
   }
 
@@ -1426,6 +1445,22 @@ export function projectStructuredVocabSchemaColumns<TProjection extends Structur
 
   for (const [predicate, rules] of vocabDefinitionIndex.shapesByTerm.entries()) {
     appendPredicate(predicate, rules)
+  }
+
+  // Observed columns come back sorted by address and the registry lists terms in no particular order,
+  // so columns the person added would shuffle as soon as a value is written. They keep the order they
+  // were added in: the dated columns are put back, oldest first, into the places dated columns hold
+  // (columns without a time stay where they are).
+  const createdOf = (predicate: string) => {
+    const rules = appendedRules.get(predicate) ?? lookupPredicateDefinition(vocabDefinitionIndex, predicate)?.shapeRules ?? []
+    return rules.map((rule) => rule.created).filter((created): created is string => !!created).sort()[0] ?? null
+  }
+  const dated = predicates
+    .map((predicate, index) => ({ predicate, index, created: createdOf(predicate) }))
+    .filter((entry): entry is { predicate: string; index: number; created: string } => entry.created !== null)
+  if (dated.length > 1) {
+    const inOrder = [...dated].sort((left, right) => left.created.localeCompare(right.created) || left.index - right.index)
+    dated.forEach((slot, position) => { predicates[slot.index] = inOrder[position]!.predicate })
   }
 
   return {
@@ -1579,6 +1614,10 @@ const VOCAB_FIELD_ALIASES = {
     'udfs:pattern',
     'https://undefineds.co/vocab/pattern',
   ],
+  created: [
+    'dcterms:created',
+    'http://purl.org/dc/terms/created',
+  ],
   prefix: [
     'sh:prefix',
     'http://www.w3.org/ns/shacl#prefix',
@@ -1717,6 +1756,7 @@ export function projectLockedVocabRegistryRows(
     const maxCount = firstRegistryValue(cells, VOCAB_FIELD_ALIASES.maxCount)
     const datatype = firstRegistryValue(cells, VOCAB_FIELD_ALIASES.datatype)
     const pattern = firstRegistryValue(cells, VOCAB_FIELD_ALIASES.pattern)
+    const created = firstRegistryValue(cells, VOCAB_FIELD_ALIASES.created)
     return {
       registryKind: resolvedRegistryKind,
       uri: row.subject,
@@ -1734,6 +1774,7 @@ export function projectLockedVocabRegistryRows(
       ...(maxCount ? { maxCount } : {}),
       ...(datatype ? { datatype } : {}),
       ...(pattern ? { pattern } : {}),
+      ...(created ? { created } : {}),
       prefix: firstRegistryValue(cells, VOCAB_FIELD_ALIASES.prefix),
       namespace: firstRegistryValue(cells, VOCAB_FIELD_ALIASES.namespace),
     }
@@ -1772,6 +1813,7 @@ function shapeRuleFromRegistryRow(row: LockedVocabRegistryRow): StructuredVocabS
     ...(maxCount !== null ? { maxCount } : {}),
     ...(row.datatype ? { datatype: row.datatype } : {}),
     ...(row.pattern ? { pattern: row.pattern } : {}),
+    ...(row.created ? { created: row.created } : {}),
     status: row.status || 'active',
   }
 }

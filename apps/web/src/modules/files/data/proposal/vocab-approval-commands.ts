@@ -13,10 +13,12 @@ import {
   FILES_VOCAB_APPROVAL_TOOL_NAME,
   parseVocabTermProposalTurtle,
   renderApprovedVocabShapeProposalNTriples,
+  vocabShapeRuleUri,
   renderApprovedVocabTermNTriples,
   type VocabTermProposal,
 } from '../../domain/structured/structured-table'
 import { stripProposalFragment } from '../../domain/proposal/proposal-status'
+import { hashText } from '../../domain/history/text-hash'
 
 function resolveRequiredPodBaseUrl(db: SolidDatabase): string {
   const podBaseUrl = resolveCurrentPodBaseUrl(db)
@@ -158,7 +160,11 @@ function renderVocabNamespacesRegistrySkeleton(): string {
   ].join('\n')
 }
 
-function assertVocabProposalTargetsCurrentPod(db: SolidDatabase, proposal: VocabTermProposal): void {
+function assertVocabProposalTargetsCurrentPod(
+  db: SolidDatabase,
+  proposal: VocabTermProposal,
+  options: { documentAnywhereInPod?: boolean } = {},
+): void {
   const podBaseUrl = resolveRequiredPodBaseUrl(db)
   const podPrefix = `${podBaseUrl}/`
   const proposalResourceUri = normalizeAbsoluteIri(proposal.proposalResourceUri)
@@ -170,7 +176,8 @@ function assertVocabProposalTargetsCurrentPod(db: SolidDatabase, proposal: Vocab
 
   const valid =
     proposalResourceUri.startsWith(`${podPrefix}.data/proposals/vocab/`) &&
-    documentUri.startsWith(`${podPrefix}.data/`) &&
+    // A table the person made can live in any folder of their Pod; only agent proposals are kept under .data.
+    documentUri.startsWith(options.documentAnywhereInPod ? podPrefix : `${podPrefix}.data/`) &&
     targetVocabUri.startsWith(podPrefix) &&
     targetVocabUri.endsWith('/.vocab/terms.ttl') &&
     targetShapesUri === expectedShapesUri &&
@@ -195,6 +202,9 @@ export async function approveVocabTermProposalFromInbox(
   const proposalResource = await readRawTextResource(db, proposalResourceUri)
   const proposal = parseVocabTermProposalTurtle(proposalResource.content, proposalResource.uri)
   assertVocabProposalTargetsCurrentPod(db, proposal)
+  // A column the person kept from the table is already in the vocabulary; its old inbox item can
+  // still be approved to close it, instead of failing on "already approved".
+  if (proposal.status === 'approved') return proposal
   assertVocabProposalPending(proposal)
   await approveVocabTermProposalCanonical(db, proposal)
   return proposal
@@ -311,28 +321,96 @@ async function patchVocabRegistryResource(
   }
 }
 
+/** Whether a registry already names this address (as a full address or as `<#fragment>` in Turtle). */
+function registryMentions(content: string, uri: string): boolean {
+  const fragment = uri.includes('#') ? uri.slice(uri.lastIndexOf('#')) : null
+  return content.includes(`<${uri}>`) || (!!fragment && content.includes(`<${fragment}>`))
+}
+
 export async function approveVocabTermProposalCanonical(
   db: SolidDatabase,
   proposal: VocabTermProposal,
+  options: { documentAnywhereInPod?: boolean } = {},
 ): Promise<{ termUri: string; shapesUri: string | null }> {
-  assertVocabProposalTargetsCurrentPod(db, proposal)
+  assertVocabProposalTargetsCurrentPod(db, proposal, options)
   assertVocabProposalPending(proposal)
   await assertVocabPublishWritable(db, proposal)
-  await ensureVocabRegistryResource(db, proposal.targetVocabUri, renderVocabTermsRegistrySkeleton())
-  await ensureVocabRegistryResource(db, proposal.targetShapesUri, renderVocabShapesRegistrySkeleton())
+  const termsRegistry = await ensureVocabRegistryResource(db, proposal.targetVocabUri, renderVocabTermsRegistrySkeleton())
+  const shapesRegistry = await ensureVocabRegistryResource(db, proposal.targetShapesUri, renderVocabShapesRegistrySkeleton())
   await ensureVocabRegistryResource(
     db,
     siblingVocabResourceUri(proposal.targetVocabUri, 'namespaces.ttl'),
     renderVocabNamespacesRegistrySkeleton(),
   )
 
-  await patchVocabRegistryResource(db, proposal.targetVocabUri, renderApprovedVocabTermNTriples(proposal))
+  // A property is shared by every table: a second table that uses it adds its own rule, not a second term.
+  if (!registryMentions(termsRegistry.content, proposal.termUri)) {
+    await patchVocabRegistryResource(db, proposal.targetVocabUri, renderApprovedVocabTermNTriples(proposal))
+  }
 
-  if (!proposal.shape.trim()) {
+  const baseRuleUri = vocabShapeRuleUri(proposal)
+  const ruleUri = registryMentions(shapesRegistry.content, baseRuleUri)
+    ? `${baseRuleUri}-${hashText(proposal.classScope ?? 'any').slice(0, 7)}`
+    : baseRuleUri
+  const shapeTriples = registryMentions(shapesRegistry.content, ruleUri)
+    ? ''
+    : renderApprovedVocabShapeProposalNTriples(proposal, ruleUri)
+  if (!shapeTriples) {
     return { termUri: proposal.termUri, shapesUri: null }
   }
 
-  await patchVocabRegistryResource(db, proposal.targetShapesUri, renderApprovedVocabShapeProposalNTriples(proposal))
+  await patchVocabRegistryResource(db, proposal.targetShapesUri, shapeTriples)
 
   return { termUri: proposal.termUri, shapesUri: proposal.targetShapesUri }
+}
+
+function sparqlStringLiteral(value: string): string {
+  return JSON.stringify(value)
+}
+
+async function runVocabRegistryUpdate(db: SolidDatabase, uri: string, update: string): Promise<void> {
+  const response = await getAuthenticatedFetch(db)(uri, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/sparql-update' },
+    body: update,
+  })
+  if (!response.ok) {
+    throw new Error(`Cannot update vocab term in ${uri}: HTTP ${response.status}`)
+  }
+}
+
+/**
+ * K6d 改值的类型: the property keeps its name and address, only what it holds changes. The new type
+ * is written to the term and to the rules that scope it to a table, so every table that uses the
+ * property sees it. Values already on cards are not touched.
+ */
+export async function changeVocabTermValueType(
+  db: SolidDatabase,
+  input: { termUri: string; targetVocabUri: string; valueType: string; shape: string },
+): Promise<void> {
+  const podBaseUrl = resolveRequiredPodBaseUrl(db)
+  const termUri = normalizeAbsoluteIri(input.termUri)
+  const targetVocabUri = normalizeAbsoluteIri(input.targetVocabUri)
+  if (
+    !targetVocabUri.startsWith(`${podBaseUrl}/`)
+    || !targetVocabUri.endsWith('/.vocab/terms.ttl')
+    || !termUri.startsWith(`${targetVocabUri}#`)
+  ) {
+    throw new Error('Refusing to change a vocab term outside the current Pod vocab registry.')
+  }
+  const shapesUri = siblingVocabResourceUri(targetVocabUri, 'shapes.ttl')
+  const valueType = sparqlStringLiteral(input.valueType)
+  const shape = sparqlStringLiteral(input.shape)
+
+  await runVocabRegistryUpdate(db, targetVocabUri, [
+    'DELETE { <' + termUri + '> <https://undefineds.co/vocab/valueType> ?v . <' + termUri + '> <https://undefineds.co/vocab/shape> ?s }',
+    'INSERT { <' + termUri + '> <https://undefineds.co/vocab/valueType> ' + valueType + ' . <' + termUri + '> <https://undefineds.co/vocab/shape> ' + shape + ' }',
+    'WHERE { OPTIONAL { <' + termUri + '> <https://undefineds.co/vocab/valueType> ?v } OPTIONAL { <' + termUri + '> <https://undefineds.co/vocab/shape> ?s } }',
+  ].join('\n'))
+
+  await runVocabRegistryUpdate(db, shapesUri, [
+    'DELETE { ?r <https://undefineds.co/vocab/valueType> ?v . ?r <https://undefineds.co/vocab/constraint> ?c }',
+    'INSERT { ?r <https://undefineds.co/vocab/valueType> ' + valueType + ' . ?r <https://undefineds.co/vocab/constraint> ' + shape + ' }',
+    'WHERE { ?r <https://undefineds.co/vocab/term> <' + termUri + '> . OPTIONAL { ?r <https://undefineds.co/vocab/valueType> ?v } OPTIONAL { ?r <https://undefineds.co/vocab/constraint> ?c } }',
+  ].join('\n'))
 }

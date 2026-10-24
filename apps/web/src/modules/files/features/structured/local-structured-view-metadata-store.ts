@@ -1,5 +1,6 @@
 import {
   normalizeStructuredColumnSizing,
+  normalizeStructuredColumnView,
   normalizeStructuredKanbanOrder,
   normalizeStructuredOpenViews,
   normalizeStructuredSortDirection,
@@ -44,6 +45,7 @@ function normalizeStoredMetadata(value: unknown, documentUri: string): Required<
       ? candidate.kanbanBoard as StructuredViewMetadata['kanbanBoard'] ?? null
       : null,
     columnSizing: normalizeStructuredColumnSizing(candidate.columnSizing),
+    columnView: normalizeStructuredColumnView(candidate.columnView),
     whiteboard: {
       selectedSubjects: Array.isArray(whiteboard.selectedSubjects) ? whiteboard.selectedSubjects : [],
       positions: whiteboard.positions ?? {},

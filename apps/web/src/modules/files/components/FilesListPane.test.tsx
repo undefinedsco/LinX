@@ -73,6 +73,7 @@ vi.mock('../data/queries', () => ({
   useCreateBlobResource: () => mockUseCreateBlobResource(),
   useCreateFolderResource: () => mockUseCreateFolderResource(),
   useCreateVocabTermProposalInboxApproval: () => ({ mutateAsync: vi.fn() }),
+  useConfirmVocabTerm: () => ({ mutateAsync: vi.fn() }),
   useFilesCurrentPodRootUri: () => 'https://pod.example/',
 }))
 

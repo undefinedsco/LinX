@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_STRUCTURED_VIEW_CONFIG,
+  normalizeStructuredColumnView,
   normalizeStructuredKanbanBoardMetadata,
   normalizeStructuredViewConfig,
   normalizeStructuredWhiteboardSnapshotMetadata,
@@ -43,7 +44,34 @@ describe('structured view metadata model', () => {
       columnSizing: {
         subject: 165,
       },
+      columnView: { filters: [], labels: {}, removed: [] },
     })
+  })
+
+  it('keeps what the person did to a table\'s columns and drops anything malformed', () => {
+    expect(normalizeStructuredColumnView({
+      filters: [
+        { predicate: 'status', kind: 'values', values: ['进行中', '', '进行中', 3] },
+        { predicate: 'status', kind: 'contains', text: 'later duplicate for the same column' },
+        { predicate: 'amount', kind: 'range', min: ' 10 ', max: '' },
+        { predicate: 'note', kind: 'contains', text: '   ' },
+        { predicate: 'due', kind: 'empty', empty: false },
+        { predicate: 'broken', kind: 'unknown' },
+        'nonsense',
+      ],
+      labels: { status: ' 进度 ', amount: '   ', due: 42 },
+      removed: ['old', 'old', '', 7],
+    })).toEqual({
+      filters: [
+        { predicate: 'status', kind: 'values', values: ['进行中'] },
+        { predicate: 'amount', kind: 'range', min: '10', max: null },
+        { predicate: 'due', kind: 'empty', empty: false },
+      ],
+      labels: { status: '进度' },
+      removed: ['old'],
+    })
+    expect(normalizeStructuredColumnView(undefined)).toEqual({ filters: [], labels: {}, removed: [] })
+    expect(normalizeStructuredViewConfig({ columnView: { removed: ['a'] } })?.columnView.removed).toEqual(['a'])
   })
 
   it('falls back invalid stored view config values to the default table config', () => {

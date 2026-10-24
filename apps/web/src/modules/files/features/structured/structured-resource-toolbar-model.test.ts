@@ -142,6 +142,7 @@ describe('projectStructuredResourceToolbarModel', () => {
         label: '视图',
       },
       filterSectionLabels: {
+        columnValue: '按列的值',
         subject: '行',
         namespace: '列 · 命名空间',
         predicateType: '列 · 值的类型',
@@ -360,6 +361,7 @@ describe('projectStructuredResourceToolbarModel', () => {
       label: '视图',
     })
     expect(model.filterSectionLabels).toEqual({
+      columnValue: '按列的值',
       subject: '行',
       namespace: '列 · 命名空间',
       predicateType: '列 · 值的类型',
@@ -396,5 +398,33 @@ describe('projectStructuredResourceToolbarModel', () => {
     expect(model.namespaceFilterRows).toEqual([
       { value: null, label: '全部命名空间', checked: true },
     ])
+  })
+
+  it('marks the filter tool while rows are filtered by a column\'s value', () => {
+    const input = {
+      availablePredicateNamespaces: [],
+      classCreateOpen: false,
+      classDefinitionOpen: false,
+      classOptions: [],
+      hiddenPredicates: new Set<string>(),
+      openViews: [],
+      pendingWritesOnly: false,
+      predicateNamespaceFilter: null,
+      predicateTypeFilter: 'all' as const,
+      schemaPredicateControls: [],
+      showNamespaces: false,
+      sourceUpdatesOnly: false,
+      structuredSortDirection: 'asc' as const,
+      structuredSortKey: null,
+      structuredWritesSupported: true,
+      viewMode: 'table' as const,
+      visiblePendingClassProposals: [],
+      vocabTermFilter: 'all' as const,
+      warningRowsOnly: false,
+    }
+
+    expect(projectStructuredResourceToolbarModel(input).hasActiveFilters).toBe(false)
+    expect(projectStructuredResourceToolbarModel({ ...input, columnFilterCount: 2 }).hasActiveFilters).toBe(true)
+    expect(projectStructuredResourceToolbarModel(input).filterSectionLabels.columnValue).toBe('按列的值')
   })
 })
