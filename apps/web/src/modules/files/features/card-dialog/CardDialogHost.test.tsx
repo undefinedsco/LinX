@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   texts: [] as Array<{ uri: string; title: string; text: string }>,
   citing: [] as Array<{ chatRef: string; chatId: string; title: string; count: number; quote: string | null; lastAt: string | null }>,
   selectChat: vi.fn(),
+  writeCell: vi.fn().mockResolvedValue(undefined),
+  confirmTerm: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/use-withdrawn-cards', () => ({
@@ -35,12 +37,17 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('../sidecars/ShareDialog', () => ({ ShareDialog: () => null }))
 vi.mock('../../data/queries', () => ({
   useFileDetail: () => mocks.detail(),
-  useRawTextResource: () => mocks.raw(),
+  // The vocabulary documents are not part of these cards.
+  useRawTextResource: (uri: string) => (uri.endsWith('/terms.ttl') || uri.endsWith('/shapes.ttl') || uri.endsWith('/namespaces.ttl')
+    ? { data: undefined, isLoading: false, isError: false, error: null }
+    : mocks.raw()),
+  useFilesVocabRegistryDiscovery: () => ({ data: undefined }),
+  useConfirmVocabTerm: () => ({ mutateAsync: mocks.confirmTerm }),
   useBlobResource: () => ({ data: undefined, isLoading: false }),
   useFilesCurrentPodRootUri: () => 'https://pod.example/',
   useFilesMetaSidecar: () => ({ data: undefined }),
   useSaveRawTextResource: () => ({ mutateAsync: mocks.saveRaw }),
-  useWriteOwnStructuredCellChange: () => ({ mutateAsync: vi.fn() }),
+  useWriteOwnStructuredCellChange: () => ({ mutateAsync: mocks.writeCell }),
   useCardHistoryAccess: () => mocks.history,
   useAiDraft: () => ({ data: null }),
   useCreateRawTextResource: () => ({ mutateAsync: vi.fn() }),
@@ -98,7 +105,7 @@ describe('CardDialogHost', () => {
     act(() => { useCardDialog.getState().open({ uri: DOC, locator: { page: 3 } }) })
     expect(await screen.findByText('第 3 页')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '上一张' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: '展开' }))
+    fireEvent.click(screen.getByRole('button', { name: '展开成整页' }))
     await waitFor(() => expect(useCardDialog.getState().request).toBeNull())
     expect(mocks.navigate).toHaveBeenCalled()
   })
@@ -155,7 +162,7 @@ describe('CardDialogHost', () => {
     render(<CardDialogHost />)
     act(() => { useCardDialog.getState().open({ uri: DOC, from: 'folder' }) })
     const section = await screen.findByLabelText('被引用')
-    expect(within(section).getByText('被引用 · 1 处')).toBeInTheDocument()
+    expect(screen.getByText(/被 1 处引用/)).toBeInTheDocument()
     expect(within(section).getByText('idea')).toBeInTheDocument()
     expect(within(section).getByText('来源')).toBeInTheDocument()
     expect(within(section).queryByText('other')).not.toBeInTheDocument()
@@ -180,7 +187,7 @@ describe('CardDialogHost', () => {
     render(<CardDialogHost />)
     act(() => { useCardDialog.getState().open({ uri: DOC }) })
     const section = await screen.findByLabelText('用过它的工作')
-    expect(within(section).getByText('用过它的工作 · 2 次')).toBeInTheDocument()
+    expect(screen.getByText(/用过它的工作 2 次/)).toBeInTheDocument()
     fireEvent.click(within(section).getByText('周报讨论'))
     expect(mocks.selectChat).toHaveBeenCalledWith('c1')
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'chat' } })
@@ -199,6 +206,16 @@ describe('CardDialogHost', () => {
       expect(title).toHaveFocus()
       expect(title).toHaveValue('')
       expect(screen.queryByLabelText('Subject')).not.toBeInTheDocument()
+    })
+
+    it('looks like an opened card: the title where the heading sits, then the body and properties places', async () => {
+      render(<CardDialogHost />)
+      open(vi.fn())
+      const title = await screen.findByLabelText('卡片标题')
+      expect(title).toHaveAttribute('data-card-title', 'true')
+      expect(title.className).toContain('text-2xl')
+      expect(screen.getByLabelText('属性')).toBeInTheDocument()
+      expect(screen.getByText('起好名字后，在这里写正文')).toBeInTheDocument()
     })
 
     it('creates the row from the title on Enter and carries on as that card', async () => {
@@ -246,6 +263,108 @@ describe('CardDialogHost', () => {
       fireEvent.change(title, { target: { value: '写周报' } })
       fireEvent.keyDown(title, { key: 'Escape' })
       await waitFor(() => expect(create).toHaveBeenCalledWith('写周报'))
+    })
+  })
+
+  describe('a row of a table', () => {
+    const TABLE = 'https://pod.example/cards/t.ttl'
+    const SOURCE = `@prefix schema: <http://schema.org/>.
+@prefix udfs: <https://undefineds.co/vocab/>.
+<#a> a schema:Thing; schema:name "周报"; schema:text "正文"; udfs:stage "进行中"; udfs:score 5; schema:url <https://a.example/>.
+<#b> a schema:Thing; schema:name "写稿"; udfs:stage "待办".`
+    const mockTable = (source = SOURCE) => {
+      mocks.detail.mockReturnValue({
+        data: {
+          id: TABLE, uri: TABLE, name: 't.ttl', kind: 'resource', semanticKind: 'structured-data',
+          parentUri: 'https://pod.example/cards/', mimeType: 'text/turtle', size: 100, modifiedAt: null, headers: {},
+        },
+        isLoading: false, isError: false, error: null, refetch: vi.fn(),
+      })
+      mocks.raw.mockReturnValue({
+        data: { uri: TABLE, content: source, mimeType: 'text/turtle', etag: 'e1', headers: {} },
+        isLoading: false, isError: false, error: null, refetch: vi.fn(),
+      })
+    }
+    const openCard = (id: string) => {
+      render(<CardDialogHost />)
+      act(() => { useCardDialog.getState().open({ uri: `${TABLE}#${id}`, from: 'table' }) })
+    }
+
+    it('lays the table columns out as label and value, without the body as a property', async () => {
+      mockTable()
+      openCard('a')
+      const section = await screen.findByLabelText('属性')
+      expect(within(section).getByText('Stage')).toBeInTheDocument()
+      expect(within(section).getByLabelText('Stage')).toHaveValue('进行中')
+      expect(within(section).getByLabelText('Score')).toHaveValue(5)
+      expect(within(section).queryByText('Text')).not.toBeInTheDocument()
+      expect(within(section).queryByText('正文')).not.toBeInTheDocument()
+      expect(within(section).getByRole('link', { name: /a\.example/ })).toHaveAttribute('href', 'https://a.example/')
+      expect(within(section).getByRole('button', { name: '+ 属性' })).toBeInTheDocument()
+    })
+
+    it('also shows the columns this card has no value for', async () => {
+      mockTable()
+      openCard('b')
+      const section = await screen.findByLabelText('属性')
+      expect(within(section).getByLabelText('Score')).toHaveValue('')
+    })
+
+    it('writes an edited property straight into the row', async () => {
+      mockTable()
+      openCard('a')
+      const stage = await screen.findByLabelText('Stage')
+      fireEvent.change(stage, { target: { value: '完成' } })
+      fireEvent.blur(stage)
+      await waitFor(() => expect(mocks.writeCell).toHaveBeenCalledWith(expect.objectContaining({
+        documentUri: TABLE,
+        subject: `${TABLE}#a`,
+        predicate: 'https://undefineds.co/vocab/stage',
+        previousValues: ['"进行中"'],
+        nextValues: ['"完成"'],
+      })))
+      const score = screen.getByLabelText('Score')
+      fireEvent.change(score, { target: { value: '8' } })
+      fireEvent.blur(score)
+      await waitFor(() => expect(mocks.writeCell).toHaveBeenCalledWith(expect.objectContaining({
+        predicate: 'https://undefineds.co/vocab/score',
+        previousValues: ['5'],
+        nextValues: ['8'],
+      })))
+    })
+
+    it('adds a column to the table from + 属性 and offers it at once', async () => {
+      mockTable()
+      openCard('a')
+      fireEvent.click(await screen.findByRole('button', { name: '+ 属性' }))
+      fireEvent.change(screen.getByLabelText('属性名'), { target: { value: '负责人' } })
+      fireEvent.keyDown(screen.getByLabelText('属性名'), { key: 'Enter' })
+      await waitFor(() => expect(mocks.confirmTerm).toHaveBeenCalledTimes(1))
+      const { proposal } = mocks.confirmTerm.mock.calls[0]![0]
+      expect(proposal).toMatchObject({ termKind: 'predicate', label: '负责人', classScope: 'schema:Thing', documentUri: TABLE })
+      expect(await screen.findByLabelText('负责人')).toHaveValue('')
+      expect(screen.queryByLabelText('属性名')).not.toBeInTheDocument()
+    })
+
+    it('takes the new column back when the vocabulary refuses it', async () => {
+      mockTable()
+      mocks.confirmTerm.mockRejectedValueOnce(new Error('no'))
+      openCard('a')
+      fireEvent.click(await screen.findByRole('button', { name: '+ 属性' }))
+      fireEvent.change(screen.getByLabelText('属性名'), { target: { value: '负责人' } })
+      fireEvent.keyDown(screen.getByLabelText('属性名'), { key: 'Enter' })
+      await waitFor(() => expect(mocks.confirmTerm).toHaveBeenCalled())
+      await waitFor(() => expect(screen.queryByLabelText('负责人')).not.toBeInTheDocument())
+    })
+
+    it('says "被 N 处引用 · 用过它的工作 N 次" in one line above the lists', async () => {
+      mockTable()
+      mocks.citing = [{ chatRef: 'c1', chatId: 'c1', title: '周报讨论', count: 4, quote: null, lastAt: null }]
+      mocks.texts = [{ uri: 'https://pod.example/摘录/idea.md', title: 'idea.md', text: `来源：[周报](${TABLE}#a)` }]
+      openCard('a')
+      const summary = await screen.findByText(/被 1 处引用 · 用过它的工作 4 次/)
+      const list = await screen.findByLabelText('被引用')
+      expect(summary.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
   })
 

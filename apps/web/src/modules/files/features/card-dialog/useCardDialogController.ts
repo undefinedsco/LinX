@@ -20,6 +20,7 @@ import {
   useCardHistoryAccess,
   useFilesSelectChat,
   useWriteOwnStructuredCellChange,
+  useConfirmVocabTerm,
 } from '../../data/queries'
 import {
   CARD_PREVIEW_MAX_BYTES,
@@ -31,6 +32,10 @@ import {
   projectCardQuotedPrompt,
   planCardBodyWrite,
   planCardValueWrite,
+  planCardColumnWrite,
+  projectCardColumns,
+  projectCardRowClass,
+  type CardColumnModel,
   projectCardDocumentOverview,
   projectCardFileProperties,
   projectCardKind,
@@ -54,6 +59,9 @@ import type { CardBacklink } from '../../domain/card/card-backlinks'
 import { displayResourceName, getEntryName } from '../../domain/resource/resource-semantics'
 import { projectStructuredResourceTable } from '../../domain/structured/structured-table'
 import { useCardBacklinks, type CardWorkUseRow } from './useCardBacklinks'
+import { supportsStructuredWriteProposals } from '../../domain/structured/structured-write-capability'
+import { planCardNewProperty } from './card-new-property-model'
+import { useStructuredVocabContext } from '../structured/useStructuredVocabContext'
 
 export function useCardDialogController(request: CardDialogRequest) {
   const { toast } = useToast()
@@ -77,6 +85,8 @@ export function useCardDialogController(request: CardDialogRequest) {
   const aiDraft = aiDraftQuery.data ?? null
   const actOnAiDraft = useActOnAiDraft()
   const writeOwnCell = useWriteOwnStructuredCellChange()
+  const confirmVocabTerm = useConfirmVocabTerm()
+  const [addedColumns, setAddedColumns] = useState<CardColumnModel[]>([])
   const [saveStatus, setSaveStatus] = useState<CardSaveStatus>('idle')
   const [accessOpen, setAccessOpen] = useState(false)
   const historyAccess = useCardHistoryAccess()
@@ -85,6 +95,7 @@ export function useCardDialogController(request: CardDialogRequest) {
   const [historyError, setHistoryError] = useState(false)
 
   useEffect(() => { setSaveStatus('idle') }, [request.uri])
+  useEffect(() => { setAddedColumns([]) }, [target.documentUri])
 
   const projection = useMemo(() => {
     if ((kind !== 'subject' && kind !== 'table') || !rawQuery.data) return null
@@ -111,6 +122,19 @@ export function useCardDialogController(request: CardDialogRequest) {
   const openSubject = useCallback((uri: string) => {
     openCard({ ...request, uri, locator: undefined, siblings: listedUris })
   }, [listedUris, openCard, request])
+
+  // The table's columns, with the vocabulary that names and types them (read only for a table row).
+  const vocab = useStructuredVocabContext({ documentUri: target.documentUri, enabled: kind === 'subject' || kind === 'table' })
+  const tableColumns = useMemo(() => (
+    projection && subject
+      ? projectCardColumns({ projection, documentUri: target.documentUri, subject, vocabDefinitionIndex: vocab.vocabDefinitionIndex })
+      : []
+  ), [projection, subject, target.documentUri, vocab.vocabDefinitionIndex])
+  /** Columns added from this card show at once, until the table's own list has caught up. */
+  const columns = useMemo(
+    () => [...tableColumns, ...addedColumns.filter((added) => !tableColumns.some((column) => column.predicate === added.predicate))],
+    [addedColumns, tableColumns],
+  )
 
   const fileProperties = useMemo(() => {
     if (!metaQuery.data?.content || !detail) return null
@@ -238,6 +262,52 @@ export function useCardDialogController(request: CardDialogRequest) {
     }))
     recordVersion(subjectSnapshot({ predicate: property.predicate, tokens: plan.nextValues }), subjectSnapshot())
   }, [rawQuery.data?.etag, recordVersion, subject, subjectSnapshot, target.documentUri, track, writeOwnCell])
+
+  /** Edits a column's value with the table's editor: written straight into the row. */
+  const saveSubjectColumn = useCallback(async (column: CardColumnModel, nextTokens: string[]) => {
+    if (!subject || !projection) return
+    const plan = planCardColumnWrite({ column, nextTokens, documentUri: target.documentUri, prefixes: projection.prefixes })
+    if (!plan) return
+    await track(() => writeOwnCell.mutateAsync({
+      documentUri: target.documentUri,
+      subject: subject.subjectIri,
+      predicate: column.predicate,
+      previousValues: plan.previousValues,
+      nextValues: plan.nextValues,
+      expectedEtag: rawQuery.data?.etag ?? null,
+    }))
+    recordVersion(subjectSnapshot({ predicate: column.predicate, tokens: plan.nextValues }), subjectSnapshot())
+  }, [projection, rawQuery.data?.etag, recordVersion, subject, subjectSnapshot, target.documentUri, track, writeOwnCell])
+
+  /** "+ 属性": adds a column to the table through the vocabulary; resolves true when it is usable. */
+  const addColumn = useCallback(async (label: string, type: string): Promise<boolean> => {
+    if (!subject || !projection) return false
+    const plan = planCardNewProperty({
+      label,
+      type,
+      documentUri: target.documentUri,
+      classScope: projectCardRowClass(projection, target.documentUri, subject.subjectIri),
+      existingPredicates: columns.map((column) => column.predicate),
+      currentPodRootUri: vocab.currentPodRootUri,
+      targetVocabUri: vocab.vocabTermsUri,
+      targetShapesUri: vocab.vocabShapesUri,
+      vocabNamespaces: vocab.vocabDefinitionIndex.namespaces,
+    })
+    if (!plan.ok) {
+      toast({ title: plan.reason === 'duplicate' ? '已经有这个属性了' : '先给属性起个名字', variant: 'destructive' })
+      return false
+    }
+    // Optimistic: usable at once; taken back if the vocabulary refuses it.
+    setAddedColumns((current) => [...current, plan.column])
+    try {
+      await confirmVocabTerm.mutateAsync({ proposal: plan.proposal })
+      return true
+    } catch {
+      setAddedColumns((current) => current.filter((column) => column.predicate !== plan.column.predicate))
+      toast({ title: '没能加上这个属性，稍后再试', variant: 'destructive' })
+      return false
+    }
+  }, [columns, confirmVocabTerm, projection, subject, target.documentUri, toast, vocab])
 
   const openHistory = useCallback(async () => {
     setHistoryOpen(true)
@@ -385,6 +455,10 @@ export function useCardDialogController(request: CardDialogRequest) {
     saveDocumentText,
     saveSubjectBody,
     saveSubjectProperty,
+    columns,
+    canAddColumn: Boolean(subject) && supportsStructuredWriteProposals({ uri: target.documentUri, mimeType: rawQuery.data?.mimeType }),
+    saveSubjectColumn,
+    addColumn,
     goTo,
     expand,
     close: closeDialog,

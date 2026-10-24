@@ -52,18 +52,22 @@ export function NewCardDialog({ request, draft }: { request: CardDialogRequest; 
         data-card-draft="true"
         className="flex max-h-[820px] w-[min(960px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden rounded-xl p-0"
       >
-        <header className="border-b border-border/40 py-2.5 pl-4 pr-12">
-          <DialogTitle className="text-sm font-medium">新卡片</DialogTitle>
-          <DialogDescription className="text-xs">起个名字，回车后就能写正文、加属性</DialogDescription>
+        {/* The same frame as an opened card (K2): bar on top, the title where the heading sits. */}
+        <header className="flex items-center gap-2 border-b border-border/40 py-2.5 pl-4 pr-12">
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="sr-only">新卡片</DialogTitle>
+            <DialogDescription className="truncate text-xs">新卡片 · 起个名字，回车后就能写正文、加属性</DialogDescription>
+          </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-7 sm:px-[72px]">
           <input
             autoFocus
             aria-label="卡片标题"
             placeholder="卡片标题"
             value={title}
             disabled={busy}
-            className="w-full bg-transparent text-2xl font-semibold outline-none placeholder:text-muted-foreground/50"
+            data-card-title="true"
+            className="mb-4 block w-full bg-transparent text-2xl font-semibold leading-tight outline-none placeholder:text-muted-foreground/50"
             onChange={(event) => { setTitle(event.target.value); setMessage(null) }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
@@ -72,8 +76,12 @@ export function NewCardDialog({ request, draft }: { request: CardDialogRequest; 
             }}
             onBlur={() => { void commit() }}
           />
-          {message ? <p role="alert" className="mt-2 text-xs text-destructive">{message}</p> : null}
-          <p className="mt-6 text-sm text-muted-foreground/70">正文和属性在起好名字之后填写。</p>
+          {message ? <p role="alert" className="mb-3 text-xs text-destructive">{message}</p> : null}
+          <p className="min-h-[200px] text-[15px] leading-[1.75] text-muted-foreground/60">起好名字后，在这里写正文</p>
+          <section className="mt-6 border-t border-border/40 pt-2" aria-label="属性">
+            <div className="pb-1 text-xs text-muted-foreground">属性</div>
+            <p className="py-1 text-sm text-muted-foreground/60">起好名字后，这张表的属性会出现在这里</p>
+          </section>
         </div>
       </DialogContent>
     </Dialog>
