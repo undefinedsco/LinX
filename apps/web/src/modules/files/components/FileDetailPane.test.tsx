@@ -8945,7 +8945,20 @@ describe('FileDetailPane', () => {
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
       // Exactly the row in the + 属性 menu: /tags/ also matched other buttons (e.g. the removal toast).
       fireEvent.click(within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' }))
-      expect(await screen.findByRole('button', { name: 'tags 列菜单' })).toBeInTheDocument()
+      try {
+        expect(await screen.findByRole('button', { name: 'tags 列菜单' })).toBeInTheDocument()
+      } catch (error) {
+        // CI-only failure: show what the table and the column view look like at this point.
+        console.error('[header-menu diagnose]', JSON.stringify({
+          headers: screen.queryAllByRole('columnheader').map((header) => header.textContent),
+          menus: screen.queryAllByRole('button').map((button) => button.getAttribute('aria-label')).filter((label) => label?.includes('列菜单')),
+          columnView: useFilesStore.getState().structuredColumnViewByDocument[documentUri],
+          hidden: [...useFilesStore.getState().structuredHiddenPredicates],
+          confirmCalls: mockConfirmVocabTerm.mock.calls.length,
+          openMenus: screen.queryAllByRole('menu').length,
+        }))
+        throw error
+      }
       expect(useFilesStore.getState().structuredColumnViewByDocument[documentUri]?.removed).toEqual([])
     })
 
