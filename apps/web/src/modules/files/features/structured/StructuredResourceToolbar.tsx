@@ -11,11 +11,13 @@ import {
   ListFilter,
   LoaderCircle,
   Network,
+  Redo2,
   Plus,
   Search,
   Table2,
   Tags,
   Text,
+  Undo2,
   X,
 } from 'lucide-react'
 
@@ -95,6 +97,7 @@ export function StructuredResourceToolbar({
   viewMetadataSaveStatus,
   viewMetadataSaveError,
   onRetryViewMetadataSave,
+  editHistory,
 }: {
   /** K6d 按它筛选: the columns whose values the 筛选 menu can filter rows by. */
   columnFilterMenu?: {
@@ -149,6 +152,15 @@ export function StructuredResourceToolbar({
   viewMetadataSaveStatus: 'synced' | 'dirty' | 'saving' | 'error'
   viewMetadataSaveError: string | null
   onRetryViewMetadataSave: () => void
+  /** K6 ↶ ↷: the person's own edits in this session; omitted when the table cannot be written. */
+  editHistory?: {
+    canUndo: boolean
+    canRedo: boolean
+    undoTitle: string
+    redoTitle: string
+    undo: () => unknown
+    redo: () => unknown
+  }
   classScopeMenuOpen?: boolean
   onClassScopeMenuOpenChange?: (open: boolean) => void
 }) {
@@ -466,6 +478,27 @@ export function StructuredResourceToolbar({
             className="h-7 w-full rounded-md border-0 bg-transparent pl-7 pr-1 text-xs placeholder:text-transparent hover:bg-muted/70 focus:bg-background focus:placeholder:text-muted-foreground focus-visible:ring-1"
           />
         </div>
+        {editHistory ? (
+          <div className="contents">
+            {([
+              { id: 'undo', label: '撤销', title: editHistory.undoTitle, enabled: editHistory.canUndo, run: editHistory.undo, Icon: Undo2 },
+              { id: 'redo', label: '重做', title: editHistory.redoTitle, enabled: editHistory.canRedo, run: editHistory.redo, Icon: Redo2 },
+            ] as const).map(({ id, label, title, enabled, run, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                data-testid={`structured-${id}`}
+                aria-label={label}
+                title={title}
+                disabled={!enabled}
+                className="order-[4] flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                onClick={() => { void run() }}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="contents">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
