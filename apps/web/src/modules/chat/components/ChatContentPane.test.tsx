@@ -151,8 +151,10 @@ vi.mock('../features/conversation/welcome/WelcomeConversation', async () => {
     WelcomeConversation: ({ chatId: _chatId, ...props }: { chatId: string } & Record<string, unknown>) => (
       <SecretaryWelcome {...(props as React.ComponentProps<typeof SecretaryWelcome>)} />
     ),
-    InlineWelcomeHost: ({ render }: { render: (welcome: unknown) => React.ReactNode }) => (
-      <div data-testid="welcome-conversation-stub">{render({ content: () => null, onStarted: () => undefined })}</div>
+    InlineWelcomeHost: ({ render, active = true }: { render: (welcome: unknown) => React.ReactNode; active?: boolean }) => (
+      active
+        ? <div data-testid="welcome-conversation-stub">{render({ content: () => null, onStarted: () => undefined })}</div>
+        : <>{render(undefined)}</>
     ),
   }
 })
