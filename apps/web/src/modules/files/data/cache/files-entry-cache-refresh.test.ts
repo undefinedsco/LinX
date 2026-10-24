@@ -17,4 +17,15 @@ describe('refreshing the file tree after a create', () => {
     const keys = invalidate.mock.calls.map((call) => JSON.stringify((call[0] as { queryKey: unknown }).queryKey))
     expect(keys.filter((key) => key === JSON.stringify(FILES_COLLECTION_QUERY_KEYS.roots)).length).toBeGreaterThanOrEqual(3)
   })
+
+  it('refreshes the whole-Pod listing behind search and 被引用 when a file is created', async () => {
+    const cache = createFilesEntryCacheCollection(FILES_COLLECTION_QUERY_KEYS, createConfirmedEntryTransferOverlayStore())
+    const client = new QueryClient()
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+
+    await cache.invalidateResourceCreate(client, 'http://localhost:3000/test/摘录/一段话.md')
+
+    const keys = invalidate.mock.calls.map((call) => JSON.stringify((call[0] as { queryKey: unknown }).queryKey))
+    expect(keys).toContain(JSON.stringify(FILES_COLLECTION_QUERY_KEYS.treeSearch))
+  })
 })

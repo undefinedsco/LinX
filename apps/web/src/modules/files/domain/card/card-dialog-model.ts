@@ -452,15 +452,22 @@ function rowSubjectIri(row: StructuredTableRow, documentUri: string, prefixes: R
   return expandRdfIri(row.subject, documentUri, prefixes)
 }
 
+/** The same row can be spelled `#周末` or `#%E5%91%A8…`: compare them as one address. */
+function sameSubjectAddress(left: string, right: string) {
+  if (left === right) return true
+  const decode = (value: string) => { try { return decodeURI(value) } catch { return value } }
+  return decode(left) === decode(right)
+}
+
 export function findCardSubjectRow(
   projection: StructuredTableProjection,
   documentUri: string,
   subjectIri: string,
 ): StructuredTableRow | null {
-  return projection.rows.find((row) => rowSubjectIri(row, documentUri, projection.prefixes) === subjectIri) ?? null
+  return projection.rows.find((row) => sameSubjectAddress(rowSubjectIri(row, documentUri, projection.prefixes), subjectIri)) ?? null
 }
 
-function labelPredicate(predicateIri: string, labeler?: CardPredicateLabeler) {
+export function labelPredicate(predicateIri: string, labeler?: CardPredicateLabeler) {
   return labeler?.(predicateIri) || knownPredicateLabel(predicateIri) || readablePredicateLabel(predicateIri)
 }
 
@@ -523,7 +530,8 @@ export function projectCardSubjectModel({
   const photoIri = photoValue ? expandRdfIri(photoValue, documentUri, prefixes) : null
 
   return {
-    subjectIri,
+    // The row's own address, as written in the document, so edits patch the right subject.
+    subjectIri: rowSubjectIri(row, documentUri, prefixes),
     photoUri: photoIri && /^https?:\/\//.test(photoIri) ? photoIri : null,
     title,
     titlePredicate: titleCell?.predicate ?? null,
@@ -713,6 +721,13 @@ export function planCardBodyWrite({
 }
 
 /** Where a property the person names in a card lives: the shared vocabulary (词表 › 属性). */
+/** Why a new card could not be made, in words a person can act on. */
+export function projectNewCardMessage(reason: 'empty' | 'duplicate' | 'unavailable'): string {
+  if (reason === 'duplicate') return '已经有同名的卡片了，换个名字吧'
+  if (reason === 'empty') return '先给卡片起个名字'
+  return '没能创建这张卡片，稍后再试'
+}
+
 export function projectNewCardPropertyIri(label: string, vocabTermsUri: string): string {
   const slug = label
     .trim()

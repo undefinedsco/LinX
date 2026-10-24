@@ -1,5 +1,6 @@
 import type { ColumnDef, SortingFn } from '@tanstack/react-table'
 import { useCardDialog } from '@/lib/card-dialog'
+import type { StructuredCardCreationResult } from './useStructuredSubjectCreationController'
 import { projectCardSubjectUris } from '../../domain/card/card-dialog-model'
 import { expandRdfIri } from '../../domain/card/rdf-term-tokens'
 
@@ -123,6 +124,30 @@ function openSubjectCard(projection: StructuredTableProjection, documentUri: str
     uri: expandRdfIri(subject, documentUri, projection.prefixes),
     siblings: projectCardSubjectUris(projection, documentUri),
     from: 'table',
+  })
+}
+
+/** R6 K2 "+ 卡片": an empty card popup whose title becomes the new row's name. */
+export function openStructuredNewCard(
+  projection: StructuredTableProjection,
+  documentUri: string,
+  createSubjectByName: (name: string) => Promise<StructuredCardCreationResult>,
+) {
+  useCardDialog.getState().open({
+    uri: `${documentUri}#new-card`,
+    from: 'table',
+    draft: {
+      create: async (title) => {
+        const created = await createSubjectByName(title)
+        if (created.kind === 'created') {
+          const uri = expandRdfIri(created.subject, documentUri, projection.prefixes)
+          return { kind: 'created', uri, siblings: [...projectCardSubjectUris(projection, documentUri), uri] }
+        }
+        if (created.kind === 'rejected' && created.reason === 'duplicate-subject') return { kind: 'rejected', reason: 'duplicate' }
+        if (created.kind === 'rejected' && created.reason === 'empty-subject') return { kind: 'rejected', reason: 'empty' }
+        return { kind: 'rejected', reason: 'unavailable' }
+      },
+    },
   })
 }
 

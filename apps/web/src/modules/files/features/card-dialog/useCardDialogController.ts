@@ -18,6 +18,7 @@ import {
   useRawTextResource,
   useSaveRawTextResource,
   useCardHistoryAccess,
+  useFilesSelectChat,
   useWriteOwnStructuredCellChange,
 } from '../../data/queries'
 import {
@@ -49,8 +50,10 @@ import {
   type CardHistory,
   type CardSnapshot,
 } from '../../domain/history/card-history'
+import type { CardBacklink } from '../../domain/card/card-backlinks'
 import { displayResourceName, getEntryName } from '../../domain/resource/resource-semantics'
 import { projectStructuredResourceTable } from '../../domain/structured/structured-table'
+import { useCardBacklinks, type CardWorkUseRow } from './useCardBacklinks'
 
 export function useCardDialogController(request: CardDialogRequest) {
   const { toast } = useToast()
@@ -147,6 +150,24 @@ export function useCardDialogController(request: CardDialogRequest) {
     return null
   })()
   const loading = !blocking && (detailQuery.isLoading || (readsText && rawQuery.isLoading) || (!!mediaKind && blobQuery.isLoading))
+
+  // R6 K2 bottom sections: filled lazily once the card itself is on screen.
+  const { backlinks, workUses } = useCardBacklinks({
+    uri: request.uri,
+    documentUri: target.documentUri,
+    projection,
+    subjectIri: subject?.subjectIri ?? null,
+    enabled: !loading && !blocking && (kind !== 'other' && kind !== 'folder'),
+  })
+  const selectChat = useFilesSelectChat()
+  const openBacklink = useCallback((link: CardBacklink) => {
+    openCard({ uri: link.uri, locator: link.line ? { line: link.line } : undefined, from: request.from })
+  }, [openCard, request.from])
+  const openWorkUse = useCallback((use: CardWorkUseRow) => {
+    selectChat(use.chatId)
+    closeDialog()
+    void navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
+  }, [closeDialog, navigate, selectChat])
 
   const track = useCallback(async (job: () => Promise<unknown>) => {
     setSaveStatus('saving')
@@ -355,6 +376,10 @@ export function useCardDialogController(request: CardDialogRequest) {
     openSubject,
     fileProperties,
     siblings,
+    backlinks,
+    workUses,
+    openBacklink,
+    openWorkUse,
     saveStatus,
     setSaveStatus,
     saveDocumentText,
