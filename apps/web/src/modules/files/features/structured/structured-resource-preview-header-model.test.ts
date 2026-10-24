@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { projectStructuredResourcePreviewHeaderModel } from './structured-resource-preview-header-model'
+import {
+  projectStructuredCardClassLabels,
+  projectStructuredResourcePreviewHeaderModel,
+  projectStructuredTableWithoutNameColumn,
+} from './structured-resource-preview-header-model'
 
 describe('projectStructuredResourcePreviewHeaderModel', () => {
   it('projects selected class labels from definition, pending proposal, or local URI fallback', () => {
@@ -55,6 +59,32 @@ describe('projectStructuredResourcePreviewHeaderModel', () => {
       classScopeButtonLabel: '选择类型',
       classScopeDisplayLabel: '选择或创建类型',
       classScopeLabel: '选择或创建类型',
+    })
+  })
+})
+
+describe('projectStructuredTableWithoutNameColumn', () => {
+  const projection = { predicates: ['rdfs:label', 'udfs:status'] }
+
+  it('drops rdfs:label from the columns of a table, since it is the row name', () => {
+    expect(projectStructuredTableWithoutNameColumn(projection, 'https://pod.example/.data/tasks/tasks.ttl').predicates).toEqual(['udfs:status'])
+  })
+
+  it('keeps it in vocabulary registries where it is a defined field', () => {
+    expect(projectStructuredTableWithoutNameColumn(projection, 'https://pod.example/.vocab/terms.ttl')).toBe(projection)
+  })
+})
+
+describe('projectStructuredCardClassLabels', () => {
+  it('maps class local names to their labels and the scoped class to the table name', () => {
+    const classes = new Map([
+      ['https://pod.example/.vocab/terms.ttl#Task', { uri: 'x', label: '任务', description: '', status: '' }],
+      ['https://pod.example/.vocab/terms.ttl#Note', { uri: 'y', label: ' ', description: '', status: '' }],
+    ])
+
+    expect(projectStructuredCardClassLabels({ classes, scopeClassName: 'udfs:Project', scopeLabel: '项目' })).toEqual({
+      Task: '任务',
+      Project: '项目',
     })
   })
 })

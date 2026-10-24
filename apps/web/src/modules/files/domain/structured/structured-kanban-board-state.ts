@@ -51,10 +51,14 @@ export function reconcileStructuredKanbanBoardState({
 }): StructuredKanbanBoardStateV1 {
   const normalized = normalizeSavedState(saved)
   const liveLaneIds = new Set(lanes.map((lane) => lane.id))
-  const laneOrder = [
-    ...normalized.laneOrder.filter((laneId) => liveLaneIds.has(laneId)),
-    ...lanes.map((lane) => lane.id).filter((laneId) => !normalized.laneOrder.includes(laneId)),
-  ]
+  // No saved lane order stays empty: the default order (option definition order) is derived by the
+  // view, and only a lane the person moved becomes a saved order.
+  const laneOrder = normalized.laneOrder.length === 0
+    ? []
+    : [
+      ...normalized.laneOrder.filter((laneId) => liveLaneIds.has(laneId)),
+      ...lanes.map((lane) => lane.id).filter((laneId) => !normalized.laneOrder.includes(laneId)),
+    ]
   const collapsedLaneIds = normalized.collapsedLaneIds.filter((laneId) => liveLaneIds.has(laneId))
   const cardOrder: Record<string, string[]> = {}
 

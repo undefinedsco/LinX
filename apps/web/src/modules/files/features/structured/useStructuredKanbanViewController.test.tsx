@@ -314,6 +314,29 @@ describe('useStructuredKanbanViewController', () => {
     expect(onLaneOrderChange).toHaveBeenCalledTimes(1)
   })
 
+  it('derives the default lane order from the option order without saving it, and a saved lane order wins', () => {
+    const onLaneOrderChange = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ laneOrder }: { laneOrder: string[] }) => useStructuredKanbanViewController({
+        documentUri,
+        projection,
+        groupPredicate: 'status',
+        kanbanOrder: {},
+        optionOrder: ['Done', 'Todo'],
+        laneOrder,
+        onColumnOrderChange: vi.fn(),
+        onLaneOrderChange,
+      }),
+      { initialProps: { laneOrder: [] as string[] } },
+    )
+
+    expect(result.current.displayColumns.map((column) => column.id)).toEqual(['Done', 'Todo'])
+    expect(onLaneOrderChange).not.toHaveBeenCalled()
+
+    rerender({ laneOrder: ['Todo', 'Done'] })
+    expect(result.current.displayColumns.map((column) => column.id)).toEqual(['Todo', 'Done'])
+  })
+
   it('persists mouse lane reordering from lane DnD drops without touching card order or cell writes', async () => {
     const onColumnOrderChange = vi.fn()
     const onLaneOrderChange = vi.fn()

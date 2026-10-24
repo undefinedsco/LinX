@@ -154,10 +154,10 @@ export function useDetailMetaPredicateController({
         podRootUri: currentPodRootUri,
       }))
       patchMetaPredicateStatus(predicateKey, 'pending')
-      toast({ description: 'meta predicate 更改已提交审核' })
+      toast({ description: '属性更改已提交审核' })
     } catch (error) {
       patchMetaPredicateStatus(predicateKey, 'error')
-      const description = formatFilesErrorForUser(error, 'meta predicate 更改提交审核失败')
+      const description = formatFilesErrorForUser(error, '属性更改提交审核失败')
       toast({ description, variant: 'destructive' })
     }
   }
@@ -169,7 +169,7 @@ export function useDetailMetaPredicateController({
   return {
     title: {
       status: metaPredicateStatus('title'),
-      statusLabel: `${labelPrefix} title meta predicate`,
+      statusLabel: `${labelPrefix === 'Card' ? '卡片' : '文件'}标题`,
       values: title ? [title] : [],
       commit: (nextValues: string[]) => {
         patchMetaPredicateDraft('title', nextValues)
@@ -183,7 +183,7 @@ export function useDetailMetaPredicateController({
     },
     reviewStatus: {
       status: metaPredicateStatus('reviewStatus'),
-      statusLabel: `${labelPrefix} review status meta predicate`,
+      statusLabel: `${labelPrefix === 'Card' ? '卡片' : '文件'}审核状态`,
       values: reviewStatus ? [reviewStatus] : [],
       options: reviewStatusOptions,
       commitStructured: (nextValues: string[]) => {
@@ -198,7 +198,7 @@ export function useDetailMetaPredicateController({
     },
     tags: {
       status: metaPredicateStatus('tags'),
-      statusLabel: `${labelPrefix} tags meta predicate`,
+      statusLabel: `${labelPrefix === 'Card' ? '卡片' : '文件'}标签`,
       values: splitDetailTagValue(tags),
       options: tagOptions,
       commitStructured: (nextValues: string[]) => {

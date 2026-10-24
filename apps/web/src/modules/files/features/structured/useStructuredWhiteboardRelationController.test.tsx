@@ -42,7 +42,7 @@ describe('useStructuredWhiteboardRelationController', () => {
     expect(result.current.hasVisualRelationChips).toBe(true)
     expect(result.current.relationEditorChrome).toMatchObject({
       fromFieldLabel: '起点',
-      fromFieldAriaLabel: 'Relation from',
+      fromFieldAriaLabel: '关联起点',
       saveButtonLabel: '连接',
       cancelButtonAriaLabel: '取消视觉关系',
     })

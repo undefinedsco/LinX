@@ -24,7 +24,7 @@ export function projectPendingCellWriteButtonChrome({
 }): PendingCellWriteButtonChrome {
   if (status === 'approval-staged') {
     return {
-      ariaLabel: `Pending approval for ${predicateLabel} on ${subject}`,
+      ariaLabel: `${subject} 的 ${predicateLabel} 待审核`,
       kind: 'status',
       marker: '*',
       title: '单元格变更已提交；等待 Inbox 审批，canonical 数据未变更',
@@ -41,7 +41,7 @@ export function projectPendingCellWriteButtonChrome({
   }
 
   return {
-    ariaLabel: `Discard pending write for ${predicateLabel} on ${subject}`,
+    ariaLabel: `放弃 ${subject} 的 ${predicateLabel} 更改`,
     kind: 'discard',
     title: '单元格变更提交失败；可撤回本地改动',
   }

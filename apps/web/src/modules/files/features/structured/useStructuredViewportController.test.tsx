@@ -13,7 +13,7 @@ describe('useStructuredViewportController', () => {
 
     expect(result.current.chrome).toEqual({
       viewport: {
-        ariaLabel: 'Structured resource viewport',
+        ariaLabel: '表格视图区',
       },
     })
   })

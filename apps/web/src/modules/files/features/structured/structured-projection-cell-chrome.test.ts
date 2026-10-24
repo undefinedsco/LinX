@@ -96,7 +96,7 @@ describe('projectStructuredPredicateCellChrome', () => {
       },
       predicateLabel: 'Status*',
       shapeWarning: {
-        ariaLabel: 'Shape warning for Status* on #Task',
+        ariaLabel: '#Task 的 Status* 格式提醒',
         message: 'Must be one of the defined statuses.',
         predicateLabel: 'Status*',
         subject,
@@ -137,6 +137,17 @@ describe('projectStructuredPredicateCellChrome', () => {
 })
 
 describe('projectStructuredSubjectCellChrome', () => {
+  it('shows the row rdfs:label as its name', () => {
+    const chrome = projectStructuredSubjectCellChrome({
+      documentUri,
+      projection: { prefixes: {}, predicates: [], rows: [], warnings: [] },
+      row: { subject, cells: { 'rdfs:label': ['"写周报"@zh'] } },
+      rowIndex: 0,
+    })
+
+    expect(chrome.displayLabel).toBe('写周报')
+  })
+
   it('projects subject, row index, pending state, and open target outside the columns renderer', () => {
     const chrome = projectStructuredSubjectCellChrome({
       documentUri,

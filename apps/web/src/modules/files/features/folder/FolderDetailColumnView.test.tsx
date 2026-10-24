@@ -43,7 +43,7 @@ describe('FolderColumnPanel', () => {
 
     render(
       <FolderColumnPanel
-        ariaLabel="Folder column"
+        ariaLabel="文件夹列"
         title="files"
         parentFile={folder()}
         entries={[child]}

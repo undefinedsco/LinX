@@ -10,7 +10,8 @@ import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seede
 test.use({ channel: 'chrome' })
 test.describe.configure({ mode: 'serial' })
 
-const STAGE_LANES = ['看板列 待办', '看板列 完成', '看板列 进行中']
+// The order the 阶段 options were defined in the vocab, not the order the data happens to list them.
+const STAGE_LANES = ['看板列 待办', '看板列 进行中', '看板列 完成']
 
 test.describe('Files table and 看板 browser interactions', () => {
   let runtime: SeededXpodRuntime
@@ -31,6 +32,8 @@ test.describe('Files table and 看板 browser interactions', () => {
     const board = await seedTaskTable(page)
     await openTable(page, board)
     await expect(page.getByRole('columnheader').filter({ hasText: '阶段' })).toBeVisible({ timeout: 30_000 })
+    // rdfs:label is the row's name (名称), not a column of its own.
+    await expect(page.getByRole('columnheader').filter({ hasText: /^Label$|^label$/i })).toHaveCount(0)
 
     // Table: sort by 点数 (number column), ascending then descending.
     const rowNames = async () => (await page.getByRole('row').allTextContents())
@@ -66,11 +69,16 @@ test.describe('Files table and 看板 browser interactions', () => {
     await page.getByRole('menuitem', { name: '阶段' }).click()
 
     // One lane per option value.
-    await expect.poll(async () => (await laneLabels(page)).sort(), { timeout: 30_000 }).toEqual([...STAGE_LANES].sort())
+    await expect.poll(async () => laneLabels(page), { timeout: 30_000 }).toEqual(STAGE_LANES)
     const todoLane = page.getByLabel('看板列 待办')
     const doingLane = page.getByLabel('看板列 进行中')
     const doneLane = page.getByLabel('看板列 完成')
     await expect.poll(async () => cardSubjectsInLane(todoLane)).toEqual([board.alpha, board.beta])
+
+    // Cards name their type by its label (任务), not the class's local name (Task).
+    const alphaCard = page.locator(`[data-kanban-card-subject="${board.alpha}"]`).first()
+    await expect(alphaCard).toContainText('任务')
+    await expect(alphaCard).not.toContainText(/Task/)
 
     // Multi-select (click + shift-click) and move both to 进行中 from the card menu.
     await page.getByRole('button', { name: 'Alpha task', exact: true }).click()

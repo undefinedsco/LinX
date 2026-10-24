@@ -246,4 +246,16 @@ describe('structured projections', () => {
     ])
     expect(kanban.columns.find((column) => column.id === 'done')?.cards.map((card) => card.subject)).toEqual(['#done'])
   })
+
+  it('names the type on a card by the label people gave it instead of the class local name', () => {
+    const projection = projectTurtleTable(`
+@prefix udfs: <https://undefineds.co/vocab/> .
+<#one> a udfs:Task ; title "Draft" ; status "todo" .
+`)
+    const withLabels = { ...projection, classLabels: { Task: '任务' } }
+
+    expect(projectStructuredKanban(withLabels, 'status').columns[0].cards[0].className).toBe('任务')
+    expect(projectStructuredWhiteboard(withLabels).nodes[0].className).toBe('任务')
+    expect(projectStructuredKanban(projection, 'status').columns[0].cards[0].className).toBe('Task')
+  })
 })

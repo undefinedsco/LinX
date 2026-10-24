@@ -131,11 +131,11 @@ describe('structured-whiteboard-relation-model', () => {
   it('projects relation editor chrome outside the renderer', () => {
     expect(projectStructuredWhiteboardRelationEditorChrome({ editingRelationId: null })).toEqual({
       fromFieldLabel: '起点',
-      fromFieldAriaLabel: 'Relation from',
+      fromFieldAriaLabel: '关联起点',
       toFieldLabel: '终点',
-      toFieldAriaLabel: 'Relation to',
+      toFieldAriaLabel: '关联终点',
       labelFieldLabel: '标签',
-      labelFieldAriaLabel: 'Relation label',
+      labelFieldAriaLabel: '关联名称',
       labelFieldPlaceholder: '视觉关系',
       saveButtonLabel: '连接',
       cancelButtonLabel: '取消',

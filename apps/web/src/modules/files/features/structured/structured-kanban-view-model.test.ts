@@ -4,6 +4,7 @@ import type { StructuredTableProjection } from '../../domain/structured/structur
 import {
   findStructuredKanbanColumnForSubject,
   mergeKanbanOptionLanes,
+  kanbanOptionLabels,
   findStructuredKanbanTargetColumnForDndOverId,
   createStructuredKanbanNativeDragState,
   hasStructuredKanbanMoveTargets,
@@ -250,5 +251,33 @@ describe('mergeKanbanOptionLanes', () => {
   it('keeps the hand-added lanes when the property has no options or nothing is grouped', () => {
     expect(mergeKanbanOptionLanes(['搁置'], null, new Map())).toEqual(['搁置'])
     expect(mergeKanbanOptionLanes(undefined, 'udfs:owner', new Map())).toEqual([])
+  })
+})
+
+describe('kanban lane order from option definition order', () => {
+  const optionOrder = ['Done', 'Todo']
+
+  it('orders lanes by the order the options were defined, unassigned last', () => {
+    const model = projectStructuredKanbanSourceModel({
+      projection,
+      groupPredicate: 'status',
+      kanbanOrder: {},
+      extraLanes: ['Backlog', 'Done', 'Todo'],
+      optionOrder: ['Backlog', ...optionOrder],
+    })
+
+    expect(model.kanban.columns.map((column) => column.id)).toEqual(['Backlog', 'Done', 'Todo'])
+  })
+
+  it('keeps data order when no option order is known', () => {
+    const model = projectStructuredKanbanSourceModel({ projection, groupPredicate: 'status', kanbanOrder: {} })
+
+    expect(model.kanban.columns.map((column) => column.id)).toEqual(['Todo', 'Done'])
+  })
+
+  it('reads option labels in definition order, matching the property by local name', () => {
+    const options = new Map([['https://pod.example/.vocab/terms.ttl#status', [{ label: '待办' }, { label: '进行中' }, { label: '完成' }]]])
+    expect(kanbanOptionLabels('udfs:status', options)).toEqual(['待办', '进行中', '完成'])
+    expect(kanbanOptionLabels(null, options)).toEqual([])
   })
 })
