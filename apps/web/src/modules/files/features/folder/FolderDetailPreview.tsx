@@ -71,7 +71,7 @@ export function FolderDetailPreview({
 
   return (
     <div
-      aria-label="Folder detail surface"
+      aria-label="文件夹内容"
       className={cn('space-y-3 p-4', folderUpload.isDropTargetActive && 'rounded-md bg-primary/5 ring-1 ring-primary/30')}
       onDragOver={folderUpload.handleUploadDragOver}
       onDragLeave={folderUpload.handleUploadDragLeave}

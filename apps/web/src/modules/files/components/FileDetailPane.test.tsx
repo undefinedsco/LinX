@@ -54,7 +54,7 @@ function revealRichTextToolbar(editor = getRichEditorTextbox()) {
 }
 
 function getFileMetaDrawer(): HTMLElement {
-  return screen.getByLabelText('Resource .meta inspector')
+  return screen.getByLabelText('资源附属信息')
 }
 
 function getFileMetaDrawerControl(label: string): HTMLElement {
@@ -712,7 +712,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitem', { name: '富文本' }))
     expect(screen.queryByRole('menuitem', { name: '查看 Access 来源' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Resource .meta inspector')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('资源附属信息')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /保存/ })).not.toBeInTheDocument()
     expect(within(getRichEditorTextbox()).getByRole('heading', { name: 'Hello' })).toBeInTheDocument()
     expect(getRichEditorTextbox()).toHaveAttribute('contenteditable', 'true')
@@ -1015,15 +1015,15 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
     openHeaderMetaDrawer()
 
-    expect(getFileMetaDrawerControl('File title meta predicate')).toHaveValue('Readme metadata title')
-    expect(getFileMetaDrawerControl('File review status meta predicate')).toHaveValue('Needs review')
+    expect(getFileMetaDrawerControl('文件标题')).toHaveValue('Readme metadata title')
+    expect(getFileMetaDrawerControl('文件审核状态')).toHaveValue('Needs review')
     expect(within(getFileMetaDrawer()).getByLabelText('已选择值 core')).toBeInTheDocument()
     expect(within(getFileMetaDrawer()).getByLabelText('已选择值 rdf')).toBeInTheDocument()
-    expect(getFileMetaDrawerControl('File source meta predicate')).toHaveValue('https://source.example/readme')
+    expect(getFileMetaDrawerControl('文件来源')).toHaveValue('https://source.example/readme')
     expect(within(getFileMetaDrawer()).queryByText('审核状态')).not.toBeInTheDocument()
 
-    fireEvent.change(getFileMetaDrawerControl('File title meta predicate'), { target: { value: 'Readme display title' } })
-    fireEvent.blur(getFileMetaDrawerControl('File title meta predicate'))
+    fireEvent.change(getFileMetaDrawerControl('文件标题'), { target: { value: 'Readme display title' } })
+    fireEvent.blur(getFileMetaDrawerControl('文件标题'))
     await waitFor(() => {
       expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/public/README.md.meta',
@@ -1036,7 +1036,7 @@ describe('FileDetailPane', () => {
     })
     mockCreateCellProposal.mockClear()
 
-    const reviewStatusInput = getFileMetaDrawerControl('File review status meta predicate')
+    const reviewStatusInput = getFileMetaDrawerControl('文件审核状态')
     fireEvent.change(reviewStatusInput, { target: { value: 'Published' } })
     fireEvent.keyDown(reviewStatusInput, { key: 'Enter' })
     await waitFor(() => {
@@ -1051,8 +1051,8 @@ describe('FileDetailPane', () => {
     })
     mockCreateCellProposal.mockClear()
 
-    fireEvent.change(getFileMetaDrawerControl('File tags meta predicate'), { target: { value: 'files' } })
-    fireEvent.keyDown(getFileMetaDrawerControl('File tags meta predicate'), { key: 'Enter' })
+    fireEvent.change(getFileMetaDrawerControl('文件标签'), { target: { value: 'files' } })
+    fireEvent.keyDown(getFileMetaDrawerControl('文件标签'), { key: 'Enter' })
     await waitFor(() => {
       expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/public/README.md.meta',
@@ -1095,28 +1095,28 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
     openHeaderMetaDrawer()
 
-    fireEvent.change(getFileMetaDrawerControl('File title meta predicate'), { target: { value: 'Readme display title' } })
-    fireEvent.blur(getFileMetaDrawerControl('File title meta predicate'))
+    fireEvent.change(getFileMetaDrawerControl('文件标题'), { target: { value: 'Readme display title' } })
+    fireEvent.blur(getFileMetaDrawerControl('文件标题'))
 
     await waitFor(() => {
-      expect(screen.getByLabelText('待审核更改：File title meta predicate')).toHaveTextContent('*')
+      expect(screen.getByLabelText('待审核更改：文件标题')).toHaveTextContent('*')
     })
-    expect(screen.queryByLabelText('meta predicate 更改提交失败：File title meta predicate')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('属性更改提交失败：文件标题')).not.toBeInTheDocument()
 
-    fireEvent.change(getFileMetaDrawerControl('File tags meta predicate'), { target: { value: 'files' } })
-    fireEvent.keyDown(getFileMetaDrawerControl('File tags meta predicate'), { key: 'Enter' })
+    fireEvent.change(getFileMetaDrawerControl('文件标签'), { target: { value: 'files' } })
+    fireEvent.keyDown(getFileMetaDrawerControl('文件标签'), { key: 'Enter' })
 
     await waitFor(() => {
-      expect(screen.getByLabelText('meta predicate 更改提交失败：File tags meta predicate')).toHaveTextContent('!')
+      expect(screen.getByLabelText('属性更改提交失败：文件标签')).toHaveTextContent('!')
     })
     expect(within(getFileMetaDrawer()).getByLabelText('已选择值 files')).toBeInTheDocument()
-    expect(screen.getByLabelText('待审核更改：File title meta predicate')).toBeInTheDocument()
+    expect(screen.getByLabelText('待审核更改：文件标题')).toBeInTheDocument()
 
-    fireEvent.change(getFileMetaDrawerControl('File source meta predicate'), { target: { value: 'https://source.example/readme-v2' } })
-    fireEvent.blur(getFileMetaDrawerControl('File source meta predicate'))
+    fireEvent.change(getFileMetaDrawerControl('文件来源'), { target: { value: 'https://source.example/readme-v2' } })
+    fireEvent.blur(getFileMetaDrawerControl('文件来源'))
 
     await waitFor(() => {
-      expect(screen.getByLabelText('待审核更改：File source meta predicate')).toHaveTextContent('*')
+      expect(screen.getByLabelText('待审核更改：文件来源')).toHaveTextContent('*')
     })
   })
 
@@ -1178,14 +1178,14 @@ describe('FileDetailPane', () => {
     openHeaderMetaDrawer()
 
     expect(mockUsePendingStructuredCellChangeProposals).toHaveBeenCalledWith('https://pod.example/public/README.md.meta', true)
-    expect(getFileMetaDrawerControl('File title meta predicate')).toHaveValue('Readme display title')
+    expect(getFileMetaDrawerControl('文件标题')).toHaveValue('Readme display title')
     expect(within(getFileMetaDrawer()).getByLabelText('已选择值 core')).toBeInTheDocument()
     expect(within(getFileMetaDrawer()).getByLabelText('已选择值 rdf')).toBeInTheDocument()
     expect(within(getFileMetaDrawer()).getByLabelText('已选择值 files')).toBeInTheDocument()
-    expect(getFileMetaDrawerControl('File source meta predicate')).toHaveValue('https://source.example/readme-v2')
-    expect(within(getFileMetaDrawer()).getByLabelText('待审核更改：File title meta predicate')).toHaveTextContent('*')
-    expect(within(getFileMetaDrawer()).getByLabelText('待审核更改：File tags meta predicate')).toHaveTextContent('*')
-    expect(within(getFileMetaDrawer()).getByLabelText('待审核更改：File source meta predicate')).toHaveTextContent('*')
+    expect(getFileMetaDrawerControl('文件来源')).toHaveValue('https://source.example/readme-v2')
+    expect(within(getFileMetaDrawer()).getByLabelText('待审核更改：文件标题')).toHaveTextContent('*')
+    expect(within(getFileMetaDrawer()).getByLabelText('待审核更改：文件标签')).toHaveTextContent('*')
+    expect(within(getFileMetaDrawer()).getByLabelText('待审核更改：文件来源')).toHaveTextContent('*')
   })
 
   it('stages editable file RDF metadata predicate edits against the existing owner subject in .meta', async () => {
@@ -1215,10 +1215,10 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
     openHeaderMetaDrawer()
 
-    expect(getFileMetaDrawerControl('File title meta predicate')).toHaveValue('Owner title')
+    expect(getFileMetaDrawerControl('文件标题')).toHaveValue('Owner title')
     expect(within(getFileMetaDrawer()).getByLabelText('已选择值 owner')).toBeInTheDocument()
-    fireEvent.change(getFileMetaDrawerControl('File title meta predicate'), { target: { value: 'Owner title v2' } })
-    fireEvent.blur(getFileMetaDrawerControl('File title meta predicate'))
+    fireEvent.change(getFileMetaDrawerControl('文件标题'), { target: { value: 'Owner title v2' } })
+    fireEvent.blur(getFileMetaDrawerControl('文件标题'))
 
     await waitFor(() => {
       expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
@@ -1396,16 +1396,16 @@ describe('FileDetailPane', () => {
     expect(bodyPreview).toBeInTheDocument()
     expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
     openHeaderMetaDrawer()
-    const metaDrawer = screen.getByLabelText('Resource .meta inspector')
+    const metaDrawer = screen.getByLabelText('资源附属信息')
     expect(bodyPreview.compareDocumentPosition(metaDrawer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(within(metaDrawer).getByLabelText('RDF metadata')).toBeInTheDocument()
-    expect(within(metaDrawer).getByLabelText('Card title meta predicate')).toHaveValue('Quarterly report')
-    expect(within(metaDrawer).getByRole('combobox', { name: 'Card review status meta predicate' })).toHaveValue('Needs review')
+    expect(within(metaDrawer).getByLabelText('属性信息')).toBeInTheDocument()
+    expect(within(metaDrawer).getByLabelText('卡片标题')).toHaveValue('Quarterly report')
+    expect(within(metaDrawer).getByRole('combobox', { name: '卡片审核状态' })).toHaveValue('Needs review')
     expect(within(metaDrawer).getByLabelText('已选择值 source-linked')).toBeInTheDocument()
     expect(within(metaDrawer).getByLabelText('已选择值 finance')).toBeInTheDocument()
-    expect(within(metaDrawer).getByLabelText('Card relation meta predicate')).toHaveValue('https://pod.example/.data/workspaces/ws-1/cards/quarterly-report.md')
+    expect(within(metaDrawer).getByLabelText('卡片关联')).toHaveValue('https://pod.example/.data/workspaces/ws-1/cards/quarterly-report.md')
 
-    const reviewStatusInput = within(metaDrawer).getByRole('combobox', { name: 'Card review status meta predicate' })
+    const reviewStatusInput = within(metaDrawer).getByRole('combobox', { name: '卡片审核状态' })
     fireEvent.change(reviewStatusInput, { target: { value: 'Ready' } })
     fireEvent.keyDown(reviewStatusInput, { key: 'Enter' })
     await waitFor(() => {
@@ -1418,11 +1418,11 @@ describe('FileDetailPane', () => {
         writesCanonicalResource: false,
       }))
     })
-    expect(within(metaDrawer).getByLabelText('待审核更改：Card review status meta predicate')).toHaveTextContent('*')
+    expect(within(metaDrawer).getByLabelText('待审核更改：卡片审核状态')).toHaveTextContent('*')
     mockCreateCellProposal.mockClear()
 
     mockCreateCellProposal.mockRejectedValueOnce(new Error('proposal write failed'))
-    const tagsInput = within(metaDrawer).getByRole('combobox', { name: 'Card tags meta predicate' })
+    const tagsInput = within(metaDrawer).getByRole('combobox', { name: '卡片标签' })
     fireEvent.change(tagsInput, { target: { value: 'audited' } })
     fireEvent.keyDown(tagsInput, { key: 'Enter' })
     await waitFor(() => {
@@ -1435,12 +1435,12 @@ describe('FileDetailPane', () => {
         writesCanonicalResource: false,
       }))
     })
-    expect(within(metaDrawer).getByLabelText('meta predicate 更改提交失败：Card tags meta predicate')).toHaveTextContent('!')
+    expect(within(metaDrawer).getByLabelText('属性更改提交失败：卡片标签')).toHaveTextContent('!')
     expect(within(metaDrawer).getByLabelText('已选择值 audited')).toBeInTheDocument()
     mockCreateCellProposal.mockClear()
 
-    fireEvent.change(screen.getByLabelText('Card title meta predicate'), { target: { value: 'Quarterly report v2' } })
-    fireEvent.blur(screen.getByLabelText('Card title meta predicate'))
+    fireEvent.change(screen.getByLabelText('卡片标题'), { target: { value: 'Quarterly report v2' } })
+    fireEvent.blur(screen.getByLabelText('卡片标题'))
     await waitFor(() => {
       expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/cards/quarterly-report.card.ttl',
@@ -1453,8 +1453,8 @@ describe('FileDetailPane', () => {
     })
     mockCreateCellProposal.mockClear()
 
-    fireEvent.change(screen.getByLabelText('Card relation meta predicate'), { target: { value: 'https://pod.example/.data/workspaces/ws-1/cards/revised-report.md' } })
-    fireEvent.blur(screen.getByLabelText('Card relation meta predicate'))
+    fireEvent.change(screen.getByLabelText('卡片关联'), { target: { value: 'https://pod.example/.data/workspaces/ws-1/cards/revised-report.md' } })
+    fireEvent.blur(screen.getByLabelText('卡片关联'))
     await waitFor(() => {
       expect(mockCreateCellProposal).toHaveBeenCalledWith(expect.objectContaining({
         documentUri: 'https://pod.example/.data/workspaces/ws-1/cards/quarterly-report.card.ttl',
@@ -1745,24 +1745,24 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(mockUsePendingStructuredCellChangeProposals).not.toHaveBeenCalled()
-    expect(screen.queryByLabelText('Card title meta predicate')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('卡片标题')).not.toBeInTheDocument()
     openHeaderMetaDrawer()
     expect(mockUsePendingStructuredCellChangeProposals).toHaveBeenCalledWith(
       'https://pod.example/.data/workspaces/ws-1/cards/quarterly-report.card.ttl',
       true,
     )
-    const metaDrawer = screen.getByLabelText('Resource .meta inspector')
-    expect(within(metaDrawer).getByLabelText('Card title meta predicate')).toHaveValue('Quarterly report reviewed')
-    expect(within(metaDrawer).getByRole('combobox', { name: 'Card review status meta predicate' })).toHaveValue('Ready')
+    const metaDrawer = screen.getByLabelText('资源附属信息')
+    expect(within(metaDrawer).getByLabelText('卡片标题')).toHaveValue('Quarterly report reviewed')
+    expect(within(metaDrawer).getByRole('combobox', { name: '卡片审核状态' })).toHaveValue('Ready')
     expect(within(metaDrawer).getByLabelText('已选择值 source-linked')).toBeInTheDocument()
     expect(within(metaDrawer).getByLabelText('已选择值 finance')).toBeInTheDocument()
     expect(within(metaDrawer).getByLabelText('已选择值 audited')).toBeInTheDocument()
-    expect(within(metaDrawer).getByLabelText('Card relation meta predicate')).toHaveValue('https://pod.example/.data/workspaces/ws-1/cards/quarterly-report-reviewed.md')
-    expect(within(metaDrawer).getByLabelText('待审核更改：Card title meta predicate')).toHaveTextContent('*')
-    expect(within(metaDrawer).getByLabelText('待审核更改：Card review status meta predicate')).toHaveTextContent('*')
-    expect(within(metaDrawer).getByLabelText('待审核更改：Card tags meta predicate')).toHaveTextContent('*')
-    expect(within(metaDrawer).getByLabelText('待审核更改：Card relation meta predicate')).toHaveTextContent('*')
-    fireEvent.blur(within(metaDrawer).getByLabelText('Card title meta predicate'))
+    expect(within(metaDrawer).getByLabelText('卡片关联')).toHaveValue('https://pod.example/.data/workspaces/ws-1/cards/quarterly-report-reviewed.md')
+    expect(within(metaDrawer).getByLabelText('待审核更改：卡片标题')).toHaveTextContent('*')
+    expect(within(metaDrawer).getByLabelText('待审核更改：卡片审核状态')).toHaveTextContent('*')
+    expect(within(metaDrawer).getByLabelText('待审核更改：卡片标签')).toHaveTextContent('*')
+    expect(within(metaDrawer).getByLabelText('待审核更改：卡片关联')).toHaveTextContent('*')
+    fireEvent.blur(within(metaDrawer).getByLabelText('卡片标题'))
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
   })
 
@@ -3118,15 +3118,15 @@ describe('FileDetailPane', () => {
   it('opens ordinary file meta in the right drawer instead of the editor sheet', () => {
     render(<FileDetailPane />)
 
-    expect(screen.queryByLabelText('Resource .meta inspector')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('资源附属信息')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
     expect(within(screen.getByLabelText('文件详情 head')).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
 
     openHeaderMetaDrawer()
 
     const metaDrawer = getFileMetaDrawer()
-    expect(within(metaDrawer).getByLabelText('RDF metadata')).toBeInTheDocument()
-    expect(within(metaDrawer).getByLabelText('File title meta predicate')).toHaveValue('Hello')
+    expect(within(metaDrawer).getByLabelText('属性信息')).toBeInTheDocument()
+    expect(within(metaDrawer).getByLabelText('文件标题')).toHaveValue('Hello')
     expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
   })
@@ -3171,7 +3171,7 @@ describe('FileDetailPane', () => {
     expect(within(metaDrawer).getByText(/@prefix dcterms:/)).toBeInTheDocument()
     expect(within(metaDrawer).getByText(/<#meta> dcterms:source <https:\/\/source\.example\/readme>/)).toBeInTheDocument()
     expect(within(metaDrawer).getByText(/udfs:shape <https:\/\/pod\.example\/\.vocab\/shapes\.ttl#MarkdownFileShape>/)).toBeInTheDocument()
-    expect(within(metaDrawer).getByLabelText('RDF metadata')).toBeInTheDocument()
+    expect(within(metaDrawer).getByLabelText('属性信息')).toBeInTheDocument()
     expect(within(metaDrawer).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
     expect(within(metaDrawer).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
 
@@ -3228,7 +3228,7 @@ describe('FileDetailPane', () => {
 
     expect(within(metaDrawer).getByText('https://pod.example/public/README.md.meta')).toBeInTheDocument()
     expect(within(metaDrawer).getByText('未找到 .meta。')).toBeInTheDocument()
-    expect(within(metaDrawer).getByLabelText('RDF metadata')).toBeInTheDocument()
+    expect(within(metaDrawer).getByLabelText('属性信息')).toBeInTheDocument()
   })
 
   it('opens structured ttl meta in the right drawer instead of file sheet meta', () => {
@@ -3296,7 +3296,7 @@ describe('FileDetailPane', () => {
 
     openHeaderMetaDrawer()
 
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     expect(drawer).toHaveAttribute('data-sidecar-coverage', 'content')
     expect(drawer).toHaveClass('w-[320px]', 'border-l', 'shrink-0')
     expect(drawer).not.toHaveClass('absolute', 'inset-y-0')
@@ -3366,7 +3366,7 @@ describe('FileDetailPane', () => {
 
     openHeaderMetaDrawer()
 
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     expect(within(drawer).getByText('https://pod.example/public/diagram.png.meta')).toBeInTheDocument()
     expect(within(drawer).getByText(/Diagram metadata/)).toBeInTheDocument()
   })
@@ -3445,7 +3445,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
     openHeaderMetaDrawer()
 
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     expect(within(drawer).getByText('https://pod.example/.data/state.ttl.meta')).toBeInTheDocument()
     expect(within(drawer).getByText('未找到 .meta。')).toBeInTheDocument()
   })
@@ -3486,7 +3486,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
     openHeaderMetaDrawer()
 
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     expect(within(drawer).getByText('403')).toBeInTheDocument()
     expect(within(drawer).getByText('.meta 不可访问。')).toBeInTheDocument()
   })
@@ -3518,7 +3518,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
     openHeaderMetaDrawer()
 
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     expect(within(drawer).getByText('无法读取 .meta。')).toBeInTheDocument()
     expect(within(drawer).getByText('HTTP 500 while reading .meta')).toBeInTheDocument()
     expect(within(drawer).queryByText('未找到 .meta。')).not.toBeInTheDocument()
@@ -3562,7 +3562,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
     openHeaderMetaDrawer()
 
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     expect(within(drawer).getByText('工作区状态')).toBeInTheDocument()
     expect(within(drawer).getByText('仓库')).toBeInTheDocument()
     expect(within(drawer).getByText('https://pod.example/.data/repositories/linx.git')).toBeInTheDocument()
@@ -3673,7 +3673,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(await screen.findByLabelText('Resource .meta inspector')).toBeInTheDocument()
+    expect(await screen.findByLabelText('资源附属信息')).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument()
     expect(useFilesStore.getState().sidecarActionRequest).toBeNull()
   })
@@ -4015,7 +4015,7 @@ describe('FileDetailPane', () => {
 
     openHeaderMetaDrawer()
 
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     expect(within(drawer).getByText('https://pod.example/.vocab/terms.ttl.meta')).toBeInTheDocument()
     expect(within(drawer).getByText(/Vocab metadata/)).toBeInTheDocument()
     expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
@@ -4406,7 +4406,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByText(/4 行 · \d+ 个属性/)).toBeInTheDocument()
     expect(screen.getByText('1 个校验提醒')).toBeInTheDocument()
     expect(screen.getByText('#Workspace tags has 2 values; maxCount is 1.')).toBeInTheDocument()
-    expect(screen.getByLabelText('Shape warning for tags on #Workspace')).toBeInTheDocument()
+    expect(screen.getByLabelText('#Workspace 的 tags 格式提醒')).toBeInTheDocument()
     await chooseStructuredFilterCheckbox('有校验提醒的行')
     expect(screen.getByRole('button', { name: '#Workspace' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
@@ -4442,7 +4442,7 @@ describe('FileDetailPane', () => {
     expect(structuredByline).toHaveClass('flex')
     expect(within(structuredByline).getByText('Workspace')).toBeInTheDocument()
     expect(within(structuredByline).queryByText('Subject')).not.toBeInTheDocument()
-    const structuredResourceViewport = screen.getByLabelText('Structured resource viewport')
+    const structuredResourceViewport = screen.getByLabelText('表格视图区')
     expect(structuredResourceViewport).not.toHaveClass('rounded-lg')
     expect(structuredResourceViewport).not.toHaveClass('border')
     expect(structuredResourceViewport).not.toHaveClass('bg-muted/20')
@@ -4467,7 +4467,7 @@ describe('FileDetailPane', () => {
     expect(subjectSidecar).not.toHaveClass('inset-y-0', 'w-[360px]')
     expect(subjectSidecar).not.toHaveClass('inset-0', 'w-full', 'max-w-none')
     expect(within(subjectSidecar).getByText('卡片预览')).toBeInTheDocument()
-    expect(within(subjectSidecar).getByLabelText('Subject card summary')).toBeInTheDocument()
+    expect(within(subjectSidecar).getByLabelText('卡片摘要')).toBeInTheDocument()
     expect(within(subjectSidecar).getByText('类型 · state')).toBeInTheDocument()
     expect(within(subjectSidecar).queryByText(/Type:/)).not.toBeInTheDocument()
     expect(within(subjectSidecar).queryByText('Subject URI')).not.toBeInTheDocument()
@@ -4599,7 +4599,7 @@ describe('FileDetailPane', () => {
     })
 
     await chooseClassScope('udfs:Workspace')
-    const absoluteStructuredViewport = screen.getByLabelText('Structured resource viewport')
+    const absoluteStructuredViewport = screen.getByLabelText('表格视图区')
     const absoluteSubjectButton = await within(absoluteStructuredViewport).findByRole('button', { name: 'report.md' })
     absoluteStructuredViewport.scrollTop = 184
     fireEvent.scroll(absoluteStructuredViewport!)
@@ -4740,7 +4740,7 @@ describe('FileDetailPane', () => {
         nextValues: ['"LinX Files"'],
       }))
     })
-    expect(screen.queryByRole('status', { name: 'Pending approval for title on #Workspace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: '#Workspace 的 title 待审核' })).not.toBeInTheDocument()
     // The person's own edit is already written, so nothing is waiting for confirmation.
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
@@ -4806,7 +4806,7 @@ describe('FileDetailPane', () => {
     })
     expect(screen.getByText('新增 solid-modeling*')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('option', { name: '新增选项 solid-modeling' }))
-    expect(screen.queryByRole('status', { name: 'Pending approval for tags on #Workspace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: '#Workspace 的 tags 待审核' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '查看词表变更 solid-modeling' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '忽略词表变更 solid-modeling' })).not.toBeInTheDocument()
     await waitFor(() => {
@@ -5414,7 +5414,7 @@ describe('FileDetailPane', () => {
     fireEvent.focus(titleInput)
     fireEvent.blur(titleInput)
 
-    expect(screen.getByRole('button', { name: 'Discard pending write for title on #Other' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '放弃 #Other 的 title 更改' })).toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
@@ -5576,7 +5576,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('menuitem', { name: 'core' })).not.toBeInTheDocument()
 
     openHeaderMetaDrawer()
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     const semanticHeading = within(drawer).getByText('链接与 Schema')
     expect(semanticHeading).toBeInTheDocument()
     expect(semanticHeading.closest('details')).toBeNull()
@@ -6464,7 +6464,7 @@ describe('FileDetailPane', () => {
 
     expect(screen.getByRole('columnheader', { name: /owner/i })).toBeInTheDocument()
     expect(screen.getByText('1 个校验提醒')).toBeInTheDocument()
-    expect(screen.getByLabelText('Shape warning for owner on #Workspace')).toBeInTheDocument()
+    expect(screen.getByLabelText('#Workspace 的 owner 格式提醒')).toBeInTheDocument()
 
     const workspaceRow = screen.getByRole('row', { name: /#Workspace/ })
     const workspaceCells = within(workspaceRow).getAllByRole('cell')
@@ -8424,8 +8424,8 @@ describe('FileDetailPane', () => {
       true,
     )
     expect(screen.getByRole('cell', { name: /Draft title/ })).toBeInTheDocument()
-    expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Discard pending write for title on #Workspace' })).not.toBeInTheDocument()
+    expect(screen.getByRole('status', { name: '#Workspace 的 title 待审核' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '放弃 #Workspace 的 title 更改' })).not.toBeInTheDocument()
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
     expect(mockMutateRaw).not.toHaveBeenCalled()
 
@@ -8712,7 +8712,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByText('待确认词表变更')).not.toBeInTheDocument()
     expect(mockCreateCellProposal).not.toHaveBeenCalled()
     expect(screen.getByRole('cell', { name: 'core' })).toBeInTheDocument()
-    expect(screen.queryByRole('status', { name: 'Pending approval for tags on #Workspace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: '#Workspace 的 tags 待审核' })).not.toBeInTheDocument()
     expect(screen.queryByRole('cell', { name: 'solid-modeling' })).not.toBeInTheDocument()
     expect(screen.queryByRole('cell', { name: 'solid-modeling*' })).not.toBeInTheDocument()
   })
@@ -9021,7 +9021,7 @@ describe('FileDetailPane', () => {
       })
     })
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'Discard pending write for title on #Workspace' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '放弃 #Workspace 的 title 更改' })).not.toBeInTheDocument()
       expect(screen.queryByRole('cell', { name: /Draft title/ })).not.toBeInTheDocument()
     })
     expect(screen.getByRole('cell', { name: 'Files' })).toBeInTheDocument()
@@ -9079,10 +9079,10 @@ describe('FileDetailPane', () => {
     })
     expect(mockMutateRaw).not.toHaveBeenCalled()
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'Discard pending write for title on #Workspace' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '放弃 #Workspace 的 title 更改' })).not.toBeInTheDocument()
     })
     expect(screen.getByText('Draft title')).toBeInTheDocument()
-    expect(screen.queryByRole('status', { name: 'Pending approval for title on #Workspace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: '#Workspace 的 title 待审核' })).not.toBeInTheDocument()
   })
 
   it('renders raw structured view from effective visible table state', async () => {
@@ -10047,7 +10047,7 @@ describe('FileDetailPane', () => {
 
     expect(screen.getByLabelText('Folder list view')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '展开 docs' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Folder child preview')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('所选项预览')).not.toBeInTheDocument()
     expect(screen.queryByText('文件夹预览')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '预览' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '来源' })).not.toBeInTheDocument()
@@ -10144,7 +10144,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByLabelText('Folder detail surface')).toBeInTheDocument()
+    expect(screen.getByLabelText('文件夹内容')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '预览' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '来源' })).not.toBeInTheDocument()
     expect(screen.queryByText('浏览 public')).not.toBeInTheDocument()
@@ -10170,7 +10170,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('docs')).toBeInTheDocument()
     expect(screen.getByText('diagram.png')).toBeInTheDocument()
     expect(screen.queryByText('文件夹预览')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Folder child preview')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('所选项预览')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '网格' }))
     const iconView = screen.getByLabelText('Folder icon view')
@@ -10261,7 +10261,7 @@ describe('FileDetailPane', () => {
     const metaCallStart = mockUseFilesMetaSidecar.mock.calls.length
     openHeaderMetaDrawer()
 
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     const openedMetaTargets = mockUseFilesMetaSidecar.mock.calls
       .slice(metaCallStart)
       .filter(([, enabled]) => enabled === true)
@@ -10738,7 +10738,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     const file = new File([new Uint8Array([1, 2, 3, 4])], 'scan.pdf', { type: 'application/pdf' })
-    const folderPane = screen.getByLabelText('Folder detail surface')
+    const folderPane = screen.getByLabelText('文件夹内容')
     expect(folderPane).not.toBeNull()
     fireEvent.dragOver(folderPane!, {
       dataTransfer: {
@@ -11431,13 +11431,13 @@ describe('FileDetailPane', () => {
     rerender(<FileDetailPane />)
 
     expect(screen.queryByRole('button', { name: /alpha/ })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Folder child preview')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('所选项预览')).not.toBeInTheDocument()
 
     mockFolder([alpha, beta])
     rerender(<FileDetailPane />)
 
     expect(getFolderTreeItem(/alpha/)).toHaveAttribute('aria-selected', 'false')
-    expect(screen.queryByLabelText('Folder child preview')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('所选项预览')).not.toBeInTheDocument()
   })
 
   it('previews an editable child file and opens its sheet on explicit open', async () => {
@@ -11955,7 +11955,7 @@ describe('FileDetailPane', () => {
     const metaCallStart = mockUseFilesMetaSidecar.mock.calls.length
     openHeaderMetaDrawer()
 
-    const drawer = screen.getByLabelText('Resource .meta inspector')
+    const drawer = screen.getByLabelText('资源附属信息')
     const openedMetaTargets = mockUseFilesMetaSidecar.mock.calls
       .slice(metaCallStart)
       .filter(([, enabled]) => enabled === true)

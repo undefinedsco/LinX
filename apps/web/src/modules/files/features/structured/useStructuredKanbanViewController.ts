@@ -39,6 +39,7 @@ export function useStructuredKanbanViewController({
   laneOrder = [],
   initialCollapsedLaneIds = [],
   extraLanes,
+  optionOrder,
   laneLabels,
   onColumnOrderChange,
   onLaneOrderChange,
@@ -53,6 +54,7 @@ export function useStructuredKanbanViewController({
   laneOrder?: string[]
   initialCollapsedLaneIds?: string[]
   extraLanes?: string[]
+  optionOrder?: string[]
   laneLabels?: Record<string, string>
   onColumnOrderChange: (columnId: string, subjects: string[]) => void
   onLaneOrderChange?: (laneOrder: string[]) => void
@@ -75,8 +77,9 @@ export function useStructuredKanbanViewController({
       projection,
       extraLanes,
       laneLabels,
+      optionOrder,
     }),
-    [extraLanes, groupPredicate, kanbanOrder, laneLabels, projection],
+    [extraLanes, groupPredicate, kanbanOrder, laneLabels, optionOrder, projection],
   )
   const move = useStructuredKanbanMoveController({
     documentUri,
@@ -119,6 +122,8 @@ export function useStructuredKanbanViewController({
 
   useEffect(() => {
     if (!onLaneOrderChange) return
+    // Nothing saved yet: the default order (option definition order) stays derived until a lane is moved.
+    if (laneOrder.length === 0) return
     if (arraysEqual(displayColumnIds, laneOrder)) {
       lastPublishedLaneOrderRef.current = null
       return

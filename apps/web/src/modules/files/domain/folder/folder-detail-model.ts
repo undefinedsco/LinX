@@ -524,7 +524,7 @@ export function projectFolderDescendantColumnModel({
   const title = parentFile?.name ?? folderColumnNameFromUri(containerUri)
   return {
     chrome: {
-      ariaLabel: `Folder column ${title}`,
+      ariaLabel: `文件夹列 ${title}`,
       loadingMessage: FOLDER_DESCENDANT_COLUMN_LOADING_MESSAGE,
       title,
       unavailableMessage: FOLDER_DESCENDANT_COLUMN_UNAVAILABLE_MESSAGE,

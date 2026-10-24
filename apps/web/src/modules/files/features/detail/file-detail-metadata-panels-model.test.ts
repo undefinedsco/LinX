@@ -53,14 +53,14 @@ describe('file detail metadata panels model', () => {
   it('projects predicate status marker chrome for pending and failed meta writes', () => {
     expect(projectDetailMetaPredicateStatusChrome({
       status: undefined,
-      statusLabel: 'File title meta predicate',
+      statusLabel: '文件标题',
     })).toBeNull()
 
     expect(projectDetailMetaPredicateStatusChrome({
       status: 'pending',
-      statusLabel: 'File title meta predicate',
+      statusLabel: '文件标题',
     })).toEqual({
-      ariaLabel: '待审核更改：File title meta predicate',
+      ariaLabel: '待审核更改：文件标题',
       className: 'text-[13px] font-semibold leading-none text-primary',
       marker: '*',
       title: '待审核更改',
@@ -68,12 +68,12 @@ describe('file detail metadata panels model', () => {
 
     expect(projectDetailMetaPredicateStatusChrome({
       status: 'error',
-      statusLabel: 'File title meta predicate',
+      statusLabel: '文件标题',
     })).toEqual({
-      ariaLabel: 'meta predicate 更改提交失败：File title meta predicate',
+      ariaLabel: '属性更改提交失败：文件标题',
       className: 'text-[12px] font-semibold leading-none text-destructive',
       marker: '!',
-      title: 'meta predicate 更改提交失败',
+      title: '属性更改提交失败',
     })
   })
 
@@ -89,7 +89,7 @@ describe('file detail metadata panels model', () => {
       documentUri: 'https://pod.example/public/report.md.meta',
       labelPrefix: 'File',
       relation: {
-        ariaLabel: 'File source meta predicate',
+        ariaLabel: '文件来源',
         label: 'source',
         predicate: 'dcterms:source',
         value: 'https://source.example/report',
@@ -148,7 +148,7 @@ describe('file detail metadata panels model', () => {
       documentUri: 'https://pod.example/.data/cards/report.card.ttl',
       labelPrefix: 'Card',
       relation: {
-        ariaLabel: 'Card relation meta predicate',
+        ariaLabel: '卡片关联',
         label: 'relation',
         predicate: 'udfs:bodyResource',
         value: 'https://pod.example/.data/cards/report.md',

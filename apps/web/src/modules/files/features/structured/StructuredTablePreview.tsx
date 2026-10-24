@@ -4,7 +4,7 @@ import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import { createStructuredCellWriteProposal } from '../../domain/structured/structured-table'
 import { StructuredKanbanView } from './StructuredKanbanView'
-import { mergeKanbanOptionLanes } from './structured-kanban-view-model'
+import { kanbanOptionLabels, mergeKanbanOptionLanes } from './structured-kanban-view-model'
 import {
   StructuredProjectionWarningsAlert,
   StructuredShapeWarningsAlert,
@@ -16,7 +16,7 @@ import { StructuredResourceToolbar } from './StructuredResourceToolbar'
 import { StructuredSubjectPeekActions } from './StructuredSubjectPeekActions'
 import { StructuredSubjectPeekDrawer } from './StructuredSubjectPeek'
 import { StructuredWhiteboardView } from './StructuredWhiteboardView'
-import { projectStructuredResourcePreviewHeaderModel } from './structured-resource-preview-header-model'
+import { projectStructuredCardClassLabels, projectStructuredResourcePreviewHeaderModel, projectStructuredTableWithoutNameColumn } from './structured-resource-preview-header-model'
 import { STRUCTURED_TABLE_ROW_ORDER_KEY } from './structured-row-selection-model'
 import { localRdfName } from '../../domain/card/rdf-term-tokens'
 import { useStructuredAiCellDots } from './useStructuredAiCellDots'
@@ -316,6 +316,26 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     [kanbanBoard.extraLanes, kanbanGroupPredicate, vocabDefinitionIndex?.enumOptionsByPredicate],
   )
 
+  // Cards name their type by the label people gave it (「任务」), not by the class's local name (Task).
+  const cardProjection = useMemo(() => ({
+    ...effectiveViewProjection,
+    classLabels: projectStructuredCardClassLabels({
+      classes: vocabDefinitionIndex?.classes,
+      scopeClassName: scopedProjection.className,
+      scopeLabel: classScopeDisplayLabel,
+    }),
+  }), [classScopeDisplayLabel, effectiveViewProjection, scopedProjection.className, vocabDefinitionIndex?.classes])
+
+  const namedTableProjection = useMemo(
+    () => projectStructuredTableWithoutNameColumn(tableProjection, file.uri),
+    [file.uri, tableProjection],
+  )
+
+  const kanbanOptionOrder = useMemo(
+    () => kanbanOptionLabels(kanbanGroupPredicate, vocabDefinitionIndex?.enumOptionsByPredicate),
+    [kanbanGroupPredicate, vocabDefinitionIndex?.enumOptionsByPredicate],
+  )
+
   return (
     <div className="relative min-h-full w-full min-w-0 max-w-full overflow-hidden p-2 space-y-2">
       <div
@@ -428,7 +448,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               onUndoAiCell={aiCellDots.onUndoAiCell}
               onSeenAiCell={aiCellDots.onSeenAiCell}
               documentUri={file.uri}
-              projection={tableProjection}
+              projection={namedTableProjection}
               availablePredicates={schemaPredicateControls}
               classScope={scopedProjection.className}
               sortKey={structuredSortKey}
@@ -460,13 +480,14 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           {viewMode === 'kanban' && (
             <StructuredKanbanView
               documentUri={file.uri}
-              projection={effectiveViewProjection}
+              projection={cardProjection}
               groupPredicate={kanbanGroupPredicate}
               kanbanOrder={kanbanOrder}
               laneOrder={kanbanBoard.laneOrder}
               initialCollapsedLaneIds={kanbanBoard.collapsedLaneIds}
               initialScrollLeft={kanbanBoard.scrollLeft}
               extraLanes={kanbanLanes}
+              optionOrder={kanbanOptionOrder}
               laneLabels={kanbanBoard.laneLabels}
               cardFields={kanbanBoard.cardFields}
               predicateLabel={predicateLabel}
@@ -486,7 +507,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
             <StructuredWhiteboardView
               documentUri={file.uri}
               layout={whiteboardPositions}
-              projection={effectiveViewProjection}
+              projection={cardProjection}
               selectedSubjects={whiteboardSubjects}
               visualRelations={whiteboardVisualRelations}
               snapshot={whiteboardSnapshot}

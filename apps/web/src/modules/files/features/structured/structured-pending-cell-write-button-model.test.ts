@@ -9,7 +9,7 @@ describe('structured pending cell write button model', () => {
       status: 'approval-staged',
       subject: '#Workspace',
     })).toEqual({
-      ariaLabel: 'Pending approval for title on #Workspace',
+      ariaLabel: '#Workspace 的 title 待审核',
       kind: 'status',
       marker: '*',
       title: '单元格变更已提交；等待 Inbox 审批，canonical 数据未变更',
@@ -35,7 +35,7 @@ describe('structured pending cell write button model', () => {
       status: 'failed',
       subject: '#Workspace',
     })).toEqual({
-      ariaLabel: 'Discard pending write for title on #Workspace',
+      ariaLabel: '放弃 #Workspace 的 title 更改',
       kind: 'discard',
       title: '单元格变更提交失败；可撤回本地改动',
     })

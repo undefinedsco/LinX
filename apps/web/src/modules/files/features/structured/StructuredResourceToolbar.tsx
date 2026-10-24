@@ -443,7 +443,7 @@ export function StructuredResourceToolbar({
         data-structured-toolbar-scroll="subject-tools"
         className="contents"
       >
-        <div className="group/search order-[4] relative h-7 w-7 shrink-0 transition-[width] focus-within:w-44">
+        <div className="group/search order-[6] relative h-7 w-7 shrink-0 transition-[width] focus-within:w-44">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchText}
@@ -459,7 +459,7 @@ export function StructuredResourceToolbar({
               <button
                 aria-label={toolbarModel.filterTool.ariaLabel}
                 className={cn(
-                  'order-[5] flex h-7 w-7 items-center justify-center rounded-md text-[11px] transition-colors hover:bg-muted/70',
+                  'order-[4] flex h-7 w-7 items-center justify-center rounded-md text-[11px] transition-colors hover:bg-muted/70',
                   toolbarModel.hasActiveFilters ? 'text-primary' : 'text-muted-foreground',
                 )}
               >
@@ -530,7 +530,7 @@ export function StructuredResourceToolbar({
                   aria-label={toolbarModel.sortTool.ariaLabel}
                   title={toolbarModel.sortTool.label}
                   className={cn(
-                    'order-[6] flex h-7 w-7 items-center justify-center rounded-md text-[11px] transition-colors hover:bg-muted/70',
+                    'order-[5] flex h-7 w-7 items-center justify-center rounded-md text-[11px] transition-colors hover:bg-muted/70',
                     toolbarModel.sortTool.active ? 'text-primary' : 'text-muted-foreground',
                   )}
                 >

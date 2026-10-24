@@ -28,9 +28,9 @@ describe('StructuredTableCellPrimitives', () => {
 
     expect(source).toContain("from './structured-pending-cell-write-button-model'")
     expect(source).toContain('projectPendingCellWriteButtonChrome')
-    expect(source).not.toContain('Pending approval for ${predicateLabel} on ${subject}')
+    expect(source).not.toContain('${subject} 的 ${predicateLabel} 待审核')
     expect(source).not.toContain('正在提交 ${predicateLabel} on ${subject} 的单元格变更')
-    expect(source).not.toContain('Discard pending write for ${predicateLabel} on ${subject}')
+    expect(source).not.toContain('放弃 ${subject} 的 ${predicateLabel} 更改')
     expect(source).not.toContain('单元格变更已提交；等待 Inbox 审批，canonical 数据未变更')
     expect(source).not.toContain('单元格变更正在提交；canonical 数据未变更')
     expect(source).not.toContain('单元格变更提交失败；可撤回本地改动')
@@ -58,7 +58,7 @@ describe('StructuredTableCellPrimitives', () => {
   it('keeps shape warning accessible copy in cell chrome', () => {
     const source = readFileSync('src/modules/files/features/structured/StructuredTableCellPrimitives.tsx', 'utf8')
 
-    expect(source).not.toContain('Shape warning for ${predicateLabel} on ${subject}')
+    expect(source).not.toContain('${subject} 的 ${predicateLabel} 格式提醒')
     expect(source).not.toMatch(/aria-label=\{`Shape warning for/)
   })
 
@@ -162,12 +162,12 @@ describe('StructuredTableCellPrimitives', () => {
   it('renders shape warning as a compact accessible icon', () => {
     render(
       <ShapeWarningIndicator
-        ariaLabel="Shape warning for tags on #Workspace"
+        ariaLabel="#Workspace 的 tags 格式提醒"
         title="#Workspace tags has 2 values; maxCount is 1."
       />,
     )
 
-    const warning = screen.getByLabelText('Shape warning for tags on #Workspace')
+    const warning = screen.getByLabelText('#Workspace 的 tags 格式提醒')
     expect(warning).toHaveAttribute('role', 'img')
     expect(warning).toHaveAttribute('title', '#Workspace tags has 2 values; maxCount is 1.')
   })
@@ -194,7 +194,7 @@ describe('StructuredTableCellPrimitives', () => {
       </div>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Discard pending write for title on #Workspace' }))
+    fireEvent.click(screen.getByRole('button', { name: '放弃 #Workspace 的 title 更改' }))
 
     expect(onDiscard).toHaveBeenCalledTimes(1)
     expect(onCellClick).not.toHaveBeenCalled()
@@ -209,10 +209,10 @@ describe('StructuredTableCellPrimitives', () => {
       />,
     )
 
-    expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' })).toBeInTheDocument()
-    expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' }))
+    expect(screen.getByRole('status', { name: '#Workspace 的 title 待审核' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: '#Workspace 的 title 待审核' }))
       .toHaveAttribute('title', '单元格变更已提交；等待 Inbox 审批，canonical 数据未变更')
-    expect(screen.queryByRole('button', { name: 'Discard pending write for title on #Workspace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '放弃 #Workspace 的 title 更改' })).not.toBeInTheDocument()
   })
 
   it('shows submitting writes without exposing cell proposal implementation copy', () => {
