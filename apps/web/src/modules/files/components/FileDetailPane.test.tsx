@@ -8938,31 +8938,14 @@ describe('FileDetailPane', () => {
       fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
       expect(screen.queryByRole('menuitemcheckbox', { name: 'tags' })).not.toBeInTheDocument()
       fireEvent.keyDown(document.body, { key: 'Escape' })
+      // Let the 列显示 menu finish closing first: on slow runners its close otherwise dismisses the
+      // + 属性 menu that opens right after, and the click lands on a row that is already gone.
+      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
 
       // ... but 加属性 offers it again.
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
-      // Exactly the row in the + 属性 menu: /tags/ also matched other buttons (e.g. the removal toast).
-      const restoreRow = within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' })
-      const beforeClick = { connected: restoreRow.isConnected, menus: screen.queryAllByRole('menu').length, title: restoreRow.getAttribute('title') }
-      fireEvent.click(restoreRow)
-      console.error('[header-menu diagnose click]', JSON.stringify({
-        beforeClick,
-        afterRemoved: useFilesStore.getState().structuredColumnViewByDocument[documentUri]?.removed,
-      }))
-      try {
-        expect(await screen.findByRole('button', { name: 'tags 列菜单' })).toBeInTheDocument()
-      } catch (error) {
-        // CI-only failure: show what the table and the column view look like at this point.
-        console.error('[header-menu diagnose]', JSON.stringify({
-          headers: screen.queryAllByRole('columnheader').map((header) => header.textContent),
-          menus: screen.queryAllByRole('button').map((button) => button.getAttribute('aria-label')).filter((label) => label?.includes('列菜单')),
-          columnView: useFilesStore.getState().structuredColumnViewByDocument[documentUri],
-          hidden: [...useFilesStore.getState().structuredHiddenPredicates],
-          confirmCalls: mockConfirmVocabTerm.mock.calls.length,
-          openMenus: screen.queryAllByRole('menu').length,
-        }))
-        throw error
-      }
+      fireEvent.click(within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' }))
+      expect(await screen.findByRole('button', { name: 'tags 列菜单' })).toBeInTheDocument()
       expect(useFilesStore.getState().structuredColumnViewByDocument[documentUri]?.removed).toEqual([])
     })
 
