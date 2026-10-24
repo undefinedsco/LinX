@@ -134,10 +134,14 @@ function InlineWelcomeContent({ named, onNamed, start }: { named: string | null;
  * dialogs) is always the real one; while the welcome is due it only adds the assistant's
  * first words above the empty thread. Sending anything ends the welcome.
  */
-export function InlineWelcomeHost({ render }: { render: (welcome: InlineWelcome | undefined) => ReactNode }) {
+export function InlineWelcomeHost({ render, active = true }: {
+  render: (welcome: InlineWelcome | undefined) => ReactNode
+  /** Whether this topic may show the welcome; when false it renders the plain conversation in the same place. */
+  active?: boolean
+}) {
   const { phase, finish } = useWelcomePhase()
   const [named, setNamed] = useState<string | null>(null)
-  if (phase !== 'first') return <>{render(undefined)}</>
+  if (!active || phase !== 'first') return <>{render(undefined)}</>
   return (
     <>
       {render({
