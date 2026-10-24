@@ -4,10 +4,16 @@ import {
   useFilesStore,
   type StructuredColumnSizingUpdater,
 } from '../../app/store'
+import {
+  removeStructuredColumnFilter,
+  setStructuredColumnFilter,
+  type StructuredColumnFilter,
+} from '../../domain/structured/structured-column-filter'
 import type { StructuredWhiteboardVisualRelation } from '../../domain/structured/structured-projections'
 import type { StructuredTableProjection } from '../../domain/structured/structured-table'
 import type { StructuredViewMetadata } from '../../domain/structured/structured-view-metadata'
 import {
+  EMPTY_STRUCTURED_COLUMN_VIEW,
   normalizeStructuredKanbanBoardMetadata,
   normalizeStructuredWhiteboardSnapshotMetadata,
   type StructuredKanbanBoardMetadataV1,
@@ -54,6 +60,8 @@ export function useStructuredViewStateController({
   const togglePredicateVisibility = useFilesStore((state) => state.toggleStructuredPredicateVisibility)
   const columnSizingByDocument = useFilesStore((state) => state.structuredColumnSizingByDocument)
   const setStructuredColumnSizing = useFilesStore((state) => state.setStructuredColumnSizing)
+  const columnView = useFilesStore((state) => state.structuredColumnViewByDocument[file.uri] ?? EMPTY_STRUCTURED_COLUMN_VIEW)
+  const setStructuredColumnView = useFilesStore((state) => state.setStructuredColumnView)
   const kanbanGroupPredicate = useFilesStore((state) => state.structuredKanbanGroupPredicate)
   const setKanbanGroupPredicate = useFilesStore((state) => state.setStructuredKanbanGroupPredicate)
   const kanbanOrder = useFilesStore((state) => state.structuredKanbanOrderByDocument[file.uri] ?? EMPTY_KANBAN_ORDER)
@@ -124,6 +132,7 @@ export function useStructuredViewStateController({
     kanbanOrder,
     kanbanBoard: persistedKanbanBoard,
     columnSizing,
+    columnView,
     whiteboard: {
       selectedSubjects: whiteboardSubjects,
       positions: whiteboardPositions,
@@ -133,6 +142,7 @@ export function useStructuredViewStateController({
     writesCanonicalData: false,
   }), [
     columnSizing,
+    columnView,
     effectiveClassScope,
     file.uri,
     hiddenPredicates,
@@ -180,7 +190,7 @@ export function useStructuredViewStateController({
     markLocalViewMetadataChange()
     setStructuredSearchText(searchText)
   }, [markLocalViewMetadataChange, setStructuredSearchText])
-  const setStructuredSortFromUi = useCallback((sortKey: string, sortDirection: StructuredSortDirection) => {
+  const setStructuredSortFromUi = useCallback((sortKey: string | null, sortDirection: StructuredSortDirection) => {
     markLocalViewMetadataChange()
     setStructuredSort(sortKey, sortDirection)
   }, [markLocalViewMetadataChange, setStructuredSort])
@@ -196,6 +206,41 @@ export function useStructuredViewStateController({
     markLocalViewMetadataChange()
     setStructuredColumnSizing(file.uri, updater)
   }, [file.uri, markLocalViewMetadataChange, setStructuredColumnSizing])
+  const setColumnFilterFromUi = useCallback((filter: StructuredColumnFilter) => {
+    markLocalViewMetadataChange()
+    setStructuredColumnView(file.uri, (current) => ({ ...current, filters: setStructuredColumnFilter(current.filters, filter) }))
+  }, [file.uri, markLocalViewMetadataChange, setStructuredColumnView])
+  const removeColumnFilterFromUi = useCallback((predicate: string) => {
+    markLocalViewMetadataChange()
+    setStructuredColumnView(file.uri, (current) => ({ ...current, filters: removeStructuredColumnFilter(current.filters, predicate) }))
+  }, [file.uri, markLocalViewMetadataChange, setStructuredColumnView])
+  const clearColumnFiltersFromUi = useCallback(() => {
+    markLocalViewMetadataChange()
+    setStructuredColumnView(file.uri, (current) => ({ ...current, filters: [] }))
+  }, [file.uri, markLocalViewMetadataChange, setStructuredColumnView])
+  /** An empty name puts the column's own name back. */
+  const setColumnLabelFromUi = useCallback((predicate: string, label: string) => {
+    markLocalViewMetadataChange()
+    setStructuredColumnView(file.uri, (current) => {
+      const labels = { ...current.labels }
+      const trimmed = label.trim()
+      if (trimmed) labels[predicate] = trimmed
+      else delete labels[predicate]
+      return { ...current, labels }
+    })
+  }, [file.uri, markLocalViewMetadataChange, setStructuredColumnView])
+  const setColumnRemovedFromUi = useCallback((predicate: string, removed: boolean) => {
+    markLocalViewMetadataChange()
+    setStructuredColumnView(file.uri, (current) => {
+      const others = current.removed.filter((entry) => entry !== predicate)
+      return {
+        ...current,
+        removed: removed ? [...others, predicate] : others,
+        // A column that left the table takes its filter with it: a chip for a column nobody sees would be a trap.
+        filters: removed ? removeStructuredColumnFilter(current.filters, predicate) : current.filters,
+      }
+    })
+  }, [file.uri, markLocalViewMetadataChange, setStructuredColumnView])
   const setKanbanGroupPredicateFromUi = useCallback((predicate: string | null) => {
     markLocalViewMetadataChange()
     setKanbanGroupPredicate(predicate)
@@ -247,16 +292,22 @@ export function useStructuredViewStateController({
   return {
     addWhiteboardSubjectFromUi,
     classScope,
+    clearColumnFiltersFromUi,
     clearWhiteboardSubjectsFromUi,
     closeStructuredViewFromUi,
     columnSizing,
+    columnView,
     effectiveClassScope,
     hiddenPredicates,
     kanbanGroupPredicate,
     kanbanOrder,
     kanbanBoard,
     openViews,
+    removeColumnFilterFromUi,
     removeWhiteboardSubjectFromUi,
+    setColumnFilterFromUi,
+    setColumnLabelFromUi,
+    setColumnRemovedFromUi,
     setKanbanColumnOrderFromUi,
     setKanbanBoardFromUi,
     setKanbanGroupPredicateFromUi,

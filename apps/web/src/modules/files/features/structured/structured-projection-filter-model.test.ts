@@ -224,4 +224,58 @@ describe('property names and option properties', () => {
     expect(structuredOptionPredicates(['https://x/stage', 'https://x/points', 'https://x/other'], index)).toEqual(['https://x/stage'])
     expect(structuredOptionPredicates(['stage'], undefined)).toEqual([])
   })
+
+  it('hides rows by the person\'s column filters in every view, and keeps the columns', () => {
+    const model = projectStructuredProjectionFilterModel({
+      columnFilters: [{ predicate: 'linx:done', kind: 'values', values: ['true'] }],
+      classScope: 'schema:Task',
+      predicateNamespaceFilter: null,
+      predicateTypeFilter: 'all',
+      projection,
+      structuredSearchText: '',
+      structuredSortDirection: 'asc',
+      structuredSortKey: null,
+      vocabDefinitionIndex,
+      vocabTermFilter: 'all',
+    })
+
+    expect(model.viewProjection.rows.map((row) => row.subject)).toEqual(['#one'])
+    expect(model.unfilteredTableProjection.rows.map((row) => row.subject)).toEqual(['#one'])
+    // Filters hide rows only: the columns and the unfiltered schema stay as they were.
+    expect(model.unfilteredTableProjection.predicates).toEqual(model.schemaProjection.predicates)
+    expect(model.schemaProjection.rows.map((row) => row.subject)).toEqual(['#one', '#three'])
+  })
+
+  it('combines column filters with search and sorting', () => {
+    const model = projectStructuredProjectionFilterModel({
+      columnFilters: [{ predicate: 'schema:name', kind: 'contains', text: 'a' }],
+      classScope: 'schema:Task',
+      predicateNamespaceFilter: null,
+      predicateTypeFilter: 'all',
+      projection,
+      structuredSearchText: 'beta',
+      structuredSortDirection: 'desc',
+      structuredSortKey: 'schema:name',
+      vocabDefinitionIndex,
+      vocabTermFilter: 'all',
+    })
+
+    expect(model.viewProjection.rows.map((row) => row.subject)).toEqual(['#three'])
+  })
+
+  it('leaves rows alone when there are no column filters', () => {
+    const model = projectStructuredProjectionFilterModel({
+      classScope: 'schema:Task',
+      predicateNamespaceFilter: null,
+      predicateTypeFilter: 'all',
+      projection,
+      structuredSearchText: '',
+      structuredSortDirection: 'asc',
+      structuredSortKey: null,
+      vocabDefinitionIndex,
+      vocabTermFilter: 'all',
+    })
+
+    expect(model.viewProjection.rows.map((row) => row.subject)).toEqual(['#one', '#three'])
+  })
 })

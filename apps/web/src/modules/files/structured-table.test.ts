@@ -13,6 +13,7 @@ import {
   projectLockedVocabRegistryRows,
   projectStructuredResourceTable,
   projectStructuredTableView,
+  renderApprovedVocabShapeProposalNTriples,
   renderStructuredProjectionAsRawText,
   buildStructuredVocabDefinitionIndex,
   projectRdfXmlTable,
@@ -1506,6 +1507,91 @@ describe('projectTurtleTable', () => {
       className: 'udfs:Workspace',
       classOptions: ['udfs:Workspace'],
     })
+  })
+
+  it('gives only a column a rule that scopes it to a table, so a type or an option never shows up as a column', () => {
+    const base = {
+      documentUri: 'https://pod.example/test/tasks.ttl',
+      classScope: 'udfs:Task',
+      label: 'x',
+      valueType: 'text',
+      description: '',
+      createdAt: '2026-10-24T00:00:00.000Z',
+    }
+    const column = createVocabTermProposal({ ...base, termUri: 'https://pod.example/.vocab/terms.ttl#col', termKind: 'predicate', shape: 'class udfs:Task · editor input' })
+    const option = createVocabTermProposal({ ...base, termUri: 'https://pod.example/.vocab/terms.ttl#opt', termKind: 'enum-option', shape: 'predicate https://pod.example/.vocab/terms.ttl#col', predicate: 'https://pod.example/.vocab/terms.ttl#col' })
+    const type = createVocabTermProposal({ ...base, classScope: null, termUri: 'https://pod.example/.vocab/terms.ttl#Task', termKind: 'class', shape: 'rdf:type scope' })
+
+    expect(renderApprovedVocabShapeProposalNTriples(column)).toContain('/vocab/term> <https://pod.example/.vocab/terms.ttl#col>')
+    expect(renderApprovedVocabShapeProposalNTriples(option)).toBe('')
+    expect(renderApprovedVocabShapeProposalNTriples(type)).toBe('')
+    expect(applyApprovedVocabShapeProposalToTurtle('', option)).toBe('')
+    expect(applyApprovedVocabShapeProposalToTurtle('', type)).toBe('')
+    // The option still belongs to its column through the term itself.
+    expect(applyApprovedVocabTermProposalToTurtle('', option)).toContain('udfs:predicate <https://pod.example/.vocab/terms.ttl#col>')
+  })
+
+  it('lists columns the person added in the order they were added, not in the order the registry returns them', () => {
+    const projection = projectStructuredResourceTable({
+      uri: 'https://pod.example/test/tasks.ttl',
+      mimeType: 'text/turtle',
+      source: `
+        @prefix udfs: <https://undefineds.co/vocab/> .
+        <#a> a udfs:Task .
+      `,
+    })
+    const scopedProjection = projectStructuredClassScope(projection, 'udfs:Task')
+    // The registry hands the rules back sorted by name: 金额 (p-1) is first, although 状态 was typed first.
+    const shapes = projectLockedVocabRegistryRows({
+      uri: 'https://pod.example/.vocab/shapes.ttl',
+      mimeType: 'text/turtle',
+      source: `
+        @prefix udfs: <https://undefineds.co/vocab/> .
+        @prefix dcterms: <http://purl.org/dc/terms/> .
+        <#p-1-shape> a udfs:ShapeRule ; udfs:term <https://pod.example/.vocab/terms.ttl#p-1> ; udfs:classScope "udfs:Task" ; udfs:constraint "datatype xsd:decimal" ; dcterms:created "2026-10-24T01:00:00.003Z" .
+        <#p-2-shape> a udfs:ShapeRule ; udfs:term <https://pod.example/.vocab/terms.ttl#p-2> ; udfs:classScope "udfs:Task" ; udfs:constraint "editor input" ; dcterms:created "2026-10-24T01:00:00.001Z" .
+        <#p-3-shape> a udfs:ShapeRule ; udfs:term <https://pod.example/.vocab/terms.ttl#p-3> ; udfs:classScope "udfs:Task" ; udfs:constraint "datatype xsd:date" ; dcterms:created "2026-10-24T01:00:00.002Z" .
+        <#old-shape> a udfs:ShapeRule ; udfs:term <https://pod.example/.vocab/terms.ttl#old> ; udfs:classScope "udfs:Task" ; udfs:constraint "editor input" .
+      `,
+      registryKind: 'shapes',
+    })
+    const index = buildStructuredVocabDefinitionIndex({ terms: [], shapes })
+
+    const schemaProjection = projectStructuredVocabSchemaColumns(scopedProjection, index, scopedProjection.className)
+
+    // Oldest first; a rule with no time is simply kept (it has nothing to be ordered by).
+    expect(schemaProjection.predicates.filter((predicate) => predicate !== '#old')).toEqual(['#p-2', '#p-3', '#p-1'])
+    expect(schemaProjection.predicates).toContain('#old')
+  })
+
+  it('keeps the order columns were added in once values are written into them (observed columns are sorted by address)', () => {
+    const projection = projectStructuredResourceTable({
+      uri: 'https://pod.example/test/tasks.ttl',
+      mimeType: 'text/turtle',
+      source: `
+        @prefix udfs: <https://undefineds.co/vocab/> .
+        <#a> a udfs:Task ; <#p-1> "5" ; <#p-2> "x" ; udfs:title "Files" .
+      `,
+    })
+    const scopedProjection = projectStructuredClassScope(projection, 'udfs:Task')
+    const shapes = projectLockedVocabRegistryRows({
+      uri: 'https://pod.example/.vocab/shapes.ttl',
+      mimeType: 'text/turtle',
+      source: `
+        @prefix udfs: <https://undefineds.co/vocab/> .
+        @prefix dcterms: <http://purl.org/dc/terms/> .
+        <#p-1-shape> a udfs:ShapeRule ; udfs:term <https://pod.example/.vocab/terms.ttl#p-1> ; udfs:classScope "udfs:Task" ; udfs:constraint "datatype xsd:decimal" ; dcterms:created "2026-10-24T01:00:00.002Z" .
+        <#p-2-shape> a udfs:ShapeRule ; udfs:term <https://pod.example/.vocab/terms.ttl#p-2> ; udfs:classScope "udfs:Task" ; udfs:constraint "editor input" ; dcterms:created "2026-10-24T01:00:00.001Z" .
+      `,
+      registryKind: 'shapes',
+    })
+    const index = buildStructuredVocabDefinitionIndex({ terms: [], shapes })
+
+    const { predicates } = projectStructuredVocabSchemaColumns(scopedProjection, index, scopedProjection.className)
+
+    expect(predicates.filter((predicate) => predicate.startsWith('#p-'))).toEqual(['#p-2', '#p-1'])
+    // A column that was never given a time stays where it was.
+    expect(predicates.indexOf('https://undefineds.co/vocab/title')).toBe(scopedProjection.predicates.indexOf('https://undefineds.co/vocab/title'))
   })
 
   it('does not duplicate an observed predicate when a shape references an alias of the same term', () => {

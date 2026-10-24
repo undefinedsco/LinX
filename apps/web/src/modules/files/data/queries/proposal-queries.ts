@@ -41,6 +41,37 @@ export function useApproveVocabTermProposal() {
   })
 }
 
+/** The person's own new term (column, option) goes straight into the vocabulary. */
+export function useConfirmVocabTerm() {
+  const { db } = useSolidDatabase()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: { proposal: VocabTermProposal; resolveRecord?: boolean }) => {
+      if (!db) throw new Error('Database not connected')
+      return vocabTermProposalCollection.confirmWithCache({
+        cacheClient: queryClient,
+        db,
+        proposal: input.proposal,
+        resolveRecord: input.resolveRecord,
+      })
+    },
+  })
+}
+
+/** K6d 改值的类型: rewrites the value type of a property the person owns. */
+export function useChangeVocabTermValueType() {
+  const { db } = useSolidDatabase()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: { termUri: string; targetVocabUri: string; valueType: string; shape: string }) => {
+      if (!db) throw new Error('Database not connected')
+      return vocabTermProposalCollection.changeValueTypeWithCache({ cacheClient: queryClient, db, ...input })
+    },
+  })
+}
+
 export function useCreateVocabTermProposalInboxApproval() {
   const { db } = useSolidDatabase()
   const { session } = useSession()

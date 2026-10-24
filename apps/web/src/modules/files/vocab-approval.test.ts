@@ -6,10 +6,13 @@ import {
   renderVocabTermProposalTurtle,
 } from './domain/structured/structured-table'
 import {
+  approveVocabTermProposalCanonical,
   approveVocabTermProposalFromInbox,
+  changeVocabTermValueType,
   createVocabTermProposalInboxApproval,
 } from './data/proposal/vocab-approval-commands'
 import { updateProposalStatusInTurtle } from './proposal-status'
+import { hashText } from './domain/history/text-hash'
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -310,7 +313,7 @@ describe('vocab proposal inbox approvals', () => {
     })
   })
 
-  it.each(['approved', 'rejected'] as const)(
+  it.each(['rejected'] as const)(
     'rejects a resolved %s vocab proposal before reading or writing canonical vocab resources',
     async (status) => {
       const proposal = createVocabTermProposal({
@@ -349,6 +352,39 @@ describe('vocab proposal inbox approvals', () => {
       expect(authFetch.mock.calls[0]?.[0]).toBe(proposal.proposalResourceUri)
     },
   )
+
+  it('closes the inbox item of a column the person already kept without touching the vocab again', async () => {
+    const proposal = createVocabTermProposal({
+      documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+      classScope: 'udfs:Workspace',
+      termUri: 'https://pod.example/.vocab/terms.ttl#summary',
+      termKind: 'predicate',
+      label: 'summary',
+      valueType: 'text',
+      description: 'Short note summary shown on cards.',
+      shape: 'minCount 0 · maxCount 1',
+      createdAt: '2026-06-17T00:00:00.000Z',
+    })
+    const proposalSource = updateProposalStatusInTurtle(renderVocabTermProposalTurtle(proposal), 'approved')
+    const authFetch = vi.fn(async (uri: RequestInfo | URL) => {
+      if (String(uri) === proposal.proposalResourceUri) {
+        return new Response(proposalSource, {
+          status: 200,
+          headers: { 'Content-Type': 'text/turtle', ETag: '"proposal-1"' },
+        })
+      }
+      throw new Error('an already kept column must not read or write canonical vocab resources again')
+    })
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://pod.example/',
+        getAuthenticatedFetch: () => authFetch,
+      }),
+    }
+
+    await expect(approveVocabTermProposalFromInbox(db as any, proposal.id)).resolves.toMatchObject({ status: 'approved' })
+    expect(authFetch).toHaveBeenCalledTimes(1)
+  })
 
   it('patches canonical vocab registries even when the Pod returns N-Triples', async () => {
     const proposal = createVocabTermProposal({
@@ -834,6 +870,113 @@ describe('vocab proposal inbox approvals', () => {
     expect(authFetch).not.toHaveBeenCalledWith('https://evil.example/.vocab/shapes.ttl', expect.anything())
   })
 
+  describe('a term the person made for a table in an ordinary folder', () => {
+    function topLevelTableProposal() {
+      return createVocabTermProposal({
+        documentUri: 'https://pod.example/%E4%BB%BB%E5%8A%A1.ttl',
+        classScope: 'https://pod.example/.vocab/terms.ttl#Task',
+        termUri: 'https://pod.example/.vocab/terms.ttl#p-1',
+        termKind: 'predicate',
+        label: '状态',
+        valueType: 'enum',
+        description: '',
+        shape: 'class https://pod.example/.vocab/terms.ttl#Task',
+        createdAt: '2026-06-17T00:00:00.000Z',
+      })
+    }
+
+    function writableDb(patches: Array<{ uri: string; body: string }>, registries: Record<string, string> = {}) {
+      const authFetch = vi.fn(async (uri: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'HEAD') {
+          return new Response('', { status: 200, headers: { 'WAC-Allow': 'user="read append write",public="read"' } })
+        }
+        if (init?.method === 'PATCH') {
+          patches.push({ uri: String(uri), body: String(init.body) })
+          return new Response(null, { status: 205 })
+        }
+        return new Response(registries[String(uri)] ?? '@prefix udfs: <https://undefineds.co/vocab/> .\n', { status: 200, headers: { 'Content-Type': 'text/turtle', ETag: '"1"' } })
+      })
+      return {
+        getDialect: () => ({ getPodUrl: () => 'https://pod.example/', getAuthenticatedFetch: () => authFetch }),
+      }
+    }
+
+    it('is written to the vocab even though the table is not under .data', async () => {
+      const patches: Array<{ uri: string; body: string }> = []
+
+      await approveVocabTermProposalCanonical(writableDb(patches) as any, topLevelTableProposal(), { documentAnywhereInPod: true })
+
+      expect(patches.map((patch) => patch.uri)).toEqual([
+        'https://pod.example/.vocab/terms.ttl',
+        'https://pod.example/.vocab/shapes.ttl',
+      ])
+      expect(patches[0]?.body).toContain('"状态"')
+    })
+
+    it('lets a second table use a property that already exists: no second term, and a rule of its own', async () => {
+      const patches: Array<{ uri: string; body: string }> = []
+      const first = topLevelTableProposal()
+      const second = createVocabTermProposal({
+        documentUri: 'https://pod.example/%E6%B4%BB%E5%8A%A8.ttl',
+        classScope: 'https://pod.example/.vocab/terms.ttl#Event',
+        termUri: first.termUri,
+        termKind: 'predicate',
+        label: '状态',
+        valueType: 'enum',
+        description: '',
+        shape: 'class https://pod.example/.vocab/terms.ttl#Event',
+        createdAt: '2026-06-18T00:00:00.000Z',
+      })
+      const registries = {
+        'https://pod.example/.vocab/terms.ttl': '<https://pod.example/.vocab/terms.ttl#p-1> <http://www.w3.org/2000/01/rdf-schema#label> "状态" .\n',
+        'https://pod.example/.vocab/shapes.ttl': '<https://pod.example/.vocab/shapes.ttl#p-1-shape> <https://undefineds.co/vocab/classScope> "https://pod.example/.vocab/terms.ttl#Task" .\n',
+      }
+
+      await approveVocabTermProposalCanonical(writableDb(patches, registries) as any, second, { documentAnywhereInPod: true })
+
+      expect(patches.map((patch) => patch.uri)).toEqual(['https://pod.example/.vocab/shapes.ttl'])
+      expect(patches[0]?.body).not.toContain('#p-1-shape> <http')
+      expect(patches[0]?.body).toMatch(/#p-1-shape-[0-9a-f]{7}> /)
+      expect(patches[0]?.body).toContain('"https://pod.example/.vocab/terms.ttl#Event"')
+    })
+
+    it('does not write the same property rule for the same table twice', async () => {
+      const patches: Array<{ uri: string; body: string }> = []
+      const proposal = topLevelTableProposal()
+      const first: Array<{ uri: string; body: string }> = []
+      await approveVocabTermProposalCanonical(writableDb(first) as any, proposal, { documentAnywhereInPod: true })
+      const shapesBody = first.find((patch) => patch.uri.endsWith('shapes.ttl'))?.body ?? ''
+      const ruleUri = /<([^>]+#p-1-shape-[0-9a-f]{7}|[^>]+#p-1-shape)>/.exec(shapesBody)?.[1] ?? ''
+      expect(ruleUri).not.toBe('')
+      const suffixed = `${ruleUri}-${hashText(proposal.classScope ?? 'any').slice(0, 7)}`
+      const registries = {
+        'https://pod.example/.vocab/terms.ttl': '<https://pod.example/.vocab/terms.ttl#p-1> <http://www.w3.org/2000/01/rdf-schema#label> "状态" .\n',
+        'https://pod.example/.vocab/shapes.ttl': `<${ruleUri}> a <https://undefineds.co/vocab/ShapeRule> .\n<${suffixed}> a <https://undefineds.co/vocab/ShapeRule> .\n`,
+      }
+
+      await approveVocabTermProposalCanonical(writableDb(patches, registries) as any, proposal, { documentAnywhereInPod: true })
+
+      expect(patches).toEqual([])
+    })
+
+    it('stays refused for an agent proposal about a document outside .data', async () => {
+      const patches: Array<{ uri: string; body: string }> = []
+
+      await expect(approveVocabTermProposalCanonical(writableDb(patches) as any, topLevelTableProposal()))
+        .rejects.toThrow('Refusing to approve vocab proposal outside the current Pod vocab registry')
+      expect(patches).toEqual([])
+    })
+
+    it('is still refused when the vocabulary is not this Pod\'s own', async () => {
+      const patches: Array<{ uri: string; body: string }> = []
+      const proposal = { ...topLevelTableProposal(), targetVocabUri: 'https://evil.example/.vocab/terms.ttl', targetShapesUri: 'https://evil.example/.vocab/shapes.ttl' }
+
+      await expect(approveVocabTermProposalCanonical(writableDb(patches) as any, proposal, { documentAnywhereInPod: true }))
+        .rejects.toThrow('Refusing to approve vocab proposal outside the current Pod vocab registry')
+      expect(patches).toEqual([])
+    })
+  })
+
   it('approves a vocab proposal targeting a discovered private registry in the current pod', async () => {
     const proposal = createVocabTermProposal({
       documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
@@ -950,5 +1093,95 @@ describe('vocab proposal inbox approvals', () => {
     expect(authFetch).toHaveBeenCalledWith(proposal.targetVocabUri, { method: 'HEAD' })
     expect(authFetch).not.toHaveBeenCalledWith(proposal.targetVocabUri, expect.objectContaining({ method: 'PUT' }))
     expect(authFetch).not.toHaveBeenCalledWith(proposal.targetShapesUri, expect.objectContaining({ method: 'PUT' }))
+  })
+
+  describe('changeVocabTermValueType (R6 K6d 改值的类型)', () => {
+    function dbWithFetch(authFetch: (uri: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
+      return {
+        getDialect: () => ({
+          getPodUrl: () => 'https://pod.example/',
+          getAuthenticatedFetch: () => authFetch,
+        }),
+      }
+    }
+
+    it('rewrites the value type on the term and on the rules that scope it to a table', async () => {
+      const calls: Array<{ uri: string; method?: string; body?: string; type?: string }> = []
+      const authFetch = vi.fn(async (uri: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          uri: String(uri),
+          method: init?.method,
+          body: String(init?.body),
+          type: (init?.headers as Record<string, string>)?.['Content-Type'],
+        })
+        return new Response(null, { status: 205 })
+      })
+
+      await changeVocabTermValueType(dbWithFetch(authFetch) as any, {
+        termUri: 'https://pod.example/.vocab/terms.ttl#summary',
+        targetVocabUri: 'https://pod.example/.vocab/terms.ttl',
+        valueType: 'number',
+        shape: 'class udfs:Task · datatype xsd:decimal',
+      })
+
+      expect(calls.map((call) => [call.uri, call.method, call.type])).toEqual([
+        ['https://pod.example/.vocab/terms.ttl', 'PATCH', 'application/sparql-update'],
+        ['https://pod.example/.vocab/shapes.ttl', 'PATCH', 'application/sparql-update'],
+      ])
+      const [termUpdate, shapeUpdate] = calls.map((call) => call.body ?? '')
+      expect(termUpdate).toContain('DELETE { <https://pod.example/.vocab/terms.ttl#summary> <https://undefineds.co/vocab/valueType> ?v')
+      expect(termUpdate).toContain('INSERT { <https://pod.example/.vocab/terms.ttl#summary> <https://undefineds.co/vocab/valueType> "number"')
+      expect(termUpdate).toContain('<https://undefineds.co/vocab/shape> "class udfs:Task · datatype xsd:decimal"')
+      expect(shapeUpdate).toContain('?r <https://undefineds.co/vocab/term> <https://pod.example/.vocab/terms.ttl#summary>')
+      expect(shapeUpdate).toContain('?r <https://undefineds.co/vocab/constraint> "class udfs:Task · datatype xsd:decimal"')
+    })
+
+    it('escapes quotes in the rule text so it cannot break out of the update', async () => {
+      const bodies: string[] = []
+      const authFetch = vi.fn(async (_uri: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(String(init?.body))
+        return new Response(null, { status: 205 })
+      })
+
+      await changeVocabTermValueType(dbWithFetch(authFetch) as any, {
+        termUri: 'https://pod.example/.vocab/terms.ttl#summary',
+        targetVocabUri: 'https://pod.example/.vocab/terms.ttl',
+        valueType: 'text',
+        shape: 'editor "x" } DROP',
+      })
+
+      expect(bodies[0]).toContain('"editor \\"x\\" } DROP"')
+    })
+
+    it('refuses to touch a term outside the current Pod vocabulary', async () => {
+      const authFetch = vi.fn(async () => new Response(null, { status: 205 }))
+      const db = dbWithFetch(authFetch) as any
+
+      await expect(changeVocabTermValueType(db, {
+        termUri: 'https://elsewhere.example/.vocab/terms.ttl#summary',
+        targetVocabUri: 'https://elsewhere.example/.vocab/terms.ttl',
+        valueType: 'text',
+        shape: '',
+      })).rejects.toThrow('Refusing to change a vocab term outside the current Pod vocab registry.')
+      await expect(changeVocabTermValueType(db, {
+        termUri: 'https://pod.example/other.ttl#summary',
+        targetVocabUri: 'https://pod.example/.vocab/terms.ttl',
+        valueType: 'text',
+        shape: '',
+      })).rejects.toThrow('Refusing to change a vocab term outside the current Pod vocab registry.')
+      expect(authFetch).not.toHaveBeenCalled()
+    })
+
+    it('reports a failed update instead of pretending the type changed', async () => {
+      const authFetch = vi.fn(async () => new Response(null, { status: 403 }))
+
+      await expect(changeVocabTermValueType(dbWithFetch(authFetch) as any, {
+        termUri: 'https://pod.example/.vocab/terms.ttl#summary',
+        targetVocabUri: 'https://pod.example/.vocab/terms.ttl',
+        valueType: 'text',
+        shape: '',
+      })).rejects.toThrow('HTTP 403')
+      expect(authFetch).toHaveBeenCalledTimes(1)
+    })
   })
 })

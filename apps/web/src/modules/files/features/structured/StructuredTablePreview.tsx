@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button'
 import { FilesEmptyState } from '../../ui/FilesEmptyState'
 import type { FilesDetail } from '../../domain/resource/resource-model'
 import { createStructuredCellWriteProposal } from '../../domain/structured/structured-table'
+import { StructuredColumnDialogHost } from './StructuredColumnDialogHost'
+import { StructuredColumnFilterChips } from './StructuredColumnFilterChips'
 import { StructuredKanbanView } from './StructuredKanbanView'
 import { mergeKanbanOptionLanes } from './structured-kanban-view-model'
 import {
@@ -20,6 +22,7 @@ import { projectStructuredResourcePreviewHeaderModel } from './structured-resour
 import { STRUCTURED_TABLE_ROW_ORDER_KEY } from './structured-row-selection-model'
 import { localRdfName } from '../../domain/card/rdf-term-tokens'
 import { useStructuredAiCellDots } from './useStructuredAiCellDots'
+import { useStructuredColumnMenuController } from './useStructuredColumnMenuController'
 import { useStructuredCellProposalWorkflowController } from './useStructuredCellProposalWorkflowController'
 import { useStructuredProjectionFilterController } from './useStructuredProjectionFilterController'
 import { useStructuredProjectionReviewController } from './useStructuredProjectionReviewController'
@@ -49,17 +52,23 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   const {
     addWhiteboardSubjectFromUi,
     classScope,
+    clearColumnFiltersFromUi,
     clearWhiteboardSubjectsFromUi,
     closeStructuredViewFromUi,
     columnSizing,
+    columnView,
     effectiveClassScope,
     hiddenPredicates,
     kanbanBoard,
     kanbanGroupPredicate,
     kanbanOrder,
     openViews,
+    removeColumnFilterFromUi,
     removeWhiteboardSubjectFromUi,
     retryViewMetadataSave,
+    setColumnFilterFromUi,
+    setColumnLabelFromUi,
+    setColumnRemovedFromUi,
     setKanbanColumnOrderFromUi,
     setKanbanBoardFromUi,
     setKanbanGroupPredicateFromUi,
@@ -111,6 +120,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     viewProjection,
     vocabTermFilter,
   } = useStructuredProjectionFilterController({
+    columnFilters: columnView.filters,
     classScope,
     documentUri: file.uri,
     hiddenPredicates,
@@ -123,6 +133,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   })
   const {
     approvePendingClassProposal,
+    confirmVocabTerm,
     createPendingClassProposal,
     createVocabProposalResource,
     discardPendingClassProposal,
@@ -141,6 +152,37 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     targetShapesUri: vocabShapesUri,
     targetVocabUri: vocabTermsUri,
   })
+  const {
+    chips: columnFilterChips,
+    columnDialog,
+    columnMenu,
+    effectiveHiddenPredicates,
+    labelOf: columnLabelOf,
+    removedPredicates,
+    toolbarFilterMenu,
+  } = useStructuredColumnMenuController({
+    clearColumnFilters: clearColumnFiltersFromUi,
+    columnView,
+    hiddenPredicates,
+    predicateLabel,
+    removeColumnFilter: removeColumnFilterFromUi,
+    schemaPredicateControls,
+    schemaProjection,
+    setColumnFilter: setColumnFilterFromUi,
+    setColumnLabel: setColumnLabelFromUi,
+    setColumnRemoved: setColumnRemovedFromUi,
+    setSort: setStructuredSortFromUi,
+    structuredWritesSupported,
+    togglePredicateVisibility: togglePredicateVisibilityFromUi,
+    vocabDefinitionIndex,
+    vocabTermsUri,
+  })
+  const selectExistingPredicateFromMenu = (predicate: string) => {
+    // 加属性 brings back a column that was taken off this table.
+    if (removedPredicates.has(predicate)) setColumnRemovedFromUi(predicate, false)
+    selectExistingPredicate(predicate)
+  }
+  const toolbarPredicateControls = schemaPredicateControls.filter((predicate) => !removedPredicates.has(predicate))
   const {
     classScopeButtonLabel,
     classScopeDisplayLabel,
@@ -188,7 +230,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     classScope: scopedProjection.className,
     documentUri: file.uri,
     effectiveCellWriteProposals,
-    hiddenPredicates,
+    hiddenPredicates: effectiveHiddenPredicates,
     predicateNamespaceFilter,
     predicateTypeFilter,
     resourceUpdateFilteredProjection,
@@ -210,7 +252,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     structuredSearchText,
     structuredSortKey,
     structuredSortDirection,
-    hiddenPredicates,
+    hiddenPredicates: effectiveHiddenPredicates,
     kanbanGroupPredicate,
   })
   const whiteboardRelationPredicateOptions = projectStructuredRelationPredicateOptions(
@@ -328,6 +370,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
         onKeyDownCapture={structuredViewport.recordStructuredViewportScrollTop}
       >
         <StructuredResourceToolbar
+          columnFilterMenu={viewMode === 'table' ? toolbarFilterMenu : undefined}
           documentUri={file.uri}
           classScopeDisplayLabel={classScopeDisplayLabel}
           structuredStatus={structuredStatus}
@@ -364,8 +407,8 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           availablePredicateNamespaces={availablePredicateNamespaces}
           vocabTermFilter={vocabTermFilter}
           onVocabTermFilterChange={setVocabTermFilter}
-          schemaPredicateControls={schemaPredicateControls}
-          predicateLabel={predicateLabel}
+          schemaPredicateControls={toolbarPredicateControls}
+          predicateLabel={columnLabelOf}
           structuredSortKey={structuredSortKey}
           structuredSortDirection={structuredSortDirection}
           onSort={setStructuredSortFromUi}
@@ -377,6 +420,13 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           viewMetadataSaveError={viewMetadataSaveError}
           onRetryViewMetadataSave={retryViewMetadataSave}
         />
+        {viewMode === 'table' ? (
+          <StructuredColumnFilterChips
+            chips={columnFilterChips}
+            onClear={clearColumnFiltersFromUi}
+            onRemove={removeColumnFilterFromUi}
+          />
+        ) : null}
         {structuredSourceUnavailable ? <StructuredSourceUnavailableAlert /> : null}
         <StructuredShapeWarningsAlert warnings={shapeWarnings} />
         <div className="mt-2">
@@ -416,6 +466,8 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
             />
           ) : viewMode === 'table' ? (
             <StructuredProjectionTable
+              columnMenu={columnMenu}
+              onConfirmVocabTerm={structuredWritesSupported ? confirmVocabTerm : undefined}
               rowOrder={kanbanOrder[STRUCTURED_TABLE_ROW_ORDER_KEY]}
               onRowOrderChange={(subjects) => setKanbanColumnOrderFromUi(STRUCTURED_TABLE_ROW_ORDER_KEY, subjects)}
               bulkMoveTargets={bulkMoveTargets}
@@ -437,7 +489,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               showNamespaces={showNamespaces}
               columnSizing={columnSizing}
               onColumnSizingChange={setStructuredColumnSizingFromUi}
-              hiddenPredicates={hiddenPredicates}
+              hiddenPredicates={effectiveHiddenPredicates}
               editable={structuredWritesSupported}
               onOpenSubjectResource={subjectNavigation.openSubjectPeek}
               onCommitCellWriteProposal={structuredWritesSupported ? commitCellWriteProposal : undefined}
@@ -446,7 +498,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               onCreateVocabTermProposal={structuredWritesSupported ? createVocabProposalResource : undefined}
               onOpenVocabTermProposal={reviewVocabProposal}
               onDiscardVocabTermProposal={discardReviewableVocabProposal}
-              onSelectExistingPredicate={selectExistingPredicate}
+              onSelectExistingPredicate={selectExistingPredicateFromMenu}
               reviewableVocabProposals={reviewableVocabProposals}
               vocabDefinitionIndex={vocabDefinitionIndex}
               shapeWarnings={shapeWarnings}
@@ -509,6 +561,14 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
           )}
         </div>
       </div>
+      <StructuredColumnDialogHost
+        dialog={columnDialog.model}
+        onChangeType={columnDialog.onChangeType}
+        onClose={columnDialog.onClose}
+        onFilterChange={columnDialog.onFilterChange}
+        onRemove={columnDialog.onRemove}
+        onRename={columnDialog.onRename}
+      />
       <StructuredProjectionWarningsAlert warnings={projection.warnings} />
       <StructuredSubjectPeekDrawer
         peek={subjectNavigation.subjectPeek}

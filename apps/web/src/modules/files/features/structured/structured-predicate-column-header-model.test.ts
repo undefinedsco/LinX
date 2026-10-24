@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { StructuredTableProjection, VocabTermProposal } from '../../domain/structured/structured-table'
 import {
-  projectStructuredDefinedPredicateHeaderChrome,
   projectStructuredPredicateColumnHeader,
   projectStructuredPredicateHeaderColumnModel,
   projectStructuredPendingPredicateHeaderChrome,
@@ -102,7 +101,6 @@ describe('projectStructuredPredicateColumnHeader', () => {
     const vocabProposal = vocabTermProposal()
 
     expect(projectStructuredPredicateColumnHeader({
-      canCreateVocabTermProposal: false,
       observedValues: [],
       predicate,
       proposal: {
@@ -129,7 +127,7 @@ describe('projectStructuredPredicateColumnHeader', () => {
       ruleText: 'status shape',
       shape: 'status shape',
       status: 'approval-staged',
-      statusLabel: '等待 Inbox 审批',
+      statusLabel: '等你确认（收件箱里有记录）',
       submitInline: true,
       type: 'enum',
       vocabProposal: {
@@ -139,52 +137,16 @@ describe('projectStructuredPredicateColumnHeader', () => {
     })
   })
 
-  it('projects defined predicate header menu chrome outside the cell primitive', () => {
-    expect(projectStructuredDefinedPredicateHeaderChrome({
-      normalizedLabel: 'reviewStatus',
-      shapeRuleActions: [{
-        uri: 'https://pod.example/.vocab/shapes.ttl#reviewStatus-required',
-        label: 'Required',
-      }],
-    })).toEqual({
-      definitionTrigger: {
-        ariaLabel: '查看 reviewStatus 的说明',
-      },
-      menu: {
-        actions: {
-          copyPredicate: { label: '复制字段标识' },
-          openPredicate: { label: '打开字段定义' },
-          shapeRuleActions: [{
-            uri: 'https://pod.example/.vocab/shapes.ttl#reviewStatus-required',
-            label: '打开规则 Required',
-          }],
-        },
-        actionsHeading: '链接操作',
-        rows: {
-          description: { label: '说明' },
-          predicate: { label: '字段' },
-          rule: { label: '规则' },
-          status: { label: '状态' },
-        },
-        title: '字段说明',
-      },
-      sortButton: {
-        ariaLabel: '按 reviewStatus 排序',
-      },
-    })
-  })
-
   it('projects pending predicate header menu chrome outside the cell primitive', () => {
     expect(projectStructuredPendingPredicateHeaderChrome({
       hasVocabProposal: true,
       normalizedLabel: 'summary',
-      status: 'pending',
     })).toEqual({
       menu: {
         actions: {
           discard: { label: '放弃此字段' },
           openProposal: { label: '打开审批记录' },
-          submit: { label: '提交审核' },
+          submit: { label: '保留这列' },
         },
         approvalNotice: '已提交审批记录；词表未变更。',
         rows: {
@@ -205,21 +167,20 @@ describe('projectStructuredPredicateColumnHeader', () => {
     expect(projectStructuredPendingPredicateHeaderChrome({
       hasVocabProposal: false,
       normalizedLabel: 'summary',
-      status: 'approval-staged',
     })).toMatchObject({
       menu: {
         actions: {
           openProposal: null,
-          submit: null,
+          // The person decides for their own columns: keeping one is always on offer.
+          submit: { label: '保留这列' },
         },
         approvalNotice: null,
       },
     })
   })
 
-  it('disables inline submit when vocab proposal creation is available', () => {
+  it('offers 保留这列 inline for a column that waits for the person', () => {
     const header = projectStructuredPredicateColumnHeader({
-      canCreateVocabTermProposal: true,
       observedValues: [],
       predicate,
       proposal: {
@@ -236,7 +197,8 @@ describe('projectStructuredPredicateColumnHeader', () => {
 
     expect(header).toMatchObject({
       kind: 'pending',
-      submitInline: false,
+      submitInline: true,
+      statusLabel: '待确认',
       vocabProposal: undefined,
       openableVocabProposal: undefined,
     })
@@ -293,6 +255,7 @@ describe('projectStructuredPredicateTypeIconKind', () => {
     expect(projectStructuredPredicateTypeIconKind('boolean')).toBe('boolean')
     expect(projectStructuredPredicateTypeIconKind('enum')).toBe('choice')
     expect(projectStructuredPredicateTypeIconKind('relation')).toBe('relation')
+    expect(projectStructuredPredicateTypeIconKind('url')).toBe('relation')
     expect(projectStructuredPredicateTypeIconKind('observed')).toBe('text')
   })
 })

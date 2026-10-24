@@ -72,6 +72,36 @@ export function projectApprovedStructuredPendingPredicateColumnsState({
   }
 }
 
+/**
+ * The person's own column is in the vocabulary now. It stays in the list as `confirmed` (an ordinary
+ * column that is only waiting for the table to re-read the vocabulary), and the stale 待确认 copy
+ * read from an older approval record is hidden.
+ */
+export function projectConfirmedStructuredPendingPredicateColumnsState({
+  current,
+  proposal,
+  hydratedProposalId,
+}: {
+  current: StructuredPendingPredicateColumnsState
+  proposal: StructuredPredicateColumnProposal
+  hydratedProposalId?: string | null
+}): StructuredPendingPredicateColumnsState {
+  const confirmed: StructuredPredicateColumnProposal = { ...proposal, status: 'confirmed' }
+  delete confirmed.vocabProposal
+  const staged = current.pendingPredicateProposals.some((candidate) => candidate.id === proposal.id)
+  return {
+    dismissedHydratedPredicateProposalIds: hydratedProposalId
+      ? projectDismissedHydratedPredicateProposalIds({
+          currentIds: current.dismissedHydratedPredicateProposalIds,
+          proposalId: hydratedProposalId,
+        })
+      : current.dismissedHydratedPredicateProposalIds,
+    pendingPredicateProposals: staged
+      ? current.pendingPredicateProposals.map((candidate) => (candidate.id === proposal.id ? confirmed : candidate))
+      : [...current.pendingPredicateProposals, confirmed],
+  }
+}
+
 export function projectDiscardedStructuredPendingPredicateColumnsState({
   current,
   predicate,
@@ -148,15 +178,24 @@ export function projectStructuredVisiblePendingPredicateProposals({
     })
   }
   for (const proposal of pendingPredicateProposals) {
+    // A confirmed column the table already lists is just a column.
+    if (proposal.status === 'confirmed' && projectionPredicates.some((predicate) => predicatesShareLocalIdentity(predicate, proposal.id))) continue
     proposalsById.set(proposal.id, proposal)
   }
   return Array.from(proposalsById.values())
 }
 
+/** The columns that still wait for a decision; a confirmed column is not one of them. */
+export function projectStructuredAwaitingPredicateProposals(
+  visiblePendingPredicateProposals: readonly StructuredPredicateColumnProposal[],
+) {
+  return visiblePendingPredicateProposals.filter((proposal) => proposal.status !== 'confirmed')
+}
+
 export function projectStructuredPendingPredicateProposalByPredicate(
   visiblePendingPredicateProposals: readonly StructuredPredicateColumnProposal[],
 ) {
-  return new Map(visiblePendingPredicateProposals.map((proposal) => [proposal.id, proposal]))
+  return new Map(projectStructuredAwaitingPredicateProposals(visiblePendingPredicateProposals).map((proposal) => [proposal.id, proposal]))
 }
 
 export function projectStructuredPendingPredicateIds(

@@ -25,6 +25,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -33,6 +34,9 @@ import type { StructuredVocabTermDefinition } from '../../domain/structured/stru
 import type { StructuredResourceViewMode } from '../../domain/structured/structured-view-metadata'
 import type { StructuredPredicateTypeFilter, StructuredVocabTermFilter } from '../../domain/structured/structured-view-projection'
 import { ResourceViewBar } from '../../ui/ResourceViewBar'
+import type { StructuredColumnFilter } from '../../domain/structured/structured-column-filter'
+import { StructuredColumnFilterMenuEntry } from './StructuredColumnFilterSubmenu'
+import type { StructuredColumnFilterColumn } from './structured-column-filter-model'
 import { useStructuredClassScopeMenuController } from './useStructuredClassScopeMenuController'
 import {
   projectStructuredResourceToolbarModel,
@@ -42,6 +46,7 @@ import {
 } from './structured-resource-toolbar-model'
 
 export function StructuredResourceToolbar({
+  columnFilterMenu,
   documentUri,
   classScopeDisplayLabel,
   structuredStatus,
@@ -91,6 +96,13 @@ export function StructuredResourceToolbar({
   viewMetadataSaveError,
   onRetryViewMetadataSave,
 }: {
+  /** K6d 按它筛选: the columns whose values the 筛选 menu can filter rows by. */
+  columnFilterMenu?: {
+    columns: readonly StructuredColumnFilterColumn[]
+    onChange: (predicate: string, filter: StructuredColumnFilter | null) => void
+    /** Opens the filter dialog (kept outside the toolbar) for a text, number or date column. */
+    onOpenDialog: (predicate: string) => void
+  }
   documentUri: string
   classScopeDisplayLabel: string
   structuredStatus: string
@@ -160,6 +172,7 @@ export function StructuredResourceToolbar({
   })
 
   const toolbarModel = projectStructuredResourceToolbarModel({
+    columnFilterCount: columnFilterMenu?.columns.filter((column) => column.filter).length ?? 0,
     availablePredicateNamespaces,
     classCreateOpen,
     classDefinition,
@@ -467,6 +480,26 @@ export function StructuredResourceToolbar({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
+              {columnFilterMenu && columnFilterMenu.columns.length > 0 ? (
+                <>
+                  <div className="px-2 pb-1 pt-1 text-[10px] font-medium tracking-wide text-muted-foreground">
+                    {toolbarModel.filterSectionLabels.columnValue}
+                  </div>
+                  {columnFilterMenu.columns.map((column) => (
+                    <StructuredColumnFilterMenuEntry
+                      key={column.predicate}
+                      filter={column.filter}
+                      label={column.filter ? `${column.label}（已筛选）` : column.label}
+                      predicate={column.predicate}
+                      values={column.values}
+                      valueKind={column.valueKind}
+                      onChange={(filter) => columnFilterMenu.onChange(column.predicate, filter)}
+                      onOpenDialog={() => columnFilterMenu.onOpenDialog(column.predicate)}
+                    />
+                  ))}
+                  <DropdownMenuSeparator />
+                </>
+              ) : null}
               <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 {toolbarModel.filterSectionLabels.subject}
               </div>

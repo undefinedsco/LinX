@@ -16,9 +16,11 @@ import {
   type StructuredPredicateTypeFilter,
   type StructuredVocabTermFilter,
 } from './structured-projection-filter-model'
+import type { StructuredColumnFilter } from '../../domain/structured/structured-column-filter'
 import type { StructuredSortDirection } from '../../domain/structured/structured-view-metadata'
 
 export function useStructuredProjectionFilterController({
+  columnFilters,
   classScope,
   documentUri,
   hiddenPredicates,
@@ -29,6 +31,7 @@ export function useStructuredProjectionFilterController({
   togglePredicateVisibilityFromUi,
   vocabDefinitionIndex,
 }: {
+  columnFilters: readonly StructuredColumnFilter[]
   classScope: string | null
   documentUri: string
   hiddenPredicates: ReadonlySet<string>
@@ -88,6 +91,7 @@ export function useStructuredProjectionFilterController({
     unfilteredTableProjection,
     viewProjection,
   } = useMemo(() => projectStructuredProjectionFilterModel({
+    columnFilters,
     classScope,
     predicateNamespaceFilter: filterState.predicateNamespaceFilter,
     predicateTypeFilter: filterState.predicateTypeFilter,
@@ -98,6 +102,7 @@ export function useStructuredProjectionFilterController({
     vocabDefinitionIndex,
     vocabTermFilter: filterState.vocabTermFilter,
   }), [
+    columnFilters,
     classScope,
     filterState.predicateNamespaceFilter,
     filterState.predicateTypeFilter,

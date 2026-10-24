@@ -19,7 +19,9 @@ import type { AiColumnChange } from '../../domain/proposal/ai-column-change-mode
 import { CompactTableShell } from '../../ui/CompactTableShell'
 import {
   buildStructuredProjectionTableColumns,
+  createStructuredHeaderCache,
   openStructuredSubjectCard,
+  type StructuredColumnMenuInput,
   type StructuredSubjectOpenOptions,
 } from './StructuredProjectionTableColumns'
 import { StructuredSaveLine } from './StructuredSaveLine'
@@ -57,6 +59,8 @@ import {
 const EMPTY_HIDDEN_PREDICATES = new Set<string>()
 
 export function StructuredProjectionTable({
+  columnMenu,
+  onConfirmVocabTerm,
   aiCellDots,
   aiColumns,
   onKeepAiColumn,
@@ -101,6 +105,10 @@ export function StructuredProjectionTable({
   targetVocabUri,
   targetShapesUri,
 }: {
+  /** K6d: the column header menu (names, filters, sort, hide, remove, type). */
+  columnMenu?: StructuredColumnMenuInput
+  /** The person's own new column or option goes straight into the vocabulary. */
+  onConfirmVocabTerm?: (proposal: VocabTermProposal, options?: { resolveRecord?: boolean }) => boolean | Promise<boolean>
   aiCellDots?: ReadonlyMap<string, AiCellChange>
   aiColumns?: ReadonlyMap<string, AiColumnChange>
   onKeepAiColumn?: (change: AiColumnChange) => void
@@ -176,6 +184,7 @@ export function StructuredProjectionTable({
 
   const {
     approvePendingPredicateProposal,
+    confirmedLabelByPredicate,
     createPendingPredicateProposal,
     discardPendingPredicateProposal,
     findVisiblePendingPredicateProposal,
@@ -190,6 +199,7 @@ export function StructuredProjectionTable({
     classScope,
     currentPodRootUri,
     documentUri,
+    onConfirmVocabTerm,
     onCreateVocabTermProposal,
     projectionPredicates: projection.predicates,
     reviewableVocabProposals,
@@ -285,7 +295,7 @@ export function StructuredProjectionTable({
     documentUri,
     findVisiblePendingPredicateProposal,
     getPredicateDefinition,
-    onCreateVocabTermProposal,
+    onCreateVocabTermProposal: onConfirmVocabTerm ?? onCreateVocabTermProposal,
     previousValuesForCell,
     reviewableVocabProposals,
     stageCellValueChange,
@@ -297,10 +307,8 @@ export function StructuredProjectionTable({
   })
 
   const {
-    copyPredicate,
     openEnumOptionDefinition,
     openPredicateDefinition,
-    openPredicateShapeRule,
     openRelationValue,
     openVocabTermProposal,
   } = useStructuredProjectionActionController({
@@ -337,8 +345,11 @@ export function StructuredProjectionTable({
     if (next) onRowOrderChange?.(next)
   }, [onRowOrderChange, orderedRows])
 
+  const [headerCache] = useState(createStructuredHeaderCache)
   const columns = useMemo(
     () => buildStructuredProjectionTableColumns({
+      headerCache,
+      columnMenu,
       selectedSubjects,
       onToggleSubject: toggleSubject,
       aiCellDots,
@@ -364,17 +375,15 @@ export function StructuredProjectionTable({
       getCellWriteState,
       getEnumOptionsForPredicate,
       getPredicateDefinition,
-      onCreateVocabTermProposal,
-      onCopyPredicate: copyPredicate,
       onDiscardVocabTermProposal,
       onOpenEnumOptionDefinition: openEnumOptionDefinition,
       onOpenPredicateDefinition: openPredicateDefinition,
-      onOpenPredicateShapeRule: openPredicateShapeRule,
       onOpenSubjectResource,
       onOpenVocabTermProposal: openVocabTermProposal,
       onSelectExistingPredicate,
       onSort,
       openRelationValue,
+      confirmedLabelByPredicate,
       pendingProposalByPredicate,
       popoverPlacement: activeCellPopoverPlacement,
       projection,
@@ -395,6 +404,7 @@ export function StructuredProjectionTable({
       removeEnumOption,
     }),
     [
+      columnMenu,
       selectedSubjects,
       toggleSubject,
       aiCellDots,
@@ -420,17 +430,15 @@ export function StructuredProjectionTable({
       getCellWriteState,
       getEnumOptionsForPredicate,
       getPredicateDefinition,
-      onCreateVocabTermProposal,
-      copyPredicate,
       onDiscardVocabTermProposal,
       openEnumOptionDefinition,
       openPredicateDefinition,
-      openPredicateShapeRule,
       openVocabTermProposal,
       onOpenSubjectResource,
       onSelectExistingPredicate,
       onSort,
       openRelationValue,
+      confirmedLabelByPredicate,
       pendingProposalByPredicate,
       activeCellPopoverPlacement,
       projection,

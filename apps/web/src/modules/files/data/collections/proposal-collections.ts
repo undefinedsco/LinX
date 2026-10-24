@@ -290,6 +290,41 @@ export function createProposalCollections(dependencies: ProposalCollectionsDepen
       return resource
     },
 
+    async confirmWithCache(input: {
+      cacheClient: QueryClient
+      db?: SolidDatabase | null
+      proposal: VocabTermProposal
+      resolveRecord?: boolean
+    }): Promise<FilesRawTextResource> {
+      const resource = await vocabTermProposalUseCases.confirm({
+        db: input.db ?? getDb(),
+        proposal: input.proposal,
+        resolveRecord: input.resolveRecord,
+      })
+      await vocabTermProposalCollection.invalidateApproval(input.cacheClient, resource)
+      if (input.resolveRecord) await vocabTermProposalCollection.invalidateCreate(input.cacheClient, input.proposal)
+      return resource
+    },
+
+    async changeValueTypeWithCache(input: {
+      cacheClient: QueryClient
+      db?: SolidDatabase | null
+      termUri: string
+      targetVocabUri: string
+      valueType: string
+      shape: string
+    }): Promise<FilesRawTextResource> {
+      const resource = await vocabTermProposalUseCases.changeValueType({
+        db: input.db ?? getDb(),
+        termUri: input.termUri,
+        targetVocabUri: input.targetVocabUri,
+        valueType: input.valueType,
+        shape: input.shape,
+      })
+      await vocabTermProposalCollection.invalidateApproval(input.cacheClient, resource)
+      return resource
+    },
+
     async invalidateApproval(cacheClient: QueryClient, resource: Pick<FilesRawTextResource, 'uri'>) {
       const shapesUri = resource.uri.replace(/terms\.ttl$/, 'shapes.ttl')
       const namespacesUri = resource.uri.replace(/terms\.ttl$/, 'namespaces.ttl')

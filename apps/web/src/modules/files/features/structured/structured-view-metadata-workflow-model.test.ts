@@ -29,6 +29,7 @@ function metadata(overrides: Partial<StructuredViewMetadata> = {}): Required<Str
       status: 120,
       title: 240,
     },
+    columnView: { filters: [], labels: {}, removed: [] },
     whiteboard: {
       selectedSubjects: ['#a'],
       positions: {
@@ -244,5 +245,46 @@ describe('structured-view-metadata-workflow-model', () => {
       action: 'hydrate',
       shouldHydrate: false,
     })
+  })
+
+  it('saves a view again when the person changes a filter, a column name or removes a column', () => {
+    const plain = structuredViewMetadataSignature(metadata())
+    const filtered = structuredViewMetadataSignature(metadata({
+      columnView: { filters: [{ predicate: 'status', kind: 'values', values: ['进行中'] }], labels: {}, removed: [] },
+    }))
+    const renamed = structuredViewMetadataSignature(metadata({ columnView: { filters: [], labels: { status: '进度' }, removed: [] } }))
+    const removed = structuredViewMetadataSignature(metadata({ columnView: { filters: [], labels: {}, removed: ['status'] } }))
+
+    expect(new Set([plain, filtered, renamed, removed]).size).toBe(4)
+  })
+
+  it('does not save again for the same column settings written in another order', () => {
+    const left = metadata({
+      columnView: {
+        filters: [
+          { predicate: 'b', kind: 'contains', text: 'x' },
+          { predicate: 'a', kind: 'empty', empty: true },
+        ],
+        labels: { b: 'B', a: 'A' },
+        removed: ['z', 'y'],
+      },
+    })
+    const right = metadata({
+      columnView: {
+        filters: [
+          { predicate: 'a', kind: 'empty', empty: true },
+          { predicate: 'b', kind: 'contains', text: 'x' },
+        ],
+        labels: { a: 'A', b: 'B' },
+        removed: ['y', 'z'],
+      },
+    })
+
+    expect(structuredViewMetadataSignature(left)).toBe(structuredViewMetadataSignature(right))
+  })
+
+  it('treats metadata saved before column settings existed like metadata with none', () => {
+    const { columnView: _columnView, ...legacy } = metadata()
+    expect(structuredViewMetadataSignature(legacy as StructuredViewMetadata)).toBe(structuredViewMetadataSignature(metadata()))
   })
 })
