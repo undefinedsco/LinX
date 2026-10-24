@@ -386,6 +386,7 @@ export function StructuredPredicateValueEditor({
     <input
       aria-label={ariaLabel}
       type={editor.scalarInputType}
+      placeholder={placeholder}
       className={cn(predicateValueEditorClassName(status, className), 'h-8 w-full')}
       value={editor.draft}
       onChange={(event) => editor.setDraft(event.target.value)}
