@@ -71,6 +71,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     setColumnFilterFromUi,
     setColumnLabelFromUi,
     setColumnRemovedFromUi,
+    restoreRemovedColumnFromUi,
     setKanbanColumnOrderFromUi,
     setKanbanBoardFromUi,
     setKanbanGroupPredicateFromUi,
@@ -181,7 +182,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
   })
   const selectExistingPredicateFromMenu = (predicate: string) => {
     // 加属性 brings back a column that was taken off this table.
-    if (removedPredicates.has(predicate)) setColumnRemovedFromUi(predicate, false)
+    restoreRemovedColumnFromUi(predicate)
     selectExistingPredicate(predicate)
   }
   const toolbarPredicateControls = schemaPredicateControls.filter((predicate) => !removedPredicates.has(predicate))

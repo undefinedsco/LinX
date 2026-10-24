@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { StructuredTableProjection } from '../../domain/structured/structured-table'
 import {
+  findRemovedStructuredColumnKey,
   projectStructuredReconciledKanbanBoard,
   projectStructuredWhiteboardVisualRelations,
   resolveStructuredEffectiveClassScope,
@@ -88,5 +89,14 @@ describe('projectStructuredWhiteboardVisualRelations', () => {
     }, [{ id: 'legacy', from: '#a', to: '#c', label: 'old' }])).toEqual([
       { id: 'new', from: '#a', to: '#b', label: 'supports' },
     ])
+  })
+})
+
+describe('findRemovedStructuredColumnKey', () => {
+  it('matches a removed column by key, full IRI or prefixed name', () => {
+    expect(findRemovedStructuredColumnKey(['tags'], 'tags')).toBe('tags')
+    expect(findRemovedStructuredColumnKey(['tags'], 'https://undefineds.co/vocab/tags')).toBe('tags')
+    expect(findRemovedStructuredColumnKey(['https://undefineds.co/vocab/tags'], 'udfs:tags')).toBe('https://undefineds.co/vocab/tags')
+    expect(findRemovedStructuredColumnKey(['status'], 'tags')).toBeNull()
   })
 })
