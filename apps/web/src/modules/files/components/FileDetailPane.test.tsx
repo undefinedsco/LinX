@@ -2,7 +2,10 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 // Heavy full-pane renders: under a full parallel run some take longer than the 5 s default.
 vi.setConfig({ testTimeout: 20_000 })
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+// Tables render their rows before the column vocabulary; on slow CI runners header menus and
+// dialogs can take longer than Testing Library's 1 s default to appear.
+configure({ asyncUtilTimeout: 5_000 })
 import { FileDetailPane } from './FileDetailPane'
 import { useCardDialog } from '@/lib/card-dialog'
 import { useFilesStore } from '../app/store'
