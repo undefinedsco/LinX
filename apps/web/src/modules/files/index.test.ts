@@ -120,7 +120,10 @@ describe('files public module exports', () => {
     const detailMetadataPanelsSource = readFileSync('src/modules/files/features/detail/FileDetailMetadataPanels.tsx', 'utf8')
     const detailMetadataPredicateControllerSource = readFileSync('src/modules/files/features/detail/useDetailMetaPredicateController.ts', 'utf8')
     const structuredPreviewSource = readFileSync('src/modules/files/features/structured/StructuredTablePreview.tsx', 'utf8')
-    const structuredPreviewControllerSource = readFileSync('src/modules/files/features/structured/useStructuredResourcePreviewController.ts', 'utf8')
+    const structuredPreviewControllerSource = [
+      readFileSync('src/modules/files/features/structured/useStructuredResourcePreviewController.ts', 'utf8'),
+      readFileSync('src/modules/files/features/structured/useStructuredVocabContext.ts', 'utf8'),
+    ].join('\n')
 
     expect(collectionSource).toContain('resolveCurrentPodRootUri')
     expect(querySource).toContain("export * from './resource-queries'")

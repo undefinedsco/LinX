@@ -2,12 +2,12 @@
 #
 # Rendered by .github/workflows/promote.yml with the digest from the accepted RC record
 # (release-acceptance-<sha>) and applied with `kubectl replace`, so the whole Deployment spec
-# is this file: the files come from the accepted image, not from the PVC `linx-web-content`
-# the earlier hand-synced Deployment mounted. Name, `app: linx-web` selector and port 8080
-# (`http`) stay as they were, so Service/linx-web and the gateway route are unchanged.
+# is this file: the files come from the accepted image. Name, `app: linx-web` selector and port
+# 8080 (`http`) stay as they were, so Service/linx-web and the gateway route are unchanged.
 #
-# Roll back with `kubectl -n <ns> rollout undo deployment/linx-web` (the previous ReplicaSet,
-# PVC-based, is kept by revisionHistoryLimit) or by promoting an earlier accepted tag.
+# Roll back by promoting an earlier accepted tag, or `kubectl -n <ns> rollout undo
+# deployment/linx-web` to an image-based revision (0.3.34 or later). The PVC `linx-web-content`
+# that pre-0.3.34 revisions mounted was deleted on 2026-10-24, so those revisions no longer start.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

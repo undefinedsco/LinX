@@ -51,7 +51,7 @@ GitHub Environment `prd`（deployment branch/tag policy 限定 `linx-v*` 标签�
 | Variable | `SEALOS_NAMESPACE` | `ns-iknkxtc8` |
 | Variable | `LINX_PROD_URL` | `https://linx.undefineds.cn` |
 
-生产清单从此由本仓库管理（`deploy/prd/linx-web.yaml`）；homepage 仓库里的 `deploy/k8s/linx-web-renamed.yaml` 只作历史记录，不要再用它 apply，否则会把 Deployment 改回挂 PVC 的旧形态。
+生产清单从此由本仓库管理（`deploy/prd/linx-web.yaml`）；homepage 仓库里的 `deploy/k8s/linx-web-renamed.yaml` 只作历史记录，不要再用它 apply，否则会把 Deployment 改回挂 PVC 的旧形态；那块 PVC `linx-web-content` 已于 2026-10-24 删除，旧形态起不来。回滚只能回到 0.3.34 及以后的镜像版本（重新提升更早的验收 tag，或 `rollout undo` 到这些版本）。
 
 ## 不在本流程内
 

@@ -5,6 +5,7 @@ import {
   resolveFilesPodRootUri,
   turtleString,
 } from '../resource/files-rdf-contract'
+import { CARD_BODY_HIDDEN_COLUMN_IRIS, expandRdfIri } from '../card/rdf-term-tokens'
 import {
   canonicalPredicateKey,
   localName,
@@ -1274,6 +1275,11 @@ export function getStructuredClassOptions(projection: StructuredTableProjection)
   })
 }
 
+/** True for the predicate that holds a card's rich-text body (current and earlier spellings). */
+export function isStructuredCardBodyPredicate(predicate: string, prefixes?: Record<string, string>): boolean {
+  return CARD_BODY_HIDDEN_COLUMN_IRIS.includes(expandRdfIri(predicate, '', prefixes))
+}
+
 export function projectStructuredClassScope(
   projection: StructuredTableProjection,
   requestedClassName?: string | null,
@@ -1297,7 +1303,10 @@ export function projectStructuredClassScope(
     }
   }
 
-  const predicates = projection.predicates.filter((predicate) => predicateSet.has(predicate))
+  // The card's body (R6 K2) is the card's rich text, never a column.
+  const predicates = projection.predicates.filter((predicate) => (
+    predicateSet.has(predicate) && !isStructuredCardBodyPredicate(predicate, projection.prefixes)
+  ))
   const scopedRows = rows.map((row) => ({
     subject: row.subject,
     cells: row.cells.filter((cell) => cell.predicate !== 'rdf:type'),
@@ -1994,7 +2003,7 @@ function matchesShapeClassScope(rule: StructuredVocabShapeRuleDefinition, classS
   return termLookupKeys(rule.classScope).some((key) => termLookupKeys(classScope).includes(key))
 }
 
-function lookupPredicateDefinition(
+export function lookupPredicateDefinition(
   vocabDefinitionIndex: StructuredVocabDefinitionIndex,
   predicate: string,
 ) {

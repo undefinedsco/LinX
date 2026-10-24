@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Expand, History, Link2, MoreHorizontal, Share2, Undo2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, History, Link2, Maximize2, MoreHorizontal, Share2, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useRouterState } from '@tanstack/react-router'
 
@@ -18,8 +18,11 @@ import { BlockNoteFileEditor } from '@/modules/files/ui/BlockNoteFileEditor'
 import {
   projectCardLocatorLabel,
   projectCardSaveLabel,
+  type CardColumnModel,
   type CardPropertyModel,
 } from '../../domain/card/card-dialog-model'
+import { StructuredPredicateValueEditor } from '../structured/StructuredTableCellPrimitives'
+import { CARD_NEW_PROPERTY_TYPES } from './card-new-property-model'
 import { ShareDialog } from '../sidecars/ShareDialog'
 import { CardHistoryDialog } from './CardHistoryDialog'
 import { AiDraftBanner, AiDraftReview } from './AiDraftViews'
@@ -50,22 +53,105 @@ function PropertyValue({ property }: { property: CardPropertyModel }) {
   )
 }
 
-function PropertyRow({ property, onSave }: { property: CardPropertyModel; onSave?: (text: string) => void }) {
-  const text = property.displayValues.join('、')
+const PROPERTY_ROW_CLASS = 'grid grid-cols-[120px_minmax(0,1fr)] items-start gap-3 py-1 text-sm'
+
+/** A property that is only shown (a file's description, a link). */
+function PropertyRow({ property }: { property: CardPropertyModel }) {
   return (
-    <div className="grid grid-cols-[120px_1fr] items-start gap-3 py-1.5 text-sm">
-      <span className="truncate text-muted-foreground">{property.label}</span>
-      {onSave && !property.isResource ? (
-        <input
-          defaultValue={text}
-          aria-label={property.label}
-          className="rounded px-1 py-0.5 outline-none hover:bg-muted/50 focus:bg-muted/70"
-          onBlur={(event) => { if (event.currentTarget.value !== text) onSave(event.currentTarget.value) }}
-          onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
-        />
+    <div className={PROPERTY_ROW_CLASS}>
+      <span className="truncate py-1 text-muted-foreground">{property.label}</span>
+      <span className="break-words px-1 py-1"><PropertyValue property={property} /></span>
+    </div>
+  )
+}
+
+/** A column of the table: edited here with the editor its table cells use. Links read as links. */
+function ColumnRow({ column, onSave }: { column: CardColumnModel; onSave: (values: string[]) => void }) {
+  const [editingLink, setEditingLink] = useState(false)
+  const showLinks = column.editorKind === 'relation' && column.displayValues.length > 0 && !editingLink
+  return (
+    <div className={PROPERTY_ROW_CLASS} data-card-column={column.predicate}>
+      <span className="truncate py-1 text-muted-foreground" title={column.label}>{column.label}</span>
+      {showLinks ? (
+        <div className="flex min-w-0 items-start gap-2">
+          <span className="min-w-0 break-words px-1 py-1"><PropertyValue property={column} /></span>
+          <button
+            type="button"
+            aria-label={`修改${column.label}`}
+            className="shrink-0 py-1 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setEditingLink(true)}
+          >
+            修改
+          </button>
+        </div>
       ) : (
-        <span className="break-words px-1"><PropertyValue property={property} /></span>
+        <StructuredPredicateValueEditor
+          kind={column.editorKind}
+          ariaLabel={column.label}
+          values={column.editorValues}
+          options={column.options}
+          placeholder="—"
+          className="min-w-0 border-transparent bg-transparent text-sm hover:bg-muted/50 focus-within:bg-muted/70"
+          onCommit={(values) => { setEditingLink(false); onSave(values) }}
+        />
       )}
+    </div>
+  )
+}
+
+/** "+ 属性": name it, pick what it holds; it becomes a column of the table at once. */
+function AddPropertyRow({ onAdd }: { onAdd: (label: string, type: string) => Promise<boolean> }) {
+  const [open, setOpen] = useState(false)
+  const [label, setLabel] = useState('')
+  const [type, setType] = useState('text')
+  const [busy, setBusy] = useState(false)
+  const reset = () => { setOpen(false); setLabel(''); setType('text') }
+  const submit = async () => {
+    if (!label.trim() || busy) return
+    setBusy(true)
+    try {
+      if (await onAdd(label, type)) reset()
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (!open) {
+    return (
+      <div className={PROPERTY_ROW_CLASS}>
+        <button type="button" className="py-1 text-left text-primary hover:underline" onClick={() => setOpen(true)}>+ 属性</button>
+        <span />
+      </div>
+    )
+  }
+  return (
+    <div className={PROPERTY_ROW_CLASS} data-card-add-property="true">
+      <span className="py-1 text-muted-foreground">新属性</span>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <input
+          autoFocus
+          aria-label="属性名"
+          placeholder="属性名"
+          value={label}
+          disabled={busy}
+          className="h-8 min-w-0 flex-1 rounded-md border border-border/60 bg-background px-2 text-sm outline-none focus:border-primary/50"
+          onChange={(event) => setLabel(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); reset() }
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void submit() }
+          }}
+        />
+        <select
+          aria-label="属性类型"
+          value={type}
+          disabled={busy}
+          className="h-8 rounded-md border border-border/60 bg-background px-2 text-sm outline-none"
+          onChange={(event) => setType(event.target.value)}
+        >
+          {CARD_NEW_PROPERTY_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        <Button size="sm" disabled={busy || !label.trim()} onClick={() => { void submit() }}>添加</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={reset}>取消</Button>
+      </div>
     </div>
   )
 }
@@ -89,51 +175,59 @@ function CardReferences({
   const shownLinks = showAll ? backlinks : backlinks.slice(0, REFERENCES_SHOWN)
   const shownWork = showAll ? workUses : workUses.slice(0, REFERENCES_SHOWN)
   const hidden = backlinks.length - shownLinks.length + workUses.length - shownWork.length
+  const workTotal = workUses.reduce((sum, use) => sum + use.count, 0)
+  const summary = [
+    backlinks.length > 0 ? `被 ${backlinks.length} 处引用` : null,
+    workUses.length > 0 ? `用过它的工作 ${workTotal} 次` : null,
+  ].filter(Boolean).join(' · ')
   return (
-    <div className="mt-6 space-y-4 border-t border-border/40 pt-3" data-card-references="true">
-      {backlinks.length > 0 ? (
-        <section aria-label="被引用">
-          <h3 className="pb-1 text-xs text-muted-foreground">被引用 · {backlinks.length} 处</h3>
-          <ul>
-            {shownLinks.map((link) => (
-              <li key={link.key}>
-                <button
-                  type="button"
-                  data-card-backlink="true"
-                  className="flex w-full items-baseline gap-2 rounded px-1 py-1.5 text-left text-sm hover:bg-muted/50"
-                  onClick={() => onOpenBacklink(link)}
-                >
-                  <span className="min-w-0 truncate">{link.title}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{link.hint}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {workUses.length > 0 ? (
-        <section aria-label="用过它的工作">
-          <h3 className="pb-1 text-xs text-muted-foreground">用过它的工作 · {workUses.reduce((sum, use) => sum + use.count, 0)} 次</h3>
-          <ul>
-            {shownWork.map((use) => (
-              <li key={use.chatRef}>
-                <button
-                  type="button"
-                  data-card-work-use="true"
-                  className="flex w-full items-baseline gap-2 rounded px-1 py-1.5 text-left text-sm hover:bg-muted/50"
-                  onClick={() => onOpenWork(use)}
-                >
-                  <span className="min-w-0 truncate">{use.title}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">问 LinX 引用过{use.count > 1 ? ` ${use.count} 次` : ''}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {hidden > 0 ? (
-        <button type="button" className="text-xs text-primary hover:underline" onClick={() => setShowAll(true)}>看全部</button>
-      ) : null}
+    <div className="mt-6 border-t border-border/40 pt-3" data-card-references="true">
+      <p className="text-[13px] text-muted-foreground" data-card-references-summary="true">
+        {summary}
+        {hidden > 0 ? (
+          <button type="button" className="ml-1.5 text-primary hover:underline" onClick={() => setShowAll(true)}>看全部</button>
+        ) : null}
+      </p>
+      <div className="mt-2 space-y-3">
+        {backlinks.length > 0 ? (
+          <section aria-label="被引用">
+            <ul>
+              {shownLinks.map((link) => (
+                <li key={link.key}>
+                  <button
+                    type="button"
+                    data-card-backlink="true"
+                    className="flex w-full items-baseline gap-2 rounded px-1 py-1.5 text-left text-sm hover:bg-muted/50"
+                    onClick={() => onOpenBacklink(link)}
+                  >
+                    <span className="min-w-0 truncate">{link.title}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{link.hint}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+        {workUses.length > 0 ? (
+          <section aria-label="用过它的工作">
+            <ul>
+              {shownWork.map((use) => (
+                <li key={use.chatRef}>
+                  <button
+                    type="button"
+                    data-card-work-use="true"
+                    className="flex w-full items-baseline gap-2 rounded px-1 py-1.5 text-left text-sm hover:bg-muted/50"
+                    onClick={() => onOpenWork(use)}
+                  >
+                    <span className="min-w-0 truncate">{use.title}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">问 LinX 引用过{use.count > 1 ? ` ${use.count} 次` : ''}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -263,16 +357,15 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
             </section>
           ) : null}
         </div>
-        {properties.length > 0 ? (
+        {card.subject || properties.length > 0 ? (
           <section className="mt-6 border-t border-border/40 pt-2" aria-label="属性">
             <div className="pb-1 text-xs text-muted-foreground">属性</div>
-            {properties.map((property) => (
-              <PropertyRow
-                key={property.predicate}
-                property={property}
-                onSave={card.subject ? (text) => { void card.saveSubjectProperty(property, text) } : undefined}
-              />
-            ))}
+            {card.subject
+              ? card.columns.map((column) => (
+                <ColumnRow key={column.predicate} column={column} onSave={(values) => { void card.saveSubjectColumn(column, values).catch(() => undefined) }} />
+              ))
+              : properties.map((property) => <PropertyRow key={property.predicate} property={property} />)}
+            {card.subject && card.canAddColumn ? <AddPropertyRow onAdd={card.addColumn} /> : null}
           </section>
         ) : null}
         <CardReferences
@@ -305,7 +398,7 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
             </div>
             {locatorLabel ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">{locatorLabel}</span> : null}
             <span className="text-xs text-muted-foreground" data-card-save-status={card.saveStatus}>{projectCardSaveLabel(card.saveStatus)}</span>
-            <Button size="sm" variant="ghost" onClick={card.expand}><Expand className="mr-1 h-3.5 w-3.5" />展开</Button>
+            <Button size="icon" variant="ghost" aria-label="展开成整页" title="展开成整页" onClick={card.expand}><Maximize2 className="h-4 w-4" /></Button>
             {card.detail ? (
               <Button size="sm" variant="ghost" onClick={() => card.setAccessOpen(true)}><Share2 className="mr-1 h-3.5 w-3.5" />共享…</Button>
             ) : null}
