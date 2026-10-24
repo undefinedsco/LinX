@@ -523,7 +523,7 @@ describe('folder detail model helpers', () => {
       },
     })).toMatchObject({
       chrome: {
-        ariaLabel: 'Folder column a-folder',
+        ariaLabel: '文件夹列 a-folder',
         loadingMessage: '正在加载...',
         title: 'a-folder',
         unavailableMessage: '无法读取子文件夹。',
@@ -540,7 +540,7 @@ describe('folder detail model helpers', () => {
       parentFile: null,
     })).toMatchObject({
       chrome: {
-        ariaLabel: 'Folder column My Folder',
+        ariaLabel: '文件夹列 My Folder',
         title: 'My Folder',
       },
       contentState: { kind: 'loading' },

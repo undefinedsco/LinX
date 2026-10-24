@@ -4,6 +4,7 @@ import type {
   VocabTermProposal,
 } from '../../domain/structured/structured-table'
 import type { AiColumnChange } from '../../domain/proposal/ai-column-change-model'
+import { classifyStructuredColumnValueKind } from '../../domain/structured/structured-column-filter'
 import { readablePredicateLabel } from '../../domain/structured/structured-table-vocab'
 
 export type StructuredPredicateColumnProposal = {
@@ -15,7 +16,8 @@ export type StructuredPredicateColumnProposal = {
   description: string
   shape: string
   enumOptions: string[]
-  status: 'pending' | 'approval-staged'
+  /** `confirmed`: a column the person made; it is already in the vocabulary, only waiting to show up in the table. */
+  status: 'pending' | 'approval-staged' | 'confirmed'
   vocabProposal?: VocabTermProposal
   /** A column LinX added (R6 K6b): shows its own header. */
   aiColumn?: AiColumnChange
@@ -39,30 +41,6 @@ type DefinedPredicateColumnHeaderModel = {
   shapeRuleActions: { uri: string; label: string }[]
   statusLabel: string
   typeLabel: string
-}
-
-export type StructuredDefinedPredicateHeaderChrome = {
-  definitionTrigger: {
-    ariaLabel: string
-  }
-  menu: {
-    actions: {
-      copyPredicate: { label: string }
-      openPredicate: { label: string }
-      shapeRuleActions: { uri: string; label: string }[]
-    }
-    actionsHeading: string
-    rows: {
-      description: { label: string }
-      predicate: { label: string }
-      rule: { label: string }
-      status: { label: string }
-    }
-    title: string
-  }
-  sortButton: {
-    ariaLabel: string
-  }
 }
 
 type PendingPredicateColumnHeaderModel = {
@@ -127,6 +105,13 @@ function inferStructuredPredicateKind(values: readonly string[]): StructuredPred
   return 'text'
 }
 
+export function projectStructuredPredicateTypeLabel(
+  definition: StructuredVocabPredicateDefinition | undefined,
+  values: readonly string[],
+) {
+  return predicateDefinitionTypeLabel(definition, values)
+}
+
 function predicateDefinitionTypeLabel(
   definition: StructuredVocabPredicateDefinition | undefined,
   values: readonly string[],
@@ -143,7 +128,7 @@ function predicateDefinitionRuleText(definition: StructuredVocabPredicateDefinit
 }
 
 function pendingFieldStatusLabel(status: 'pending' | 'approval-staged') {
-  return status === 'approval-staged' ? '等待 Inbox 审批' : '待提交'
+  return status === 'approval-staged' ? '等你确认（收件箱里有记录）' : '待确认'
 }
 
 function normalizedPredicateHeaderLabel(label: string) {
@@ -154,56 +139,20 @@ function pendingPredicateHeaderLabel(label: string) {
   return normalizedPredicateHeaderLabel(label)
 }
 
-export function projectStructuredDefinedPredicateHeaderChrome({
-  normalizedLabel,
-  shapeRuleActions,
-}: {
-  normalizedLabel: string
-  shapeRuleActions: readonly { uri: string; label: string }[]
-}): StructuredDefinedPredicateHeaderChrome {
-  return {
-    definitionTrigger: {
-      ariaLabel: `查看 ${normalizedLabel} 的说明`,
-    },
-    menu: {
-      actions: {
-        copyPredicate: { label: '复制字段标识' },
-        openPredicate: { label: '打开字段定义' },
-        shapeRuleActions: shapeRuleActions.map((rule) => ({
-          uri: rule.uri,
-          label: `打开规则 ${rule.label}`,
-        })),
-      },
-      actionsHeading: '链接操作',
-      rows: {
-        description: { label: '说明' },
-        predicate: { label: '字段' },
-        rule: { label: '规则' },
-        status: { label: '状态' },
-      },
-      title: '字段说明',
-    },
-    sortButton: {
-      ariaLabel: `按 ${normalizedLabel} 排序`,
-    },
-  }
-}
-
 export function projectStructuredPendingPredicateHeaderChrome({
   hasVocabProposal,
   normalizedLabel,
-  status,
 }: {
   hasVocabProposal: boolean
   normalizedLabel: string
-  status: 'pending' | 'approval-staged'
 }): StructuredPendingPredicateHeaderChrome {
   return {
     menu: {
       actions: {
         discard: { label: '放弃此字段' },
         openProposal: hasVocabProposal ? { label: '打开审批记录' } : null,
-        submit: status === 'pending' ? { label: '提交审核' } : null,
+        // The person decides for their own columns; keeping one writes it to the vocabulary at once.
+        submit: { label: '保留这列' },
       },
       approvalNotice: hasVocabProposal ? '已提交审批记录；词表未变更。' : null,
       rows: {
@@ -245,14 +194,12 @@ export function projectStructuredPredicateHeaderColumnModel(input: {
 }
 
 export function projectStructuredPredicateColumnHeader({
-  canCreateVocabTermProposal,
   definition,
   observedValues,
   predicate,
   proposal,
   showNamespaces = false,
 }: {
-  canCreateVocabTermProposal?: boolean
   definition?: StructuredVocabPredicateDefinition
   observedValues: string[]
   predicate: string
@@ -273,9 +220,9 @@ export function projectStructuredPredicateColumnHeader({
       proposalUri: proposal.uri,
       ruleText: proposal.shape || '使用默认规则',
       shape: proposal.shape,
-      status: proposal.status,
-      statusLabel: pendingFieldStatusLabel(proposal.status),
-      submitInline: !canCreateVocabTermProposal,
+      status: proposal.status === 'confirmed' ? 'pending' : proposal.status,
+      statusLabel: pendingFieldStatusLabel(proposal.status === 'confirmed' ? 'pending' : proposal.status),
+      submitInline: true,
       type: proposal.type,
       vocabProposal: proposal.vocabProposal
         ? {
@@ -312,11 +259,5 @@ export type StructuredPredicateTypeIconKind = 'text' | 'number' | 'date' | 'bool
 
 /** The icon beside a column title (R6 K6): what kind of value the column holds. */
 export function projectStructuredPredicateTypeIconKind(typeLabel: string | null | undefined): StructuredPredicateTypeIconKind {
-  const normalized = (typeLabel ?? '').toLowerCase()
-  if (/bool/.test(normalized)) return 'boolean'
-  if (/int|decimal|double|float|number|numeric/.test(normalized)) return 'number'
-  if (/date|time/.test(normalized)) return 'date'
-  if (/enum|choice|select|option/.test(normalized)) return 'choice'
-  if (/relation|link|iri|uri|resource|reference|object/.test(normalized)) return 'relation'
-  return 'text'
+  return classifyStructuredColumnValueKind(typeLabel)
 }

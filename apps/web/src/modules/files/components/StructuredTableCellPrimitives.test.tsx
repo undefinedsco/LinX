@@ -9,7 +9,6 @@ import {
   StructuredEnumValueChips,
   StructuredEnumCellSelector,
   StructuredPendingPredicateHeaderCell,
-  StructuredPredicateHeaderCell,
   StructuredPredicateValueEditor,
   StructuredPredicateValueLinks,
   StructuredPredicateCellEditor,
@@ -18,7 +17,6 @@ import {
   StructuredSubjectCell,
 } from './StructuredTableCellPrimitives'
 import {
-  projectStructuredDefinedPredicateHeaderChrome,
   projectStructuredPendingPredicateHeaderChrome,
 } from '../features/structured/structured-predicate-column-header-model'
 
@@ -28,9 +26,9 @@ describe('StructuredTableCellPrimitives', () => {
 
     expect(source).toContain("from './structured-pending-cell-write-button-model'")
     expect(source).toContain('projectPendingCellWriteButtonChrome')
-    expect(source).not.toContain('Pending approval for ${predicateLabel} on ${subject}')
+    expect(source).not.toContain('${subject} 的 ${predicateLabel} 待审核')
     expect(source).not.toContain('正在提交 ${predicateLabel} on ${subject} 的单元格变更')
-    expect(source).not.toContain('Discard pending write for ${predicateLabel} on ${subject}')
+    expect(source).not.toContain('放弃 ${subject} 的 ${predicateLabel} 更改')
     expect(source).not.toContain('单元格变更已提交；等待 Inbox 审批，canonical 数据未变更')
     expect(source).not.toContain('单元格变更正在提交；canonical 数据未变更')
     expect(source).not.toContain('单元格变更提交失败；可撤回本地改动')
@@ -58,7 +56,7 @@ describe('StructuredTableCellPrimitives', () => {
   it('keeps shape warning accessible copy in cell chrome', () => {
     const source = readFileSync('src/modules/files/features/structured/StructuredTableCellPrimitives.tsx', 'utf8')
 
-    expect(source).not.toContain('Shape warning for ${predicateLabel} on ${subject}')
+    expect(source).not.toContain('${subject} 的 ${predicateLabel} 格式提醒')
     expect(source).not.toMatch(/aria-label=\{`Shape warning for/)
   })
 
@@ -162,12 +160,12 @@ describe('StructuredTableCellPrimitives', () => {
   it('renders shape warning as a compact accessible icon', () => {
     render(
       <ShapeWarningIndicator
-        ariaLabel="Shape warning for tags on #Workspace"
+        ariaLabel="#Workspace 的 tags 格式提醒"
         title="#Workspace tags has 2 values; maxCount is 1."
       />,
     )
 
-    const warning = screen.getByLabelText('Shape warning for tags on #Workspace')
+    const warning = screen.getByLabelText('#Workspace 的 tags 格式提醒')
     expect(warning).toHaveAttribute('role', 'img')
     expect(warning).toHaveAttribute('title', '#Workspace tags has 2 values; maxCount is 1.')
   })
@@ -194,7 +192,7 @@ describe('StructuredTableCellPrimitives', () => {
       </div>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Discard pending write for title on #Workspace' }))
+    fireEvent.click(screen.getByRole('button', { name: '放弃 #Workspace 的 title 更改' }))
 
     expect(onDiscard).toHaveBeenCalledTimes(1)
     expect(onCellClick).not.toHaveBeenCalled()
@@ -209,10 +207,10 @@ describe('StructuredTableCellPrimitives', () => {
       />,
     )
 
-    expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' })).toBeInTheDocument()
-    expect(screen.getByRole('status', { name: 'Pending approval for title on #Workspace' }))
+    expect(screen.getByRole('status', { name: '#Workspace 的 title 待审核' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: '#Workspace 的 title 待审核' }))
       .toHaveAttribute('title', '单元格变更已提交；等待 Inbox 审批，canonical 数据未变更')
-    expect(screen.queryByRole('button', { name: 'Discard pending write for title on #Workspace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '放弃 #Workspace 的 title 更改' })).not.toBeInTheDocument()
   })
 
   it('shows submitting writes without exposing cell proposal implementation copy', () => {
@@ -893,65 +891,6 @@ describe('StructuredTableCellPrimitives', () => {
     expect(onCommit).toHaveBeenCalledWith('2026-07-01')
   })
 
-  it('renders predicate header sorting and definition controls without double-activating sort', () => {
-    const onSort = vi.fn()
-    const onCopyPredicate = vi.fn()
-    const onOpenPredicate = vi.fn()
-    const onOpenShapeRule = vi.fn()
-
-    render(
-      <StructuredPredicateHeaderCell
-        chrome={projectStructuredDefinedPredicateHeaderChrome({
-          normalizedLabel: 'reviewStatus',
-          shapeRuleActions: [{
-            uri: 'https://pod.example/.vocab/shapes.ttl#reviewStatus-required',
-            label: 'Required',
-          }],
-        })}
-        predicate="https://schema.org/reviewStatus"
-        displayLabel="reviewStatus"
-        normalizedLabel="reviewStatus"
-        typeLabel="enum"
-        description="Review workflow status"
-        ruleText="required"
-        statusLabel="active"
-        sortIcon={<span aria-hidden="true">sort</span>}
-        onSort={onSort}
-        onCopyPredicate={onCopyPredicate}
-        onOpenPredicate={onOpenPredicate}
-        onOpenShapeRule={onOpenShapeRule}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: '按 reviewStatus 排序' }))
-    expect(onSort).toHaveBeenCalledTimes(1)
-
-    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 reviewStatus 的说明' }))
-    expect(onSort).toHaveBeenCalledTimes(1)
-    const definitionMenu = screen.getByRole('menu')
-    expect(within(definitionMenu).getByText('字段说明')).toBeInTheDocument()
-    expect(within(definitionMenu).getByText('reviewStatus')).toBeInTheDocument()
-    expect(within(definitionMenu).getByText('enum')).toBeInTheDocument()
-    expect(within(definitionMenu).getByText('规则')).toBeInTheDocument()
-    expect(within(definitionMenu).getByText('required')).toBeInTheDocument()
-    expect(within(definitionMenu).getByText('Review workflow status')).toBeInTheDocument()
-    expect(within(definitionMenu).getByText('active')).toBeInTheDocument()
-    expect(within(definitionMenu).getByText('链接操作')).toBeInTheDocument()
-    expect(screen.queryByText('https://schema.org/reviewStatus')).not.toBeInTheDocument()
-    expect(screen.queryByText('https://pod.example/.vocab/terms.ttl#reviewStatus')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('menuitem', { name: '复制字段标识' }))
-    expect(onCopyPredicate).toHaveBeenCalledWith('https://schema.org/reviewStatus')
-
-    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 reviewStatus 的说明' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '打开字段定义' }))
-    expect(onOpenPredicate).toHaveBeenCalledWith('https://schema.org/reviewStatus')
-
-    fireEvent.pointerDown(screen.getByRole('button', { name: '查看 reviewStatus 的说明' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '打开规则 Required' }))
-    expect(onOpenShapeRule).toHaveBeenCalledWith('https://pod.example/.vocab/shapes.ttl#reviewStatus-required')
-  })
-
   it('renders pending predicate definition actions with the external predicate URI but without leaking proposal details', () => {
     const onSubmit = vi.fn()
     const onOpenProposal = vi.fn()
@@ -962,7 +901,6 @@ describe('StructuredTableCellPrimitives', () => {
         chrome={projectStructuredPendingPredicateHeaderChrome({
           hasVocabProposal: true,
           normalizedLabel: 'summary',
-          status: 'pending',
         })}
         displayLabel="summary*"
         proposalUri="https://pod.example/.vocab/terms.ttl#summary"
@@ -1001,7 +939,7 @@ describe('StructuredTableCellPrimitives', () => {
     expect(within(pendingMenu).queryByText('https://pod.example/.vocab/terms.ttl#summary')).not.toBeInTheDocument()
     expect(within(pendingMenu).queryByText('https://pod.example/.vocab/terms.ttl')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('menuitem', { name: '提交审核' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '保留这列' }))
     expect(onSubmit).toHaveBeenCalledTimes(1)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '待确认字段 summary' }))

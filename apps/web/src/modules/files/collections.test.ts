@@ -65,6 +65,8 @@ const mocks = vi.hoisted(() => ({
   fetchApprovals: vi.fn(),
   invalidateQueries: vi.fn(),
   approveVocabTermProposalCanonical: vi.fn(),
+  changeVocabTermValueType: vi.fn(),
+  markFilesProposalResourceResolved: vi.fn(),
   createAccessPolicyProposalInboxApproval: vi.fn(),
   createAiChangeProposalInboxApproval: vi.fn(),
   createSourceUpdateProposalInboxApproval: vi.fn(),
@@ -156,7 +158,16 @@ vi.mock('./data/proposal/vocab-approval-commands', async (importOriginal) => {
   return {
     ...actual,
     approveVocabTermProposalCanonical: mocks.approveVocabTermProposalCanonical,
+    changeVocabTermValueType: mocks.changeVocabTermValueType,
     createVocabTermProposalInboxApproval: mocks.createVocabTermProposalInboxApproval,
+  }
+})
+
+vi.mock('./data/proposal/proposal-status-resource', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./data/proposal/proposal-status-resource')>()
+  return {
+    ...actual,
+    markFilesProposalResourceResolved: mocks.markFilesProposalResourceResolved,
   }
 })
 
@@ -167,6 +178,8 @@ describe('files collections', () => {
     mocks.invalidateQueries.mockResolvedValue(undefined)
     mocks.fetchApprovals.mockResolvedValue([])
     mocks.approveVocabTermProposalCanonical.mockResolvedValue({ termUri: 'https://pod.example/.vocab/terms.ttl#core', shapesUri: 'https://pod.example/.vocab/shapes.ttl' })
+    mocks.changeVocabTermValueType.mockResolvedValue(undefined)
+    mocks.markFilesProposalResourceResolved.mockResolvedValue(undefined)
     mocks.createAccessPolicyProposalInboxApproval.mockResolvedValue('https://pod.example/.data/approvals/access.ttl#approval')
     mocks.createAiChangeProposalInboxApproval.mockResolvedValue('https://pod.example/.data/approvals/ai.ttl#approval')
     mocks.createSourceUpdateProposalInboxApproval.mockResolvedValue('https://pod.example/.data/approvals/source.ttl#approval')
@@ -2219,6 +2232,86 @@ describe('files collections', () => {
 
     expect(mocks.approveVocabTermProposalCanonical).toHaveBeenCalledWith({ id: 'db' }, proposal)
     expect(mocks.readRawTextResource).toHaveBeenCalledWith({ id: 'db' }, proposal.targetVocabUri)
+  })
+
+  it('writes a term the person made straight into the vocab, without an approval record or inbox item', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    const proposal = createVocabTermProposal({
+      documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+      termUri: 'https://pod.example/.vocab/terms.ttl#summary',
+      termKind: 'predicate',
+      label: 'summary',
+      valueType: 'text',
+      description: 'Short summary.',
+      createdAt: '2026-06-18T00:00:00.000Z',
+    })
+    const termsResource = {
+      uri: proposal.targetVocabUri,
+      content: '@prefix udfs: <https://undefineds.co/vocab/> .',
+      mimeType: 'text/turtle',
+      headers: {},
+    }
+    mocks.readRawTextResource.mockResolvedValueOnce(termsResource)
+
+    await expect(vocabTermProposalCollection.confirmWithCache({ cacheClient: queryClient, proposal })).resolves.toBe(termsResource)
+
+    expect(mocks.approveVocabTermProposalCanonical).toHaveBeenCalledWith({ id: 'db' }, proposal, { documentAnywhereInPod: true })
+    expect(mocks.createRawTextResource).not.toHaveBeenCalled()
+    expect(mocks.createVocabTermProposalInboxApproval).not.toHaveBeenCalled()
+    expect(mocks.markFilesProposalResourceResolved).not.toHaveBeenCalled()
+    // The table re-reads the vocabulary, so the new column shows up as an ordinary one.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.rawText, proposal.targetVocabUri] })
+  })
+
+  it('closes the approval record of an older column when the person keeps it', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    const proposal = createVocabTermProposal({
+      documentUri: 'https://pod.example/.data/workspaces/ws-1/state.ttl',
+      termUri: 'https://pod.example/.vocab/terms.ttl#summary',
+      termKind: 'predicate',
+      label: 'summary',
+      valueType: 'text',
+      description: 'Short summary.',
+      createdAt: '2026-06-18T00:00:00.000Z',
+    })
+    mocks.readRawTextResource.mockResolvedValueOnce({ uri: proposal.targetVocabUri, content: '', mimeType: 'text/turtle', headers: {} })
+
+    await vocabTermProposalCollection.confirmWithCache({ cacheClient: queryClient, proposal, resolveRecord: true })
+
+    expect(mocks.approveVocabTermProposalCanonical).toHaveBeenCalledWith({ id: 'db' }, proposal, { documentAnywhereInPod: true })
+    expect(mocks.markFilesProposalResourceResolved).toHaveBeenCalledWith({ id: 'db' }, proposal.proposalResourceUri, 'approved')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: vocabTermProposalCollection.queryKey(proposal.documentUri) })
+  })
+
+  it('changes the value type of a term through the collection and refreshes the vocab', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    const termsResource = { uri: 'https://pod.example/.vocab/terms.ttl', content: '', mimeType: 'text/turtle', headers: {} }
+    mocks.readRawTextResource.mockResolvedValueOnce(termsResource)
+
+    await expect(vocabTermProposalCollection.changeValueTypeWithCache({
+      cacheClient: queryClient,
+      termUri: 'https://pod.example/.vocab/terms.ttl#summary',
+      targetVocabUri: 'https://pod.example/.vocab/terms.ttl',
+      valueType: 'number',
+      shape: 'datatype xsd:decimal',
+    })).resolves.toBe(termsResource)
+
+    expect(mocks.changeVocabTermValueType).toHaveBeenCalledWith({ id: 'db' }, {
+      termUri: 'https://pod.example/.vocab/terms.ttl#summary',
+      targetVocabUri: 'https://pod.example/.vocab/terms.ttl',
+      valueType: 'number',
+      shape: 'datatype xsd:decimal',
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [...FILES_COLLECTION_QUERY_KEYS.rawText, 'https://pod.example/.vocab/terms.ttl'] })
   })
 
   it('wraps proposal mutations with collection-owned cache invalidation', async () => {

@@ -261,11 +261,11 @@ export function projectStructuredWhiteboardRelationEditorChrome({
 }): StructuredWhiteboardRelationEditorChrome {
   return {
     fromFieldLabel: '起点',
-    fromFieldAriaLabel: 'Relation from',
+    fromFieldAriaLabel: '关联起点',
     toFieldLabel: '终点',
-    toFieldAriaLabel: 'Relation to',
+    toFieldAriaLabel: '关联终点',
     labelFieldLabel: '标签',
-    labelFieldAriaLabel: 'Relation label',
+    labelFieldAriaLabel: '关联名称',
     labelFieldPlaceholder: '视觉关系',
     saveButtonLabel: editingRelationId ? '保存连接' : '连接',
     cancelButtonLabel: '取消',

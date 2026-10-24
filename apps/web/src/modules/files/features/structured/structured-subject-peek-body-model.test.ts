@@ -63,7 +63,7 @@ describe('structured subject peek body model', () => {
           heading: '来源',
         },
         summary: {
-          ariaLabel: 'Subject card summary',
+          ariaLabel: '卡片摘要',
           typePrefix: '类型',
         },
         technicalDetails: {

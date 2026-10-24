@@ -75,7 +75,8 @@ function localName(value: string): string {
   return cleaned
 }
 
-type ProjectionWithScope = StructuredTableProjection & { className?: string | null }
+/** `classLabels` maps a class's local name to the label people gave it (the table's name), shown instead of the machine name. */
+type ProjectionWithScope = StructuredTableProjection & { className?: string | null; classLabels?: Readonly<Record<string, string>> }
 
 /** Names LinX generates for non-Latin labels (`p-<hash>`, see autoPredicateLocalName) mean nothing to people. */
 function isMachineName(name: string): boolean {
@@ -142,7 +143,7 @@ export function projectStructuredCards(projection: ProjectionWithScope): Structu
     return {
       subject: row.subject,
       title: cleanLiteral(title),
-      className: className ? localName(className) : null,
+      className: className ? (projection.classLabels?.[localName(className)] || localName(className)) : null,
       summary: summary ? cleanLiteral(summary) : '',
       tags,
     }

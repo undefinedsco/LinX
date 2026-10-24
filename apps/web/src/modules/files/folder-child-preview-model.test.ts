@@ -63,7 +63,7 @@ describe('folder child preview model', () => {
     expect(projectFolderChildPreviewModel({ file: folder, child: report, childCount: 2 }))
       .toMatchObject({
         chrome: {
-          ariaLabel: 'Folder child preview',
+          ariaLabel: '所选项预览',
           openSelectedLabel: '打开选中项',
         },
         heading: '选中项',
@@ -87,7 +87,7 @@ describe('folder child preview model', () => {
     expect(projectFolderChildPreviewModel({ file: folder, child: null, childCount: 2 }))
       .toMatchObject({
         chrome: {
-          ariaLabel: 'Folder child preview',
+          ariaLabel: '所选项预览',
           openSelectedLabel: '打开选中项',
         },
         heading: '文件夹预览',

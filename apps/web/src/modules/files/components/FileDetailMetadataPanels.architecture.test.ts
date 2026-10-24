@@ -89,7 +89,7 @@ describe('File detail metadata panels architecture boundary', () => {
     expect(metadataPanelsSource).not.toContain("status === 'pending'")
     expect(metadataPanelsSource).not.toContain("status === 'error'")
     expect(metadataPanelsSource).not.toContain('待审核更改：${statusLabel}')
-    expect(metadataPanelsSource).not.toContain('meta predicate 更改提交失败：${statusLabel}')
+    expect(metadataPanelsSource).not.toContain('属性更改提交失败：${statusLabel}')
 
     expect(metadataPredicateControllerSource).toContain('export function useDetailMetaPredicateController')
     expect(metadataPredicateControllerSource).toContain('useToast')

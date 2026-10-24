@@ -27,63 +27,31 @@ const vocabProposal = {
 } as const
 
 describe('StructuredPredicateColumnHeader', () => {
-  it('delegates predicate and shape opens instead of calling window.open directly', () => {
+  it('delegates 在词表里查看 instead of calling window.open directly', () => {
     const windowOpen = vi.spyOn(window, 'open').mockImplementation(() => null)
-    const onOpenPredicateDefinition = vi.fn()
-    const onOpenPredicateShapeRule = vi.fn()
-    const onCopyPredicate = vi.fn()
-    const writeText = vi.fn()
-    const originalClipboard = navigator.clipboard
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    })
+    const onOpenDefinition = vi.fn()
 
-    try {
-      render(createElement(Header, {
-        definition: {
-          uri: 'https://pod.example/.vocab/terms.ttl#status',
-          label: 'status',
-          description: 'Task status.',
-          status: 'active',
-          valueType: 'enum',
-          shape: 'status shape',
-          shapeRules: [{
-            uri: 'https://pod.example/.vocab/shapes.ttl#status-required',
-            label: 'Required',
-            classScope: 'https://schema.example/Task',
-            constraint: 'minCount 1',
-            status: 'active',
-          }],
-        },
-        observedValues: ['"Draft"'],
-        onDiscard: vi.fn(),
-        predicate: 'https://pod.example/.vocab/terms.ttl#status',
-        sortIcon: null,
-        onCopyPredicate,
-        onOpenPredicateDefinition,
-        onOpenPredicateShapeRule,
-      }))
+    render(createElement(Header, {
+      actions: { filterValues: [], onFilterChange: vi.fn(), onOpenDefinition, onSort: vi.fn() },
+      definition: {
+        uri: 'https://pod.example/.vocab/terms.ttl#status',
+        label: 'status',
+        description: 'Task status.',
+        status: 'active',
+        valueType: 'enum',
+        shape: 'status shape',
+        shapeRules: [],
+      },
+      observedValues: ['"Draft"'],
+      onDiscard: vi.fn(),
+      predicate: 'https://pod.example/.vocab/terms.ttl#status',
+      sortIcon: null,
+    }))
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: '查看 status 的说明' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '打开字段定义' }))
-      expect(onOpenPredicateDefinition).toHaveBeenCalledWith('https://pod.example/.vocab/terms.ttl#status')
-
-      fireEvent.pointerDown(screen.getByRole('button', { name: '查看 status 的说明' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '打开规则 Required' }))
-      expect(onOpenPredicateShapeRule).toHaveBeenCalledWith('https://pod.example/.vocab/shapes.ttl#status-required')
-
-      fireEvent.pointerDown(screen.getByRole('button', { name: '查看 status 的说明' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '复制字段标识' }))
-      expect(onCopyPredicate).toHaveBeenCalledWith('https://pod.example/.vocab/terms.ttl#status')
-      expect(writeText).not.toHaveBeenCalled()
-      expect(windowOpen).not.toHaveBeenCalled()
-    } finally {
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: originalClipboard,
-      })
-    }
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'status 列菜单' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '在词表里查看' }))
+    expect(onOpenDefinition).toHaveBeenCalledTimes(1)
+    expect(windowOpen).not.toHaveBeenCalled()
   })
 
   it('delegates pending predicate proposal opens instead of calling window.open directly', () => {

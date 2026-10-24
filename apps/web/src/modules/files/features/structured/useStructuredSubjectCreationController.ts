@@ -1,16 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import type { StructuredCellCommitResult } from '../../domain/structured/structured-table'
 import {
-  canSubmitStructuredSubjectCreation,
   createStructuredSubjectCreationState,
   planStructuredSubjectCreation,
   structuredSubjectDraftFromName,
-  projectStructuredSubjectCreationDialogModel,
-  projectStructuredSubjectCreationDraftPatch,
   projectStructuredSubjectCreationExistingSubjects,
   projectStructuredSubjectCreationFooterModel,
-  projectStructuredSubjectCreationOpenPatch,
-  projectStructuredSubjectCreationOpened,
   projectStructuredSubjectCreationReset,
   projectStructuredSubjectCreationSettled,
   projectStructuredSubjectCreationSubmitted,
@@ -23,7 +19,13 @@ type StageCellValueChange = (input: {
   subject: string
   predicate: string
   nextValues: string[]
-}) => void
+}) => void | Promise<StructuredCellCommitResult | undefined>
+
+export type StructuredCardCreationResult =
+  | { kind: 'created'; subject: string }
+  | { kind: 'rejected'; reason: 'missing-class' | 'empty-subject' | 'duplicate-subject' }
+  /** The row was staged but did not land in the document (no permission yet, or the write failed). */
+  | { kind: 'not-written' }
 
 export function useStructuredSubjectCreationController({
   classScope,
@@ -37,21 +39,13 @@ export function useStructuredSubjectCreationController({
   stageCellValueChange: StageCellValueChange
 }) {
   const [subjectCreationState, setSubjectCreationState] = useState(createStructuredSubjectCreationState)
-  const { createSubjectOpen, pendingSubjects, subjectDraft } = subjectCreationState
+  const { pendingSubjects } = subjectCreationState
   const mountedRef = useRef(false)
   const existingSubjects = useMemo(
     () => projectStructuredSubjectCreationExistingSubjects(projectionRows),
     [projectionRows],
   )
-  const submitDisabled = !canSubmitStructuredSubjectCreation({
-    classScope,
-    documentUri,
-    existingSubjects,
-    pendingSubjects,
-    subjectDraft,
-  })
   const footerModel = projectStructuredSubjectCreationFooterModel({ classScope })
-  const dialogModel = projectStructuredSubjectCreationDialogModel({ classScope })
 
   useEffect(() => {
     if (!mountedRef.current) {
@@ -65,33 +59,30 @@ export function useStructuredSubjectCreationController({
     setSubjectCreationState((current) => projectStructuredSubjectCreationSettled(current, existingSubjects, documentUri))
   }, [documentUri, existingSubjects])
 
-  const openCreateSubjectDialog = useCallback(() => {
-    if (!classScope) return
-    setSubjectCreationState((current) => projectStructuredSubjectCreationOpened({
-      current,
-      existingSubjects,
-    }))
-  }, [classScope, existingSubjects])
-
-  const submitCreateSubjectProposal = useCallback(() => {
+  /**
+   * Adds a row named by the person (the inline last row, or the title of a new K2 card): the
+   * address is made from the name. Resolves once the write has landed, so callers can open it.
+   */
+  const createSubjectByName = useCallback(async (name: string): Promise<StructuredCardCreationResult> => {
     const plan = planStructuredSubjectCreation({
       classScope,
       documentUri,
       existingSubjects,
       pendingSubjects,
-      subjectDraft,
+      subjectDraft: structuredSubjectDraftFromName(name),
     })
-    if (plan.kind === 'noop') return
+    if (plan.kind === 'noop') return { kind: 'rejected', reason: plan.reason }
     setSubjectCreationState((current) => projectStructuredSubjectCreationSubmitted({
       current,
       plan,
     }))
-    stageCellValueChange({
+    const result = await stageCellValueChange({
       subject: plan.subject,
       predicate: plan.typePredicate,
       nextValues: plan.typeValues,
     })
-  }, [classScope, documentUri, existingSubjects, pendingSubjects, stageCellValueChange, subjectDraft])
+    return result === 'written' ? { kind: 'created', subject: plan.subject } : { kind: 'not-written' }
+  }, [classScope, documentUri, existingSubjects, pendingSubjects, stageCellValueChange])
 
   /** Adds a row named by the person (the inline last row); false when the name is empty or taken. */
   const addSubjectByName = useCallback((name: string) => {
@@ -103,50 +94,14 @@ export function useStructuredSubjectCreationController({
       subjectDraft: structuredSubjectDraftFromName(name),
     })
     if (plan.kind === 'noop') return false
-    setSubjectCreationState((current) => projectStructuredSubjectCreationSubmitted({
-      current,
-      plan,
-    }))
-    stageCellValueChange({
-      subject: plan.subject,
-      predicate: plan.typePredicate,
-      nextValues: plan.typeValues,
-    })
+    void createSubjectByName(name)
     return true
-  }, [classScope, documentUri, existingSubjects, pendingSubjects, stageCellValueChange])
-
-  const setCreateSubjectOpen = useCallback((nextCreateSubjectOpen: boolean) => {
-    setSubjectCreationState((current) => projectStructuredSubjectCreationOpenPatch({
-      current,
-      createSubjectOpen: nextCreateSubjectOpen,
-    }))
-  }, [])
-
-  const setSubjectDraft = useCallback((nextSubjectDraft: string) => {
-    setSubjectCreationState((current) => projectStructuredSubjectCreationDraftPatch({
-      current,
-      subjectDraft: nextSubjectDraft,
-    }))
-  }, [])
-
-  const handleSubjectDraftKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    submitCreateSubjectProposal()
-  }, [submitCreateSubjectProposal])
+  }, [classScope, createSubjectByName, documentUri, existingSubjects, pendingSubjects])
 
   return {
     addSubjectByName,
-    createSubjectOpen,
-    dialogModel,
+    createSubjectByName,
     footerModel,
-    handleSubjectDraftKeyDown,
-    openCreateSubjectDialog,
     pendingSubjects,
-    setCreateSubjectOpen,
-    setSubjectDraft,
-    subjectDraft,
-    submitDisabled,
-    submitCreateSubjectProposal,
   }
 }

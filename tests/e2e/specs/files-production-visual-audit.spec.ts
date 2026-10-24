@@ -70,7 +70,7 @@ async function closeMetaDrawer(page: Page) {
   const closeButton = page.getByRole('button', { name: '关闭 .meta inspector' })
   if (await closeButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
     await closeButton.click()
-    await expect(page.getByLabel('Resource .meta inspector')).toHaveCount(0)
+    await expect(page.getByLabel('资源附属信息')).toHaveCount(0)
   }
 }
 
@@ -382,7 +382,7 @@ test.describe('Files production visual audit', () => {
     await capture(page, '01-folder-finder-detail-1440x900')
 
     await openResourceAction(page, seed.folderName, '查看 .meta')
-    const folderMetaDrawer = page.getByLabel('Resource .meta inspector')
+    const folderMetaDrawer = page.getByLabel('资源附属信息')
     await expect(folderMetaDrawer).toContainText(seed.folderMetaUri)
     await expect(folderMetaDrawer).toContainText('Visual audit folder')
     await expect(folderMetaDrawer).toContainText('Ready')
@@ -453,7 +453,7 @@ test.describe('Files production visual audit', () => {
     await page.keyboard.press('Escape')
 
     await openResourceAction(page, seed.turtleName, '查看 .meta')
-    const turtleMetaDrawer = page.getByLabel('Resource .meta inspector')
+    const turtleMetaDrawer = page.getByLabel('资源附属信息')
     await expect(turtleMetaDrawer).toContainText(seed.turtleMetaUri)
     await expect(turtleMetaDrawer).toContainText('Visual Audit Workspace Table')
     await expect(turtleMetaDrawer).toContainText(seed.turtleMetaUri.replace(/\.meta$/, ''))
@@ -547,7 +547,7 @@ test.describe('Files production visual audit', () => {
     }).toBeLessThan(2)
 
     await page.getByRole('button', { name: '添加视觉关系' }).click()
-    await page.getByLabel('Relation label').fill('audit relation')
+    await page.getByLabel('关联名称').fill('audit relation')
     await page.getByRole('button', { name: '创建视觉关系' }).click()
     await expect(page.locator('[data-whiteboard-relation-source="visual"]')).toHaveCount(1)
     await capture(page, '10-whiteboard-1440x900')

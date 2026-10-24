@@ -57,7 +57,7 @@ describe('useFolderDescendantColumnController', () => {
     const { result } = renderHook(() => useFolderDescendantColumnController('https://pod.example/files/'))
 
     expect(result.current.chrome.title).toBe('files')
-    expect(result.current.chrome.ariaLabel).toBe('Folder column files')
+    expect(result.current.chrome.ariaLabel).toBe('文件夹列 files')
     expect(result.current.chrome.loadingMessage).toBe('正在加载...')
     expect(result.current.contentState).toEqual({ kind: 'loading' })
   })

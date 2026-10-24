@@ -3,9 +3,7 @@ export type StructuredSubjectCreationPlan =
   | { kind: 'create'; subject: string; typePredicate: 'rdf:type'; typeValues: string[] }
 
 export type StructuredSubjectCreationState = {
-  createSubjectOpen: boolean
   pendingSubjects: string[]
-  subjectDraft: string
 }
 
 export type StructuredSubjectCreationFooterModel = {
@@ -15,69 +13,14 @@ export type StructuredSubjectCreationFooterModel = {
   buttonLabel: string
 }
 
-export type StructuredSubjectCreationDialogModel = {
-  title: string
-  description: string
-  subjectInputLabel: string
-  cancelLabel: string
-  submitLabel: string
-}
-
 export function createStructuredSubjectCreationState(): StructuredSubjectCreationState {
-  return {
-    createSubjectOpen: false,
-    pendingSubjects: [],
-    subjectDraft: '#NewSubject',
-  }
+  return { pendingSubjects: [] }
 }
 
 export function projectStructuredSubjectCreationReset(
   _current: StructuredSubjectCreationState,
 ): StructuredSubjectCreationState {
   return createStructuredSubjectCreationState()
-}
-
-export function projectStructuredSubjectCreationOpened({
-  current,
-  existingSubjects,
-}: {
-  current: StructuredSubjectCreationState
-  existingSubjects: readonly string[]
-}): StructuredSubjectCreationState {
-  return {
-    ...current,
-    createSubjectOpen: true,
-    subjectDraft: getNextStructuredSubjectDraft({
-      existingSubjects,
-      pendingSubjects: current.pendingSubjects,
-    }),
-  }
-}
-
-export function projectStructuredSubjectCreationOpenPatch({
-  current,
-  createSubjectOpen,
-}: {
-  current: StructuredSubjectCreationState
-  createSubjectOpen: boolean
-}): StructuredSubjectCreationState {
-  return {
-    ...current,
-    createSubjectOpen,
-  }
-}
-
-export function projectStructuredSubjectCreationDraftPatch({
-  current,
-  subjectDraft,
-}: {
-  current: StructuredSubjectCreationState
-  subjectDraft: string
-}): StructuredSubjectCreationState {
-  return {
-    ...current,
-    subjectDraft,
-  }
 }
 
 export function projectStructuredSubjectCreationSubmitted({
@@ -91,7 +34,6 @@ export function projectStructuredSubjectCreationSubmitted({
 
   return {
     ...current,
-    createSubjectOpen: false,
     pendingSubjects: projectStagedStructuredPendingSubjects({
       pendingSubjects: current.pendingSubjects,
       subject: plan.subject,
@@ -125,23 +67,6 @@ export function projectStructuredSubjectCreationExistingSubjects(
   projectionRows: readonly { subject: string }[],
 ): string[] {
   return projectionRows.map((row) => row.subject)
-}
-
-export function getNextStructuredSubjectDraft(input: {
-  existingSubjects: readonly string[]
-  pendingSubjects: readonly string[]
-}): string {
-  const existingSubjects = new Set([
-    ...input.existingSubjects,
-    ...input.pendingSubjects,
-  ])
-  let nextNumber = input.pendingSubjects.length + 1
-  let subject = nextNumber === 1 ? '#NewSubject' : `#NewSubject${nextNumber}`
-  while (existingSubjects.has(subject)) {
-    nextNumber += 1
-    subject = `#NewSubject${nextNumber}`
-  }
-  return subject
 }
 
 /** R6 K6b: the person types a name in the last row; the card's address is made from it. */
@@ -199,22 +124,8 @@ export function projectStructuredSubjectCreationFooterModel({
 }): StructuredSubjectCreationFooterModel {
   return {
     disabled: !classScope,
-    title: classScope ? `在“${classScope}”里新增一行` : '先选一个类型再新增一行',
+    title: classScope ? '新增一张卡片' : '先选一个类型再新增卡片',
     buttonAriaLabel: '+ 卡片',
     buttonLabel: '卡片',
-  }
-}
-
-export function projectStructuredSubjectCreationDialogModel({
-  classScope,
-}: {
-  classScope?: string | null
-}): StructuredSubjectCreationDialogModel {
-  return {
-    title: '新增一行',
-    description: classScope ?? '先选一个类型再新增一行。',
-    subjectInputLabel: 'Subject',
-    cancelLabel: '取消',
-    submitLabel: '创建条目审批',
   }
 }

@@ -170,3 +170,26 @@ export function predicateShapeFromDraft(draft: PredicateDefinitionDraft) {
   if (shape) shapeParts.push(shape)
   return shapeParts.join(' · ')
 }
+
+/**
+ * The rule text of a column after its value type changes: the parts that belong to the old type
+ * (datatype, resource range, options) are replaced, everything else (table scope, required,
+ * counts, editor) stays.
+ */
+export function reshapePredicateShapeForValueType(shape: string, valueType: string, enumOptions: readonly string[] = []) {
+  const kept = shape
+    .split(' · ')
+    .map((part) => part.trim())
+    .filter((part) => part && !/^datatype /.test(part) && !/^range /.test(part) && !/^option /.test(part))
+  const type = valueType.trim().toLowerCase()
+  const typed: string[] = []
+  if (type === 'date') typed.push('datatype xsd:date')
+  if (type === 'boolean') typed.push('datatype xsd:boolean')
+  if (type === 'number') typed.push('datatype xsd:decimal')
+  if (type === 'relation' || type === 'resource' || type === 'url' || type === 'contact') typed.push('range resource')
+  if (type === 'enum') typed.push(...enumOptions.map((option) => `option ${option}`))
+  // Type parts go right after the table scope and `required`, like the rule text of a new column.
+  const head = kept.filter((part) => /^class /.test(part) || part === 'required')
+  const tail = kept.filter((part) => !(/^class /.test(part) || part === 'required'))
+  return [...head, ...typed, ...tail].join(' · ')
+}

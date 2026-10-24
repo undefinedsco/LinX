@@ -1,4 +1,5 @@
 import type { StructuredWhiteboardVisualRelation } from './structured-projections'
+import { normalizeStructuredColumnFilters, type StructuredColumnFilter } from './structured-column-filter'
 
 export type StructuredResourceViewMode = 'table' | 'kanban' | 'whiteboard' | 'raw'
 export type StructuredSortDirection = 'asc' | 'desc'
@@ -9,6 +10,19 @@ export interface StructuredWhiteboardPosition {
   x: number
   y: number
 }
+
+/**
+ * K6d header menu: what the person did to this table's columns. Filters hide rows, labels are the
+ * names shown for columns in this table only, and removed columns are no longer part of the table
+ * (the values stay on the cards; 加属性 brings a column back).
+ */
+export interface StructuredColumnViewState {
+  filters: StructuredColumnFilter[]
+  labels: Record<string, string>
+  removed: string[]
+}
+
+export const EMPTY_STRUCTURED_COLUMN_VIEW: StructuredColumnViewState = { filters: [], labels: {}, removed: [] }
 
 export interface StructuredKanbanBoardMetadataV1 {
   version: 1
@@ -77,6 +91,7 @@ export interface StructuredViewConfig {
   kanbanGroupPredicate: string | null
   kanbanOrder: StructuredKanbanOrderState
   columnSizing: StructuredColumnSizingState
+  columnView: StructuredColumnViewState
 }
 
 export interface StructuredViewMetadataWhiteboard {
@@ -99,6 +114,7 @@ export interface StructuredViewMetadata {
   kanbanOrder?: StructuredKanbanOrderState
   kanbanBoard?: StructuredKanbanBoardMetadataV1 | null
   columnSizing: StructuredColumnSizingState
+  columnView?: StructuredColumnViewState
   whiteboard: StructuredViewMetadataWhiteboard
   writesCanonicalData?: false
 }
@@ -114,6 +130,7 @@ export const DEFAULT_STRUCTURED_VIEW_CONFIG: StructuredViewConfig = {
   kanbanGroupPredicate: null,
   kanbanOrder: {},
   columnSizing: {},
+  columnView: EMPTY_STRUCTURED_COLUMN_VIEW,
 }
 
 
@@ -146,6 +163,22 @@ export function normalizeStructuredColumnSizing(value: unknown): StructuredColum
     sizing[key] = Math.round(width)
   }
   return sizing
+}
+
+export function normalizeStructuredColumnView(value: unknown): StructuredColumnViewState {
+  if (!value || typeof value !== 'object') return EMPTY_STRUCTURED_COLUMN_VIEW
+  const candidate = value as Record<string, unknown>
+  const labels: Record<string, string> = {}
+  if (candidate.labels && typeof candidate.labels === 'object') {
+    for (const [predicate, label] of Object.entries(candidate.labels as Record<string, unknown>)) {
+      if (typeof label === 'string' && label.trim()) labels[predicate] = label.trim()
+    }
+  }
+  return {
+    filters: normalizeStructuredColumnFilters(candidate.filters),
+    labels,
+    removed: uniqueStrings(candidate.removed),
+  }
 }
 
 export function normalizeStructuredKanbanOrder(value: unknown): StructuredKanbanOrderState {
@@ -371,6 +404,7 @@ export function normalizeStructuredViewConfig(value: unknown): StructuredViewCon
     kanbanGroupPredicate: typeof candidate.kanbanGroupPredicate === 'string' ? candidate.kanbanGroupPredicate : null,
     kanbanOrder: normalizeStructuredKanbanOrder(candidate.kanbanOrder),
     columnSizing: normalizeStructuredColumnSizing(candidate.columnSizing),
+    columnView: normalizeStructuredColumnView(candidate.columnView),
   }
 }
 

@@ -1,5 +1,13 @@
+import type { ReactNode } from 'react'
 import type { ColumnDef, SortingFn } from '@tanstack/react-table'
+import {
+  collectStructuredColumnFilterValues,
+  findStructuredColumnFilter,
+  STRUCTURED_SUBJECT_FILTER_KEY,
+  type StructuredColumnFilter,
+} from '../../domain/structured/structured-column-filter'
 import { useCardDialog } from '@/lib/card-dialog'
+import type { StructuredCardCreationResult } from './useStructuredSubjectCreationController'
 import { projectCardSubjectUris } from '../../domain/card/card-dialog-model'
 import { expandRdfIri } from '../../domain/card/rdf-term-tokens'
 
@@ -34,6 +42,8 @@ import {
   type StructuredSubjectCellOpenKind,
 } from './StructuredTableCellPrimitives'
 import { StructuredProjectionSortIcon } from './StructuredProjectionSortIcon'
+import { StructuredColumnHeaderCell } from './StructuredColumnHeaderCell'
+import type { StructuredColumnDialogKind } from './StructuredColumnDialogHost'
 import {
   StructuredPredicateCellPendingWriteControl,
   StructuredPredicateCellShapeWarning,
@@ -50,7 +60,23 @@ export type StructuredSubjectOpenOptions = {
 type StructuredPredicateActiveCellProps = Parameters<typeof StructuredPredicateActiveCell>[0]
 type StructuredAddPredicateColumnHeaderProps = Parameters<typeof StructuredAddPredicateColumnHeader>[0]
 
+export type StructuredColumnMenuInput = {
+  /** Names the person gave columns in this table. */
+  labels: Readonly<Record<string, string>>
+  filters: readonly StructuredColumnFilter[]
+  /** Rows the option lists of filters are read from (before any column filter hides rows). */
+  getValueRows: () => ReadonlyArray<{ subject: string; cells: ReadonlyArray<{ predicate: string; values: readonly string[] }> }>
+  onFilterChange?: (predicate: string, filter: StructuredColumnFilter | null) => void
+  onHide?: (predicate: string, label: string) => void
+  /** 改显示的名字, 改值的类型, 按它筛选 (a dialog) and 从这张表去掉 open a dialog kept outside the header. */
+  onOpenDialog?: (kind: StructuredColumnDialogKind, predicate: string) => void
+  onSortDirection?: (sortKey: string, direction: 'asc' | 'desc' | null) => void
+  /** Only a property in the person's own vocabulary can change type. */
+  canChangeType?: (predicate: string) => boolean
+}
+
 export interface StructuredProjectionTableColumnsInput {
+  headerCache?: StructuredHeaderCache
   activeEnumCell: StructuredPredicateActiveCellProps['activeEnumCell']
   activeRelationCell: StructuredPredicateActiveCellProps['activeRelationCell']
   activeTextCell: StructuredPredicateActiveCellProps['activeTextCell']
@@ -71,12 +97,9 @@ export interface StructuredProjectionTableColumnsInput {
   getCellWriteState: (subject: string, predicate: string) => StructuredCellWriteState
   getEnumOptionsForPredicate: StructuredPredicateActiveCellProps['getEnumOptionsForPredicate']
   getPredicateDefinition: (predicate: string) => StructuredVocabPredicateDefinition | undefined
-  onCreateVocabTermProposal?: (proposal: VocabTermProposal) => boolean | Promise<boolean>
-  onCopyPredicate?: (predicateUri: string) => void
   onDiscardVocabTermProposal?: StructuredPredicateActiveCellProps['onDiscardVocabTermProposal']
   onOpenEnumOptionDefinition?: StructuredPredicateActiveCellProps['onOpenEnumOptionDefinition']
   onOpenPredicateDefinition?: (predicateUri: string) => void
-  onOpenPredicateShapeRule?: (shapeRuleUri: string) => void
   onOpenSubjectResource?: (
     subject: string,
     targetUri: string,
@@ -87,6 +110,7 @@ export interface StructuredProjectionTableColumnsInput {
   onSelectExistingPredicate?: StructuredAddPredicateColumnHeaderProps['onSelectExisting']
   onSort?: (sortKey: string) => void
   openRelationValue: StructuredPredicateActiveCellProps['onOpenRelationValue']
+  confirmedLabelByPredicate?: ReadonlyMap<string, { label: string }>
   pendingProposalByPredicate: ReadonlyMap<string, StructuredPredicateColumnProposal>
   popoverPlacement: StructuredPredicateActiveCellProps['popoverPlacement']
   projection: StructuredTableProjection
@@ -105,6 +129,8 @@ export interface StructuredProjectionTableColumnsInput {
   visiblePredicates: readonly string[]
   vocabDefinitionIndex?: StructuredVocabDefinitionIndex
   removeEnumOption: StructuredPredicateActiveCellProps['onRemoveEnumOption']
+  /** K6d header menu: the names, filters and actions of this table's columns. */
+  columnMenu?: StructuredColumnMenuInput
   /** Cells LinX wrote that still wear a purple dot, keyed by `aiCellKey(subjectIri, predicateIri)`. */
   aiCellDots?: ReadonlyMap<string, AiCellChange>
   onUndoAiCell?: (change: AiCellChange) => void
@@ -126,11 +152,61 @@ function openSubjectCard(projection: StructuredTableProjection, documentUri: str
   })
 }
 
+/** R6 K2 "+ 卡片": an empty card popup whose title becomes the new row's name. */
+export function openStructuredNewCard(
+  projection: StructuredTableProjection,
+  documentUri: string,
+  createSubjectByName: (name: string) => Promise<StructuredCardCreationResult>,
+) {
+  useCardDialog.getState().open({
+    uri: `${documentUri}#new-card`,
+    from: 'table',
+    draft: {
+      create: async (title) => {
+        const created = await createSubjectByName(title)
+        if (created.kind === 'created') {
+          const uri = expandRdfIri(created.subject, documentUri, projection.prefixes)
+          return { kind: 'created', uri, siblings: [...projectCardSubjectUris(projection, documentUri), uri] }
+        }
+        if (created.kind === 'rejected' && created.reason === 'duplicate-subject') return { kind: 'rejected', reason: 'duplicate' }
+        if (created.kind === 'rejected' && created.reason === 'empty-subject') return { kind: 'rejected', reason: 'empty' }
+        return { kind: 'rejected', reason: 'unavailable' }
+      },
+    },
+  })
+}
+
 export function openStructuredSubjectCard(projection: StructuredTableProjection, documentUri: string, subject: string) {
   openSubjectCard(projection, documentUri, subject)
 }
 
+/**
+ * Header components keep their identity across column rebuilds, so an open column menu is not torn
+ * down (and re-opened closed) whenever the table re-reads its data; only what they render is updated.
+ */
+export type StructuredHeaderCache = {
+  renderers: Map<string, () => ReactNode>
+  components: Map<string, () => ReactNode>
+}
+
+export function createStructuredHeaderCache(): StructuredHeaderCache {
+  return { renderers: new Map(), components: new Map() }
+}
+
+function stableHeader(cache: StructuredHeaderCache | undefined, id: string, render: () => ReactNode) {
+  if (!cache) return render
+  cache.renderers.set(id, render)
+  let component = cache.components.get(id)
+  if (!component) {
+    component = () => cache.renderers.get(id)?.() ?? null
+    cache.components.set(id, component)
+  }
+  return component
+}
+
 export function buildStructuredProjectionTableColumns({
+  headerCache,
+  columnMenu,
   aiCellDots,
   onUndoAiCell,
   onSeenAiCell,
@@ -156,17 +232,15 @@ export function buildStructuredProjectionTableColumns({
   getCellWriteState,
   getEnumOptionsForPredicate,
   getPredicateDefinition,
-  onCreateVocabTermProposal,
-  onCopyPredicate,
   onDiscardVocabTermProposal,
   onOpenEnumOptionDefinition,
   onOpenPredicateDefinition,
-  onOpenPredicateShapeRule,
   onOpenSubjectResource,
   onOpenVocabTermProposal,
   onSelectExistingPredicate,
   onSort,
   openRelationValue,
+  confirmedLabelByPredicate,
   pendingProposalByPredicate,
   popoverPlacement,
   projection,
@@ -202,11 +276,31 @@ export function buildStructuredProjectionTableColumns({
           rowIndex: 0,
         }).displayLabel,
       },
-      header: () => (
-        <button className="flex items-center gap-1 hover:text-foreground" onClick={() => onSort?.('subject')}>
-          名称 <StructuredProjectionSortIcon columnKey="subject" sortKey={sortKey} sortDirection={sortDirection} />
-        </button>
-      ),
+      header: stableHeader(headerCache, 'subject', () => (
+        columnMenu ? (
+          <StructuredColumnHeaderCell
+            isNameColumn
+            editable={editable}
+            label={columnMenu.labels.subject ?? '名称'}
+            predicate="subject"
+            sort={sortKey === 'subject' ? sortDirection ?? 'asc' : null}
+            sortIcon={<StructuredProjectionSortIcon columnKey="subject" sortKey={sortKey} sortDirection={sortDirection} />}
+            termIsEditable={false}
+            typeLabel="text"
+            actions={{
+              filter: findStructuredColumnFilter(columnMenu.filters, STRUCTURED_SUBJECT_FILTER_KEY),
+              filterValues: [],
+              onFilterChange: (filter) => columnMenu.onFilterChange?.(STRUCTURED_SUBJECT_FILTER_KEY, filter),
+              onOpenFilterDialog: () => columnMenu.onOpenDialog?.('filter', STRUCTURED_SUBJECT_FILTER_KEY),
+              onSort: (direction) => columnMenu.onSortDirection?.('subject', direction),
+            }}
+          />
+        ) : (
+          <button className="flex items-center gap-1 hover:text-foreground" onClick={() => onSort?.('subject')}>
+            名称 <StructuredProjectionSortIcon columnKey="subject" sortKey={sortKey} sortDirection={sortDirection} />
+          </button>
+        )
+      )),
       cell: ({ row }) => {
         const subjectChrome = projectStructuredSubjectCellChrome({
           documentUri,
@@ -251,26 +345,43 @@ export function buildStructuredProjectionTableColumns({
         accessorFn: (row) => (row.cells[predicate] ?? []).join(' '),
         size: 128,
         sortingFn: structuredTableSortingFn,
-        header: () => (
+        header: stableHeader(headerCache, predicate, () => (
           <StructuredPredicateColumnHeader
             predicate={predicate}
             proposal={proposal}
             showNamespaces={showNamespaces}
             observedValues={columnModel.observedValues}
             definition={definition}
+            editable={editable}
+            labelOverride={columnMenu?.labels[predicate]}
+            sort={sortKey === predicate ? sortDirection ?? 'asc' : null}
+            termIsEditable={columnMenu?.canChangeType?.(predicate) ?? false}
             sortIcon={(
               <StructuredProjectionSortIcon columnKey={predicate} sortKey={sortKey} sortDirection={sortDirection} />
             )}
-            onSort={() => onSort?.(predicate)}
-            onCanCreateVocabTermProposal={!!onCreateVocabTermProposal}
+            actions={{
+              filter: columnMenu ? findStructuredColumnFilter(columnMenu.filters, predicate) : undefined,
+              filterValues: columnMenu
+                ? collectStructuredColumnFilterValues(
+                  columnMenu.getValueRows(),
+                  predicate,
+                  getEnumOptionsForPredicate(predicate, columnModel.observedValues),
+                )
+                : [],
+              onFilterChange: (filter) => columnMenu?.onFilterChange?.(predicate, filter),
+              onSort: (direction) => (columnMenu?.onSortDirection ? columnMenu.onSortDirection(predicate, direction) : onSort?.(predicate)),
+              onOpenFilterDialog: () => columnMenu?.onOpenDialog?.('filter', predicate),
+              onRename: columnMenu?.onOpenDialog ? () => columnMenu.onOpenDialog?.('rename', predicate) : undefined,
+              onChangeType: columnMenu?.onOpenDialog ? () => columnMenu.onOpenDialog?.('type', predicate) : undefined,
+              onHide: columnMenu?.onHide ? () => columnMenu.onHide?.(predicate, columnMenu.labels[predicate] ?? columnModel.label) : undefined,
+              onRemove: columnMenu?.onOpenDialog ? () => columnMenu.onOpenDialog?.('remove', predicate) : undefined,
+              onOpenDefinition: onOpenPredicateDefinition ? () => onOpenPredicateDefinition(predicate) : undefined,
+            }}
             onApprove={() => approvePendingPredicateProposal(predicate)}
             onDiscard={() => discardPendingPredicateProposal(predicate)}
-            onCopyPredicate={onCopyPredicate}
-            onOpenPredicateDefinition={onOpenPredicateDefinition}
-            onOpenPredicateShapeRule={onOpenPredicateShapeRule}
             onOpenVocabTermProposal={onOpenVocabTermProposal}
           />
-        ),
+        )),
         cell: ({ row }) => {
           const cellChrome = projectStructuredPredicateCellChrome({
             activeEnumCell,
@@ -279,7 +390,8 @@ export function buildStructuredProjectionTableColumns({
             cellWriteState: getCellWriteState(row.original.subject, predicate),
             documentUri,
             predicate,
-            proposal,
+            // Cells are named after the column's name ("状态"), not its address ("p-ae49e298").
+            proposal: proposal ?? confirmedLabelByPredicate?.get(predicate) ?? (definition?.label ? { label: definition.label } : undefined),
             row: row.original,
             shapeWarningByCell,
           })

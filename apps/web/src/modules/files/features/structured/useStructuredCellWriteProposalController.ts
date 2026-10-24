@@ -58,8 +58,9 @@ export function useStructuredCellWriteProposalController({
     })
   ), [documentUri, persistedCellWriteProposals])
 
-  const stageCellWriteProposal = useCallback((proposal: StructuredCellWriteProposal) => {
-    if (sameStructuredCellValues(proposal.previousValues, proposal.nextValues)) return
+  /** Resolves with the commit result (undefined when nothing was committed) so callers can wait for the write. */
+  const stageCellWriteProposal = useCallback((proposal: StructuredCellWriteProposal): Promise<StructuredCellCommitResult | undefined> => {
+    if (sameStructuredCellValues(proposal.previousValues, proposal.nextValues)) return Promise.resolve(undefined)
     const key = documentCellKey(proposal.documentUri, proposal.subject, proposal.predicate)
     if (settleTimer.current) clearTimeout(settleTimer.current)
     if (onCommitCellWriteProposal) setSaveState((current) => projectStructuredSaveStarted(current))
@@ -68,7 +69,7 @@ export function useStructuredCellWriteProposalController({
       key,
       proposal,
     }))
-    void Promise.resolve(onCommitCellWriteProposal?.(proposal)).then((saved) => {
+    return Promise.resolve(onCommitCellWriteProposal?.(proposal)).then((saved) => {
       if (onCommitCellWriteProposal) {
         if (saved === false) {
           setSaveState((current) => projectStructuredSaveFailed(current, proposal))
@@ -84,12 +85,13 @@ export function useStructuredCellWriteProposalController({
           current,
           key,
         }))
-        return
+        return saved
       }
       setCellWriteProposalWorkflowState((current) => projectStructuredCellWriteProposalWorkflowApprovalStaged({
         current,
         key,
       }))
+      return saved
     })
   }, [onCommitCellWriteProposal])
 

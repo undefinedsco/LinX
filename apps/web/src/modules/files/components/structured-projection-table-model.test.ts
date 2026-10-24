@@ -35,7 +35,6 @@ import {
 } from './structured-predicate-cell-display-model'
 import {
   canSubmitStructuredSubjectCreation,
-  getNextStructuredSubjectDraft,
   planStructuredSubjectCreation,
   projectStagedStructuredPendingSubjects,
   projectStructuredSubjectCreationExistingSubjects,
@@ -187,10 +186,6 @@ describe('structured projection table model', () => {
       { subject: '#Task' },
       { subject: '#Note' },
     ])).toEqual(['#Task', '#Note'])
-    expect(getNextStructuredSubjectDraft({
-      existingSubjects: ['#NewSubject', '#Task'],
-      pendingSubjects: ['#NewSubject2'],
-    })).toBe('#NewSubject3')
     expect(planStructuredSubjectCreation({
       classScope: null,
       existingSubjects: ['#Task'],
@@ -244,13 +239,13 @@ describe('structured projection table model', () => {
     })).toBe(false)
     expect(projectStructuredSubjectCreationFooterModel({ classScope: 'schema:Task' })).toEqual({
       disabled: false,
-      title: '在“schema:Task”里新增一行',
+      title: '新增一张卡片',
       buttonAriaLabel: '+ 卡片',
       buttonLabel: '卡片',
     })
     expect(projectStructuredSubjectCreationFooterModel({ classScope: null })).toEqual({
       disabled: true,
-      title: '先选一个类型再新增一行',
+      title: '先选一个类型再新增卡片',
       buttonAriaLabel: '+ 卡片',
       buttonLabel: '卡片',
     })

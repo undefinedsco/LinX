@@ -4,7 +4,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { useFilesStore } from '../../app/store'
 import {
   useCreateFolderResource,
-  useCreateVocabTermProposalInboxApproval,
+  useConfirmVocabTerm,
   useFilesCurrentPodRootUri,
   useCreateRawTextResource,
 } from '../../data/queries'
@@ -46,7 +46,7 @@ export function useFilesAddMenuController({
   const createFolder = useCreateFolderResource()
   const createRawText = useCreateRawTextResource()
   const ingest = useSourceIngestToolbarController()
-  const createVocabApproval = useCreateVocabTermProposalInboxApproval()
+  const confirmVocabTerm = useConfirmVocabTerm()
   const podRootUri = useFilesCurrentPodRootUri()
   const [tableOpen, setTableOpen] = useState(false)
   const [tableName, setTableName] = useState('')
@@ -162,7 +162,7 @@ export function useFilesAddMenuController({
     }
   }
 
-  /** 新建表格: the file is written first; the class and the first columns are proposed to the vocabulary and show as 未确认. */
+  /** 新建表格: the file is written first; the class and the first columns are the person's own, so they go straight into the vocabulary. */
   const confirmTable = async () => {
     if (!tablePlan.ok || !containerUri) return
     setTablePending(true)
@@ -171,7 +171,11 @@ export function useFilesAddMenuController({
         resource: { uri: tablePlan.documentUri, mimeType: 'text/turtle' },
         content: tablePlan.content,
       })
+      // One time per term, in order: the table lists its columns in the order they were typed.
+      const startedAt = Date.now()
+      const at = (offset: number) => new Date(startedAt + offset).toISOString()
       const classProposal = createVocabTermProposal({
+        createdAt: at(0),
         documentUri: tablePlan.documentUri,
         classScope: null,
         termUri: tablePlan.classUri,
@@ -179,12 +183,14 @@ export function useFilesAddMenuController({
         label: tableName.trim(),
         valueType: 'class',
         description: '这张表里每一行的类型。',
-        shape: 'rdf:type scope',
+        // A type has no column rule of its own: with one, the type would show up as a column of every table.
+        shape: '',
         podRootUri,
       })
-      const proposals = [classProposal, ...tablePlan.columns.map(({ draft }) => createVocabTermProposal({
+      const proposals = [classProposal, ...tablePlan.columns.map(({ draft }, index) => createVocabTermProposal({
+        createdAt: at(index + 1),
         documentUri: tablePlan.documentUri,
-        // Same class the rows are typed with, so the table lists these as its 未确认 columns.
+        // Same class the rows are typed with, so the table lists these as its columns.
         classScope: tablePlan.classUri,
         termUri: resolveLocalVocabTermUri(tablePlan.documentUri, draft.localName, podRootUri),
         termKind: 'predicate',
@@ -196,7 +202,7 @@ export function useFilesAddMenuController({
       }))]
       let proposalFailed = false
       for (const proposal of proposals) {
-        try { await createVocabApproval.mutateAsync(proposal) } catch { proposalFailed = true }
+        try { await confirmVocabTerm.mutateAsync({ proposal }) } catch { proposalFailed = true }
       }
       selectFile(resource.uri)
       setDetailTab('preview')
