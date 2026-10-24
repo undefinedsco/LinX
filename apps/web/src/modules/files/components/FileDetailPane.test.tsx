@@ -8943,7 +8943,8 @@ describe('FileDetailPane', () => {
 
       // ... but 加属性 offers it again.
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
-      fireEvent.click(await screen.findByRole('button', { name: /tags/ }))
+      // Exactly the row in the + 属性 menu: /tags/ also matched other buttons (e.g. the removal toast).
+      fireEvent.click(within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' }))
       expect(await screen.findByRole('button', { name: 'tags 列菜单' })).toBeInTheDocument()
       expect(useFilesStore.getState().structuredColumnViewByDocument[documentUri]?.removed).toEqual([])
     })
