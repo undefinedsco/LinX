@@ -8942,7 +8942,13 @@ describe('FileDetailPane', () => {
       // ... but 加属性 offers it again.
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
       // Exactly the row in the + 属性 menu: /tags/ also matched other buttons (e.g. the removal toast).
-      fireEvent.click(within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' }))
+      const restoreRow = within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' })
+      const beforeClick = { connected: restoreRow.isConnected, menus: screen.queryAllByRole('menu').length, title: restoreRow.getAttribute('title') }
+      fireEvent.click(restoreRow)
+      console.error('[header-menu diagnose click]', JSON.stringify({
+        beforeClick,
+        afterRemoved: useFilesStore.getState().structuredColumnViewByDocument[documentUri]?.removed,
+      }))
       try {
         expect(await screen.findByRole('button', { name: 'tags 列菜单' })).toBeInTheDocument()
       } catch (error) {
