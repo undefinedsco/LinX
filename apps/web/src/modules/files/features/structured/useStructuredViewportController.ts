@@ -11,7 +11,7 @@ export type StructuredViewportChromeModel = {
 export function projectStructuredViewportChrome(): StructuredViewportChromeModel {
   return {
     viewport: {
-      ariaLabel: 'Structured resource viewport',
+      ariaLabel: '表格视图区',
     },
   }
 }

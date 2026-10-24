@@ -215,6 +215,11 @@ export class BodySearchStore {
     return this.index.search(query, options)
   }
 
+  /** Texts held right now (read-only view for link scans such as 被引用). */
+  texts(): Array<Pick<BodyDoc, 'uri' | 'title' | 'text'>> {
+    return this.index.snapshot()
+  }
+
   /** Forget everything (e.g. when signing out). */
   async clear() {
     this.index = new BodyIndex()

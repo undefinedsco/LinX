@@ -9,7 +9,7 @@ import {
 
 describe('StructuredPredicateCellTrailing', () => {
   const shapeWarning = {
-    ariaLabel: 'Shape warning for tags on #Workspace',
+    ariaLabel: '#Workspace 的 tags 格式提醒',
     message: '#Workspace tags has 2 values; maxCount is 1.',
     predicateLabel: 'tags',
     subject: '#Workspace',
@@ -36,15 +36,15 @@ describe('StructuredPredicateCellTrailing', () => {
       />,
     )
 
-    expect(screen.getByLabelText('Shape warning for tags on #Workspace')).toBeInTheDocument()
+    expect(screen.getByLabelText('#Workspace 的 tags 格式提醒')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Discard pending write for tags on #Workspace' }))
+    fireEvent.click(screen.getByRole('button', { name: '放弃 #Workspace 的 tags 更改' }))
     expect(onDiscard).toHaveBeenCalledTimes(1)
   })
 
   it('can render warning and pending controls separately for active editor slots', () => {
     const { rerender } = render(<StructuredPredicateCellShapeWarning warning={shapeWarning} />)
-    expect(screen.getByLabelText('Shape warning for tags on #Workspace')).toBeInTheDocument()
+    expect(screen.getByLabelText('#Workspace 的 tags 格式提醒')).toBeInTheDocument()
 
     rerender(<StructuredPredicateCellPendingWriteControl pendingWrite={submittingWrite} />)
     expect(screen.getByRole('status', { name: '正在提交 tags on #Workspace 的单元格变更' })).toBeInTheDocument()
@@ -59,6 +59,6 @@ describe('StructuredPredicateCellTrailing', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Discard pending write for title on #Other' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '放弃 #Other 的 title 更改' })).toBeInTheDocument()
   })
 })

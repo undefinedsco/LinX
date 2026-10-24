@@ -24,6 +24,8 @@ export type FilesEntryCacheQueryRoots = {
   children: QueryKey
   /** The Pod root listing the tree is seeded from; it must be refreshed together with the entry lists. */
   roots: QueryKey
+  /** The whole-Pod listing behind search and 被引用: a new file must show up there too. */
+  treeSearch?: QueryKey
   detail: QueryKey
   rawText: QueryKey
   metaSidecar: QueryKey
@@ -197,6 +199,9 @@ export function createFilesEntryCacheCollection(
         cacheClient.invalidateQueries({ queryKey: queryKeys.containerEntries }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.children }),
         cacheClient.invalidateQueries({ queryKey: queryKeys.roots }),
+        queryKeys.treeSearch
+          ? cacheClient.invalidateQueries({ queryKey: queryKeys.treeSearch })
+          : Promise.resolve(),
         options.includeRawText
           ? cacheClient.invalidateQueries({ queryKey: [...queryKeys.rawText, resourceUri] })
           : Promise.resolve(),

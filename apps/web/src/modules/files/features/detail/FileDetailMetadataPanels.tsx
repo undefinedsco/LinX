@@ -84,9 +84,9 @@ function DetailRdfMetadataPanel({
   })
 
   return (
-    <div className="mt-3 rounded-md border border-border/40 bg-background/80 px-3 py-2" aria-label="RDF metadata">
+    <div className="mt-3 rounded-md border border-border/40 bg-background/80 px-3 py-2" aria-label="属性信息">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-medium text-foreground/80">RDF metadata</p>
+        <p className="text-[11px] font-medium text-foreground/80">属性信息</p>
         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">approval</span>
       </div>
       <div className="mt-2 grid gap-2 text-[11px] sm:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)]">

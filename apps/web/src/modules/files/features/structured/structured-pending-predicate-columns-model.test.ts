@@ -12,6 +12,8 @@ import {
 import type { StructuredPredicateColumnProposal } from './StructuredPredicateColumnHeader'
 import {
   createStructuredPendingPredicateColumnsState,
+  projectConfirmedStructuredPendingPredicateColumnsState,
+  projectStructuredAwaitingPredicateProposals,
   createStructuredPendingPredicateApprovalProposal,
   createStructuredPendingPredicateColumnProposalFromDraft,
   findStructuredVisiblePendingPredicateProposal,
@@ -411,5 +413,85 @@ describe('columns LinX added', () => {
     })
     expect(visible.map((proposal) => proposal.id)).toEqual(['http://schema.org/skill'])
     expect(visible[0]?.aiColumn?.state).toBe('added')
+  })
+
+  describe('a column the person made is confirmed at once (R6 K6b)', () => {
+    it('turns a staged column into a confirmed one without an approval record', () => {
+      const staged = projectStagedStructuredPendingPredicateColumnsState({
+        current: createStructuredPendingPredicateColumnsState(),
+        proposal: pendingPredicateProposal(),
+      })
+
+      const confirmed = projectConfirmedStructuredPendingPredicateColumnsState({
+        current: staged,
+        proposal: staged.pendingPredicateProposals[0]!,
+      })
+
+      expect(confirmed.pendingPredicateProposals).toHaveLength(1)
+      expect(confirmed.pendingPredicateProposals[0]).toMatchObject({ id: 'reviewStatus', status: 'confirmed' })
+      expect(confirmed.pendingPredicateProposals[0]?.vocabProposal).toBeUndefined()
+      expect(confirmed.dismissedHydratedPredicateProposalIds.size).toBe(0)
+    })
+
+    it('hides the older waiting copy of a column that is kept from the table', () => {
+      const hydrated = vocabPredicateProposal({ id: 'older-record' })
+      const before = createStructuredPendingPredicateColumnsState()
+      const confirmed = projectConfirmedStructuredPendingPredicateColumnsState({
+        current: before,
+        proposal: pendingPredicateProposal({ status: 'approval-staged', vocabProposal: hydrated }),
+        hydratedProposalId: hydrated.id,
+      })
+
+      expect(confirmed.pendingPredicateProposals.map((proposal) => proposal.status)).toEqual(['confirmed'])
+      expect(confirmed.dismissedHydratedPredicateProposalIds.has('older-record')).toBe(true)
+      const visible = projectStructuredVisiblePendingPredicateProposals({
+        ...confirmed,
+        classScope: 'udfs:Task',
+        documentUri,
+        projectionPredicates: [],
+        reviewableVocabProposals: [hydrated],
+      })
+      expect(visible.map((proposal) => proposal.status)).toEqual(['confirmed'])
+    })
+
+    it('stops listing a confirmed column once the table lists it itself', () => {
+      const confirmedState = projectConfirmedStructuredPendingPredicateColumnsState({
+        current: createStructuredPendingPredicateColumnsState(),
+        proposal: pendingPredicateProposal(),
+      })
+      const visibleBefore = projectStructuredVisiblePendingPredicateProposals({
+        ...confirmedState,
+        documentUri,
+        projectionPredicates: ['title'],
+        reviewableVocabProposals: [],
+      })
+      const visibleAfter = projectStructuredVisiblePendingPredicateProposals({
+        ...confirmedState,
+        documentUri,
+        projectionPredicates: ['title', 'reviewStatus'],
+        reviewableVocabProposals: [],
+      })
+
+      expect(visibleBefore.map((proposal) => proposal.id)).toEqual(['reviewStatus'])
+      expect(visibleAfter).toEqual([])
+    })
+
+    it('shows a confirmed column in the table but never as waiting for approval', () => {
+      const visible = [
+        pendingPredicateProposal({ id: 'a', status: 'confirmed' }),
+        pendingPredicateProposal({ id: 'b', status: 'approval-staged' }),
+        pendingPredicateProposal({ id: 'c', status: 'pending' }),
+      ]
+
+      expect(projectStructuredPendingPredicateIds(visible)).toEqual(['a', 'b', 'c'])
+      expect(projectStructuredAwaitingPredicateProposals(visible).map((proposal) => proposal.id)).toEqual(['b', 'c'])
+      expect([...projectStructuredPendingPredicateProposalByPredicate(visible).keys()]).toEqual(['b', 'c'])
+      // A cell write in a confirmed column has no approval record to wait for.
+      expect(resolveVocabTermProposalResourceUriForPredicate({
+        pendingProposalByPredicate: projectStructuredPendingPredicateProposalByPredicate(visible),
+        predicate: 'a',
+        visiblePendingPredicateProposals: visible,
+      })).toBeUndefined()
+    })
   })
 })

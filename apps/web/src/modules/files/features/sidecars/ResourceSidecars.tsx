@@ -197,7 +197,7 @@ export function ResourceMetaDrawer({
 
   if (variant === 'embedded') {
     return (
-      <div aria-label="Resource .meta inspector" data-sidecar-coverage="content" className="flex h-full min-h-0 flex-col">
+      <div aria-label="资源附属信息" data-sidecar-coverage="content" className="flex h-full min-h-0 flex-col">
         {body}
       </div>
     )
@@ -205,7 +205,7 @@ export function ResourceMetaDrawer({
 
   return (
     <aside
-      aria-label="Resource .meta inspector"
+      aria-label="资源附属信息"
       data-sidecar-coverage="content"
       className={cn('flex w-[320px] max-w-[40%] shrink-0 flex-col border-l border-border/50 bg-background', className)}
     >

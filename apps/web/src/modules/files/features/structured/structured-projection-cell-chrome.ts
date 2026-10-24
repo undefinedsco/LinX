@@ -74,6 +74,19 @@ function rowNameFromHash(hash: string) {
   }
 }
 
+const ROW_LABEL_PREDICATES = ['rdfs:label', 'http://www.w3.org/2000/01/rdf-schema#label']
+
+/** The row's own name (rdfs:label) is what 名称 shows; it is not a separate column. */
+function structuredRowLabel(row: StructuredProjectionTableRow): string | null {
+  for (const predicate of ROW_LABEL_PREDICATES) {
+    const raw = row.cells[predicate]?.[0]
+    if (!raw) continue
+    const text = raw.replace(/^"/, '').replace(/"(?:@[A-Za-z-]+|\^\^.+)?$/, '').trim()
+    if (text) return text
+  }
+  return null
+}
+
 function structuredSubjectDisplayLabel(subject: string, documentUri: string) {
   if (!subject) return documentUri
   try {
@@ -162,7 +175,7 @@ export function projectStructuredPredicateCellChrome({
   const shapeWarningMessage = cellShapeWarnings[0]?.message
   const shapeWarning = shapeWarningMessage
     ? {
-        ariaLabel: `Shape warning for ${predicateLabel} on ${row.subject}`,
+        ariaLabel: `${row.subject} 的 ${predicateLabel} 格式提醒`,
         message: shapeWarningMessage,
         predicateLabel,
         subject: row.subject,
@@ -203,7 +216,7 @@ export function projectStructuredSubjectCellChrome({
   rowIndex: number
 }): StructuredSubjectCellChrome {
   const openTarget = resolveStructuredSubjectOpenTarget(documentUri, row.subject, { fallbackToDocument: true, projection })
-  const displayLabel = structuredSubjectDisplayLabel(row.subject, documentUri)
+  const displayLabel = (documentUri.includes('/.vocab/') ? null : structuredRowLabel(row)) ?? structuredSubjectDisplayLabel(row.subject, documentUri)
 
   return {
     displayLabel,

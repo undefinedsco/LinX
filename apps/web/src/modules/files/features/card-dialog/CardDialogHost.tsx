@@ -24,7 +24,10 @@ import { ShareDialog } from '../sidecars/ShareDialog'
 import { CardHistoryDialog } from './CardHistoryDialog'
 import { AiDraftBanner, AiDraftReview } from './AiDraftViews'
 import { CardSelectionToolbar, CardTextViewer, useCardTextSelection } from './CardSelectionViews'
+import type { CardBacklink } from '../../domain/card/card-backlinks'
+import { NewCardDialog } from './NewCardDialog'
 import { useCardDialogController } from './useCardDialogController'
+import type { CardWorkUseRow } from './useCardBacklinks'
 
 const AUTOSAVE_MS = 800
 
@@ -63,6 +66,74 @@ function PropertyRow({ property, onSave }: { property: CardPropertyModel; onSave
       ) : (
         <span className="break-words px-1"><PropertyValue property={property} /></span>
       )}
+    </div>
+  )
+}
+
+const REFERENCES_SHOWN = 5
+
+/** K2 bottom: 被引用 (what points at this card) and 用过它的工作 (chats that cited it). */
+function CardReferences({
+  backlinks,
+  workUses,
+  onOpenBacklink,
+  onOpenWork,
+}: {
+  backlinks: CardBacklink[]
+  workUses: CardWorkUseRow[]
+  onOpenBacklink: (link: CardBacklink) => void
+  onOpenWork: (use: CardWorkUseRow) => void
+}) {
+  const [showAll, setShowAll] = useState(false)
+  if (backlinks.length === 0 && workUses.length === 0) return null
+  const shownLinks = showAll ? backlinks : backlinks.slice(0, REFERENCES_SHOWN)
+  const shownWork = showAll ? workUses : workUses.slice(0, REFERENCES_SHOWN)
+  const hidden = backlinks.length - shownLinks.length + workUses.length - shownWork.length
+  return (
+    <div className="mt-6 space-y-4 border-t border-border/40 pt-3" data-card-references="true">
+      {backlinks.length > 0 ? (
+        <section aria-label="被引用">
+          <h3 className="pb-1 text-xs text-muted-foreground">被引用 · {backlinks.length} 处</h3>
+          <ul>
+            {shownLinks.map((link) => (
+              <li key={link.key}>
+                <button
+                  type="button"
+                  data-card-backlink="true"
+                  className="flex w-full items-baseline gap-2 rounded px-1 py-1.5 text-left text-sm hover:bg-muted/50"
+                  onClick={() => onOpenBacklink(link)}
+                >
+                  <span className="min-w-0 truncate">{link.title}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{link.hint}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {workUses.length > 0 ? (
+        <section aria-label="用过它的工作">
+          <h3 className="pb-1 text-xs text-muted-foreground">用过它的工作 · {workUses.reduce((sum, use) => sum + use.count, 0)} 次</h3>
+          <ul>
+            {shownWork.map((use) => (
+              <li key={use.chatRef}>
+                <button
+                  type="button"
+                  data-card-work-use="true"
+                  className="flex w-full items-baseline gap-2 rounded px-1 py-1.5 text-left text-sm hover:bg-muted/50"
+                  onClick={() => onOpenWork(use)}
+                >
+                  <span className="min-w-0 truncate">{use.title}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">问 LinX 引用过{use.count > 1 ? ` ${use.count} 次` : ''}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {hidden > 0 ? (
+        <button type="button" className="text-xs text-primary hover:underline" onClick={() => setShowAll(true)}>看全部</button>
+      ) : null}
     </div>
   )
 }
@@ -193,7 +264,8 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
           ) : null}
         </div>
         {properties.length > 0 ? (
-          <section className="mt-6 border-t border-border/40 pt-3" aria-label="属性">
+          <section className="mt-6 border-t border-border/40 pt-2" aria-label="属性">
+            <div className="pb-1 text-xs text-muted-foreground">属性</div>
             {properties.map((property) => (
               <PropertyRow
                 key={property.predicate}
@@ -203,6 +275,12 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
             ))}
           </section>
         ) : null}
+        <CardReferences
+          backlinks={card.backlinks}
+          workUses={card.workUses}
+          onOpenBacklink={card.openBacklink}
+          onOpenWork={card.openWorkUse}
+        />
       </>
     )
   }
@@ -223,7 +301,6 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
             </Button>
             {siblings.positionLabel ? <span className="text-xs text-muted-foreground">{siblings.positionLabel}</span> : null}
             <div className="min-w-0 flex-1">
-              <DialogTitle className="truncate text-sm font-medium">{card.title}</DialogTitle>
               <DialogDescription className="truncate text-xs">{card.pathLabel}</DialogDescription>
             </div>
             {locatorLabel ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">{locatorLabel}</span> : null}
@@ -261,7 +338,12 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
               <Button size="sm" variant="ghost" onClick={card.retry}>刷新</Button>
             </div>
           ) : null}
-          <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">{renderBody()}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-7 sm:px-[72px]">
+            {!card.loading && !card.blocking ? (
+              <DialogTitle data-card-title="true" className="mb-4 break-words text-2xl font-semibold leading-tight">{card.title}</DialogTitle>
+            ) : <DialogTitle className="sr-only">{card.title}</DialogTitle>}
+            {renderBody()}
+          </div>
         </DialogContent>
       </Dialog>
       <ConfirmDialog
@@ -307,5 +389,6 @@ export function CardDialogHost() {
     if (openedAt.current !== pathname) close()
   }, [close, pathname, request])
   if (!request) return null
+  if (request.draft) return <NewCardDialog request={request} draft={request.draft} />
   return <CardDialog request={request} />
 }

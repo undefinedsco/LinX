@@ -99,3 +99,30 @@ describe('card dialog model', () => {
     expect(note.content).toContain('来源：[场地合同.pdf · 第 3 页](https://p/a.pdf#page=3)')
   })
 })
+
+describe('projectNewCardMessage', () => {
+  it('explains why a new card could not be made', async () => {
+    const { projectNewCardMessage } = await import('./card-dialog-model')
+    expect(projectNewCardMessage('duplicate')).toBe('已经有同名的卡片了，换个名字吧')
+    expect(projectNewCardMessage('empty')).toBe('先给卡片起个名字')
+    expect(projectNewCardMessage('unavailable')).toBe('没能创建这张卡片，稍后再试')
+  })
+})
+
+describe('a card whose address is spelled two ways', () => {
+  it('finds the row by either spelling and keeps the address the document uses', async () => {
+    const { projectCardSubjectModel } = await import('./card-dialog-model')
+    const { projectStructuredResourceTable } = await import('../structured/structured-table')
+    const doc = 'https://pod.example/%E6%83%B3%E6%B3%95.ttl'
+    const projection = projectStructuredResourceTable({
+      uri: doc,
+      mimeType: 'text/turtle',
+      source: '<https://pod.example/%E6%83%B3%E6%B3%95.ttl#周末读书会> a <http://schema.org/Thing> .',
+    })
+    for (const requested of [`${doc}#周末读书会`, `${doc}#%E5%91%A8%E6%9C%AB%E8%AF%BB%E4%B9%A6%E4%BC%9A`]) {
+      const model = projectCardSubjectModel({ projection, documentUri: doc, subjectIri: requested })
+      expect(model?.subjectIri).toBe(`${doc}#周末读书会`)
+      expect(model?.title).toBe('周末读书会')
+    }
+  })
+})

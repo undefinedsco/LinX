@@ -1,120 +1,81 @@
 import { act, renderHook } from '@testing-library/react'
-import type { KeyboardEvent } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { useStructuredSubjectCreationController } from './useStructuredSubjectCreationController'
 
-function subjectDraftKeyEvent(key: string) {
-  const preventDefault = vi.fn()
-
-  return {
-    event: {
-      key,
-      preventDefault,
-    } as unknown as KeyboardEvent<HTMLInputElement>,
-    preventDefault,
-  }
-}
+const DOC = 'https://pod.example/.data/tasks.ttl'
 
 describe('useStructuredSubjectCreationController', () => {
-  it('owns subject draft Enter submission and pending subject staging', () => {
-    const stageCellValueChange = vi.fn()
+  it('creates a card from its title and resolves once the write has landed', async () => {
+    const stageCellValueChange = vi.fn().mockResolvedValue('written')
     const { result } = renderHook(() => useStructuredSubjectCreationController({
       classScope: 'udfs:Task',
-      documentUri: 'https://pod.example/.data/tasks.ttl',
+      documentUri: DOC,
       projectionRows: [{ subject: '#Existing', cells: {} }],
       stageCellValueChange,
     }))
 
-    act(() => result.current.openCreateSubjectDialog())
-    expect(result.current.createSubjectOpen).toBe(true)
-    expect(result.current.submitDisabled).toBe(false)
-    expect(result.current.footerModel).toEqual({
-      disabled: false,
-      title: '在“udfs:Task”里新增一行',
-      buttonAriaLabel: '+ 卡片',
-      buttonLabel: '卡片',
-    })
-    expect(result.current.dialogModel).toEqual({
-      title: '新增一行',
-      description: 'udfs:Task',
-      subjectInputLabel: 'Subject',
-      cancelLabel: '取消',
-      submitLabel: '创建条目审批',
-    })
+    let created: unknown
+    await act(async () => { created = await result.current.createSubjectByName('写周报') })
 
-    act(() => result.current.setSubjectDraft('#Task'))
-    expect(result.current.submitDisabled).toBe(false)
-    const nonSubmitKey = subjectDraftKeyEvent('Escape')
-    act(() => result.current.handleSubjectDraftKeyDown(nonSubmitKey.event))
-
-    expect(nonSubmitKey.preventDefault).not.toHaveBeenCalled()
-    expect(stageCellValueChange).not.toHaveBeenCalled()
-    expect(result.current.createSubjectOpen).toBe(true)
-
-    const submitKey = subjectDraftKeyEvent('Enter')
-    act(() => result.current.handleSubjectDraftKeyDown(submitKey.event))
-
-    expect(submitKey.preventDefault).toHaveBeenCalledTimes(1)
     expect(stageCellValueChange).toHaveBeenCalledWith({
-      subject: '#Task',
+      subject: '#写周报',
       predicate: 'rdf:type',
       nextValues: ['udfs:Task'],
     })
-    expect(result.current.pendingSubjects).toEqual(['#Task'])
-    expect(result.current.createSubjectOpen).toBe(false)
+    expect(created).toEqual({ kind: 'created', subject: '#写周报' })
+    expect(result.current.pendingSubjects).toEqual(['#写周报'])
   })
 
-  it('projects submit disabled state from class scope, duplicate subjects, and empty drafts', () => {
-    const { result, rerender } = renderHook(
-      ({ classScope }: { classScope?: string | null }) => useStructuredSubjectCreationController({
-        classScope,
-        documentUri: 'https://pod.example/.data/tasks.ttl',
-        projectionRows: [{ subject: '#Existing', cells: {} }],
-        stageCellValueChange: vi.fn(),
-      }),
-      { initialProps: { classScope: 'udfs:Task' } },
-    )
-
-    act(() => result.current.setSubjectDraft('   '))
-    expect(result.current.submitDisabled).toBe(true)
-
-    act(() => result.current.setSubjectDraft('#Existing'))
-    expect(result.current.submitDisabled).toBe(true)
-
-    act(() => result.current.setSubjectDraft('#NewSubject'))
-    expect(result.current.submitDisabled).toBe(false)
-
-    rerender({ classScope: null })
-    expect(result.current.submitDisabled).toBe(true)
-    expect(result.current.footerModel).toEqual({
-      disabled: true,
-      title: '先选一个类型再新增一行',
-      buttonAriaLabel: '+ 卡片',
-      buttonLabel: '卡片',
-    })
-    expect(result.current.dialogModel).toEqual({
-      title: '新增一行',
-      description: '先选一个类型再新增一行。',
-      subjectInputLabel: 'Subject',
-      cancelLabel: '取消',
-      submitLabel: '创建条目审批',
-    })
-  })
-
-  it('derives existing subjects from projection rows before seeding a draft', () => {
+  it('reports a write that did not land instead of opening a card that is not there', async () => {
     const { result } = renderHook(() => useStructuredSubjectCreationController({
       classScope: 'udfs:Task',
-      documentUri: 'https://pod.example/.data/tasks.ttl',
-      projectionRows: [
-        { subject: '#NewSubject', cells: {} },
-        { subject: '#NewSubject2', cells: {} },
-      ],
-      stageCellValueChange: vi.fn(),
+      documentUri: DOC,
+      projectionRows: [],
+      stageCellValueChange: vi.fn().mockResolvedValue(false),
     }))
 
-    act(() => result.current.openCreateSubjectDialog())
+    let created: unknown
+    await act(async () => { created = await result.current.createSubjectByName('写周报') })
+    expect(created).toEqual({ kind: 'not-written' })
+  })
 
-    expect(result.current.subjectDraft).toBe('#NewSubject3')
+  it('rejects empty and duplicate titles without writing', async () => {
+    const stageCellValueChange = vi.fn()
+    const { result } = renderHook(() => useStructuredSubjectCreationController({
+      classScope: 'udfs:Task',
+      documentUri: DOC,
+      projectionRows: [{ subject: '#Existing', cells: {} }],
+      stageCellValueChange,
+    }))
+
+    let empty: unknown
+    let duplicate: unknown
+    await act(async () => {
+      empty = await result.current.createSubjectByName('  ')
+      duplicate = await result.current.createSubjectByName('Existing')
+    })
+    expect(empty).toEqual({ kind: 'rejected', reason: 'empty-subject' })
+    expect(duplicate).toEqual({ kind: 'rejected', reason: 'duplicate-subject' })
+    expect(stageCellValueChange).not.toHaveBeenCalled()
+  })
+
+  it('keeps the inline last row adding by name', () => {
+    const stageCellValueChange = vi.fn().mockResolvedValue('written')
+    const { result } = renderHook(() => useStructuredSubjectCreationController({
+      classScope: 'udfs:Task',
+      documentUri: DOC,
+      projectionRows: [],
+      stageCellValueChange,
+    }))
+
+    let added = false
+    act(() => { added = result.current.addSubjectByName('Task') })
+    expect(added).toBe(true)
+    expect(stageCellValueChange).toHaveBeenCalledTimes(1)
+    expect(result.current.footerModel.buttonAriaLabel).toBe('+ 卡片')
+    let again = true
+    act(() => { again = result.current.addSubjectByName('   ') })
+    expect(again).toBe(false)
   })
 })

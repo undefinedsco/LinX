@@ -111,6 +111,7 @@ function projectStructuredFilterTool() {
 
 function projectStructuredFilterSectionLabels() {
   return {
+    columnValue: '按列的值',
     subject: '行',
     namespace: '列 · 命名空间',
     predicateType: '列 · 值的类型',
@@ -279,6 +280,7 @@ function projectStructuredClassDefinitionPanel({
 type PredicateLabeler = (predicate: string) => string
 
 export function projectStructuredResourceToolbarModel({
+  columnFilterCount = 0,
   predicateLabel = readablePredicateLabel,
   availablePredicateNamespaces,
   classCreateOpen,
@@ -302,6 +304,8 @@ export function projectStructuredResourceToolbarModel({
   vocabTermFilter,
   warningRowsOnly,
 }: {
+  /** How many columns the person filtered rows by (K6d 按它筛选). */
+  columnFilterCount?: number
   /** The name shown for a property (its vocab label); defaults to the readable local name. */
   predicateLabel?: PredicateLabeler
   availablePredicateNamespaces: readonly string[]
@@ -360,7 +364,8 @@ export function projectStructuredResourceToolbarModel({
     extraViewTrigger: projectStructuredExtraViewTrigger(),
     filterSectionLabels: projectStructuredFilterSectionLabels(),
     filterTool: projectStructuredFilterTool(),
-    hasActiveFilters: warningRowsOnly
+    hasActiveFilters: columnFilterCount > 0
+      || warningRowsOnly
       || pendingWritesOnly
       || sourceUpdatesOnly
       || predicateTypeFilter !== 'all'

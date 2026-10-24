@@ -61,4 +61,11 @@ describe('structured-kanban-board-state', () => {
       lanes: [],
     })).toEqual(DEFAULT_STRUCTURED_KANBAN_BOARD_STATE)
   })
+
+  it('leaves the lane order empty until the person saved one', () => {
+    expect(reconcileStructuredKanbanBoardState({
+      saved: { version: 1, laneOrder: [], collapsedLaneIds: [], scrollLeft: 0, cardOrder: {} },
+      lanes: [{ id: 'todo', subjects: [] }, { id: 'done', subjects: [] }],
+    }).laneOrder).toEqual([])
+  })
 })

@@ -452,18 +452,18 @@ test.describe('Files real Pod smoke', () => {
     }
     await openFilesTreeAction(page, smoke.fileName, '查看 .meta')
 
-    const metaTail = page.getByLabel('Resource .meta inspector')
+    const metaTail = page.getByLabel('资源附属信息')
     await expect(metaTail).toBeVisible({ timeout: 30_000 })
     await expect(metaTail).toContainText(smoke.metaUri)
-    await expect(metaTail.getByLabel('File title meta predicate')).toHaveValue('Original meta title')
+    await expect(metaTail.getByLabel('文件标题')).toHaveValue('Original meta title')
     await expect(metaTail.getByLabel('已选择值 docs')).toBeVisible()
     await expect(metaTail.getByLabel('已选择值 smoke')).toBeVisible()
-    await expect(metaTail.getByRole('combobox', { name: 'File tags meta predicate' })).toHaveValue('')
-    await expect(metaTail.getByLabel('File source meta predicate')).toHaveValue('https://source.example/editable-meta-smoke')
+    await expect(metaTail.getByRole('combobox', { name: '文件标签' })).toHaveValue('')
+    await expect(metaTail.getByLabel('文件来源')).toHaveValue('https://source.example/editable-meta-smoke')
 
-    await metaTail.getByLabel('File title meta predicate').fill('Edited meta title')
-    await metaTail.getByLabel('File title meta predicate').blur()
-    await expect(metaTail.getByLabel('待审核更改：File title meta predicate')).toHaveText('*', { timeout: 30_000 })
+    await metaTail.getByLabel('文件标题').fill('Edited meta title')
+    await metaTail.getByLabel('文件标题').blur()
+    await expect(metaTail.getByLabel('待审核更改：文件标题')).toHaveText('*', { timeout: 30_000 })
 
     const structuredProposalInput = {
       resourceUri: smoke.metaUri,
@@ -904,7 +904,7 @@ test.describe('Files real Pod smoke', () => {
 
     await selectByTreeSearch(smoke.agentName)
     await expect(contentHead.getByRole('heading', { name: smoke.agentName, exact: true })).toBeVisible({ timeout: 30_000 })
-    const agentFolderSurface = workspace.getByLabel('Folder detail surface')
+    const agentFolderSurface = workspace.getByLabel('文件夹内容')
     await expect(agentFolderSurface).toBeVisible()
     await expect(agentFolderSurface.getByRole('button', { name: /index\.ttl/ })).toBeVisible()
 
@@ -923,7 +923,7 @@ test.describe('Files real Pod smoke', () => {
     const workspacesToggle = workspacesRow.getByRole('button', { name: '展开 workspaces', exact: true })
     if (await workspacesToggle.count()) await workspacesToggle.click()
     await openFilesTreeAction(page, smoke.workspaceName, '查看 .meta')
-    const drawer = page.getByLabel('Resource .meta inspector')
+    const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.workspaceMetaUri)
     await expect(drawer).toContainText('文件夹摘要')
@@ -1735,7 +1735,7 @@ test.describe('Files real Pod smoke', () => {
     const rootToggle = page.getByRole('button', { name: /^展开 .*Pod|^展开 根目录/ }).first()
     if (await rootToggle.count()) await rootToggle.click()
     await openFilesTreeAction(page, smoke.fileName, '查看 .meta')
-    const drawer = page.getByLabel('Resource .meta inspector')
+    const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
     await expect(drawer).toContainText('状态')
@@ -2154,7 +2154,7 @@ test.describe('Files real Pod smoke', () => {
     const rootToggle = page.getByRole('button', { name: /^展开 .*Pod|^展开 根目录/ }).first()
     if (await rootToggle.count()) await rootToggle.click()
     await openFilesTreeAction(page, smoke.fileName, '查看 .meta')
-    const drawer = page.getByLabel('Resource .meta inspector')
+    const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
 
@@ -2192,7 +2192,7 @@ test.describe('Files real Pod smoke', () => {
     await addWhiteboardSubject('#Other')
     await expect(page.locator(`[data-whiteboard-subject="${smoke.otherSubject}"]`)).toHaveCount(1)
     await page.getByRole('button', { name: '添加视觉关系' }).click()
-    await page.getByLabel('Relation label').fill('e2e sketch link')
+    await page.getByLabel('关联名称').fill('e2e sketch link')
     await page.getByRole('button', { name: '创建视觉关系' }).click()
     await expect(page.locator('[data-whiteboard-relation-source="visual"]')).toHaveCount(1)
 
@@ -3312,13 +3312,13 @@ test.describe('Files real Pod smoke', () => {
     const folderTreeRow = filesTree.getByRole('treeitem', { name: new RegExp(`^(?:(?:展开|收起) )?${escapeRegExp(smoke.folderName)}(?:\\s|$)`) })
     await expect(folderTreeRow).toBeVisible({ timeout: 30_000 })
     await openFilesTreeAction(page, smoke.folderName, '查看 .meta')
-    const drawer = page.getByLabel('Resource .meta inspector')
+    const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
     await expect(drawer).toContainText('Real folder metadata')
     await expect(drawer).toContainText('inode/container')
     await page.getByRole('button', { name: '关闭 .meta inspector' }).click()
-    await expect(page.getByLabel('Resource .meta inspector')).toHaveCount(0)
+    await expect(page.getByLabel('资源附属信息')).toHaveCount(0)
 
     await page.getByRole('button', { name: '网格' }).click()
     const iconView = page.getByLabel('Folder icon view')
@@ -3926,7 +3926,7 @@ test.describe('Files real Pod smoke', () => {
     await titleInput.fill('Draft title')
     await titleInput.blur()
 
-    const approvalStatus = page.getByRole('status', { name: `Pending approval for title on ${smoke.subject}` })
+    const approvalStatus = page.getByRole('status', { name: `${smoke.subject} 的 title 待审核` })
     await expect(approvalStatus).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('Draft title', { exact: true })).toBeVisible()
 

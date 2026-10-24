@@ -62,10 +62,10 @@ export function projectDetailMetaPredicateStatusChrome({
 
   if (status === 'error') {
     return {
-      ariaLabel: `meta predicate 更改提交失败：${statusLabel}`,
+      ariaLabel: `属性更改提交失败：${statusLabel}`,
       className: 'text-[12px] font-semibold leading-none text-destructive',
       marker: '!',
-      title: 'meta predicate 更改提交失败',
+      title: '属性更改提交失败',
     }
   }
 
@@ -93,7 +93,7 @@ export function projectFileRdfMetadataPanelModel({
     documentUri: metaUri,
     labelPrefix: 'File',
     relation: {
-      ariaLabel: 'File source meta predicate',
+      ariaLabel: '文件来源',
       label: 'source',
       predicate: 'dcterms:source',
       previousValues: metaPredicates?.sourcePreviousValues ?? [],
@@ -124,7 +124,7 @@ export function projectSourceLinkedCardMetadataPanelModel({
     documentUri,
     labelPrefix: 'Card',
     relation: {
-      ariaLabel: 'Card relation meta predicate',
+      ariaLabel: '卡片关联',
       label: 'relation',
       predicate: 'udfs:bodyResource',
       previousValues: iriDetailCellValue(bodyResourceUri),

@@ -22,7 +22,7 @@ export type FolderChildPreviewModel = {
 }
 
 const FOLDER_CHILD_PREVIEW_CHROME: FolderChildPreviewChrome = {
-  ariaLabel: 'Folder child preview',
+  ariaLabel: '所选项预览',
   openSelectedLabel: '打开选中项',
 }
 

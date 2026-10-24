@@ -117,13 +117,12 @@ export function projectStructuredKanbanNativeDragCleared(): StructuredKanbanNati
  * K6d: grouping by a 选项 property shows one lane per option, empty ones included. Enum cells
  * store the option label, so option lanes behave like lanes added by hand (`extraLanes`).
  */
-export function mergeKanbanOptionLanes(
-  extraLanes: readonly string[] | undefined,
+/** Option labels of the grouping property, in the order the options were defined. */
+export function kanbanOptionLabels(
   groupPredicate: string | null | undefined,
   enumOptionsByPredicate: ReadonlyMap<string, ReadonlyArray<{ label: string }>> | undefined,
 ): string[] {
-  const lanes = [...(extraLanes ?? [])]
-  if (!groupPredicate || !enumOptionsByPredicate) return lanes
+  if (!groupPredicate || !enumOptionsByPredicate) return []
   let options = enumOptionsByPredicate.get(groupPredicate)
   if (!options) {
     const local = localPredicateLabel(groupPredicate)
@@ -131,16 +130,34 @@ export function mergeKanbanOptionLanes(
       if (localPredicateLabel(key) === local) { options = value; break }
     }
   }
+  const labels: string[] = []
   for (const option of options ?? []) {
     const label = option.label.trim()
-    if (label && !lanes.includes(label)) lanes.push(label)
+    if (label && !labels.includes(label)) labels.push(label)
+  }
+  return labels
+}
+
+export function mergeKanbanOptionLanes(
+  extraLanes: readonly string[] | undefined,
+  groupPredicate: string | null | undefined,
+  enumOptionsByPredicate: ReadonlyMap<string, ReadonlyArray<{ label: string }>> | undefined,
+): string[] {
+  const lanes = [...(extraLanes ?? [])]
+  for (const label of kanbanOptionLabels(groupPredicate, enumOptionsByPredicate)) {
+    if (!lanes.includes(label)) lanes.push(label)
   }
   return lanes
 }
 
 export function applyStructuredKanbanLaneCustomization(
   kanban: StructuredKanbanProjection,
-  { extraLanes = [], laneLabels = {} }: { extraLanes?: readonly string[]; laneLabels?: Record<string, string> },
+  { extraLanes = [], laneLabels = {}, optionOrder = [] }: {
+    extraLanes?: readonly string[]
+    laneLabels?: Record<string, string>
+    /** Option labels in definition order: the default lane order when no lane order was saved. */
+    optionOrder?: readonly string[]
+  },
 ): StructuredKanbanProjection {
   const columns = kanban.columns.map((column) => ({ ...column }))
   if (kanban.groupPredicate) {
@@ -153,6 +170,14 @@ export function applyStructuredKanbanLaneCustomization(
       if (unassignedIndex >= 0) columns.splice(unassignedIndex, 0, lane)
       else columns.push(lane)
     }
+  }
+  if (optionOrder.length > 0) {
+    const rank = (column: { id: string }) => {
+      if (column.id === 'unassigned') return optionOrder.length + 1
+      const index = optionOrder.indexOf(column.id)
+      return index >= 0 ? index : optionOrder.length
+    }
+    columns.sort((left, right) => rank(left) - rank(right))
   }
   return {
     ...kanban,
@@ -169,12 +194,14 @@ export function projectStructuredKanbanSourceModel({
   projection,
   extraLanes,
   laneLabels,
+  optionOrder,
 }: {
   projection: StructuredTableProjection
   groupPredicate: string | null
   kanbanOrder: Record<string, string[]>
   extraLanes?: readonly string[]
   laneLabels?: Record<string, string>
+  optionOrder?: readonly string[]
 }): {
   kanban: StructuredKanbanProjection
   chrome: StructuredKanbanChrome
@@ -186,7 +213,7 @@ export function projectStructuredKanbanSourceModel({
 } {
   const kanban = applyStructuredKanbanLaneCustomization(
     projectStructuredKanban(projection, groupPredicate ?? undefined, kanbanOrder),
-    { extraLanes, laneLabels },
+    { extraLanes, laneLabels, optionOrder },
   )
   const predicateOptions = projection.predicates.map((predicate) => ({ predicate, label: localPredicateLabel(predicate) }))
 

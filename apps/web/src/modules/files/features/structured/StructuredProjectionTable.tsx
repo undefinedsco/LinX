@@ -19,7 +19,10 @@ import type { AiColumnChange } from '../../domain/proposal/ai-column-change-mode
 import { CompactTableShell } from '../../ui/CompactTableShell'
 import {
   buildStructuredProjectionTableColumns,
+  createStructuredHeaderCache,
+  openStructuredNewCard,
   openStructuredSubjectCard,
+  type StructuredColumnMenuInput,
   type StructuredSubjectOpenOptions,
 } from './StructuredProjectionTableColumns'
 import { StructuredSaveLine } from './StructuredSaveLine'
@@ -44,10 +47,7 @@ import { useStructuredCellCommitController } from './useStructuredCellCommitCont
 import { useStructuredPendingPredicateColumns } from './useStructuredPendingPredicateColumns'
 import { useStructuredProjectionTableModelController } from './useStructuredProjectionTableModelController'
 import { useStructuredSubjectCreationController } from './useStructuredSubjectCreationController'
-import {
-  StructuredSubjectCreationDialog,
-  StructuredSubjectCreationFooterRow,
-} from './StructuredSubjectCreationControls'
+import { StructuredSubjectCreationFooterRow } from './StructuredSubjectCreationControls'
 import {
   isStructuredProjectionTableCellInteractive,
   projectStructuredProjectionTableCellClassName,
@@ -57,6 +57,8 @@ import {
 const EMPTY_HIDDEN_PREDICATES = new Set<string>()
 
 export function StructuredProjectionTable({
+  columnMenu,
+  onConfirmVocabTerm,
   aiCellDots,
   aiColumns,
   onKeepAiColumn,
@@ -101,6 +103,10 @@ export function StructuredProjectionTable({
   targetVocabUri,
   targetShapesUri,
 }: {
+  /** K6d: the column header menu (names, filters, sort, hide, remove, type). */
+  columnMenu?: StructuredColumnMenuInput
+  /** The person's own new column or option goes straight into the vocabulary. */
+  onConfirmVocabTerm?: (proposal: VocabTermProposal, options?: { resolveRecord?: boolean }) => boolean | Promise<boolean>
   aiCellDots?: ReadonlyMap<string, AiCellChange>
   aiColumns?: ReadonlyMap<string, AiColumnChange>
   onKeepAiColumn?: (change: AiColumnChange) => void
@@ -176,6 +182,7 @@ export function StructuredProjectionTable({
 
   const {
     approvePendingPredicateProposal,
+    confirmedLabelByPredicate,
     createPendingPredicateProposal,
     discardPendingPredicateProposal,
     findVisiblePendingPredicateProposal,
@@ -190,6 +197,7 @@ export function StructuredProjectionTable({
     classScope,
     currentPodRootUri,
     documentUri,
+    onConfirmVocabTerm,
     onCreateVocabTermProposal,
     projectionPredicates: projection.predicates,
     reviewableVocabProposals,
@@ -209,17 +217,9 @@ export function StructuredProjectionTable({
   })
   const {
     addSubjectByName,
-    createSubjectOpen,
-    dialogModel,
+    createSubjectByName,
     footerModel,
-    handleSubjectDraftKeyDown,
-    openCreateSubjectDialog,
     pendingSubjects,
-    setCreateSubjectOpen,
-    setSubjectDraft,
-    subjectDraft,
-    submitDisabled,
-    submitCreateSubjectProposal,
   } = useStructuredSubjectCreationController({
     classScope,
     documentUri,
@@ -285,7 +285,7 @@ export function StructuredProjectionTable({
     documentUri,
     findVisiblePendingPredicateProposal,
     getPredicateDefinition,
-    onCreateVocabTermProposal,
+    onCreateVocabTermProposal: onConfirmVocabTerm ?? onCreateVocabTermProposal,
     previousValuesForCell,
     reviewableVocabProposals,
     stageCellValueChange,
@@ -297,10 +297,8 @@ export function StructuredProjectionTable({
   })
 
   const {
-    copyPredicate,
     openEnumOptionDefinition,
     openPredicateDefinition,
-    openPredicateShapeRule,
     openRelationValue,
     openVocabTermProposal,
   } = useStructuredProjectionActionController({
@@ -337,8 +335,11 @@ export function StructuredProjectionTable({
     if (next) onRowOrderChange?.(next)
   }, [onRowOrderChange, orderedRows])
 
+  const [headerCache] = useState(createStructuredHeaderCache)
   const columns = useMemo(
     () => buildStructuredProjectionTableColumns({
+      headerCache,
+      columnMenu,
       selectedSubjects,
       onToggleSubject: toggleSubject,
       aiCellDots,
@@ -364,17 +365,15 @@ export function StructuredProjectionTable({
       getCellWriteState,
       getEnumOptionsForPredicate,
       getPredicateDefinition,
-      onCreateVocabTermProposal,
-      onCopyPredicate: copyPredicate,
       onDiscardVocabTermProposal,
       onOpenEnumOptionDefinition: openEnumOptionDefinition,
       onOpenPredicateDefinition: openPredicateDefinition,
-      onOpenPredicateShapeRule: openPredicateShapeRule,
       onOpenSubjectResource,
       onOpenVocabTermProposal: openVocabTermProposal,
       onSelectExistingPredicate,
       onSort,
       openRelationValue,
+      confirmedLabelByPredicate,
       pendingProposalByPredicate,
       popoverPlacement: activeCellPopoverPlacement,
       projection,
@@ -395,6 +394,7 @@ export function StructuredProjectionTable({
       removeEnumOption,
     }),
     [
+      columnMenu,
       selectedSubjects,
       toggleSubject,
       aiCellDots,
@@ -420,17 +420,15 @@ export function StructuredProjectionTable({
       getCellWriteState,
       getEnumOptionsForPredicate,
       getPredicateDefinition,
-      onCreateVocabTermProposal,
-      copyPredicate,
       onDiscardVocabTermProposal,
       openEnumOptionDefinition,
       openPredicateDefinition,
-      openPredicateShapeRule,
       openVocabTermProposal,
       onOpenSubjectResource,
       onSelectExistingPredicate,
       onSort,
       openRelationValue,
+      confirmedLabelByPredicate,
       pendingProposalByPredicate,
       activeCellPopoverPlacement,
       projection,
@@ -476,13 +474,18 @@ export function StructuredProjectionTable({
     getSortedRowModel: getSortedRowModel(),
   })
 
+  /** R6 K2: "+ 卡片" opens an empty card; the row is created from the title typed there. */
+  const openNewCard = useCallback(() => {
+    openStructuredNewCard(projection, documentUri, createSubjectByName)
+  }, [createSubjectByName, documentUri, projection])
+
   const footerRow = editable
     ? (
         <StructuredSubjectCreationFooterRow
           disabled={footerModel.disabled}
           footerModel={footerModel}
           footerPredicates={footerPredicates}
-          onOpen={openCreateSubjectDialog}
+          onOpen={openNewCard}
           onAddByName={addSubjectByName}
           title={footerModel.title}
         />
@@ -532,16 +535,6 @@ export function StructuredProjectionTable({
         onCellKeyDown={handleCellKeyDown}
         onColumnMouseResize={startColumnResize}
         onColumnTouchResize={startTouchColumnResize}
-      />
-      <StructuredSubjectCreationDialog
-        dialogModel={dialogModel}
-        onOpenChange={setCreateSubjectOpen}
-        onSubjectDraftChange={setSubjectDraft}
-        onSubjectDraftKeyDown={handleSubjectDraftKeyDown}
-        onSubmit={submitCreateSubjectProposal}
-        open={createSubjectOpen}
-        subjectDraft={subjectDraft}
-        submitDisabled={submitDisabled}
       />
     </>
   )

@@ -338,8 +338,10 @@ export function ChatContentPane(props: ChatContentPaneProps) {
           </div>
         ) : null}
         <div className="min-h-0 flex-1 overflow-hidden">
-          {keepInlineWelcome ? (
-            <InlineWelcomeHost render={renderConversation} />
+          {/* LinX 助手 always goes through the same wrapper, so the conversation is not remounted
+              (losing what the person already typed) when the welcome turns out to be due. */}
+          {isSecretary ? (
+            <InlineWelcomeHost active={keepInlineWelcome} render={renderConversation} />
           ) : renderConversation(undefined)}
         </div>
       </div>

@@ -52,6 +52,7 @@ export function StructuredKanbanView({
   initialCollapsedLaneIds,
   initialScrollLeft,
   extraLanes,
+  optionOrder,
   laneLabels,
   cardFields,
   predicateLabel = localPredicateLabel,
@@ -75,6 +76,7 @@ export function StructuredKanbanView({
   initialScrollLeft?: number
   /** K6d: lanes added by hand, display names for lanes, and the properties shown on cards. */
   extraLanes?: string[]
+  optionOrder?: string[]
   laneLabels?: Record<string, string>
   cardFields?: string[]
   /** The name shown for a property (its vocab label); defaults to the readable local name. */
@@ -116,6 +118,7 @@ export function StructuredKanbanView({
     laneOrder,
     initialCollapsedLaneIds,
     extraLanes,
+    optionOrder,
     laneLabels,
     onColumnOrderChange,
     onLaneOrderChange,
