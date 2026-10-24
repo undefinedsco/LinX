@@ -4683,7 +4683,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('#Workspace')).toBeInTheDocument()
     expect(screen.getAllByText('tags').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Status')).toBeInTheDocument()
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'title 列菜单' }))
+    fireEvent.pointerDown(await screen.findByRole('button', { name: 'title 列菜单' }))
     expect(screen.getByText('Human readable subject title.')).toBeInTheDocument()
     expect(screen.getByText('文字')).toBeInTheDocument()
     for (const name of ['改显示的名字', '改值的类型…', '按它排序', '按它筛选', '隐藏这一列', '在词表里查看', '从这张表去掉…']) {
@@ -5077,7 +5077,7 @@ describe('FileDetailPane', () => {
       }))
     })
     expect(mockCreateInboxApproval).not.toHaveBeenCalledWith(expect.objectContaining({ termKind: 'predicate' }))
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Summary 列菜单' }))
+    fireEvent.pointerDown(await screen.findByRole('button', { name: 'Summary 列菜单' }))
     expect(screen.getByText('Short note summary shown on cards.')).toBeInTheDocument()
     fireEvent.keyDown(document.body, { key: 'Escape' })
     expect(screen.getByRole('separator', { name: '调整 Summary 列宽' })).toBeInTheDocument()
@@ -5111,7 +5111,7 @@ describe('FileDetailPane', () => {
     fireEvent.change(screen.getByPlaceholderText('搜索卡片'), {
       target: { value: '' },
     })
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'title 列菜单' }))
+    fireEvent.pointerDown(await screen.findByRole('button', { name: 'title 列菜单' }))
     const sortTrigger = screen.getByRole('menuitem', { name: '按它排序' })
     sortTrigger.focus()
     fireEvent.keyDown(sortTrigger, { key: 'ArrowRight' })
@@ -8804,7 +8804,7 @@ describe('FileDetailPane', () => {
       await screen.findByRole('cell', { name: 'rdf' })
       expect(screen.queryByLabelText('已用的筛选')).not.toBeInTheDocument()
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       openSubmenuItem('按它筛选')
       fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'core' }))
       fireEvent.keyDown(document.body, { key: 'Escape' })
@@ -8847,7 +8847,7 @@ describe('FileDetailPane', () => {
       render(<FileDetailPane />)
       await screen.findByRole('cell', { name: 'rdf' })
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: '名称 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: '名称 列菜单' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '按它筛选' }))
       const dialog = await screen.findByRole('dialog')
       fireEvent.change(within(dialog).getByLabelText('包含的文字'), { target: { value: 'Oth' } })
@@ -8862,13 +8862,13 @@ describe('FileDetailPane', () => {
       render(<FileDetailPane />)
       await screen.findByRole('cell', { name: 'rdf' })
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       openSubmenuItem('按它排序')
       fireEvent.click(await screen.findByRole('menuitem', { name: '降序' }))
       expect(useFilesStore.getState().structuredSortKey).toBe('tags')
       expect(useFilesStore.getState().structuredSortDirection).toBe('desc')
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       openSubmenuItem('按它排序')
       fireEvent.click(await screen.findByRole('menuitem', { name: '取消排序' }))
       expect(useFilesStore.getState().structuredSortKey).toBeNull()
@@ -8879,7 +8879,7 @@ describe('FileDetailPane', () => {
       render(<FileDetailPane />)
       await screen.findByRole('cell', { name: 'rdf' })
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '改显示的名字' }))
       const dialog = await screen.findByRole('dialog')
       fireEvent.change(within(dialog).getByLabelText('显示的名字'), { target: { value: '标签' } })
@@ -8889,7 +8889,7 @@ describe('FileDetailPane', () => {
       expect(screen.queryByRole('button', { name: 'tags 列菜单' })).not.toBeInTheDocument()
       expect(useFilesStore.getState().structuredColumnViewByDocument[documentUri]?.labels).toEqual({ tags: '标签' })
       // The toolbar and filter chips use the same name.
-      fireEvent.pointerDown(screen.getByRole('button', { name: '标签 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: '标签 列菜单' }))
       openSubmenuItem('按它筛选')
       fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'core' }))
       expect(await screen.findByRole('button', { name: '去掉筛选：标签：core' })).toBeInTheDocument()
@@ -8900,7 +8900,7 @@ describe('FileDetailPane', () => {
       render(<FileDetailPane />)
       await screen.findByRole('cell', { name: 'rdf' })
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '隐藏这一列' }))
 
       await waitFor(() => expect(screen.queryByRole('button', { name: 'tags 列菜单' })).not.toBeInTheDocument())
@@ -8919,7 +8919,7 @@ describe('FileDetailPane', () => {
       render(<FileDetailPane />)
       await screen.findByRole('cell', { name: 'rdf' })
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '从这张表去掉…' }))
       const dialog = await screen.findByRole('dialog')
       expect(within(dialog).getByText(/卡片上的值都保留/)).toBeInTheDocument()
@@ -8948,13 +8948,13 @@ describe('FileDetailPane', () => {
       render(<FileDetailPane />)
       await screen.findByRole('cell', { name: 'rdf' })
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       openSubmenuItem('按它筛选')
       fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'core' }))
       fireEvent.keyDown(document.body, { key: 'Escape' })
       await screen.findByLabelText('已用的筛选')
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '从这张表去掉…' }))
       fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '去掉' }))
 
@@ -8967,7 +8967,7 @@ describe('FileDetailPane', () => {
       render(<FileDetailPane />)
       await screen.findByRole('cell', { name: 'rdf' })
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '在词表里查看' }))
       expect(window.open).toHaveBeenCalled()
     })
@@ -9041,7 +9041,7 @@ describe('FileDetailPane', () => {
       render(<FileDetailPane />)
       await screen.findByRole('cell', { name: 'rdf' })
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'tags 列菜单' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'tags 列菜单' }))
       fireEvent.click(screen.getByRole('menuitem', { name: '改值的类型…' }))
       const dialog = await screen.findByRole('dialog')
       fireEvent.click(within(dialog).getByRole('radio', { name: /文字/ }))
