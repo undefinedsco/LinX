@@ -4975,12 +4975,11 @@ describe('FileDetailPane', () => {
     mockWriteOwnStructuredCellChange.mockClear()
     fireEvent.click(screen.getByRole('button', { name: '+ 卡片' }))
 
-    const createSubjectDialog = screen.getByRole('dialog', { name: '新增一行' })
-    expect(within(createSubjectDialog).getByText('udfs:Workspace')).toBeInTheDocument()
-    const subjectInput = within(createSubjectDialog).getByLabelText('Subject')
-    expect(subjectInput).toHaveValue('#NewSubject')
-    fireEvent.change(subjectInput, { target: { value: '#InboxRule' } })
-    fireEvent.click(within(createSubjectDialog).getByRole('button', { name: '创建条目审批' }))
+    // R6 K2: + 卡片 opens an empty card; the row is made from the title typed there.
+    expect(screen.queryByRole('dialog', { name: '新增一行' })).not.toBeInTheDocument()
+    const newCard = useCardDialog.getState().request
+    expect(newCard?.draft).toBeDefined()
+    await act(async () => { await newCard!.draft!.create('InboxRule') })
 
     // The new row shows once: the staged write already puts it in the table, so there is no
     // second greyed "待确认" copy of it next to the saved row.
@@ -6705,10 +6704,9 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('button', { name: '+ 卡片' })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('button', { name: '+ 卡片' }))
-    const createSubjectDialog = screen.getByRole('dialog', { name: '新增一行' })
-    expect(within(createSubjectDialog).getByText('udfs:Workspace')).toBeInTheDocument()
-    fireEvent.change(within(createSubjectDialog).getByLabelText('Subject'), { target: { value: '#FirstSubject' } })
-    fireEvent.click(within(createSubjectDialog).getByRole('button', { name: '创建条目审批' }))
+    const newCard = useCardDialog.getState().request
+    expect(newCard?.draft).toBeDefined()
+    await act(async () => { await newCard!.draft!.create('FirstSubject') })
 
     expect(screen.getByText('FirstSubject')).toBeInTheDocument()
     await waitFor(() => {

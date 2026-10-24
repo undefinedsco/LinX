@@ -1,12 +1,13 @@
 import { useCallback } from 'react'
 import {
   createStructuredCellWriteProposal,
+  type StructuredCellCommitResult,
   type StructuredCellWriteProposal,
   type StructuredTableProjection,
 } from '../../domain/structured/structured-table'
 import { getStructuredProjectionCellOriginalValues } from './structured-projection-table-model'
 
-type StageCellWriteProposal = (proposal: StructuredCellWriteProposal) => void
+type StageCellWriteProposal = (proposal: StructuredCellWriteProposal) => void | Promise<StructuredCellCommitResult | undefined>
 type VocabTermProposalResourceResolver = (predicate: string) => string | undefined
 
 function noopStageCellWriteProposal(_proposal: StructuredCellWriteProposal) {
@@ -57,9 +58,9 @@ export function useStructuredCellCommitController({
     subject: string
     predicate: string
     nextValues: string[]
-  }) => {
+  }) => (
     stageCellWriteProposal(createCellWriteProposal(input))
-  }, [createCellWriteProposal, stageCellWriteProposal])
+  ), [createCellWriteProposal, stageCellWriteProposal])
 
   return {
     createCellWriteProposal,

@@ -20,6 +20,7 @@ import { CompactTableShell } from '../../ui/CompactTableShell'
 import {
   buildStructuredProjectionTableColumns,
   createStructuredHeaderCache,
+  openStructuredNewCard,
   openStructuredSubjectCard,
   type StructuredColumnMenuInput,
   type StructuredSubjectOpenOptions,
@@ -46,10 +47,7 @@ import { useStructuredCellCommitController } from './useStructuredCellCommitCont
 import { useStructuredPendingPredicateColumns } from './useStructuredPendingPredicateColumns'
 import { useStructuredProjectionTableModelController } from './useStructuredProjectionTableModelController'
 import { useStructuredSubjectCreationController } from './useStructuredSubjectCreationController'
-import {
-  StructuredSubjectCreationDialog,
-  StructuredSubjectCreationFooterRow,
-} from './StructuredSubjectCreationControls'
+import { StructuredSubjectCreationFooterRow } from './StructuredSubjectCreationControls'
 import {
   isStructuredProjectionTableCellInteractive,
   projectStructuredProjectionTableCellClassName,
@@ -219,17 +217,9 @@ export function StructuredProjectionTable({
   })
   const {
     addSubjectByName,
-    createSubjectOpen,
-    dialogModel,
+    createSubjectByName,
     footerModel,
-    handleSubjectDraftKeyDown,
-    openCreateSubjectDialog,
     pendingSubjects,
-    setCreateSubjectOpen,
-    setSubjectDraft,
-    subjectDraft,
-    submitDisabled,
-    submitCreateSubjectProposal,
   } = useStructuredSubjectCreationController({
     classScope,
     documentUri,
@@ -484,13 +474,18 @@ export function StructuredProjectionTable({
     getSortedRowModel: getSortedRowModel(),
   })
 
+  /** R6 K2: "+ 卡片" opens an empty card; the row is created from the title typed there. */
+  const openNewCard = useCallback(() => {
+    openStructuredNewCard(projection, documentUri, createSubjectByName)
+  }, [createSubjectByName, documentUri, projection])
+
   const footerRow = editable
     ? (
         <StructuredSubjectCreationFooterRow
           disabled={footerModel.disabled}
           footerModel={footerModel}
           footerPredicates={footerPredicates}
-          onOpen={openCreateSubjectDialog}
+          onOpen={openNewCard}
           onAddByName={addSubjectByName}
           title={footerModel.title}
         />
@@ -540,16 +535,6 @@ export function StructuredProjectionTable({
         onCellKeyDown={handleCellKeyDown}
         onColumnMouseResize={startColumnResize}
         onColumnTouchResize={startTouchColumnResize}
-      />
-      <StructuredSubjectCreationDialog
-        dialogModel={dialogModel}
-        onOpenChange={setCreateSubjectOpen}
-        onSubjectDraftChange={setSubjectDraft}
-        onSubjectDraftKeyDown={handleSubjectDraftKeyDown}
-        onSubmit={submitCreateSubjectProposal}
-        open={createSubjectOpen}
-        subjectDraft={subjectDraft}
-        submitDisabled={submitDisabled}
       />
     </>
   )

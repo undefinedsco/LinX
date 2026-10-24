@@ -13,6 +13,14 @@ export interface CardDialogLocator {
   quote?: string
 }
 
+export type CardDialogDraftResult =
+  | { kind: 'created'; uri: string; siblings?: string[] }
+  | { kind: 'rejected'; reason: 'empty' | 'duplicate' | 'unavailable' }
+
+export interface CardDialogDraft {
+  create: (title: string) => Promise<CardDialogDraftResult>
+}
+
 export interface CardDialogRequest {
   /** Pod resource URI of the card: a file, or a subject inside a data document. */
   uri: string
@@ -20,6 +28,11 @@ export interface CardDialogRequest {
   locator?: CardDialogLocator
   /** Sibling cards for ‹ › navigation, in display order. */
   siblings?: string[]
+  /**
+   * A card that does not exist yet (R6 K2 "+ 卡片"): the popup opens empty with the title focused and
+   * calls `create` with the typed title. On success the popup continues on the new card's `uri`.
+   */
+  draft?: CardDialogDraft
   from?: 'chat' | 'table' | 'folder' | 'whiteboard' | 'inbox' | 'search' | 'favorites'
 }
 
