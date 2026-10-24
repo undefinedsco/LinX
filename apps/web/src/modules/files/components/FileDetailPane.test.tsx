@@ -8725,9 +8725,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('cell', { name: 'solid-modeling*' })).not.toBeInTheDocument()
   })
 
-  // Flaky on CI runners only (passes locally, also with 2 workers): "X 列菜单" sometimes never
-  // appears. Retried until the root cause is found; see the follow-up task in the PR.
-  describe('column header menu, filters and kept columns (R6 K6 / K6d)', { retry: 2 }, () => {
+  describe('column header menu, filters and kept columns (R6 K6 / K6d)', () => {
     const documentUri = 'https://pod.example/.data/workspaces/ws-1/state.ttl'
 
     function showTagsTable() {

@@ -25,6 +25,7 @@ import type {
   StructuredWhiteboardPosition,
 } from '../../domain/structured/structured-view-metadata'
 import {
+  findRemovedStructuredColumnKey,
   projectStructuredWhiteboardVisualRelations,
   projectStructuredReconciledKanbanBoard,
   resolveStructuredEffectiveClassScope,
@@ -241,6 +242,17 @@ export function useStructuredViewStateController({
       }
     })
   }, [file.uri, markLocalViewMetadataChange, setStructuredColumnView])
+  /**
+   * 加属性 brings back a column that was taken off this table. The menu may name it by its full IRI
+   * while the view stored the column's key (or the other way round), so match on the local name too.
+   * Returns whether a removed column was brought back.
+   */
+  const restoreRemovedColumnFromUi = useCallback((predicate: string): boolean => {
+    const removed = findRemovedStructuredColumnKey(columnView.removed, predicate)
+    if (!removed) return false
+    setColumnRemovedFromUi(removed, false)
+    return true
+  }, [columnView.removed, setColumnRemovedFromUi])
   const setKanbanGroupPredicateFromUi = useCallback((predicate: string | null) => {
     markLocalViewMetadataChange()
     setKanbanGroupPredicate(predicate)
@@ -308,6 +320,7 @@ export function useStructuredViewStateController({
     setColumnFilterFromUi,
     setColumnLabelFromUi,
     setColumnRemovedFromUi,
+    restoreRemovedColumnFromUi,
     setKanbanColumnOrderFromUi,
     setKanbanBoardFromUi,
     setKanbanGroupPredicateFromUi,

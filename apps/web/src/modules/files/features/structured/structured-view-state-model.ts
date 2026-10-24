@@ -1,3 +1,4 @@
+import { localPredicateLabel } from '../../domain/structured/structured-table-vocab'
 import {
   projectStructuredClassScope,
   type StructuredTableProjection,
@@ -53,4 +54,13 @@ export function projectStructuredReconciledKanbanBoard({
       subjects: column.cards.map((card) => card.subject),
     })),
   })
+}
+
+/**
+ * The removed-column key that a column picked in 加属性 refers to. The menu may name the column by its
+ * full IRI or prefixed name while the view stored its key (or the other way round), so the local
+ * name counts as a match.
+ */
+export function findRemovedStructuredColumnKey(removed: readonly string[], predicate: string): string | null {
+  return removed.find((key) => key === predicate || localPredicateLabel(key) === localPredicateLabel(predicate)) ?? null
 }
