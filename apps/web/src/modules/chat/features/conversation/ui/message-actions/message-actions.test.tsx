@@ -11,7 +11,13 @@ import { stopReadAloud } from './read-aloud'
 
 vi.mock('../speaker', () => ({ useSpeakerName: () => null }))
 vi.mock('../useRememberMessage', () => ({ useRememberMessage: () => ({ canRemember: false, status: { kind: 'idle' }, remember: vi.fn(), undo: vi.fn() }) }))
-vi.mock('@/modules/favorites/collections', () => ({ favoriteHooks: { onStarredChange: vi.fn() }, useFavoriteList: () => ({ data: [] }) }))
+const favorites = vi.hoisted(() => ({
+  rows: [] as Array<{ sourceId: string }>,
+  onStarredChange: vi.fn(async () => undefined),
+  toast: vi.fn(),
+}))
+vi.mock('@/modules/favorites/collections', () => ({ favoriteHooks: { onStarredChange: favorites.onStarredChange }, useFavoriteList: () => ({ data: favorites.rows }) }))
+vi.mock('@/components/ui/use-toast', () => ({ useToast: () => ({ toast: favorites.toast }) }))
 vi.mock('../../../collections', () => ({ useChatList: () => ({ data: [] }) }))
 
 const THREAD = 'https://alice.example/.data/chat/c1/index.ttl#t1'
@@ -84,7 +90,13 @@ function mount(saved: object = {}) {
   return { requests, feedback, ...view }
 }
 
-afterEach(() => { stopReadAloud(); vi.unstubAllGlobals() })
+afterEach(() => {
+  stopReadAloud()
+  vi.unstubAllGlobals()
+  favorites.rows = []
+  favorites.onStarredChange.mockClear()
+  favorites.toast.mockClear()
+})
 
 describe('message actions', () => {
   it('edits a sent message into a new version saved through the service', async () => {
@@ -144,5 +156,60 @@ describe('message actions', () => {
     await openMenu(container.querySelector('[data-role="assistant"]') as HTMLElement)
     await screen.findByRole('menuitem', { name: '重新回答' })
     expect(screen.queryByRole('menuitem', { name: '朗读' })).toBeNull()
+  })
+
+  it('puts every shared action in 更多, with 编辑 on own messages only', async () => {
+    const { container } = mount()
+    await waitFor(() => expect(container.querySelector('[data-role="assistant"]')).not.toBeNull())
+    const own = container.querySelector('[data-role="user"]') as HTMLElement
+    await openMenu(own)
+    for (const name of ['复制', '收藏', '编辑']) expect(await screen.findByRole('menuitem', { name })).toBeTruthy()
+    await act(async () => { fireEvent.keyDown(document.body, { key: 'Escape' }) })
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+
+    await openMenu(container.querySelector('[data-role="assistant"]') as HTMLElement)
+    for (const name of ['复制', '收藏', '重新回答']) expect(await screen.findByRole('menuitem', { name })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '编辑' })).toBeNull()
+    await act(async () => { fireEvent.keyDown(document.body, { key: 'Escape' }) })
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+  })
+
+  it('opens the same actions on right-click', async () => {
+    const { container } = mount()
+    await waitFor(() => expect(container.querySelector('[data-role="user"]')).not.toBeNull())
+    const own = container.querySelector('[data-role="user"]') as HTMLElement
+    await act(async () => { fireEvent.contextMenu(within(own).getByText('明天天气')) })
+    for (const name of ['复制', '收藏', '编辑']) expect(await screen.findByRole('menuitem', { name })).toBeTruthy()
+    await click(screen.getByRole('menuitem', { name: '编辑' }))
+    expect(await screen.findByLabelText('编辑消息')).toBeTruthy()
+  })
+
+  it('favorites a saved message from the toolbar and confirms with a toast', async () => {
+    const { container } = mount()
+    await waitFor(() => expect(container.querySelector('[data-role="user"]')).not.toBeNull())
+    const own = container.querySelector('[data-role="user"]') as HTMLElement
+    await click(within(own).getByRole('button', { name: '收藏' }))
+    await waitFor(() => expect(favorites.onStarredChange).toHaveBeenCalledWith('messages', U1, true, expect.objectContaining({ snapshotContent: '明天天气' })))
+    await waitFor(() => expect(favorites.toast).toHaveBeenCalledWith({ description: '已收藏，可在「收藏」里查看。' }))
+  })
+
+  it('shows 取消收藏 for a favorited message and removes it from the menu', async () => {
+    favorites.rows = [{ sourceId: A1 }]
+    const { container } = mount()
+    await waitFor(() => expect(container.querySelector('[data-role="assistant"]')).not.toBeNull())
+    const answerRoot = container.querySelector('[data-role="assistant"]') as HTMLElement
+    expect(within(answerRoot).getByRole('button', { name: '取消收藏' })).toBeTruthy()
+    await openMenu(answerRoot)
+    await click(await screen.findByRole('menuitem', { name: '取消收藏' }))
+    await waitFor(() => expect(favorites.onStarredChange).toHaveBeenCalledWith('messages', A1, false, expect.anything()))
+    await waitFor(() => expect(favorites.toast).toHaveBeenCalledWith({ description: '已取消收藏。' }))
+  })
+
+  it('reports a failed favorite instead of staying silent', async () => {
+    favorites.onStarredChange.mockRejectedValueOnce(new Error('pod down'))
+    const { container } = mount()
+    await waitFor(() => expect(container.querySelector('[data-role="user"]')).not.toBeNull())
+    await click(within(container.querySelector('[data-role="user"]') as HTMLElement).getByRole('button', { name: '收藏' }))
+    await waitFor(() => expect(favorites.toast).toHaveBeenCalledWith({ variant: 'destructive', description: '没收藏成功，请重试。' }))
   })
 })
