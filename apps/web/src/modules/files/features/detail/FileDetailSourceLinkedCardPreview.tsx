@@ -11,6 +11,7 @@ import {
 } from '../../ui/FileDetailPreviewPrimitives'
 import { BlockNoteFileEditor } from '@/modules/files/ui/BlockNoteFileEditor'
 import type { SourceLinkedCardPrimaryActionIcon } from './source-linked-card-preview-model'
+import { useCardLinkOpener } from '../card-dialog/useCardLinkOpener'
 import { useSourceLinkedCardPreviewController } from './useSourceLinkedCardPreviewController'
 
 function SourceLinkedCardActionIcon({ icon }: { icon: SourceLinkedCardPrimaryActionIcon }) {
@@ -30,6 +31,7 @@ function SourceLinkedCardActionIcon({ icon }: { icon: SourceLinkedCardPrimaryAct
 
 export function SourceLinkedCardPreview({ file }: { file: FilesDetail }) {
   const preview = useSourceLinkedCardPreviewController(file)
+  const openLink = useCardLinkOpener()
   const content = preview.content
 
   if (content.kind === 'unavailable') {
@@ -82,6 +84,7 @@ export function SourceLinkedCardPreview({ file }: { file: FilesDetail }) {
             content={content.bodyRichEditorContent}
             warning={content.bodyRichTextWarning}
             editable={false}
+            onOpenLink={openLink}
             className="min-h-[220px] border-border/30 bg-background/70 shadow-none"
           />
         </div>

@@ -51,7 +51,7 @@ test('creates at the top of 我的空间, builds an ordered table, and keeps edi
   await page.getByRole('dialog').getByRole('textbox').fill('会议纪要')
   await page.getByRole('dialog').getByRole('button', { name: /创建|确定/ }).click()
   await expect.poll(async () => (await pod(page, encodeURIComponent('会议纪要.md'))).status, { timeout: 20_000 }).toBe(200)
-  await expect(page.getByRole('dialog').getByText('会议纪要.md').first()).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('dialog').getByText('会议纪要', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
   await expect(async () => {
     await page.keyboard.press('Escape')
     const discard = page.getByRole('button', { name: '放弃修改' })

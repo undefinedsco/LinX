@@ -149,6 +149,66 @@ describe('CardDialogHost', () => {
     expect(title.compareDocumentPosition(references) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('shows the title once when the body starts with the same heading', async () => {
+    mocks.raw.mockReturnValue({
+      data: { uri: DOC, content: '# plan\n\n正文', mimeType: 'text/markdown', etag: 'e1', headers: {} },
+      isLoading: false, isError: false, error: null, refetch: vi.fn(),
+    })
+    render(<CardDialogHost />)
+    act(() => { useCardDialog.getState().open({ uri: DOC }) })
+    await screen.findByText('正文')
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getAllByText('plan', { selector: 'h1, h2:not(.sr-only)' })).toHaveLength(1)
+  })
+
+  it('shows the title once for a made card whose file name adds the date', async () => {
+    const excerpt = 'https://pod.example/摘录/%E7%BB%B4%E6%8A%A4%E6%88%90%E6%9C%AC%2010-24.md'
+    mocks.detail.mockReturnValue({
+      data: {
+        id: excerpt, uri: excerpt, name: '维护成本 10-24.md', kind: 'resource', semanticKind: 'file',
+        parentUri: 'https://pod.example/摘录/', mimeType: 'text/markdown', size: 10, modifiedAt: null, headers: {}, previewText: '',
+      },
+      isLoading: false, isError: false, error: null, refetch: vi.fn(),
+    })
+    mocks.raw.mockReturnValue({
+      data: { uri: excerpt, content: '# 维护成本\n\n> 太高\n', mimeType: 'text/markdown', etag: 'e1', headers: {} },
+      isLoading: false, isError: false, error: null, refetch: vi.fn(),
+    })
+    render(<CardDialogHost />)
+    act(() => { useCardDialog.getState().open({ uri: excerpt }) })
+    await screen.findByText('维护成本', { selector: 'h1' })
+    expect(within(screen.getByRole('dialog')).queryByText('维护成本 10-24', { selector: 'h2:not(.sr-only)' })).not.toBeInTheDocument()
+  })
+
+  it('opens a link into the Pod as a card at its line instead of leaving LinX', async () => {
+    mocks.raw.mockReturnValue({
+      data: { uri: DOC, content: '# plan\n\n来源：[会议纪要 · 第 3 行](https://pod.example/%E4%BC%9A%E8%AE%AE.md#line=3)', mimeType: 'text/markdown', etag: 'e1', headers: {} },
+      isLoading: false, isError: false, error: null, refetch: vi.fn(),
+    })
+    render(<CardDialogHost />)
+    act(() => { useCardDialog.getState().open({ uri: DOC }) })
+    const link = await screen.findByRole('link', { name: '会议纪要 · 第 3 行' })
+    expect(fireEvent.click(link)).toBe(false) // default navigation was prevented
+    expect(useCardDialog.getState().request).toMatchObject({
+      uri: 'https://pod.example/%E4%BC%9A%E8%AE%AE.md',
+      locator: { line: 3 },
+    })
+  })
+
+  it('opens links to other sites in a new tab', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    mocks.raw.mockReturnValue({
+      data: { uri: DOC, content: '# plan\n\n[官网](https://example.com/a)', mimeType: 'text/markdown', etag: 'e1', headers: {} },
+      isLoading: false, isError: false, error: null, refetch: vi.fn(),
+    })
+    render(<CardDialogHost />)
+    act(() => { useCardDialog.getState().open({ uri: DOC }) })
+    fireEvent.click(await screen.findByRole('link', { name: '官网' }))
+    expect(open).toHaveBeenCalledWith('https://example.com/a', '_blank', 'noopener,noreferrer')
+    expect(useCardDialog.getState().request?.uri).toBe(DOC)
+    open.mockRestore()
+  })
+
   it('lists the cards that point here under 被引用 and opens one in the same popup', async () => {
     mocks.texts = [{
       uri: 'https://pod.example/摘录/idea.md',

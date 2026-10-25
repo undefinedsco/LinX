@@ -285,7 +285,9 @@ describe('FilesTreePane', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '搜索文件树' }), { target: { value: 'report' } })
     expect(screen.queryByText('我的空间')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('report.md'))
+    expect(screen.queryByText('report.md')).not.toBeInTheDocument()
+    expect(screen.getByText('我的空间 / public / docs')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('report'))
 
     expect(useFilesStore.getState().selectedTreeNodeId).toBe('resource:https://pod.example/public/docs/report.md')
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/docs/report.md')

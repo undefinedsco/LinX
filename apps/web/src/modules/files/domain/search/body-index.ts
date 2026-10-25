@@ -1,4 +1,5 @@
 import MiniSearch from 'minisearch'
+import { stripMarkdownSyntax } from './markdown-text'
 
 /**
  * Client-side full-text index of file bodies (MiniSearch, MIT).
@@ -78,7 +79,7 @@ export function buildBodySnippet(text: string, query: string, terms: string[] = 
   const lineEnd = lineEndRaw < 0 ? text.length : lineEndRaw
   const from = Math.max(lineStart, index - SNIPPET_BEFORE)
   const to = Math.min(lineEnd, index + needle.length + SNIPPET_AFTER)
-  const excerpt = text.slice(from, to).trim()
+  const excerpt = stripMarkdownSyntax(text.slice(from, to)) || text.slice(from, to).trim()
   const snippet = `${from > lineStart ? '…' : ''}${excerpt}${to < lineEnd ? '…' : ''}`
   const line = text.slice(0, index).split('\n').length
   const matched = text.slice(index, index + needle.length)

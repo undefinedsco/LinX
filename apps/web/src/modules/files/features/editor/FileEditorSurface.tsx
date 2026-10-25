@@ -19,11 +19,16 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { Check, MoreHorizontal, Shield } from 'lucide-react'
 import type { FilesDetail } from '../../domain/resource/resource-model'
+import { displayResourceName } from '../../domain/resource/resource-semantics'
+import { projectCardSaveLabel } from '../../domain/card/card-dialog-model'
 import { AccessPolicyDialog } from '../sidecars/ResourceSidecars'
 import { useResourceSidecarActionsController } from '../sidecars/useResourceSidecarActionsController'
 import { BlockNoteFileEditor } from '@/modules/files/ui/BlockNoteFileEditor'
 import { FileEditorRawSourceEditor } from './FileEditorRawSourceEditor'
+import { useCardLinkOpener } from '../card-dialog/useCardLinkOpener'
 import { useFileEditorSheetController, type FileEditorSourceLinkedDescriptor } from './useFileEditorSheetController'
+
+const RICH_AUTOSAVE_MS = 800
 
 export type FileEditorSurfaceHandle = {
   requestClose: () => void
@@ -58,6 +63,7 @@ export const FileEditorSurface = forwardRef<FileEditorSurfaceHandle, {
     stagedSourceText,
   })
   const sidecarActions = useResourceSidecarActionsController(file)
+  const openLink = useCardLinkOpener()
   const setContentView = editor.setContentView
   const structuredReturnAction = editor.structuredReturnAction
   const returnToSourceStructuredSubject = editor.returnToSourceStructuredSubject
@@ -164,16 +170,26 @@ export const FileEditorSurface = forwardRef<FileEditorSurfaceHandle, {
         content={editor.richEditorContent}
         editable
         warning={editor.richEditorWarning}
+        onOpenLink={openLink}
         onSaveText={editor.canSaveRichText ? editor.saveRichTextContent : undefined}
         onDirtyChange={setRichTextDirty}
         onSaveStatusChange={setRichTextSaveStatus}
-        onSubmitProposal={editor.canUseRichEditor ? editor.submitChangeProposal : undefined}
+        // The person's own edits save themselves; only a source-linked card sends changes for review.
+        autoSaveDelayMs={editor.canSaveRichText ? RICH_AUTOSAVE_MS : undefined}
+        hideStatusBar={editor.canSaveRichText}
+        onSubmitProposal={editor.isSourceLinkedEditor ? editor.submitChangeProposal : undefined}
         proposalPending={editor.proposalPending}
         proposalLabel={editor.proposalLabel}
         className="min-h-[360px] border-0 px-0 py-0 shadow-none"
       />
     )
   }
+
+  const saveStatusLabel = editor.canSaveRichText && editor.contentView === 'rich' ? (
+    <span className="ml-auto shrink-0 text-xs text-muted-foreground" data-document-editor-save-status={richTextSaveStatus}>
+      {projectCardSaveLabel(richTextSaveStatus === 'dirty' ? 'idle' : richTextSaveStatus)}
+    </span>
+  ) : null
 
   const headerActions = (
     <div className="flex shrink-0 items-center gap-1">
@@ -219,8 +235,9 @@ export const FileEditorSurface = forwardRef<FileEditorSurfaceHandle, {
               data-document-editor-file-title="true"
               className="min-w-0 max-w-[min(520px,60vw)] truncate text-sm font-medium text-foreground"
             >
-              {file.name}
+              {displayResourceName(file.name)}
             </span>
+            {saveStatusLabel}
             {headerActions}
           </div>
         </DialogHeader>
@@ -230,8 +247,9 @@ export const FileEditorSurface = forwardRef<FileEditorSurfaceHandle, {
             data-document-editor-file-title="true"
             className="min-w-0 max-w-[min(520px,60vw)] truncate text-sm font-medium text-foreground"
           >
-            {file.name}
+            {displayResourceName(file.name)}
           </span>
+          {saveStatusLabel}
           {headerActions}
         </div>
       )}
