@@ -163,7 +163,10 @@ export async function createMatrixGroupRoom(input: CreateMatrixGroupRoomInput): 
   // The canonical server name is the service's own identity, not the API host.
   const whoami = await client.whoami()
   const serverName = matrixServerNameFromUserId(whoami.user_id)
-  const invite = validatedWebIds.map((webId) => matrixUserIdFromWebId(webId, serverName))
+  // Canonical MXID: @u_<sha256(full WebID)>:<service authority from whoami>.
+  const invite = await Promise.all(
+    validatedWebIds.map((webId) => matrixUserIdFromWebId(webId, serverName)),
+  )
   // Private room WITHOUT invites: access is granted on the canonical room
   // container first, then the Matrix invite is sent. The server never grants
   // Solid ACL from a Matrix invitation.

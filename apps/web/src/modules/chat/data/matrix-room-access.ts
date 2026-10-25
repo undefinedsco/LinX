@@ -122,7 +122,10 @@ export function normalizeWebId(value: string | undefined): string | null {
     if (!['http:', 'https:'].includes(url.protocol)) return null
     if (url.username || url.password) return null
     if (!url.pathname) return null
-    return url.href
+    // Return the exact supplied bytes: the backend hashes the WebID string and
+    // verifies the invite's targetWebID against it, so URL-normalizing here
+    // (host case, default port, dot segments) would break the pair.
+    return trimmed
   } catch {
     return null
   }

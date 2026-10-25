@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import {
   MatrixClient,
   MatrixClientError,
@@ -69,8 +70,11 @@ test('MatrixClient invite can carry the invited full WebID for server registrati
   })
   await client.inviteUser('!room:api.example', '@u_abc:api.example')
 
-  expect(requests[0]?.body).toEqual({ user_id: '@u_abc:api.example', targetWebID: 'https://bob.example/#id' })
-  expect(requests[1]?.body).toEqual({ user_id: '@u_abc:api.example' })
+  assert.deepEqual(requests[0]?.body, {
+    user_id: '@u_abc:api.example',
+    targetWebID: 'https://bob.example/#id',
+  })
+  assert.deepEqual(requests[1]?.body, { user_id: '@u_abc:api.example' })
 })
 
 test('MatrixClient supports room membership and state endpoints', async () => {
@@ -122,10 +126,9 @@ test('MatrixClient supports room membership and state endpoints', async () => {
 test('Matrix helpers match xpod room and user resource conventions', async () => {
   const roomId = '!room:node-0000.undefineds.co'
   assert.equal(matrixServerNameFromBaseUrl('https://node-0000.undefineds.co/'), 'node-0000.undefineds.co')
-  assert.equal(
-    matrixUserIdFromWebId('https://id.undefineds.co/alice/profile/card#me', 'node-0000.undefineds.co'),
-    '@alice_profile_card_me:node-0000.undefineds.co',
-  )
+  const bob = 'https://id.undefineds.co/bob/profile/card#me'
+  const expected = `@u_${createHash('sha256').update(bob).digest('hex')}:node-0000.undefineds.co`
+  assert.equal(await matrixUserIdFromWebId(bob, 'node-0000.undefineds.co'), expected)
   assert.equal(await matrixChatResourceIdFromRoomId(roomId), 'matrix-dab780ed4920d00b/index.ttl#this')
   assert.equal(await matrixThreadResourceIdFromRoomId(roomId), 'chat/matrix-dab780ed4920d00b/index.ttl#thread')
 })
@@ -146,4 +149,79 @@ test('MatrixClient surfaces Matrix error bodies', async () => {
       return true
     },
   )
+})
+
+test('canonical Matrix user id hashes the full WebID and is independent of host or fragment', async () => {
+  const server = 'node-0000.undefineds.co'
+  const samePathOtherOrigin = 'https://other.example/bob/profile/card#me'
+  const samePathOtherFragment = 'https://id.undefineds.co/bob/profile/card#other'
+  const base = 'https://id.undefineds.co/bob/profile/card#me'
+
+  const hashOf = (webId: string) => createHash('sha256').update(webId).digest('hex')
+  assert.equal(await matrixUserIdFromWebId(base, server), `@u_${hashOf(base)}:${server}`)
+  // Same pathname, different origin/fragment => different identity (no slug collision).
+  assert.notEqual(await matrixUserIdFromWebId(base, server), await matrixUserIdFromWebId(samePathOtherOrigin, server))
+  assert.notEqual(await matrixUserIdFromWebId(base, server), await matrixUserIdFromWebId(samePathOtherFragment, server))
+  // Port-bearing service authority is preserved verbatim.
+  assert.equal(
+    await matrixUserIdFromWebId(base, 'node-0000.undefineds.co:8448'),
+    `@u_${hashOf(base)}:node-0000.undefineds.co:8448`,
+  )
+  // A non-full WebID is rejected instead of being slugged.
+  await assert.rejects(() => matrixUserIdFromWebId('alice', server))
+  await assert.rejects(() => matrixUserIdFromWebId('https://user:pass@id.example/a#me', server))
+})
+
+test('canonical Matrix user id hashes the exact supplied WebID bytes', async () => {
+  const server = 'id.undefineds.co'
+  // URL-equivalent forms that normalize differently must hash differently,
+  // because the backend hashes the exact targetWebID string.
+  const raw = 'https://ID.example:443/a/../bob#me'
+  const normalized = new URL(raw).href
+  assert.notEqual(raw, normalized)
+  assert.equal(
+    await matrixUserIdFromWebId(raw, server),
+    `@u_${createHash('sha256').update(raw).digest('hex')}:${server}`,
+  )
+  assert.equal(
+    await matrixUserIdFromWebId(normalized, server),
+    `@u_${createHash('sha256').update(normalized).digest('hex')}:${server}`,
+  )
+  assert.notEqual(
+    await matrixUserIdFromWebId(raw, server),
+    await matrixUserIdFromWebId(normalized, server),
+  )
+  // An encoded slash and a path separator remain distinct identities.
+  const a = 'https://id.example/alice%2Fbob#me'
+  const b = 'https://id.example/alice/bob#me'
+  assert.notEqual(
+    await matrixUserIdFromWebId(a, server),
+    await matrixUserIdFromWebId(b, server),
+  )
+})
+
+test('Matrix server authority validation accepts ports and IPv6, rejects malformed', async () => {
+  const webId = 'https://id.undefineds.co/alice/profile/card#me'
+  const hash = createHash('sha256').update(webId).digest('hex')
+  for (const authority of ['node.example', 'node.example:8448', '[::1]', '[2001:db8::1]:8448']) {
+    assert.equal(await matrixUserIdFromWebId(webId, authority), `@u_${hash}:${authority}`)
+  }
+  for (const authority of [
+    '', ' user', 'user@host', 'https://host', 'host/path', 'host?x', 'host#x', 'host\\x',
+    'host:', 'host:abc', 'host:123456', '[::1', '::1', '[zz::1]',
+  ]) {
+    await assert.rejects(
+      () => matrixUserIdFromWebId(webId, authority),
+      undefined,
+      `expected rejection for ${JSON.stringify(authority)}`,
+    )
+  }
+})
+
+test('canonical Matrix user id is deterministic for the same full WebID', async () => {
+  const webId = 'https://id.undefineds.co/alice/profile/card#me'
+  const first = await matrixUserIdFromWebId(webId, 'node-0000.undefineds.co')
+  const second = await matrixUserIdFromWebId(webId, 'node-0000.undefineds.co')
+  assert.equal(first, second)
+  assert.equal(first, `@u_${createHash('sha256').update(webId).digest('hex')}:node-0000.undefineds.co`)
 })

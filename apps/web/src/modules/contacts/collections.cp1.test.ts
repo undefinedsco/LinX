@@ -5,6 +5,7 @@
  * resolveMembers, and getGroupMemberRoles.
  */
 
+import { createHash } from 'node:crypto'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ContactClass, ContactType, chatResource, contactResource } from '@undefineds.co/models'
 
@@ -303,7 +304,7 @@ describe('CP1: createGroupWithChat', () => {
       'https://pod.example/_matrix/client/v3/rooms/!room%3Apod.example/invite',
     )
     expect(JSON.parse(await inviteRequest.text())).toEqual({
-      user_id: '@bob_profile_card_me:pod.example',
+      user_id: `@u_${createHash('sha256').update('https://pod.example/bob/profile/card#me').digest('hex')}:pod.example`,
       targetWebID: 'https://pod.example/bob/profile/card#me',
     })
     expect(result.chatId).toMatch(/^matrix-[a-f0-9]{16}\/index\.ttl#this$/)

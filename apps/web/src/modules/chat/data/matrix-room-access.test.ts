@@ -117,6 +117,15 @@ describe('validateMatrixInvitees', () => {
     ])
   })
 
+  it('preserves the exact supplied full WebID bytes for hashing and targetWebID', () => {
+    // URL-equivalent but byte-different identities must not be normalized:
+    // the backend hashes the exact string it receives.
+    const raw = 'https://ID.example:443/a/../bob#me'
+    expect(validateMatrixInvitees([raw], OWNER)).toEqual([raw])
+    expect(validateMatrixInvitees([raw], OWNER)[0]).not.toBe(new URL(raw).href)
+    expect(validateMatrixInvitees([BOB], OWNER)).toEqual([BOB])
+  })
+
   it('rejects the whole list when one WebID is invalid', () => {
     expect(() => validateMatrixInvitees([BOB, 'https://user:pass@bob.example/#id'], OWNER))
       .toThrow('受邀成员的 WebID 无效')
