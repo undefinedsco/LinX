@@ -340,11 +340,18 @@ export function ContactDetail({ detail, space, sync, group, editing, creation, a
             <DialogTitle>备注</DialogTitle>
             <DialogDescription>备注只存在你的空间，TA 看不到。</DialogDescription>
           </DialogHeader>
-          <Input placeholder="给 TA 起个备注" value={editing.alias} onChange={(event) => editing.onAliasChange(event.target.value)} className="mt-2" autoFocus />
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={editing.onClose} disabled={editing.isSaving}>取消</Button>
-            <Button onClick={editing.onSaveAlias} disabled={editing.isSaving}>{editing.isSaving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}保存</Button>
-          </DialogFooter>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!editing.isSaving) editing.onSaveAlias()
+            }}
+          >
+            <Input placeholder="给 TA 起个备注" value={editing.alias} onChange={(event) => editing.onAliasChange(event.target.value)} className="mt-2" autoFocus />
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={editing.onClose} disabled={editing.isSaving}>取消</Button>
+              <Button type="submit" disabled={editing.isSaving}>{editing.isSaving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}保存</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

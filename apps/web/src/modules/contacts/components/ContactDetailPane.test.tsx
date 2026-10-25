@@ -734,4 +734,22 @@ describe('ContactDetailPane', () => {
     expect(await screen.findByPlaceholderText('给 TA 起个备注')).toBeInTheDocument()
     expect(screen.getAllByText('备注只存在你的空间，TA 看不到。').length).toBeGreaterThan(0)
   })
+
+  it('saves the remark when pressing Enter in the input', async () => {
+    const contact = solidContact()
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+    mockUpdateContact.mockResolvedValue(undefined)
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    fireEvent.click(screen.getByText('备注'))
+    const input = await screen.findByPlaceholderText('给 TA 起个备注')
+    fireEvent.change(input, { target: { value: '老朋友' } })
+    fireEvent.submit(input.closest('form')!)
+
+    await waitFor(() => {
+      expect(mockUpdateContact).toHaveBeenCalled()
+    })
+  })
 })

@@ -2041,7 +2041,7 @@ describe('files browser', () => {
     })
   })
 
-  it('falls back to LDP container POST when MKCOL is not supported', async () => {
+  it('falls back to LDP container PUT when MKCOL is not supported', async () => {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = []
     const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(input), init })
@@ -2065,19 +2065,20 @@ describe('files browser', () => {
       init: expect.objectContaining({ method: 'MKCOL' }),
     })
     expect(calls[1]).toEqual({
-      url: 'https://pod.example/public/',
+      url: 'https://pod.example/public/Project%20Notes/',
       init: expect.objectContaining({
-        method: 'POST',
+        method: 'PUT',
         headers: expect.objectContaining({
+          'Content-Type': 'text/turtle',
           Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"',
-          Slug: 'Project Notes',
+          'If-None-Match': '*',
         }),
       }),
     })
     expect(created.uri).toBe('https://pod.example/public/Project%20Notes/')
   })
 
-  it('falls back to LDP container POST when MKCOL is not implemented', async () => {
+  it('falls back to LDP container PUT when MKCOL is not implemented', async () => {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = []
     const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(input), init })
@@ -2101,19 +2102,20 @@ describe('files browser', () => {
       init: expect.objectContaining({ method: 'MKCOL' }),
     })
     expect(calls[1]).toEqual({
-      url: 'https://pod.example/public/',
+      url: 'https://pod.example/public/Project%20Notes/',
       init: expect.objectContaining({
-        method: 'POST',
+        method: 'PUT',
         headers: expect.objectContaining({
+          'Content-Type': 'text/turtle',
           Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"',
-          Slug: 'Project Notes',
+          'If-None-Match': '*',
         }),
       }),
     })
     expect(created.uri).toBe('https://pod.example/public/Project%20Notes/')
   })
 
-  it('falls back to LDP container POST when MKCOL fails before returning a response', async () => {
+  it('falls back to LDP container PUT when MKCOL fails before returning a response', async () => {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = []
     const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(input), init })
@@ -2137,16 +2139,43 @@ describe('files browser', () => {
 
     expect(calls[0]?.init).toEqual(expect.objectContaining({ method: 'MKCOL' }))
     expect(calls[1]).toEqual({
-      url: 'https://pod.example/public/',
+      url: 'https://pod.example/public/Project%20Notes/',
       init: expect.objectContaining({
-        method: 'POST',
+        method: 'PUT',
         headers: expect.objectContaining({
+          'Content-Type': 'text/turtle',
           Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"',
-          Slug: 'Project Notes',
+          'If-None-Match': '*',
         }),
       }),
     })
     expect(created.uri).toBe('https://pod.example/public/Project%20Notes/')
+  })
+
+  it('creates non-ASCII folder names via percent-encoded PUT without non-Latin1 headers', async () => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = []
+    const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      return new Response('', {
+        status: init?.method === 'MKCOL' ? 405 : 201,
+        headers: {
+          'content-type': 'text/turtle',
+          'last-modified': 'Sat, 01 Mar 2026 10:00:00 GMT',
+        },
+      })
+    }) as typeof fetch
+    const db = createDb({ fetch: authFetch, listContainerResources: async () => [] })
+
+    await createFolderResource(db, { containerUri: 'https://pod.example/public/', name: '项目' })
+
+    const put = calls.find((call) => call.init?.method === 'PUT')
+    expect(put?.url).toBe('https://pod.example/public/%E9%A1%B9%E7%9B%AE/')
+    for (const call of calls) {
+      for (const value of Object.values((call.init?.headers ?? {}) as Record<string, string>)) {
+        expect(value).toMatch(/^[\x00-\xff]*$/)
+      }
+    }
+    expect(() => new Headers((put?.init?.headers ?? {}) as Record<string, string>)).not.toThrow()
   })
 
   it('reports folder creation conflicts without overwriting existing containers', async () => {
