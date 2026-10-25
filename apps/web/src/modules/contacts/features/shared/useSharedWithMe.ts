@@ -5,7 +5,8 @@ import { isAgentContact, isGroupContact, type ContactRow } from '@undefineds.co/
 import { useSession } from '@/providers/solid-session-context'
 import { contactOps, contactCollection } from '../../data/collections'
 import { readSharedWithMe, type SharedWithMePerson } from '../../data/shared-with-me'
-import type { SharedWithMeItem } from '../../domain/shared-with-me'
+import { contactDisplayName } from '../../domain/contact-display-name'
+import { applyOwnerNames, type SharedWithMeItem } from '../../domain/shared-with-me'
 
 export type { SharedWithMeItem }
 
@@ -25,7 +26,7 @@ export function useSharedWithMe(): { items: SharedWithMeItem[]; isLoading: boole
     for (const row of (contacts.data ?? []) as ContactRow[]) {
       if (!row?.id || row.deletedAt || isGroupContact(row) || isAgentContact(row)) continue
       if (!/^https?:\/\//i.test(row.about ?? '')) continue
-      result.push({ name: row.alias?.trim() || row.name?.trim() || '联系人', webId: row.about as string })
+      result.push({ name: contactDisplayName(row) || '联系人', webId: row.about as string })
     }
     return result
   }, [contacts.data])
@@ -38,6 +39,10 @@ export function useSharedWithMe(): { items: SharedWithMeItem[]; isLoading: boole
     queryFn: () => readSharedWithMe({ authFetch: contactOps.getAuthFetch(), people, ownWebId }),
   })
 
-  const items = useMemo(() => query.data ?? [], [query.data])
+  // The listing is cached by WebID only; names are applied here so a new remark shows at once.
+  const items = useMemo(
+    () => applyOwnerNames(query.data ?? [], new Map(people.map((person) => [person.webId, person.name]))),
+    [query.data, people],
+  )
   return { items, isLoading: people.length > 0 && query.isLoading }
 }

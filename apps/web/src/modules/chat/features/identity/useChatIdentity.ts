@@ -24,6 +24,7 @@ import {
   type ChatIdentity,
   type ChatIdentityContact,
 } from '../../domain/chat-identity'
+import { contactDisplayName } from '@/modules/contacts/domain/contact-display-name'
 
 export interface ContactLookup {
   find: (participantIri: string) => ChatIdentityContact | null
@@ -34,7 +35,7 @@ export interface ContactLookup {
 function toIdentityContact(row: ContactRow): ChatIdentityContact {
   return {
     id: row.id,
-    name: row.alias?.trim() || row.name?.trim() || '',
+    name: contactDisplayName(row),
     avatarUrl: row.avatarUrl ?? null,
     isAssistant: isAgentContact(row),
     isGroup: isGroupContact(row),

@@ -14,6 +14,8 @@ import { ReactNode } from 'react'
 // ============================================================================
 
 const mockUseFavoriteStore = vi.fn()
+vi.mock('@/providers/solid-session-context', () => ({ useSession: () => ({ session: { info: { webId: 'http://localhost:42140/test/profile/card#me' } } }) }))
+
 vi.mock('../app/store', () => ({
   useFavoriteStore: (selector: (state: unknown) => unknown) => mockUseFavoriteStore(selector),
 }))

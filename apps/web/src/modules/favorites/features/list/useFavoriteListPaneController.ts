@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, type KeyboardEvent } from 'react'
 import { useFavoriteStore } from '../../app/store'
 import { useFavoriteInit, useFavoriteList } from '../../data/collections'
 import { countFavoriteGroups, favoriteGroupOf } from '../../domain/groups'
+import { useResolveFavoriteDisplay } from '../display'
 import type { FavoriteListItem } from '../../ui/FavoriteList'
 
 function formatFavoriteDate(favoredAt?: Date | null): string {
@@ -13,6 +14,7 @@ function formatFavoriteDate(favoredAt?: Date | null): string {
 
 export function useFavoriteListPaneController() {
   useFavoriteInit()
+  const resolveDisplay = useResolveFavoriteDisplay()
 
   const searchText = useFavoriteStore((s) => s.searchText)
   const setSearchText = useFavoriteStore((s) => s.setSearchText)
@@ -36,15 +38,18 @@ export function useFavoriteListPaneController() {
   const selectedIndex = favorites.findIndex((fav) => fav.id === selectedFavoriteId)
 
   const items = useMemo<FavoriteListItem[]>(
-    () => favorites.map((fav) => ({
+    () => favorites.map((raw) => {
+      const fav = resolveDisplay(raw)
+      return {
       id: fav.id,
       title: fav.title,
       snapshotContent: fav.snapshotContent,
       snapshotAuthor: fav.snapshotAuthor,
       formattedDate: formatFavoriteDate(fav.favoredAt),
       kindLabel: group === 'all' ? GROUP_LABEL[favoriteGroupOf(fav)] : undefined,
-    })),
-    [favorites, group],
+      }
+    }),
+    [favorites, group, resolveDisplay],
   )
 
   const registerItemRef = useCallback((index: number, node: HTMLDivElement | null) => {

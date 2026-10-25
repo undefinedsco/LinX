@@ -35,6 +35,7 @@ export async function readSharedByPerson(authFetch: typeof fetch, person: Shared
   try {
     const dataset = await getSolidDataset(root, { fetch: authFetch })
     return sharedItemsFromListing(person.name, getContainedResourceUrlAll(dataset))
+      .map((item) => ({ ...item, ownerWebId: person.webId }))
   } catch {
     return []
   }
