@@ -9,13 +9,24 @@ import {
   type WhiteboardCanvasSide,
 } from '../../../domain/structured/structured-whiteboard-canvas'
 import { whiteboardRelationLabel } from './whiteboard-relations'
+import { projectCardSubjectModel } from '../../../domain/card/card-dialog-model'
+import { expandRdfIri } from '../../../domain/card/rdf-term-tokens'
+import type { StructuredTableProjection } from '../../../domain/structured/structured-table'
 
 export type WhiteboardCardState = 'ok' | 'deleted'
+
+/** One small "label value" line on a row card (the column's name, never an internal id). */
+export interface WhiteboardCardFact {
+  label: string
+  value: string
+}
 
 export interface WhiteboardCardContent {
   kind: 'row' | 'file' | 'text'
   title: string
   body: string
+  /** Main properties of a row card; shown when the row has no body to preview. */
+  facts?: readonly WhiteboardCardFact[]
   className: string | null
   state: WhiteboardCardState
   /** Card URI for opening and relations; null for text and sections. */
@@ -195,4 +206,46 @@ export function fileNameFromUri(uri: string): string {
   } catch {
     return last
   }
+}
+
+export const WHITEBOARD_CARD_FACTS_SHOWN = 4
+const INTERNAL_COLUMN_NAME = /^p-(?=[a-z0-9]*\d)[a-z0-9]{6,}$/i
+
+/**
+ * The properties a row card shows when it has no body: the table's columns by their own names
+ * ("状态 进行中"), without the title, body, type or empty cells. A column with no human name is left out
+ * rather than shown by its internal id.
+ */
+export function projectWhiteboardRowFacts({
+  projection,
+  documentUri,
+  subject,
+  labelOf,
+  limit = WHITEBOARD_CARD_FACTS_SHOWN,
+}: {
+  projection: StructuredTableProjection
+  documentUri: string
+  subject: string
+  labelOf: (predicate: string) => string
+  limit?: number
+}): WhiteboardCardFact[] {
+  const rawByIri = new Map<string, string>()
+  for (const predicate of projection.predicates) {
+    rawByIri.set(expandRdfIri(predicate, documentUri, projection.prefixes), predicate)
+  }
+  const model = projectCardSubjectModel({
+    projection,
+    documentUri,
+    subjectIri: expandRdfIri(subject, documentUri, projection.prefixes),
+    labeler: (iri) => labelOf(rawByIri.get(iri) ?? iri),
+  })
+  if (!model) return []
+  const facts: WhiteboardCardFact[] = []
+  for (const property of model.properties) {
+    const value = property.displayValues.map((item) => item.trim()).filter(Boolean).join('、')
+    if (!value || INTERNAL_COLUMN_NAME.test(property.label)) continue
+    facts.push({ label: property.label, value })
+    if (facts.length >= limit) break
+  }
+  return facts
 }

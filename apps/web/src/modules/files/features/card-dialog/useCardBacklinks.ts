@@ -1,11 +1,12 @@
 import { useMemo } from 'react'
 import {
+  projectBoardBacklinks,
   projectRowBacklinks,
   projectTextBacklinks,
   type CardBacklink,
 } from '../../domain/card/card-backlinks'
 import type { StructuredTableProjection } from '../../domain/structured/structured-table'
-import { useFilesCitingWork, type FilesCitingWork } from '../../data/queries'
+import { useCardWhiteboardPlacements, useFilesCitingWork, type FilesCitingWork } from '../../data/queries'
 import { useFilesBodyIndex } from '../../data/queries/body-search-queries'
 
 export type CardWorkUseRow = FilesCitingWork
@@ -45,9 +46,11 @@ export function useCardBacklinks({
   ), [documentUri, enabled, projection, subjectIri])
 
   const workUses = useFilesCitingWork(uri, enabled)
+  const placements = useCardWhiteboardPlacements(uri, enabled)
+  const boardLinks = useMemo(() => projectBoardBacklinks(placements), [placements])
 
   return {
-    backlinks: useMemo(() => [...rowLinks, ...textLinks], [rowLinks, textLinks]),
+    backlinks: useMemo(() => [...rowLinks, ...textLinks, ...boardLinks], [boardLinks, rowLinks, textLinks]),
     workUses,
     indexing: snapshot.indexing,
   }

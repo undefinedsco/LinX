@@ -42,6 +42,7 @@ import {
   WhiteboardCardNode,
   WhiteboardNodeContext,
   WhiteboardSectionNode,
+  isEditableWhiteboardDocument,
   type WhiteboardNodeActions,
 } from './WhiteboardNodes'
 import {
@@ -66,6 +67,7 @@ import {
   toFlowEdges,
   toFlowNodes,
   type WhiteboardCardContent,
+  type WhiteboardCardFact,
 } from './whiteboard-flow'
 
 const NODE_TYPES = { card: WhiteboardCardNode, section: WhiteboardSectionNode }
@@ -90,7 +92,10 @@ export interface LinxWhiteboardCanvasProps {
   cards: readonly StructuredCardProjection[]
   canvasState: WhiteboardCanvasState
   relation?: LinxWhiteboardRelationController
+  /** The main properties shown on a row card that has no body. */
+  rowFacts?: (subject: string) => readonly WhiteboardCardFact[]
   onCommitCardBody?: (subject: string, markdown: string) => void | Promise<void>
+  onCommitCardTitle?: (subject: string, title: string) => void | Promise<void>
 }
 
 function isSide(value: string | null | undefined): value is WhiteboardCanvasSide {
@@ -126,7 +131,9 @@ function WhiteboardCanvasInner({
   cards,
   canvasState,
   relation,
+  rowFacts,
   onCommitCardBody,
+  onCommitCardTitle,
 }: LinxWhiteboardCanvasProps) {
   const { canvas, updateCanvas, status, conflict, takeLatest, keepMine, podRootUri } = canvasState
   const flow = useReactFlow()
@@ -182,7 +189,7 @@ function WhiteboardCanvasInner({
     if (!uri) return { kind: 'file', title: '', body: '', className: null, state: 'ok', uri: null, subject: null }
     const card = cardByUri.get(uri)
     if (card) {
-      return { kind: 'row', title: card.title, body: card.summary, className: card.className, state: 'ok', uri, subject: card.subject }
+      return { kind: 'row', title: card.title, body: card.summary, facts: rowFacts?.(card.subject), className: card.className, state: 'ok', uri, subject: card.subject }
     }
     const otherRow = space.rowByUri.get(uri)
     if (otherRow) {
@@ -192,7 +199,7 @@ function WhiteboardCanvasInner({
       return { kind: 'row', title: '', body: '', className: null, state: 'deleted', uri, subject: null }
     }
     return { kind: 'file', title: displayResourceName(fileNameFromUri(uri)), body: filePreviews.get(uri) ?? '', className: null, state: 'ok', uri, subject: null }
-  }, [cardByUri, documentBase, filePreviews, podRootUri, space.rowByUri])
+  }, [cardByUri, documentBase, filePreviews, podRootUri, rowFacts, space.rowByUri])
 
   const nodeIdBySubject = useMemo(() => {
     const map = new Map<string, string>()
@@ -210,7 +217,7 @@ function WhiteboardCanvasInner({
   )
 
   // --- editing -------------------------------------------------------------------------
-  const commitBody = useCallback((id: string, markdown: string) => {
+  const commitBody = useCallback((id: string, markdown: string, title?: string) => {
     const node = canvasRef.current.nodes.find((candidate) => candidate.id === id)
     setEditingId(null)
     if (!node) return
@@ -219,8 +226,10 @@ function WhiteboardCanvasInner({
       return
     }
     const content = contentOf(node)
-    if (content.subject) void onCommitCardBody?.(content.subject, markdown)
-  }, [contentOf, onCommitCardBody, updateCanvas])
+    if (!content.subject) return
+    if (title !== undefined && title !== content.title) void onCommitCardTitle?.(content.subject, title)
+    if (markdown.trim() !== content.body.trim()) void onCommitCardBody?.(content.subject, markdown)
+  }, [contentOf, onCommitCardBody, onCommitCardTitle, updateCanvas])
 
   const cardUrisInOrder = useCallback(() => (
     [...canvasRef.current.nodes]
@@ -250,7 +259,9 @@ function WhiteboardCanvasInner({
       const node = canvasRef.current.nodes.find((candidate) => candidate.id === id)
       if (!node) return false
       if (node.type === 'text') return true
-      return Boolean(onCommitCardBody && contentOf(node).subject)
+      const content = contentOf(node)
+      if (content.kind === 'file') return isEditableWhiteboardDocument(content.uri)
+      return Boolean(onCommitCardBody && content.subject)
     },
   }), [commitBody, contentOf, editingId, onCommitCardBody, openCard, tool, updateCanvas])
 
@@ -515,7 +526,13 @@ function WhiteboardCanvasInner({
             const bounds = wrapperRef.current?.getBoundingClientRect()
             setPicker({ edgeId: edge.id, left: event.clientX - (bounds?.left ?? 0), top: event.clientY - (bounds?.top ?? 0) })
           }}
-          onPaneClick={() => { setPicker(null); setEditingId(null) }}
+          onPaneClick={() => {
+            setPicker(null)
+            // Leaving the card saves what was typed: the editor saves when it loses focus.
+            const active = document.activeElement
+            if (active instanceof HTMLElement && active.closest('[data-whiteboard-card]')) active.blur()
+            setEditingId(null)
+          }}
           connectionMode={ConnectionMode.Loose}
           panActivationKeyCode={null}
           zoomOnDoubleClick={false}
