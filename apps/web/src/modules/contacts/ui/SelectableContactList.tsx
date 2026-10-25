@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Search, Check, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isAgentContact, type ContactRow } from '@undefineds.co/models'
+import { contactDisplayName } from '../domain/contact-display-name'
 
 interface SelectableContactListProps {
   title: string
@@ -69,7 +70,7 @@ function SelectableItem({
   onToggle: () => void
 }) {
   const isAgent = isAgentContact(contact)
-  const displayName = contact.alias || contact.name
+  const displayName = contactDisplayName(contact)
 
   return (
     <button

@@ -6,6 +6,7 @@ import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { buildAgentHomePath } from '@/lib/data/agent-home'
 import { useSession } from '@/providers/solid-session-context'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
+import { displayNameOf } from '../../domain/display-name'
 import { getPrimaryParticipantUri } from '../../utils/chat-participants'
 import { LINX_DEFAULT_SECRETARY, isLinxDefaultSecretaryChat, useChatList } from '../../collections'
 
@@ -91,16 +92,7 @@ export function useResolveConversationIdentity(input: {
   }, [agent?.name, agentId, agentResourceUri, chat?.title, contact?.id, input.chatId, input.threadId, input.threadUri, isSecretary, participants, podBaseUrl, webId])
 }
 
-/** name@provider from a WebID; the address itself is never shown. */
-export function displayNameOf(webId: string): string {
-  try {
-    const url = new URL(webId)
-    const first = url.pathname.split('/').filter(Boolean)[0]
-    return first ? `${decodeURIComponent(first)}@${url.host}` : url.host
-  } catch {
-    return webId
-  }
-}
+export { displayNameOf }
 
 export function ConversationProvider({ value, children }: { value: ConversationIdentity; children: ReactNode }) {
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>

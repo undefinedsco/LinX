@@ -5,6 +5,7 @@ import { isAgentContact, isGroupContact, type ContactRow } from '@undefineds.co/
 import { displayAssistantName } from '@/lib/assistant-name'
 import { contactCollection } from '@/modules/contacts'
 import { parseAccountInput } from '@/modules/contacts/domain/account-address'
+import { contactDisplayName } from '@/modules/contacts/domain/contact-display-name'
 
 export interface ShareContact {
   id: string
@@ -21,7 +22,7 @@ export function useShareContacts() {
     for (const row of (query.data ?? []) as ContactRow[]) {
       if (!row?.id || row.deletedAt || isGroupContact(row) || !row.about) continue
       const isAssistant = isAgentContact(row)
-      const stored = row.alias?.trim() || row.name?.trim() || ''
+      const stored = contactDisplayName(row)
       contacts.push({
         id: row.id,
         webId: row.about,

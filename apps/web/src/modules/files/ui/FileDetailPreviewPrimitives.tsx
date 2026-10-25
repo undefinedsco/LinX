@@ -48,13 +48,15 @@ const MARKDOWN_PROSE = 'text-sm leading-6 text-foreground/90 [&_blockquote]:my-2
 export function MarkdownPreview({
   text,
   onOpenLink,
+  className,
 }: {
   text: string | null
   onOpenLink?: (href: string) => boolean
+  className?: string
 }) {
   if (!text) return null
   return (
-    <div className={MARKDOWN_PROSE} data-markdown-preview="true">
+    <div className={className ?? MARKDOWN_PROSE} data-markdown-preview="true">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
