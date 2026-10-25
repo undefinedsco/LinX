@@ -15,6 +15,7 @@ import {
 import { Search, MoreHorizontal, UserPlus, Bot, Crown, Shield } from 'lucide-react'
 import type { ContactRow } from '@undefineds.co/models'
 import { isAgentContact } from '@undefineds.co/models'
+import { contactDisplayName } from '../domain/contact-display-name'
 
 export type MemberRole = 'owner' | 'admin' | 'member'
 
@@ -66,7 +67,7 @@ function MemberItem({ member, isCurrentUser, canManage, canSetRole, onViewProfil
 }) {
   const { contact, memberRef, role } = member
   const isAgent = isAgentContact(contact)
-  const displayName = contact.alias || contact.name || '?'
+  const displayName = contactDisplayName(contact) || '?'
 
   return (
     <div className="group flex items-center gap-2.5 px-3 py-2 hover:bg-muted/50 transition-colors">

@@ -7,6 +7,7 @@ import { contactCollection, contactOps } from '../../data/collections'
 import { probeContactAccess, readPublicKnows } from '../../data/contact-access'
 import { formatAccountAddress } from '../../domain/account-address'
 import { hasAnyAccess } from '../../domain/contact-access'
+import { contactDisplayName } from '../../domain/contact-display-name'
 
 export interface PublicContactEntry {
   webId: string
@@ -38,7 +39,7 @@ export function useWhoCanSeeMe(): WhoCanSeeMe {
     for (const row of (contacts.data ?? []) as ContactRow[]) {
       if (!row?.id || row.deletedAt || isGroupContact(row) || isAgentContact(row)) continue
       if (!/^https?:\/\//i.test(row.about ?? '')) continue
-      byWebId.set(row.about as string, row.alias?.trim() || row.name?.trim() || '')
+      byWebId.set(row.about as string, contactDisplayName(row))
     }
     return byWebId
   }, [contacts.data])

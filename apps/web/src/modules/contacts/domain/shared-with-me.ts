@@ -11,6 +11,8 @@ export type SharedWithMeKind = 'file' | 'folder'
 export interface SharedWithMeItem {
   /** The saved contact name of the person who shares it. */
   ownerName: string
+  /** WebID of that person; lets the name follow later remark edits. */
+  ownerWebId?: string
   /** Where to open it. */
   uri: string
   /** Plain name for the list ("项目计划.pdf"). */
@@ -57,4 +59,12 @@ export function sharedItemsFromListing(ownerName: string, containedUrls: readonl
   return items.sort((left, right) => (
     left.kind === right.kind ? left.name.localeCompare(right.name, 'zh-Hans-CN') : left.kind === 'folder' ? -1 : 1
   ))
+}
+
+/** Re-applies current contact names to a cached listing, so a new remark shows without re-reading Pods. */
+export function applyOwnerNames(items: readonly SharedWithMeItem[], namesByWebId: ReadonlyMap<string, string>): SharedWithMeItem[] {
+  return items.map((item) => {
+    const ownerName = item.ownerWebId ? namesByWebId.get(item.ownerWebId) : undefined
+    return ownerName && ownerName !== item.ownerName ? { ...item, ownerName } : item
+  })
 }
