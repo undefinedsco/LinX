@@ -223,3 +223,75 @@ test('a note cited through 问 LinX lists that chat under 用过它的工作', a
   await work.locator('[data-card-work-use]').first().click()
   await expect(page.locator('[data-role="user"]').filter({ hasText: '这条为什么不自己做？' })).toBeVisible({ timeout: 30_000 })
 })
+
+test('来源 in a made card opens the source note at its line inside LinX, and the title shows once', async ({ page }) => {
+  await loginToSeededXpod(page, runtime)
+  await expectSecretaryInitialized(page)
+  // A note and the card 做成卡片 makes from it (same shape: "# <excerpt>", the quote, a link with the line).
+  const base = await page.evaluate(() => String((window as any).__SOLID_DB_POD_URL__).replace(/\/?$/, '/'))
+  await pod(page, 'notes/weekly.md', { method: 'PUT', type: 'text/markdown', body: '# weekly\n\n预算要在周五前确认。\n' })
+  await pod(page, `${encodeURIComponent('摘录')}/${encodeURIComponent('预算要在周五前确认 10-24.md')}`, {
+    method: 'PUT',
+    type: 'text/markdown',
+    body: `# 预算要在周五前确认\n\n> 预算要在周五前确认。\n\n来源：[weekly · 第 3 行](${base}notes/weekly.md#line=3)\n`,
+  })
+  await goToFiles(page)
+  const search = page.getByRole('textbox', { name: '搜索文件树' })
+  const hits = page.getByRole('region', { name: '正文里的结果' })
+  const card = page.getByRole('dialog')
+  const appOrigin = new URL(page.url()).origin
+
+  // The note's own "# weekly" is the title: the popup does not add a second one above it.
+  await search.fill('预算要在周五')
+  await hits.getByRole('button').filter({ hasText: 'weekly' }).first().click({ timeout: 30_000 })
+  await expect(card.locator('[data-card-title]')).toHaveText('weekly', { timeout: 20_000 })
+  await expect(card.locator('[data-card-title]')).toHaveClass(/sr-only/)
+  await expect(card.locator('h1')).toHaveCount(1)
+  await expect(async () => {
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 1500 })
+  }).toPass({ timeout: 15_000 })
+
+  // The made card is found by name: readable name and place (no ".md", no raw folder address).
+  await search.fill('')
+  await search.fill('预算要在周五前确认 10')
+  const made = page.getByRole('tree').getByRole('treeitem').filter({ hasText: '预算要在周五前确认' })
+  await expect(made).toContainText('我的空间 / 摘录', { timeout: 30_000 })
+  await expect(made).not.toContainText('.md')
+  await expect(made).not.toContainText('http')
+  await made.first().click()
+
+  // 来源 stays in the app and shows the source note at line 3.
+  await page.getByRole('link', { name: /weekly/ }).first().click()
+  expect(new URL(page.url()).origin).toBe(appOrigin)
+  await expect(card.locator('[data-card-title]')).toHaveText('weekly', { timeout: 20_000 })
+  await expect(card.getByText('第 3 行')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => {
+    const highlight = (CSS as any).highlights?.get('card-locator')
+    return highlight ? [...highlight].map((range: Range) => range.toString()).join('') : ''
+  }), { timeout: 15_000 }).toContain('预算要在周五前确认')
+})
+
+test('a new document saves itself while typing, with no AI review button', async ({ page }) => {
+  await loginToSeededXpod(page, runtime)
+  await expectSecretaryInitialized(page)
+  await goToFiles(page)
+
+  await page.getByRole('button', { name: '添加' }).first().click()
+  await page.getByRole('menuitem', { name: '新建文档' }).click()
+  await page.getByRole('dialog').getByRole('textbox').fill('随手记')
+  await page.getByRole('dialog').getByRole('button', { name: /创建|确定/ }).click()
+  await expect.poll(async () => (await pod(page, encodeURIComponent('随手记.md'))).status, { timeout: 20_000 }).toBe(200)
+
+  const editor = page.getByRole('dialog').first()
+  await expect(editor.locator('[data-document-editor-file-title]')).toHaveText('随手记', { timeout: 20_000 })
+  await expect(editor.getByRole('button', { name: /AI 修改审批/ })).toHaveCount(0)
+
+  await editor.locator('.bn-editor').first().click()
+  await page.keyboard.type('自动保存的一句话')
+  await expect(editor.locator('[data-document-editor-save-status="saved"]')).toBeVisible({ timeout: 15_000 })
+  await expect(editor.getByText('未保存')).toHaveCount(0)
+  // Saved without closing the dialog.
+  await expect.poll(async () => (await pod(page, encodeURIComponent('随手记.md'))).text, { timeout: 20_000 }).toContain('自动保存的一句话')
+  await expect(editor.getByRole('button', { name: /AI 修改审批/ })).toHaveCount(0)
+})

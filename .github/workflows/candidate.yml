@@ -116,6 +116,7 @@ jobs:
             specs/files-kanban-interactions.spec.ts \
             specs/files-card-dialog.spec.ts \
             specs/files-table-undo.spec.ts \
+            specs/files-whiteboard.spec.ts \
             specs/deployed-signed-in.spec.ts
       - uses: actions/upload-artifact@v4
         if: failure()

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   cardLinkNeedles,
+  projectBoardBacklinks,
   projectCitingMessages,
   projectRowBacklinks,
   projectTextBacklinks,
@@ -96,5 +97,19 @@ describe('citing messages', () => {
     expect(projectWorkUses(projectCitingMessages(messages, NOTE))).toEqual([
       { chatRef: chat1, count: 2, quote: '更晚的', lastAt: '2026-10-02T00:00:00Z' },
     ])
+  })
+})
+
+describe('projectBoardBacklinks', () => {
+  it('lists the boards the card sits on as 在白板上, opening the table the board views', () => {
+    expect(projectBoardBacklinks([
+      { boardUri: 'https://pod.example/.data/views/whiteboard/tasks.canvas', viewOf: 'https://pod.example/tasks.ttl', name: 'tasks' },
+    ])).toEqual([{
+      key: 'board:https://pod.example/.data/views/whiteboard/tasks.canvas',
+      uri: 'https://pod.example/tasks.ttl',
+      title: 'tasks',
+      hint: '在白板上',
+      board: { viewOf: 'https://pod.example/tasks.ttl', boardUri: 'https://pod.example/.data/views/whiteboard/tasks.canvas' },
+    }])
   })
 })

@@ -20,6 +20,8 @@ export interface CardBacklink {
   hint: string
   /** 1-based line of the link in the opened text, so the popup can jump there. */
   line?: number
+  /** Set for a whiteboard the card sits on: opening it shows the board instead of a card. */
+  board?: { viewOf: string | null; boardUri: string }
 }
 
 export interface CardBacklinkText {
@@ -220,4 +222,17 @@ export function projectWorkUses(citing: readonly CardCitingMessage[]): CardWorkU
     }
   }
   return [...byChat.values()].sort((a, b) => (b.lastAt ?? '').localeCompare(a.lastAt ?? ''))
+}
+
+/** Whiteboards the card sits on, listed with the other things that point at it. */
+export function projectBoardBacklinks(
+  placements: ReadonlyArray<{ boardUri: string; viewOf: string | null; name: string }>,
+): CardBacklink[] {
+  return placements.map((placement) => ({
+    key: `board:${placement.boardUri}`,
+    uri: placement.viewOf ?? placement.boardUri,
+    title: placement.name,
+    hint: '在白板上',
+    board: { viewOf: placement.viewOf, boardUri: placement.boardUri },
+  }))
 }

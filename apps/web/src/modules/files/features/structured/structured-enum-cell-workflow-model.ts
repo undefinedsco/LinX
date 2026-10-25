@@ -163,23 +163,40 @@ export function projectStructuredEnumCellOptionMenuModel({
   }
 }
 
+/** Enter picks the option the arrows are on, else the one named exactly, else creates what was typed. */
 export function planStructuredEnumSelectorInputKeyAction({
   exactSearchOptionLabel,
+  highlightedOptionLabel = null,
   key,
   normalizedSearch,
 }: {
   exactSearchOptionLabel: string | null
+  highlightedOptionLabel?: string | null
   key: string
   normalizedSearch: string
 }): StructuredEnumSelectorInputKeyAction {
   if (key === 'Escape') return { kind: 'cancel' }
-  if (key === 'Enter' && normalizedSearch) {
-    return {
-      kind: 'add-option',
-      value: exactSearchOptionLabel ?? normalizedSearch,
-    }
+  if (key === 'Enter') {
+    const value = highlightedOptionLabel ?? (normalizedSearch ? exactSearchOptionLabel ?? normalizedSearch : null)
+    if (value) return { kind: 'add-option', value }
   }
   return { kind: 'noop' }
+}
+
+/** Arrow keys walk the listed options (-1 = none); they stop at both ends. */
+export function moveStructuredEnumHighlight({
+  current,
+  key,
+  optionCount,
+}: {
+  current: number
+  key: string
+  optionCount: number
+}): number {
+  if (optionCount === 0) return -1
+  if (key === 'ArrowDown') return Math.min(current + 1, optionCount - 1)
+  if (key === 'ArrowUp') return Math.max(current - 1, -1)
+  return current
 }
 
 export function planStructuredEnumSelectorOptionKeyAction({

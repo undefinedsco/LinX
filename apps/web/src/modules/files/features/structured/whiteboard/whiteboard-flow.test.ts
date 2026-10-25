@@ -4,12 +4,14 @@ import { findFreeWhiteboardPosition, type WhiteboardCanvas } from '../../../doma
 import {
   moveCanvasNodes,
   nodesInsideSection,
+  projectWhiteboardRowFacts,
   removeCanvasNodes,
   toFlowEdges,
   toFlowNodes,
   type WhiteboardCardContent,
 } from './whiteboard-flow'
 import { whiteboardRelationLabel } from './whiteboard-relations'
+import { projectStructuredResourceTable } from '../../../domain/structured/structured-table'
 
 const canvas: WhiteboardCanvas = {
   nodes: [
@@ -70,5 +72,39 @@ describe('findFreeWhiteboardPosition', () => {
     const full = [card('a', 24, 24), card('b', 348, 24), card('c', 24, 228), card('d', 348, 228)]
     const position = findFreeWhiteboardPosition({ nodes: full, area: { x: 0, y: 0, width: 700, height: 440 } })
     expect(position).toEqual({ x: 24, y: 228 + 180 + 24 })
+  })
+})
+
+describe('projectWhiteboardRowFacts', () => {
+  const documentUri = 'https://pod.example/tasks.ttl'
+  const projection = projectStructuredResourceTable({
+    uri: documentUri,
+    mimeType: 'text/turtle',
+    source: [
+      '@prefix dcterms: <http://purl.org/dc/terms/> .',
+      '@prefix t: <https://pod.example/tasks.ttl#> .',
+      '<#a> dcterms:title "写方案" ; t:p-se49e298 "进行中" ; t:p-1234567a "周五" ; t:empty "" .',
+      '<#b> dcterms:title "无属性" .',
+    ].join('\n'),
+  })
+  const labels: Record<string, string> = {
+    'p-se49e298': '状态',
+    'p-1234567a': '截止',
+  }
+  const labelOf = (predicate: string) => labels[predicate.split(/[#/:]/).pop() ?? ''] ?? predicate.split(/[#/:]/).pop() ?? predicate
+
+  it('lists the columns by their names, not the title or internal ids', () => {
+    const facts = projectWhiteboardRowFacts({ projection, documentUri, subject: '#a', labelOf })
+    expect(facts).toEqual([
+      { label: '截止', value: '周五' },
+      { label: '状态', value: '进行中' },
+    ])
+  })
+
+  it('leaves out a column that has no human name and caps the lines', () => {
+    expect(projectWhiteboardRowFacts({ projection, documentUri, subject: '#a', labelOf: (predicate) => predicate.split(/[#/:]/).pop() ?? '' })).toEqual([])
+    expect(projectWhiteboardRowFacts({ projection, documentUri, subject: '#a', labelOf, limit: 1 })).toHaveLength(1)
+    expect(projectWhiteboardRowFacts({ projection, documentUri, subject: '#b', labelOf })).toEqual([])
+    expect(projectWhiteboardRowFacts({ projection, documentUri, subject: '#missing', labelOf })).toEqual([])
   })
 })

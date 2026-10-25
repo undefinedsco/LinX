@@ -117,6 +117,7 @@ export function useFilesTreePaneController() {
     onAddMenuOpenChange: setAddMenuOpen,
     onSearchTextChange: setSearchText,
     openSearchResult,
+    podRootUri,
     rootError: rootEntriesQuery.error,
     rootLoading: rootEntriesQuery.isLoading,
     searchActive,

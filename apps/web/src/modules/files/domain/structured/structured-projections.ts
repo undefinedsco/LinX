@@ -93,7 +93,7 @@ function rowNameOfSubject(subject: string): string {
   }
 }
 
-const TITLE_PREDICATES = [
+export const STRUCTURED_CARD_TITLE_PREDICATES = [
   'title',
   'name',
   'label',
@@ -132,7 +132,7 @@ const SUMMARY_PREDICATES = [
 
 export function projectStructuredCards(projection: ProjectionWithScope): StructuredCardProjection[] {
   return projection.rows.map((row) => {
-    const title = firstValue(row, TITLE_PREDICATES)
+    const title = firstValue(row, STRUCTURED_CARD_TITLE_PREDICATES)
       ?? rowNameOfSubject(row.subject)
     const classValue = firstValue(row, CLASS_PREDICATES) ?? projection.className ?? null
     const className = classValue && !isMachineName(localName(classValue)) ? classValue : null

@@ -34,6 +34,7 @@ export function useStructuredSubjectNavigationController({
   structuredSortDirection,
   hiddenPredicates,
   kanbanGroupPredicate,
+  predicateLabel,
 }: {
   file: Pick<FilesDetail, 'uri'>
   viewportRef: RefObject<HTMLDivElement | null>
@@ -48,6 +49,7 @@ export function useStructuredSubjectNavigationController({
   structuredSortDirection: StructuredSortDirection
   hiddenPredicates: Set<string>
   kanbanGroupPredicate: string | null
+  predicateLabel?: (predicate: string) => string
 }) {
   const filesRouteBridge = useFilesRouteBridge()
   const openStructuredSubjectResource = useFilesStore((state) => state.openStructuredSubjectResource)
@@ -139,9 +141,10 @@ export function useStructuredSubjectNavigationController({
         visibleProjection: viewMode === 'table' ? tableProjection : effectiveViewProjection,
         subject,
         tableName: displayResourceName(getEntryName(file.uri.split('#')[0] ?? file.uri)),
+        predicateLabel,
       }),
     })
-  }, [currentStructuredScrollTop, effectiveViewProjection, navigateStructuredSubject, file.uri, projection, tableProjection, viewMode])
+  }, [currentStructuredScrollTop, effectiveViewProjection, navigateStructuredSubject, file.uri, predicateLabel, projection, tableProjection, viewMode])
 
   const openAlternativeViewSubject = useCallback((subject: string, options?: StructuredSubjectOpenOptions) => {
     const openRequest = projectStructuredAlternativeSubjectOpenRequest({

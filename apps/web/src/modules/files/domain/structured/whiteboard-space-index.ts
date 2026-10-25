@@ -151,3 +151,39 @@ export function projectWhiteboardUsedOnLabel(boardNames: readonly string[] | und
   const shown = boardNames.slice(0, 2).map((name) => `“${name}”`).join('、')
   return boardNames.length > 2 ? `已在${shown}等 ${boardNames.length} 块白板上` : `已在${shown}白板上`
 }
+
+export interface WhiteboardPlacement {
+  /** The board's own file. */
+  boardUri: string
+  /** The table or folder the board is a view of; opening it in 白板 shows the board. */
+  viewOf: string | null
+  name: string
+}
+
+function sameCardAddress(left: string, right: string) {
+  if (left === right) return true
+  const decode = (value: string) => { try { return decodeURI(value) } catch { return value } }
+  return decode(left) === decode(right)
+}
+
+/**
+ * The boards a card sits on (R6 K2 "在白板上"): `boards` are the canvas files of the space as
+ * read from the Pod. A board holding the card twice is listed once.
+ */
+export function projectWhiteboardPlacements(
+  boards: ReadonlyArray<{ uri: string; content: string | null | undefined }>,
+  { cardUri, podRootUri }: { cardUri: string; podRootUri: string | null | undefined },
+): WhiteboardPlacement[] {
+  const placements: WhiteboardPlacement[] = []
+  for (const board of boards) {
+    const parsed = parseWhiteboardCanvas(board.content)
+    if (!parsed) continue
+    const holds = parsed.canvas.nodes.some((node) => {
+      if (node.type === 'group') return false
+      const uri = resolveWhiteboardCardNodeUri(node, podRootUri)
+      return Boolean(uri && sameCardAddress(uri, cardUri))
+    })
+    if (holds) placements.push({ boardUri: board.uri, viewOf: parsed.viewOf, name: whiteboardBoardName(parsed.viewOf, board.uri) })
+  }
+  return placements
+}

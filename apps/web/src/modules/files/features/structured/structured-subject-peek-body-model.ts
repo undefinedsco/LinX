@@ -43,7 +43,7 @@ function projectStructuredSubjectPeekBodyChrome() {
 export function projectStructuredSubjectPeekTechnicalDetailsToggle(technicalDetailsOpen: boolean) {
   return {
     expanded: technicalDetailsOpen,
-    stateLabel: technicalDetailsOpen ? '收起' : 'URI',
+    stateLabel: technicalDetailsOpen ? '收起' : '展开',
   }
 }
 
@@ -56,7 +56,7 @@ export function projectStructuredSubjectPeekBodyModel(peek: StructuredSubjectPee
   }))
   const predicateRows = peek.predicates.map((fact) => ({
     key: fact.predicate,
-    label: localPredicateLabel(fact.predicate),
+    label: fact.label || localPredicateLabel(fact.predicate),
     predicate: fact.predicate,
     title: fact.values.join(', '),
     values: displayPeekFactValues(fact.values),

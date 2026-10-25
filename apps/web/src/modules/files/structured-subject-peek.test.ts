@@ -48,3 +48,22 @@ describe('structured subject peek facts', () => {
     expect(facts.typeName).toBe('任务')
   })
 })
+
+describe('structured subject peek property names', () => {
+  const projection = {
+    prefixes: {},
+    predicates: ['p-se49e298'],
+    rows: [{ subject: '#a', cells: [{ predicate: 'p-se49e298', values: ['"进行中"'] }] }],
+    warnings: [],
+  } as never
+
+  it('names a property by its column, not its internal id', () => {
+    const facts = deriveStructuredSubjectPeekFacts({
+      projection,
+      visibleProjection: projection,
+      subject: '#a',
+      predicateLabel: (predicate) => (predicate === 'p-se49e298' ? '状态' : predicate),
+    })
+    expect(facts.predicates).toEqual([{ predicate: 'p-se49e298', values: ['"进行中"'], label: '状态' }])
+  })
+})

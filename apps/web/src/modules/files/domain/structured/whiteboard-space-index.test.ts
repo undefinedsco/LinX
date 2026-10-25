@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildWhiteboardCardIndex,
   projectWhiteboardLibraryFiles,
+  projectWhiteboardPlacements,
   isWhiteboardSpaceTableEntry,
   projectWhiteboardSpaceRows,
   projectWhiteboardUsedOnLabel,
@@ -69,5 +70,27 @@ describe('whiteboard space index', () => {
     expect(isWhiteboardSpaceTableEntry({ kind: 'resource', semanticKind: 'structured-data', mimeType: 'text/turtle', uri: `${POD}a.ttl` } as never)).toBe(true)
     expect(isWhiteboardSpaceTableEntry({ kind: 'resource', semanticKind: 'structured-data', mimeType: 'text/turtle', uri: `${POD}.data/proposals/x.ttl` } as never)).toBe(false)
     expect(isWhiteboardSpaceTableEntry({ kind: 'container', semanticKind: 'folder', mimeType: null, uri: `${POD}a/` } as never)).toBe(false)
+  })
+})
+
+describe('whiteboard placements of one card', () => {
+  const board = (viewOf: string, nodes: unknown[]) => JSON.stringify({ nodes, edges: [], linx: { version: 1, viewOf } })
+  const card = (id: string, file: string, subpath?: string) => ({ id, type: 'file', x: 0, y: 0, width: 10, height: 10, file, ...(subpath ? { subpath } : {}) })
+
+  it('lists every board that holds the card once, with the board it is a view of', () => {
+    const placements = projectWhiteboardPlacements([
+      { uri: 'b1', content: board(`${POD}读书会.ttl`, [card('n1', '笔记.md'), card('n2', '笔记.md')]) },
+      { uri: 'b2', content: board(`${POD}排班.ttl`, [card('n1', '读书会.ttl', '#a')]) },
+      { uri: 'b3', content: board(`${POD}空.ttl`, [{ id: 'g', type: 'group', x: 0, y: 0, width: 10, height: 10 }]) },
+      { uri: 'b4', content: 'not json' },
+    ], { cardUri: `${POD}笔记.md`, podRootUri: POD })
+    expect(placements).toEqual([{ boardUri: 'b1', viewOf: `${POD}读书会.ttl`, name: '读书会' }])
+  })
+
+  it('matches a row card whichever way its address is spelled', () => {
+    const content = board(`${POD}排班.ttl`, [card('n1', '读书会.ttl', '#周六')])
+    const encoded = `${POD}${encodeURI('读书会.ttl')}#${encodeURIComponent('周六')}`
+    expect(projectWhiteboardPlacements([{ uri: 'b2', content }], { cardUri: encoded, podRootUri: POD })).toHaveLength(1)
+    expect(projectWhiteboardPlacements([{ uri: 'b2', content }], { cardUri: `${POD}读书会.ttl#其它`, podRootUri: POD })).toHaveLength(0)
   })
 })

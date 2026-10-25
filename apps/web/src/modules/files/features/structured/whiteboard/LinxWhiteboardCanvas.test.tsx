@@ -10,6 +10,15 @@ const mocks = vi.hoisted(() => ({
   space: { rows: [] as Array<Record<string, unknown>>, boardsByCard: new Map<string, string[]>(), rowByUri: new Map<string, Record<string, unknown>>(), loading: false },
 }))
 
+vi.mock('./WhiteboardBodyEditor', () => ({
+  default: ({ markdown, title, onCommit }: { markdown: string; title?: string; onCommit: (markdown: string, title?: string) => void }) => (
+    <div data-testid="body-editor" data-title={title ?? ''}>
+      {markdown}
+      <button type="button" onClick={() => onCommit('新正文', title === undefined ? undefined : '新标题')}>保存</button>
+    </div>
+  ),
+}))
+
 vi.mock('../../../data/queries', () => ({
   useWhiteboardSpace: () => mocks.space,
   useFilesPodSearchEntries: () => ({ data: [{ uri: 'https://pod.example/docs/plan.md', name: 'plan.md', kind: 'resource', semanticKind: 'file', mimeType: 'text/markdown' }] }),
@@ -136,5 +145,67 @@ describe('LinxWhiteboardCanvas', () => {
     const { container } = render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={cards} canvasState={state} />)
     expect(container.querySelector('.react-flow__minimap')).toBeTruthy()
     expect(container.querySelector('.react-flow__controls')).toBeTruthy()
+  })
+
+  it('shows a row\'s main properties when it has no body, and the body when it has one', () => {
+    const rowFacts = (subject: string) => (subject === '#b' ? [{ label: '状态', value: '进行中' }] : [{ label: '状态', value: '搁置' }])
+    const withB: WhiteboardCanvas = {
+      nodes: [
+        { id: 'c1', type: 'file', file: 'data/people.ttl', subpath: '#a', x: 20, y: 40, width: 240, height: 140 },
+        { id: 'c3', type: 'file', file: 'data/people.ttl', subpath: '#b', x: 300, y: 40, width: 240, height: 140 },
+      ],
+      edges: [],
+    }
+    render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={cards} canvasState={makeState(withB)} rowFacts={rowFacts} />)
+    expect(screen.getByText('进行中')).toBeTruthy()
+    expect(screen.getByText('状态')).toBeTruthy()
+    expect(screen.queryByText('搁置')).toBeNull()
+    expect(screen.getByText('小团队不为一次活动承担长期维护负担。')).toBeTruthy()
+  })
+
+  it('edits a row card in place on double click: title and body go through the row writers', async () => {
+    const onCommitCardBody = vi.fn()
+    const onCommitCardTitle = vi.fn()
+    const { container } = render(
+      <LinxWhiteboardCanvas
+        documentUri={DOC}
+        model={model}
+        cards={cards}
+        canvasState={makeState(board)}
+        onCommitCardBody={onCommitCardBody}
+        onCommitCardTitle={onCommitCardTitle}
+      />,
+    )
+    fireEvent.doubleClick(container.querySelector('[data-whiteboard-card="c1"]') as HTMLElement)
+    const editor = await screen.findByTestId('body-editor')
+    expect(editor.getAttribute('data-title')).toBe('维护成本')
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(onCommitCardTitle).toHaveBeenCalledWith('#a', '新标题')
+    expect(onCommitCardBody).toHaveBeenCalledWith('#a', '新正文')
+    await waitFor(() => expect(screen.queryByTestId('body-editor')).toBeNull())
+  })
+
+  it('edits a note card in place and keeps the text in the board', async () => {
+    const note: WhiteboardCanvas = { nodes: [{ id: 't1', type: 'text', text: '旧内容', x: 10, y: 10, width: 220, height: 100 }], edges: [] }
+    const state = makeState(note)
+    const { container } = render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={cards} canvasState={state} />)
+    fireEvent.doubleClick(container.querySelector('[data-whiteboard-card="t1"]') as HTMLElement)
+    expect((await screen.findByTestId('body-editor')).getAttribute('data-title')).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    const next = (state.updateCanvas as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0](note) as WhiteboardCanvas
+    expect(next.nodes[0]).toMatchObject({ id: 't1', text: '新正文' })
+  })
+
+  it('does not edit a row in place when the table cannot be written', () => {
+    const { container } = render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={cards} canvasState={makeState(board)} />)
+    fireEvent.doubleClick(container.querySelector('[data-whiteboard-card="c1"]') as HTMLElement)
+    expect(screen.queryByTestId('body-editor')).toBeNull()
+  })
+
+  it('shows resize handles on the selected card only', () => {
+    const { container } = render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={cards} canvasState={makeState(board)} />)
+    expect(container.querySelector('[data-id="c1"] .react-flow__resize-control')).toBeNull()
+    fireEvent.click(container.querySelector('[data-id="c1"]') as HTMLElement)
+    expect(container.querySelectorAll('[data-id="c1"] .react-flow__resize-control.handle').length).toBe(4)
   })
 })

@@ -684,7 +684,7 @@ describe('FileDetailPane', () => {
     requestDefaultEditableFileSheetOpen()
     render(<FileDetailPane />)
 
-    expect(screen.getAllByText('README.md').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('README').length).toBeGreaterThan(0)
     const editorSheet = screen.getByRole('dialog', { name: 'Hello' })
     expect(editorSheet).toBeInTheDocument()
     expect(editorSheet).toHaveAttribute('data-document-editor-modal', 'true')
@@ -701,8 +701,8 @@ describe('FileDetailPane', () => {
     expect(screen.queryByLabelText('笔记标题')).not.toBeInTheDocument()
     expect(within(editorSheet).getByRole('heading', { name: 'Hello', level: 1 })).toBeInTheDocument()
     expect(within(sheetHeader).queryByText('text/markdown')).not.toBeInTheDocument()
-    expect(within(sheetHeader).getByText('README.md')).toBeInTheDocument()
-    expect(within(sheetHeader).getByText('README.md')).toHaveAttribute('data-document-editor-file-title', 'true')
+    expect(within(sheetHeader).getByText('README')).toBeInTheDocument()
+    expect(within(sheetHeader).getByText('README')).toHaveAttribute('data-document-editor-file-title', 'true')
     expect(within(sheetHeader).queryByText('https://pod.example/public/README.md')).not.toBeInTheDocument()
     expect(within(sheetHeader).queryByLabelText('文件详情 byline')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '富文本' })).not.toBeInTheDocument()
@@ -741,7 +741,7 @@ describe('FileDetailPane', () => {
     const editorSheet = screen.getByRole('dialog', { name: 'Hello' })
     const sheetHeader = within(editorSheet).getByLabelText('文件详情标题')
 
-    expect(within(sheetHeader).getByText('README.md')).toBeInTheDocument()
+    expect(within(sheetHeader).getByText('README')).toBeInTheDocument()
     expect(within(sheetHeader).queryByText('text/markdown')).not.toBeInTheDocument()
     expect(within(sheetHeader).queryByText('https://pod.example/public/README.md')).not.toBeInTheDocument()
     expect(within(sheetHeader).queryByLabelText('文件详情 byline')).not.toBeInTheDocument()

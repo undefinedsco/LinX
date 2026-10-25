@@ -4,6 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import type { FilesEntry } from '../../domain/resource/resource-model'
+import { displayContainerLocation, displayResourceName } from '../../domain/resource/resource-semantics'
 import { useFilesTreePaneController } from './useFilesTreePaneController'
 import { FilesAddMenu } from '../add/FilesAddMenu'
 import { FilesExplorerRow } from '../../ui/FilesExplorerRow'
@@ -68,10 +69,12 @@ function TreeSearchHeader({
 function TreeSearchResultRow({
   entry,
   isSelected,
+  podRootUri,
   onOpen,
 }: {
   entry: FilesEntry
   isSelected: boolean
+  podRootUri: string | null
   onOpen: () => void
 }) {
   const Icon = entry.kind === 'container' ? FolderOpen : FileText
@@ -95,10 +98,10 @@ function TreeSearchResultRow({
     >
       <span className="w-4.5" />
       <Icon strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+      <span className="min-w-0 flex-1 truncate">{displayResourceName(entry.name)}</span>
       {entry.parentUri ? (
-        <span className="min-w-0 max-w-[45%] shrink truncate text-[11px] text-muted-foreground" title={entry.parentUri}>
-          {entry.parentUri}
+        <span className="min-w-0 max-w-[45%] shrink truncate text-[11px] text-muted-foreground" title={displayContainerLocation(entry.parentUri, podRootUri)}>
+          {displayContainerLocation(entry.parentUri, podRootUri)}
         </span>
       ) : null}
     </div>
@@ -156,6 +159,7 @@ export function FilesTreePane({ forceExpanded = false }: MicroAppPaneProps & { f
                 key={entry.uri}
                 entry={entry}
                 isSelected={false}
+                podRootUri={tree.podRootUri}
                 onOpen={() => tree.openSearchResult(entry)}
               />
             ))}

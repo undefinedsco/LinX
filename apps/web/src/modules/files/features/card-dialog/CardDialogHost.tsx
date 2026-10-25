@@ -17,6 +17,8 @@ import { BlockNoteFileEditor } from '@/modules/files/ui/BlockNoteFileEditor'
 
 import {
   projectCardLocatorLabel,
+  projectCardLineQuote,
+  cardBodyLeadsWithTitle,
   projectCardSaveLabel,
   type CardColumnModel,
   type CardPropertyModel,
@@ -30,6 +32,7 @@ import { CardSelectionToolbar, CardTextViewer, useCardTextSelection } from './Ca
 import type { CardBacklink } from '../../domain/card/card-backlinks'
 import { NewCardDialog } from './NewCardDialog'
 import { useCardDialogController } from './useCardDialogController'
+import { useCardLinkOpener } from './useCardLinkOpener'
 import type { CardWorkUseRow } from './useCardBacklinks'
 
 const AUTOSAVE_MS = 800
@@ -267,7 +270,15 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
   const card = useCardDialogController(request)
   const bodyRef = useRef<HTMLDivElement>(null)
   const { selection } = useCardTextSelection(bodyRef)
-  useLocatorHighlight(bodyRef, request.locator?.quote, request.uri)
+  const openLink = useCardLinkOpener()
+  // A cited line of a note is lit up by its words (`#line=3` -> what line 3 says).
+  const highlightQuote = request.locator?.quote
+    ?? projectCardLineQuote(card.subject ? card.subject.bodyText : card.documentText, request.locator?.line)
+    ?? undefined
+  useLocatorHighlight(bodyRef, card.documentPlainText ? undefined : highlightQuote, request.uri)
+  // The body already opens with its own "# Title": show the title once.
+  const titleInBody = !card.documentPlainText
+    && cardBodyLeadsWithTitle(card.subject ? card.subject.bodyText : card.documentText, card.title)
   const locatorLabel = projectCardLocatorLabel(request.locator)
   const { siblings } = card
   // K2b 撤回: future work stops using this card; finished work and chats keep it.
@@ -316,6 +327,7 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
               content={{ inputFormat: 'markdownish', saveFormat: 'markdown', text: card.subject.bodyText }}
               editable
               hideStatusBar
+              onOpenLink={openLink}
               autoSaveDelayMs={AUTOSAVE_MS}
               onSaveText={card.saveSubjectBody}
               onSaveStatusChange={(status) => card.setSaveStatus(status === 'dirty' ? 'idle' : status)}
@@ -331,6 +343,7 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
               content={{ inputFormat: card.documentMimeType === 'text/html' ? 'html' : 'markdownish', saveFormat: 'markdown', text: card.documentText }}
               editable={card.documentEditable}
               hideStatusBar
+              onOpenLink={openLink}
               autoSaveDelayMs={AUTOSAVE_MS}
               onSaveText={card.documentEditable ? card.saveDocumentText : undefined}
               onSaveStatusChange={(status) => card.setSaveStatus(status === 'dirty' ? 'idle' : status)}
@@ -432,9 +445,9 @@ function CardDialog({ request }: { request: CardDialogRequest }) {
             </div>
           ) : null}
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-7 sm:px-[72px]">
-            {!card.loading && !card.blocking ? (
+            {!card.loading && !card.blocking && !titleInBody ? (
               <DialogTitle data-card-title="true" className="mb-4 break-words text-2xl font-semibold leading-tight">{card.title}</DialogTitle>
-            ) : <DialogTitle className="sr-only">{card.title}</DialogTitle>}
+            ) : <DialogTitle data-card-title="true" className="sr-only">{card.title}</DialogTitle>}
             {renderBody()}
           </div>
         </DialogContent>
