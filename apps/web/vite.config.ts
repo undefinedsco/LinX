@@ -67,7 +67,14 @@ function getPackageName(id: string): string | null {
   return segments[0] ?? null
 }
 
-function resolveVendorChunk(id: string): string | undefined {
+export function resolveVendorChunk(id: string): string | undefined {
+  // Virtual helper modules (vite preload helper, CJS interop) are imported by the
+  // entry chunk. Left unassigned they get hoisted into whichever manual chunk
+  // uses them first (vendor-mermaid, ~2.8MB), which makes first paint download it.
+  if (id.includes('vite/preload-helper') || id.includes('commonjsHelpers') || id.startsWith('\0')) {
+    return 'runtime-helpers'
+  }
+
   if (!id.includes('/node_modules/')) return undefined
 
   const pkg = getPackageName(id)
