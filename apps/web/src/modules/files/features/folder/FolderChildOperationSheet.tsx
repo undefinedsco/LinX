@@ -69,6 +69,7 @@ export function FolderChildOperationSheet({
               <input
                 name="folder-child-operation-value"
                 id="folder-child-operation-input"
+                autoFocus
                 value={value}
                 onChange={(event) => onValueChange(event.target.value)}
                 className="flex h-8 w-full rounded-md border border-input bg-background px-2.5 py-1 text-xs outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring"

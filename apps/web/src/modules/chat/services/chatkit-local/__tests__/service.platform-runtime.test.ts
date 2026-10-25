@@ -286,6 +286,7 @@ function createMockDb(
     exactCredentialRow?: Record<string, unknown>
     findByIdError?: Error
     contactAbout?: string
+    contactType?: string
     participantRef?: string
     providerCapabilities?: string[]
     selectError?: Error
@@ -299,7 +300,7 @@ function createMockDb(
   const contact = {
     id: 'contact-1',
     about: options.contactAbout ?? 'agent-1/',
-    contactType: 'agent',
+    contactType: options.contactType ?? 'agent',
   }
   gatewayModels = options.providerCapabilities
     ? [{ id: `${agent.provider}/${agent.model}`, owned_by: agent.provider, capabilities: options.providerCapabilities }]
@@ -1849,6 +1850,28 @@ describe('LocalChatKitService platform runtime routing', () => {
       expect.anything(),
     )
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本机空间')).toBe(true)
+  })
+
+  it('stores a message to a human (person) contact without invoking the AI', async () => {
+    const store = createMockStore()
+    const db = createMockDb({ provider: 'undefineds', model: 'undefineds/linx-lite' }, [], {
+      contactType: 'person',
+      contactAbout: 'http://localhost:39340/test/profile/card#me',
+    })
+    const authFetch = vi.fn(async () => createSseResponse(['data: [DONE]\n\n']))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: modelTraffic(authFetch) as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(events.some((event) => event.type === 'thread.item.done' && event.item?.type === 'user_message')).toBe(true)
+    expect(findAssistantDone(events)).toBeUndefined()
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(authFetch).not.toHaveBeenCalled()
   })
 
   it('resolves an Agent contact about IRI with findByIri instead of deriving a row id from the IRI', async () => {

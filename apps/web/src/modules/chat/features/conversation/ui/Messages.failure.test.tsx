@@ -9,6 +9,7 @@ import { AssistantMessage, UserMessage } from './Messages'
 
 vi.mock('./speaker', () => ({ useSpeakerName: () => null }))
 vi.mock('./MessageToolbar', () => ({ MessageToolbar: () => null }))
+vi.mock('./MessageActions', () => ({ MessageActionsBoundary: ({ children }: { children: unknown }) => children }))
 
 const FAIL = '消息生成失败。请稍后重试。'
 const THREAD = 'https://alice.example/.data/chat/c1/index.ttl#t1'

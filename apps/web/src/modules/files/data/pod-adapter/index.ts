@@ -1360,12 +1360,15 @@ export async function createFolderResource(db: SolidDatabase, input: FilesFolder
   }
 
   if (!response || response.status === 405 || response.status === 501) {
-    const fallback = await authFetch(containerUri, {
-      method: 'POST',
+    // PUT to the already-encoded URI: user-provided names must never go into headers (ISO-8859-1 only).
+    const fallback = await authFetch(folderUri, {
+      method: 'PUT',
       headers: {
+        'Content-Type': 'text/turtle',
         Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"',
-        Slug: folderName,
+        'If-None-Match': '*',
       },
+      body: '',
     })
     if (fallback.status === 409 || fallback.status === 412) {
       throw new FilesSaveConflictError(folderUri)

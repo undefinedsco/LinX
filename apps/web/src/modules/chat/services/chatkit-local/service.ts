@@ -1052,6 +1052,8 @@ export class LocalChatKitService {
   private async *respond(
     ...args: Parameters<LocalChatKitService['generateResponse']>
   ): AsyncIterable<ThreadStreamEvent> {
+    // A chat with a human contact only stores/delivers the message; no AI run.
+    if (await this.isHumanOnlyThread(args[0])) return
     const waitingItemId = generateId('waiting-toolbar')
     yield createWaitingToolbarEvent(args[0].id, waitingItemId)
     let waiting = true
@@ -1888,6 +1890,28 @@ export class LocalChatKitService {
         requestFailed: 'Failed to respond runtime tool call',
       },
     )
+  }
+
+  /** True when every counterpart resolves to a known non-agent (person) contact. */
+  private async isHumanOnlyThread(thread: ThreadMetadata): Promise<boolean> {
+    const chatId = readChatIdFromThread(thread)
+    if (!chatId || chatId === '__secretary__') return false
+    try {
+      const chat = await this.findChatById(chatId)
+      const refs = Array.isArray(chat?.participants)
+        ? chat.participants.filter((p: unknown): p is string => typeof p === 'string' && p.length > 0 && p !== this.webId)
+        : []
+      if (refs.length === 0) return false
+      for (const ref of refs) {
+        const contact = await this.findContactByRef(ref)
+        if (!contact) return false
+        const agent = await this.findAgentByRef(contact.about ?? ref)
+        if (agent) return false
+      }
+      return true
+    } catch {
+      return false
+    }
   }
 
   private async resolveThreadAgentConfig(thread: ThreadMetadata): Promise<ThreadAgentConfig | null> {
