@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FocusEvent } from 'react'
+import type { FocusEvent, MouseEvent } from 'react'
 import { BlockNoteView } from '@blocknote/mantine'
 import { zh } from '@blocknote/core/locales'
 import { useCreateBlockNote } from '@blocknote/react'
@@ -82,6 +82,7 @@ export function BlockNoteFileEditor({
   proposalLabel = '审批',
   autoSaveDelayMs,
   hideStatusBar = false,
+  onOpenLink,
 }: {
   content: BlockNoteEditorContent
   className?: string
@@ -97,6 +98,11 @@ export function BlockNoteFileEditor({
   autoSaveDelayMs?: number
   /** The host shows its own save state (the card header does). */
   hideStatusBar?: boolean
+  /**
+   * Links in the body never navigate the window. The host opens the ones it knows (a link into the
+   * person's Pod opens as a card) and returns true; every other http(s) link opens in a new tab.
+   */
+  onOpenLink?: (href: string) => boolean
 }) {
   const initialText = content.text ?? ''
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -176,6 +182,16 @@ export function BlockNoteFileEditor({
     }, autoSaveDelayMs)
   }
 
+  const handleLinkClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !(event.target instanceof Element)) return
+    const href = event.target.closest('a[href]')?.getAttribute('href')
+    if (!href || !/^https?:\/\//i.test(href)) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (onOpenLink?.(href)) return
+    window.open(href, '_blank', 'noopener,noreferrer')
+  }
+
   const handleBlur = async (event: FocusEvent<HTMLDivElement>) => {
     const nextFocusTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null
     if (nextFocusTarget && event.currentTarget.contains(nextFocusTarget)) return
@@ -222,6 +238,7 @@ export function BlockNoteFileEditor({
       data-testid="rich-text-file-editor"
       className={cn('rounded-md border border-border/40 bg-background shadow-sm', className)}
       onBlur={handleBlur}
+      onClickCapture={handleLinkClick}
     >
       {warning ? (
         <div

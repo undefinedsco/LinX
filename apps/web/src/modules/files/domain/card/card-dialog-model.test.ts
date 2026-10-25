@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { projectStructuredClassScope, projectStructuredResourceTable } from '../structured/structured-table'
 import {
+  cardBodyLeadsWithTitle,
+  parseCardPodLink,
+  projectCardLineQuote,
   findCardLocatorLines,
   formatCardTimestamp,
   projectCardExcerptNote,
@@ -21,6 +24,40 @@ import {
   projectCardSiblingNavigation,
   projectCardUnpreviewableState,
 } from './card-dialog-model'
+
+describe('links inside a card body', () => {
+  const root = 'https://pod.example/test/'
+
+  it('reads a link into the Pod as a card with the cited line', () => {
+    expect(parseCardPodLink('https://pod.example/test/%E4%BC%9A%E8%AE%AE.md#line=3', root)).toEqual({
+      uri: 'https://pod.example/test/%E4%BC%9A%E8%AE%AE.md',
+      locator: { line: 3 },
+    })
+    expect(parseCardPodLink('https://pod.example/test/a.pdf#page=2', root)?.locator).toEqual({ page: 2 })
+    expect(parseCardPodLink('https://pod.example/test/a.ttl#row1', root)).toEqual({ uri: 'https://pod.example/test/a.ttl#row1' })
+  })
+
+  it('leaves other sites, other pods and a missing pod alone', () => {
+    expect(parseCardPodLink('https://example.com/test/a.md', root)).toBeNull()
+    expect(parseCardPodLink('https://pod.example/other/a.md', root)).toBeNull()
+    expect(parseCardPodLink('not a url', root)).toBeNull()
+    expect(parseCardPodLink('https://pod.example/test/a.md', null)).toBeNull()
+  })
+
+  it('finds the words of a cited line without markdown marks', () => {
+    expect(projectCardLineQuote('# 标题\n\n- **维护**成本太高\n', 3)).toBe('维护成本太高')
+    expect(projectCardLineQuote('a\nb', 9)).toBeNull()
+    expect(projectCardLineQuote('a', undefined)).toBeNull()
+  })
+
+  it('knows when the body already starts with the title', () => {
+    expect(cardBodyLeadsWithTitle('# 会议纪要\n\n正文', '会议纪要')).toBe(true)
+    expect(cardBodyLeadsWithTitle('\n# 维护成本\n> 引用', '维护成本 10-24')).toBe(true)
+    expect(cardBodyLeadsWithTitle('# 别的标题\n正文', '会议纪要')).toBe(false)
+    expect(cardBodyLeadsWithTitle('正文\n# 会议纪要', '会议纪要')).toBe(false)
+    expect(cardBodyLeadsWithTitle('', '会议纪要')).toBe(false)
+  })
+})
 
 describe('card dialog model', () => {
   it('splits a subject uri into document and fragment', () => {

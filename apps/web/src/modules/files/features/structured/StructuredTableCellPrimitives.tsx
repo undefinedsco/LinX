@@ -11,12 +11,14 @@ import {
   useStructuredPredicateValueEditorController,
   type StructuredPredicateValueEditorKind,
 } from './useStructuredPredicateValueEditorController'
+import { useStructuredEnumHighlight } from './useStructuredEnumHighlight'
 import { projectStructuredPredicateValueEditorChrome } from './structured-predicate-value-editor-model'
 import {
   projectStructuredPredicateTypeIconKind,
   type StructuredPendingPredicateHeaderChrome,
 } from './structured-predicate-column-header-model'
 import {
+  moveStructuredEnumHighlight,
   planStructuredEnumSelectorInputKeyAction,
   planStructuredEnumSelectorOptionKeyAction,
   projectStructuredEnumCellOptionMenuModel,
@@ -900,6 +902,9 @@ export function StructuredEnumCellSelector({
     valueLabel,
   })
   const createOption = selectorChrome.createOption
+  // The option the arrow keys are on; Enter picks it. Typing starts over.
+  const [highlighted, setHighlighted] = useStructuredEnumHighlight(search)
+  const highlightedOption = filteredOptions[highlighted]?.label ?? null
 
   return (
     <div
@@ -934,14 +939,24 @@ export function StructuredEnumCellSelector({
           aria-controls={listboxId}
           aria-expanded="true"
           aria-autocomplete="list"
+          aria-activedescendant={highlighted >= 0 ? `${listboxId}-option-${highlighted}` : undefined}
+          autoFocus
           className="h-6 min-w-24 flex-1 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground/70"
           placeholder={selectorChrome.input.placeholder}
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           onKeyDown={(event) => {
             event.stopPropagation()
+            // Enter that confirms Chinese input is not a choice.
+            if (event.nativeEvent.isComposing) return
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault()
+              setHighlighted((current) => moveStructuredEnumHighlight({ current, key: event.key, optionCount: filteredOptions.length }))
+              return
+            }
             const action = planStructuredEnumSelectorInputKeyAction({
               exactSearchOptionLabel,
+              highlightedOptionLabel: highlightedOption,
               key: event.key,
               normalizedSearch,
             })
@@ -975,7 +990,7 @@ export function StructuredEnumCellSelector({
             <span>{createOption.label}</span>
           </button>
         ) : null}
-        {filteredOptions.map((option) => {
+        {filteredOptions.map((option, optionIndex) => {
           const optionMenu = projectStructuredEnumCellOptionMenuModel({
             option,
             predicateLabel,
@@ -983,9 +998,10 @@ export function StructuredEnumCellSelector({
           return (
             <div
               key={option.label}
-              className="inline-flex items-center rounded bg-primary/10 text-primary"
+              className={cn('inline-flex items-center rounded bg-primary/10 text-primary', optionIndex === highlighted && 'ring-2 ring-primary')}
             >
               <span
+                id={`${listboxId}-option-${optionIndex}`}
                 role="option"
                 aria-selected="true"
                 tabIndex={0}

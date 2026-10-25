@@ -1,5 +1,6 @@
 import { FilesResourceReadError, type FilesEntry } from '../resource/resource-model'
 import { displayResourceName, getEntryName, getFilesEntryOpenMode, getParentContainerUri, normalizeContainerUri } from '../resource/resource-semantics'
+import { stripMarkdownSyntax } from '../search/markdown-text'
 import { readablePredicateLabel } from '../structured/structured-table-vocab'
 import {
   isStructuredCardBodyPredicate,
@@ -280,6 +281,50 @@ export function projectCardLocatorLink(uri: string, locator: CardLocator | null 
   if (typeof locator.timeSeconds === 'number') return `${uri}#t=${Math.floor(locator.timeSeconds)}`
   if (typeof locator.line === 'number') return `${uri}#line=${Math.floor(locator.line)}`
   return uri
+}
+
+/**
+ * A link inside a card or document body that points into the person's Pod opens as a card in LinX,
+ * at the spot `#line=N` / `#page=N` / `#t=N` names. Returns null for anything else.
+ */
+export function parseCardPodLink(
+  href: string,
+  podRootUri: string | null | undefined,
+): { uri: string; locator?: CardLocator } | null {
+  if (!podRootUri) return null
+  let url: URL
+  let root: URL
+  try {
+    url = new URL(href)
+    root = new URL(podRootUri.endsWith('/') ? podRootUri : `${podRootUri}/`)
+  } catch {
+    return null
+  }
+  if (url.origin !== root.origin || !url.pathname.startsWith(root.pathname)) return null
+  const fragment = url.hash.replace(/^#/, '')
+  const located = /^(line|page|t)=(\d+)$/.exec(fragment)
+  const base = `${url.origin}${url.pathname}${url.search}`
+  if (!located) return { uri: fragment ? `${base}#${fragment}` : base }
+  const value = Number(located[2])
+  const locator: CardLocator = located[1] === 'line' ? { line: value } : located[1] === 'page' ? { page: value } : { timeSeconds: value }
+  return { uri: base, locator }
+}
+
+/** The words on source line N of a note, for lighting that line up in the rendered body. */
+export function projectCardLineQuote(text: string, line: number | undefined): string | null {
+  if (typeof line !== 'number' || line < 1) return null
+  const quote = stripMarkdownSyntax(text.split('\n')[Math.floor(line) - 1] ?? '')
+  return quote || null
+}
+
+/** True when the body already opens with its own `# Title`, so the popup should not repeat it. */
+export function cardBodyLeadsWithTitle(body: string | null | undefined, title: string): boolean {
+  const first = (body ?? '').split('\n').find((line) => line.trim()) ?? ''
+  const heading = /^\s*#\s+(.+?)\s*#*\s*$/.exec(first)?.[1]?.trim()
+  const name = title.trim()
+  if (!heading || !name) return false
+  // 做成卡片 names the file "<excerpt> M-D" and starts the body with "# <excerpt>".
+  return heading === name || name.startsWith(`${heading} `)
 }
 
 function quoteLines(text: string) {

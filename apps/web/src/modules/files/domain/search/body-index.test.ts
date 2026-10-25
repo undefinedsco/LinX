@@ -48,6 +48,16 @@ describe('BodyIndex', () => {
     expect(hits[0].quote).toContain('排班')
   })
 
+  it('shows snippets as plain words, without markdown marks', () => {
+    const index = new BodyIndex()
+    index.upsert(doc('pod/a.md', '# 维护成本太高，先不自己做\n\n- **预算**不够'))
+    const [hit] = index.search('维护成本')
+    expect(hit.snippet).toBe('维护成本太高，先不自己做')
+    expect(hit.quote).toBe('维护成本太高，先不自己做')
+    expect(hit.line).toBe(1)
+    expect(index.search('预算')[0].snippet).toBe('预算不够')
+  })
+
   it('matches a single character and multi-word latin queries (all words)', () => {
     const index = new BodyIndex()
     index.upsert(doc('a', '志愿者排班'))
