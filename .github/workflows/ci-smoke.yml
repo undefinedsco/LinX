@@ -49,6 +49,7 @@ jobs:
             src/lib/solid/advertised-acr.test.ts \
             src/lib/data/linx-solid-database.test.ts \
             src/lib/data/linx-solid-database.cache.test.ts \
+            src/modules/model-services/data/use-model-services.test.tsx \
             src/modules/chat/data/matrix-service.test.ts \
             src/modules/chat/data/matrix-room-access.test.ts \
             src/modules/chat/data/matrix-invitations.test.ts \
