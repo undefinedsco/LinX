@@ -117,4 +117,6 @@ test('chats with the assistant', async ({ page }) => {
   await expect(answer).not.toContainText('消息生成失败', { timeout: 120_000 })
   await expect.poll(async () => (await answer.innerText()).trim().length, { timeout: 120_000 }).toBeGreaterThan(0)
   await expect(answer).not.toContainText('这次没有完成')
+  // The default linx/linx-lite route must be found; a "no model" notice is not a reply.
+  await expect(answer).not.toContainText('还没有连接 AI 模型')
 })
