@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
@@ -32,6 +33,18 @@ export function FilesOperationSheet({
   onClose,
   onConfirm,
 }: FilesOperationSheetProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const hasInput = Boolean(input)
+  useEffect(() => {
+    if (!open || !hasInput) return
+    // The menu that opened this sheet hands focus back to its trigger as it closes; take it after.
+    const frame = requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [open, hasInput])
+
   if (!open) return null
 
   return (
@@ -63,6 +76,7 @@ export function FilesOperationSheet({
               {input.label}
             </label>
             <Input
+              ref={inputRef}
               id="files-list-operation-input"
               value={input.value}
               onChange={(event) => input.onValueChange(event.target.value)}
