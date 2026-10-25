@@ -65,4 +65,3 @@ test('a replacement or restart of the same image invalidates the browser evidenc
     assert.throws(() => assertSameProviderRuntime(before, { ...before, ...change }), /changed/)
   }
 })
-

@@ -92,5 +92,3 @@ export function sharedRoomReferenceForSelection(
   if (!chat || !isSharedRoomChatRow(chat)) return null
   return sharedRoomReferenceFromChatRow(chat)
 }
-
-
