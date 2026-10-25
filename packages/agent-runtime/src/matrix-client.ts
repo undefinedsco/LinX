@@ -43,6 +43,12 @@ export interface MatrixJoinRoomResponse {
 
 export interface MatrixInviteRequest {
   user_id: string
+  /**
+   * Optional extension (Xpod): the invited person's full WebID. Only accepted
+   * by the server when `user_id` is that WebID's canonical MXID; it lets the
+   * server register a cross-Pod room reference. Never a secret.
+   */
+  targetWebID?: string
 }
 
 export interface MatrixSetStateResponse {
@@ -178,9 +184,14 @@ export class MatrixClient {
     return this.request('POST', `/_matrix/client/v3/rooms/${encodePathSegment(roomId)}/join`, {})
   }
 
-  async inviteUser(roomId: string, userId: string): Promise<Record<string, never>> {
+  async inviteUser(
+    roomId: string,
+    userId: string,
+    options: { targetWebID?: string } = {},
+  ): Promise<Record<string, never>> {
     return this.request('POST', `/_matrix/client/v3/rooms/${encodePathSegment(roomId)}/invite`, {
       user_id: userId,
+      ...(options.targetWebID ? { targetWebID: options.targetWebID } : {}),
     } satisfies MatrixInviteRequest)
   }
 

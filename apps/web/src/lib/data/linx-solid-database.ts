@@ -14,6 +14,14 @@ export interface CreateLinxSolidDatabaseOptions {
   initTimeoutMs?: number
   podUrl?: string | null
   transportUrlRewrite?: TransportUrlRewrite | null
+  /**
+   * Per-database collection SELECT endpoint (drizzle-solid 0.3.26). Used by
+   * shared-room references so SELECT reads the owner's canonical room without
+   * mutating the shared table or copying its data.
+   */
+  sparqlEndpoint?: string
+  /** Skip implicit broad-parent LDP preparation for room-scoped read DBs. */
+  resourcePreparation?: 'auto' | 'off'
 }
 
 const DEFAULT_INIT_TIMEOUT_MS = 30_000
@@ -35,28 +43,23 @@ export async function createLinxSolidDatabase(
   session: unknown,
   options: CreateLinxSolidDatabaseOptions = {},
 ): Promise<SolidDatabase> {
-  const cacheKeys = resolveCreationCacheKeys(session, options.podUrl)
-  for (const cacheKey of cacheKeys) {
-    const inFlight = inFlightCreations.get(cacheKey)
-    if (inFlight) {
-      return await inFlight
-    }
+  // Dedup only an identical semantic binding: Pod root, room endpoint,
+  // resource-preparation mode, transport rewrite and authenticated session.
+  // Two rooms of the same owner must never share one database.
+  const cacheKey = resolveCreationCacheKey(session, options)
+  const inFlight = inFlightCreations.get(cacheKey)
+  if (inFlight) {
+    return await awaitCallerDeadline(inFlight, options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS)
   }
 
   const creation = createLinxSolidDatabaseUncached(session, options)
-  if (cacheKeys.length > 0) {
-    for (const cacheKey of cacheKeys) {
-      inFlightCreations.set(cacheKey, creation)
+  inFlightCreations.set(cacheKey, creation)
+  const clearInFlight = () => {
+    if (inFlightCreations.get(cacheKey) === creation) {
+      inFlightCreations.delete(cacheKey)
     }
-    const clearInFlight = () => {
-      for (const cacheKey of cacheKeys) {
-        if (inFlightCreations.get(cacheKey) === creation) {
-          inFlightCreations.delete(cacheKey)
-        }
-      }
-    }
-    void creation.then(clearInFlight, clearInFlight)
   }
+  void creation.then(clearInFlight, clearInFlight)
 
   return await creation
 }
@@ -89,6 +92,8 @@ async function createLinxSolidDatabaseUncached(
     podUrl: normalizePodUrl(options.podUrl),
     resourcePreparation: 'best-effort',
     schema: solidSchema,
+    ...(options.sparqlEndpoint ? { sparqlEndpoint: options.sparqlEndpoint } : {}),
+    ...(options.resourcePreparation ? { resourcePreparation: options.resourcePreparation } : {}),
   } as any) as unknown as SolidDatabase
   report({ stage: 'database:create:done' })
 
@@ -100,6 +105,13 @@ async function createLinxSolidDatabaseUncached(
   })
   installInsertWriteGuard(instance)
   installMutationWriteGuard(instance)
+
+  if (options.resourcePreparation === 'off') {
+    // Room-scoped read database: the target container lives on the owner's Pod
+    // and is not Bob's to initialize. Skip broad parent/container bootstrap.
+    report({ stage: 'database:init:skipped' })
+    return instance
+  }
 
   try {
     await withTimeout(
@@ -259,23 +271,38 @@ function rewriteUrlBase(requestUrl: string, fromBaseUrl: string, toBaseUrl: stri
   }
 }
 
-function resolveCreationCacheKeys(session: unknown, podUrl?: string | null): string[] {
+function resolveCreationCacheKey(
+  session: unknown,
+  options: CreateLinxSolidDatabaseOptions,
+): string {
   const info = (session as { info?: { sessionId?: string; webId?: string } } | null | undefined)?.info
-  const normalizedPodUrl = normalizePodUrl(podUrl)
-  const webId = typeof info?.webId === 'string' && info.webId.trim()
-    ? info.webId
-    : null
+  const webId = typeof info?.webId === 'string' && info.webId.trim() ? info.webId : ''
+  const sessionId = typeof info?.sessionId === 'string' && info.sessionId.trim() ? info.sessionId : ''
+  const podUrl = normalizePodUrl(options.podUrl) ?? ''
+  const endpoint = options.sparqlEndpoint ? new URL(options.sparqlEndpoint).href : ''
+  const preparation = options.resourcePreparation ?? 'default'
+  const rewrite = options.transportUrlRewrite
+    ? `${normalizePodUrl(options.transportUrlRewrite.fromBaseUrl)}>${normalizePodUrl(options.transportUrlRewrite.toBaseUrl)}`
+    : ''
+  return JSON.stringify(['linx-db', webId, sessionId, podUrl, endpoint, preparation, rewrite])
+}
 
-  const keys: string[] = []
-  if (normalizedPodUrl) {
-    keys.push(`pod:${normalizedPodUrl}`)
+/**
+ * A caller that joins an existing creation still honors its own init deadline:
+ * a shorter requested timeout must not hang on the shared promise.
+ */
+async function awaitCallerDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('Pod init timed out')), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
   }
-
-  if (webId) {
-    keys.push(`webid:${webId}:default`)
-  }
-
-  return keys
 }
 
 function installInsertWriteGuard(db: SolidDatabase): void {

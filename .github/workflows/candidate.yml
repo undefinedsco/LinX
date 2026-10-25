@@ -79,7 +79,7 @@ jobs:
           npx tsc -p .
           node --test test/*.test.cjs
       - name: Release script tests
-        run: node --test scripts/release-candidate.test.mjs scripts/rc-provider-seed.test.mjs scripts/xpod-rc-provider-patch.test.mjs
+        run: node --test scripts/release-candidate.test.mjs scripts/rc-provider-seed.test.mjs scripts/xpod-rc-provider-patch.test.mjs scripts/rc-shared-group-contract.test.mjs scripts/rc-provider-runtime.test.mjs
 
   # LinX against a real (seeded, SQLite) xpod started from its npm package: sign-in, chat,
   # files, citations, withdrawal, every main surface. Covers the local/standalone space mode
@@ -330,8 +330,11 @@ jobs:
             exit 1
           fi
           # Alice and Bob are generated for this run (random passwords, masked in the log).
+          # Both are real browser identities of the shared-group acceptance; --provider-url
+          # records their seeded CSS WebIDs for the UI's 添加朋友 form.
           node scripts/rc-provider-seed.mjs --output "$RUNNER_TEMP/rc.json" \
-            --suffix "linx-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --github-env "$GITHUB_ENV"
+            --suffix "linx-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --github-env "$GITHUB_ENV" \
+            --provider-url "$RC_PROVIDER_URL"
           kubectl -n "$NAMESPACE" create secret generic "$RC_SEED_SECRET" --from-file=rc.json="$RUNNER_TEMP/rc.json" \
             --dry-run=client -o yaml | kubectl apply -f -
           rm -f "$RUNNER_TEMP/rc.json"
@@ -347,6 +350,17 @@ jobs:
           done
           echo "::error::${RC_PROVIDER_URL} did not serve OpenID discovery"
           exit 1
+      - name: Bind acceptance to the exact running xpod provider
+        run: |
+          set -euo pipefail
+          umask 077
+          kubectl -n "$NAMESPACE" get deployment xpod-rc -o json > "$RUNNER_TEMP/xpod-runtime-deployment.json"
+          kubectl -n "$NAMESPACE" get pods -l app=xpod-rc -o json > "$RUNNER_TEMP/xpod-runtime-pods.json"
+          provider_image="$(node -e 'const d=require(process.argv[1]);process.stdout.write(d.spec.template.spec.containers.find(c=>c.name==="xpod").image)' "$RUNNER_TEMP/xpod-runtime-deployment.json")"
+          [[ "$provider_image" =~ ^ghcr\.io/undefinedsco/xpod@sha256:[0-9a-f]{64}$ ]] || { echo '::error::xpod provider must use an immutable candidate digest'; exit 1; }
+          docker buildx imagetools inspect "$provider_image" --raw > "$RUNNER_TEMP/xpod-runtime-manifest.json"
+          node scripts/rc-provider-runtime.mjs observe "$RUNNER_TEMP/xpod-runtime-deployment.json" \
+            "$RUNNER_TEMP/xpod-runtime-pods.json" "$RUNNER_TEMP/xpod-runtime-manifest.json" "$RUNNER_TEMP/xpod-runtime-before.json"
       - name: Signed-in acceptance (xpod RC seed account)
         env:
           CI: '1'
@@ -359,6 +373,30 @@ jobs:
           set -euo pipefail
           cd tests/e2e
           npx playwright test specs/deployed-signed-in.spec.ts --reporter=list
+      - name: Shared-group acceptance (Alice and Bob on the real RC provider)
+        # Mandatory RC evidence. This is a real two-person browser flow against the same
+        # xpod-rc. Trace/screenshots/video stay off for this spec because
+        # the provider sign-in pages carry the per-run passwords.
+        env:
+          CI: '1'
+          LINX_E2E_BASE_URL: ${{ env.RC_URL }}
+          LINX_E2E_REUSE_SERVER: '0'
+          LINX_E2E_CLOUD_IDENTITY_URL: ${{ env.RC_PROVIDER_URL }}
+          LINX_E2E_LOGIN_VIA: custom
+          LINX_E2E_SHARED_GROUP: '1'
+        run: |
+          set -euo pipefail
+          cd tests/e2e
+          npx playwright test specs/rc-shared-group.spec.ts --reporter=list
+      - name: Verify the xpod provider stayed unchanged during acceptance
+        run: |
+          set -euo pipefail
+          umask 077
+          kubectl -n "$NAMESPACE" get deployment xpod-rc -o json > "$RUNNER_TEMP/xpod-runtime-deployment.json"
+          kubectl -n "$NAMESPACE" get pods -l app=xpod-rc -o json > "$RUNNER_TEMP/xpod-runtime-pods.json"
+          node scripts/rc-provider-runtime.mjs observe "$RUNNER_TEMP/xpod-runtime-deployment.json" \
+            "$RUNNER_TEMP/xpod-runtime-pods.json" "$RUNNER_TEMP/xpod-runtime-manifest.json" "$RUNNER_TEMP/xpod-runtime-after.json"
+          node scripts/rc-provider-runtime.mjs compare "$RUNNER_TEMP/xpod-runtime-before.json" "$RUNNER_TEMP/xpod-runtime-after.json"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -382,13 +420,14 @@ jobs:
           mkdir -p acceptance
           node -e '
             const [candidate, sourceSha, digest, rcUrl, provider, runUrl] = process.argv.slice(1)
+            const providerRuntime = JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP + "/xpod-runtime-after.json", "utf8"))
             const record = {
               schema: "linx-web-release-acceptance/1",
               candidate, sourceSha, branch: "staging",
               image: `ghcr.io/undefinedsco/linx-web@${digest}`, digest,
-              rcUrl, provider, runUrl,
+              rcUrl, provider, providerRuntime, runUrl,
               acceptedAt: new Date().toISOString(),
-              checks: { verify: "passed", "local-e2e": "passed", "standalone-e2e": "passed", "deployed-digest": "passed", "static-deploy": "passed", "deployed-smoke": "passed", "signed-in": "passed" },
+              checks: { verify: "passed", "local-e2e": "passed", "standalone-e2e": "passed", "deployed-digest": "passed", "static-deploy": "passed", "deployed-smoke": "passed", "signed-in": "passed", "shared-group": "passed" },
             }
             require("fs").writeFileSync("acceptance/release-acceptance.json", JSON.stringify(record, null, 2) + "\n")
           ' "${{ needs.metadata.outputs.candidate }}" "${{ needs.metadata.outputs.sourceSha }}" \

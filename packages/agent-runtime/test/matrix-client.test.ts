@@ -53,6 +53,26 @@ test('MatrixClient supports createRoom and incremental sync', async () => {
   ])
 })
 
+test('MatrixClient invite can carry the invited full WebID for server registration', async () => {
+  const requests: Array<{ body: unknown }> = []
+  const client = new MatrixClient({
+    baseUrl: 'https://api.example',
+    accessToken: 'sk-interface',
+    fetch: async (_input, init) => {
+      requests.push({ body: init?.body ? JSON.parse(String(init.body)) : null })
+      return Response.json({})
+    },
+  })
+
+  await client.inviteUser('!room:api.example', '@u_abc:api.example', {
+    targetWebID: 'https://bob.example/#id',
+  })
+  await client.inviteUser('!room:api.example', '@u_abc:api.example')
+
+  expect(requests[0]?.body).toEqual({ user_id: '@u_abc:api.example', targetWebID: 'https://bob.example/#id' })
+  expect(requests[1]?.body).toEqual({ user_id: '@u_abc:api.example' })
+})
+
 test('MatrixClient supports room membership and state endpoints', async () => {
   const calls: Array<{ method: string; url: string; body?: unknown }> = []
   const client = new MatrixClient({

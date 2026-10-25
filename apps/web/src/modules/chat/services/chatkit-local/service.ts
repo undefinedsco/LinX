@@ -50,7 +50,16 @@ import {
   normalizeModelAnnotations,
   type ChatKitAnnotation,
 } from './model-annotations'
-import { sendMatrixThreadMessage } from '../../matrix-service'
+import {
+  formatMatrixErrorForUser,
+  MatrixUserFacingError,
+  readMatrixRoomId,
+  sendMatrixThreadMessage,
+} from '../../matrix-service'
+import {
+  MatrixInterfaceAuthorizationRequiredError,
+  type MatrixInterfaceAccess,
+} from '@/lib/matrix/pod-interface-access'
 import { attachmentToModelParts, MAX_ATTACHMENT_BYTES, type ModelContentPart } from './attachment-content'
 import {
   DEFAULT_AGENT_AI_RUNTIME_LOCATION,
@@ -197,6 +206,9 @@ export interface LocalServiceOptions {
   authFetch: typeof fetch
   systemPrompt?: string
   onServiceAccessRequired?: () => Promise<void> | void
+  /** Browser-owned Pod credential for Matrix group messages; created on explicit consent. */
+  matrixAccess?: MatrixInterfaceAccess
+  onMatrixAuthorizationRequired?: () => Promise<void> | void
   attachmentThreadId?: string
 }
 
@@ -500,6 +512,8 @@ export class LocalChatKitService {
   private systemPrompt: string
   private runtimeSidecar: RuntimeSidecarSink
   private onServiceAccessRequired?: LocalServiceOptions['onServiceAccessRequired']
+  private matrixAccess?: MatrixInterfaceAccess
+  private onMatrixAuthorizationRequired?: LocalServiceOptions['onMatrixAuthorizationRequired']
   private attachmentThreadId?: string
   private readonly attachmentModelPartCache = new Map<string, Promise<ModelContentPart[]>>()
 
@@ -510,6 +524,8 @@ export class LocalChatKitService {
     this.authFetch = options.authFetch
     this.systemPrompt = options.systemPrompt ?? 'You are a helpful assistant.'
     this.onServiceAccessRequired = options.onServiceAccessRequired
+    this.matrixAccess = options.matrixAccess
+    this.onMatrixAuthorizationRequired = options.onMatrixAuthorizationRequired
     this.attachmentThreadId = options.attachmentThreadId
     this.runtimeSidecar = new RuntimeSidecarSink(this.db, this.webId)
   }
@@ -559,8 +575,14 @@ export class LocalChatKitService {
       yield* this.processStreaming(request, context)
     } catch (error: any) {
       if (isAbortError(error)) return
-      console.error('[LocalChatKitService] Streaming request failed:', error)
-      const userMessage = formatErrorForUser(error, '消息生成失败。请稍后重试。')
+      // Matrix failures are already worded for the person and never describe the
+      // Solid login; do not route them through the sign-in error mapper.
+      if (!(error instanceof MatrixUserFacingError)) {
+        console.error('[LocalChatKitService] Streaming request failed:', error)
+      }
+      const userMessage = error instanceof MatrixUserFacingError
+        ? error.message
+        : formatErrorForUser(error, '消息生成失败。请稍后重试。')
       yield {
         type: 'error',
         error: {
@@ -1384,6 +1406,8 @@ export class LocalChatKitService {
       const retryableGenerationFailure = isRetryableGenerationError(error)
       const userFacingMessage = serviceAccessRequired
         ? '需要授权 Xpod AI 服务访问模型配置。授权后请重新发送。'
+        : error instanceof MatrixUserFacingError
+        ? error.message
         : error instanceof ProviderCapabilityError
         ? error.message
         : webSearchFailed
@@ -1456,19 +1480,54 @@ export class LocalChatKitService {
   }
 
   private async trySendMatrixUserMessage(thread: ThreadMetadata, userMessage: ThreadItem): Promise<boolean> {
+    if (!readMatrixRoomId(thread.metadata)) return false
     const body = extractUserMessageText((userMessage as any).content)
-    const result = await sendMatrixThreadMessage({
-      db: this.db,
-      authFetch: this.authFetch,
-      webId: this.webId,
-      thread: {
-        id: thread.id,
-        metadata: thread.metadata as Record<string, unknown> | undefined,
-      },
-      body,
-      txnId: userMessage.id,
-    })
-    return result !== null
+    try {
+      const result = await sendMatrixThreadMessage({
+        db: this.db,
+        access: this.requireMatrixAccess(),
+        webId: this.webId,
+        thread: {
+          id: thread.id,
+          metadata: thread.metadata as Record<string, unknown> | undefined,
+        },
+        body,
+        txnId: userMessage.id,
+      })
+      return result !== null
+    } catch (error) {
+      if (error instanceof MatrixInterfaceAuthorizationRequiredError) {
+        // Ask the host for the explicit consent flow, then retry once with the
+        // newly authorized credential. Nothing is created silently here: the
+        // host renders the user gesture and only authorizes after it.
+        await this.onMatrixAuthorizationRequired?.()
+        if (!this.matrixAccess?.get()) {
+          throw new MatrixUserFacingError(error.message)
+        }
+        const result = await sendMatrixThreadMessage({
+          db: this.db,
+          access: this.matrixAccess,
+          webId: this.webId,
+          thread: {
+            id: thread.id,
+            metadata: thread.metadata as Record<string, unknown> | undefined,
+          },
+          body,
+          txnId: userMessage.id,
+        })
+        return result !== null
+      }
+      const failure = formatMatrixErrorForUser(error)
+      if (failure) throw new MatrixUserFacingError(failure)
+      throw error
+    }
+  }
+
+  private requireMatrixAccess(): MatrixInterfaceAccess {
+    if (!this.matrixAccess) {
+      throw new MatrixInterfaceAuthorizationRequiredError('current-pod')
+    }
+    return this.matrixAccess
   }
 
   private async getRuntimeThread(threadId: string): Promise<RuntimeThreadRecord | null> {

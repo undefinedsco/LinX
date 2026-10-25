@@ -11,41 +11,21 @@
 
 import type { SolidDatabase } from '@undefineds.co/models'
 import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/client'
+import { getSolidDataset, universalAccess } from '@inrupt/solid-client'
 import {
-  addUrl,
-  buildThing,
-  createThing,
-  getSolidDataset,
-  getThingAll,
-  getUrlAll,
-  saveSolidDatasetAt,
-  solidDatasetAsTurtle,
-  setThing,
-  universalAccess,
-} from '@inrupt/solid-client'
+  discoverAdvertisedAcr,
+  mergeAdvertisedAcrGrant,
+  saveAdvertisedAcr,
+} from '@/lib/solid/advertised-acr'
 import { nowTimestamp, type Attachment, type StreamingReq, type ThreadItem, type ThreadMetadata, type ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
 import { getLocalChatKitRuntimeCache } from './runtime-cache'
+import type { MatrixInterfaceAccess } from '@/lib/matrix/pod-interface-access'
+import { isMatrixUserFacingError } from '../../matrix-service'
 
-const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
-const ACP = 'http://www.w3.org/ns/solid/acp#'
-const ACL = 'http://www.w3.org/ns/auth/acl#'
-const ACP_ACCESS_CONTROL_RESOURCE = `${ACP}AccessControlResource`
-const ACP_ACCESS_CONTROL_LINK = `${ACP}accessControl`
-const ACP_MEMBER_ACCESS_CONTROL = `${ACP}memberAccessControl`
-const ACP_ACCESS_CONTROL = `${ACP}AccessControl`
-const ACP_APPLY = `${ACP}apply`
-const ACP_POLICY = `${ACP}Policy`
-const ACP_ALLOW = `${ACP}allow`
-const ACP_ANY_OF = `${ACP}anyOf`
-const ACP_MATCHER = `${ACP}Matcher`
-const ACP_AGENT = `${ACP}agent`
-const ACL_READ = `${ACL}Read`
-const ACL_APPEND = `${ACL}Append`
-const ACL_WRITE = `${ACL}Write`
 
 export interface LocalChatKitFetchOptions {
   db: SolidDatabase
@@ -57,6 +37,8 @@ export interface LocalChatKitFetchOptions {
   onStreamingChange?: (state: { active: boolean; abort?: () => void }) => void
   onThreadItemsChange?: (items: ThreadItem[]) => void
   onRequestError?: (message: string) => void
+  matrixAccess?: MatrixInterfaceAccess
+  onMatrixAuthorizationRequired?: () => Promise<void> | void
   onServiceAccessRequired?: () => void
   onServiceAccessRecovered?: () => void
   onChatSummaryChange?: (summary: {
@@ -78,6 +60,8 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     onStreamingChange,
     onThreadItemsChange,
     onRequestError,
+    matrixAccess,
+    onMatrixAuthorizationRequired,
     onServiceAccessRequired,
     onServiceAccessRecovered,
     onChatSummaryChange,
@@ -98,6 +82,8 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
     webId,
     authFetch,
     attachmentThreadId: initialThread?.id,
+    ...(matrixAccess ? { matrixAccess } : {}),
+    ...(onMatrixAuthorizationRequired ? { onMatrixAuthorizationRequired } : {}),
     onServiceAccessRequired: () => {
       runtimeCache.aiServiceAccessBlocked = true
       onServiceAccessRequired?.()
@@ -208,8 +194,14 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): Loca
         headers: { 'Content-Type': 'application/json' },
       })
     } catch (error: any) {
-      console.error('[LocalChatKitFetch] Error:', error)
-      const message = formatErrorForUser(error, '聊天服务暂时不可用。请稍后重试。')
+      // Matrix failures are already worded for the person; logging them would
+      // only duplicate the message and risk echoing a server body.
+      if (!isMatrixUserFacingError(error)) {
+        console.error('[LocalChatKitFetch] Error:', error)
+      }
+      const message = isMatrixUserFacingError(error)
+        ? error.message
+        : formatErrorForUser(error, '聊天服务暂时不可用。请稍后重试。')
       // ChatKit renders a fixed generic toast for failed requests, so surface
       // the formatted reason through the host app as well.
       onRequestError?.(message)
@@ -474,65 +466,27 @@ async function grantXpodAcrAccess(input: {
     return input.resource.access
   }
 
-  let acr = await getSolidDataset(state.url, { fetch: input.authFetch })
-  const root = getThingAll(acr).find((thing) => getUrlAll(thing, RDF_TYPE).includes(ACP_ACCESS_CONTROL_RESOURCE))
-  if (!root) throw new Error('Xpod 访问控制文档缺少根资源。')
+  const acr = await getSolidDataset(state.url, { fetch: input.authFetch })
   const suffix = input.members ? 'Member' : ''
-  const controlUrl = `${state.url}#linxService${suffix}Access`
-  const policyUrl = `${state.url}#linxService${suffix}Policy`
-  const matcherUrl = `${state.url}#linxService${suffix}Matcher`
-  acr = setThing(acr, addUrl(root, input.members ? ACP_MEMBER_ACCESS_CONTROL : ACP_ACCESS_CONTROL_LINK, controlUrl))
-  acr = setThing(acr, buildThing(createThing({ url: controlUrl }))
-    .addUrl(RDF_TYPE, ACP_ACCESS_CONTROL)
-    .addUrl(ACP_APPLY, policyUrl)
-    .build())
-  acr = setThing(acr, buildThing(createThing({ url: policyUrl }))
-    .addUrl(RDF_TYPE, ACP_POLICY)
-    .addUrl(ACP_ALLOW, ACL_READ)
-    .addUrl(ACP_ALLOW, ACL_APPEND)
-    .addUrl(ACP_ALLOW, ACL_WRITE)
-    .addUrl(ACP_ANY_OF, matcherUrl)
-    .build())
-  acr = setThing(acr, buildThing(createThing({ url: matcherUrl }))
-    .addUrl(RDF_TYPE, ACP_MATCHER)
-    .addUrl(ACP_AGENT, input.serviceWebId)
-    .build())
-  try {
-    await saveSolidDatasetAt(state.url, acr, { fetch: input.authFetch })
-  } catch {
-    // Xpod stores ACP documents as Turtle but does not support the N3 Patch
-    // emitted by solid-client for an existing ACR. Preserve the complete
-    // dataset and replace it atomically instead of dropping owner policies.
-    const updated = await input.authFetch(state.url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'text/turtle' },
-      body: await solidDatasetAsTurtle(acr),
-    })
-    if (!updated.ok) {
-      throw new Error(`更新 ${input.resource.id} 的 Xpod 访问控制失败（HTTP ${updated.status}）。`)
-    }
-  }
+  const merged = await mergeAdvertisedAcrGrant({
+    acr,
+    acrUrl: state.url,
+    agentWebId: input.serviceWebId,
+    access: input.resource.access,
+    links: input.members ? 'member' : 'access',
+    controlKey: `linxService${suffix}`,
+  })
+  await saveAdvertisedAcr(state.url, merged, input.authFetch)
   return input.resource.access
 }
 
+/** Shared Link-header ACR discovery; keeps the existing error surface. */
 async function discoverXpodAcr(resourceUrl: string, authFetch: typeof fetch): Promise<{ url: string; exists: boolean }> {
-  const info = await authFetch(resourceUrl, { method: 'HEAD' })
-  if (info.status !== 200 && info.status !== 404) {
-    throw new Error(`读取 Xpod 资源授权信息失败（HTTP ${info.status}）。`)
+  try {
+    return await discoverAdvertisedAcr(resourceUrl, authFetch)
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : 'Xpod 资源没有提供访问控制地址。')
   }
-  const match = info.headers.get('Link')?.match(/<([^>]+)>\s*;\s*rel=["']acl["']/iu)
-  if (!match?.[1]) throw new Error('Xpod 资源没有提供访问控制地址。')
-
-  const discovered = new URL(match[1], resourceUrl)
-  const expected = new URL(`${resourceUrl}.acr`)
-  if (discovered.href !== expected.href) {
-    throw new Error('Xpod 返回了越界的访问控制地址。')
-  }
-  const current = await authFetch(discovered.href, { headers: { Accept: 'text/turtle' } })
-  if (current.status !== 404 && !current.ok) {
-    throw new Error(`读取 Xpod 访问控制文档失败（HTTP ${current.status}）。`)
-  }
-  return { url: discovered.href, exists: current.ok }
 }
 
 function createInitialServiceAcr(input: {
