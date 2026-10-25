@@ -185,8 +185,17 @@ export function useCardDialogController(request: CardDialogRequest) {
   })
   const selectChat = useFilesSelectChat()
   const openBacklink = useCallback((link: CardBacklink) => {
+    if (link.board) {
+      // The board is a view of its table or folder: open that in 白板.
+      const store = useFilesStore.getState()
+      store.openFilePreview(link.board.viewOf ?? link.uri)
+      store.setStructuredViewMode('whiteboard')
+      closeDialog()
+      void navigate({ to: '/$microAppId', params: { microAppId: 'files' } })
+      return
+    }
     openCard({ uri: link.uri, locator: link.line ? { line: link.line } : undefined, from: request.from })
-  }, [openCard, request.from])
+  }, [closeDialog, navigate, openCard, request.from])
   const openWorkUse = useCallback((use: CardWorkUseRow) => {
     selectChat(use.chatId)
     closeDialog()

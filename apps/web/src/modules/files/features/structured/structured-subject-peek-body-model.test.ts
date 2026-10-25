@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { StructuredSubjectPeek } from '../../domain/structured/structured-subject-peek'
-import { projectStructuredSubjectPeekBodyModel } from './structured-subject-peek-body-model'
+import {
+  projectStructuredSubjectPeekBodyModel,
+  projectStructuredSubjectPeekTechnicalDetailsToggle,
+} from './structured-subject-peek-body-model'
 
 const peek: NonNullable<StructuredSubjectPeek> = {
   subject: '#Task',
@@ -154,5 +157,16 @@ describe('structured subject peek body model', () => {
     expect(emptySourceLinked.showSourceLinkedCardSection).toBe(false)
     expect(emptySourceLinked.showTermDefinitionSection).toBe(false)
     expect(emptySourceLinked.showSourceSection).toBe(false)
+  })
+})
+
+describe('structured subject peek property rows', () => {
+  it('shows the column name when the peek carries one and keeps the address behind the toggle', () => {
+    const model = projectStructuredSubjectPeekBodyModel({
+      ...peek,
+      predicates: [{ predicate: 'p-se49e298', values: ['"进行中"'], label: '状态' }],
+    })
+    expect(model.predicateRows[0]).toMatchObject({ label: '状态', values: '进行中' })
+    expect(projectStructuredSubjectPeekTechnicalDetailsToggle(false).stateLabel).toBe('展开')
   })
 })

@@ -10,7 +10,9 @@ import {
   WHITEBOARD_SPACE_MAX_TABLES,
   buildWhiteboardCardIndex,
   isWhiteboardSpaceTableEntry,
+  projectWhiteboardPlacements,
   projectWhiteboardSpaceRows,
+  type WhiteboardPlacement,
   type WhiteboardSpaceRow,
 } from '../../domain/structured/whiteboard-space-index'
 import { filesResourceQueryCollection } from '../collections'
@@ -161,4 +163,44 @@ export function useWhiteboardFilePreviews(fileUris: readonly string[]): Readonly
     // queries changes identity every render; key tracks its content.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uris, key])
+}
+
+const EMPTY_PLACEMENTS: WhiteboardPlacement[] = []
+
+/**
+ * The boards that hold a card, for the card dialog's 被引用 list. Boards are read lazily when
+ * `enabled` (a card is open) and share the cache with the library's board index but are read
+ * again each time a card opens.
+ */
+export function useCardWhiteboardPlacements(cardUri: string, enabled: boolean): WhiteboardPlacement[] {
+  const { db } = useSolidDatabase()
+  const podRootUri = useFilesCurrentPodRootUri()
+  const boardsContainer = podRootUri ? filesDataResourceUri(podRootUri, 'views/whiteboard/') : null
+  const boardEntries = useFilesContainerEntries(boardsContainer, enabled)
+  const boardFiles = useMemo(() => (boardEntries.data ?? [])
+    .filter((entry) => entry.kind !== 'container' && entry.uri.endsWith('.canvas'))
+    .slice(0, WHITEBOARD_SPACE_MAX_BOARDS), [boardEntries.data])
+  const boardQueries = useQueries({
+    queries: boardFiles.map((entry) => ({
+      queryKey: ['files', 'whiteboard-index', entry.uri] as const,
+      enabled: enabled && Boolean(db),
+      // A card just placed on a board must show up: look again whenever a card is opened.
+      staleTime: 0,
+      refetchOnMount: 'always' as const,
+      retry: false,
+      queryFn: async () => {
+        if (!db) throw new Error('Database not connected')
+        const resource = await readWhiteboardCanvasResource(db, entry.uri)
+        return { uri: entry.uri, content: resource.content }
+      },
+    })),
+  })
+  const boardKey = boardQueries.map((query) => `${query.dataUpdatedAt}`).join(',')
+  return useMemo(() => {
+    if (!enabled) return EMPTY_PLACEMENTS
+    const boards = boardQueries.flatMap((query) => (query.data ? [query.data] : []))
+    return boards.length > 0 ? projectWhiteboardPlacements(boards, { cardUri, podRootUri }) : EMPTY_PLACEMENTS
+    // boardQueries changes identity every render; boardKey tracks its content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardUri, enabled, podRootUri, boardKey])
 }

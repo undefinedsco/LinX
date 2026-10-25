@@ -397,23 +397,18 @@ describe('FileDetailPane rich text save wiring', () => {
     expect(mockToast).toHaveBeenCalledWith({ description: 'AI 修改审批已提交' })
   })
 
-  it('submits a dirty rich text draft as an AI change proposal without saving canonical content', async () => {
+  it('autosaves the person\'s own rich edits with a save line and no AI review button', async () => {
     render(<FileDetailPane />)
 
-    setRichDraft(screen, '# AI candidate\n\n- serialized rich draft')
-    fireEvent.click(screen.getByRole('button', { name: '提交 AI 修改审批' }))
+    setRichDraft(screen, '# Own edit\n\n- typed by the person')
 
-    await vi.waitFor(() => expect(mockMutateAiChange).toHaveBeenCalledTimes(1))
-    expect(mockMutateAiChange).toHaveBeenCalledWith(expect.objectContaining({
-      targetResourceUri: 'https://pod.example/public/README.md',
-      documentUri: null,
-      subject: 'https://pod.example/public/README.md',
-      operation: 'replace-content',
-      proposedContent: '# AI candidate\n\n- serialized rich draft',
-      writesCanonicalContent: false,
-    }))
-    expect(mockMutateRaw).not.toHaveBeenCalled()
-    expect(mockToast).toHaveBeenCalledWith({ description: 'AI 修改审批已提交' })
+    expect(screen.queryByRole('button', { name: '提交 AI 修改审批' })).not.toBeInTheDocument()
+    await vi.waitFor(() => expect(mockMutateRaw).toHaveBeenCalledWith(expect.objectContaining({
+      content: '# Own edit\n\n- typed by the person',
+    })), { timeout: 3000 })
+    expect(mockMutateAiChange).not.toHaveBeenCalled()
+    await waitFor(() => expect(document.querySelector('[data-document-editor-save-status="saved"]')).not.toBeNull())
+    expect(screen.queryByText('未保存')).not.toBeInTheDocument()
   })
 
   it('renders source-linked cards as body-first previews and submits rich drafts through proposals only', async () => {

@@ -95,7 +95,7 @@ describe('useStructuredSubjectPeekBodyController', () => {
     expect(result.current.technicalDetailsOpen).toBe(false)
     expect(result.current.technicalDetailsToggle).toEqual({
       expanded: false,
-      stateLabel: 'URI',
+      stateLabel: '展开',
     })
 
     act(() => result.current.toggleTechnicalDetails())

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ClipboardEvent, FocusEvent, ReactNode } from 'react'
+import type { ClipboardEvent, FocusEvent, MouseEvent, ReactNode } from 'react'
 
 type SaveStatus = 'saved' | 'dirty' | 'saving' | 'error'
 
@@ -22,6 +22,7 @@ type FakeEditorProps = {
   proposalLabel?: string
   autoSaveDelayMs?: number
   hideStatusBar?: boolean
+  onOpenLink?: (href: string) => boolean
 }
 
 function summarize(text: string): { title: string | null; links: string[] } {
@@ -67,6 +68,7 @@ export function BlockNoteFileEditor({
   proposalPending = false,
   proposalLabel = '审批',
   autoSaveDelayMs,
+  onOpenLink,
 }: FakeEditorProps) {
   const initial = content.text ?? ''
   const [text, setText] = useState(initial)
@@ -129,6 +131,14 @@ export function BlockNoteFileEditor({
     markDirty(event.clipboardData?.getData('text/plain') ?? '')
   }
 
+  const handleLinkClick = (event: MouseEvent<HTMLDivElement>) => {
+    const href = (event.target as Element).closest('a[href]')?.getAttribute('href')
+    if (!href || !/^https?:\/\//i.test(href)) return
+    event.preventDefault()
+    if (onOpenLink?.(href)) return
+    window.open(href, '_blank', 'noopener,noreferrer')
+  }
+
   const handleBlur = async (event: FocusEvent<HTMLDivElement>) => {
     const next = event.relatedTarget instanceof Node ? event.relatedTarget : null
     if (next && event.currentTarget.contains(next)) return
@@ -176,6 +186,7 @@ export function BlockNoteFileEditor({
         aria-label="富文本编辑器"
         onPaste={handlePaste}
         onBlur={handleBlur}
+        onClickCapture={handleLinkClick}
       >
         {heading ? <h1>{heading}</h1> : null}
         {body
