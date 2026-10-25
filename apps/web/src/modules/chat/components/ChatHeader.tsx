@@ -129,7 +129,11 @@ export function ChatHeader() {
   const isAssistant = !isGroup && Boolean(resolvedAgent || isLinxDefaultSecretaryChat(chat))
   const storedName = (typeof resolvedAgent?.name === 'string' && resolvedAgent.name) || chat?.title || '助手'
   // Same naming as the chat list: legacy default names show as “LinX 助手”.
-  const displayName = isAssistant ? displayAssistantName(storedName) : storedName
+  // Human chats: remark (alias) -> contact name -> chat title.
+  const contactLabel = !isAssistant && !isGroup
+    ? ((typeof contact?.alias === 'string' && contact.alias.trim()) || (typeof contact?.name === 'string' && contact.name.trim()) || '')
+    : ''
+  const displayName = isAssistant ? displayAssistantName(storedName) : (contactLabel || storedName)
   const threadSchedule = useThreadSchedule(isAssistant ? selectedThreadId : null)
   const scheduleLabel = useMemo(
     () => describeScheduleRepeat(threadSchedule.schedule)?.label ?? null,

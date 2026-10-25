@@ -346,6 +346,32 @@ describe('ChatHeader', () => {
     })
   })
 
+  it('titles a human chat with the contact remark, then name, not the raw chat title', () => {
+    const personChat = {
+      id: 'chat-1',
+      title: 'test@localhost:39340',
+      participants: ['https://user.example/profile/card#me', 'http://localhost:39340/test/profile/card#me'],
+      starred: false,
+    }
+    mockUseChatList.mockReturnValue({ data: [personChat] })
+    const setContact = (contact: Record<string, unknown>) => mockUseEntity.mockImplementation(
+      (_resource: unknown, iri: string | null | undefined) => ({
+        data: iri ? contact : null,
+        refresh: vi.fn().mockResolvedValue(undefined),
+      }),
+    )
+
+    setContact({ id: 'c1', name: '王小明', alias: '小王', contactType: 'person' })
+    const { unmount } = render(<ChatHeader />)
+    expect(screen.getAllByText('小王').length).toBeGreaterThan(0)
+    expect(screen.queryByText('test@localhost:39340')).not.toBeInTheDocument()
+    unmount()
+
+    setContact({ id: 'c1', name: '王小明', contactType: 'person' })
+    render(<ChatHeader />)
+    expect(screen.getAllByText('王小明').length).toBeGreaterThan(0)
+  })
+
   it('leaves the right sidebar toggle to the shared page header', () => {
     render(<ChatHeader />)
 

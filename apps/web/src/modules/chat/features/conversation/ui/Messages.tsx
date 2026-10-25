@@ -6,6 +6,7 @@ import { isLinxCardPart, LinxCardPart } from '../cards/CardCatalog'
 import { useOptionalConversationIdentity } from '../ConversationContext'
 import { MarkdownText, PlainText } from './MarkdownText'
 import { EditComposer } from './message-actions/EditComposer'
+import { MessageActionsBoundary } from './MessageActions'
 import { MessageToolbar } from './MessageToolbar'
 import { ProcessLine } from './ProcessLine'
 import { SourcesLine } from './SourcesLine'
@@ -82,6 +83,7 @@ export function UserMessage() {
   const editing = useAuiState((state) => state.composer.isEditing)
   return (
     <MessagePrimitive.Root className="group/message flex items-start justify-end gap-2.5" data-role="user" data-message-id={messageId}>
+      <MessageActionsBoundary role="user" disabled={editing}>
       <div className="flex min-w-0 max-w-[68%] flex-col items-end gap-1.5">
         <Speaker role="user" />
         {editing ? (
@@ -99,6 +101,7 @@ export function UserMessage() {
           </>
         )}
       </div>
+      </MessageActionsBoundary>
       <Avatar name={speaker ?? identity?.selfName ?? '我'} assistant={false} />
     </MessagePrimitive.Root>
   )
@@ -122,6 +125,7 @@ export function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="group/message flex items-start gap-2.5" data-role="assistant" data-message-id={messageId}>
       <Avatar name={identity?.agentName ?? 'AI'} assistant />
+      <MessageActionsBoundary role="assistant">
       <div className="flex min-w-0 max-w-[72%] flex-col items-start gap-1.5">
         <Speaker role="assistant" />
         <MessagePrimitive.Parts
@@ -157,6 +161,7 @@ export function AssistantMessage() {
           <BranchPicker />
         </div>
       </div>
+      </MessageActionsBoundary>
     </MessagePrimitive.Root>
   )
 }
