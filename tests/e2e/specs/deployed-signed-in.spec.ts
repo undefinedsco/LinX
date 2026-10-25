@@ -23,11 +23,15 @@ import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seede
  */
 const runId = `linx-acceptance-${Date.now().toString(36)}`
 const expectModelReply = process.env.LINX_E2E_EXPECT_MODEL_REPLY === '1'
+const expectBuiltinModels = process.env.LINX_E2E_EXPECT_BUILTIN_MODELS === '1'
+const requestFailures = new WeakMap<Page, string[]>()
 
 let runtime: SeededXpodRuntime | null = null
 let account: ProviderAccount | null = null
 let loginVia: 'cloud' | 'custom' = 'cloud'
 
+// Login and authenticated requests carry credentials; do not retain browser traces.
+test.use({ trace: 'off', screenshot: 'off', video: 'off' })
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(240_000)
 
@@ -53,6 +57,61 @@ test.afterAll(async () => {
   await runtime?.stop?.()
 })
 
+// Capture failures from the first navigation, including a transient bootstrap
+// toast that may disappear before the final assertions. Keep only pathname and
+// status; queries, headers and response bodies can contain private information.
+test.beforeEach(async ({ page }) => {
+  const failures: string[] = []
+  requestFailures.set(page, failures)
+  page.on('response', (response) => {
+    const pathname = new URL(response.url()).pathname
+    if (response.status() === 400 && /\/sparql\/?$/u.test(pathname)) {
+      failures.push(`HTTP 400 ${pathname}`)
+    }
+    if (expectBuiltinModels && pathname === '/v1/models' && response.status() !== 200) {
+      failures.push(`HTTP ${response.status()} /v1/models`)
+    }
+  })
+  await page.addInitScript(() => {
+    const state = { failed: false }
+    ;(window as any).__LINX_ACCEPTANCE_BOOTSTRAP__ = state
+    const check = () => {
+      if (document.body?.innerText.includes('LinX 助手没能准备好')) state.failed = true
+    }
+    const observer = new MutationObserver(check)
+    observer.observe(document, { childList: true, subtree: true, characterData: true })
+    check()
+  })
+})
+
+test.afterEach(async ({ page }) => {
+  expect(requestFailures.get(page) ?? [], 'SPARQL must avoid HTTP 400 and deployment model listing must return HTTP 200').toEqual([])
+  if (!page.isClosed()) {
+    expect(await page.evaluate(() => (window as any).__LINX_ACCEPTANCE_BOOTSTRAP__?.failed ?? false),
+      'the assistant must never report bootstrap failure').toBe(false)
+    await expect(page.getByText('LinX 助手没能准备好')).toHaveCount(0)
+  }
+})
+
+async function expectDeploymentModels(page: Page) {
+  if (!expectBuiltinModels) return
+  const result = await page.evaluate(async (url) => {
+    const db = (window as any).__SOLID_DB__
+    const authFetch = db.getDialect().getAuthenticatedFetch()
+    const response = await authFetch(url, { cache: 'no-store' })
+    // Return only public model identifiers, never auth headers or raw bodies.
+    const payload = await response.json().catch(() => null)
+    return {
+      status: response.status,
+      ids: Array.isArray(payload?.data)
+        ? payload.data.flatMap((model: any) => typeof model?.id === 'string' ? [model.id] : [])
+        : [],
+    }
+  }, new URL('/v1/models', account!.baseUrl).href)
+  expect(result.status, 'DPoP session must list deployment models without a Pod interface key').toBe(200)
+  expect(result.ids).toEqual(expect.arrayContaining(['linx', 'linx-lite']))
+}
+
 async function signIn(page: Page) {
   await page.goto('/')
   if (loginVia === 'cloud') {
@@ -68,6 +127,7 @@ async function signIn(page: Page) {
   await page.waitForURL((url) => url.origin !== providerOrigin, { timeout: 60_000 })
   await expectSecretaryVisible(page, 90_000)
   await waitForSolidDbReady(page)
+  await expectDeploymentModels(page)
 }
 
 /** The app's own authenticated fetch against the signed-in Pod. */

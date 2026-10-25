@@ -368,7 +368,8 @@ jobs:
           LINX_E2E_REUSE_SERVER: '0'
           LINX_E2E_CLOUD_IDENTITY_URL: ${{ env.RC_PROVIDER_URL }}
           LINX_E2E_LOGIN_VIA: custom
-          LINX_E2E_EXPECT_MODEL_REPLY: ${{ vars.LINX_RC_EXPECT_MODEL_REPLY || '1' }}
+          LINX_E2E_EXPECT_MODEL_REPLY: '1'
+          LINX_E2E_EXPECT_BUILTIN_MODELS: '1'
         run: |
           set -euo pipefail
           cd tests/e2e
