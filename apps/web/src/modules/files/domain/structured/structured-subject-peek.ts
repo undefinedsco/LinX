@@ -37,7 +37,8 @@ export type StructuredSubjectPeek = {
     sourceHash: string
   } | null
   facts: { predicate: string; values: string[] }[]
-  predicates: { predicate: string; values: string[] }[]
+  /** `label` is the column's name as the table shows it; without it the predicate's local name is used. */
+  predicates: { predicate: string; values: string[]; label?: string }[]
   backlinks: { subject: string; predicate: string; values: string[] }[]
 } | null
 
@@ -287,11 +288,14 @@ export function deriveStructuredSubjectPeekFacts({
   visibleProjection,
   subject,
   tableName,
+  predicateLabel,
 }: {
   projection: StructuredTableProjection
   visibleProjection: StructuredTableProjection
   subject: string
   tableName?: string
+  /** The column name the table shows for a property (so the panel never shows an internal id). */
+  predicateLabel?: (predicate: string) => string
 }) {
   const sourceRow = projection.rows.find((row) => row.subject === subject)
   const visibleRow = visibleProjection.rows.find((row) => row.subject === subject)
@@ -332,7 +336,10 @@ export function deriveStructuredSubjectPeekFacts({
     source,
     sourceLinkedCard,
     facts: rawFacts.slice(0, 6),
-    predicates: cardFacts.slice(0, 8),
+    predicates: cardFacts.slice(0, 8).map((cell) => {
+      const label = predicateLabel?.(cell.predicate)
+      return label ? { ...cell, label } : cell
+    }),
     backlinks,
   }
 }

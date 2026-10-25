@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useFilesStore } from '../../app/store'
 import { useCardDialog } from '@/lib/card-dialog'
 
 import { CardDialogHost } from './CardDialogHost'
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   restore: vi.fn().mockResolvedValue([]),
   texts: [] as Array<{ uri: string; title: string; text: string }>,
   citing: [] as Array<{ chatRef: string; chatId: string; title: string; count: number; quote: string | null; lastAt: string | null }>,
+  placements: [] as Array<{ boardUri: string; viewOf: string | null; name: string }>,
   selectChat: vi.fn(),
   writeCell: vi.fn().mockResolvedValue(undefined),
   confirmTerm: vi.fn().mockResolvedValue(undefined),
@@ -53,6 +55,7 @@ vi.mock('../../data/queries', () => ({
   useCreateRawTextResource: () => ({ mutateAsync: vi.fn() }),
   useActOnAiDraft: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useFilesCitingWork: () => mocks.citing,
+  useCardWhiteboardPlacements: () => mocks.placements,
   useFilesSelectChat: () => mocks.selectChat,
 }))
 vi.mock('../../data/queries/body-search-queries', () => ({
@@ -70,6 +73,7 @@ describe('CardDialogHost', () => {
     useCardDialog.setState({ request: null })
     mocks.texts = []
     mocks.citing = []
+    mocks.placements = []
     mocks.detail.mockReturnValue({
       data: {
         id: DOC, uri: DOC, name: 'plan.md', kind: 'resource', semanticKind: 'file',
@@ -251,6 +255,19 @@ describe('CardDialogHost', () => {
     fireEvent.click(within(section).getByText('周报讨论'))
     expect(mocks.selectChat).toHaveBeenCalledWith('c1')
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'chat' } })
+    expect(useCardDialog.getState().request).toBeNull()
+  })
+
+  it('lists the whiteboards the card sits on under 被引用 and opens that board', async () => {
+    mocks.placements = [{ boardUri: 'https://pod.example/.data/views/whiteboard/plan.canvas', viewOf: 'https://pod.example/tasks.ttl', name: '任务' }]
+    render(<CardDialogHost />)
+    act(() => { useCardDialog.getState().open({ uri: DOC }) })
+    const section = await screen.findByLabelText('被引用')
+    expect(within(section).getByText('在白板上')).toBeInTheDocument()
+    fireEvent.click(within(section).getByText('任务'))
+    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/tasks.ttl')
+    expect(useFilesStore.getState().structuredViewMode).toBe('whiteboard')
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/$microAppId', params: { microAppId: 'files' } })
     expect(useCardDialog.getState().request).toBeNull()
   })
 

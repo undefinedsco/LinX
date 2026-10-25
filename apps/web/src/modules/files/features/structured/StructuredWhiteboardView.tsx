@@ -24,6 +24,7 @@ export function StructuredWhiteboardView({
   visualRelations = [],
   snapshot,
   relationPredicateOptions = [],
+  predicateLabel,
   onVisualRelationsChange,
   onOpenSubject,
   onCommitCellWriteProposal,
@@ -35,6 +36,7 @@ export function StructuredWhiteboardView({
   visualRelations?: StructuredWhiteboardVisualRelation[]
   snapshot?: StructuredWhiteboardSnapshotV1
   relationPredicateOptions?: readonly string[]
+  predicateLabel?: (predicate: string) => string
   onAddSubject?: (subject: string) => void
   onCreateSubject?: (subject: string) => boolean | Promise<boolean>
   onRemoveSubject?: (subject: string) => void
@@ -53,6 +55,7 @@ export function StructuredWhiteboardView({
     visualRelations,
     snapshot,
     relationPredicateOptions,
+    predicateLabel,
     onCommitCellWriteProposal,
     onVisualRelationsChange,
     onOpenSubject,
@@ -65,7 +68,9 @@ export function StructuredWhiteboardView({
       cards={board.cards}
       canvasState={board.canvasState}
       relation={board.relation}
+      rowFacts={board.rowFacts}
       onCommitCardBody={board.commitCardBody}
+      onCommitCardTitle={board.commitCardTitle}
     />
   )
 }

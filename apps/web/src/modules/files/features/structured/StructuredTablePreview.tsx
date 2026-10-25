@@ -279,6 +279,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
     structuredSortDirection,
     hiddenPredicates: effectiveHiddenPredicates,
     kanbanGroupPredicate,
+    predicateLabel: columnLabelOf,
   })
   const whiteboardRelationPredicateOptions = projectStructuredRelationPredicateOptions(
     effectiveViewProjection,
@@ -621,6 +622,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
               visualRelations={whiteboardVisualRelations}
               snapshot={whiteboardSnapshot}
               relationPredicateOptions={whiteboardRelationPredicateOptions}
+              predicateLabel={columnLabelOf}
               onAddSubject={addWhiteboardSubjectFromUi}
               onCreateSubject={structuredWritesSupported ? createWhiteboardSubject : undefined}
               onRemoveSubject={removeWhiteboardSubjectFromUi}

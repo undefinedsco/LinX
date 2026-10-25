@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 
 import {
+  STRUCTURED_CARD_TITLE_PREDICATES,
   projectStructuredCards,
   type StructuredWhiteboardVisualRelation,
 } from '../../../domain/structured/structured-projections'
@@ -21,6 +22,7 @@ import {
 } from '../../../domain/structured/structured-whiteboard-canvas'
 import { useStructuredWhiteboardViewController } from '../useStructuredWhiteboardViewController'
 import { useWhiteboardCanvasState } from './useWhiteboardCanvasState'
+import { projectWhiteboardRowFacts } from './whiteboard-flow'
 
 const BODY_PREDICATES = [
   'schema:description',
@@ -29,6 +31,7 @@ const BODY_PREDICATES = [
   'http://purl.org/dc/terms/description',
 ]
 const DEFAULT_BODY_PREDICATE = 'http://purl.org/dc/terms/description'
+const DEFAULT_TITLE_PREDICATE = 'http://purl.org/dc/terms/title'
 
 /**
  * Ties the board together: layout saved in the Pod as JSON Canvas (with the
@@ -43,6 +46,7 @@ export function useWhiteboardBoardController({
   visualRelations,
   snapshot,
   relationPredicateOptions,
+  predicateLabel,
   onCommitCellWriteProposal,
   onVisualRelationsChange,
   onOpenSubject,
@@ -54,6 +58,8 @@ export function useWhiteboardBoardController({
   visualRelations?: StructuredWhiteboardVisualRelation[]
   snapshot?: StructuredWhiteboardSnapshotV1
   relationPredicateOptions?: readonly string[]
+  /** The column name the table shows for a property. */
+  predicateLabel?: (predicate: string) => string
   onCommitCellWriteProposal?: (proposal: StructuredCellWriteProposal) => StructuredCellCommitResult | Promise<StructuredCellCommitResult>
   onVisualRelationsChange?: (relations: StructuredWhiteboardVisualRelation[]) => void
   onOpenSubject?: Parameters<typeof useStructuredWhiteboardViewController>[0]['onOpenSubject']
@@ -104,9 +110,30 @@ export function useWhiteboardBoardController({
     }))
   }, [documentUri, onCommitCellWriteProposal, projection.rows])
 
+  const commitCardTitle = useCallback(async (subject: string, title: string) => {
+    if (!onCommitCellWriteProposal) return
+    const next = title.trim()
+    if (!next) return
+    const row = projection.rows.find((candidate) => candidate.subject === subject)
+    const existing = row?.cells.find((cell) => STRUCTURED_CARD_TITLE_PREDICATES.includes(cell.predicate))
+    await onCommitCellWriteProposal(createStructuredCellWriteProposal({
+      documentUri,
+      subject,
+      predicate: existing?.predicate ?? DEFAULT_TITLE_PREDICATE,
+      previousValues: existing ? [...existing.values] : [],
+      nextValues: [quoteStructuredCellLiteral(next)],
+    }))
+  }, [documentUri, onCommitCellWriteProposal, projection.rows])
+
+  const rowFacts = useCallback((subject: string) => (
+    predicateLabel ? projectWhiteboardRowFacts({ projection, documentUri, subject, labelOf: predicateLabel }) : []
+  ), [documentUri, predicateLabel, projection])
+
   return {
     canvasState,
     cards,
+    rowFacts,
+    commitCardTitle: onCommitCellWriteProposal ? commitCardTitle : undefined,
     model: whiteboard,
     relation: whiteboard,
     commitCardBody: onCommitCellWriteProposal ? commitCardBody : undefined,
