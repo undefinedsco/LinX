@@ -4,6 +4,14 @@ import { zh } from '@blocknote/core/locales'
 import { useCreateBlockNote } from '@blocknote/react'
 import '@blocknote/mantine/style.css'
 
+/** The card is small: the editor sits on the card's own background with compact type. */
+const COMPACT_EDITOR_CSS = `
+[data-whiteboard-body-editor] .bn-container { --bn-colors-editor-background: transparent; }
+[data-whiteboard-body-editor] .bn-editor { padding-inline: 0; }
+[data-whiteboard-body-editor] .bn-block-content { font-size: 12px; }
+[data-whiteboard-body-editor] [data-content-type="heading"] { --level: 14px !important; font-weight: 600; }
+`
+
 /**
  * Inline body editor for a whiteboard card (BlockNote). Loaded on demand so the
  * board itself stays light until someone double-clicks a card.
@@ -80,6 +88,7 @@ export default function WhiteboardBodyEditor({
           }}
         />
       ) : null}
+      <style>{COMPACT_EDITOR_CSS}</style>
       <BlockNoteView editor={editor} theme="light" sideMenu={false} slashMenu={false} />
     </div>
   )
