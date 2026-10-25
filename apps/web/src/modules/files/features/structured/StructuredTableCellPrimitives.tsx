@@ -1,6 +1,7 @@
 import type { KeyboardEvent, ReactNode } from 'react'
 import { CalendarDays, Check, ExternalLink, Eye, Hash, Info, Link2, ListChecks, Minus, MoreHorizontal, RotateCcw, ToggleLeft, Type, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { structuredOptionTone } from '../../domain/structured/structured-option-color'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -291,7 +292,7 @@ export function StructuredPredicateValueEditor({
                 type="button"
                 role="option"
                 aria-selected={option === editor.selectedValues[0]}
-                className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-foreground hover:bg-primary/10"
+                className={cn('rounded px-1.5 py-0.5 text-[10px] hover:opacity-80', structuredOptionTone(option).chip)}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => editor.commitEnumValue(option)}
               >
@@ -481,7 +482,7 @@ export function StructuredEnumValueChips({
       {labels.map((label, index) => (
         <span
           key={`${label}-${index}`}
-          className="inline-flex max-w-full items-center rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium leading-none text-primary"
+          className={cn('inline-flex max-w-full items-center rounded px-1.5 py-0.5 text-[11px] font-medium leading-none', structuredOptionTone(label).chip)}
           title={label}
         >
           <span className="min-w-0 truncate" title={label}>{label}</span>
@@ -998,7 +999,7 @@ export function StructuredEnumCellSelector({
           return (
             <div
               key={option.label}
-              className={cn('inline-flex items-center rounded bg-primary/10 text-primary', optionIndex === highlighted && 'ring-2 ring-primary')}
+              className={cn('inline-flex items-center rounded', structuredOptionTone(option.label).chip, optionIndex === highlighted && 'ring-2 ring-primary')}
             >
               <span
                 id={`${listboxId}-option-${optionIndex}`}

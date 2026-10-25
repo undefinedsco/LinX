@@ -375,26 +375,16 @@ describe('FileDetailPane rich text save wiring', () => {
     expect(mockMutateRaw).not.toHaveBeenCalled()
   })
 
-  it('submits a dirty raw draft as an AI change proposal without saving canonical content', async () => {
+  it('does not show the AI review button in raw source view and saves canonically', async () => {
     render(<FileDetailPane />)
 
     switchEditorToRawSource()
     fireEvent.change(screen.getByLabelText('原始内容'), {
-      target: { value: '# AI candidate\n\nReview before writing.' },
+      target: { value: '# Raw edit\n\nSaved directly.' },
     })
-    fireEvent.click(screen.getByRole('button', { name: '提交 AI 修改审批' }))
 
-    await vi.waitFor(() => expect(mockMutateAiChange).toHaveBeenCalledTimes(1))
-    expect(mockMutateAiChange).toHaveBeenCalledWith(expect.objectContaining({
-      targetResourceUri: 'https://pod.example/public/README.md',
-      documentUri: null,
-      subject: 'https://pod.example/public/README.md',
-      operation: 'replace-content',
-      proposedContent: '# AI candidate\n\nReview before writing.',
-      writesCanonicalContent: false,
-    }))
-    expect(mockMutateRaw).not.toHaveBeenCalled()
-    expect(mockToast).toHaveBeenCalledWith({ description: 'AI 修改审批已提交' })
+    expect(screen.queryByRole('button', { name: '提交 AI 修改审批' })).not.toBeInTheDocument()
+    expect(mockMutateAiChange).not.toHaveBeenCalled()
   })
 
   it('autosaves the person\'s own rich edits with a save line and no AI review button', async () => {
