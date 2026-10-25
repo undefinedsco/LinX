@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 import { useOptionalConversationIdentity } from '../ConversationContext'
 import { useChatList } from '../../../collections'
+import { favoriteAuthorLabel } from './favorite-author'
 import { useSpeakerName } from './speaker'
 import { useReadAloud } from './message-actions/read-aloud'
 
@@ -66,7 +67,7 @@ export function useMessageActions(role: MessageRole): MessageActionsState {
       title: text.replace(/\s+/gu, ' ').trim().slice(0, 40) || '消息',
       searchText: text,
       snapshotContent: text,
-      snapshotAuthor: speaker ?? (role === 'user' ? identity?.selfName : identity?.agentName),
+      snapshotAuthor: favoriteAuthorLabel({ role, speaker, selfName: identity?.selfName, agentName: identity?.agentName }),
       // K7: lets 收藏 jump back to the message ("在会话中查看"); messageId is the Pod message URI.
       snapshotMeta: JSON.stringify({ chatId: identity?.chatId, chatTitle, threadId: identity?.threadId, messageId: id }),
       // Top-level copies for the favorites module (R2-C); fields it does not know yet are ignored.

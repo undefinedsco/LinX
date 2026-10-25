@@ -1788,14 +1788,20 @@ export const chatOps = {
   async toggleChatStar(id: string, currentStarred: boolean): Promise<void> {
     const newStarred = !currentStarred
     await this.updateChat(id, { starred: newStarred })
+    this.syncStarFavorite(id, newStarred)
+  },
 
-    // CP1: report starred change to favorites hub
+  /**
+   * 标星 == 收藏 (docs/feature-plan/wave-b/13-favorites-hub.md): every path that
+   * changes a chat's starred flag reports it to the favorites hub (CP1).
+   */
+  syncStarFavorite(id: string, starred: boolean): void {
     const chat = this.getById(id)
-    favoriteHooks.onStarredChange('chat', id, newStarred, {
+    void Promise.resolve(favoriteHooks.onStarredChange('chat', id, starred, {
       title: chat?.title ?? id,
       searchText: chat?.title ?? undefined,
       snapshotContent: chat?.lastMessagePreview ?? undefined,
-    })
+    })).catch((error) => console.warn('[chat] Failed to sync star to favorites:', error))
   },
 
   /**
@@ -2586,8 +2592,11 @@ export function useChatMutations() {
   })
 
   const updateChat = useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Partial<ChatRow>) => 
-      chatOps.updateChat(id, data),
+    mutationFn: async ({ id, ...data }: { id: string } & Partial<ChatRow>) => {
+      await chatOps.updateChat(id, data)
+      // 标星 from the list menu and from 聊天信息 both land here.
+      if (typeof data.starred === 'boolean') chatOps.syncStarFavorite(id, data.starred)
+    },
   })
 
   const deleteChat = useMutation({

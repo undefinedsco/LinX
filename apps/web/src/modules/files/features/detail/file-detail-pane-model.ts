@@ -1,4 +1,4 @@
-import { isExplorerSystemDataFolder } from '../../domain/list/explorer-virtual-entries'
+import { isExplorerSystemDataFolder, projectExplorerEntryLabel } from '../../domain/list/explorer-virtual-entries'
 import {
   projectFileDetailShellState,
   type FileDetailShellTab,
@@ -48,7 +48,8 @@ export function planFileDetailFavoriteToggle({
     sourceId: file.uri,
     starred: !isFavorite,
     metadata: {
-      title: file.name,
+      // Same label the Files tree shows (.data -> 数据, no .md/.ttl).
+      title: projectExplorerEntryLabel(file),
       searchText: file.name,
       snapshotContent,
       snapshotMeta: JSON.stringify({

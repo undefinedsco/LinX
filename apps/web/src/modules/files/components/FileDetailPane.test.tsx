@@ -3812,7 +3812,7 @@ describe('FileDetailPane', () => {
       'https://pod.example/public/README.md',
       true,
       expect.objectContaining({
-        title: 'README.md',
+        title: 'README',
         snapshotMeta: JSON.stringify({
           fileId: 'https://pod.example/public/README.md',
           treeNodeId: 'container:https://pod.example/public/',

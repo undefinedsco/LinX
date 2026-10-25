@@ -5,6 +5,7 @@ import { useFavoriteStore } from '../../app/store'
 import { useFavoriteList, useFavoriteMutations, useFavoriteSourceStatus } from '../../data/collections'
 import { favoriteGroupOf } from '../../domain/groups'
 import { resolveFavoriteScene } from '../../domain/scene-restore'
+import { useResolveFavoriteDisplay } from '../display'
 import { undoToastAction } from '../../ui/UndoToastAction'
 import { useToast } from '@/components/ui/use-toast'
 import { useCardDialog } from '@/lib/card-dialog'
@@ -22,6 +23,7 @@ export function useFavoriteContentPaneController() {
   const selectFile = useFilesStore((s) => s.selectFile)
   const selectTreeNode = useFilesStore((s) => s.selectTreeNode)
   const { data: favorites } = useFavoriteList()
+  const resolveDisplay = useResolveFavoriteDisplay()
   const { removeFavorite, restoreFavorite } = useFavoriteMutations()
   const { toast } = useToast()
   const openCard = useCardDialog((s) => s.open)
@@ -92,7 +94,7 @@ export function useFavoriteContentPaneController() {
   }, [favorite, navigate, openCard, selectChat, selectContact, selectFile, selectThread, selectTreeNode, setMessageAnchor])
 
   return {
-    favorite: favorite as FavoriteRow | null,
+    favorite: (favorite ? resolveDisplay(favorite) : null) as FavoriteRow | null,
     sourceStatus,
     onRemove: handleRemove,
     onOpenSource: handleOpenSource,
