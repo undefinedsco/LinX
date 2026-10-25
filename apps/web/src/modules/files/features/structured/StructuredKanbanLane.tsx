@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 import { cn } from '@/lib/utils'
+import { structuredOptionTone } from '../../domain/structured/structured-option-color'
 import type { StructuredKanbanDisplayColumn } from './structured-kanban-view-model'
 
 export function StructuredKanbanLane({
@@ -171,8 +172,13 @@ export function StructuredKanbanLane({
             }}
           />
         ) : (
-          <p className={cn('min-w-0 flex-1 truncate text-xs font-medium text-foreground/80', collapsed && 'sr-only')}>
-            {column.label}
+          <p className={cn('min-w-0 flex-1 truncate', collapsed && 'sr-only')}>
+            <span
+              data-kanban-lane-chip="true"
+              className={cn('inline-block max-w-full truncate rounded px-1.5 py-0.5 align-middle text-xs font-medium', structuredOptionTone(column.label).chip)}
+            >
+              {column.label}
+            </span>
           </p>
         )}
         <span className="shrink-0 text-[10px] text-muted-foreground">{column.cardCountLabel}</span>
