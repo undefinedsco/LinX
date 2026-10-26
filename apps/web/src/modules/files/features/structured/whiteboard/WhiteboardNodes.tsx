@@ -1,7 +1,8 @@
-import { createContext, lazy, Suspense, useContext, useState } from 'react'
+import { createContext, lazy, memo, Suspense, useContext, useState } from 'react'
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
 
 import { cn } from '@/lib/utils'
+import { MarkdownPreview } from '../../../ui/FileDetailPreviewPrimitives'
 import { WHITEBOARD_SECTION_COLORS } from '../../../domain/structured/structured-whiteboard-canvas'
 import type { WhiteboardCardData, WhiteboardSectionData } from './whiteboard-flow'
 
@@ -38,6 +39,14 @@ export const WhiteboardNodeContext = createContext<WhiteboardNodeActions>({
   renameSection: noop,
   recolorSection: noop,
   canEdit: () => false,
+})
+
+const WHITEBOARD_CARD_PROSE = 'min-h-0 flex-1 overflow-hidden break-words text-xs leading-relaxed text-foreground/90 [&_a]:text-primary [&_blockquote]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-2 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-sm [&_h1]:font-semibold [&_h2]:text-[13px] [&_h2]:font-semibold [&_h3]:text-xs [&_h3]:font-semibold [&_img]:max-w-full [&_li]:ml-4 [&_li]:list-disc [&_ol_li]:list-decimal [&_p]:my-1 [&_pre]:overflow-hidden [&_pre]:rounded [&_pre]:bg-muted [&_pre]:p-1.5'
+// Read-only preview: plain react-markdown, never an editor instance per card. Cap the text so huge docs stay cheap.
+const WHITEBOARD_CARD_PREVIEW_CHARS = 1500
+
+const WhiteboardCardBody = memo(function WhiteboardCardBody({ body }: { body: string }) {
+  return <MarkdownPreview text={body.slice(0, WHITEBOARD_CARD_PREVIEW_CHARS)} className={WHITEBOARD_CARD_PROSE} />
 })
 
 const SIDE_POSITIONS = [
@@ -121,7 +130,7 @@ export function WhiteboardCardNode({ id, data, selected }: NodeProps & { data: W
                 ))}
               </ul>
             ) : (
-              <p className="min-h-0 flex-1 overflow-hidden whitespace-pre-wrap break-words leading-relaxed">{content.body}</p>
+              <WhiteboardCardBody body={content.body} />
             )}
           </>
         )}

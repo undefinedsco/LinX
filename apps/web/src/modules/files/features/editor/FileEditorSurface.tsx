@@ -283,7 +283,8 @@ export const FileEditorSurface = forwardRef<FileEditorSurfaceHandle, {
               sourceState={editor.rawSourceEditorState}
               onDirtyChange={setRawSourceDirty}
               onSavePendingChange={setRawSourceSavePending}
-              onSubmitProposal={editor.submitChangeProposal}
+              // AI review belongs to the rendered view; raw source only offers it for source-linked cards (no canonical save there).
+              onSubmitProposal={editor.isSourceLinkedEditor ? editor.submitChangeProposal : undefined}
               proposalPending={editor.proposalPending}
               proposalLabel={editor.proposalLabel}
               allowCanonicalSave={!editor.isSourceLinkedEditor}

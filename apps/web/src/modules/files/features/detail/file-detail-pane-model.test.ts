@@ -89,7 +89,7 @@ describe('file detail pane model', () => {
       sourceId: currentFile.uri,
       starred: true,
       metadata: {
-        title: 'report.md',
+        title: 'report',
         searchText: 'report.md',
         snapshotContent: '# Report\n',
         snapshotMeta: JSON.stringify({
@@ -107,7 +107,7 @@ describe('file detail pane model', () => {
       sourceId: currentFile.uri,
       starred: false,
       metadata: {
-        title: 'report.md',
+        title: 'report',
         searchText: 'report.md',
         snapshotContent: undefined,
         snapshotMeta: JSON.stringify({
@@ -121,6 +121,15 @@ describe('file detail pane model', () => {
       isFavorite: false,
       selectedTreeNodeId: null,
     })).toBeNull()
+  })
+
+  it('titles a favorited .data folder 数据, as the Files tree does', () => {
+    const plan = planFileDetailFavoriteToggle({
+      file: file({ uri: 'https://pod.example/.data/', name: '.data', kind: 'container', semanticKind: 'container', parentUri: 'https://pod.example/' }),
+      isFavorite: false,
+      selectedTreeNodeId: null,
+    })
+    expect(plan?.metadata.title).toBe('数据')
   })
 
   it('projects structured return action without renderer-local context checks', () => {

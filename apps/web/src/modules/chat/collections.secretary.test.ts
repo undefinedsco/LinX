@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentResource, chatResource, contactResource, threadResource } from '@undefineds.co/models'
 import { agentResourceId } from '@/lib/data/resource-identity'
+import { favoriteHooks } from '@/modules/favorites/collections'
 
 const {
   collectionOptions,
@@ -92,6 +93,10 @@ const {
 
 vi.mock('@/lib/data/pod-collection', () => ({
   createPodCollection: vi.fn(createCollectionMock),
+}))
+
+vi.mock('@/modules/favorites/collections', () => ({
+  favoriteHooks: { onStarredChange: vi.fn(async () => undefined) },
 }))
 
 vi.mock('@/providers/query-provider', () => ({
@@ -939,5 +944,17 @@ describe('chat workspace persistence', () => {
       threadRow.id,
       expect.objectContaining({ workspace: workspaceUri }),
     )
+  })
+})
+
+describe('chat star syncs to favorites', () => {
+  it('reports starred chats to the favorites hub (聊天信息 and list menu share this path)', () => {
+    chatCollection.state.set('chat-star', { id: 'chat-star', title: '小王', lastMessagePreview: '你好' } as any)
+
+    chatOps.syncStarFavorite('chat-star', true)
+    expect(favoriteHooks.onStarredChange).toHaveBeenCalledWith('chat', 'chat-star', true, expect.objectContaining({ title: '小王' }))
+
+    chatOps.syncStarFavorite('chat-star', false)
+    expect(favoriteHooks.onStarredChange).toHaveBeenLastCalledWith('chat', 'chat-star', false, expect.anything())
   })
 })

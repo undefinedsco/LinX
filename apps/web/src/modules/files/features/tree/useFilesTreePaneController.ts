@@ -11,6 +11,7 @@ import {
   useSelectedFilesLocation,
   useSharedWithMe,
 } from '../../data/queries'
+import { projectExplorerEntryLabel } from '../../domain/list/explorer-virtual-entries'
 import { projectFilesAddContainerUri } from '../../domain/list/files-add-menu-model'
 import { normalizeContainerUri } from '../../domain/resource/resource-semantics'
 import { ALL_FILES_NODE_ID, type FilesEntry } from '../../domain/resource/resource-model'
@@ -89,7 +90,7 @@ export function useFilesTreePaneController() {
   )
   const toggleEntryFavorite = useCallback((entry: FilesEntry) => {
     void filesFavoriteHooks.onStarredChange('files', entry.uri, !isEntryFavorite(entry), {
-      title: entry.name,
+      title: projectExplorerEntryLabel(entry),
       searchText: entry.name,
       snapshotMeta: JSON.stringify({ fileId: entry.uri, treeNodeId: createContainerNodeId(entry.uri) }),
     })

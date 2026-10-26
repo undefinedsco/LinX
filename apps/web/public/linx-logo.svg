@@ -1,8 +1,8 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="pencilGradient" x1="264" y1="512" x2="760" y2="512" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#6A4BFF"/>
-      <stop offset="1" stop-color="#5A38F4"/>
+      <stop stop-color="#563E84"/>
+      <stop offset="1" stop-color="#563E84"/>
     </linearGradient>
     <clipPath id="iconClip">
       <rect x="80" y="80" width="864" height="864" rx="212" />
@@ -37,7 +37,7 @@
       </g>
 
       <g transform="rotate(45)">
-        <rect x="-300" y="-48" width="116" height="96" rx="28" fill="#7A56FF" />
+        <rect x="-300" y="-48" width="116" height="96" rx="28" fill="#563E84" />
         <rect x="-172" y="-48" width="484" height="96" fill="url(#pencilGradient)" />
         <path d="M312 -48L428 0L312 48V-48Z" fill="url(#pencilGradient)" />
         <rect x="-190" y="-48" width="18" height="96" rx="9" fill="white" />

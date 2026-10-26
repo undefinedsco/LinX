@@ -81,6 +81,14 @@ describe('LinxWhiteboardCanvas', () => {
     expect(screen.getByText('这张卡片已删除')).toBeTruthy()
   })
 
+  it('renders card bodies as formatted markdown, not raw syntax', () => {
+    const md = [{ subject: '#a', title: '维护成本', className: null, summary: '**加粗内容** 与 - 列表', tags: [] }]
+    const { container } = render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={md} canvasState={makeState(board)} />)
+    const strong = container.querySelector('[data-whiteboard-card="c1"] strong')
+    expect(strong?.textContent).toBe('加粗内容')
+    expect(container.textContent).not.toContain('**')
+  })
+
   it('opens the card dialog with Space on the selected card', async () => {
     const { container } = render(<LinxWhiteboardCanvas documentUri={DOC} model={model} cards={cards} canvasState={makeState(board)} />)
     const card = container.querySelector('[data-id="c1"]') as HTMLElement
