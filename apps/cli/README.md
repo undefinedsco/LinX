@@ -80,6 +80,12 @@ auto-mode ACP 控制界面当前提供这些 LinX 壳命令：
 - `/debug on|off` 切换协议调试输出
 - `/exit` 或 `/quit` 结束控制界面
 
+## Sessions
+
+- `--session <id|file>` resume a specific LinX session id or JSONL file
+- `--session-id <id>` create (or reopen) this exact session id; cannot be combined with `--session`/`--continue`/`--resume`/`--last`
+- `--session-dir <dir>` store and look up sessions in this directory (default flat directory under the LinX agent dir)
+
 ## Credentials
 
 当前优先读取：
