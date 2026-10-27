@@ -79,7 +79,7 @@ jobs:
           npx tsc -p .
           node --test test/*.test.cjs
       - name: Release script tests
-        run: node --test scripts/release-candidate.test.mjs scripts/rc-provider-seed.test.mjs scripts/xpod-rc-provider-patch.test.mjs scripts/rc-shared-group-contract.test.mjs scripts/rc-provider-runtime.test.mjs
+        run: node --test scripts/release-candidate.test.mjs scripts/rc-provider-seed.test.mjs scripts/xpod-rc-provider-patch.test.mjs scripts/rc-shared-group-contract.test.mjs scripts/rc-provider-runtime.test.mjs scripts/rc-shared-group-artifact-cleanup.test.mjs
 
   # LinX against a real (seeded, SQLite) xpod started from its npm package: sign-in, chat,
   # files, citations, withdrawal, every main surface. Covers the local/standalone space mode
@@ -400,8 +400,21 @@ jobs:
           node scripts/rc-provider-runtime.mjs observe "$RUNNER_TEMP/xpod-runtime-deployment.json" \
             "$RUNNER_TEMP/xpod-runtime-pods.json" "$RUNNER_TEMP/xpod-runtime-manifest.json" "$RUNNER_TEMP/xpod-runtime-after.json"
           node scripts/rc-provider-runtime.mjs compare "$RUNNER_TEMP/xpod-runtime-before.json" "$RUNNER_TEMP/xpod-runtime-after.json"
+      - name: Drop the shared-group spec's failure artifacts before upload
+        # always(): failure evidence only exists when an earlier step failed, which
+        # is exactly when this must run. The shared-group spec disables
+        # trace/screenshot/video, but Playwright still writes per-test output for a
+        # failed attempt, and those pages carry the run's seeded provider passwords.
+        id: shared_group_cleanup
+        if: always()
+        run: |
+          set -euo pipefail
+          node scripts/rc-shared-group-artifact-cleanup.mjs "$GITHUB_WORKSPACE/tests/e2e/test-results"
       - uses: actions/upload-artifact@v4
-        if: failure()
+        # Sanitized evidence only: upload when the job failed AND the privacy
+        # cleanup finished. If cleanup failed, upload nothing rather than publish
+        # the raw results tree (this step does not get to relax failure() on its own).
+        if: failure() && steps.shared_group_cleanup.outcome == 'success'
         with:
           name: rc-acceptance-results-${{ github.sha }}
           path: tests/e2e/test-results

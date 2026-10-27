@@ -79,3 +79,40 @@ test('the shared-group spec is a real two-browser UI flow with no credential art
   assert.match(spec, /test\.skip\(!enabled,/)
   assert.match(spec, /requiredEnv\('LINX_E2E_BOB_ACCOUNT_WEBID'\)/)
 })
+
+test('the shared-group failure artifacts are dropped before any upload, fail-closed', () => {
+  const cleanupMarker = '      - name: Drop the shared-group spec\'s failure artifacts before upload\n'
+  const cleanupStart = workflow.indexOf(cleanupMarker)
+  assert.ok(cleanupStart >= 0, 'candidate.yml must sanitize shared-group artifacts before upload')
+  const cleanup = stepBody("Drop the shared-group spec's failure artifacts before upload")
+  // It must actually invoke the helper on the RC results tree.
+  assert.match(cleanup, /node scripts\/rc-shared-group-artifact-cleanup\.mjs/)
+  assert.match(cleanup, /tests\/e2e\/test-results/)
+  // always(): the evidence it sanitizes only exists after a failure.
+  assert.match(cleanup, /if: always\(\)/)
+  // A guarded upload needs a step id to read the cleanup outcome from.
+  assert.match(cleanup, /id: \s*shared_group_cleanup/)
+
+  const upload = workflow.slice(workflow.indexOf('      - uses: actions/upload-artifact@v4', cleanupStart))
+  const uploadStep = upload.slice(0, upload.indexOf('\n      - '))
+  assert.match(uploadStep, /rc-acceptance-results-/)
+  // Fail closed: only upload the sanitized tree, and only when cleanup succeeded.
+  assert.match(uploadStep, /if: failure\(\) && steps\.shared_group_cleanup\.outcome == 'success'/)
+  // The cleanup must be ordered before the upload it protects.
+  assert.ok(cleanupStart < workflow.indexOf('      - uses: actions/upload-artifact@v4', cleanupStart))
+  // Exactly one upload of the RC results tree remains, so no unguarded copy lingers.
+  const rcUploads = workflow.match(/name: rc-acceptance-results-\$\{\{ github\.sha \}\}/g) ?? []
+  assert.equal(rcUploads.length, 1)
+
+  // The acceptance step itself stays mandatory: no continue-on-error, no if-guard.
+  const shared = stepBody('Shared-group acceptance (Alice and Bob on the real RC provider)')
+  const acceptanceStep = shared.slice(0, shared.indexOf('\n      - uses:'))
+  assert.doesNotMatch(acceptanceStep, /continue-on-error|\n\s+if:/)
+
+  // The workflow's own cleanup step must stay after acceptance and before upload,
+  // and provider restore / seed cleanup must still run unconditionally.
+  const order = ['Shared-group acceptance', "Drop the shared-group spec's failure artifacts before upload",
+    'rc-acceptance-results-'].map((needle) => workflow.indexOf(needle))
+  assert.ok(order.every((position, i) => position >= 0 && (i === 0 || position > order[i - 1])))
+  assert.match(stepBody('Scale the xpod RC provider back down'), /^\s+if: always\(\)$/m)
+})
