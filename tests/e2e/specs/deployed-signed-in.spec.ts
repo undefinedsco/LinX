@@ -12,6 +12,8 @@ import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seede
  *   LINX_E2E_CLOUD_IDENTITY_URL  the provider (signs in through the 云端空间 button)
  *   LINX_E2E_ACCOUNT_EMAIL / LINX_E2E_ACCOUNT_PASSWORD   the acceptance account
  *   LINX_E2E_EXPECT_MODEL_REPLY=1  require a real model answer
+ *   LINX_E2E_EXPECT_SINGLE_OIDC_CONSENT=1  fresh single-identity seed sign-in:
+ *     the visible user-facing OIDC approval must happen exactly once (RC)
  *
  * Standalone — the same account variables plus LINX_E2E_LOGIN_VIA=custom: signs in to a
  *   standalone xpod (its own identity provider) through 使用其他空间.
@@ -120,10 +122,24 @@ async function signIn(page: Page) {
     await fillCustomLoginProvider(page, account!.baseUrl)
     await getLoginDialog(page).getByRole('button', { name: '继续' }).click()
   }
+  // A fresh single-identity seed has exactly one owned WebID/Pod binding: the
+  // in-process local seeded runtime, or RC's per-run Alice opt-in. Built-in
+  // model expectations do not prove one identity, so they must not enable this.
+  const singleIdentitySeed = loginVia === 'custom'
+    && (runtime !== null || process.env.LINX_E2E_EXPECT_SINGLE_OIDC_CONSENT === '1')
   const providerOrigin = new URL(account!.baseUrl).origin
   await page.waitForURL((url) => url.origin === providerOrigin, { timeout: 60_000 })
   await signInToSeededRuntime(page, account!)
-  await authorizeSeededRuntime(page, account!)
+  const approvals = await authorizeSeededRuntime(
+    page,
+    account!,
+    singleIdentitySeed ? { maxOidcApprovalScreens: 1 } : {},
+  )
+  if (singleIdentitySeed) {
+    // The xpod pre-binding fix must make the first apparent click the real
+    // consent, not a pick-webid POST that produces a second approval screen.
+    expect(approvals, 'fresh single-identity seed sign-in must approve OIDC consent exactly once').toBe(1)
+  }
   await page.waitForURL((url) => url.origin !== providerOrigin, { timeout: 60_000 })
   await expectSecretaryVisible(page, 90_000)
   await waitForSolidDbReady(page)

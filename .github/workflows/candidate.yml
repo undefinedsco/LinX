@@ -370,6 +370,8 @@ jobs:
           LINX_E2E_LOGIN_VIA: custom
           LINX_E2E_EXPECT_MODEL_REPLY: '1'
           LINX_E2E_EXPECT_BUILTIN_MODELS: '1'
+          # Per-run single-owned-binding seed: one visible OIDC approval only.
+          LINX_E2E_EXPECT_SINGLE_OIDC_CONSENT: '1'
         run: |
           set -euo pipefail
           cd tests/e2e

@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 import type { SeededXpodRuntime } from './seeded-xpod-runtime'
 import { expectLoginComplete, expectLoginDialog, fillCustomLoginProvider } from './login-ui'
+import { createOidcApprovalGuard, summarizeSeededLoginFailure } from './oidc-consent-guard'
 
 export async function loginToSeededXpod(page: Page, runtime: SeededXpodRuntime): Promise<void> {
   await installSeededXpodDesktopBridge(page, runtime)
@@ -93,12 +94,13 @@ export async function assertSeededLoginReady(page: Page, runtime: SeededXpodRunt
       { timeout: 30_000 },
     )
     await expectLoginComplete(page)
-  } catch (error) {
-    const debugState = await readSeededAuthDebugState(page)
-    throw new Error(`expected login route to be ready\n${JSON.stringify({
-      ...debugState,
-      browserCookies: await page.context().cookies(),
-    }, null, 2)}`, { cause: error })
+  } catch {
+    // No raw cause: re-emitting the original error could restore unredacted
+    // details after the safe summary. Diagnostics stay allow-listed only.
+    const debugState = await readSeededAuthDebugState(page).catch(() => null)
+    throw new Error(
+      `expected login route to be ready\n${JSON.stringify(debugState ? summarizeSeededLoginFailure(debugState) : null)}`,
+    )
   }
 
   await expect.poll(async () => {
@@ -109,7 +111,7 @@ export async function assertSeededLoginReady(page: Page, runtime: SeededXpodRunt
       dbError: debugState.dbError,
       dbPodUrlReady: typeof debugState.dbPodUrl === 'string' && debugState.dbPodUrl.includes(`/${runtime.podName}/`),
       dbAuthFetchReady: debugState.dbAuthFetchReady,
-      currentSessionReady: Boolean(debugState.currentSession),
+      currentSessionReady: debugState.currentSessionReady,
       storedAccountReady: typeof debugState.loginStore?.state?.storedAccount?.webId === 'string'
         && debugState.loginStore.state.storedAccount.webId.includes(`/${runtime.podName}/profile/card#me`),
     }
@@ -144,34 +146,78 @@ export async function assertSeededLoginReady(page: Page, runtime: SeededXpodRunt
 
 export async function readSeededAuthDebugState(page: Page) {
   return page.evaluate(() => {
-    const readStorage = (storage: Storage) =>
-      Object.fromEntries(
-        Object.keys(storage)
-          .filter((key) => key.startsWith('solid') || key.startsWith('linx') || key.startsWith('oidc'))
-          .map((key) => [key, storage.getItem(key)]),
-      )
-
+    // Diagnostics are an allow-list of safe metadata, never raw credential or
+    // error text. Arbitrary messages can embed opaque keys/client secrets, so
+    // failures are represented by fixed presence markers only.
+    const publicUrl = (value: unknown, keepHash = false) => {
+      if (typeof value !== 'string' || !value) return null
+      try {
+        const url = new URL(value)
+        url.username = ''
+        url.password = ''
+        url.search = ''
+        if (!keepHash) url.hash = ''
+        return url.href
+      } catch {
+        return '[invalid-url]'
+      }
+    }
+    const pagePath = (href: string) => {
+      try {
+        const url = new URL(href)
+        return `${url.origin}${url.pathname}`
+      } catch {
+        return '[invalid-url]'
+      }
+    }
+    const errorMarker = (value: unknown) =>
+      typeof value === 'string' && value.length > 0 ? '[error-present]' : null
+    const storageKeys = (storage: Storage) =>
+      Object.keys(storage).filter((key) => key.startsWith('solid') || key.startsWith('linx') || key.startsWith('oidc'))
+    const loginStore = (() => {
+      try {
+        return JSON.parse(window.localStorage.getItem('linx-login') ?? 'null')
+      } catch {
+        return null
+      }
+    })()
+    const storedAccount = loginStore?.state?.storedAccount
+    const bootstrap = (window as any).__SOLID_DB_BOOTSTRAP__
     const sessionId = window.localStorage.getItem('solidClientAuthn:currentSession')
-    const storedSession = sessionId
-      ? window.localStorage.getItem(`solidClientAuthenticationUser:${sessionId}`)
-      : null
-
     return {
-      url: window.location.href,
+      // OAuth codes/state live in the query; only origin+pathname is retained.
+      url: pagePath(window.location.href),
       title: document.title,
-      body: document.body.innerText,
       dbReady: Boolean((window as any).__SOLID_DB__),
       dbStatus: (window as any).__SOLID_DB_STATUS__ ?? null,
-      dbError: (window as any).__SOLID_DB_ERROR__ ?? null,
-      dbBootstrap: (window as any).__SOLID_DB_BOOTSTRAP__ ?? null,
-      dbPodUrl: (window as any).__SOLID_DB_POD_URL__ ?? null,
+      dbError: errorMarker((window as any).__SOLID_DB_ERROR__),
+      dbBootstrap: bootstrap
+        ? { status: bootstrap.status ?? null, stage: bootstrap.stage ?? null, errorPresent: errorMarker(bootstrap.error) !== null }
+        : null,
+      dbPodUrl: publicUrl((window as any).__SOLID_DB_POD_URL__),
       dbAuthFetchReady: typeof (window as any).__SOLID_DB__?.getDialect?.()?.getAuthenticatedFetch?.() === 'function',
-      currentSession: sessionId,
-      storedSession: storedSession ? JSON.parse(storedSession) : null,
-      loginStore: JSON.parse(window.localStorage.getItem('linx-login') ?? 'null'),
-      localStorage: readStorage(window.localStorage),
-      sessionStorage: readStorage(window.sessionStorage),
-      cookie: document.cookie,
+      currentSessionReady: Boolean(sessionId),
+      storedSessionPresent: Boolean(
+        sessionId && window.localStorage.getItem(`solidClientAuthenticationUser:${sessionId}`),
+      ),
+      // The WebID is public identity; its fragment (#me) is preserved while
+      // query and userinfo are stripped. Storage values never leave the page.
+      loginStore: storedAccount
+        ? {
+            state: {
+              storedAccount: {
+                webId: publicUrl(storedAccount.webId, true),
+              },
+            },
+          }
+        : null,
+      localStorageKeys: storageKeys(window.localStorage),
+      sessionStorageKeys: storageKeys(window.sessionStorage),
+      // Cookie names only: values are never read into diagnostics.
+      cookieNames: document.cookie
+        .split(';')
+        .map((entry) => entry.split('=')[0]?.trim())
+        .filter(Boolean),
     }
   })
 }
@@ -226,8 +272,27 @@ export async function signInToSeededRuntime(page: Page, runtime: ProviderAccount
 }
 
 /** Gets through the provider's consent page (creating the Pod first when the account has none). */
-export async function authorizeSeededRuntime(page: Page, runtime: ProviderAccount): Promise<void> {
+export interface SeededAuthorizationOptions {
+  /**
+   * Optional, caller-scoped cap on user-facing Account OIDC approval actions.
+   * Unset keeps the generic (multi-identity) consent flow uncapped.
+   */
+  maxOidcApprovalScreens?: number
+}
+
+export async function authorizeSeededRuntime(
+  page: Page,
+  runtime: ProviderAccount,
+  options: SeededAuthorizationOptions = {},
+): Promise<number> {
   const deadline = Date.now() + 90_000
+  // Only an explicitly scoped caller caps user-facing OIDC approval actions;
+  // an unset maximum keeps the generic multi-identity flow unchanged.
+  const providerOrigin = new URL(runtime.baseUrl).origin
+  const approvalGuard = createOidcApprovalGuard({
+    providerOrigin,
+    maxApprovalActions: options.maxOidcApprovalScreens,
+  })
 
   while (Date.now() < deadline) {
     const authorizeButton = page.getByRole('button', { name: /^(Authorize|允许访问|允许)$/i }).first()
@@ -291,22 +356,25 @@ export async function authorizeSeededRuntime(page: Page, runtime: ProviderAccoun
         await page.waitForTimeout(500)
         continue
       }
-      const providerOrigin = new URL(runtime.baseUrl).origin
       for (let attempt = 0; attempt < 3; attempt += 1) {
         await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined)
-        if (new URL(page.url()).origin !== providerOrigin) return
+        if (new URL(page.url()).origin !== providerOrigin) return approvalGuard.count
+        // Count the visible OIDC approval action immediately before clicking it.
+        // A known-fresh single-identity run allows one approval; a second
+        // qualifying click is rejected before it can hide a duplicate screen.
+        approvalGuard.beforeApproval(page.url())
         await authorizeButton.click({ timeout: 5_000 }).catch(() => undefined)
         const left = await page.waitForURL((url) => url.origin !== providerOrigin, { timeout: 20_000 })
           .then(() => true, () => false)
-        if (left) return
+        if (left) return approvalGuard.count
       }
-      throw new Error(`consent did not complete after 允许\n${JSON.stringify(await readSeededAuthDebugState(page), null, 2)}`)
+      throw new Error(`consent did not complete after 允许\n${JSON.stringify(summarizeSeededLoginFailure(await readSeededAuthDebugState(page)))}`)
     }
 
     await page.waitForTimeout(500)
   }
 
-  throw new Error(`timed out waiting for seeded xpod consent\n${JSON.stringify(await readSeededAuthDebugState(page), null, 2)}`)
+  throw new Error(`timed out waiting for seeded xpod consent\n${JSON.stringify(summarizeSeededLoginFailure(await readSeededAuthDebugState(page)))}`)
 }
 
 async function clickAccountDashboardContinue(page: Page): Promise<void> {
@@ -318,7 +386,7 @@ async function clickAccountDashboardContinue(page: Page): Promise<void> {
   })
 
   if (!clicked) {
-    throw new Error(`expected account dashboard Continue control\n${JSON.stringify(await readSeededAuthDebugState(page), null, 2)}`)
+    throw new Error(`expected account dashboard Continue control\n${JSON.stringify(summarizeSeededLoginFailure(await readSeededAuthDebugState(page)))}`)
   }
 }
 
@@ -344,7 +412,7 @@ async function waitForPodCreationOutcome(page: Page, expectedPodUrl: string): Pr
     await page.waitForTimeout(500)
   }
 
-  throw new Error(`expected created Pod ${expectedPodUrl} to become selectable or authorizable\n${JSON.stringify(await readSeededAuthDebugState(page), null, 2)}`)
+  throw new Error(`expected created Pod ${expectedPodUrl} to become selectable or authorizable\n${JSON.stringify(summarizeSeededLoginFailure(await readSeededAuthDebugState(page)))}`)
 }
 
 async function waitForAppPath(page: Page, path: string, timeoutMs: number): Promise<void> {
