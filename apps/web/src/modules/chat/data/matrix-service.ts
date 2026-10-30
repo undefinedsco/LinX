@@ -115,12 +115,18 @@ export function createPodMatrixClient(input: {
 /**
  * Canonical Matrix server name from the authenticated account's own MXID
  * (`@user:server`). The API host is not assumed to be the service identity.
+ *
+ * The server part is the whole authority after the localpart delimiter, not
+ * the text after the last colon: an authority legitimately carries a
+ * non-default port (`localhost:5739`, `pod.local:8443`) or a bracketed IPv6
+ * literal (`[::1]`, `[2001:db8::1]:8448`). Splitting on the last colon would
+ * reduce those to a bare port and invite a Matrix user on a different server.
  */
 export function matrixServerNameFromUserId(userId: string): string {
   if (typeof userId !== 'string' || !userId) {
     throw new Error('群聊服务返回了无效的账号标识，无法确认所在服务器。')
   }
-  const separator = userId.lastIndexOf(':')
+  const separator = userId.indexOf(':')
   if (!userId.startsWith('@') || separator <= 1 || separator === userId.length - 1) {
     throw new Error('群聊服务返回了无效的账号标识，无法确认所在服务器。')
   }

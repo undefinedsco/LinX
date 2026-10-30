@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MatrixClientError } from '@linx/agent-runtime/matrix-client'
+import { matrixUserIdFromWebId, MatrixClientError } from '@linx/agent-runtime/matrix-client'
 import {
   createPodMatrixClient,
   formatMatrixErrorForUser,
+  matrixServerNameFromUserId,
   sendMatrixThreadMessage,
 } from './matrix-service'
 import {
@@ -45,6 +46,49 @@ const CREDENTIAL = {
 
 beforeEach(() => resetMatrixInterfaceCredentialsForTests())
 afterEach(() => resetMatrixInterfaceCredentialsForTests())
+
+describe('matrix server name from the whoami MXID', () => {
+  it('uses the bare host for the default-port production authority', () => {
+    expect(matrixServerNameFromUserId('@u_alice:ids.sealosgzg.site')).toBe('ids.sealosgzg.site')
+  })
+
+  it('keeps a non-default port instead of reducing the server to the port number', async () => {
+    for (const server of ['localhost:5739', 'pod.local:8443']) {
+      const userId = `@u_alice:${server}`
+      expect(matrixServerNameFromUserId(userId)).toBe(server)
+      // The invite must target the same account the provider derived for this WebID.
+      expect(await matrixUserIdFromWebId(WEB_ID, matrixServerNameFromUserId(userId)))
+        .toBe(await matrixUserIdFromWebId(WEB_ID, server))
+    }
+  })
+
+  it('keeps a bracketed IPv6 authority, with and without a port', async () => {
+    for (const server of ['[::1]', '[2001:db8::1]:8448']) {
+      const userId = `@u_alice:${server}`
+      expect(matrixServerNameFromUserId(userId)).toBe(server)
+      expect(await matrixUserIdFromWebId(WEB_ID, matrixServerNameFromUserId(userId)))
+        .toBe(await matrixUserIdFromWebId(WEB_ID, server))
+    }
+  })
+
+  it('keeps rejecting malformed or non-string MXIDs', () => {
+    const invalid: unknown[] = [
+      '',
+      '@',
+      '@u_alice',
+      '@u_alice:',
+      '@:pod.example',
+      'u_alice:pod.example',
+      ' @u_alice:pod.example',
+      null,
+      undefined,
+      42,
+    ]
+    for (const userId of invalid) {
+      expect(() => matrixServerNameFromUserId(userId as string)).toThrow('无效的账号标识')
+    }
+  })
+})
 
 describe('matrix transport authorization', () => {
   it('attaches the Pod interface credential to Matrix requests', async () => {
