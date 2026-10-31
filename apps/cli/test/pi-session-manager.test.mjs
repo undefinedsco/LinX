@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
@@ -651,4 +651,106 @@ test('native Pod session list surfaces container read failures', async (t) => {
     () => source.listSessions('/tmp/another-cwd'),
     /Failed to list Pod container .*\/\.data\/sessions\/.*: 403 Forbidden/,
   )
+})
+
+function appendAssistantMessage(manager, text) {
+  manager.appendMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text }],
+    api: 'openai-completions',
+    provider: 'undefineds',
+    model: 'linx-lite',
+    usage: {
+      input: 1, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 3,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: 'stop',
+    timestamp: Date.now(),
+  })
+}
+
+test('--session-dir stores sessions in the chosen directory', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  t.after(() => cleanup())
+
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-session-dir-cwd-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-session-dir-agent-'))
+  const customDir = mkdtempSync(join(tmpdir(), 'linx-session-dir-custom-'))
+  t.after(() => {
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+    rmSync(customDir, { recursive: true, force: true })
+  })
+
+  const manager = await module.createLinxPiSessionManager({ cwd, agentDir, sessionDir: customDir, podSessionSource: null })
+  assert.equal(manager.isPersisted(), true)
+  assert.equal(manager.getSessionDir(), customDir)
+  assert.ok(manager.getSessionFile().startsWith(customDir + '/'))
+
+  // Listing (used by --resume/--last) honours the same directory.
+  appendAssistantMessage(manager, 'in custom dir')
+  const listed = await module.listLinxPiSessions(cwd, agentDir, { sessionDir: customDir, podSessionSource: null })
+  assert.ok(listed.some((session) => session.id === manager.getSessionId()))
+  const defaultListed = await module.listLinxPiSessions(cwd, agentDir, { podSessionSource: null })
+  assert.equal(defaultListed.some((session) => session.id === manager.getSessionId()), false)
+})
+
+test('--session-id creates an exact id and reopens the same session', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  t.after(() => cleanup())
+
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-session-id-cwd-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-session-id-agent-'))
+  const customDir = mkdtempSync(join(tmpdir(), 'linx-session-id-custom-'))
+  t.after(() => {
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+    rmSync(customDir, { recursive: true, force: true })
+  })
+
+  const created = await module.createLinxPiSessionManager({
+    cwd, agentDir, sessionDir: customDir, sessionId: 'linx-exact_1', podSessionSource: null,
+  })
+  assert.equal(created.getSessionId(), 'linx-exact_1')
+  appendAssistantMessage(created, 'kept across reopen')
+
+  const reopened = await module.createLinxPiSessionManager({
+    cwd, agentDir, sessionDir: customDir, sessionId: 'linx-exact_1', podSessionSource: null,
+  })
+  assert.equal(reopened.getSessionId(), 'linx-exact_1')
+  assert.equal(reopened.getEntries().some((entry) => entry.type === 'message'), true)
+
+  // --last honours the chosen directory and finds that same session.
+  const last = await module.createLinxPiSessionManager({ cwd, agentDir, sessionDir: customDir, last: true, podSessionSource: null })
+  assert.equal(last.getSessionId(), 'linx-exact_1')
+})
+
+test('--session-id rejects conflicting selectors and unsafe ids without writing', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  t.after(() => cleanup())
+
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-session-guard-cwd-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-session-guard-agent-'))
+  const customDir = mkdtempSync(join(tmpdir(), 'linx-session-guard-custom-'))
+  t.after(() => {
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+    rmSync(customDir, { recursive: true, force: true })
+  })
+
+  await assert.rejects(
+    () => module.createLinxPiSessionManager({ cwd, agentDir, sessionDir: customDir, sessionId: 'exact', session: 'other', podSessionSource: null }),
+    /--session-id cannot be combined with --session/,
+  )
+  await assert.rejects(
+    () => module.createLinxPiSessionManager({ cwd, agentDir, sessionDir: customDir, sessionId: 'exact', last: true, podSessionSource: null }),
+    /--session-id cannot be combined with --continue or --resume/,
+  )
+  for (const unsafe of ['../escape', 'has space', '-lead', 'trail-', 'a/b']) {
+    await assert.rejects(
+      () => module.createLinxPiSessionManager({ cwd, agentDir, sessionDir: customDir, sessionId: unsafe, podSessionSource: null }),
+      /Session id must be non-empty/,
+    )
+  }
+  assert.deepEqual(readdirSync(customDir), [])
 })

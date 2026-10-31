@@ -5,6 +5,7 @@
  * resolveMembers, and getGroupMemberRoles.
  */
 
+import { createHash } from 'node:crypto'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ContactClass, ContactType, chatResource, contactResource } from '@undefineds.co/models'
 
@@ -170,6 +171,7 @@ describe('CP1: createGroupWithChat', () => {
 
   afterEach(() => {
     setContactsDatabaseGetter(() => null)
+    vi.unstubAllGlobals()
   })
 
   it('should create group + chat when >= 2 members', async () => {
@@ -239,28 +241,72 @@ describe('CP1: createGroupWithChat', () => {
     expect(mockInsert).toHaveBeenCalledTimes(1)
   })
 
-  it('creates a Matrix room for group chat when an authenticated Matrix adapter is provided', async () => {
-    const authFetch = vi.fn(async () => new Response(JSON.stringify({
-      room_id: '!room:pod.example',
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+  it('creates a Matrix room for group chat when an authorized Matrix adapter is provided', async () => {
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith('/account/whoami')) {
+        return new Response(JSON.stringify({ user_id: '@alice:pod.example' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ room_id: '!room:pod.example' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', authFetch)
+    const grantRoomAccess = vi.fn(async () => ({
+      roomContainerUri: 'https://pod.example/.data/chat/matrix-room/',
+      aclUri: 'https://pod.example/.data/chat/matrix-room/.acl',
+      grantedWebIds: ['https://pod.example/bob/profile/card#me'],
     }))
 
     const result = await contactOps.createGroupWithChat({
       name: 'Matrix Group',
       participants: ['https://pod.example/bob/profile/card#me'],
       ownerRef: 'https://pod.example/alice/profile/card#me',
-      matrix: { authFetch: authFetch as any },
+      matrix: {
+        grantRoomAccess,
+        access: {
+          get: () => ({
+            apiKey: 'sk-alpha',
+            webId: 'https://pod.example/alice/profile/card#me',
+            accountOrigin: 'https://id.example',
+            origin: 'https://pod.example',
+            podUrl: 'https://pod.example/alice/',
+          }),
+          authorize: vi.fn(),
+          release: vi.fn(async () => undefined),
+        },
+      },
     })
 
-    expect(authFetch).toHaveBeenCalledWith(
-      'https://pod.example/_matrix/client/v3/createRoom',
-      expect.objectContaining({ method: 'POST' }),
-    )
-    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    const createRequest = authFetch.mock.calls[1]?.[0] as Request
+    expect(createRequest).toBeInstanceOf(Request)
+    expect(createRequest.url).toBe('https://pod.example/_matrix/client/v3/createRoom')
+    expect(createRequest.method).toBe('POST')
+    expect(createRequest.headers.get('Authorization')).toBe('Bearer sk-alpha')
+    expect(createRequest.headers.get('DPoP')).toBeNull()
+    expect(createRequest.credentials).toBe('omit')
+    const body = JSON.parse(await createRequest.text())
     expect(body.name).toBe('Matrix Group')
-    expect(body.invite).toEqual(['@bob_profile_card_me:pod.example'])
+    // Private room is created WITHOUT invites; the invite is sent after the ACL.
+    expect(body.invite).toBeUndefined()
+    expect(grantRoomAccess).toHaveBeenCalledTimes(1)
+    expect(grantRoomAccess.mock.calls[0]?.[0]).toMatchObject({
+      ownerWebId: 'https://pod.example/alice/profile/card#me',
+      participants: ['https://pod.example/bob/profile/card#me'],
+      roomContainerUri: expect.stringContaining('/.data/chat/matrix-'),
+    })
+    const inviteRequest = authFetch.mock.calls[2]?.[0] as Request
+    expect(inviteRequest.url).toBe(
+      'https://pod.example/_matrix/client/v3/rooms/!room%3Apod.example/invite',
+    )
+    expect(JSON.parse(await inviteRequest.text())).toEqual({
+      user_id: `@u_${createHash('sha256').update('https://pod.example/bob/profile/card#me').digest('hex')}:pod.example`,
+      targetWebID: 'https://pod.example/bob/profile/card#me',
+    })
     expect(result.chatId).toMatch(/^matrix-[a-f0-9]{16}\/index\.ttl#this$/)
     expect(mockInsert).not.toHaveBeenCalled()
     expect(mockDb.updateById).toHaveBeenCalledWith(

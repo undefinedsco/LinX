@@ -14,10 +14,30 @@ export interface CreateLinxSolidDatabaseOptions {
   initTimeoutMs?: number
   podUrl?: string | null
   transportUrlRewrite?: TransportUrlRewrite | null
+  /**
+   * Per-database collection SELECT endpoint (drizzle-solid 0.3.26). Used by
+   * shared-room references so SELECT reads the owner's canonical room without
+   * mutating the shared table or copying its data.
+   */
+  sparqlEndpoint?: string
+  /** Skip implicit broad-parent LDP preparation for room-scoped read DBs. */
+  resourcePreparation?: 'auto' | 'off'
 }
 
 const DEFAULT_INIT_TIMEOUT_MS = 30_000
 const inFlightCreations = new Map<string, Promise<SolidDatabase>>()
+/**
+ * Stable identity for the authenticated caller. A session object keeps the
+ * same token while its OIDC `sessionId`/`webId` fields settle; different
+ * session objects (or different fetch functions) never share a token, so one
+ * tenant can never borrow another's in-flight database just because the
+ * storage root matches.
+ */
+const sessionIdentities = new WeakMap<object, number>()
+/** Aliases each in-flight creation is reachable through, for exact cleanup. */
+const inFlightAliases = new WeakMap<Promise<SolidDatabase>, Set<string>>()
+const fetchIdentities = new WeakMap<(...args: never[]) => unknown, number>()
+let nextIdentityToken = 1
 const MAX_BOOTSTRAP_EVENTS = 80
 
 export interface TransportUrlRewrite {
@@ -35,28 +55,41 @@ export async function createLinxSolidDatabase(
   session: unknown,
   options: CreateLinxSolidDatabaseOptions = {},
 ): Promise<SolidDatabase> {
-  const cacheKeys = resolveCreationCacheKeys(session, options.podUrl)
-  for (const cacheKey of cacheKeys) {
+  // Coalesce the same storage binding while OIDC/profile discovery settles:
+  // the Pod root and the WebID are independent aliases (as before), and each
+  // alias also carries the semantic binding so room endpoints, resource
+  // preparation and transport rewrites never share a database.
+  const cacheKeys = resolveCreationCacheKeys(session, options)
+  for (const cacheKey of cacheKeys.lookup) {
     const inFlight = inFlightCreations.get(cacheKey)
     if (inFlight) {
-      return await inFlight
+      // A known identity may claim its own object's anonymous creation exactly
+      // once; the synchronous promotion below is atomic (no await between read
+      // and rebind), so a second identity can never claim it afterwards.
+      promoteAnonymousClaim(inFlight, cacheKey, cacheKeys)
+      return await awaitCallerDeadline(inFlight, options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS)
     }
   }
 
   const creation = createLinxSolidDatabaseUncached(session, options)
-  if (cacheKeys.length > 0) {
-    for (const cacheKey of cacheKeys) {
-      inFlightCreations.set(cacheKey, creation)
-    }
-    const clearInFlight = () => {
-      for (const cacheKey of cacheKeys) {
+  const aliases = new Set(cacheKeys.store)
+  inFlightAliases.set(creation, aliases)
+  for (const cacheKey of aliases) {
+    inFlightCreations.set(cacheKey, creation)
+  }
+  const clearInFlight = () => {
+    const tracked = inFlightAliases.get(creation)
+    if (tracked) {
+      for (const cacheKey of tracked) {
         if (inFlightCreations.get(cacheKey) === creation) {
           inFlightCreations.delete(cacheKey)
         }
       }
+      tracked.clear()
+      inFlightAliases.delete(creation)
     }
-    void creation.then(clearInFlight, clearInFlight)
   }
+  void creation.then(clearInFlight, clearInFlight)
 
   return await creation
 }
@@ -89,6 +122,8 @@ async function createLinxSolidDatabaseUncached(
     podUrl: normalizePodUrl(options.podUrl),
     resourcePreparation: 'best-effort',
     schema: solidSchema,
+    ...(options.sparqlEndpoint ? { sparqlEndpoint: options.sparqlEndpoint } : {}),
+    ...(options.resourcePreparation ? { resourcePreparation: options.resourcePreparation } : {}),
   } as any) as unknown as SolidDatabase
   report({ stage: 'database:create:done' })
 
@@ -100,6 +135,13 @@ async function createLinxSolidDatabaseUncached(
   })
   installInsertWriteGuard(instance)
   installMutationWriteGuard(instance)
+
+  if (options.resourcePreparation === 'off') {
+    // Room-scoped read database: the target container lives on the owner's Pod
+    // and is not Bob's to initialize. Skip broad parent/container bootstrap.
+    report({ stage: 'database:init:skipped' })
+    return instance
+  }
 
   try {
     await withTimeout(
@@ -259,23 +301,130 @@ function rewriteUrlBase(requestUrl: string, fromBaseUrl: string, toBaseUrl: stri
   }
 }
 
-function resolveCreationCacheKeys(session: unknown, podUrl?: string | null): string[] {
-  const info = (session as { info?: { sessionId?: string; webId?: string } } | null | undefined)?.info
-  const normalizedPodUrl = normalizePodUrl(podUrl)
-  const webId = typeof info?.webId === 'string' && info.webId.trim()
-    ? info.webId
-    : null
-
-  const keys: string[] = []
-  if (normalizedPodUrl) {
-    keys.push(`pod:${normalizedPodUrl}`)
+function identityTokenFor(session: unknown): string {
+  const fetchImpl = (session as { fetch?: unknown } | null | undefined)?.fetch
+  if (typeof session === 'object' && session !== null) {
+    return `s${weakToken(sessionIdentities, session)}`
   }
-
-  if (webId) {
-    keys.push(`webid:${webId}:default`)
+  if (typeof fetchImpl === 'function') {
+    return `f${weakToken(fetchIdentities, fetchImpl as (...args: never[]) => unknown)}`
   }
+  return ''
+}
 
-  return keys
+function weakToken<T extends object>(registry: WeakMap<T, number>, key: T): number {
+  const existing = registry.get(key)
+  if (existing !== undefined) return existing
+  const token = nextIdentityToken++
+  registry.set(key, token)
+  return token
+}
+
+function isBroadDiscoveryOptions(options: CreateLinxSolidDatabaseOptions): boolean {
+  return !options.sparqlEndpoint
+    && (!options.resourcePreparation || options.resourcePreparation === 'auto')
+    && !options.transportUrlRewrite
+}
+
+/**
+ * Cache identity for an in-flight creation.
+ *
+ * Identity = stable caller object (WeakMap token) + authenticated WebID scope
+ * + storage location (explicit Pod root or profile discovery) + full semantic
+ * binding (room endpoint, resource preparation, transport rewrite).
+ *
+ * - The OIDC `sessionId` is not identity (it settles after the first call);
+ *   the same session *object* keeps coalescing while fields settle.
+ * - The WebID is auth scope: Alice and Bob never share a database even for the
+ *   same owner Pod/room, and a known identity change on one object never
+ *   reuses the previous account's pending database.
+ * - Unknown→known may claim only its own object's anonymous in-flight entry.
+ * - Profile discovery may be claimed by a later explicit Pod URL only on the
+ *   same object, same known WebID, and only for the broad (non-room) binding.
+ * - There is no global Pod-root alias: another session object can never claim
+ *   the creation by matching the storage root.
+ */
+interface CreationCacheKeys {
+  lookup: string[]
+  store: string[]
+  /** This caller object's anonymous alias for the current location/binding. */
+  anonymousKey: string | null
+  /** The known-identity alias of this caller, when the WebID is known. */
+  knownKey: string | null
+  webId: string
+}
+
+function resolveCreationCacheKeys(
+  session: unknown,
+  options: CreateLinxSolidDatabaseOptions,
+): CreationCacheKeys {
+  const caller = identityTokenFor(session)
+  if (!caller) return { lookup: [], store: [], anonymousKey: null, knownKey: null, webId: '' }
+  const info = (session as { info?: { webId?: string } } | null | undefined)?.info
+  const webId = typeof info?.webId === 'string' && info.webId.trim() ? info.webId : ''
+  const podUrl = normalizePodUrl(options.podUrl)
+  const semantic = JSON.stringify([
+    options.sparqlEndpoint ? new URL(options.sparqlEndpoint).href : '',
+    options.resourcePreparation ?? 'default',
+    options.transportUrlRewrite
+      ? `${normalizePodUrl(options.transportUrlRewrite.fromBaseUrl)}>${normalizePodUrl(options.transportUrlRewrite.toBaseUrl)}`
+      : '',
+  ])
+  const location = podUrl ? `pod:${podUrl}` : 'discovery'
+  const scope = (web: string) => `obj:${caller}|web:${web}|${location}|${semantic}`
+
+  const anonymousKey = scope('unknown')
+  const knownKey = webId ? scope(webId) : null
+  const lookup: string[] = []
+  if (knownKey) lookup.push(knownKey)
+  // Same object settling from unknown to known may claim its own anonymous
+  // creation (promoted exactly once); other objects can never reach this alias.
+  lookup.push(anonymousKey)
+  if (knownKey && podUrl && isBroadDiscoveryOptions(options)) {
+    // Profile discovery followed by the explicit Pod URL of the same login.
+    lookup.push(`obj:${caller}|web:${webId}|discovery|${semantic}`)
+  }
+  return { lookup, store: knownKey ? [knownKey] : [anonymousKey], anonymousKey, knownKey, webId }
+}
+
+/**
+ * Consume the caller object's anonymous alias for the first known identity.
+ *
+ * The anonymous entry is deleted and the same promise is bound to the known
+ * alias in one synchronous step, and the new alias is registered on the
+ * creation so normal cleanup removes it. Later identities find neither the
+ * anonymous nor the known alias and start their own database.
+ */
+function promoteAnonymousClaim(
+  inFlight: Promise<SolidDatabase>,
+  matchedKey: string,
+  cacheKeys: CreationCacheKeys,
+): void {
+  if (!cacheKeys.webId || !cacheKeys.knownKey || !cacheKeys.anonymousKey) return
+  if (matchedKey !== cacheKeys.anonymousKey) return
+  if (inFlightCreations.get(cacheKeys.anonymousKey) !== inFlight) return
+  if (inFlightCreations.has(cacheKeys.knownKey)) return
+  inFlightCreations.delete(cacheKeys.anonymousKey)
+  inFlightCreations.set(cacheKeys.knownKey, inFlight)
+  inFlightAliases.get(inFlight)?.add(cacheKeys.knownKey)
+}
+
+/**
+ * A caller that joins an existing creation still honors its own init deadline:
+ * a shorter requested timeout must not hang on the shared promise.
+ */
+async function awaitCallerDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('Pod init timed out')), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 function installInsertWriteGuard(db: SolidDatabase): void {

@@ -89,7 +89,12 @@ jobs:
             if (record.branch !== "staging") fail("acceptance is not from staging")
             if (!String(record.candidate).startsWith(version + "-rc.")) fail("candidate " + record.candidate + " is not " + version)
             if (!/^sha256:[0-9a-f]{64}$/.test(record.digest)) fail("invalid digest")
-            const required = ["verify", "local-e2e", "standalone-e2e", "deployed-digest", "static-deploy", "deployed-smoke", "signed-in"]
+            const backend = record.providerRuntime
+            if (backend?.schema !== "linx-xpod-runtime/1" ||
+              !/^sha256:[0-9a-f]{64}$/.test(backend.digest) ||
+              backend.image !== `ghcr.io/undefinedsco/xpod@${backend.digest}` ||
+              !/^sha256:[0-9a-f]{64}$/.test(backend.runtimeDigest)) fail("missing exact xpod provider runtime evidence")
+            const required = ["verify", "local-e2e", "standalone-e2e", "deployed-digest", "static-deploy", "deployed-smoke", "signed-in", "shared-group"]
             for (const check of required) if (record.checks?.[check] !== "passed") fail("check not passed: " + check)
             const out = require("fs").createWriteStream(process.env.GITHUB_OUTPUT, { flags: "a" })
             out.write(`digest=${record.digest}\ncandidate=${record.candidate}\nsourceSha=${sha}\n`)

@@ -900,10 +900,11 @@ export const contactOps = {
     const matrixRoom = input.matrix
       ? await getContactsChatPort().createMatrixGroupRoom({
           db,
-          authFetch: input.matrix.authFetch,
+          access: input.matrix.access,
           name,
           participants,
           ownerRef,
+          ...(input.matrix.grantRoomAccess ? { grantRoomAccess: input.matrix.grantRoomAccess } : {}),
         })
       : null
     const chatId = matrixRoom?.chatId ?? crypto.randomUUID()
