@@ -79,7 +79,7 @@ jobs:
           npx tsc -p .
           node --test test/*.test.cjs
       - name: Release script tests
-        run: node --test scripts/release-candidate.test.mjs scripts/rc-provider-seed.test.mjs scripts/xpod-rc-provider-patch.test.mjs scripts/rc-shared-group-contract.test.mjs scripts/rc-provider-runtime.test.mjs scripts/rc-public-evidence-cleanup.test.mjs
+        run: node --test scripts/release-candidate.test.mjs scripts/rc-provider-seed.test.mjs scripts/xpod-rc-provider-patch.test.mjs scripts/rc-shared-group-contract.test.mjs scripts/rc-provider-runtime.test.mjs scripts/rc-public-evidence-cleanup.test.mjs scripts/rc-browser-results.test.mjs
 
   # LinX against a real (seeded, SQLite) xpod started from its npm package: sign-in, chat,
   # files, citations, withdrawal, every main surface. Covers the local/standalone space mode
@@ -375,7 +375,15 @@ jobs:
         run: |
           set -euo pipefail
           cd tests/e2e
-          npx playwright test specs/deployed-signed-in.spec.ts --reporter=list
+          report="$RUNNER_TEMP/rc-browser-signed-in.json"
+          rm -f "$report"
+          (
+            umask 077
+            PLAYWRIGHT_JSON_OUTPUT_FILE="$report" npx playwright test specs/deployed-signed-in.spec.ts --reporter=list,json
+          )
+          test -s "$report"
+          chmod 600 "$report"
+          node ../../scripts/rc-browser-results.mjs verify signed-in "$report"
       - name: Shared-group acceptance (Alice and Bob on the real RC provider)
         # Mandatory RC evidence. This is a real two-person browser flow against the same
         # xpod-rc. Trace/screenshots/video stay off for this spec because
@@ -390,7 +398,15 @@ jobs:
         run: |
           set -euo pipefail
           cd tests/e2e
-          npx playwright test specs/rc-shared-group.spec.ts --reporter=list
+          report="$RUNNER_TEMP/rc-browser-shared-group.json"
+          rm -f "$report"
+          (
+            umask 077
+            PLAYWRIGHT_JSON_OUTPUT_FILE="$report" npx playwright test specs/rc-shared-group.spec.ts --reporter=list,json
+          )
+          test -s "$report"
+          chmod 600 "$report"
+          node ../../scripts/rc-browser-results.mjs verify shared-group "$report"
       - name: Verify the xpod provider stayed unchanged during acceptance
         run: |
           set -euo pipefail
