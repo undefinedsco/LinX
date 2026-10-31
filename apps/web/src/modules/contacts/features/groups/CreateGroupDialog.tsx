@@ -30,6 +30,7 @@ import { contactCollection, contactOps } from '../../data/collections'
 import { isGroupContact, type ContactRow } from '@undefineds.co/models'
 import { SelectableContactList } from '../../ui/SelectableContactList'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
+import { formatMatrixErrorForUser } from '@/modules/chat/matrix-service'
 
 interface CreateGroupDialogProps {
   open: boolean
@@ -146,8 +147,8 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
       onCreated?.(result.id, result.chatId)
       handleClose()
     } catch (err) {
-      const msg = formatErrorForUser(err, '创建群组失败。请确认当前空间可写后再试。')
-      setError(msg)
+      const matrixMessage = formatMatrixErrorForUser(err)
+      setError(matrixMessage ?? formatErrorForUser(err, '创建群组失败。请确认当前空间可写后再试。'))
     } finally {
       setIsCreating(false)
     }

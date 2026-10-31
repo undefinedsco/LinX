@@ -59,6 +59,7 @@ vi.mock('../data/collections', () => ({
   },
 }))
 
+import { MatrixClientError } from '@linx/agent-runtime/matrix-client'
 import { MatrixInterfaceAuthorizeUnavailableError } from '@/lib/matrix/pod-interface-access'
 import { CreateGroupDialog } from './CreateGroupDialog'
 
@@ -288,6 +289,84 @@ describe('CreateGroupDialog', () => {
     })
   })
 
+  it('keeps the safe Matrix 403 reason instead of a generic login failure', async () => {
+    const onCreated = vi.fn()
+    const onOpenChange = vi.fn()
+    mockCreateGroupWithChat.mockRejectedValueOnce(
+      new MatrixClientError('Grant Pod interface access before using Matrix', {
+        status: 403,
+        errcode: 'M_FORBIDDEN',
+      }),
+    )
+
+    render(
+      <CreateGroupDialog open onOpenChange={onOpenChange} onCreated={onCreated} />,
+      { wrapper: createWrapper() },
+    )
+
+    fireEvent.change(screen.getByPlaceholderText('输入群组名称'), {
+      target: { value: 'Test Group' },
+    })
+    fireEvent.click(await screen.findByText('Alice'))
+    fireEvent.click(screen.getByRole('button', { name: '创建群组' }))
+
+    expect(
+      await screen.findByText('群聊操作没有完成：Grant Pod interface access before using Matrix'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/登录状态已失效|请重新登录/)).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '创建群组' })).toBeInTheDocument()
+    expect(onCreated).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+  })
+
+  it('keeps a Pod read 403 with a nested upstream 401 in the group-chat operation', async () => {
+    mockCreateGroupWithChat.mockRejectedValueOnce(
+      new MatrixClientError('Pod read failed: upstream401 Unauthorized', {
+        status: 403,
+        errcode: 'M_FORBIDDEN',
+      }),
+    )
+
+    render(
+      <CreateGroupDialog open onOpenChange={() => {}} />,
+      { wrapper: createWrapper() },
+    )
+
+    fireEvent.change(screen.getByPlaceholderText('输入群组名称'), {
+      target: { value: 'Test Group' },
+    })
+    fireEvent.click(await screen.findByText('Alice'))
+    fireEvent.click(screen.getByRole('button', { name: '创建群组' }))
+
+    expect(
+      await screen.findByText('群聊操作没有完成：Pod read failed: upstream401 Unauthorized'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/登录状态已失效|请重新登录/)).not.toBeInTheDocument()
+  })
+
+  it('uses the Matrix safety fallback for a 403 reason that contains a URL or key', async () => {
+    mockCreateGroupWithChat.mockRejectedValueOnce(
+      new MatrixClientError('Pod write failed at https://node.example/alice/?token=secret', {
+        status: 403,
+        errcode: 'M_FORBIDDEN',
+      }),
+    )
+
+    render(
+      <CreateGroupDialog open onOpenChange={() => {}} />,
+      { wrapper: createWrapper() },
+    )
+
+    fireEvent.change(screen.getByPlaceholderText('输入群组名称'), {
+      target: { value: 'Test Group' },
+    })
+    fireEvent.click(await screen.findByText('Alice'))
+    fireEvent.click(screen.getByRole('button', { name: '创建群组' }))
+
+    expect(await screen.findByText('当前空间没有允许这次群聊操作。')).toBeInTheDocument()
+    expect(screen.queryByText(/node\.example|token=secret|https?:\/\//)).not.toBeInTheDocument()
+  })
+
   it('does not expose storage internals when group creation fails', async () => {
     mockCreateGroupWithChat.mockRejectedValueOnce(new Error('Failed to create Pod container https://node.example/alice/.data/groups/: HTTP 403'))
 
@@ -305,6 +384,7 @@ describe('CreateGroupDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: '创建群组' }))
 
     expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本机空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.queryByText(/群聊操作没有完成/)).not.toBeInTheDocument()
     expect(screen.queryByText(/HTTP 403|Pod container|node\.example|\.data/i)).not.toBeInTheDocument()
   })
 })
