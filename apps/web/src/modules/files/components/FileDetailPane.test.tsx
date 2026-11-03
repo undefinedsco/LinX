@@ -8938,9 +8938,10 @@ describe('FileDetailPane', () => {
       fireEvent.pointerDown(screen.getByRole('button', { name: '列显示' }))
       expect(screen.queryByRole('menuitemcheckbox', { name: 'tags' })).not.toBeInTheDocument()
       fireEvent.keyDown(document.body, { key: 'Escape' })
-      // Let the 列显示 menu finish closing first: on slow runners its close otherwise dismisses the
-      // + 属性 menu that opens right after, and the click lands on a row that is already gone.
-      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+      // Radix hands focus back to the 列显示 trigger in a timeout after the menu unmounts. If that
+      // lands after + 属性 opens, the non-modal + 属性 menu takes it as focus outside and closes, so
+      // the click below misses its row (CI-only timing). Wait for focus to come back first.
+      await waitFor(() => expect(screen.getByRole('button', { name: '列显示' })).toHaveFocus())
 
       // ... but 加属性 offers it again.
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
