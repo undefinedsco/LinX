@@ -11,10 +11,11 @@
 
 import type { SolidDatabase } from '@undefineds.co/models'
 import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/client'
-import { getSolidDataset, universalAccess } from '@inrupt/solid-client'
+import { universalAccess } from '@inrupt/solid-client'
 import {
   discoverAdvertisedAcr,
   mergeAdvertisedAcrGrant,
+  readAdvertisedAcr,
   saveAdvertisedAcr,
 } from '@/lib/solid/advertised-acr'
 import { nowTimestamp, type Attachment, type StreamingReq, type ThreadItem, type ThreadMetadata, type ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
@@ -466,17 +467,17 @@ async function grantXpodAcrAccess(input: {
     return input.resource.access
   }
 
-  const acr = await getSolidDataset(state.url, { fetch: input.authFetch })
+  const snapshot = await readAdvertisedAcr(state.url, input.authFetch)
   const suffix = input.members ? 'Member' : ''
   const merged = await mergeAdvertisedAcrGrant({
-    acr,
+    acr: snapshot.acr,
     acrUrl: state.url,
     agentWebId: input.serviceWebId,
     access: input.resource.access,
     links: input.members ? 'member' : 'access',
     controlKey: `linxService${suffix}`,
   })
-  await saveAdvertisedAcr(state.url, merged, input.authFetch)
+  await saveAdvertisedAcr(state.url, merged, input.authFetch, snapshot.etag)
   return input.resource.access
 }
 

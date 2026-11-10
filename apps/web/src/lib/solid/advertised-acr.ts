@@ -169,17 +169,17 @@ export async function grantAdvertisedAcrAccess(
     return await grantAdvertisedAcrAccess(input)
   }
 
-  const acr = await getSolidDataset(state.url, { fetch: input.authFetch })
+  const snapshot = await readAdvertisedAcr(state.url, input.authFetch)
   const controlKey = await advertisedAcrControlKey(input.controlPrefix, input.agentWebId)
   const merged = await mergeAdvertisedAcrGrant({
-    acr,
+    acr: snapshot.acr,
     acrUrl: state.url,
     agentWebId: input.agentWebId,
     access: input.access,
     links: input.links,
     controlKey,
   })
-  await saveAdvertisedAcr(state.url, merged, input.authFetch)
+  await saveAdvertisedAcr(state.url, merged, input.authFetch, snapshot.etag)
   return input.access
 }
 
@@ -271,28 +271,66 @@ export async function mergeAdvertisedAcrGrant(input: {
 }
 
 /**
+ * Read an ACR together with the exact entity version (ETag) the server returned
+ * for that read, when it provides one. The SDK's `internal_resourceInfo` does
+ * not expose the ETag, so the caller-supplied fetch is wrapped to capture it
+ * from the single GET that produced the parsed dataset. There is deliberately
+ * no follow-up HEAD: a fresh ETag would describe a different version than the
+ * one we merged into. An absent ETag is not fatal for the incremental PATCH.
+ */
+export async function readAdvertisedAcr(
+  acrUrl: string,
+  authFetch: typeof fetch,
+): Promise<{ acr: Awaited<ReturnType<typeof getSolidDataset>>; etag?: string }> {
+  const expectedUrl = new URL(acrUrl).href
+  let etag: string | null = null
+  const captureFetch: typeof fetch = async (input, init) => {
+    const requestUrl = new URL(
+      typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      expectedUrl,
+    ).href
+    const response = await authFetch(input, init)
+    // Capture only the GET that `getSolidDataset` actually used for `acrUrl`;
+    // any other request passing through this wrapper is not our snapshot.
+    if (etag === null
+      && requestUrl === expectedUrl
+      && response.ok
+      && (init?.method ?? 'GET').toUpperCase() === 'GET') {
+      etag = response.headers.get('ETag')
+    }
+    return response
+  }
+  const acr = await getSolidDataset(acrUrl, { fetch: captureFetch })
+  return { acr, ...(etag ? { etag } : {}) }
+}
+
+/**
  * Save an updated ACR. The primary path is solid-client's incremental
  * saveSolidDatasetAt, which sends only the added/deleted triples and refuses to
- * silently drop a concurrent grant. If the server does not accept that patch,
- * the Turtle replacement is sent with the dataset's ETag as If-Match; a
- * precondition failure is surfaced rather than overwriting the newest policy.
+ * silently drop a concurrent grant; it works whether or not the read exposed an
+ * ETag. Only the fallback full replacement requires the ETag of the exact read
+ * the merge was based on: without it, the replacement is refused with a clear
+ * error instead of overwriting the newest policy. A precondition failure is
+ * surfaced the same way.
  */
 export async function saveAdvertisedAcr(
   acrUrl: string,
   acr: Awaited<ReturnType<typeof getSolidDataset>>,
   authFetch: typeof fetch,
+  expectedETag?: string,
 ): Promise<void> {
   try {
     await saveSolidDatasetAt(acrUrl, acr, { fetch: authFetch })
     return
-  } catch (patchError) {
-    const info = await authFetch(acrUrl, { method: 'HEAD' })
-    const etag = info.headers.get('ETag')
+  } catch {
+    if (!expectedETag) {
+      throw new Error('访问控制文档没有返回版本标识（ETag），无法安全替换；请重试。')
+    }
     const updated = await authFetch(acrUrl, {
       method: 'PUT',
       headers: {
         'Content-Type': 'text/turtle',
-        ...(etag ? { 'If-Match': etag } : {}),
+        'If-Match': expectedETag,
       },
       body: await solidDatasetAsTurtle(acr),
     })
@@ -302,6 +340,5 @@ export async function saveAdvertisedAcr(
     if (!updated.ok) {
       throw new Error(`更新访问控制失败（HTTP ${updated.status}）。`)
     }
-    void patchError
   }
 }

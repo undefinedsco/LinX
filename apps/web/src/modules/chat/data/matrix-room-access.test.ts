@@ -88,7 +88,7 @@ describe('grantMatrixRoomAccess', () => {
   })
 
   it('fails when no access-control mechanism is advertised instead of guessing .acl', async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }))
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 200 }))
     await expect(grantMatrixRoomAccess({
       db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
     })).rejects.toThrow('没有提供访问控制地址')
@@ -96,10 +96,25 @@ describe('grantMatrixRoomAccess', () => {
   })
 
   it('reports a denied ACR write instead of claiming success', async () => {
-    const fetchImpl = orderedAcrFetch({ writeStatus: 403 })
+    const fetchImpl = orderedAcrFetch({ patchStatus: 403, putStatus: 403 })
     await expect(grantMatrixRoomAccess({
       db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
     })).rejects.toThrow('HTTP 403')
+  })
+
+  it('guards the ACR replacement write with the version of the read it merged', async () => {
+    const fetchImpl = orderedAcrFetch({ patchStatus: 405 })
+    await grantMatrixRoomAccess({
+      db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
+    })
+    const puts = fetchImpl.mock.calls.filter(([input, init]) => (
+      String(input) === `${ROOM}.acr` && init?.method === 'PUT'
+    ))
+    expect(puts).toHaveLength(1)
+    expect(new Headers((puts[0]?.[1] as RequestInit).headers).get('If-Match')).toBe('"room-acr-v1"')
+    expect(fetchImpl.mock.calls.filter(([input, init]) => (
+      String(input) === `${ROOM}.acr` && init?.method === 'HEAD'
+    ))).toHaveLength(0)
   })
 })
 
@@ -171,22 +186,22 @@ function res(url: string, body: BodyInit | null, init: ResponseInit & { headers?
   return response
 }
 
-function orderedAcrFetch(options: { writeStatus?: number } = {}) {
+function orderedAcrFetch(options: { patchStatus?: number; putStatus?: number } = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
-    if (init?.method === 'HEAD' && url === ROOM) {
+    const method = init?.method?.toUpperCase()
+    if (method === 'HEAD' && url === ROOM) {
       return new Response(null, { status: 200, headers: { Link: `<${ROOM}.acr>; rel="acl"` } })
     }
-    if (url === `${ROOM}.acr` && (init?.method === 'PUT' || init?.method === 'PATCH')) {
-      if (options.writeStatus && options.writeStatus >= 400) {
-        return res(url, null, { status: options.writeStatus })
-      }
-      return res(url, null, { status: init.method === 'PATCH' ? 200 : 201 })
+    if (url === `${ROOM}.acr` && (method === 'PUT' || method === 'PATCH')) {
+      const status = method === 'PATCH' ? options.patchStatus : options.putStatus
+      if (status && status >= 400) return res(url, null, { status })
+      return res(url, null, { status: method === 'PATCH' ? 200 : 201 })
     }
     if (url === `${ROOM}.acr`) {
       return res(url, acrTurtle(), {
         status: 200,
-        headers: { 'Content-Type': 'text/turtle' },
+        headers: { 'Content-Type': 'text/turtle', ETag: '"room-acr-v1"' },
       })
     }
     return res(url, null, { status: 404 })
