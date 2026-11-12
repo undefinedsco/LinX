@@ -225,7 +225,6 @@ export function StructuredResourceToolbar({
       activeViewId={viewMode}
       addViewLabel={toolbarModel.extraViewTrigger.ariaLabel}
       onSelectView={onViewModeChange}
-      addViewControl={<span className="hidden" aria-hidden="true" />}
       data-control-placement="structured-byline"
       className="flex h-10 min-w-0 items-center gap-1 overflow-hidden border-b border-border/30"
     >

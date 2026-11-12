@@ -225,13 +225,13 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   }
 
   const buildWelcomeProps = (starterActions: readonly SecretaryStarterAction[], onStarterAction: (action: SecretaryStarterAction) => void) => {
-    const composerStatus = threadCreationError
+    const composerStatus: string | undefined = threadCreationError
       ? '聊天暂时没准备好，草稿已保留。重试后可以继续。'
       : activePendingSecretaryDraft
         ? '草稿已保留，将在聊天准备好后填入输入框。'
       : isDefaultSecretarySettling || !isReady || !db || isChatsLoading || isThreadsLoading
         ? '可以立即开始；对话记录会在空间准备好后同步。'
-        : '准备就绪。'
+        : undefined
     return {
       starterActions,
       composerValue: secretaryDraft,

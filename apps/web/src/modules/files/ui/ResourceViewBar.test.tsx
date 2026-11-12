@@ -45,4 +45,17 @@ describe('ResourceViewBar', () => {
     expect(onSelectView).toHaveBeenCalledWith('grid')
     expect(onAddView).toHaveBeenCalledTimes(1)
   })
+
+  it('renders no add view button without an onAddView handler', () => {
+    render(
+      <ResourceViewBar
+        ariaLabel="Resource views"
+        views={[{ id: 'list', label: '列表', icon: List }]}
+        activeViewId="list"
+        onSelectView={vi.fn()}
+      />,
+    )
+
+    expect(screen.getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['列表'])
+  })
 })
