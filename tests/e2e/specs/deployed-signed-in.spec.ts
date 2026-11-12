@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Frame, type Page } from '@playwright/test'
 import { fillCustomLoginProvider, getLoginDialog, selectLoginSpace } from '../helpers/login-ui'
+import { isAccountOidcConsentUrl } from '../helpers/oidc-consent-guard'
 import { authorizeSeededRuntime, signInToSeededRuntime, waitForSolidDbReady, type ProviderAccount } from '../helpers/seeded-auth-flow'
 import { expectSecretaryVisible } from '../helpers/secretary-bootstrap'
 import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seeded-xpod-runtime'
@@ -159,6 +160,45 @@ async function expectDeploymentModels(page: Page) {
   }
 }
 
+/**
+ * Count ENTRIES into the provider's user-facing OIDC consent screen for the
+ * whole test, not just the sign-in helper's window.
+ *
+ * A re-login driven by a mid-chat 401 crosses the same Account consent route;
+ * that second consent is exactly the production regression this acceptance must
+ * catch. Only main-frame navigations can be the consent page a user acts on
+ * (the app's own SPA route changes never match the Account consent path), and a
+ * consent screen is counted once per entry so a duplicate event for the same
+ * page cannot look like a second approval.
+ */
+function watchConsentNavigations(page: Page): { count: () => number; stop: () => void } {
+  const providerOrigin = account!.baseUrl
+  let count = 0
+  let lastConsentPath: string | null = null
+  const onNavigate = (frame: Frame) => {
+    if (frame !== page.mainFrame()) return
+    const url = frame.url()
+    if (!isAccountOidcConsentUrl(url, providerOrigin)) {
+      // Leaving the consent route ends the current entry, so returning to the
+      // same consent later still counts as a new one.
+      lastConsentPath = null
+      return
+    }
+    // Key on the consent PATH: re-rendering the same screen is not a second
+    // approval, while a new `interaction/<id>` screen (or a return after
+    // leaving) is. A trailing-slash redirect is the same screen, so normalize it.
+    const consentPath = new URL(url).pathname.replace(/\/+$/u, '')
+    if (consentPath === lastConsentPath) return
+    count += 1
+    lastConsentPath = consentPath
+  }
+  page.on('framenavigated', onNavigate)
+  return {
+    count: () => count,
+    stop: () => page.off('framenavigated', onNavigate),
+  }
+}
+
 async function signIn(page: Page) {
   await page.goto('/')
   if (loginVia === 'cloud') {
@@ -224,22 +264,33 @@ test('signs in, writes and reads the Pod, and cleans up', async ({ page }) => {
 })
 
 test('chats with the assistant', async ({ page }) => {
-  await signIn(page)
-  await page.evaluate(() => { history.pushState({}, '', '/chat'); dispatchEvent(new PopStateEvent('popstate')) })
-  const input = page.getByRole('textbox', { name: '消息' })
-  await expect(input).toBeVisible({ timeout: 30_000 })
-  const prompt = `${runId} 请只回复：收到`
-  await input.fill(prompt)
-  await input.press('Enter')
-  await expect(page.locator('[data-role="user"]').filter({ hasText: runId })).toBeVisible({ timeout: 30_000 })
+  const consent = watchConsentNavigations(page)
+  try {
+    await signIn(page)
+    // The legal first consent is whatever sign-in needed (exactly one on a fresh
+    // seed). From here on, a new consent entry means a mid-chat re-login.
+    const consentsAfterSignIn = consent.count()
+    await page.evaluate(() => { history.pushState({}, '', '/chat'); dispatchEvent(new PopStateEvent('popstate')) })
+    const input = page.getByRole('textbox', { name: '消息' })
+    await expect(input).toBeVisible({ timeout: 30_000 })
+    const prompt = `${runId} 请只回复：收到`
+    await input.fill(prompt)
+    await input.press('Enter')
+    await expect(page.locator('[data-role="user"]').filter({ hasText: runId })).toBeVisible({ timeout: 30_000 })
 
-  if (!expectModelReply) return
-  const answer = page.locator('[data-role="assistant"]').last()
-  await expect(answer).not.toContainText('消息生成失败', { timeout: 120_000 })
-  await expect.poll(async () => (await answer.innerText()).trim().length, { timeout: 120_000 }).toBeGreaterThan(0)
-  await expect(answer).not.toContainText('这次没有完成')
-  // The default linx/linx-lite route must be found; a "no model" notice is not a reply.
-  await expect(answer).not.toContainText('还没有连接 AI 模型')
-  await expect(answer).toContainText('收到', { timeout: 120_000 })
-  await expect(answer).not.toContainText(runId)
+    if (!expectModelReply) return
+    const answer = page.locator('[data-role="assistant"]').last()
+    await expect(answer).not.toContainText('消息生成失败', { timeout: 120_000 })
+    await expect.poll(async () => (await answer.innerText()).trim().length, { timeout: 120_000 }).toBeGreaterThan(0)
+    await expect(answer).not.toContainText('这次没有完成')
+    // The default linx/linx-lite route must be found; a "no model" notice is not a reply.
+    await expect(answer).not.toContainText('还没有连接 AI 模型')
+    await expect(answer).toContainText('收到', { timeout: 120_000 })
+    await expect(answer).not.toContainText(runId)
+    // Sending a real message must not force a second OIDC consent. A re-login
+    // that returns to the app is still a failure: the user approved once.
+    expect(consent.count(), 'chat must reach a real reply without another OIDC consent after sign-in').toBe(consentsAfterSignIn)
+  } finally {
+    consent.stop()
+  }
 })
