@@ -475,6 +475,21 @@ describe('useLoginController', () => {
       },
     ]
     window.localStorage.setItem('solidClientAuthn:currentSession', 'stale-session')
+    window.localStorage.setItem('solidClientAuthenticationUser:stale-session', JSON.stringify({
+      clientId: 'rejected-client',
+      clientSecret: 'rejected-secret',
+      clientType: 'dynamic',
+      expiresAt: '0',
+      issuer: 'https://cloud.example.com',
+    }))
+    // A different provider's registration must not be collateral damage.
+    window.localStorage.setItem('solidClientAuthenticationUser:other-provider', JSON.stringify({
+      clientId: 'other-client',
+      clientSecret: 'other-secret',
+      clientType: 'dynamic',
+      expiresAt: '0',
+      issuer: 'https://other.example.com',
+    }))
 
     const { result } = renderHook(() => useLoginController())
 
@@ -483,9 +498,63 @@ describe('useLoginController', () => {
     })
 
     expect(connectMock).toHaveBeenCalledTimes(2)
-    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
+    // Bounded reset: only the rejected provider's registration is forgotten, so
+    // the retry registers exactly once and no other provider re-consents.
+    const stale = JSON.parse(
+      window.localStorage.getItem('solidClientAuthenticationUser:stale-session') ?? '{}',
+    )
+    expect(stale).not.toHaveProperty('clientId')
+    expect(stale).not.toHaveProperty('clientSecret')
+    expect(
+      JSON.parse(window.localStorage.getItem('solidClientAuthenticationUser:other-provider') ?? '{}'),
+    ).toMatchObject({ clientId: 'other-client' })
     expect(useLoginStore.getState().state).toBe('connecting')
     expect(useLoginStore.getState().error).toBeNull()
+  })
+
+  it('keeps another provider session when one provider keeps rejecting its client', async () => {
+    connectMock.mockRejectedValue(new Error('invalid_client: unknown client'))
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+    ]
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'rejected-session')
+    window.localStorage.setItem('solidClientAuthenticationUser:rejected-session', JSON.stringify({
+      clientId: 'rejected-client',
+      clientSecret: 'rejected-secret',
+      clientType: 'dynamic',
+      expiresAt: '0',
+      issuer: 'https://cloud.example.com',
+      isLoggedIn: 'true',
+    }))
+    // A different, currently signed-in provider on the same origin.
+    window.localStorage.setItem('solidClientAuthenticationUser:other-session', JSON.stringify({
+      clientId: 'other-client',
+      clientSecret: 'other-secret',
+      clientType: 'dynamic',
+      expiresAt: '0',
+      issuer: 'https://other.example.com',
+      isLoggedIn: 'true',
+      webId: 'https://other.example.com/bob#me',
+    }))
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('https://cloud.example.com')
+    })
+
+    // The rejected account is cleaned up...
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:rejected-session')).toBeNull()
+    // ...but the other provider's SESSION and registration must survive: the
+    // old clearStoredSolidSession() here force-logged-out every provider.
+    expect(
+      JSON.parse(window.localStorage.getItem('solidClientAuthenticationUser:other-session') ?? '{}'),
+    ).toMatchObject({ clientId: 'other-client', isLoggedIn: 'true' })
   })
 
   it('removes orphaned Solid auth metadata before starting a fresh Cloud login', async () => {
@@ -565,6 +634,15 @@ describe('useLoginController', () => {
     expect(connectMock).toHaveBeenNthCalledWith(2, 'https://cloud.example.com', expect.objectContaining({
       prompt: 'consent',
     }))
+    // The retry must keep every other option of the silent attempt so it lands
+    // on the same provider/account binding, and it must not purge state: a
+    // silent failure is not a rejected client, and dropping the registration
+    // here is what used to force a second DCR and a second consent.
+    const silentOptions = connectMock.mock.calls[0][1] as Record<string, unknown>
+    const consentOptions = connectMock.mock.calls[1][1] as Record<string, unknown>
+    expect(consentOptions.storageProviderUrl).toBe(silentOptions.storageProviderUrl)
+    expect(consentOptions.route).toBe(silentOptions.route)
+    expect(connectMock).toHaveBeenCalledTimes(2)
     expect(useLoginStore.getState().state).toBe('connecting')
     expect(useLoginStore.getState().error).toBeNull()
   })

@@ -76,7 +76,16 @@ let currentChatQueryScopeKey = 'logged-out'
 let currentChatQueryGeneration = 0
 const threadChatIdCache = new Map<string, string>()
 let linxWelcomeInFlight: Promise<LinxWelcomeResult | null> | null = null
-let linxWelcomeAttempt = 0
+type LinxWelcomeRun = {
+  db: SolidDatabase
+  visible: Promise<LinxWelcomeResult | null> | null
+  failed: boolean
+  error: unknown
+  stop: (error: unknown) => void
+}
+let linxWelcomeRun: LinxWelcomeRun | null = null
+// A timed-out write still owns its database, including across A -> B -> A.
+const linxWelcomeRuns = new WeakMap<SolidDatabase, LinxWelcomeRun>()
 const linxWelcomeListeners = new Set<() => void>()
 let stagedDefaultSecretaryRows: {
   agent: AgentRow
@@ -140,6 +149,21 @@ export class SecretaryBootstrapTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super(`AI Secretary bootstrap timed out after ${timeoutMs}ms.`)
     this.name = 'SecretaryBootstrapTimeoutError'
+  }
+}
+
+/**
+ * The session/account that owned a bootstrap is no longer current (logout,
+ * account switch, or a newer attempt). The run stops at its next checkpoint so
+ * it cannot start new writes for the old account or publish its result.
+ */
+export class SecretaryBootstrapSupersededError extends Error {
+  readonly kind = 'superseded'
+  readonly recoverable = true
+
+  constructor() {
+    super('AI Secretary bootstrap was superseded by a newer session or attempt.')
+    this.name = 'SecretaryBootstrapSupersededError'
   }
 }
 
@@ -670,18 +694,19 @@ async function isProtectedLinxSecretaryChat(db: SolidDatabase, chatId: string): 
   return isLinxDefaultSecretaryChat(chat)
 }
 
-async function ensureLinxWelcomeInternal(isCurrentAttempt: () => boolean): Promise<LinxWelcomeResult | null> {
-  const db = getDb()
-  if (!db) {
-    throw new Error('Solid database is not ready')
-  }
-
-  const resources = await ensureDefaultSecretaryResources(db, isCurrentAttempt)
-  const threadId = await loadDefaultSecretaryThread(db, resources.chatIri, isCurrentAttempt)
-
-  if (isCurrentAttempt()) {
-    void ensureDefaultSecretaryAgentHome(db)
-  }
+async function ensureLinxWelcomeInternal(
+  db: SolidDatabase,
+  checkpoint: () => void,
+  onProgress: () => void,
+  onFailure: (error: unknown) => void,
+): Promise<LinxWelcomeResult | null> {
+  const resources = await ensureDefaultSecretaryResources(db, checkpoint, onProgress, onFailure)
+  onProgress()
+  checkpoint()
+  const threadId = await loadDefaultSecretaryThread(db, resources.chatIri, checkpoint)
+  onProgress()
+  checkpoint()
+  void ensureDefaultSecretaryAgentHome(db)
 
   return {
     chatId: LINX_DEFAULT_SECRETARY.chatId,
@@ -693,27 +718,28 @@ async function ensureLinxWelcomeInternal(isCurrentAttempt: () => boolean): Promi
 async function loadDefaultSecretaryThread(
   db: SolidDatabase,
   chatIri: string,
-  isCurrentAttempt: () => boolean,
+  checkpoint: () => void,
 ): Promise<string | null> {
   const threadId = buildThreadResourceId(LINX_DEFAULT_SECRETARY.threadKey, chatIri)
   const threadIri = resolveResourceIri(db, threadResource, threadId)
   if (!threadIri) return null
 
   const existing = await findOptionalExactRecord<ThreadRow>(db, threadResource, threadId)
+  checkpoint()
   if (!existing) return null
 
   const normalized = normalizeCollectionRow(existing, threadId, threadIri)
-  if (isCurrentAttempt()) {
-    threadChatIdCache.set(threadId, LINX_DEFAULT_SECRETARY.chatId)
-    threadChatIdCache.set(LINX_DEFAULT_SECRETARY.threadKey, LINX_DEFAULT_SECRETARY.chatId)
-    writeCollectionRow(threadCollection, normalized, threadId)
-  }
+  threadChatIdCache.set(threadId, LINX_DEFAULT_SECRETARY.chatId)
+  threadChatIdCache.set(LINX_DEFAULT_SECRETARY.threadKey, LINX_DEFAULT_SECRETARY.chatId)
+  writeCollectionRow(threadCollection, normalized, threadId)
   return threadId
 }
 
 async function ensureDefaultSecretaryResources(
   db: SolidDatabase,
-  isCurrentAttempt: () => boolean,
+  checkpoint: () => void,
+  onProgress: () => void,
+  onFailure: (error: unknown) => void,
 ): Promise<{
   agentIri: string
   contactIri: string
@@ -736,11 +762,12 @@ async function ensureDefaultSecretaryResources(
     contactIri,
     chatIri,
   })
-  if (isCurrentAttempt()) {
-    stageDefaultSecretaryRows(optimistic)
-  }
+  checkpoint()
+  stageDefaultSecretaryRows(optimistic)
 
-  const [contactResult, chatResult] = await Promise.all([
+  // Each completed row is meaningful progress: re-arm the stall window per step
+  // so a cold run of several slow (but bounded) writes is not a stall.
+  const results = await Promise.allSettled([
     ensureDefaultSecretaryRow<ContactRow>(
       db,
       contactResource as any,
@@ -749,7 +776,7 @@ async function ensureDefaultSecretaryResources(
       _contactCollection,
       LINX_DEFAULT_SECRETARY.contactId,
       contactIri,
-      { isCurrentAttempt, trustCached: false },
+      { checkpoint, onProgress, trustCached: false },
     ),
     ensureDefaultSecretaryRow<ChatRow>(
       db,
@@ -762,23 +789,34 @@ async function ensureDefaultSecretaryResources(
       chatCollection,
       LINX_DEFAULT_SECRETARY.chatId,
       chatIri,
-      { isCurrentAttempt, trustCached: false },
+      { checkpoint, onProgress, trustCached: false },
     ),
-  ])
+  ].map((operation) => operation.catch((error) => {
+    onFailure(error)
+    throw error
+  })))
+  const [contact, chat] = results
+  if (contact.status === 'rejected') throw contact.reason
+  if (chat.status === 'rejected') throw chat.reason
+  const contactResult = contact.value
+  const chatResult = chat.value
   const contactParticipantIri = typeof contactResult.row['@id'] === 'string'
     ? contactResult.row['@id']
     : contactIri
-  if (isCurrentAttempt()) {
-    await normalizeDefaultSecretaryChatSingletons(db, chatIri)
-    const [hydratedChat] = await hydrateChatRows(db, [{
-      ...chatResult.row,
-      id: LINX_DEFAULT_SECRETARY.chatId,
-      '@id': chatIri,
-    } as ChatRow])
-    if (hydratedChat) {
-      writeCollectionRow(chatCollection, hydratedChat, LINX_DEFAULT_SECRETARY.chatId)
-    }
+  checkpoint()
+  await normalizeDefaultSecretaryChatSingletons(db, chatIri, checkpoint, onProgress)
+  onProgress()
+  checkpoint()
+  const [hydratedChat] = await hydrateChatRows(db, [{
+    ...chatResult.row,
+    id: LINX_DEFAULT_SECRETARY.chatId,
+    '@id': chatIri,
+  } as ChatRow])
+  checkpoint()
+  if (hydratedChat) {
+    writeCollectionRow(chatCollection, hydratedChat, LINX_DEFAULT_SECRETARY.chatId)
   }
+  onProgress()
 
   return {
     agentIri,
@@ -792,6 +830,8 @@ async function ensureDefaultSecretaryResources(
 async function normalizeDefaultSecretaryChatSingletons(
   db: SolidDatabase,
   chatIri: string,
+  checkpoint: () => void,
+  onProgress: () => void,
 ): Promise<void> {
   const authFetch = (
     (db as any).getDialect?.()?.getAuthenticatedFetch?.()
@@ -801,7 +841,10 @@ async function normalizeDefaultSecretaryChatSingletons(
 
   const resourceUrl = chatIri.split('#')[0]
   try {
+    checkpoint()
     const dataset = await getSolidDataset(resourceUrl, { fetch: authFetch })
+    onProgress()
+    checkpoint()
     const thing = getThing(dataset, `${resourceUrl}#this`)
     if (!thing) return
 
@@ -872,15 +915,19 @@ WHERE {
     ${timeWherePatterns.join('\n    ')}
   }
 }`
+    checkpoint()
     const response = await authFetch(resourceUrl, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/sparql-update' },
       body: update,
     })
+    onProgress()
+    checkpoint()
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} ${response.statusText}`)
     }
   } catch (error) {
+    checkpoint()
     console.warn('[chatOps] Failed to normalize default Secretary chat metadata:', error)
   }
 }
@@ -1177,6 +1224,9 @@ export function isLinxDefaultSecretaryBootstrapSettling(): boolean {
 }
 
 export function isLinxDefaultSecretaryBootstrapPending(): boolean {
+  // Only a user-visible run counts as pending. A stalled generation that is
+  // still draining its already-issued writes is an internal overlap barrier,
+  // not something the UI should keep showing as "bootstrapping".
   return !!linxWelcomeInFlight
 }
 
@@ -1237,11 +1287,14 @@ async function ensureDefaultSecretaryRow<T extends Record<string, unknown> & { i
   collectionId: string,
   iri: string,
   options: {
-    isCurrentAttempt?: () => boolean
+    checkpoint?: () => void
+    onProgress?: () => void
     trustCached?: boolean
     skipExistingRead?: boolean
   } = {},
 ): Promise<{ row: T; created: boolean }> {
+  const checkpoint = options.checkpoint ?? (() => undefined)
+  const onProgress = options.onProgress ?? (() => undefined)
   const cached = collection?.get?.(collectionId) as T | undefined
   if (cached && options.trustCached !== false) {
     return { row: cached, created: false }
@@ -1249,17 +1302,22 @@ async function ensureDefaultSecretaryRow<T extends Record<string, unknown> & { i
 
   if (!options.skipExistingRead) {
     const existing = await findOptionalExactRecord<T>(db, resource as any, targetId)
+    // The existence read is a real Pod operation: it counts as progress, and it
+    // is also the last safe point to notice that this account is no longer
+    // current, before issuing any write for it.
+    onProgress()
+    checkpoint()
     if (existing) {
       const normalized = normalizeCollectionRow(existing, collectionId, iri)
-      if (options.isCurrentAttempt?.() !== false) {
-        writeCollectionRow(collection, normalized, collectionId)
-      }
+      writeCollectionRow(collection, normalized, collectionId)
       return { row: normalized, created: false }
     }
   }
 
   if (cached && options.trustCached === false) {
     const documentExists = await podDocumentExists(db, iri)
+    onProgress()
+    checkpoint()
     // `null` means the existence probe was interrupted or unavailable. It is
     // never safe to turn an indeterminate read into a create: the target may
     // already exist and RDF inserts append values to the same subject.
@@ -1268,19 +1326,13 @@ async function ensureDefaultSecretaryRow<T extends Record<string, unknown> & { i
     }
   }
 
+  checkpoint()
   const created = normalizeCollectionRow(row as T, collectionId, iri)
-  if (cached && options.trustCached === false) {
-    const persisted = await insertPodRowWithRetry<T>(db, resource, created, targetId)
-    if (options.isCurrentAttempt?.() !== false) {
-      writeCollectionRow(collection, persisted, collectionId)
-    }
-    return { row: persisted, created: true }
-  }
-
-  const persisted = await insertPodRowWithRetry<T>(db, resource, created, targetId)
-  if (options.isCurrentAttempt?.() !== false) {
-    writeCollectionRow(collection, persisted, collectionId)
-  }
+  const persisted = await insertPodRowWithRetry<T>(db, resource, created, targetId, checkpoint, onProgress)
+  // A write is only meaningful progress once it has actually completed.
+  onProgress()
+  checkpoint()
+  writeCollectionRow(collection, persisted, collectionId)
   return { row: persisted, created: true }
 }
 
@@ -1289,16 +1341,24 @@ async function insertPodRowWithRetry<T extends Record<string, unknown> & { id: s
   resource: unknown,
   row: T,
   targetId: string,
+  checkpoint: () => void,
+  onProgress: () => void,
 ): Promise<T> {
   let lastError: unknown
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
+    checkpoint()
     try {
       await insertPodRow(db, resource, row)
+      onProgress()
+      checkpoint()
       return row
     } catch (error) {
+      checkpoint()
       lastError = error
       const existing = await findOptionalExactRecord<T>(db, resource, targetId)
+      onProgress()
+      checkpoint()
       if (existing) {
         return normalizeCollectionRow(existing, row.id, typeof row['@id'] === 'string' ? row['@id'] : '')
       }
@@ -1397,19 +1457,37 @@ function withExactReadTimeout<T>(promise: Promise<T | null>, timeoutMs: number):
   })
 }
 
-function withSecretaryBootstrapTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+/** Completed Pod operations reset the stall window; total cold startup may exceed it. */
+function createSecretaryBootstrapStallGuard(
+  timeoutMs: number,
+  onStall: (error: SecretaryBootstrapTimeoutError) => void,
+) {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
-  const timeoutPromise = new Promise<T>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new SecretaryBootstrapTimeoutError(timeoutMs))
-    }, timeoutMs)
-  })
+  let stalled = false
 
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutId) {
-      clearTimeout(timeoutId)
-    }
-  })
+  const arm = () => {
+    if (timeoutId) clearTimeout(timeoutId)
+    timeoutId = setTimeout(() => {
+      stalled = true
+      const error = new SecretaryBootstrapTimeoutError(timeoutMs)
+      onStall(error)
+    }, timeoutMs)
+  }
+  arm()
+
+  return {
+    /** Called only when a real Pod operation completed. */
+    markProgress() {
+      if (stalled) return
+      arm()
+    },
+    dispose() {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timeoutId = undefined
+      }
+    },
+  }
 }
 
 // ============================================================================
@@ -1709,31 +1787,59 @@ export const chatOps = {
    * xpod remains generic storage/runtime infrastructure; LinX owns the
    * product-specific default assistant and records completion in LinX settings.
    */
-  async ensureLinxWelcome(options: EnsureLinxWelcomeOptions = {}): Promise<LinxWelcomeResult | null> {
-    if (options.force) {
-      setLinxWelcomeInFlight(null)
+  async ensureLinxWelcome(_options: EnsureLinxWelcomeOptions = {}): Promise<LinxWelcomeResult | null> {
+    const db = getDb()
+    if (!db) throw new Error('Solid database is not ready')
+    const existing = linxWelcomeRuns.get(db)
+    if (existing) {
+      if (existing.failed) throw existing.error
+      return existing.visible!
     }
+    linxWelcomeRun?.stop(new SecretaryBootstrapSupersededError())
 
-    if (!linxWelcomeInFlight) {
-      const attempt = ++linxWelcomeAttempt
-      const persistence = ensureLinxWelcomeInternal(() => linxWelcomeAttempt === attempt)
-      const inFlight = withSecretaryBootstrapTimeout(persistence, SECRETARY_BOOTSTRAP_TIMEOUT_MS)
-      setLinxWelcomeInFlight(inFlight)
-      void inFlight.then(
-        () => {
-          if (linxWelcomeInFlight === inFlight) {
-            setLinxWelcomeInFlight(null)
-          }
-        },
-        () => {
-          if (linxWelcomeInFlight === inFlight) {
-            setLinxWelcomeInFlight(null)
-          }
-        },
-      )
+    let rejectStopped: (error: unknown) => void = () => undefined
+    const stopped = new Promise<never>((_, reject) => { rejectStopped = reject })
+    const run: LinxWelcomeRun = {
+      db,
+      visible: null,
+      failed: false,
+      error: undefined,
+      stop(error) {
+        if (run.failed) return
+        run.failed = true
+        run.error = error
+        rejectStopped(error)
+      },
     }
-
-    return linxWelcomeInFlight
+    linxWelcomeRun = run
+    linxWelcomeRuns.set(db, run)
+    const checkpoint = () => {
+      if (!run.failed && (linxWelcomeRun !== run || getDb() !== db)) {
+        run.stop(new SecretaryBootstrapSupersededError())
+      }
+      if (run.failed) throw run.error
+    }
+    const guard = createSecretaryBootstrapStallGuard(SECRETARY_BOOTSTRAP_TIMEOUT_MS, run.stop)
+    const persistence = ensureLinxWelcomeInternal(db, checkpoint, () => {
+      checkpoint()
+      guard.markProgress()
+    }, run.stop)
+    const visible = Promise.race([persistence, stopped]).finally(() => guard.dispose())
+    run.visible = visible
+    const clearVisible = () => {
+      if (linxWelcomeInFlight === visible) setLinxWelcomeInFlight(null)
+    }
+    // Observe both rejection paths without creating an unhandled finally() child.
+    void visible.then(clearVisible, clearVisible)
+    const release = () => {
+      linxWelcomeRuns.delete(db)
+      if (linxWelcomeRun === run) linxWelcomeRun = null
+      clearVisible()
+    }
+    // Visible failure is bounded; retries wait for the real writes to drain.
+    void persistence.then(release, release)
+    setLinxWelcomeInFlight(visible)
+    return visible
   },
 
   stageLinxDefaultSecretary(db: SolidDatabase): ChatRow | null {
@@ -2375,7 +2481,14 @@ export async function initializeChatCollections(db: SolidDatabase | null): Promi
   if (currentChatDatabase === db) return
 
   currentChatDatabase = db
-  linxWelcomeAttempt += 1
+  // A different database is a different account: the previous run is superseded
+  // at its next checkpoint and can no longer start writes for the old account or
+  // publish a result. Already-issued HTTP requests cannot be recalled; they are
+  // allowed to finish privately and are never surfaced for the new account.
+  if (linxWelcomeRun && linxWelcomeRun.db !== db) {
+    linxWelcomeRun.stop(new SecretaryBootstrapSupersededError())
+    linxWelcomeRun = null
+  }
   forgetLocalSecretaryChatRow()
   stagedDefaultSecretaryRows = null
   setLinxWelcomeInFlight(null)
