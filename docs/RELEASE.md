@@ -34,11 +34,11 @@ GitHub Environment `rc`（Settings → Environments，deployment branch policy �
 | Secret | `KUBE_CONFIG_DATA` | base64 的广州 Sealos kubeconfig（RC 所在集群）；集群证书轮换后要和 prd 一起更新 |
 | Variable | `SEALOS_NAMESPACE` | RC 所在 namespace（广州为 `ns-iknkxtc8`） |
 | Variable | `LINX_RC_HOST` | RC 用 Sealos 分配的域名（不挂我们自己的域名），现在是 `linx.sealosgzg.site`；RC 地址即 `https://<LINX_RC_HOST>` |
-| Variable | `LINX_RC_EXPECT_MODEL_REPLY` | 可选，默认 `1`：要求消息得到模型真实回答 |
 | Variable | `LINX_RC_CERT_ISSUER` | 可选，签发 RC 证书的 cert-manager Issuer，默认 `linx-letsencrypt`（集群里没有 Sealos 通配证书，Sealos 域名的证书都由 cert-manager 签） |
 
 另外：
 
+- 模型回复：候选工作流在登录后验收里固定设置 `LINX_E2E_EXPECT_MODEL_REPLY=1`（`.github/workflows/candidate.yml`），强制要求消息得到真实模型回答；不需要也不读取单独的 Variable。
 - 域名：RC 只用 Sealos 自己的域名，由 `deploy/rc/linx-web-rc.yaml` 里的 Ingress 直接指到 `linx-web-rc`，不用改 DNS，也不经过共享网关（homepage 仓库的路由表不用动）。
 - 镜像拉取：`ghcr.io/undefinedsco/linx-web` 首次推送后默认是私有包；要么在 GitHub 把它设为公开，要么在 namespace 里配 GHCR 拉取凭据并加到 `deploy/rc/linx-web-rc.yaml` 的 `imagePullSecrets`。
 
