@@ -14,6 +14,9 @@ import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seede
  *   LINX_E2E_EXPECT_MODEL_REPLY=1  require a real model answer
  *   LINX_E2E_EXPECT_SINGLE_OIDC_CONSENT=1  fresh single-identity seed sign-in:
  *     the visible user-facing OIDC approval must happen exactly once (RC)
+ *   LINX_E2E_EXPECT_BUILTIN_MODELS=1  require /v1/models on the identity host,
+ *     and additionally on RC_PROVIDER_API_URL's origin when that env is set
+ *     (RC's API origin differs from its identity origin, as in production)
  *
  * Standalone — the same account variables plus LINX_E2E_LOGIN_VIA=custom: signs in to a
  *   standalone xpod (its own identity provider) through 使用其他空间.
@@ -66,12 +69,12 @@ test.beforeEach(async ({ page }) => {
   const failures: string[] = []
   requestFailures.set(page, failures)
   page.on('response', (response) => {
-    const pathname = new URL(response.url()).pathname
-    if (response.status() === 400 && /\/sparql\/?$/u.test(pathname)) {
-      failures.push(`HTTP 400 ${pathname}`)
+    const url = new URL(response.url())
+    if (response.status() === 400 && /\/sparql\/?$/u.test(url.pathname)) {
+      failures.push(`HTTP 400 ${url.pathname}`)
     }
-    if (expectBuiltinModels && pathname === '/v1/models' && response.status() !== 200) {
-      failures.push(`HTTP ${response.status()} /v1/models`)
+    if (expectBuiltinModels && url.pathname === '/v1/models' && response.status() !== 200) {
+      failures.push(`HTTP ${response.status()} /v1/models from ${url.origin}`)
     }
   })
   await page.addInitScript(() => {
@@ -95,23 +98,65 @@ test.afterEach(async ({ page }) => {
   }
 })
 
+/**
+ * Deployment model listing targets. The signed-in identity host is always
+ * checked (the existing behavior). RC also declares its API origin, which is a
+ * different host from the identity provider — as it is in production
+ * (id.undefineds.co vs api.undefineds.co) — so the same session must list
+ * models there too. Deduplicate by origin so an identity-only deployment still
+ * performs exactly one request.
+ */
+function deploymentModelTargets(): URL[] {
+  const targets = [new URL('/v1/models', account!.baseUrl)]
+  const apiUrl = process.env.RC_PROVIDER_API_URL?.trim()
+  if (apiUrl) {
+    let alias: URL
+    try {
+      alias = new URL(apiUrl)
+    } catch {
+      throw new Error('RC_PROVIDER_API_URL must be an absolute http(s) URL')
+    }
+    if (alias.protocol !== 'http:' && alias.protocol !== 'https:') {
+      throw new Error('RC_PROVIDER_API_URL must be an absolute http(s) URL')
+    }
+    targets.push(new URL('/v1/models', alias))
+  }
+  const seen = new Set<string>()
+  return targets.filter((target) => {
+    if (seen.has(target.origin)) return false
+    seen.add(target.origin)
+    return true
+  })
+}
+
 async function expectDeploymentModels(page: Page) {
   if (!expectBuiltinModels) return
-  const result = await page.evaluate(async (url) => {
+  const results = await page.evaluate(async (urls) => {
     const db = (window as any).__SOLID_DB__
+    // One DPoP session for every origin: never downgrade to a static token.
     const authFetch = db.getDialect().getAuthenticatedFetch()
-    const response = await authFetch(url, { cache: 'no-store' })
-    // Return only public model identifiers, never auth headers or raw bodies.
-    const payload = await response.json().catch(() => null)
-    return {
-      status: response.status,
-      ids: Array.isArray(payload?.data)
-        ? payload.data.flatMap((model: any) => typeof model?.id === 'string' ? [model.id] : [])
-        : [],
+    const checks = []
+    for (const url of urls) {
+      // A network/CORS failure is reported as status 0 so the assertion below
+      // still names the host instead of failing anonymously.
+      const response = await authFetch(url, { cache: 'no-store' }).catch(() => null)
+      // Return only public model identifiers, never auth headers or raw bodies.
+      const payload = response ? await response.json().catch(() => null) : null
+      checks.push({
+        origin: new URL(url).origin,
+        status: response?.status ?? 0,
+        ids: Array.isArray(payload?.data)
+          ? payload.data.flatMap((model: any) => typeof model?.id === 'string' ? [model.id] : [])
+          : [],
+      })
     }
-  }, new URL('/v1/models', account!.baseUrl).href)
-  expect(result.status, 'DPoP session must list deployment models without a Pod interface key').toBe(200)
-  expect(result.ids).toEqual(expect.arrayContaining(['linx', 'linx-lite']))
+    return checks
+  }, deploymentModelTargets().map((target) => target.href))
+  for (const result of results) {
+    expect(result.status, `DPoP session must list deployment models from ${result.origin} without a Pod interface key`).toBe(200)
+    expect(result.ids, `deployment model listing from ${result.origin} must include linx and linx-lite`)
+      .toEqual(expect.arrayContaining(['linx', 'linx-lite']))
+  }
 }
 
 async function signIn(page: Page) {
