@@ -204,7 +204,7 @@ export function WelcomeConversation(props: SecretaryWelcomeProps & { chatId: str
               <Send className="mr-1 h-3.5 w-3.5" aria-hidden="true" />发送
             </Button>
           </div>
-          <p className="mx-auto mt-1 max-w-3xl text-xs text-muted-foreground">{props.composerStatus}</p>
+          {props.composerStatus ? <p className="mx-auto mt-1 max-w-3xl text-xs text-muted-foreground">{props.composerStatus}</p> : null}
           {props.onRetry ? <Button size="sm" variant="outline" className="mt-2" onClick={props.onRetry}>{props.retryLabel}</Button> : null}
         </div>
       </section>

@@ -9,6 +9,7 @@ export type WorkbenchDialog =
   | 'share'
   | 'capture'
   | 'voice'
+  | 'runtime-session'
 
 interface WorkbenchDialogState {
   active: WorkbenchDialog | null

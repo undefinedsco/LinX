@@ -15,7 +15,7 @@ export type ResourceViewBarProps<ViewId extends string = string> = {
   ariaLabel: string
   views: readonly ResourceViewBarView<ViewId>[]
   activeViewId: ViewId
-  addViewLabel: string
+  addViewLabel?: string
   onSelectView: (viewId: ViewId) => void
   onAddView?: () => void
   addViewControl?: ReactNode
@@ -72,18 +72,17 @@ export function ResourceViewBar<ViewId extends string = string>({
             </button>
           )
         })}
-        {addViewControl ?? (
+        {addViewControl ?? (onAddView ? (
           <button
             type="button"
             aria-label={addViewLabel}
             title={addViewLabel}
-            className="flex h-7 shrink-0 items-center justify-center rounded px-2 text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground disabled:opacity-45"
-            disabled={!onAddView}
+            className="flex h-7 shrink-0 items-center justify-center rounded px-2 text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
             onClick={onAddView}
           >
             <Plus className="h-3 w-3" aria-hidden />
           </button>
-        )}
+        ) : null)}
       </div>
       {rightActions ? (
         <div

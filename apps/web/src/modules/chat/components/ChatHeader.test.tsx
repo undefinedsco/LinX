@@ -123,10 +123,6 @@ vi.mock('@/components/ui/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
 }))
 
-vi.mock('@/modules/inbox/components/InboxBellButton', () => ({
-  InboxBellButton: () => <div>InboxBellButton</div>,
-}))
-
 vi.mock('../store', () => ({
   useChatStore: (selector: (state: unknown) => unknown) => mockUseChatStore(selector),
 }))

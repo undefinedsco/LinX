@@ -45,7 +45,6 @@ describe('inbox module architecture', () => {
       `${root}/features/list/useInboxListPaneController.ts`,
       `${root}/features/detail/InboxContentPane.tsx`,
       `${root}/features/detail/useInboxContentPaneController.ts`,
-      `${root}/features/bell/InboxBellButton.tsx`,
       `${root}/ui/InboxList.tsx`,
       `${root}/ui/InboxDetail.tsx`,
     ])
@@ -114,7 +113,6 @@ describe('inbox module architecture', () => {
       'scene-restore.ts',
       'components/InboxListPane.tsx',
       'components/InboxContentPane.tsx',
-      'components/InboxBellButton.tsx',
     ]) {
       expectExportOnlyFacade(`${root}/${file}`)
     }

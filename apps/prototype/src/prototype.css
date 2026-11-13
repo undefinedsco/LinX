@@ -30,10 +30,10 @@ button {
   --proto-card: #ffffff;
   --proto-card-strong: #fbfbfd;
   --proto-surface: #f5f5f7;
-  --proto-action: #735fc4;
-  --proto-action-rgb: 115 95 196;
+  --proto-action: #563e84;
+  --proto-action-rgb: 86 62 132;
   --proto-action-fg: #ffffff;
-  --proto-warm: #735fc4;
+  --proto-warm: #563e84;
   --proto-warm-soft: rgb(var(--proto-action-rgb) / 0.08);
   --proto-warm-muted: rgb(var(--proto-action-rgb) / 0.14);
   --proto-success: #2f7d62;

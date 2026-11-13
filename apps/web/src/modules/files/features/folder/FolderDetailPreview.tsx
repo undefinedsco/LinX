@@ -85,7 +85,6 @@ export function FolderDetailPreview({
           icon: folderViewModeIconByKind[option.iconKind],
         }))}
         activeViewId={viewModeOptions.find((option) => option.active)?.mode ?? 'list'}
-        addViewLabel="添加视图"
         onSelectView={setViewMode}
         rightActions={(
           <>

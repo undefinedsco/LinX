@@ -743,7 +743,7 @@ function createTrayIcon() {
 
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-      <rect x="2" y="2" width="12" height="12" rx="3.5" fill="#7c3aed" />
+      <rect x="2" y="2" width="12" height="12" rx="3.5" fill="#563E84" />
       <path d="M5 4.5v7h5.8" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
   `.trim();
