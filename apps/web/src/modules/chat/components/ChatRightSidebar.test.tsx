@@ -23,8 +23,10 @@ vi.mock('../features/schedule/useThreadSchedule', () => ({
   useThreadSchedule: () => ({ schedule: null, runs: [], setAutoRun: vi.fn(), setRepeat: vi.fn() }),
 }))
 const runtimeState: { value: any } = { value: null }
+const runtimeMode = { value: false }
 vi.mock('../runtime-client', () => ({
   useRuntimeSession: () => ({ runtimeSession: runtimeState.value }),
+  isRuntimeSessionMode: () => runtimeMode.value,
   fetchRuntimeSessionLog: vi.fn(),
 }))
 vi.mock('../collections', () => ({
@@ -64,6 +66,8 @@ describe('ChatRightSidebar (聊天信息)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     runtimeState.value = null
+    runtimeMode.value = false
+    useWorkbenchDialogs.getState().close()
     identityState.value = identity('assistant')
   })
 
@@ -135,5 +139,22 @@ describe('ChatRightSidebar (聊天信息)', () => {
       fireEvent.click(screen.getByText(label))
       expect(useWorkbenchDialogs.getState().active).toBe(dialog)
     }
+  })
+
+  it('offers 绑定运行时会话 only in runtime mode while the thread has no session, and opens the dialog', () => {
+    const { unmount } = render(<ChatRightSidebar />)
+    expect(screen.queryByText('绑定运行时会话')).not.toBeInTheDocument()
+    unmount()
+
+    runtimeMode.value = true
+    runtimeState.value = { id: 's1', tool: 'codex', status: 'active', tokenUsage: 0, createdAt: new Date().toISOString() }
+    const withSession = render(<ChatRightSidebar />)
+    expect(screen.queryByText('绑定运行时会话')).not.toBeInTheDocument()
+    withSession.unmount()
+
+    runtimeState.value = null
+    render(<ChatRightSidebar />)
+    fireEvent.click(screen.getByText('绑定运行时会话'))
+    expect(useWorkbenchDialogs.getState().active).toBe('runtime-session')
   })
 })

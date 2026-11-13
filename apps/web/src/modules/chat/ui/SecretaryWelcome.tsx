@@ -18,7 +18,7 @@ export interface SecretaryStarterAction {
 export interface SecretaryWelcomeProps {
   starterActions: readonly SecretaryStarterAction[]
   composerValue: string
-  composerStatus: string
+  composerStatus?: string
   onStarterAction: (action: SecretaryStarterAction) => void
   onComposerValueChange: (value: string) => void
   onSubmit: () => void
@@ -117,9 +117,11 @@ export function SecretaryWelcome({
               </Button>
             </div>
             <div className="mt-2 flex min-h-7 items-center justify-between gap-3 px-1">
-              <p role="status" className="text-xs text-muted-foreground">
-                {composerStatus}
-              </p>
+              {composerStatus ? (
+                <p role="status" className="text-xs text-muted-foreground">
+                  {composerStatus}
+                </p>
+              ) : <span />}
               {retryLabel && onRetry ? (
                 <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onRetry}>
                   {retryLabel}

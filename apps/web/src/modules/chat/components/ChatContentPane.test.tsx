@@ -160,6 +160,7 @@ vi.mock('../features/conversation/welcome/WelcomeConversation', async () => {
 })
 
 import { ask, useAskLinx } from '@/lib/ask-linx'
+import { useWorkbenchDialogs } from '../features/conversation/workbench-dialogs'
 import { ChatContentPane, chatThreadRefsMatch, readActiveBranchSelections } from './ChatContentPane'
 
 describe('chatThreadRefsMatch', () => {
@@ -192,6 +193,7 @@ describe('ChatContentPane', () => {
       scopeKey: 'account:alice',
     })
     mockIsRuntimeSessionMode.mockReturnValue(false)
+    useWorkbenchDialogs.getState().close()
     mockUseWorkspaceList.mockReturnValue({
       data: [],
       isLoading: false,
@@ -875,7 +877,7 @@ describe('ChatContentPane', () => {
     await waitFor(() => expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(2))
   })
 
-  it('shows bound workspace context when runtime mode is enabled', () => {
+  it('keeps the chat quiet when runtime mode is on and no runtime session exists', () => {
     mockIsRuntimeSessionMode.mockReturnValue(true)
     mockUseWorkspaceList.mockReturnValue({
       data: [{
@@ -901,8 +903,9 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    expect(screen.getByText('当前聊天已绑定空间文件夹')).toBeInTheDocument()
-    expect(screen.getByText('Pod Workspace · https://alice.example/.data/workspaces/ws-1/ · main · 基于 origin/main')).toBeInTheDocument()
+    expect(screen.queryByText('当前聊天已绑定空间文件夹')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /创建运行时会话/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('creates a Pod-container runtime session from the bound workspace without requiring a local repo path', async () => {
@@ -940,7 +943,7 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    fireEvent.click(screen.getByRole('button', { name: /创建运行时会话/ }))
+    act(() => useWorkbenchDialogs.getState().open('runtime-session'))
     fireEvent.click(screen.getByRole('button', { name: '创建并启动' }))
 
     await waitFor(() => {

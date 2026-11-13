@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from 'react'
-import { PlayCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -27,6 +26,7 @@ import {
 } from '../../runtime-client'
 import { classifyRuntimeTool } from '../../domain/runtime-tool-category'
 import { buildWorkspaceSummary } from '../../workspace-summary'
+import { useWorkbenchDialogs } from '../conversation/workbench-dialogs'
 
 interface RuntimeActivity {
   label: string
@@ -54,7 +54,8 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
   const runtime = useRuntimeSession(threadId)
   const mutations = useChatMutations()
   const { data: workspaces = [] } = useWorkspaceList({ enabled: Boolean(workspaceUri) })
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const isDialogOpen = useWorkbenchDialogs((state) => state.active === 'runtime-session')
+  const closeDialog = useWorkbenchDialogs((state) => state.close)
   const [repoPath, setRepoPath] = useState('')
   const [folderPath, setFolderPath] = useState('')
   const [tool, setTool] = useState<RuntimeToolType>('codex')
@@ -88,13 +89,13 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
   useRuntimeSessionEvents(runtime.runtimeSession?.id, handleRuntimeEvent, Boolean(runtime.runtimeSession), setConnectionState)
 
   const resetDialog = useCallback(() => {
-    setIsDialogOpen(false)
+    closeDialog()
     setRepoPath('')
     setFolderPath('')
     setTool('codex')
     setBaseRef('HEAD')
     setBranch('')
-  }, [])
+  }, [closeDialog])
 
   const createSession = useCallback(async () => {
     const normalizedRepoPath = repoPath.trim()
@@ -233,18 +234,9 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
           {connectionState === 'reconnecting' ? <div role="status" className="border-b border-warning/20 bg-warning/5 px-4 py-2 text-xs text-muted-foreground">运行时连接已中断，正在自动恢复…</div> : null}
           {runtimeError ? <div className="border-b border-border/50 px-4 py-2 text-xs text-destructive">{runtimeError}</div> : null}
         </>
-      ) : (
-        <div className="flex items-center justify-between gap-3 border-b border-border/50 bg-muted/20 px-4 py-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">{workspaceSummary ? `当前聊天已绑定${workspaceSummary.kindLabel}` : '当前聊天仅保存到空间'}</p>
-            <p className="text-xs text-muted-foreground">{workspaceSummary ? [workspaceSummary.primaryText, workspaceSummary.secondaryText].filter(Boolean).join(' · ') : '需要远程运行时时，再为这个聊天绑定运行时会话与文件夹即可。'}</p>
-            {runtimeError ? <p className="mt-1 text-xs text-destructive">{runtimeError}</p> : null}
-          </div>
-          <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => setIsDialogOpen(true)}><PlayCircle className="mr-1 h-4 w-4" />创建运行时会话</Button>
-        </div>
-      )}
+      ) : null}
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={(next) => { if (!next) closeDialog() }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>创建运行时会话</DialogTitle><DialogDescription>为当前聊天绑定一个本地运行时与文件夹。</DialogDescription></DialogHeader>
           <div className="space-y-4">
@@ -256,7 +248,8 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
               <div className="space-y-2"><Label htmlFor="runtime-branch">Branch</Label><Input id="runtime-branch" value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="留空则自动生成" /></div>
             </div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setIsDialogOpen(false)}>取消</Button><Button onClick={createSession} disabled={isBusy}>{isBusy ? '处理中...' : '创建并启动'}</Button></DialogFooter>
+          {!current && runtimeError ? <p role="alert" className="text-xs text-destructive">{runtimeError}</p> : null}
+          <DialogFooter><Button variant="outline" onClick={closeDialog}>取消</Button><Button onClick={createSession} disabled={isBusy}>{isBusy ? '处理中...' : '创建并启动'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </>

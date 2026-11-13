@@ -31,7 +31,7 @@ import { deleteChatCopy, avatarTextFor } from '../domain/chat-list-model'
 import { projectChatAssets } from '../domain/chat-asset-library'
 import { useChatIdentity } from '../features/identity/useChatIdentity'
 import { useThreadSchedule } from '../features/schedule/useThreadSchedule'
-import { useRuntimeSession } from '../runtime-client'
+import { isRuntimeSessionMode, useRuntimeSession } from '../runtime-client'
 import { isCodingTool } from '../domain/coding-run'
 import { ChatHistorySearchDialog } from '../ui/ChatHistorySearchDialog'
 import { CodingRunInfoGroup } from '../ui/CodingRunInfoGroup'
@@ -79,6 +79,8 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   const isAssistant = identity?.kind === 'assistant'
   const schedule = useThreadSchedule(isAssistant ? selectedThreadId : null)
   const runtime = useRuntimeSession(isAssistant ? selectedThreadId : null)
+  const threadRuntime = useRuntimeSession(selectedThreadId)
+  const canBindRuntime = isRuntimeSessionMode() && Boolean(selectedThreadId) && !threadRuntime.isLoading && !threadRuntime.runtimeSession
   const codingSession = runtime.runtimeSession && isCodingTool(runtime.runtimeSession.tool) ? runtime.runtimeSession : null
 
   const hasWorkspace = (threads as Array<{ id?: string | null; workspace?: string | null }>).some((thread) => thread.id === selectedThreadId && Boolean(thread.workspace))
@@ -216,7 +218,8 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
             <InfoRow label="附件" onClick={() => openDialog('attachments')} />
             <InfoRow label="产物" onClick={() => openDialog('artifacts')} />
             <InfoRow label="素材" onClick={() => openDialog('assets')} />
-            <InfoRow label="分享这段聊天" onClick={() => openDialog('share')} last />
+            <InfoRow label="分享这段聊天" onClick={() => openDialog('share')} last={!canBindRuntime} />
+            {canBindRuntime ? <InfoRow label="绑定运行时会话" onClick={() => openDialog('runtime-session')} last /> : null}
           </InfoGroup>
 
           <InfoGroup>

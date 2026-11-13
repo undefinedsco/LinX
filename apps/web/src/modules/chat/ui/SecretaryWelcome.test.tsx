@@ -43,7 +43,6 @@ describe('SecretaryWelcome', () => {
       <SecretaryWelcome
         starterActions={starterActions}
         composerValue="已有草稿"
-        composerStatus="准备就绪"
         onStarterAction={onStarterAction}
         onComposerValueChange={onComposerValueChange}
         onSubmit={onSubmit}
@@ -60,5 +59,24 @@ describe('SecretaryWelcome', () => {
 
     fireEvent.submit(screen.getByRole('textbox', { name: '给 LinX 助手发消息' }).closest('form')!)
     expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders no status text when the composer is simply ready, and keeps retry reachable', () => {
+    const onRetry = vi.fn()
+    render(
+      <SecretaryWelcome
+        starterActions={starterActions}
+        composerValue=""
+        retryLabel="重试"
+        onRetry={onRetry}
+        onStarterAction={vi.fn()}
+        onComposerValueChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
   })
 })

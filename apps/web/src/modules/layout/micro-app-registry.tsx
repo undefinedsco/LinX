@@ -39,9 +39,6 @@ export type MicroAppContentPane = ComponentType<MicroAppPaneProps>
 
 export interface MicroAppHeaderMeta {
   moduleTitle: string
-  moduleSubtitle: string
-  itemTitle?: string
-  itemSubtitle?: string
 }
 
 export interface MicroAppLayoutConfig {
@@ -171,9 +168,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: MessageSquare,
     header: {
       moduleTitle: '聊天',
-      moduleSubtitle: '与 AI 助手对话',
-      itemTitle: 'AI 助手',
-      itemSubtitle: '共享记忆实时同步',
     },
     ListPane: ChatListPane,
     ContentPane: ChatContentPane,
@@ -185,9 +179,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: Bell,
     header: {
       moduleTitle: '收件箱',
-      moduleSubtitle: '授权与审计统一入口',
-      itemTitle: '事件详情',
-      itemSubtitle: 'Approval & Audit',
     },
     ListPane: InboxListPane,
     ContentPane: InboxContentPane,
@@ -198,9 +189,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: Users,
     header: {
       moduleTitle: '联系人',
-      moduleSubtitle: '管理 Solid Pod 联系人',
-      itemTitle: '联系人详情',
-      itemSubtitle: 'Person & Agent',
     },
     ListPane: ContactListPane,
     ContentPane: ContactDetailPane,
@@ -211,9 +199,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: FolderOpen,
     header: {
       moduleTitle: '文件',
-      moduleSubtitle: 'Pod 资源与文件夹',
-      itemTitle: '文件预览',
-      itemSubtitle: '打开、复制、收藏',
     },
     ListPane: FilesListPane,
     ContentPane: FilesWorkspacePane,
@@ -227,9 +212,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: Star,
     header: {
       moduleTitle: '收藏',
-      moduleSubtitle: '快速访问常用资源',
-      itemTitle: '收藏内容',
-      itemSubtitle: '跨模块标星项汇总',
     },
     ListPane: FavoriteListPane,
     ContentPane: FavoriteContentPane,
@@ -243,7 +225,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: User,
     header: {
       moduleTitle: '我',
-      moduleSubtitle: '个人资料、收藏与设置',
     },
     ContentPane: MePane,
   },
@@ -253,7 +234,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: UserRound,
     header: {
       moduleTitle: '个人资料',
-      moduleSubtitle: '别人在联系人里看到的你',
     },
     ContentPane: ProfileEditorPane,
     hideContentHeader: true,
@@ -264,9 +244,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: SettingsIcon,
     header: {
       moduleTitle: '设置',
-      moduleSubtitle: '应用配置选项',
-      itemTitle: '设置详情',
-      itemSubtitle: '主题、实验功能等',
     },
     ListPane: SettingsListPane,
     ContentPane: SettingsContentPane,
@@ -277,9 +254,6 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: Bot, // Using Bot icon for AI Model Services
     header: {
       moduleTitle: '模型连接',
-      moduleSubtitle: '配置 AI 提供商及模型',
-      itemTitle: '提供商详情',
-      itemSubtitle: 'API Key & Model Management',
     },
     ListPane: ModelServicesListPane,
     ContentPane: ModelServicesContentPane,
