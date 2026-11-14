@@ -41,8 +41,16 @@ const DEFAULT_APP_VERSION =
   ) || '0.0.0'
 const DEFAULT_CACHE_TTL_MS = 6 * 60 * 60 * 1000
 
+// App releases are tagged linx-v<version>; CLI releases use linx-cli-v<version>.
+const APP_RELEASE_TAG = /^(?:linx-)?v\d/i
+
 export function normalizeVersion(raw: string | null | undefined): string {
-  return String(raw ?? '').trim().replace(/^v/i, '')
+  return String(raw ?? '').trim().replace(/^(?:linx-)?v/i, '')
+}
+
+function isAppRelease(item: Record<string, unknown>): boolean {
+  if (item.draft === true || item.prerelease === true) return false
+  return typeof item.tag_name !== 'string' || APP_RELEASE_TAG.test(item.tag_name)
 }
 
 function splitVersion(raw: string) {
@@ -103,7 +111,7 @@ export function parseLatestRelease(payload: Record<string, unknown>): ReleaseDes
 
 export function parseLatestReleaseFeed(payload: unknown): ReleaseDescriptor | null {
   if (Array.isArray(payload)) {
-    const first = payload.find((item) => item && typeof item === 'object') as Record<string, unknown> | undefined
+    const first = payload.find((item) => item && typeof item === 'object' && isAppRelease(item as Record<string, unknown>)) as Record<string, unknown> | undefined
     return first ? parseLatestRelease(first) : null
   }
 
@@ -119,7 +127,7 @@ export function getBuiltAppVersion(): string {
 }
 
 function getReleaseFeedUrl(repo: string, explicitUrl?: string): string {
-  return explicitUrl ?? `https://api.github.com/repos/${repo}/releases?per_page=1`
+  return explicitUrl ?? `https://api.github.com/repos/${repo}/releases?per_page=20`
 }
 
 function shouldSilenceReleaseFeedStatus(
