@@ -86,7 +86,7 @@ jobs:
   # that the cloud-only RC cannot.
   local_e2e:
     needs: metadata
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -129,7 +129,7 @@ jobs:
   # own identity provider, a seeded acceptance account (tests/e2e/fixtures/standalone-seed.json).
   standalone_e2e:
     needs: metadata
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       XPOD_IMAGE: ghcr.io/undefinedsco/xpod:${{ vars.XPOD_STANDALONE_TAG || '0.4.30' }}
     steps:
@@ -239,7 +239,7 @@ jobs:
 
   deploy_and_accept:
     needs: [metadata, build_image]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: rc
     concurrency:
       group: linx-shared-rc
