@@ -34,6 +34,22 @@ describe('app-release', () => {
     })
   })
 
+  it('reads linx-v release tags', () => {
+    expect(parseLatestRelease({ tag_name: 'linx-v0.3.43' })?.version).toBe('0.3.43')
+    expect(compareVersions(parseLatestRelease({ tag_name: 'linx-v0.3.43' })!.version, '0.3.42')).toBe(1)
+  })
+
+  it('skips CLI, draft and prerelease entries in release feeds', () => {
+    expect(
+      parseLatestReleaseFeed([
+        { tag_name: 'linx-cli-v0.3.27', html_url: 'https://example.test/cli' },
+        { tag_name: 'linx-v0.3.44', draft: true, html_url: 'https://example.test/draft' },
+        { tag_name: 'linx-v0.3.44-rc.1', prerelease: true, html_url: 'https://example.test/rc' },
+        { tag_name: 'linx-v0.3.43', html_url: 'https://example.test/app' },
+      ]),
+    ).toEqual({ version: '0.3.43', releaseUrl: 'https://example.test/app' })
+  })
+
   it('silences missing GitHub release feeds', async () => {
     const storage = createMemoryStorage()
 
