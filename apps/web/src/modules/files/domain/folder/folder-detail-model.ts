@@ -82,10 +82,7 @@ export type FolderDetailViewModeOption = {
 }
 
 export type FolderDetailToolbarChrome = {
-  createFolderLabel: string
-  createMarkdownLabel: string
   uploadInputLabel: string
-  uploadLabel: string
 }
 
 export type FolderDetailEmptyStateChrome = {
@@ -304,10 +301,7 @@ const FOLDER_DETAIL_VIEW_MODE_OPTIONS: Array<Omit<FolderDetailViewModeOption, 'a
 ]
 
 const FOLDER_DETAIL_TOOLBAR_CHROME: FolderDetailToolbarChrome = {
-  createFolderLabel: '新建文件夹',
-  createMarkdownLabel: '新建文档',
   uploadInputLabel: '选择上传文件',
-  uploadLabel: '上传文件',
 }
 
 const FOLDER_DETAIL_EMPTY_STATE_CHROME: FolderDetailEmptyStateChrome = {
@@ -333,7 +327,7 @@ export function projectFolderChildActionMenuChrome(): FolderChildActionMenuChrom
   return {
     items: [
       { kind: 'open', label: '打开', trigger: 'explicit-open' },
-      { kind: 'copy-uri', label: '复制 URI' },
+      { kind: 'copy-uri', label: '复制链接' },
       { kind: 'rename', label: '重命名', separatorBefore: true },
       { kind: 'copy', label: '复制到...' },
       { kind: 'move', label: '移动到...' },
@@ -729,7 +723,7 @@ export function projectFolderChildSelectionProjection({
 
   return {
     batchSelectionActions: {
-      copyLabel: '复制所选 URI',
+      copyLabel: '复制所选链接',
       deleteLabel: '删除所选项',
     },
     batchSelectionLabel: `已选择 ${selectedChildCount} 项`,

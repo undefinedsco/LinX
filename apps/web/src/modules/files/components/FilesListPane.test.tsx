@@ -1143,7 +1143,7 @@ describe('FilesListPane', () => {
     fireEvent.click(screen.getByRole('treeitem', { name: 'config.json' }), { shiftKey: true })
 
     expect(screen.getByText('已选择 2 项')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '复制所选 URI' }))
+    fireEvent.click(screen.getByRole('button', { name: '复制所选链接' }))
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith([
       'https://pod.example/public/config.json',
@@ -1195,10 +1195,10 @@ describe('FilesListPane', () => {
     fireEvent.click(screen.getByRole('treeitem', { name: 'README' }))
     fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'public' }))
 
-    expect(await screen.findByRole('menuitem', { name: '复制 URI' })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: '复制链接' })).toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
 
-    fireEvent.click(screen.getByRole('menuitem', { name: '复制 URI' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '复制链接' }))
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://pod.example/public/')
     await waitFor(() => {
       expect(Array.from(useFilesStore.getState().selectedFileIds)).toEqual([
@@ -1213,10 +1213,10 @@ describe('FilesListPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '更多 README 操作' }))
 
-    expect(await screen.findByRole('menuitem', { name: '查看 .meta' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: '信息' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '访问权限' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('menuitem', { name: '查看 .meta' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '信息' }))
 
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/README.md')
     expect(useFilesStore.getState().sidecarActionRequest).toEqual({
@@ -1297,7 +1297,7 @@ describe('FilesListPane', () => {
     fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README' }))
 
     expect(screen.getByText('已选择 2 项')).toBeInTheDocument()
-    fireEvent.click(await screen.findByRole('menuitem', { name: '复制所选 URI' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '复制所选链接' }))
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith([
       'https://pod.example/public/config.json',

@@ -370,7 +370,7 @@ describe('folder detail model helpers', () => {
       actionMenu: {
         items: [
           { kind: 'open', label: '打开', trigger: 'explicit-open' },
-          { kind: 'copy-uri', label: '复制 URI' },
+          { kind: 'copy-uri', label: '复制链接' },
           { kind: 'rename', label: '重命名', separatorBefore: true },
           { kind: 'copy', label: '复制到...' },
           { kind: 'move', label: '移动到...' },
@@ -410,7 +410,7 @@ describe('folder detail model helpers', () => {
       childActionMenu: {
         items: [
           { kind: 'open', label: '打开', trigger: 'explicit-open' },
-          { kind: 'copy-uri', label: '复制 URI' },
+          { kind: 'copy-uri', label: '复制链接' },
           { kind: 'rename', label: '重命名', separatorBefore: true },
           { kind: 'copy', label: '复制到...' },
           { kind: 'move', label: '移动到...' },
@@ -430,10 +430,7 @@ describe('folder detail model helpers', () => {
       hasVisibleChildren: true,
       sortedChildren: [folderEntry, markdownEntry],
       toolbarChrome: {
-        createFolderLabel: '新建文件夹',
-        createMarkdownLabel: '新建文档',
         uploadInputLabel: '选择上传文件',
-        uploadLabel: '上传文件',
       },
       viewModeOptions: [
         { mode: 'list', label: '表格', iconKind: 'list', active: true },
@@ -465,7 +462,7 @@ describe('folder detail model helpers', () => {
     expect(model.projectFolderChildActionMenuChrome()).toEqual({
       items: [
         { kind: 'open', label: '打开', trigger: 'explicit-open' },
-        { kind: 'copy-uri', label: '复制 URI' },
+        { kind: 'copy-uri', label: '复制链接' },
         { kind: 'rename', label: '重命名', separatorBefore: true },
         { kind: 'copy', label: '复制到...' },
         { kind: 'move', label: '移动到...' },
@@ -699,7 +696,7 @@ describe('folder detail model helpers', () => {
       hasBatchSelection: true,
       batchSelectionLabel: '已选择 2 项',
       batchSelectionActions: {
-        copyLabel: '复制所选 URI',
+        copyLabel: '复制所选链接',
         deleteLabel: '删除所选项',
       },
     })

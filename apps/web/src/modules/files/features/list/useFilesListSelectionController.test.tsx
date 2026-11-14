@@ -46,14 +46,14 @@ describe('useFilesListSelectionController', () => {
     expect(result.current.hasSelectedVisibleFiles).toBe(true)
     expect(result.current.batchSelectionLabel).toBe('已选择 2 项')
     expect(result.current.contextMenuViewForFile(alpha)).toMatchObject({
-      copyLabel: '复制所选 URI',
+      copyLabel: '复制所选链接',
       deleteLabel: '删除所选项',
       isBatchContext: true,
       showSingleFileActions: false,
       targetFiles: [alpha, beta],
     })
     expect(result.current.contextMenuViewForFile(gamma)).toMatchObject({
-      copyLabel: '复制 URI',
+      copyLabel: '复制链接',
       deleteLabel: '删除',
       isBatchContext: false,
       showSingleFileActions: true,

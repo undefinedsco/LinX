@@ -186,7 +186,10 @@ describe('AddChatDialog', () => {
     fireEvent.change(screen.getByLabelText('助手名称'), { target: { value: '代码助手' } })
     fireEvent.click(screen.getByLabelText('同时创建运行时会话'))
     fireEvent.change(screen.getByLabelText('仓库路径'), { target: { value: '/repo/linx' } })
-    fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'feature/runtime' } })
+    expect(screen.getByLabelText('分支')).not.toBeVisible()
+    fireEvent.click(screen.getByText('高级'))
+    expect(screen.getByLabelText('分支')).toBeVisible()
+    fireEvent.change(screen.getByLabelText('分支'), { target: { value: 'feature/runtime' } })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
 
     await waitFor(() => {

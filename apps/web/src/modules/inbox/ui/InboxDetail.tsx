@@ -65,6 +65,8 @@ export interface InboxDetailProps {
   requestState?: InboxRequestState | null
   reason: string
   setReason: (v: string) => void
+  noteOpen?: boolean
+  setNoteOpen?: (open: boolean) => void
   isPendingApproval: boolean
   isPendingAuthRequired: boolean
   isResolvedAuthRequired: boolean
@@ -102,6 +104,8 @@ export function InboxDetail({
   requestState = null,
   reason,
   setReason,
+  noteOpen = false,
+  setNoteOpen,
   isPendingApproval,
   isPendingAuthRequired,
   isResolvedAuthRequired,
@@ -264,16 +268,6 @@ export function InboxDetail({
 
             {isPendingApproval && autoDetail?.kind !== 'waiting' && (
               <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">处理备注</div>
-                  <Textarea
-                    aria-label="处理备注"
-                    value={reason}
-                    onChange={(event) => setReason(event.target.value)}
-                    placeholder="可选：补充批准 / 拒绝原因，便于后续审计。"
-                    className="mt-2 min-h-[96px]"
-                  />
-                </div>
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
                   <input
                     type="checkbox"
@@ -291,6 +285,17 @@ export function InboxDetail({
                     {isMutating ? '处理中...' : '批准这一次'}
                   </Button>
                 </div>
+                {noteOpen || reason ? (
+                  <Textarea
+                    aria-label="处理备注"
+                    value={reason}
+                    onChange={(event) => setReason(event.target.value)}
+                    placeholder="可选：补充批准 / 拒绝原因，便于后续审计。"
+                    className="min-h-[96px]"
+                  />
+                ) : (
+                  <Button type="button" variant="ghost" size="sm" className="h-auto px-0 text-xs text-muted-foreground" onClick={() => setNoteOpen?.(true)}>添加备注</Button>
+                )}
                 {error && (
                   <p className="text-xs text-destructive">
                     {formatLoginErrorForUser(error, '处理审批失败。请稍后重试。')}
