@@ -82,7 +82,7 @@ export function ChatAssetLibraryDialog(props: ChatAssetLibraryDialogProps) {
       <DialogContent className="flex h-[min(82vh,760px)] max-w-4xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>会话资产</DialogTitle>
-          <DialogDescription>浏览当前 Pod 中由聊天产生或上传的附件，并把同一份资源复用到当前会话。</DialogDescription>
+          <DialogDescription>浏览聊天里产生或上传过的附件，选中后可以在这段聊天里再次使用。</DialogDescription>
         </DialogHeader>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

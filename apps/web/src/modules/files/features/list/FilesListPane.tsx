@@ -355,17 +355,17 @@ export function FilesListPane(_props: MicroAppPaneProps) {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => listPane.copyFiles([file])}>
-          复制 URI
+          复制链接
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => {
           listPane.openSidecar(file, 'meta')
         }}>
-          查看 .meta
+          信息
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => {
           listPane.openSidecar(file, 'access')
         }}>
-          查看 Access 来源
+          访问权限
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => listOperation.openRenameContextFile(file)}>

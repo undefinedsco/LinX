@@ -207,7 +207,7 @@ export const FileEditorSurface = forwardRef<FileEditorSurfaceHandle, {
           {variant === 'modal' ? (
             <DropdownMenuItem onSelect={sidecarActions.openAccessDialog}>
               <Shield className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
-              查看 Access 来源
+              访问权限
             </DropdownMenuItem>
           ) : null}
           {variant === 'modal' ? <DropdownMenuSeparator /> : null}

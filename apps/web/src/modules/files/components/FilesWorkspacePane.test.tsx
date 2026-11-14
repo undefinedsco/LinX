@@ -249,7 +249,7 @@ describe('FilesWorkspacePane', () => {
     render(<FilesWorkspacePane theme="light" />)
 
     expect(screen.getByText('聊天文件')).toBeInTheDocument()
-    expect(screen.getByText('当前范围来自聊天关联文件；目录仍按 Pod 原始位置打开。')).toBeInTheDocument()
+    expect(screen.queryByText('当前范围来自聊天关联文件；目录仍按 Pod 原始位置打开。')).not.toBeInTheDocument()
   })
 
 })

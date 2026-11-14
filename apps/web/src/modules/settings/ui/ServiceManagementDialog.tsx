@@ -126,7 +126,7 @@ export function ServiceManagementDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="service-data-dir">1) 数据地址</Label>
+                  <Label htmlFor="service-data-dir">数据地址</Label>
                   <Input
                     id="service-data-dir"
                     value={draft.dataDir}
@@ -136,7 +136,7 @@ export function ServiceManagementDialog({
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="service-auto-start">2) 开机自动启动</Label>
+                  <Label htmlFor="service-auto-start">开机自动启动</Label>
                   <Switch
                     id="service-auto-start"
                     checked={draft.autoStart}
@@ -147,7 +147,7 @@ export function ServiceManagementDialog({
                 <AdvancedDisclosure open={advancedOpen} onOpenChange={setAdvancedOpen}>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="service-public-domain">3) 公网域名（可选）</Label>
+                      <Label htmlFor="service-public-domain">公网域名（可选）</Label>
                       <Input
                         id="service-public-domain"
                         value={draft.publicDomain}
@@ -164,7 +164,7 @@ export function ServiceManagementDialog({
                     {draft.spaceKind === 'local' ? (
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <Label htmlFor="auto-check">4) 自动检查公网 IP</Label>
+                          <Label htmlFor="auto-check">自动检查公网 IP</Label>
                           <Switch
                             id="auto-check"
                             checked={draft.autoDetectPublicIp}
@@ -182,7 +182,7 @@ export function ServiceManagementDialog({
                     {draft.spaceKind === 'local' ? (
                       <div className="space-y-2">
                         <Label>
-                          5) 隧道供应商{tunnelSuggested ? '（建议，外网访问时需要）' : '（可选）'}
+                          隧道供应商{tunnelSuggested ? '（建议，外网访问时需要）' : '（可选）'}
                         </Label>
                         <Select
                           value={draft.tunnelProvider || 'none'}
@@ -218,7 +218,7 @@ export function ServiceManagementDialog({
 
                     <div className="space-y-2">
                       <Label htmlFor="service-cert-path">
-                        {draft.spaceKind === 'local' ? '6) HTTPS 证书' : '4) HTTPS 证书（可选）'}
+                        {draft.spaceKind === 'local' ? 'HTTPS 证书' : 'HTTPS 证书（可选）'}
                       </Label>
                       <Input
                         id="service-cert-path"

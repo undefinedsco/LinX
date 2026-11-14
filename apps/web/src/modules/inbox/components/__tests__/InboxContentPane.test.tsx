@@ -165,6 +165,22 @@ describe('InboxContentPane', () => {
     expect(screen.getByText('打开会话')).toBeInTheDocument()
   })
 
+  it('puts approve and reject before an optional note that opens on demand', () => {
+    mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedItemId: approvalItem.id,
+    }))
+    mockUseInboxItems.mockReturnValue({ data: [approvalItem], isLoading: false })
+
+    render(<InboxContentPane />)
+
+    expect(screen.queryByLabelText('处理备注')).toBeNull()
+    const approve = screen.getByText('批准这一次')
+    const addNote = screen.getByText('添加备注')
+    expect(approve.compareDocumentPosition(addNote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(addNote)
+    expect(screen.getByLabelText('处理备注')).toBeVisible()
+  })
+
   it('handles approval mutation failures through hook error state without surfacing the rejection', async () => {
     mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
       selectedItemId: approvalItem.id,
@@ -177,6 +193,7 @@ describe('InboxContentPane', () => {
 
     render(<InboxContentPane />)
 
+    fireEvent.click(screen.getByText('添加备注'))
     fireEvent.change(screen.getByLabelText('处理备注'), { target: { value: 'Needs policy support.' } })
     fireEvent.click(screen.getByText('批准这一次'))
 
