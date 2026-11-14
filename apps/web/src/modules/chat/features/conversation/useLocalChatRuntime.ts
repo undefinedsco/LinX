@@ -70,6 +70,7 @@ export function useLocalChatRuntime({
   persistedActiveBranchByParentRef.current = persistedActiveBranchByParent
   onRequestErrorRef.current = onRequestError
   sessionFetchRef.current = sessionFetch
+  const hasSessionFetch = Boolean(sessionFetch)
 
   const authFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
     const currentSessionFetch = sessionFetchRef.current
@@ -80,7 +81,7 @@ export function useLocalChatRuntime({
   }, [])
 
   const localFetch = useMemo(() => {
-    if (!db || !sessionWebId || !sessionFetch) return createUnavailableFetch()
+    if (!db || !sessionWebId || !hasSessionFetch) return createUnavailableFetch()
     return createLocalChatKitFetch({
       db,
       webId: sessionWebId,
@@ -122,7 +123,7 @@ export function useLocalChatRuntime({
         updatedAt: createdAt,
       }),
     })
-  }, [authFetch, db, selectedChatId, selectedThreadId, sessionWebId])
+  }, [authFetch, db, hasSessionFetch, selectedChatId, selectedThreadId, sessionWebId])
 
   useEffect(() => {
     setThreadAttachments([])
