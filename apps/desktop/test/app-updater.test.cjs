@@ -95,3 +95,20 @@ test('AppUpdater silences missing GitHub release feeds', async () => {
   assert.equal(status.releaseUrl, null)
   assert.equal(status.error, null)
 })
+
+test('parseLatestRelease reads linx-v release tags', () => {
+  assert.equal(parseLatestRelease({ tag_name: 'linx-v0.3.43' }).version, '0.3.43')
+  assert.equal(compareVersions(parseLatestRelease({ tag_name: 'linx-v0.3.43' }).version, '0.3.42'), 1)
+})
+
+test('parseLatestReleaseFeed skips CLI, draft and prerelease entries', () => {
+  assert.deepEqual(
+    parseLatestReleaseFeed([
+      { tag_name: 'linx-cli-v0.3.27', html_url: 'https://example.test/cli' },
+      { tag_name: 'linx-v0.3.44', draft: true, html_url: 'https://example.test/draft' },
+      { tag_name: 'linx-v0.3.44-rc.1', prerelease: true, html_url: 'https://example.test/rc' },
+      { tag_name: 'linx-v0.3.43', html_url: 'https://example.test/app' },
+    ]),
+    { version: '0.3.43', releaseUrl: 'https://example.test/app' },
+  )
+})
