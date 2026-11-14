@@ -660,6 +660,9 @@ describe('useOidcConnect', () => {
         issuer: 'http://localhost:5737/',
         redirectUrl: 'http://localhost:5173/auth/callback',
         clientId: 'deleted-client-id',
+        clientSecret: 'deleted-client-secret',
+        clientType: 'dynamic',
+        expiresAt: '0',
       }),
     )
 
@@ -669,14 +672,204 @@ describe('useOidcConnect', () => {
     await waitFor(() => {
       expect(loginMock).toHaveBeenCalledTimes(2)
     })
-    // The rejected client state was purged before the retry.
-    expect(window.localStorage.getItem('solidClientAuthenticationUser:rejected-session')).toBeNull()
+    // Only the rejected registration is purged; the record survives so the
+    // retry registers exactly once, and no other provider is disturbed.
+    const record = JSON.parse(
+      window.localStorage.getItem('solidClientAuthenticationUser:rejected-session') ?? '{}',
+    )
+    expect(record).not.toHaveProperty('clientId')
+    expect(record).not.toHaveProperty('clientSecret')
+    // The retry must not be handed the rejected client again.
+    const retryOptions = loginMock.mock.calls[1][0] as Record<string, unknown>
+    expect(retryOptions).not.toHaveProperty('clientId')
     clearStoredSolidSessionSpy.mockRestore()
   })
 
-  it('purges the cached Solid session when the provider keeps rejecting the client', async () => {
-    const clearStoredSolidSessionSpy = vi.spyOn(loginUtils, 'clearStoredSolidSession')
+  it('offers the stored client on the first attempt and resets it at most once on invalid_client', async () => {
+    // An expired registration must produce a new DCR exactly once, on the REAL
+    // useOidcConnect path — not a manual helper reset.
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'expired-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:expired-session',
+      JSON.stringify({
+        issuer: 'http://localhost:5737/',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+        clientId: 'expired-client-id',
+        clientSecret: 'expired-client-secret',
+        clientType: 'dynamic',
+        expiresAt: String(Math.floor(Date.now() / 1000) - 3600),
+      }),
+    )
+    loginMock
+      .mockRejectedValueOnce(new Error('invalid_client: unknown client'))
+      .mockResolvedValueOnce(undefined)
+
+    render(<TestComponent />)
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(2)
+    })
+
+    // The expired client is never offered to login(): the first attempt must
+    // already be clean so the provider registers exactly one new client.
+    const firstOptions = loginMock.mock.calls[0][0] as Record<string, unknown>
+    expect(firstOptions).not.toHaveProperty('clientId')
+    expect(firstOptions).not.toHaveProperty('clientSecret')
+
+    // Bounded: exactly two calls, then the rejected registration is gone.
+    expect(loginMock).toHaveBeenCalledTimes(2)
+    const retryOptions = loginMock.mock.calls[1][0] as Record<string, unknown>
+    expect(retryOptions).not.toHaveProperty('clientId')
+
+    // DPoP is preserved on every attempt.
+    expect(firstOptions.tokenType).toBe('DPoP')
+    expect(retryOptions.tokenType).toBe('DPoP')
+  })
+
+  it('passes a reusable client to login so the same client is consented once', async () => {
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'reusable-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:reusable-session',
+      JSON.stringify({
+        // Must match the issuer the hook resolves via discovery (127.0.0.1),
+        // otherwise the scoped reuse check correctly refuses it.
+        issuer: 'http://127.0.0.1:5737/',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+        clientId: 'reusable-client-id',
+        clientSecret: 'reusable-client-secret',
+        clientType: 'dynamic',
+        expiresAt: '0',
+      }),
+    )
+    loginMock.mockResolvedValueOnce(undefined)
+
+    render(<TestComponent />)
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+    const options = loginMock.mock.calls[0][0] as Record<string, unknown>
+    expect(options).toMatchObject({
+      clientId: 'reusable-client-id',
+      clientSecret: 'reusable-client-secret',
+      tokenType: 'DPoP',
+    })
+  })
+
+  it('snapshots the issuer registration before login so the callback can reuse it', async () => {
+    // The storage adapter completes the SDK's own record only when the
+    // issuer-keyed cache already holds this client, so the hook MUST snapshot
+    // before calling login().
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'snapshot-session')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:snapshot-session',
+      JSON.stringify({
+        issuer: 'http://127.0.0.1:5737/',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+        clientId: 'snapshot-client-id',
+        clientSecret: 'snapshot-client-secret',
+        clientType: 'dynamic',
+        expiresAt: '0',
+      }),
+    )
+    loginMock.mockResolvedValueOnce(undefined)
+
+    render(<TestComponent />)
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => expect(loginMock).toHaveBeenCalledTimes(1))
+
+    const cache = JSON.parse(
+      window.localStorage.getItem('linx-solid-client-registration') ?? '{}',
+    )
+    expect(cache['http://127.0.0.1:5737']).toMatchObject({
+      clientId: 'snapshot-client-id',
+      clientSecret: 'snapshot-client-secret',
+      clientType: 'dynamic',
+      expiresAt: '0',
+    })
+  })
+
+  it('reuses A after switching to B and back, on the real connect path', async () => {
+    // The SDK wipes every session record on an interactive login, so A -> B -> A
+    // must be served by the issuer-keyed cache, not by the old session record.
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ issuer: 'https://a.example.com/' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ issuer: 'https://b.example.com/' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ issuer: 'https://a.example.com/' }) })
+    loginMock.mockResolvedValue(undefined)
+
+    function Switcher() {
+      const { connect } = useOidcConnect()
+      return (
+        <div>
+          <button onClick={() => void connect('https://a.example.com/', { prompt: 'consent' }).catch(() => undefined)}>
+            connect-a
+          </button>
+          <button onClick={() => void connect('https://b.example.com/', { prompt: 'consent' }).catch(() => undefined)}>
+            connect-b
+          </button>
+        </div>
+      )
+    }
+
+    render(<Switcher />)
+
+    // Provider A registers for the first time.
+    fireEvent.click(screen.getByRole('button', { name: 'connect-a' }))
+    await waitFor(() => expect(loginMock).toHaveBeenCalledTimes(1))
+    expect(loginMock.mock.calls[0][0]).not.toHaveProperty('clientId')
+
+    // Simulate the registration A's provider returned and the SDK persisted.
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-a')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-a', JSON.stringify({
+      clientId: 'a-client', clientSecret: 'a-secret', clientType: 'dynamic',
+      clientName: 'LinX', expiresAt: '0', issuer: 'https://a.example.com',
+    }))
+
+    // Provider B registers for the first time and must NOT reuse A's client.
+    fireEvent.click(screen.getByRole('button', { name: 'connect-b' }))
+    await waitFor(() => expect(loginMock).toHaveBeenCalledTimes(2))
+    expect(loginMock.mock.calls[1][0]).not.toHaveProperty('clientId')
+
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-b')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-b', JSON.stringify({
+      clientId: 'b-client', clientSecret: 'b-secret', clientType: 'dynamic',
+      clientName: 'LinX', expiresAt: '0', issuer: 'https://b.example.com',
+    }))
+
+    // Back to A: A's session record may be gone, but its cache entry survives.
+    fireEvent.click(screen.getByRole('button', { name: 'connect-a' }))
+    await waitFor(() => expect(loginMock).toHaveBeenCalledTimes(3))
+    expect(loginMock.mock.calls[2][0]).toMatchObject({
+      clientId: 'a-client',
+      clientSecret: 'a-secret',
+    })
+    // A client is never handed to the wrong issuer.
+    expect(loginMock.mock.calls[1][0]).not.toMatchObject({ clientId: 'a-client' })
+  })
+
+  it('stops retrying and forgets only this session when the provider keeps rejecting the client', async () => {
     loginMock.mockRejectedValue(new Error('Authenticating with unknown client'))
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'keeps-rejecting')
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:keeps-rejecting',
+      JSON.stringify({
+        issuer: 'http://localhost:5737/',
+        redirectUrl: 'http://localhost:5173/auth/callback',
+        clientId: 'deleted-client-id',
+        clientSecret: 'deleted-client-secret',
+        clientType: 'dynamic',
+        expiresAt: '0',
+      }),
+    )
+    // Another provider's client must survive this account's failure.
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:other-provider',
+      JSON.stringify({ clientId: 'other-client', issuer: 'https://other.example.com' }),
+    )
 
     function LocalComponent() {
       const { connect } = useOidcConnect()
@@ -691,10 +884,18 @@ describe('useOidcConnect', () => {
     fireEvent.click(screen.getByRole('button', { name: 'connect-catch' }))
 
     await waitFor(() => {
-      expect(clearStoredSolidSessionSpy).toHaveBeenCalled()
+      expect(loginMock).toHaveBeenCalledTimes(2)
     })
-    expect(loginMock).toHaveBeenCalledTimes(2)
-    clearStoredSolidSessionSpy.mockRestore()
+    // Bounded: exactly one retry, then the invalid client is forgotten so it is
+    // never persisted forever — without a global purge of other providers.
+    const failed = JSON.parse(
+      window.localStorage.getItem('solidClientAuthenticationUser:keeps-rejecting') ?? '{}',
+    )
+    expect(failed).not.toHaveProperty('clientId')
+    expect(failed).not.toHaveProperty('clientSecret')
+    expect(
+      JSON.parse(window.localStorage.getItem('solidClientAuthenticationUser:other-provider') ?? '{}'),
+    ).toMatchObject({ clientId: 'other-client' })
   })
 
   it('falls back to the system browser when embedded authorization fails', async () => {

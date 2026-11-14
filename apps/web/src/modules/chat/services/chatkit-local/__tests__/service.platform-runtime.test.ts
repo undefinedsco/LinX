@@ -436,6 +436,7 @@ describe('LocalChatKitService platform runtime routing', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
@@ -1210,21 +1211,52 @@ describe('LocalChatKitService platform runtime routing', () => {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     }))
+    // Matrix must use ordinary fetch with the Pod credential, never the
+    // session's DPoP-authenticated transport.
+    const matrixFetch = vi.fn(async () => new Response(JSON.stringify({
+      event_id: '$event:node-0000.undefineds.co',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', matrixFetch)
     const service = new LocalChatKitService({
       store: store as any,
       db: db as any,
       webId: 'https://id.undefineds.co/alice/profile/card#me',
       authFetch: modelTraffic(authFetch) as any,
+      matrixAccess: {
+        get: () => ({
+          apiKey: 'sk-matrix-test',
+          webId: 'https://id.undefineds.co/alice/profile/card#me',
+          accountOrigin: 'https://id.undefineds.co',
+          origin: 'https://node-0000.undefineds.co',
+          podUrl: 'https://node-0000.undefineds.co/alice/',
+        }),
+        authorize: async () => {
+          throw new Error('not used')
+        },
+        release: async () => undefined,
+      },
     })
 
     const events = await sendMessage(service)
 
     expect(store.addThreadItem).not.toHaveBeenCalled()
-    expect(authFetch).toHaveBeenCalledWith(
-      'https://node-0000.undefineds.co/_matrix/client/v3/rooms/!room%3Anode-0000.undefineds.co/send/m.room.message/user_message-1',
-      expect.objectContaining({ method: 'PUT' }),
+    expect(authFetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/_matrix/'),
+      expect.anything(),
     )
-    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    const matrixRequest = matrixFetch.mock.calls[0]?.[0] as Request
+    expect(matrixRequest).toBeInstanceOf(Request)
+    expect(matrixRequest.url).toBe(
+      'https://node-0000.undefineds.co/_matrix/client/v3/rooms/!room%3Anode-0000.undefineds.co/send/m.room.message/user_message-1',
+    )
+    expect(matrixRequest.method).toBe('PUT')
+    expect(matrixRequest.credentials).toBe('omit')
+    expect(matrixRequest.headers.get('authorization')).toBe('Bearer sk-matrix-test')
+    expect(matrixRequest.headers.get('dpop')).toBeNull()
+    const body = JSON.parse(await matrixRequest.text())
     expect(body.body).toBe('你好')
     expect(body['co.undefineds.linx'].chat).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#this')
     expect(body['co.undefineds.linx'].thread).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#thread')
@@ -1232,6 +1264,95 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(body['co.undefineds.linx'].reconciler.latest.chat).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#this')
     expect(body['co.undefineds.linx'].reconciler.latest.thread).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#thread')
     expect(events.map((event) => event.type)).toEqual(['thread.item.added', 'thread.item.done'])
+  })
+
+  it('shows the Matrix server refusal without treating the login as expired', async () => {
+    const store = createMockStore()
+    store.loadThread.mockResolvedValue({
+      id: 'chat/matrix-room/index.ttl#thread',
+      status: { type: 'active' as const },
+      created_at: 1,
+      updated_at: 1,
+      metadata: {
+        chat_id: 'matrix-room/index.ttl#this',
+        roomId: '!room:node-0000.undefineds.co',
+      },
+    })
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    }, 'https://node-0000.undefineds.co/alice/')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      errcode: 'M_FORBIDDEN',
+      error: 'An invitation is required',
+    }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    })))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+      authFetch: vi.fn() as any,
+      matrixAccess: {
+        get: () => ({
+          apiKey: 'sk-matrix-test',
+          webId: 'https://id.undefineds.co/alice/profile/card#me',
+          accountOrigin: 'https://id.undefineds.co',
+          origin: 'https://node-0000.undefineds.co',
+          podUrl: 'https://node-0000.undefineds.co/alice/',
+        }),
+        authorize: async () => {
+          throw new Error('not used')
+        },
+        release: async () => undefined,
+      },
+    })
+
+    const events = await sendMessage(service)
+    const text = events.find((event) => event.type === 'error')?.error?.message ?? ''
+    expect(text).toContain('An invitation is required')
+    expect(text).not.toMatch(/登录|过期|expired/iu)
+  })
+
+  it('asks for explicit Matrix authorization and stops when the person declines', async () => {
+    const store = createMockStore()
+    store.loadThread.mockResolvedValue({
+      id: 'chat/matrix-room/index.ttl#thread',
+      status: { type: 'active' as const },
+      created_at: 1,
+      updated_at: 1,
+      metadata: {
+        chat_id: 'matrix-room/index.ttl#this',
+        roomId: '!room:node-0000.undefineds.co',
+      },
+    })
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    }, 'https://node-0000.undefineds.co/alice/')
+    const onMatrixAuthorizationRequired = vi.fn()
+    const sessionFetch = vi.fn()
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+      authFetch: sessionFetch as any,
+      matrixAccess: {
+        get: () => null,
+        authorize: async () => {
+          throw new Error('not used')
+        },
+        release: async () => undefined,
+      },
+      onMatrixAuthorizationRequired,
+    })
+
+    const events = await sendMessage(service)
+    expect(onMatrixAuthorizationRequired).toHaveBeenCalledTimes(1)
+    expect(sessionFetch).not.toHaveBeenCalled()
+    const text = events.find((event) => event.type === 'error')?.error?.message ?? ''
+    expect(text).toContain('授权访问当前空间')
   })
 
   it('routes a local LinX assistant to the local xpod runtime', async () => {

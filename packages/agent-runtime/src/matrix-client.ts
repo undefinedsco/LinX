@@ -43,6 +43,12 @@ export interface MatrixJoinRoomResponse {
 
 export interface MatrixInviteRequest {
   user_id: string
+  /**
+   * Optional extension (Xpod): the invited person's full WebID. Only accepted
+   * by the server when `user_id` is that WebID's canonical MXID; it lets the
+   * server register a cross-Pod room reference. Never a secret.
+   */
+  targetWebID?: string
 }
 
 export interface MatrixSetStateResponse {
@@ -178,9 +184,14 @@ export class MatrixClient {
     return this.request('POST', `/_matrix/client/v3/rooms/${encodePathSegment(roomId)}/join`, {})
   }
 
-  async inviteUser(roomId: string, userId: string): Promise<Record<string, never>> {
+  async inviteUser(
+    roomId: string,
+    userId: string,
+    options: { targetWebID?: string } = {},
+  ): Promise<Record<string, never>> {
     return this.request('POST', `/_matrix/client/v3/rooms/${encodePathSegment(roomId)}/invite`, {
       user_id: userId,
+      ...(options.targetWebID ? { targetWebID: options.targetWebID } : {}),
     } satisfies MatrixInviteRequest)
   }
 
@@ -300,10 +311,69 @@ export function matrixServerNameFromBaseUrl(baseUrl: string): string {
   return new URL(baseUrl).host
 }
 
-export function matrixUserIdFromWebId(webId: string, serverName: string): string {
-  return `@${matrixLocalpartFromUserId(webId)}:${serverName}`
+/**
+ * Canonical Matrix user id for a full WebID, matching xpod's
+ * `MatrixIdentity.matrixUserIdForWebId`: `@u_<sha256(fullWebID)>:<server>`.
+ *
+ * The hash is over the complete WebID string (origin, path, fragment), so two
+ * identities never collide by path or by a shared suffix, and it is never
+ * decoded back into business identity.
+ *
+ * `serverName` must be the authenticated service's own authority (from
+ * `whoami`), including any port; this helper never assumes the API host.
+ */
+export async function matrixUserIdFromWebId(webId: string, serverName: string): Promise<string> {
+  const normalizedWebId = requireFullWebId(webId)
+  // Match xpod `isMatrixServerName` exactly: host[:port] with an optional
+  // bracketed IPv6 literal; ports/IPv6 are legitimate, userinfo/paths/schemes
+  // and malformed authorities are not.
+  if (!isMatrixServerName(serverName)) {
+    throw new Error('Matrix server name is invalid')
+  }
+  return `@u_${await sha256Hex(normalizedWebId)}:${serverName}`
 }
 
+/**
+ * Validate an exact full WebID and return the ORIGINAL bytes.
+ *
+ * `URL` is used only to check the scheme and reject embedded credentials; it
+ * must not rewrite the identity (host casing, default port, dot segments,
+ * percent/Unicode forms). The backend hashes exactly the supplied `targetWebID`
+ * bytes, so normalizing here would break the invite pair.
+ */
+function requireFullWebId(value: string): string {
+  if (typeof value !== 'string' || !value || value !== value.trim() || /[\s\u0000-\u001f\u007f]/u.test(value)) {
+    throw new Error('Matrix user mapping requires a full WebID')
+  }
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error('Matrix user mapping requires a full WebID')
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('Matrix user mapping requires a full WebID')
+  }
+  return value
+}
+
+/**
+ * Matrix server-name/authority validation, mirroring xpod's
+ * `MatrixIdentity.isMatrixServerName`.
+ */
+export function isMatrixServerName(value: string): boolean {
+  if (typeof value !== 'string' || !value || value !== value.trim()) return false
+  if (/[\s@/?#\\]/u.test(value) || value.includes('://')) return false
+  if (value.startsWith('[')) {
+    return /^\[[0-9a-fA-F:.]+\](?::\d{1,5})?$/u.test(value)
+  }
+  return /^([A-Za-z0-9.-]+)(?::(\d{1,5}))?$/u.test(value)
+}
+
+/**
+ * Legacy display-only slug. Never use this for authentication, invitation, or
+ * any MXID the server will compare against a WebID-derived identity.
+ */
 export function matrixLocalpartFromUserId(userId: string): string {
   try {
     const url = new URL(userId)

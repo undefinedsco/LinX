@@ -12,6 +12,9 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useLiveQuery } from '@tanstack/react-db'
 import { useSession } from '@/providers/solid-session-context'
+import { usePodInterfaceAccess } from '@/lib/matrix/usePodInterfaceAccess'
+import { MatrixNativeGrantPanel } from '@/lib/matrix/MatrixNativeGrantPanel'
+import { MatrixInterfaceAuthorizeUnavailableError } from '@/lib/matrix/pod-interface-access'
 import {
   Dialog,
   DialogContent,
@@ -27,6 +30,7 @@ import { contactCollection, contactOps } from '../../data/collections'
 import { isGroupContact, type ContactRow } from '@undefineds.co/models'
 import { SelectableContactList } from '../../ui/SelectableContactList'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
+import { formatMatrixErrorForUser } from '@/modules/chat/matrix-service'
 
 interface CreateGroupDialogProps {
   open: boolean
@@ -36,10 +40,14 @@ interface CreateGroupDialogProps {
 
 export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroupDialogProps) {
   const { session } = useSession()
+  const matrixAccess = usePodInterfaceAccess()
   const [groupName, setGroupName] = useState('')
   const [participantSearch, setParticipantSearch] = useState('')
   const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set())
   const [isCreating, setIsCreating] = useState(false)
+  const [isAuthorizing, setIsAuthorizing] = useState(false)
+  const [needsMatrixAuthorization, setNeedsMatrixAuthorization] = useState(false)
+  const [needsMatrixNativeGrant, setNeedsMatrixNativeGrant] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const ownerRef = session.info.webId ?? undefined
 
@@ -72,6 +80,54 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
   const canCreate = groupName.trim().length > 0 && total >= 2
 
   const handleCreate = async () => {
+    if (!canCreate || isCreating || isAuthorizing) return
+    setError(null)
+    if (matrixAccess && !matrixAccess.get()) {
+      // The Pod interface key is created only from an explicit user action and
+      // kept in memory for this session; never issued silently on dialog open.
+      setNeedsMatrixAuthorization(true)
+      return
+    }
+    await createGroup()
+  }
+
+  const authorizeAndCreate = async () => {
+    if (!matrixAccess || isAuthorizing || isCreating) return
+    setError(null)
+    setIsAuthorizing(true)
+    try {
+      await matrixAccess.authorize()
+      setNeedsMatrixAuthorization(false)
+      setNeedsMatrixNativeGrant(false)
+      await createGroup()
+    } catch (err) {
+      if (err instanceof MatrixInterfaceAuthorizeUnavailableError) {
+        setNeedsMatrixNativeGrant(true)
+      } else {
+        setError(formatErrorForUser(err, '群聊授权没有完成，请稍后重试。'))
+      }
+    } finally {
+      setIsAuthorizing(false)
+    }
+  }
+
+  const importAndCreate = async (credential: { apiKey?: string; clientId?: string; clientSecret?: string }) => {
+    if (!matrixAccess || isAuthorizing || isCreating) return
+    setError(null)
+    setIsAuthorizing(true)
+    try {
+      await matrixAccess.importAuthorization(credential)
+      setNeedsMatrixAuthorization(false)
+      setNeedsMatrixNativeGrant(false)
+      await createGroup()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '访问凭据没有生效，请检查后重试。')
+    } finally {
+      setIsAuthorizing(false)
+    }
+  }
+
+  const createGroup = async () => {
     if (!canCreate || isCreating) return
     setError(null)
     setIsCreating(true)
@@ -86,13 +142,13 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
         name: groupName.trim(),
         participants,
         ownerRef,
-        ...(session.fetch ? { matrix: { authFetch: session.fetch } } : {}),
+        ...(matrixAccess ? { matrix: { access: matrixAccess } } : {}),
       })
       onCreated?.(result.id, result.chatId)
       handleClose()
     } catch (err) {
-      const msg = formatErrorForUser(err, '创建群组失败。请确认当前空间可写后再试。')
-      setError(msg)
+      const matrixMessage = formatMatrixErrorForUser(err)
+      setError(matrixMessage ?? formatErrorForUser(err, '创建群组失败。请确认当前空间可写后再试。'))
     } finally {
       setIsCreating(false)
     }
@@ -102,6 +158,8 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
     setGroupName('')
     setParticipantSearch('')
     setSelectedParticipants(new Set())
+    setNeedsMatrixAuthorization(false)
+    setNeedsMatrixNativeGrant(false)
     setError(null)
     onOpenChange(false)
   }
@@ -152,6 +210,27 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
             </div>
           )}
 
+          {needsMatrixAuthorization && needsMatrixNativeGrant ? (
+            <MatrixNativeGrantPanel
+              accountOrigin={matrixAccess?.accountOrigin() ?? null}
+              busy={isAuthorizing}
+              error={error}
+              onImport={(credential) => { void importAndCreate(credential) }}
+              onCancel={() => {
+                setNeedsMatrixNativeGrant(false)
+                setError(null)
+              }}
+            />
+          ) : needsMatrixAuthorization ? (
+            <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">群聊需要一次空间授权</p>
+              <p className="mt-1">
+                群消息通过当前空间收发。LinX 会为本次登录创建一个只用于这个空间的访问凭据，
+                不会保存到本机，也不会发送给其他网站。
+              </p>
+            </div>
+          ) : null}
+
           {error && (
             <div className="flex items-center gap-1.5 text-xs text-destructive">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -162,9 +241,15 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>取消</Button>
-          <Button onClick={handleCreate} disabled={!canCreate || isCreating}>
-            {isCreating ? '创建中...' : '创建群组'}
-          </Button>
+          {needsMatrixAuthorization ? (
+            <Button onClick={authorizeAndCreate} disabled={isAuthorizing || isCreating}>
+              {isAuthorizing ? '正在授权...' : '授权并创建'}
+            </Button>
+          ) : (
+            <Button onClick={handleCreate} disabled={!canCreate || isCreating}>
+              {isCreating ? '创建中...' : '创建群组'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

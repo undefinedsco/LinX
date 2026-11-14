@@ -11144,10 +11144,10 @@
     "@undefineds.co/shared-ui" "0.1.1"
     lucide-react "^0.525.0"
 
-"@undefineds.co/drizzle-solid@0.3.17", "@undefineds.co/drizzle-solid@0.3.20", "@undefineds.co/drizzle-solid@0.3.25", "@undefineds.co/drizzle-solid@^0.3.14":
-  version "0.3.20"
-  resolved "https://registry.yarnpkg.com/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.20.tgz#8df081049e6c37cf51b45a776bed12799c80f1a9"
-  integrity sha512-66QXShwDv5sPmjNAYkhDZmbLFpJdGU7HpJrpwpGTIUQsnoatsg/SAJiy6PXrwN1Es+rmSv0Z6WBR3P8UPRylHw==
+"@undefineds.co/drizzle-solid@0.3.17", "@undefineds.co/drizzle-solid@0.3.20", "@undefineds.co/drizzle-solid@0.3.25", "@undefineds.co/drizzle-solid@0.3.26", "@undefineds.co/drizzle-solid@^0.3.14":
+  version "0.3.26"
+  resolved "https://registry.npmjs.org/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.26.tgz#c691fc474adfcb0122cd2d070858eeaf8a7f3e15"
+  integrity sha512-x51lhiVpNmLcky4G66pF32WdR9vRfSse9ZufKe3CmD+5/Fi4L7f6x75E8V4SokR9AHUNTYCbccldeTtxHRSkqw==
   dependencies:
     "@inrupt/solid-client" "^3.0.0"
     "@inrupt/solid-client-authn-node" "^3.1.1"

@@ -30,12 +30,18 @@ export interface LinxPiSessionManagerOptions {
   cwd: string
   agentDir: string
   session?: string
+  /** Custom session storage directory (`--session-dir`); flat by default. */
+  sessionDir?: string
+  /** Create or reopen this exact session id (`--session-id`). */
+  sessionId?: string
   last?: boolean
   podSessionSource?: LinxPiPodSessionSource | null
 }
 
 export interface LinxPiListSessionsOptions {
   podSessionSource?: LinxPiPodSessionSource | null
+  /** Custom session storage directory, honoured by listing and resume. */
+  sessionDir?: string
 }
 
 export interface LinxPiResolveSessionOptions {
@@ -94,7 +100,9 @@ export function createNativeLinxPiPodSessionSource(context: {
 }
 
 export async function createLinxPiSessionManager(options: LinxPiSessionManagerOptions): Promise<SessionManager> {
-  const sessionDir = getDefaultLinxPiSessionDir(options.cwd, options.agentDir)
+  assertLinxPiSessionSelectorCompatibility(options)
+  const sessionDir = resolveLinxPiSessionDir(options.cwd, options.agentDir, options.sessionDir)
+  const sessionId = normalizeLinxPiSessionId(options.sessionId)
 
   if (options.session?.trim()) {
     const session = await resolveLinxPiSession(options.session.trim(), options.cwd, sessionDir, {
@@ -106,14 +114,79 @@ export async function createLinxPiSessionManager(options: LinxPiSessionManagerOp
   if (options.last) {
     const sessions = await listLinxPiSessions(options.cwd, options.agentDir, {
       podSessionSource: options.podSessionSource,
+      sessionDir,
     })
     if (sessions[0]) {
       return openAndRepairLinxPiSession(sessions[0].path, sessionDir)
     }
+    // `--session-id` is rejected with `--last` by the guard above.
     return SessionManager.create(options.cwd, sessionDir)
   }
 
-  return SessionManager.create(options.cwd, sessionDir)
+  if (sessionId) {
+    const existing = await findExactLinxPiSessionById(sessionId, options.cwd, sessionDir)
+    if (existing) {
+      return openAndRepairLinxPiSession(existing.path, sessionDir)
+    }
+  }
+
+  return SessionManager.create(options.cwd, sessionDir, sessionId ? { id: sessionId } : undefined)
+}
+
+/**
+ * `--session-id` creates or reopens one exact session; it cannot be combined
+ * with another selector, matching the published CLI's guard.
+ */
+export function assertLinxPiSessionSelectorCompatibility(
+  options: Pick<LinxPiSessionManagerOptions, 'session' | 'sessionId' | 'last'>,
+): void {
+  if (!options.sessionId?.trim()) {
+    return
+  }
+  if (options.session?.trim()) {
+    throw new Error('--session-id cannot be combined with --session')
+  }
+  if (options.last) {
+    throw new Error('--session-id cannot be combined with --continue or --resume')
+  }
+}
+
+function resolveLinxPiSessionDir(_cwd: string, agentDir: string, sessionDir?: string): string {
+  return sessionDir?.trim() ? resolve(expandHomePath(sessionDir.trim())) : getDefaultLinxPiSessionDir(_cwd, agentDir)
+}
+
+function normalizeLinxPiSessionId(sessionId: string | undefined): string | undefined {
+  const normalized = sessionId?.trim()
+  if (!normalized) {
+    return undefined
+  }
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/.test(normalized)) {
+    throw new Error([
+      'Session id must be non-empty, contain only alphanumeric characters,',
+      "'-', '_', and '.', and start and end with an alphanumeric character",
+    ].join(' '))
+  }
+  return normalized
+}
+
+function expandHomePath(path: string): string {
+  if (path === '~') {
+    return process.env.HOME ?? path
+  }
+  if (path.startsWith('~/')) {
+    const homeDirectory = process.env.HOME
+    return homeDirectory ? join(homeDirectory, path.slice(2)) : path
+  }
+  return path
+}
+
+async function findExactLinxPiSessionById(
+  sessionId: string,
+  cwd: string,
+  sessionDir: string,
+): Promise<SessionInfo | null> {
+  const sessions = await SessionManager.list(cwd, sessionDir)
+  return sessions.find((session) => session.id === sessionId) ?? null
 }
 
 export async function listLinxPiSessions(
@@ -121,7 +194,7 @@ export async function listLinxPiSessions(
   agentDir: string,
   options: LinxPiListSessionsOptions = {},
 ): Promise<SessionInfo[]> {
-  const sessionDir = getDefaultLinxPiSessionDir(cwd, agentDir)
+  const sessionDir = resolveLinxPiSessionDir(cwd, agentDir, options.sessionDir)
   const localSessions = filterRuntimeSessionsForWorkspace(
     await SessionManager.list(cwd, sessionDir),
     cwd,

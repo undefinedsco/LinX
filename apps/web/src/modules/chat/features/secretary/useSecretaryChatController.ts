@@ -63,11 +63,15 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
   const chats = chatsQuery.data
   const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data])
   const activeChat = useMemo(() => selectedChatId && chats ? chats.find((chat) => chat.id === selectedChatId) ?? null : null, [chats, selectedChatId])
+  // Shared rooms carry the owner's canonical thread IRI; they must not get a
+  // fabricated local Thread row from the auto-create path.
+  const isSharedRoom = Boolean(activeChat && (activeChat.metadata as any)?.sharedRoom)
   const activeThread = useMemo(() => selectedThreadId ? threads.find((thread) => chatThreadRefsMatch(thread.id, selectedThreadId)) ?? null : null, [selectedThreadId, threads])
   const persistedActiveBranchByParent = useMemo(() => readActiveBranchSelections(activeThread?.metadata), [activeThread?.metadata])
 
   useEffect(() => {
     const hasExplicitSecretaryDraft = isSecretary && Boolean(draftController.activePendingDraft)
+    if (isSharedRoom) return
     if (!selectedChatId || (!isReady && !hasExplicitSecretaryDraft) || (!activeChat && !isSecretary)
       || (!isSecretary && (chatsQuery.isLoading || threadsQuery.isLoading || chatsQuery.error || threadsQuery.error))) return
     const normalizedThreads = threads.map((thread) => ({ ...thread, _id: thread.id })).filter((thread) => Boolean(thread._id))
@@ -137,7 +141,7 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
       setCreationFailure({ message: error instanceof Error ? error.message : '恢复聊天失败', scopeKey: creationScope, chatId: creationChatId })
       isCreatingThreadRef.current = false
     })
-  }, [activeChat, activeThread, chatsQuery.error, chatsQuery.isLoading, creationRetryKey, draftController.activePendingDraft, isReady, isSecretary, mutations.createThread, mutations.ensureThreadWorkspace, scopeKey, selectThread, selectedChatId, selectedThreadId, threads, threadsQuery.error, threadsQuery.isLoading])
+  }, [activeChat, activeThread, chatsQuery.error, chatsQuery.isLoading, creationRetryKey, draftController.activePendingDraft, isReady, isSecretary, isSharedRoom, mutations.createThread, mutations.ensureThreadWorkspace, scopeKey, selectThread, selectedChatId, selectedThreadId, threads, threadsQuery.error, threadsQuery.isLoading])
 
   return {
     selectedChatId,

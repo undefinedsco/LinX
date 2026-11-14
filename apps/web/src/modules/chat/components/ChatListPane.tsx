@@ -29,6 +29,7 @@ import { useChatListEntries } from '../features/list/useChatListEntries'
 import { GlobalSearchResults } from '../features/search/GlobalSearchResults'
 import { ChatListRow } from '../ui/ChatListRow'
 import { AddChatDialog } from './AddChatDialog'
+import { MatrixInvitationList } from './MatrixInvitationList'
 
 type ListFilter = 'all' | 'unread'
 
@@ -211,6 +212,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
         </DropdownMenu>
       </div>
 
+      <MatrixInvitationList />
       {!isOnline ? (
         <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/60 px-4 py-2 text-xs text-muted-foreground">
           <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />

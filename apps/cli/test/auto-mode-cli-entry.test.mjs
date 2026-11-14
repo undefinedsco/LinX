@@ -1061,3 +1061,55 @@ test('compiled cli resume selector initializes theme before rendering', async (t
   assert.doesNotMatch(output, /Theme not initialized/)
   assert.doesNotMatch(output, /Call initTheme\(\) first/)
 })
+
+test('compiled cli help exposes session-dir and session-id flags', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-help-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir', outdir,
+      '--rootDir', sourceRoot,
+      '--module', 'nodenext',
+      '--moduleResolution', 'nodenext',
+      '--target', 'ES2022',
+      '--lib', 'ES2022',
+      '--types', 'node',
+      '--skipLibCheck', 'true',
+      '--noEmitOnError', 'false',
+      entryPath,
+    ], { cwd: cliRoot, stdio: 'pipe' })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const out = execFileResult(process.execPath, [join(outdir, 'index.js'), '--help'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+    timeout: 10_000,
+  })
+  assert.equal(out.status, 0)
+  assert.match(out.stdout, /--session-dir/)
+  assert.match(out.stdout, /--session-id/)
+  assert.match(out.stdout, /--session\b/)
+
+  // Selector conflicts must be rejected by the compiled entry BEFORE any
+  // chooser/auth/TUI startup. A timeout or null status is a failure, not a pass.
+  const conflicts = [
+    ['--session', 'other'],
+    ['--continue'],
+    ['--resume'],
+    ['--last'],
+  ]
+  for (const selector of conflicts) {
+    const rejected = execFileResult(
+      process.execPath,
+      [join(outdir, 'index.js'), '--session-id', 'exact', ...selector],
+      { cwd: cliRoot, encoding: 'utf-8', timeout: 10_000 },
+    )
+    assert.equal(rejected.status, 1, `expected exit 1 for ${selector.join(' ')}`)
+    assert.match(rejected.stderr, /--session-id cannot be combined/)
+  }
+})
