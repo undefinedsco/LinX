@@ -165,7 +165,12 @@ jobs:
 
             Included artifacts:
             - Web shell bundle
-            - Desktop release artifacts for macOS and Linux
+            - macOS (Apple Silicon): `.zip`
+            - Windows: installer and portable `.exe`
+            - Linux: `.AppImage` and `.deb`
+
+            The macOS build is not signed with a Developer ID or notarized. On first launch,
+            open System Settings → Privacy & Security and choose "Open Anyway".
 
   notify:
     name: Notify Release
