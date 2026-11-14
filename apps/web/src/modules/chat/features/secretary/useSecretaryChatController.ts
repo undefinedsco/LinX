@@ -26,6 +26,8 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
   const selectThread = useChatStore((state) => state.selectThread)
   const chatsQuery = useChatList()
   const threadsQuery = useThreadList(selectedChatId || '', { enabled: Boolean(selectedChatId) })
+  const refetchThreadsRef = useRef(threadsQuery.refetch)
+  refetchThreadsRef.current = threadsQuery.refetch
   const mutations = useChatMutations()
   const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const isSecretary = selectedChatId === LINX_DEFAULT_SECRETARY.chatId
@@ -101,7 +103,7 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
     // leave the pending draft and disabled button hanging forever.
     const restoreBeforeCreate = hasExplicitSecretaryDraft
       ? Promise.resolve([])
-      : Promise.resolve().then(() => threadsQuery.refetch?.())
+      : Promise.resolve().then(() => refetchThreadsRef.current?.())
     void restoreBeforeCreate.then((restored) => {
       if (activeScopeRef.current !== creationScope || activeChatRef.current !== creationChatId || creationAttemptRef.current !== creationAttempt) return
       const restoredThreads = Array.isArray(restored) ? restored : []
