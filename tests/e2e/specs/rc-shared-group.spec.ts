@@ -200,7 +200,19 @@ async function createGroupWithBob(page: Page, bobSearch: string): Promise<void> 
   await page.getByRole('group', { name: '群聊授权', exact: true })
     .waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined)
   await completeNativeMatrixGrant(page)
-  await expect(dialog, 'the group must be created through the product UI before Bob can discover it').toHaveCount(0, { timeout: 60_000 })
+  const closed = await dialog.waitFor({ state: 'detached', timeout: 60_000 }).then(() => true, () => false)
+  if (!closed) {
+    // Report only the dialog's own user-facing error line (already worded and
+    // length-limited by the product) and its button states; never field values.
+    const productError = (await dialog.locator('.text-destructive').first().textContent({ timeout: 1_000 }).catch(() => null))
+      ?.trim().slice(0, 200) || 'none'
+    const buttons = await dialog.getByRole('button').evaluateAll((nodes) => nodes
+      .map((node) => `${(node.textContent ?? '').trim()}${(node as HTMLButtonElement).disabled ? '(disabled)' : ''}`)
+      .filter(Boolean)
+      .join(', '))
+      .catch(() => 'unknown')
+    throw new Error(`the group must be created through the product UI before Bob can discover it; dialog error: ${productError}; buttons: ${buttons}`)
+  }
 }
 
 async function sendInSelectedChat(page: Page, body: string): Promise<void> {
