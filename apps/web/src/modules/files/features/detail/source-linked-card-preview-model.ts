@@ -168,29 +168,29 @@ export function projectSourceLinkedCardDetailRows({
     ['来源', descriptor.sourceUri],
     ['类型', descriptor.sourceKind.toUpperCase()],
     ['格式', descriptor.mimeType],
-    ['Ingest', displayIngestVersion],
-    ['来源 hash', descriptor.sourceHash],
-    ['Ingest 记录', descriptor.sourceIngestManifestUri],
+    ['读取版本', displayIngestVersion],
+    ['来源校验值', descriptor.sourceHash],
+    ['读取记录', descriptor.sourceIngestManifestUri],
     ...(sourceIngestManifest ? [
-      ['Ingest 状态', sourceIngestManifest.status],
-      ['已 Ingest chunk', formatSourceLinkedCardIngestChunkProgress(sourceIngestManifest.readChunks, sourceIngestManifest.totalChunks)],
-      ['待 Ingest', sourceIngestManifest.pendingRanges.map((range) => `${range.start}..${range.end}`).join(', ') || '无'],
-      ['最近 Ingest', formatDateTime(sourceIngestManifest.lastIngestedAt)],
+      ['来源读取状态', sourceIngestManifest.status],
+      ['已读取', formatSourceLinkedCardIngestChunkProgress(sourceIngestManifest.readChunks, sourceIngestManifest.totalChunks)],
+      ['未读取的部分', sourceIngestManifest.pendingRanges.map((range) => `${range.start}..${range.end}`).join(', ') || '无'],
+      ['最近读取', formatDateTime(sourceIngestManifest.lastIngestedAt)],
     ] satisfies [string, string][] : []),
-    ['Ingest 审批', sourceProposal ? sourceProposal.status : '无'],
+    ['确认状态', sourceProposal ? sourceProposal.status : '无'],
     ...(sourceProposal ? [
       ['审批摘要', sourceProposal.summary],
-      ['审批 diff', sourceProposal.diff],
+      ['待确认的改动', sourceProposal.diff],
       ['审批目标', sourceProposal.targetResourceUri],
-      ['待审批内容', sourceProposal.proposedContent ? '已准备' : '无'],
+      ['待确认内容', sourceProposal.proposedContent ? '已准备' : '无'],
     ] satisfies [string, string][] : []),
     ['审批状态', approval?.status ?? '无'],
     ...(approval ? [
-      ['审批 ID', approval.id ?? '未知'],
+      ['确认编号', approval.id ?? '未知'],
     ] satisfies [string, string][] : []),
     ['正文', bodyUri ?? ''],
     ['创建时间', formatDateTime(descriptor.createdAt)],
-    ['写入方式', 'canonical 内容需审批后更新'],
+    ['写入方式', '内容更新需要确认'],
   ]
 }
 
@@ -214,8 +214,8 @@ export function projectSourceLinkedCardPreviewContent({
   if (!descriptor) {
     return {
       kind: 'unavailable',
-      title: 'Source-linked card',
-      description: 'Source-linked card metadata 暂不可用或不完整。',
+      title: '来源卡片',
+      description: '来源卡片的信息暂时不可用或不完整。',
       rawText: fallbackRawText,
     }
   }
@@ -223,7 +223,7 @@ export function projectSourceLinkedCardPreviewContent({
   if (!bodyUri || !bodyFile || bodyPreviewText == null) {
     return {
       kind: 'unavailable',
-      title: 'Source-linked card',
+      title: '来源卡片',
       description: '未找到这个 source-linked card 的正文资源。',
       rawText: fallbackRawText,
     }
@@ -303,9 +303,9 @@ export function projectSourceLinkedCardDetailsPanel({
   if (!open) return null
 
   return {
-    badgeLabel: 'Source-linked card',
-    title: 'Source-linked card',
-    description: 'Ingest 输出需审批后才更新 card 内容。',
+    badgeLabel: '来源卡片',
+    title: '来源卡片',
+    description: '来源有新内容时，需要你确认后才会更新卡片。',
     rows,
     hasPendingIngestRangeActions: projectSourceLinkedCardPendingIngestRangeAvailability(sourceIngestManifest),
     stagedIngestContent: projectSourceLinkedCardStagedIngestContent(sourceProposal),
@@ -362,7 +362,7 @@ export function projectSourceLinkedCardPrimaryActions({
       describedByError: hasActionError,
       icon: 'branch',
       id: 'review-ingest',
-      label: '审阅 Ingest',
+      label: '查看待确认内容',
     },
   ]
 }
@@ -376,12 +376,12 @@ export function projectSourceLinkedCardIngestRangeActions({
     {
       disabled: requestPending,
       id: 'request-next-ingest-range',
-      label: requestPending ? '排队中' : 'Ingest 下一段',
+      label: requestPending ? '排队中' : '读取下一段',
     },
     {
       disabled: requestPending,
       id: 'request-all-ingest-ranges',
-      label: 'Ingest 全部',
+      label: '读取全部',
     },
   ]
 }

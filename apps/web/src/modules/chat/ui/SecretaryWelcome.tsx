@@ -52,14 +52,10 @@ export function SecretaryWelcome({
       className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background"
       aria-labelledby="secretary-welcome-title"
     >
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_-5%,hsl(var(--primary)/0.10),transparent_70%),radial-gradient(40%_35%_at_85%_100%,hsl(var(--primary)/0.06),transparent_70%)]"
-      />
       <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto px-4 py-10 sm:px-6">
         <div className="w-full max-w-2xl">
           <div className="text-center">
-            <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-lg shadow-primary/25">
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Bot className="size-7" aria-hidden="true" />
             </span>
             <h1 id="secretary-welcome-title" className="mt-5 text-2xl font-semibold tracking-tight text-foreground">
@@ -77,7 +73,7 @@ export function SecretaryWelcome({
                 <button
                   key={action.id}
                   type="button"
-                  className="group flex flex-col items-start gap-3 rounded-xl border border-border/70 bg-card/80 px-4 py-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-md hover:shadow-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="group flex flex-col items-start gap-3 rounded-xl border border-border/70 bg-card/80 px-4 py-3.5 text-left transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   onClick={() => onStarterAction(action)}
                 >
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
@@ -96,7 +92,7 @@ export function SecretaryWelcome({
               if (canSubmit) onSubmit()
             }}
           >
-            <div className="relative rounded-2xl border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-primary/50 focus-within:shadow-md focus-within:shadow-primary/5 focus-within:ring-4 focus-within:ring-primary/10">
+            <div className="relative rounded-2xl border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20">
               <textarea
                 aria-label="给 LinX 助手发消息"
                 value={composerValue}

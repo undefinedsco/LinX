@@ -121,7 +121,7 @@ describe('file editor sheet model', () => {
     expect(surfaceSource).not.toContain('sourceLinkedDescriptor.sourceIngestManifestUri')
     expect(surfaceSource).not.toContain('editor.sourceLinkedDisplayIngestVersion')
     expect(surfaceSource).not.toContain('>Source</p>')
-    expect(surfaceSource).not.toContain('>Ingest 记录</span>')
+    expect(surfaceSource).not.toContain('>读取记录</span>')
     expect(surfaceSource).toContain('editor.structuredReturnAction')
     expect(surfaceSource).toContain('editor.richEditorContent')
     expect(surfaceSource).not.toContain('editor.structuredSubjectReturnContext?.subject')
@@ -178,10 +178,10 @@ describe('file editor sheet model', () => {
       '# Imported report',
       '',
       'Source: https://source.example/report',
-      'Ingest: ingest-v2',
-      'Ingest 记录: https://pod.example/.index/ingest/report.ttl',
+      '读取版本: ingest-v2',
+      '读取记录: https://pod.example/.index/ingest/report.ttl',
       '',
-      '确认 Ingest 审批后才会写入正文资源。',
+      '确认后才会写入正文。',
     ].join('\n'))
 
     const rawResource = raw()
@@ -231,13 +231,13 @@ describe('file editor sheet model', () => {
         },
         {
           id: 'ingestVersion',
-          label: 'Ingest',
+          label: '读取版本',
           value: 'ingest-v2',
           breakAll: false,
         },
         {
           id: 'manifestUri',
-          label: 'Ingest 记录',
+          label: '读取记录',
           value: 'https://pod.example/.index/ingest/report.ttl',
           breakAll: true,
         },
@@ -397,7 +397,7 @@ describe('file editor sheet model', () => {
       sourceText: '# Imported note\nUpdated source paragraph',
       warning: {
         title: '来源内容有冲突',
-        description: '请先确认 Ingest 更新，再替换本地编辑。',
+        description: '请先确认来源更新，再替换本地编辑。',
       },
     })
   })

@@ -33,6 +33,7 @@ export function useServiceManagementDialogController(open: boolean) {
   const [serviceSetupReady, setServiceSetupReady] = useState(false)
   const [hasPublicIp, setHasPublicIp] = useState<boolean | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false)
 
   const updateDraft = useCallback((patch: Partial<SetupDraft>) => {
     setDraft((current) => ({ ...current, ...patch }))
@@ -165,6 +166,7 @@ export function useServiceManagementDialogController(open: boolean) {
     serviceSetupReady,
     hasPublicIp,
     advancedOpen,
+    stopConfirmOpen,
     running,
     podBaseUrl,
     runtime,
@@ -176,6 +178,7 @@ export function useServiceManagementDialogController(open: boolean) {
       && (!draft.autoDetectPublicIp || hasPublicIp === false),
     updateDraft,
     setAdvancedOpen,
+    setStopConfirmOpen,
     saveAndStart,
     runRuntimeAction,
     upgradeRuntime,

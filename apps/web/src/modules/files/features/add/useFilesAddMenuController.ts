@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { useToast } from '@/components/ui/use-toast'
 import { useFilesStore } from '../../app/store'
@@ -100,6 +100,12 @@ export function useFilesAddMenuController({
       visibleChildren: entries,
     }))
   }
+
+  const ingestSuccessUri = ingest.feedback.success?.targetUri
+  const ingestSuccessMessage = ingest.feedback.success?.message
+  useEffect(() => {
+    if (ingestSuccessUri && ingestSuccessMessage) toast({ description: ingestSuccessMessage })
+  }, [ingestSuccessUri, ingestSuccessMessage, toast])
 
   const runAction = (action: FilesAddActionId) => {
     if (!containerUri) return
@@ -234,6 +240,7 @@ export function useFilesAddMenuController({
       confirm: confirmTable,
     },
     menu,
+    isUploadAction: (action: FilesAddActionId) => action === 'upload-files' || action === 'upload-folder',
     runAction,
     folderUpload,
     ingest,

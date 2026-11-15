@@ -209,7 +209,7 @@ describe('StructuredTableCellPrimitives', () => {
 
     expect(screen.getByRole('status', { name: '#Workspace 的 title 待审核' })).toBeInTheDocument()
     expect(screen.getByRole('status', { name: '#Workspace 的 title 待审核' }))
-      .toHaveAttribute('title', '单元格变更已提交；等待 Inbox 审批，canonical 数据未变更')
+      .toHaveAttribute('title', '修改已提交，等待在收件箱确认；确认前表格内容不变')
     expect(screen.queryByRole('button', { name: '放弃 #Workspace 的 title 更改' })).not.toBeInTheDocument()
   })
 
@@ -222,8 +222,8 @@ describe('StructuredTableCellPrimitives', () => {
       />,
     )
 
-    expect(screen.getByRole('status', { name: '正在提交 title on #Workspace 的单元格变更' }))
-      .toHaveAttribute('title', '单元格变更正在提交；canonical 数据未变更')
+    expect(screen.getByRole('status', { name: '正在提交「#Workspace」的「title」修改' }))
+      .toHaveAttribute('title', '正在提交修改；提交完成前表格内容不变')
   })
 
   it('commits multi-value enum selections as literal RDF values from a searchable create control', () => {

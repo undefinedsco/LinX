@@ -156,10 +156,10 @@ describe('source-linked card workflow model', () => {
         '# Imported report',
         '',
         'Source: https://source.example/report',
-        'Ingest: ingest-v2',
-        'Ingest 记录: https://pod.example/.index/ingest/report.ttl',
+        '读取版本: ingest-v2',
+        '读取记录: https://pod.example/.index/ingest/report.ttl',
         '',
-        '确认 Ingest 审批后才会写入正文资源。',
+        '确认后才会写入正文。',
       ].join('\n'),
     }))
     expect(projectSourceLinkedCardBodyPreviewText({

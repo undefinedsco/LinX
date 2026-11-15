@@ -1387,15 +1387,15 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('button', { name: 'Ingest 与审批' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '来源读取与确认' })).toBeInTheDocument()
     expect(screen.getAllByText('Quarterly report').length).toBeGreaterThan(0)
     expect(screen.getAllByText('https://example.com/report.pdf').length).toBeGreaterThan(0)
-    expect(screen.queryByText('Ingest 状态')).not.toBeInTheDocument()
+    expect(screen.queryByText('来源读取状态')).not.toBeInTheDocument()
     expect(screen.queryByText('Source proposal')).not.toBeInTheDocument()
-    expect(screen.queryByText('审批 ID')).not.toBeInTheDocument()
+    expect(screen.queryByText('确认编号')).not.toBeInTheDocument()
     expect(screen.queryByText(manifestUri)).not.toBeInTheDocument()
-    expect(screen.queryByText('canonical 内容需审批后更新')).not.toBeInTheDocument()
-    expect(screen.queryByText('Source-linked card')).not.toBeInTheDocument()
+    expect(screen.queryByText('内容更新需要确认')).not.toBeInTheDocument()
+    expect(screen.queryByText('来源卡片')).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: 'Quarterly report' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Quarterly report' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'source' })).toHaveAttribute('href', 'https://example.com/report.pdf')
@@ -1475,39 +1475,39 @@ describe('FileDetailPane', () => {
       }))
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ingest 与审批' }))
+    fireEvent.click(screen.getByRole('button', { name: '来源读取与确认' }))
 
     expect(screen.getAllByText(manifestUri).length).toBeGreaterThan(0)
-    expect(screen.getByText('Ingest 记录')).toBeInTheDocument()
+    expect(screen.getByText('读取记录')).toBeInTheDocument()
     expect(screen.queryByText('Ingest manifest')).not.toBeInTheDocument()
-    expect(screen.getByText('Ingest')).toBeInTheDocument()
+    expect(screen.getByText('读取版本')).toBeInTheDocument()
     expect(screen.queryByText('Source Ingest')).not.toBeInTheDocument()
     expect(screen.getByText('pdf-ingest-v1')).toBeInTheDocument()
     expect(screen.queryByText('pdf-parser-v1')).not.toBeInTheDocument()
-    expect(screen.getByText('Ingest 状态')).toBeInTheDocument()
+    expect(screen.getByText('来源读取状态')).toBeInTheDocument()
     expect(screen.getByText('partial')).toBeInTheDocument()
-    expect(screen.getByText('已 Ingest chunk')).toBeInTheDocument()
+    expect(screen.getByText('已读取')).toBeInTheDocument()
     expect(screen.getByText('3 / 12')).toBeInTheDocument()
-    expect(screen.getByText('待 Ingest')).toBeInTheDocument()
+    expect(screen.getByText('未读取的部分')).toBeInTheDocument()
     expect(screen.getByText('page:4..page:8, page:9..page:12')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ingest 下一段' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ingest 全部' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '读取下一段' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '读取全部' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '处理下一段' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '处理全部' })).not.toBeInTheDocument()
-    expect(screen.getByText('最近 Ingest')).toBeInTheDocument()
+    expect(screen.getByText('最近读取')).toBeInTheDocument()
     expect(screen.getAllByText(/2026.*6.*17/).length).toBeGreaterThan(0)
-    expect(screen.getByText('Ingest 审批')).toBeInTheDocument()
+    expect(screen.getByText('确认状态')).toBeInTheDocument()
     expect(screen.queryByText('Ingest proposal')).not.toBeInTheDocument()
     expect(screen.getByText('审阅 Quarterly report 的来源。')).toBeInTheDocument()
     expect(screen.getByText('Ingest 已刷新 report 标题和摘要。')).toBeInTheDocument()
-    expect(screen.getByText('待审批内容')).toBeInTheDocument()
+    expect(screen.getByText('待确认内容')).toBeInTheDocument()
     expect(screen.getByText('已准备')).toBeInTheDocument()
     expect(screen.getByText('审批状态')).toBeInTheDocument()
-    expect(screen.getByText('审批 ID')).toBeInTheDocument()
+    expect(screen.getByText('确认编号')).toBeInTheDocument()
     expect(screen.getByText('source-approval-1')).toBeInTheDocument()
     expect(mockUseApprovalByTarget).toHaveBeenCalledWith(proposal.id, expect.objectContaining({ enabled: true }))
-    expect(screen.getByText('canonical 内容需审批后更新')).toBeInTheDocument()
-    expect(screen.getAllByText('Source-linked card').length).toBeGreaterThan(0)
+    expect(screen.getByText('内容更新需要确认')).toBeInTheDocument()
+    expect(screen.getAllByText('来源卡片').length).toBeGreaterThan(0)
 
     expect(screen.getByRole('button', { name: '刷新来源' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: '刷新来源' }))
@@ -1525,14 +1525,14 @@ describe('FileDetailPane', () => {
         sourceIngestManifestUri: manifestUri,
       })
     })
-    expect(mockToast).toHaveBeenCalledWith({ description: '来源已变化，Ingest 审批已创建' })
+    expect(mockToast).toHaveBeenCalledWith({ description: '来源已变化，已生成待确认的更新' })
     mockRefreshSourceLinkedCard.mockClear()
 
     mockRequestIngestRange.mockResolvedValueOnce({
       action: 'reused',
       manifest: null,
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Ingest 下一段' }))
+    fireEvent.click(screen.getByRole('button', { name: '读取下一段' }))
     await waitFor(() => {
       expect(mockRequestIngestRange).toHaveBeenCalledWith({
         manifest: expect.objectContaining({
@@ -1547,7 +1547,7 @@ describe('FileDetailPane', () => {
     expect(mockToast).toHaveBeenCalledWith({ description: 'Ingest 队列已有：page:4..page:8' })
     mockRequestIngestRange.mockClear()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ingest 全部' }))
+    fireEvent.click(screen.getByRole('button', { name: '读取全部' }))
     await waitFor(() => {
       expect(mockRequestIngestRange).toHaveBeenCalledWith({
         manifest: expect.objectContaining({
@@ -1577,7 +1577,7 @@ describe('FileDetailPane', () => {
     act(() => {
       useFilesStore.setState({ selectedFileId: 'https://pod.example/.data/workspaces/ws-1/cards/quarterly-report.card.ttl' })
     })
-    fireEvent.click(screen.getByRole('button', { name: '审阅 Ingest' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看待确认内容' }))
     expect(useFilesStore.getState().selectedFileId).toBe(proposal.proposalResourceUri)
     expect(mockCreateSourceProposal).not.toHaveBeenCalled()
   })
@@ -1665,9 +1665,9 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ingest 与审批' }))
+    fireEvent.click(screen.getByRole('button', { name: '来源读取与确认' }))
 
-    expect(screen.getByText('已 Ingest chunk')).toBeInTheDocument()
+    expect(screen.getByText('已读取')).toBeInTheDocument()
     expect(screen.queryByText('1 / 0')).not.toBeInTheDocument()
     expect(screen.getByText('1 / 未知')).toBeInTheDocument()
   })
@@ -1882,12 +1882,12 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('Canonical body.')).toBeInTheDocument()
     expect(screen.queryByText('Pending Ingest body.')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ingest 与审批' }))
+    fireEvent.click(screen.getByRole('button', { name: '来源读取与确认' }))
     expect(screen.getByText('审阅 public report 的来源。')).toBeInTheDocument()
     expect(screen.getByText('Ingest 已暂存更新后的 public report 正文。')).toBeInTheDocument()
     expect(screen.getByText(/Pending Ingest body/)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '审阅 Ingest' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看待确认内容' }))
     expect(useFilesStore.getState().selectedFileId).toBe(proposal.proposalResourceUri)
     expect(mockRefreshSourceLinkedCard).not.toHaveBeenCalled()
     expect(mockCreateSourceProposal).not.toHaveBeenCalled()
@@ -1972,7 +1972,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ingest 与审批' }))
+    fireEvent.click(screen.getByRole('button', { name: '来源读取与确认' }))
     fireEvent.click(screen.getByRole('button', { name: '保留本地编辑' }))
 
     await waitFor(() => expect(mockResolveInboxApproval).toHaveBeenCalledTimes(1))
@@ -2068,7 +2068,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ingest 与审批' }))
+    fireEvent.click(screen.getByRole('button', { name: '来源读取与确认' }))
     fireEvent.click(screen.getByRole('button', { name: '保留本地编辑' }))
 
     const sourceCard = screen.getByRole('button', { name: '保留本地编辑' }).closest('.rounded-lg')
@@ -2078,7 +2078,7 @@ describe('FileDetailPane', () => {
     })
     expect(mockResolveInboxApproval).toHaveBeenCalledTimes(1)
     expect(mockToast).not.toHaveBeenCalledWith({ description: '本地编辑已保留' })
-    expect(mockToast).not.toHaveBeenCalledWith({ description: '本地编辑已保留，Ingest 审批已创建' })
+    expect(mockToast).not.toHaveBeenCalledWith({ description: '本地编辑已保留，来源更新等待你确认' })
   })
 
   it('refreshes URL source-linked cards from the detail preview', async () => {
@@ -2184,7 +2184,7 @@ describe('FileDetailPane', () => {
         sourceIngestManifestUri: manifestUri,
       })
     })
-    expect(mockToast).toHaveBeenCalledWith({ description: '来源已变化，Ingest 审批已创建' })
+    expect(mockToast).toHaveBeenCalledWith({ description: '来源已变化，已生成待确认的更新' })
   })
 
   it('uses source refresh for Review Ingest when there is no staged proposal yet', async () => {
@@ -2280,7 +2280,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.click(screen.getByRole('button', { name: '审阅 Ingest' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看待确认内容' }))
 
     await waitFor(() => {
       expect(mockRefreshSourceLinkedCard).toHaveBeenCalledWith({
@@ -2297,7 +2297,7 @@ describe('FileDetailPane', () => {
       })
     })
     expect(mockCreateSourceProposal).not.toHaveBeenCalled()
-    expect(mockToast).toHaveBeenCalledWith({ description: '来源已变化，Ingest 审批已创建' })
+    expect(mockToast).toHaveBeenCalledWith({ description: '来源已变化，已生成待确认的更新' })
   })
 
   it('does not create an audit-only Review Ingest proposal when source refresh is unchanged', async () => {
@@ -2376,7 +2376,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.click(screen.getByRole('button', { name: '审阅 Ingest' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看待确认内容' }))
 
     await waitFor(() => expect(mockRefreshSourceLinkedCard).toHaveBeenCalledTimes(1))
     expect(mockCreateSourceProposal).not.toHaveBeenCalled()
@@ -2454,7 +2454,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('button', { name: '审阅 Ingest' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '查看待确认内容' })).toBeDisabled()
   })
 
   it('disables Review Ingest while pending source proposal lookup is loading', () => {
@@ -2529,7 +2529,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    expect(screen.getByRole('button', { name: '审阅 Ingest' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '查看待确认内容' })).toBeDisabled()
   })
 
   it('does not render a blank rich editor when full raw content fails to load', () => {
@@ -3701,6 +3701,41 @@ describe('FileDetailPane', () => {
     expect(useFilesStore.getState().sidecarActionRequest).toBeNull()
   })
 
+  it('renders favorite and More actions next to the title when the shell provides a title slot', () => {
+    const slot = document.createElement('div')
+    slot.setAttribute('data-micro-app-title-slot', 'true')
+    document.body.appendChild(slot)
+    try {
+      useFilesStore.setState({ selectedFileId: 'https://pod.example/public/diagram.png' })
+      mockUseFileDetail.mockReturnValue({
+        data: {
+          id: 'https://pod.example/public/diagram.png',
+          uri: 'https://pod.example/public/diagram.png',
+          name: 'diagram.png',
+          kind: 'resource',
+          semanticKind: 'file',
+          parentUri: 'https://pod.example/public/',
+          mimeType: 'image/png',
+          size: 1024,
+          modifiedAt: '2026-06-17T00:00:00.000Z',
+          headers: {},
+          previewText: 'Architecture diagram preview.',
+        },
+        isLoading: false,
+        error: null,
+      })
+
+      render(<FileDetailPane />)
+
+      expect(screen.queryByLabelText('文件详情 head')).not.toBeInTheDocument()
+      expect(within(slot).getByText('diagram.png')).toBeInTheDocument()
+      expect(within(slot).getByRole('button', { name: '收藏' })).toBeInTheDocument()
+      expect(within(slot).getByRole('button', { name: '更多资源操作' })).toBeInTheDocument()
+    } finally {
+      slot.remove()
+    }
+  })
+
   it('keeps only favorite visible and collects URI, .meta, and Access actions in More', () => {
     useFilesStore.setState({ selectedFileId: 'https://pod.example/public/diagram.png' })
     mockUseFileDetail.mockReturnValue({
@@ -3862,7 +3897,7 @@ describe('FileDetailPane', () => {
     expect(lockedViewport).not.toHaveClass('bg-muted/20')
     expect(screen.queryByText(/System Predicates/)).not.toBeInTheDocument()
     expect(screen.getByPlaceholderText('搜索定义')).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: '术语 URI' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '术语地址' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '说明' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '类型' })).toBeInTheDocument()
@@ -3913,7 +3948,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('2 条规则')).toBeInTheDocument()
     expect(screen.getByText('只读')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('搜索定义')).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: '规则 URI' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '规则地址' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'term' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'class' })).toBeInTheDocument()
@@ -4064,7 +4099,7 @@ describe('FileDetailPane', () => {
     expect(termSidecar).not.toHaveClass('inset-0', 'w-full', 'max-w-none')
     expect(screen.queryByRole('dialog', { name: 'term definition' })).not.toBeInTheDocument()
     expect(within(termSidecar).queryByText('#tags')).not.toBeInTheDocument()
-    fireEvent.click(within(termSidecar).getByRole('button', { name: '查看 URI 详情' }))
+    fireEvent.click(within(termSidecar).getByRole('button', { name: '查看地址详情' }))
     expect(within(termSidecar).getByText('#tags')).toBeInTheDocument()
     expect(within(termSidecar).getByText('https://pod.example/.vocab/terms.ttl')).toBeInTheDocument()
     expect(within(termSidecar).getByText('rdfs:label')).toBeInTheDocument()
@@ -4480,9 +4515,9 @@ describe('FileDetailPane', () => {
     expect(within(subjectSidecar).getByText('类型 · state')).toBeInTheDocument()
     expect(within(subjectSidecar).queryByText(/Type:/)).not.toBeInTheDocument()
     expect(within(subjectSidecar).queryByText('Subject URI')).not.toBeInTheDocument()
-    fireEvent.click(within(subjectSidecar).getByRole('button', { name: '查看 URI 详情' }))
+    fireEvent.click(within(subjectSidecar).getByRole('button', { name: '查看地址详情' }))
     expect(within(subjectSidecar).getByText('Subject URI')).toBeInTheDocument()
-    expect(within(subjectSidecar).queryByRole('button', { name: '审阅 Ingest' })).not.toBeInTheDocument()
+    expect(within(subjectSidecar).queryByRole('button', { name: '查看待确认内容' })).not.toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/.data/workspaces/ws-1/state.ttl')
     await act(async () => {
       fireEvent.click(within(subjectSidecar).getByRole('button', { name: '打开资源' }))
@@ -4660,13 +4695,13 @@ describe('FileDetailPane', () => {
     await waitFor(() => {
       expect(screen.getByText('描述：Personal workspace class.')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByRole('button', { name: '创建类型' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建类型' }))
     fireEvent.change(screen.getByLabelText('新类型的地址'), {
       target: { value: 'udfs:Note' },
     })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
     expect(screen.getByText('note*')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认类型 *' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交新类型（待确认）' }))
     await waitFor(() => {
       expect(mockCreateInboxApproval).toHaveBeenCalledWith(expect.objectContaining({
         id: expect.stringMatching(/^https:\/\/pod\.example\/\.data\/proposals\/vocab\/note-[a-z0-9]{7}\.ttl#proposal$/),
@@ -4753,11 +4788,11 @@ describe('FileDetailPane', () => {
     expect(screen.queryByRole('status', { name: '#Workspace 的 title 待审核' })).not.toBeInTheDocument()
     // The person's own edit is already written, so nothing is waiting for confirmation.
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认修改的行' }))
     expect(screen.queryByRole('button', { name: '#Workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认修改的行' }))
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
     expect(mockMutateRaw).not.toHaveBeenCalled()
     mockWriteOwnStructuredCellChange.mockClear()
@@ -5304,7 +5339,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByText('1 个校验提醒')).toBeInTheDocument()
     expect(screen.getByText('#Workspace tags has 2 values; maxCount is 1.')).toBeInTheDocument()
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认修改的行' }))
 
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Workspace' })).not.toBeInTheDocument()
@@ -5414,7 +5449,7 @@ describe('FileDetailPane', () => {
     expect(screen.getByRole('button', { name: '放弃 #Other 的 title 更改' })).toBeInTheDocument()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认修改的行' }))
 
     expect(screen.getByRole('button', { name: '#Other' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Workspace' })).not.toBeInTheDocument()
@@ -5654,7 +5689,7 @@ describe('FileDetailPane', () => {
       fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
     })
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有导入更新的行' }))
+      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '来源有更新的行' }))
     })
 
     expect(screen.getByText(/仅导入更新/)).toBeInTheDocument()
@@ -5730,7 +5765,7 @@ describe('FileDetailPane', () => {
     expect(mockUsePendingSourceUpdateProposals).toHaveBeenCalledWith('https://pod.example/.data/workspaces/ws-1/state.ttl', true)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有导入更新的行' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '来源有更新的行' }))
 
     expect(screen.getByText(/仅导入更新/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '../docs/report.md' })).toBeInTheDocument()
@@ -5847,7 +5882,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByLabelText('新类型的地址')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '定义' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '创建类型' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建类型' }))
 
     expect(screen.getByLabelText('新类型的地址')).toBeInTheDocument()
   })
@@ -5896,7 +5931,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '选择类型' }))
-    fireEvent.click(screen.getByRole('button', { name: '创建类型' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建类型' }))
     fireEvent.change(screen.getByLabelText('新类型的地址'), { target: { value: 'udfs:Workspace' } })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
     const pendingClassOption = screen.getByRole('menuitem', { name: 'workspace*' })
@@ -7204,7 +7239,7 @@ describe('FileDetailPane', () => {
     const subjectSidecar = screen.getByLabelText('卡片预览')
     expect(within(subjectSidecar).getByText('卡片预览')).toBeInTheDocument()
     expect(within(subjectSidecar).queryByText('https://pod.example/public/report.md')).not.toBeInTheDocument()
-    fireEvent.click(within(subjectSidecar).getByRole('button', { name: '查看 URI 详情' }))
+    fireEvent.click(within(subjectSidecar).getByRole('button', { name: '查看地址详情' }))
     expect(within(subjectSidecar).getAllByText('https://pod.example/public/report.md').length).toBeGreaterThan(0)
     expect(within(subjectSidecar).getByText('Report')).toBeInTheDocument()
 
@@ -7494,7 +7529,7 @@ describe('FileDetailPane', () => {
     const externalSidecar = screen.getByLabelText('卡片预览')
     expect(within(externalSidecar).getByText('链接预览')).toBeInTheDocument()
     expect(within(externalSidecar).queryByText('https://source.example/report.pdf')).not.toBeInTheDocument()
-    fireEvent.click(within(externalSidecar).getByRole('button', { name: '查看 URI 详情' }))
+    fireEvent.click(within(externalSidecar).getByRole('button', { name: '查看地址详情' }))
     expect(within(externalSidecar).getAllByText('https://source.example/report.pdf').length).toBeGreaterThan(0)
 
     await act(async () => {
@@ -8218,7 +8253,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     expect(screen.getByText('这个文档还没有数据')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '创建类型' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '新建类型' })).toBeInTheDocument()
     expect(screen.queryByText('尚未选择类型')).not.toBeInTheDocument()
   })
 
@@ -8252,7 +8287,7 @@ describe('FileDetailPane', () => {
     const termSidecar = screen.getByLabelText('定义预览')
     expect(screen.queryByRole('dialog', { name: 'term definition' })).not.toBeInTheDocument()
     expect(within(termSidecar).queryByText('https://pod.example/.vocab/terms.ttl#tags')).not.toBeInTheDocument()
-    fireEvent.click(within(termSidecar).getByRole('button', { name: '查看 URI 详情' }))
+    fireEvent.click(within(termSidecar).getByRole('button', { name: '查看地址详情' }))
     expect(within(termSidecar).getByText('https://pod.example/.vocab/terms.ttl#tags')).toBeInTheDocument()
     expect(within(termSidecar).getByText('https://pod.example/.vocab/terms.ttl')).toBeInTheDocument()
     expect(within(termSidecar).getByText('rdfs:label')).toBeInTheDocument()
@@ -8309,7 +8344,7 @@ describe('FileDetailPane', () => {
     const termSidecar = screen.getByLabelText('定义预览')
     expect(screen.queryByRole('dialog', { name: 'term definition' })).not.toBeInTheDocument()
     expect(within(termSidecar).queryByText('https://pod.example/.vocab/terms.ttl#tags')).not.toBeInTheDocument()
-    fireEvent.click(within(termSidecar).getByRole('button', { name: '查看 URI 详情' }))
+    fireEvent.click(within(termSidecar).getByRole('button', { name: '查看地址详情' }))
     expect(within(termSidecar).getByText('https://pod.example/.vocab/terms.ttl#tags')).toBeInTheDocument()
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/.data/workspaces/ws-1/state.ttl')
     expect(useFilesStore.getState().structuredSubjectReturnContext).toBeNull()
@@ -8438,7 +8473,7 @@ describe('FileDetailPane', () => {
     expect(mockMutateRaw).not.toHaveBeenCalled()
 
     fireEvent.pointerDown(screen.getByRole('button', { name: '筛选' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认更改的行' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: '有待确认修改的行' }))
 
     expect(screen.getByRole('button', { name: '#Workspace' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '#Other' })).not.toBeInTheDocument()
@@ -9293,7 +9328,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.pointerDown(await screen.findByRole('button', { name: /(?:当前类型|选择类型)/ }))
-    fireEvent.click(screen.getByRole('button', { name: '创建类型' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建类型' }))
     fireEvent.change(screen.getByLabelText('新类型的地址'), { target: { value: 'udfs:Note' } })
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
     fireEvent.change(screen.getByLabelText('新类型的地址'), { target: { value: 'https://schema.example/terms#Note' } })
@@ -9303,7 +9338,7 @@ describe('FileDetailPane', () => {
     expect(screen.queryByText('udfs:Note*')).not.toBeInTheDocument()
     expect(screen.queryByText('https://schema.example/terms#Note*')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '提交待确认类型 *' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交新类型（待确认）' }))
     await waitFor(() => {
       expect(mockCreateInboxApproval).toHaveBeenCalledTimes(1)
     })
@@ -9489,7 +9524,7 @@ describe('FileDetailPane', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '原文' }))
 
     expect(screen.getByRole('heading', { name: '当前视图文本' })).toBeInTheDocument()
-    expect(screen.getByText('当前筛选、predicate 可见性和待确认更改后的投影视图。')).toBeInTheDocument()
+    expect(screen.getByText('按当前筛选、显示的列和待确认修改得到的原始数据。')).toBeInTheDocument()
     expect(screen.getByText(/Draft title/)).toBeInTheDocument()
     expect(screen.queryByText(/status "active"/)).not.toBeInTheDocument()
     expect(screen.queryByText(/title "Files"/)).not.toBeInTheDocument()
@@ -9985,7 +10020,7 @@ describe('FileDetailPane', () => {
     const relationSidecar = screen.getByLabelText('卡片预览')
     expect(screen.queryByRole('dialog', { name: 'Subject preview' })).not.toBeInTheDocument()
     expect(within(relationSidecar).queryByText('#Other')).not.toBeInTheDocument()
-    fireEvent.click(within(relationSidecar).getByRole('button', { name: '查看 URI 详情' }))
+    fireEvent.click(within(relationSidecar).getByRole('button', { name: '查看地址详情' }))
     expect(within(relationSidecar).getByText('#Other')).toBeInTheDocument()
     expect(within(relationSidecar).getByText('属性')).toBeInTheDocument()
     expect(within(relationSidecar).queryByText('properties')).not.toBeInTheDocument()
@@ -9998,7 +10033,7 @@ describe('FileDetailPane', () => {
     const termRelationSidecar = screen.getByLabelText('定义预览')
     expect(screen.queryByRole('dialog', { name: 'term definition' })).not.toBeInTheDocument()
     expect(within(termRelationSidecar).queryByText('https://pod.example/.vocab/terms.ttl#tags')).not.toBeInTheDocument()
-    fireEvent.click(within(termRelationSidecar).getByRole('button', { name: '查看 URI 详情' }))
+    fireEvent.click(within(termRelationSidecar).getByRole('button', { name: '查看地址详情' }))
     expect(within(termRelationSidecar).getByText('https://pod.example/.vocab/terms.ttl#tags')).toBeInTheDocument()
     expect(within(termRelationSidecar).getByText('https://pod.example/.vocab/terms.ttl')).toBeInTheDocument()
     expect(within(termRelationSidecar).getByText('rdfs:label')).toBeInTheDocument()
@@ -10890,7 +10925,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     const file = new File(['# Imported\nfrom disk'], 'Imported Notes.md', { type: 'text/markdown' })
-    fireEvent.change(screen.getByLabelText('选择上传文件'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('选择要上传到此文件夹的文件'), { target: { files: [file] } })
 
     await waitFor(() => {
       expect(mockCreateRaw).toHaveBeenCalledWith({
@@ -10942,7 +10977,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     const file = new File([new Uint8Array([1, 2, 3, 4])], 'diagram.png', { type: 'image/png' })
-    fireEvent.change(screen.getByLabelText('选择上传文件'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('选择要上传到此文件夹的文件'), { target: { files: [file] } })
 
     await waitFor(() => {
       expect(mockCreateBlob).toHaveBeenCalledWith({
@@ -10986,7 +11021,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     const file = new File([new Uint8Array([1, 2, 3, 4])], 'in-flight.png', { type: 'image/png' })
-    fireEvent.change(screen.getByLabelText('选择上传文件'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('选择要上传到此文件夹的文件'), { target: { files: [file] } })
 
     await waitFor(() => {
       expect(screen.getByRole('status', { name: '文件上传进度' })).toHaveTextContent('0/1 上传中 · in-flight.png')
@@ -11088,7 +11123,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     const file = new File(['conflict'], 'conflict.md', { type: 'text/markdown' })
-    fireEvent.change(screen.getByLabelText('选择上传文件'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('选择要上传到此文件夹的文件'), { target: { files: [file] } })
 
     await waitFor(() => {
       expect(mockToast).toHaveBeenCalledWith({

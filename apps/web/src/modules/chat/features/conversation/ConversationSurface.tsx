@@ -5,10 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@inrupt/solid-client-authn-browser'
 import { AssistantRuntimeProvider, WebSpeechDictationAdapter, type ThreadHistoryAdapter } from '@assistant-ui/react'
 import { useAgUiRuntime, type UseAgUiRuntimeOptions } from '@assistant-ui/react-ag-ui'
-import { ShieldCheck, WifiOff } from 'lucide-react'
-import { MatrixAuthorizationBanner } from './MatrixAuthorizationBanner'
+import { selectConversationBanner } from './conversation-banner'
+import { ConversationBanner } from './ConversationBanner'
 import { describeConversationLoadError } from '../../domain/conversation-load-error'
-import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import type { PendingComposerDraft } from '../../domain/conversation-workbench'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
@@ -174,6 +173,14 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
     threadUri,
   })
 
+  const banner = selectConversationBanner({
+    serviceAccessRequired: runtime.serviceAccessRequired,
+    matrixAuthorizationRequired: runtime.matrixAuthorizationRequired,
+    online,
+    loadError,
+    reconnectStatus: runtime.reconnectStatus,
+  })
+
   return (
     <div data-testid="conversation-surface-host" className="relative h-full flex-1 overflow-hidden">
       <ConversationProvider value={identity}>
@@ -206,43 +213,13 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
           </ComposerToolsContext.Provider>
         </StopStateContext.Provider>
       </ConversationProvider>
-      {loadError ? (
-        <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-sm">
-          <span>{loadErrorMessage ?? '读不到这个聊天的消息。'}</span>
-          <Button size="sm" variant="outline" onClick={() => { void refreshFromPod().catch(() => undefined) }}>重试</Button>
-        </div>
-      ) : null}
-      <MatrixAuthorizationBanner runtime={runtime} />
-      {runtime.serviceAccessRequired ? (
-        <div role="alert" className="absolute inset-x-3 top-3 z-30 flex items-center justify-between gap-4 rounded-xl border bg-background/95 px-4 py-3 shadow-md">
-          <div className="flex min-w-0 items-start gap-3">
-            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium">允许 AI 服务读取模型配置</p>
-              <p className="text-xs text-muted-foreground">仅授权当前空间中的模型配置。授权后请重新发送刚才的消息。</p>
-              {runtime.serviceAccessError ? <p className="mt-1 text-xs text-destructive">{runtime.serviceAccessError}</p> : null}
-            </div>
-          </div>
-          <Button size="sm" disabled={runtime.isGrantingServiceAccess} onClick={() => void runtime.grantServiceAccess().then(() => synchronize(true)).catch(() => undefined)}>
-            {runtime.isGrantingServiceAccess ? '正在授权…' : '允许并继续'}
-          </Button>
-        </div>
-      ) : null}
-      {!online ? (
-        <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-sm">
-          <WifiOff className="size-4" />网络已断开。现在发送会失败，连上后请重新发送。
-        </div>
-      ) : runtime.reconnectStatus !== 'idle' ? (
-        <div
-          role={runtime.reconnectStatus === 'error' ? 'alert' : 'status'}
-          className="absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-sm"
-        >
-          <span>{runtime.reconnectStatus === 'syncing' ? '连接已恢复，正在同步最新消息…' : '连接已恢复，但消息同步失败。'}</span>
-          {runtime.reconnectStatus === 'error' ? (
-            <Button size="sm" variant="outline" onClick={() => void synchronize(true)}>重试同步</Button>
-          ) : null}
-        </div>
-      ) : null}
+      <ConversationBanner
+        kind={banner}
+        runtime={runtime}
+        loadErrorMessage={loadErrorMessage}
+        onRetryLoad={() => { void refreshFromPod().catch(() => undefined) }}
+        onSynchronize={() => synchronize(true)}
+      />
     </div>
   )
 }

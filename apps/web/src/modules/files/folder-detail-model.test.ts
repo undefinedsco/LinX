@@ -430,7 +430,7 @@ describe('folder detail model helpers', () => {
       hasVisibleChildren: true,
       sortedChildren: [folderEntry, markdownEntry],
       toolbarChrome: {
-        uploadInputLabel: '选择上传文件',
+        uploadInputLabel: '选择要上传到此文件夹的文件',
       },
       viewModeOptions: [
         { mode: 'list', label: '表格', iconKind: 'list', active: true },

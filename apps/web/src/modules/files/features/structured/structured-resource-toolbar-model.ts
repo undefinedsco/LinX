@@ -121,13 +121,13 @@ function projectStructuredFilterSectionLabels() {
 
 function projectStructuredClassCreateControl(classCreateOpen: boolean) {
   return {
-    ariaLabel: '创建类型',
+    ariaLabel: '新建类型',
     expanded: classCreateOpen,
     inputAriaLabel: '新类型的地址',
     placeholder: 'udfs:Note',
     stateLabel: classCreateOpen ? '收起' : '展开',
     submitLabel: '创建',
-    toggleLabel: '创建类型',
+    toggleLabel: '新建类型',
     uriLabel: '类型的地址',
   }
 }
@@ -172,8 +172,8 @@ function projectStructuredSubjectFilterRows({
 }) {
   return [
     { id: 'warningRowsOnly' as const, checked: warningRowsOnly, label: '有校验提醒的行' },
-    { id: 'pendingWritesOnly' as const, checked: pendingWritesOnly, label: '有待确认更改的行' },
-    { id: 'sourceUpdatesOnly' as const, checked: sourceUpdatesOnly, label: '有导入更新的行' },
+    { id: 'pendingWritesOnly' as const, checked: pendingWritesOnly, label: '有待确认修改的行' },
+    { id: 'sourceUpdatesOnly' as const, checked: sourceUpdatesOnly, label: '来源有更新的行' },
   ]
 }
 
@@ -264,13 +264,13 @@ function projectStructuredClassDefinitionPanel({
   selectedClassName?: string | null
 }) {
   const description = classDefinition?.description || (selectedClassName
-    ? '不同类型不混排。'
-    : '先选择或创建类型，再添加行。')
+    ? null
+    : '先选择或新建一个类型，再添加行。')
   return {
     headingLabel: classDefinition?.label || null,
     rows: [
-      { key: 'scope', text: '此视图只展示该类型的属性。' },
-      { key: 'description', text: `描述：${description}` },
+      { key: 'scope', text: '只显示这个类型的属性。' },
+      ...(description ? [{ key: 'description', text: `描述：${description}` }] : []),
       ...(classDefinition?.status ? [{ key: 'status', text: `状态：${classDefinition.status}` }] : []),
     ],
     uri: classDefinition?.uri ?? selectedClassName ?? '未选择类型',
@@ -397,7 +397,7 @@ export function projectStructuredResourceToolbarModel({
             label,
             openApprovalLabel: approvalResourceUri ? `打开类型审批记录 ${label}` : null,
             status: proposal.status,
-            submitLabel: proposal.status === 'pending' ? '提交待确认类型 *' : null,
+            submitLabel: proposal.status === 'pending' ? '提交新类型（待确认）' : null,
             uri: proposal.uri,
           }
         })

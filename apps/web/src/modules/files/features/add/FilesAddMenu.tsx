@@ -55,9 +55,6 @@ export function FilesAddMenu({
 
   return (
     <>
-      {addMenu.ingest.feedback.success ? (
-        <p className="sr-only" aria-live="polite">{addMenu.ingest.feedback.success.message}</p>
-      ) : null}
       <input
         ref={addMenu.folderUpload.uploadInputRef}
         type="file"
@@ -100,7 +97,7 @@ export function FilesAddMenu({
               <div key={action.id}>
                 {(index === 3 || index === 5) ? <DropdownMenuSeparator /> : null}
                 <DropdownMenuItem
-                  disabled={action.disabled || addMenu.folderUpload.uploadPending}
+                  disabled={action.disabled || (addMenu.folderUpload.uploadPending && addMenu.isUploadAction(action.id))}
                   onSelect={() => addMenu.runAction(action.id)}
                 >
                   <Icon className="mr-2 h-3.5 w-3.5" strokeWidth={1.5} />

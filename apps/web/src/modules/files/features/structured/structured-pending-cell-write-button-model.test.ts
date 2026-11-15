@@ -12,7 +12,7 @@ describe('structured pending cell write button model', () => {
       ariaLabel: '#Workspace 的 title 待审核',
       kind: 'status',
       marker: '*',
-      title: '单元格变更已提交；等待 Inbox 审批，canonical 数据未变更',
+      title: '修改已提交，等待在收件箱确认；确认前表格内容不变',
     })
   })
 
@@ -22,10 +22,10 @@ describe('structured pending cell write button model', () => {
       status: 'pending',
       subject: '#Workspace',
     })).toEqual({
-      ariaLabel: '正在提交 title on #Workspace 的单元格变更',
+      ariaLabel: '正在提交「#Workspace」的「title」修改',
       kind: 'status',
       marker: '*',
-      title: '单元格变更正在提交；canonical 数据未变更',
+      title: '正在提交修改；提交完成前表格内容不变',
     })
   })
 

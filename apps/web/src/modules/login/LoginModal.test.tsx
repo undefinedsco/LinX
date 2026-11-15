@@ -152,7 +152,10 @@ describe('LoginModal', () => {
     expect(screen.getByText('要去那里，还是在这里新建一个？')).toBeTruthy()
     // Addresses are technical detail: folded under 详情.
     expect(screen.getByText('详情')).toBeTruthy()
-    expect(screen.getByText('详情').closest('details')).not.toHaveAttribute('open')
+    const details = screen.getByText('详情').closest('details')
+    expect(details).not.toHaveAttribute('open')
+    expect(details).toContainElement(screen.getByText('https://node-abc123.undefineds.co/ganlu/'))
+    expect(details).toContainElement(screen.getByText('https://node-old999.undefineds.co/ganlu/'))
 
     fireEvent.click(screen.getByRole('button', { name: '在这里创建' }))
     expect(props.onOpenCurrentSpacePodSetup).toHaveBeenCalledTimes(1)
