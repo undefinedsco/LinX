@@ -122,6 +122,7 @@ describe('InboxContentPane approval resolution', () => {
 
     expect(screen.queryByLabelText('自动允许同类请求')).toBeNull()
 
+    fireEvent.click(screen.getByText('添加备注'))
     fireEvent.change(screen.getByLabelText('处理备注'), { target: { value: '可以执行' } })
     fireEvent.click(screen.getByText('批准这一次'))
 

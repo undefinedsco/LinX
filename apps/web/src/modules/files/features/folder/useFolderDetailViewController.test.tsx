@@ -37,10 +37,7 @@ describe('useFolderDetailViewController', () => {
       { mode: 'icons', label: '网格', iconKind: 'icons', active: false },
     ])
     expect(result.current.toolbarChrome).toEqual({
-      createFolderLabel: '新建文件夹',
-      createMarkdownLabel: '新建文档',
       uploadInputLabel: '选择上传文件',
-      uploadLabel: '上传文件',
     })
     expect(result.current.sort).toEqual({ key: 'name', direction: 'asc' })
     expect(result.current.visibleChildren.map((entry) => entry.name)).toEqual(['beta.md', 'alpha.md'])
@@ -48,7 +45,7 @@ describe('useFolderDetailViewController', () => {
     expect(result.current.hasVisibleChildren).toBe(true)
     expect(result.current.childActionMenu.items.map((item) => item.label)).toEqual([
       '打开',
-      '复制 URI',
+      '复制链接',
       '重命名',
       '复制到...',
       '移动到...',

@@ -35,7 +35,7 @@ describe('ServiceManagementDialog', () => {
 
     expect(await screen.findByDisplayValue('/tmp/linx-pod')).toBeInTheDocument()
     expect(screen.queryByDisplayValue('pod.example.com')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('4) 自动检查公网 IP')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('自动检查公网 IP')).not.toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/service/start', expect.anything())
 
     const disclosure = screen.getByRole('button', { name: '高级网络设置' })
@@ -43,7 +43,7 @@ describe('ServiceManagementDialog', () => {
     fireEvent.click(disclosure)
 
     expect(screen.getByDisplayValue('pod.example.com')).toBeInTheDocument()
-    expect(screen.getByLabelText('4) 自动检查公网 IP')).toBeInTheDocument()
+    expect(screen.getByLabelText('自动检查公网 IP')).toBeInTheDocument()
     expect(disclosure).toHaveAttribute('aria-expanded', 'true')
   })
 
@@ -54,7 +54,7 @@ describe('ServiceManagementDialog', () => {
     render(<ServiceManagementDialog open onOpenChange={vi.fn()} />)
 
     expect(await screen.findByText('读取服务状态失败。')).toBeInTheDocument()
-    expect(screen.queryByLabelText('1) 数据地址')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('数据地址')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '保存并启动服务' })).not.toBeInTheDocument()
   })
 })

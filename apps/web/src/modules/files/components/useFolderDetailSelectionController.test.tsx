@@ -42,7 +42,7 @@ describe('useFolderDetailSelectionController', () => {
     expect(result.current.hasBatchSelection).toBe(false)
     expect(result.current.batchSelectionLabel).toBe('已选择 1 项')
     expect(result.current.batchSelectionActions).toEqual({
-      copyLabel: '复制所选 URI',
+      copyLabel: '复制所选链接',
       deleteLabel: '删除所选项',
     })
 

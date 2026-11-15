@@ -35,7 +35,7 @@ describe('useFolderColumnPanelController', () => {
     expect(result.current.entryCount).toBe(2)
     expect(result.current.actionMenu.items.map((item) => item.label)).toEqual([
       '打开',
-      '复制 URI',
+      '复制链接',
       '重命名',
       '复制到...',
       '移动到...',

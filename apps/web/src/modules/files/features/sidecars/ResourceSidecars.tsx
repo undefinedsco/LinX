@@ -506,7 +506,7 @@ export function ResourceSidecarActions({
           variant="ghost"
           size="icon"
           className={buttonClassName}
-          aria-label="查看 .meta"
+          aria-label="信息"
           title={`文件 .meta sidecar · ${sidecarActions.sidecars.metaUri}`}
           onClick={onMeta}
         >
@@ -517,7 +517,7 @@ export function ResourceSidecarActions({
         variant="ghost"
         size="icon"
         className={buttonClassName}
-        aria-label="查看 Access 来源"
+        aria-label="访问权限"
         title="权限设置"
         onClick={sidecarActions.openAccessDialog}
       >
@@ -550,12 +550,12 @@ export function ResourceSidecarMenuItems({
       {showMeta ? (
         <DropdownMenuItem onSelect={onMeta}>
           <FileCog className="mr-2 h-3.5 w-3.5" />
-          查看 .meta
+          信息
         </DropdownMenuItem>
       ) : null}
       <DropdownMenuItem onSelect={onAccess ?? sidecarActions.openAccessDialog}>
         <Shield className="mr-2 h-3.5 w-3.5" />
-        查看 Access 来源
+        访问权限
       </DropdownMenuItem>
       {onAccess ? null : (
         <AccessPolicyDialog

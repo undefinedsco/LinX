@@ -77,7 +77,7 @@ async function closeMetaDrawer(page: Page) {
 async function openResourceAction(
   page: Page,
   resourceName: string,
-  actionName: '查看 .meta' | '查看 Access 来源',
+  actionName: '信息' | '访问权限',
 ) {
   const resourceRow = page.getByRole('treeitem', { name: new RegExp(resourceName) })
   await resourceRow.hover()
@@ -381,7 +381,7 @@ test.describe('Files production visual audit', () => {
     await expect(folderList.getByRole('button', { name: 'folder-graph.ttl' })).toBeVisible()
     await capture(page, '01-folder-finder-detail-1440x900')
 
-    await openResourceAction(page, seed.folderName, '查看 .meta')
+    await openResourceAction(page, seed.folderName, '信息')
     const folderMetaDrawer = page.getByLabel('资源附属信息')
     await expect(folderMetaDrawer).toContainText(seed.folderMetaUri)
     await expect(folderMetaDrawer).toContainText('Visual audit folder')
@@ -390,7 +390,7 @@ test.describe('Files production visual audit', () => {
     await capture(page, '02-folder-meta-drawer-1440x900')
     await closeMetaDrawer(page)
 
-    await openResourceAction(page, seed.folderName, '查看 Access 来源')
+    await openResourceAction(page, seed.folderName, '访问权限')
     const accessDialog = page.getByRole('dialog', { name: '权限' })
     await expect(accessDialog).toBeVisible({ timeout: 30_000 })
     await expect(accessDialog.getByText('正在读取权限信息...')).toHaveCount(0, { timeout: 30_000 })
@@ -452,7 +452,7 @@ test.describe('Files production visual audit', () => {
     await capture(page, '07-enum-cell-menu-1440x900')
     await page.keyboard.press('Escape')
 
-    await openResourceAction(page, seed.turtleName, '查看 .meta')
+    await openResourceAction(page, seed.turtleName, '信息')
     const turtleMetaDrawer = page.getByLabel('资源附属信息')
     await expect(turtleMetaDrawer).toContainText(seed.turtleMetaUri)
     await expect(turtleMetaDrawer).toContainText('Visual Audit Workspace Table')

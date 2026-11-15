@@ -77,7 +77,6 @@ function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
       {entryScope === 'chat-files' ? (
         <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border/30 bg-muted/20 px-3 text-xs">
           <span className="font-medium text-foreground">聊天文件</span>
-          <span className="text-muted-foreground">当前范围来自聊天关联文件；目录仍按 Pod 原始位置打开。</span>
         </div>
       ) : null}
       {isGrantsViewUri(selectedFileId) ? <FilesGrantsView /> : <FileDetailPane />}
@@ -138,7 +137,7 @@ function FilesWorkspacePaneContent(props: MicroAppPaneProps) {
         <DialogContent variant="sheet-left" className="md:hidden">
           <DialogHeader className="h-12 shrink-0 justify-center border-b border-border/40 px-4 pr-12 text-left">
             <DialogTitle className="text-sm">文件夹</DialogTitle>
-            <DialogDescription className="sr-only">选择要浏览的 Pod 文件夹。</DialogDescription>
+            <DialogDescription className="sr-only">选择要浏览的文件夹。</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-hidden">
             <FilesTreePane theme={theme} forceExpanded />

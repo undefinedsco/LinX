@@ -315,7 +315,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
                   id="runtime-repo-path"
                   value={runtimeRepoPath}
                   onChange={(event) => setRuntimeRepoPath(event.target.value)}
-                  placeholder="例如：/Users/ganlu/develop/linx"
+                  placeholder="例如：~/projects/my-app"
                 />
               </div>
 
@@ -329,35 +329,39 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
                 />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="runtime-tool">工具</Label>
-                  <Input
-                    id="runtime-tool"
-                    value={runtimeTool}
-                    onChange={(event) => setRuntimeTool(event.target.value as RuntimeToolType)}
-                    placeholder={DEFAULT_RUNTIME_TOOL}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="runtime-base-ref">Base Ref</Label>
-                  <Input
-                    id="runtime-base-ref"
-                    value={runtimeBaseRef}
-                    onChange={(event) => setRuntimeBaseRef(event.target.value)}
-                    placeholder={DEFAULT_RUNTIME_BASE_REF}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="runtime-branch">Branch</Label>
-                  <Input
-                    id="runtime-branch"
-                    value={runtimeBranch}
-                    onChange={(event) => setRuntimeBranch(event.target.value)}
-                    placeholder="留空则自动生成"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="runtime-tool">工具</Label>
+                <Input
+                  id="runtime-tool"
+                  value={runtimeTool}
+                  onChange={(event) => setRuntimeTool(event.target.value as RuntimeToolType)}
+                  placeholder={DEFAULT_RUNTIME_TOOL}
+                />
               </div>
+
+              <details className="group">
+                <summary className="cursor-pointer text-xs text-muted-foreground">高级</summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="runtime-base-ref">基于哪个提交</Label>
+                    <Input
+                      id="runtime-base-ref"
+                      value={runtimeBaseRef}
+                      onChange={(event) => setRuntimeBaseRef(event.target.value)}
+                      placeholder={DEFAULT_RUNTIME_BASE_REF}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="runtime-branch">分支</Label>
+                    <Input
+                      id="runtime-branch"
+                      value={runtimeBranch}
+                      onChange={(event) => setRuntimeBranch(event.target.value)}
+                      placeholder="留空则自动生成"
+                    />
+                  </div>
+                </div>
+              </details>
             </div>
           )}
         </div>

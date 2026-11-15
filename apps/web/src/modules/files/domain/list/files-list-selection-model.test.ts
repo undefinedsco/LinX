@@ -79,7 +79,7 @@ describe('files list selection model', () => {
       hasSelectedVisibleFiles: true,
       batchSelectionLabel: '已选择 2 项',
       batchSelectionActions: {
-        copyLabel: '复制所选 URI',
+        copyLabel: '复制所选链接',
         deleteLabel: '删除所选项',
       },
     })
@@ -111,7 +111,7 @@ describe('files list selection model', () => {
       selectedFileIds,
       selectedVisibleFiles: projection.selectedVisibleFiles,
     })).toMatchObject({
-      copyLabel: '复制所选 URI',
+      copyLabel: '复制所选链接',
       deleteLabel: '删除所选项',
       isBatchContext: true,
       showSingleFileActions: false,
@@ -122,7 +122,7 @@ describe('files list selection model', () => {
       selectedFileIds,
       selectedVisibleFiles: projection.selectedVisibleFiles,
     })).toMatchObject({
-      copyLabel: '复制 URI',
+      copyLabel: '复制链接',
       copyToLabel: '复制到...',
       deleteLabel: '删除',
       isBatchContext: false,
