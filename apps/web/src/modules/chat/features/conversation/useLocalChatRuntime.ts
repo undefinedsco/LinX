@@ -154,6 +154,7 @@ export function useLocalChatRuntime({
   persistedActiveBranchByParentRef.current = persistedActiveBranchByParent
   onRequestErrorRef.current = onRequestError
   sessionFetchRef.current = sessionFetch
+  const hasSessionFetch = Boolean(sessionFetch)
 
   const authFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
     const currentSessionFetch = sessionFetchRef.current
@@ -166,7 +167,7 @@ export function useLocalChatRuntime({
   const localFetch = useMemo(() => {
     // A shared room never gets a local ChatKit/AI backend: all reads and sends
     // go through the owner-room conversation adapter below.
-    if (!db || !sessionWebId || !sessionFetch || isSharedRoom) return createUnavailableFetch()
+    if (!db || !sessionWebId || !hasSessionFetch || isSharedRoom) return createUnavailableFetch()
     return createLocalChatKitFetch({
       db,
       webId: sessionWebId,
@@ -213,7 +214,7 @@ export function useLocalChatRuntime({
         updatedAt: createdAt,
       }),
     })
-  }, [authFetch, db, isSharedRoom, matrixAccess, selectedChatId, selectedThreadId, sessionWebId])
+  }, [authFetch, db, hasSessionFetch, isSharedRoom, matrixAccess, selectedChatId, selectedThreadId, sessionWebId])
 
   useEffect(() => {
     setThreadAttachments([])
