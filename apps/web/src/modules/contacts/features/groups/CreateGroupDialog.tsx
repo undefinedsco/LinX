@@ -30,7 +30,7 @@ import { contactCollection, contactOps } from '../../data/collections'
 import { isGroupContact, type ContactRow } from '@undefineds.co/models'
 import { SelectableContactList } from '../../ui/SelectableContactList'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
-import { formatMatrixErrorForUser } from '@/modules/chat/matrix-service'
+import { formatMatrixErrorForUser } from '@/lib/matrix/error-format'
 
 interface CreateGroupDialogProps {
   open: boolean
