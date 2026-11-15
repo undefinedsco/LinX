@@ -9,6 +9,15 @@ import {
   unavailableResponse,
   type LocalChatKitFetch,
 } from '../../services/chatkit-local/fetch-handler'
+import { usePodInterfaceAccess } from '@/lib/matrix/usePodInterfaceAccess'
+import { useLiveQuery } from '@tanstack/react-db'
+import { chatCollection } from '../../collections'
+import { isSharedRoomChatRow, sharedRoomReferenceForSelection } from '../../data/shared-room-runtime'
+import {
+  createSharedRoomConversation,
+  SharedRoomAuthorizationRequiredError,
+} from './shared-room-conversation'
+import { MatrixInterfaceAuthorizeUnavailableError } from '@/lib/matrix/pod-interface-access'
 
 export type ReconnectStatus = 'idle' | 'syncing' | 'error'
 
@@ -59,6 +68,81 @@ export function useLocalChatRuntime({
   const [serviceAccessRequired, setServiceAccessRequired] = useState(false)
   const [serviceAccessError, setServiceAccessError] = useState<string | null>(null)
   const [isGrantingServiceAccess, setIsGrantingServiceAccess] = useState(false)
+  const [matrixAuthorizationRequired, setMatrixAuthorizationRequired] = useState(false)
+  const [matrixAuthorizationError, setMatrixAuthorizationError] = useState<string | null>(null)
+  const [matrixNativeGrantRequired, setMatrixNativeGrantRequired] = useState(false)
+  const [isAuthorizingMatrix, setIsAuthorizingMatrix] = useState(false)
+  const matrixAccess = usePodInterfaceAccess()
+  const chatQuery = useLiveQuery(chatCollection)
+  const selectedChatRow = (chatQuery.data ?? []).find(
+    (chat: { id: string }) => chat.id === selectedChatId,
+  ) as { id: string; title?: string | null; metadata?: Record<string, unknown> | null } | undefined
+  const isSharedRoom = Boolean(selectedChatRow && isSharedRoomChatRow(selectedChatRow))
+  const sharedReference = useMemo(
+    () => sharedRoomReferenceForSelection(selectedChatRow),
+    [selectedChatRow],
+  )
+  // Session/credential objects can be recreated by their providers; hold them
+  // in refs so the conversation (and its polling timer) is not rebuilt every
+  // render. Only the canonical reference identity recreates it.
+  const sharedSessionRef = useRef(session)
+  sharedSessionRef.current = session
+  const matrixAccessRef = useRef(matrixAccess)
+  matrixAccessRef.current = matrixAccess
+  const sharedConversation = useMemo(() => {
+    const activeAccess = matrixAccessRef.current
+    if (!sharedReference || !activeAccess) return null
+    return createSharedRoomConversation({
+      session: sharedSessionRef.current,
+      reference: sharedReference,
+      matrixAccess: activeAccess,
+      onError: (error) => {
+        if (error instanceof SharedRoomAuthorizationRequiredError) {
+          setMatrixAuthorizationRequired(true)
+          setMatrixAuthorizationError(null)
+          return
+        }
+        // True read/permission reason for the banner; never a logout.
+        setMatrixAuthorizationError(error.message)
+        if (/\b403\b|forbidden|没有.*权限|unauthori[sz]ed/iu.test(error.message)) {
+          setMatrixAuthorizationRequired(true)
+        }
+      },
+    })
+  }, [sharedReference])
+  useEffect(() => {
+    if (!sharedConversation) return
+    // Initial read also decides whether the authorization banner is needed: a
+    // missing/revoked credential must be actionable, not a silent empty room.
+    void sharedConversation.load().then((loaded) => {
+      setThreadItems(loaded.items.map((entry) => entry.item))
+      setMatrixAuthorizationRequired(false)
+      setMatrixAuthorizationError(null)
+    }).catch((cause) => {
+      if (cause instanceof SharedRoomAuthorizationRequiredError) {
+        setMatrixAuthorizationRequired(true)
+        setMatrixAuthorizationError(null)
+        return
+      }
+      if (cause instanceof Error) {
+        setMatrixAuthorizationError(cause.message)
+        if (/\b403\b|forbidden|没有.*权限|unauthori[sz]ed/iu.test(cause.message)) {
+          setMatrixAuthorizationRequired(true)
+        }
+      }
+    })
+    // One poll owner: the surface subscribes for imports; this hook only tracks
+    // the timeline for the welcome/empty heuristics.
+    const unsubscribe = sharedConversation.subscribe(() => {
+      void sharedConversation.load().then((loaded) => {
+        setThreadItems(loaded.items.map((entry) => entry.item))
+      }).catch(() => undefined)
+    })
+    return () => {
+      unsubscribe()
+      sharedConversation.dispose()
+    }
+  }, [sharedConversation])
   const abortGenerationRef = useRef<(() => void) | null>(null)
   const sendAvailableRef = useRef(!sendDisabled)
   const selectedThreadTitleRef = useRef(selectedThreadTitle)
@@ -80,7 +164,9 @@ export function useLocalChatRuntime({
   }, [])
 
   const localFetch = useMemo(() => {
-    if (!db || !sessionWebId || !sessionFetch) return createUnavailableFetch()
+    // A shared room never gets a local ChatKit/AI backend: all reads and sends
+    // go through the owner-room conversation adapter below.
+    if (!db || !sessionWebId || !sessionFetch || isSharedRoom) return createUnavailableFetch()
     return createLocalChatKitFetch({
       db,
       webId: sessionWebId,
@@ -98,7 +184,7 @@ export function useLocalChatRuntime({
             : {}),
         },
       },
-      isAvailable: () => sendAvailableRef.current,
+      isAvailable: () => sendAvailableRef.current && !isSharedRoom,
       // The 附件 dialog lists the whole chat itself (ConversationDialogs); the
       // store only ever reports the last thread it happened to load.
       onRequestError: (message) => onRequestErrorRef.current?.(message),
@@ -107,6 +193,11 @@ export function useLocalChatRuntime({
         setIsGenerating(active)
       },
       onThreadItemsChange: setThreadItems,
+      ...(matrixAccess ? { matrixAccess } : {}),
+      onMatrixAuthorizationRequired: () => {
+        setMatrixAuthorizationRequired(true)
+        setMatrixAuthorizationError(null)
+      },
       onServiceAccessRequired: () => {
         setServiceAccessRequired(true)
         setReconnectStatus('idle')
@@ -122,7 +213,7 @@ export function useLocalChatRuntime({
         updatedAt: createdAt,
       }),
     })
-  }, [authFetch, db, selectedChatId, selectedThreadId, sessionWebId])
+  }, [authFetch, db, isSharedRoom, matrixAccess, selectedChatId, selectedThreadId, sessionWebId])
 
   useEffect(() => {
     setThreadAttachments([])
@@ -135,6 +226,60 @@ export function useLocalChatRuntime({
     localFetch.interrupt()
     abortGenerationRef.current?.()
   }, [localFetch])
+  const authorizeMatrixAccess = useCallback(async () => {
+    if (!matrixAccess) {
+      setMatrixAuthorizationError('当前空间或账号尚未就绪，请稍后重试。')
+      return
+    }
+    setIsAuthorizingMatrix(true)
+    setMatrixAuthorizationError(null)
+    setMatrixNativeGrantRequired(false)
+    try {
+      await matrixAccess.authorize()
+      setMatrixAuthorizationRequired(false)
+    } catch (error) {
+      if (error instanceof MatrixInterfaceAuthorizeUnavailableError) {
+        // No dead-end "login expired" copy: guide the native account page.
+        setMatrixNativeGrantRequired(true)
+      } else {
+        setMatrixAuthorizationError(error instanceof Error ? error.message : '群聊授权没有完成，请重试。')
+      }
+      throw error
+    } finally {
+      setIsAuthorizingMatrix(false)
+    }
+  }, [matrixAccess])
+
+  const importMatrixAccess = useCallback(async (input: {
+    apiKey?: string
+    clientId?: string
+    clientSecret?: string
+  }) => {
+    if (!matrixAccess) {
+      setMatrixAuthorizationError('当前空间或账号尚未就绪，请稍后重试。')
+      return
+    }
+    setIsAuthorizingMatrix(true)
+    setMatrixAuthorizationError(null)
+    try {
+      await matrixAccess.importAuthorization(input)
+      setMatrixNativeGrantRequired(false)
+      setMatrixAuthorizationRequired(false)
+    } catch (error) {
+      setMatrixAuthorizationError(error instanceof Error ? error.message : '访问凭据没有生效，请检查后重试。')
+      throw error
+    } finally {
+      setIsAuthorizingMatrix(false)
+    }
+  }, [matrixAccess])
+
+  const dismissMatrixNativeGrant = useCallback(() => {
+    // Cancelling creates nothing and sends nothing; the consent prompt can be
+    // reopened later from the same banner.
+    setMatrixNativeGrantRequired(false)
+    setMatrixAuthorizationError(null)
+  }, [])
+
   const grantServiceAccess = useCallback(async () => {
     setIsGrantingServiceAccess(true)
     setServiceAccessError(null)
@@ -152,6 +297,9 @@ export function useLocalChatRuntime({
   return {
     db,
     localFetch,
+    /** Shared-room backend for the same AG-UI surface; null for normal chats. */
+    conversation: sharedConversation ?? localFetch.conversation,
+    isSharedRoom,
     authFetch,
     threadAttachments,
     setThreadAttachments,
@@ -163,6 +311,14 @@ export function useLocalChatRuntime({
     serviceAccessError,
     isGrantingServiceAccess,
     grantServiceAccess,
+    matrixAuthorizationRequired,
+    matrixAuthorizationError,
+    matrixNativeGrantRequired,
+    matrixAccountOrigin: matrixAccess?.accountOrigin() ?? null,
+    importMatrixAccess,
+    dismissMatrixNativeGrant,
+    isAuthorizingMatrix,
+    authorizeMatrixAccess,
     interrupt,
   }
 }

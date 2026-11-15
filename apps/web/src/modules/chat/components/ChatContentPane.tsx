@@ -21,6 +21,7 @@ import { RuntimeSessionToolbar } from '../features/runtime/RuntimeSessionToolbar
 import { ConversationSurface } from '../features/conversation/ConversationSurface'
 import { InlineWelcomeHost, WelcomeConversation, type InlineWelcome } from '../features/conversation/welcome/WelcomeConversation'
 import { useSecretaryChatController } from '../features/secretary/useSecretaryChatController'
+import { isSharedRoomChatRow, sharedRoomReferenceFromChatRow } from '../data/shared-room-runtime'
 
 export { chatThreadRefsMatch, readActiveBranchSelections } from '../domain/thread-selection'
 
@@ -112,9 +113,19 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     retryThreadCreation,
     completeDraftHandoff: completeSecretaryDraftHandoff,
   } = secretary
-  const messagesQuery = useMessageList(selectedChatId, selectedThreadId)
+  // A shared room has no local Thread row: its selection is the owner's
+  // canonical thread IRI from the verified binding, so the surface can mount
+  // without fabricating a local thread.
+  const sharedRoomThreadId = activeChat && isSharedRoomChatRow(activeChat)
+    ? sharedRoomReferenceFromChatRow(activeChat)?.threadIri ?? null
+    : null
+  const effectiveThreadId = sharedRoomThreadId ?? selectedThreadId
+  // Shared rooms are read from the owner's Pod by their own conversation
+  // adapter; the local message collections are never the authority for them.
+  const isSharedRoomChat = Boolean(sharedRoomThreadId)
+  const messagesQuery = useMessageList(isSharedRoomChat ? null : selectedChatId, effectiveThreadId)
   // The chat is one timeline across its internal threads: it is "empty" only when all of them are.
-  const chatMessageRows = useChatMessageRows(selectedChatId)
+  const chatMessageRows = useChatMessageRows(isSharedRoomChat ? null : selectedChatId)
   const isThreadEmpty = !messagesQuery.isLoading && messagesQuery.data.length === 0 && chatMessageRows.length === 0
   // The conversation surface is keyed by the thread it was opened on. When the
   // runtime itself moves new messages to a successor thread (too long / idle),
@@ -125,12 +136,12 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   // W0: the welcome shows in LinX 助手's selected topic as
   // long as welcome.ttl is absent (checked inside WelcomeConversation) and the
   // topic has no messages yet, whether or not the default topic already exists.
-  const showInlineWelcome = isSecretary && Boolean(selectedThreadId) && isThreadEmpty
+  const showInlineWelcome = isSecretary && Boolean(effectiveThreadId) && isThreadEmpty
   // Keep the welcome wrapper mounted for this topic once it started, so the
   // conversation underneath is not remounted when the first message arrives.
   const [welcomeThreadId, setWelcomeThreadId] = useState<string | null>(null)
   if (showInlineWelcome && selectedThreadId && welcomeThreadId !== selectedThreadId) setWelcomeThreadId(selectedThreadId)
-  const keepInlineWelcome = isSecretary && Boolean(selectedThreadId) && welcomeThreadId === selectedThreadId
+  const keepInlineWelcome = isSecretary && Boolean(effectiveThreadId) && welcomeThreadId === effectiveThreadId
   const retryContentQueries = useCallback(() => {
     if (databaseStatus !== 'ready' || !db) {
       retryDatabase()
@@ -140,7 +151,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
   }, [databaseStatus, db, refetchChats, refetchThreads, retryDatabase])
   const isStagedSecretaryWelcome = isSecretary && !activeThread
   const isWaitingForChat = isChatsLoading && !activeChat
-  const isWaitingForThread = isThreadsLoading && !selectedThreadId
+  const isWaitingForThread = isThreadsLoading && !effectiveThreadId
 
   const isAuthenticated = Boolean(session.info.webId && session.fetch)
   const rawContentState = projectChatContentState({
@@ -149,14 +160,14 @@ export function ChatContentPane(props: ChatContentPaneProps) {
       || !db
       || isWaitingForChat
       || isWaitingForThread
-      || (!isSecretary && !selectedThreadId && !threadCreationError),
+      || (!isSecretary && !effectiveThreadId && !threadCreationError),
     isChatLoading: !db || databaseStatus === 'initializing' || isWaitingForChat,
     error: databaseStatus === 'error'
       ? databaseError ?? new Error('Solid database initialization failed.')
       : isStagedSecretaryWelcome ? null : chatError ?? threadError,
     activeChat,
     isSecretary,
-    hasThread: Boolean(selectedThreadId && (activeThread || (!chatError && !threadError))),
+    hasThread: Boolean(effectiveThreadId && (activeThread || sharedRoomThreadId || (!chatError && !threadError))),
   })
   const isErrorDerivedLoginRequired = rawContentState.kind === 'login-required' && isAuthenticated
   const [loginRequiredGraceExpired, setLoginRequiredGraceExpired] = useState(false)
@@ -252,7 +263,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     return <WelcomeConversation {...welcomeProps} chatId={selectedChatId} />
   }
 
-  if (threadCreationError && !selectedThreadId) {
+  if (threadCreationError && !effectiveThreadId) {
     return (
       <EmptyState
         title="聊天暂时无法准备"
@@ -285,15 +296,16 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     )
   }
 
-  if (!selectedThreadId || !activeChat) {
+  if (!effectiveThreadId || !activeChat) {
     return <EmptyState title="正在加载聊天" description="正在同步当前聊天。" />
   }
 
+  const surfaceChatId = selectedChatId ?? activeChat.id
   if (
     !surfaceRef.current
-    || surfaceRef.current.chatId !== selectedChatId
-    || (surfaceRef.current.threadId !== selectedThreadId && rolledToRef.current !== selectedThreadId)
-  ) surfaceRef.current = { chatId: selectedChatId, threadId: selectedThreadId }
+    || surfaceRef.current.chatId !== surfaceChatId
+    || (surfaceRef.current.threadId !== effectiveThreadId && rolledToRef.current !== effectiveThreadId)
+  ) surfaceRef.current = { chatId: surfaceChatId, threadId: effectiveThreadId }
   const surfaceKey = `${surfaceRef.current.chatId}:${surfaceRef.current.threadId}`
 
   const renderConversation = (welcome: InlineWelcome | undefined) => (
@@ -304,7 +316,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
         selectThread(threadId)
       }}
       session={session}
-      selectedThreadId={selectedThreadId}
+      selectedThreadId={effectiveThreadId}
       selectedChatId={selectedChatId}
       selectedThreadTitle={activeThread?.title}
       persistedActiveBranchByParent={persistedActiveBranchByParent}
@@ -322,7 +334,7 @@ export function ChatContentPane(props: ChatContentPaneProps) {
     <div className="flex h-full flex-1 overflow-hidden bg-background">
       <div data-testid="chat-workspace-surface" className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
         <RuntimeSessionToolbar
-          threadId={selectedThreadId}
+          threadId={effectiveThreadId}
           threadTitle={activeThread?.title ?? '默认话题'}
           workspaceUri={activeThread?.workspace}
         />

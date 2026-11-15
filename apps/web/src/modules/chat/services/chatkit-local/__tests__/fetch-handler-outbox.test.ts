@@ -14,6 +14,7 @@ vi.mock('@inrupt/solid-client', () => ({
   universalAccess: { setAgentAccess: mocks.setAgentAccess },
   getSolidDataset: mocks.getSolidDataset,
   saveSolidDatasetAt: mocks.saveSolidDatasetAt,
+  solidDatasetAsTurtle: async () => '<#serialized /> <https://example.test/p> "turtle" .',
   getThingAll: (dataset: { things: any[] }) => dataset.things,
   getUrlAll: (thing: any, predicate: string) => thing.urls?.[predicate] ?? [],
   addUrl: (thing: any, predicate: string, value: string) => ({
@@ -289,7 +290,12 @@ describe('LocalChatKitFetch service access and artifacts', () => {
       },
     }
     const owner = { url: `${acrUrl}#owner`, urls: {} }
-    mocks.getSolidDataset.mockResolvedValue({ things: [root, owner] })
+    // The SDK's GET goes through the caller's fetch; mirror that so the helper
+    // can capture the entity version from the read that produced this dataset.
+    mocks.getSolidDataset.mockImplementation(async (url: string, options?: { fetch?: typeof fetch }) => {
+      await options?.fetch?.(url, { headers: { Accept: 'text/turtle' } })
+      return { things: [root, owner] }
+    })
     const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/applets/service-access/ai-connections')) {
@@ -302,7 +308,9 @@ describe('LocalChatKitFetch service access and artifacts', () => {
       if (url === providerUrl && init?.method === 'HEAD') {
         return new Response(null, { status: 200, headers: { Link: `<${acrUrl}>; rel="acl"` } })
       }
-      if (url === acrUrl && !init?.method) return new Response('', { status: 200 })
+      if (url === acrUrl && !init?.method) {
+        return new Response('', { status: 200, headers: { 'Content-Type': 'text/turtle', ETag: '"provider-acr-v1"' } })
+      }
       if (init?.method === 'HEAD' && resources.some((resource) => resource.url === url)) return new Response(null, { status: 200 })
       throw new Error(`Unexpected request: ${url}`)
     })
@@ -326,6 +334,77 @@ describe('LocalChatKitFetch service access and artifacts', () => {
       }),
       { fetch: authFetch },
     )
+  })
+
+  it('carries the captured ACR version into the fallback replacement write', async () => {
+    const podBaseUrl = 'https://pod.example/alice'
+    const providerUrl = `${podBaseUrl}/settings/providers/`
+    const acrUrl = `${providerUrl}.acr`
+    const resources = [
+      ['providerCredentials', `${podBaseUrl}/settings/credentials.ttl`],
+      ['providerDefinitions', providerUrl],
+      ['gatewayAccessKeys', `${podBaseUrl}/settings/access-keys.ttl`],
+      ['quotaSnapshots', `${podBaseUrl}/settings/quota.ttl`],
+    ].map(([id, url]) => ({
+      id,
+      url,
+      ...(id === 'providerDefinitions' ? { members: true as const } : {}),
+      access: { read: true, append: true, write: true },
+    }))
+    const root = {
+      url: `${acrUrl}#acr`,
+      urls: {
+        'http://www.w3.org/1999/02/22-rdf-syntax-ns#type': ['http://www.w3.org/ns/solid/acp#AccessControlResource'],
+        'http://www.w3.org/ns/solid/acp#accessControl': [`${acrUrl}#owner`],
+      },
+    }
+    mocks.getSolidDataset.mockImplementation(async (url: string, options?: { fetch?: typeof fetch }) => {
+      await options?.fetch?.(url, { headers: { Accept: 'text/turtle' } })
+      return { things: [root] }
+    })
+    // The SDK PATCH is refused, so the caller must fall back to one guarded PUT.
+    mocks.saveSolidDatasetAt.mockRejectedValueOnce(new Error('PATCH refused'))
+    const authFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/applets/service-access/ai-connections')) {
+        return Response.json({
+          appletId: 'co.undefineds.ai-connections',
+          service: { webId: 'https://xpod.example/service/profile/card#me' },
+          resources,
+        })
+      }
+      if (url === providerUrl && init?.method === 'HEAD') {
+        return new Response(null, { status: 200, headers: { Link: `<${acrUrl}>; rel="acl"` } })
+      }
+      if (url === acrUrl && !init?.method) {
+        return new Response('', {
+          status: 200,
+          headers: { 'Content-Type': 'text/turtle', ETag: '"provider-read-v1"' },
+        })
+      }
+      if (url === acrUrl && init?.method === 'PUT') {
+        expect(new Headers(init.headers).get('If-Match')).toBe('"provider-read-v1"')
+        return new Response(null, { status: 200 })
+      }
+      if (init?.method === 'HEAD' && resources.some((resource) => resource.url === url)) return new Response(null, { status: 200 })
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    const localFetch = createLocalChatKitFetch({
+      db: { getDialect: () => ({ getPodUrl: () => podBaseUrl }) } as any,
+      webId,
+      authFetch: authFetch as any,
+    })
+
+    await localFetch.ensureAiServiceAccess()
+
+    expect(authFetch).toHaveBeenCalledWith(acrUrl, expect.objectContaining({
+      method: 'PUT',
+      headers: expect.objectContaining({ 'If-Match': '"provider-read-v1"' }),
+    }))
+    // The helper must not probe the ACR for a fresher version before writing.
+    expect(authFetch.mock.calls.filter(([input, init]) => (
+      String(input) === acrUrl && (init as RequestInit | undefined)?.method === 'HEAD'
+    ))).toHaveLength(0)
   })
 
   it('writes edited Canvas content as a new Pod file and records a versioned chat artifact', async () => {

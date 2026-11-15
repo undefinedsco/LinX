@@ -318,13 +318,32 @@ describe('login-utils post-login target helpers', () => {
         issuer: 'https://id.example.com/',
         redirectUrl: 'http://127.0.0.1:43123/auth/callback',
         clientId: 'dynamic-client',
+        clientSecret: 'dynamic-secret',
+        clientType: 'dynamic',
+        expiresAt: '0',
       }),
     )
     window.localStorage.setItem('linx-login', '{"state":{"storedAccount":{}}}')
 
     expect(clearUnrestorableSolidAuthState()).toBe(true)
-    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBeNull()
-    expect(window.localStorage.getItem('solidClientAuthenticationUser:pending-session')).toBeNull()
+    // The pointer is intentionally KEPT: it is how the preserved registration
+    // is located again, and with no restorable metadata left the SDK still
+    // treats this as a logged-out session.
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('pending-session')
+    expect(getStoredSolidSession()).toBeNull()
+    // The session state is dropped so the SDK starts a fresh authorization, but the
+    // registered client is KEPT: wiping it is what forced a second DCR and a
+    // second consent on every ordinary connect.
+    expect(window.localStorage.getItem('solidClientAuthenticationUser:pending-session'))
+      .not.toBeNull()
+    expect(JSON.parse(
+      window.localStorage.getItem('solidClientAuthenticationUser:pending-session') ?? '{}',
+    )).toMatchObject({
+      clientId: 'dynamic-client',
+      clientSecret: 'dynamic-secret',
+      clientType: 'dynamic',
+      expiresAt: '0',
+    })
     expect(window.localStorage.getItem('linx-login')).toBe('{"state":{"storedAccount":{}}}')
   })
 
