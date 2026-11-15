@@ -31,6 +31,9 @@ vi.mock('../features/search/GlobalSearchResults', () => ({
   GlobalSearchResults: ({ query }: { query: string }) => <div data-testid="global-search-results">{query}</div>,
 }))
 vi.mock('./AddChatDialog', () => ({ AddChatDialog: () => null }))
+// The invitation banner owns its own session/credential tests; the list tests
+// cover list rendering only, so keep that unrelated child out of this boundary.
+vi.mock('./MatrixInvitationList', () => ({ MatrixInvitationList: () => null }))
 vi.mock('@/modules/contacts', () => ({
   ContactPickerDialog: ({ open }: { open: boolean }) => (open ? <div role="dialog" aria-label="找人聊天" /> : null),
 }))
