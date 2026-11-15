@@ -8980,7 +8980,8 @@ describe('FileDetailPane', () => {
       // ... but 加属性 offers it again.
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
       fireEvent.click(within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' }))
-      expect(await screen.findByRole('button', { name: 'tags 列菜单' })).toBeInTheDocument()
+      // Restoring the column re-renders the whole table; loaded CI runners need more than the default 1s.
+      expect(await screen.findByRole('button', { name: 'tags 列菜单' }, { timeout: 5_000 })).toBeInTheDocument()
       expect(useFilesStore.getState().structuredColumnViewByDocument[documentUri]?.removed).toEqual([])
     })
 
