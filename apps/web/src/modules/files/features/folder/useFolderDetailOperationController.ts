@@ -188,7 +188,6 @@ export function useFolderDetailOperationController({
     validationMessage,
     operationConfirmDisabled,
     pending,
-    createFolderPending: createFolder.isPending,
     createMarkdownPending: createRawText.isPending,
     deletePending: deleteResource.isPending,
     setOperationValue,

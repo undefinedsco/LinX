@@ -134,6 +134,53 @@ describe('InboxContentPane', () => {
     expect(screen.getByText('https://alice.example/.data/chat/chat-1/index.ttl#thread-1')).toBeInTheDocument()
   })
 
+  it('keeps the raw action and entry under a collapsed 技术详情', () => {
+    render(<InboxContentPane />)
+
+    const details = screen.getByText('技术详情').closest('details')
+    expect(details).not.toBeNull()
+    expect(details).not.toHaveAttribute('open')
+    expect(details).toContainElement(screen.getByText('runtime.auth_required'))
+    expect(details).toContainElement(screen.getByText('事件详情'))
+    expect(screen.getByText('来源').closest('details')).toBeNull()
+  })
+
+  it('offers the auth page button and does not list the raw auth address', () => {
+    mockUseInboxItems.mockReturnValue({
+      data: [{
+        ...authRequiredItem,
+        authMethod: 'oauth',
+        authUrl: 'https://auth.example/login?token=abc',
+      }],
+      isLoading: false,
+    })
+
+    render(<InboxContentPane />)
+
+    expect(screen.getByText('认证方式')).toBeInTheDocument()
+    expect(screen.queryByText('认证地址')).not.toBeInTheDocument()
+    expect(screen.queryByText('https://auth.example/login?token=abc')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '打开认证页' })).toHaveAttribute('href', 'https://auth.example/login?token=abc')
+  })
+
+  it('shows 处理时间 only once the approval is resolved', () => {
+    mockUseInboxStore.mockImplementation((selector: (state: unknown) => unknown) => selector({
+      selectedItemId: approvalItem.id,
+    }))
+    mockUseInboxItems.mockReturnValue({ data: [approvalItem], isLoading: false })
+    const { unmount } = render(<InboxContentPane />)
+    expect(screen.getByText('创建时间')).toBeInTheDocument()
+    expect(screen.queryByText('处理时间')).not.toBeInTheDocument()
+    unmount()
+
+    mockUseInboxItems.mockReturnValue({
+      data: [{ ...approvalItem, status: 'approved', approval: { ...approvalItem.approval, status: 'approved', resolvedAt: '2026-03-10T12:05:00.000Z' } }],
+      isLoading: false,
+    })
+    render(<InboxContentPane />)
+    expect(screen.getByText('处理时间')).toBeInTheDocument()
+  })
+
   it('opens the linked conversation when user clicks open conversation', () => {
     render(<InboxContentPane />)
 

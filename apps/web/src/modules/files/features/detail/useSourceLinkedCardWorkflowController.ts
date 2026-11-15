@@ -123,7 +123,7 @@ export function useSourceLinkedCardWorkflowController(file: FilesDetail) {
       })
       toast({
         description: plan.sourceProposal
-          ? '来源已变化，Ingest 审批已创建'
+          ? '来源已变化，已生成待确认的更新'
           : '来源无变化',
       })
     } catch (error) {
@@ -162,7 +162,7 @@ export function useSourceLinkedCardWorkflowController(file: FilesDetail) {
         diff: `Local body content remains authoritative for ${descriptor.sourceUri}.`,
         proposedContent: null,
       })
-      toast({ description: '本地编辑已保留，Ingest 审批已创建' })
+      toast({ description: '本地编辑已保留，来源更新等待你确认' })
     } catch (error) {
       const reason = formatFilesErrorForUser(error, '审批状态更新失败')
       setSourceActionError(`保留本地编辑失败：${reason}`)
@@ -185,7 +185,7 @@ export function useSourceLinkedCardWorkflowController(file: FilesDetail) {
       })
     } catch (error) {
       const reason = formatFilesErrorForUser(error, '队列更新失败')
-      setSourceActionError(`Ingest 下一段失败：${reason}`)
+      setSourceActionError(`读取下一段失败：${reason}`)
     }
   }, [requestSourceIngestRange, sourceIngestManifest, toast])
 
@@ -201,7 +201,7 @@ export function useSourceLinkedCardWorkflowController(file: FilesDetail) {
       toast({ description: `已加入 Ingest 队列：全部 ${ranges.length} 段` })
     } catch (error) {
       const reason = formatFilesErrorForUser(error, '队列更新失败')
-      setSourceActionError(`Ingest 全部失败：${reason}`)
+      setSourceActionError(`读取全部失败：${reason}`)
     }
   }, [requestSourceIngestRange, sourceIngestManifest, toast])
 

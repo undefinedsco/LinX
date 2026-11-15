@@ -289,7 +289,7 @@ export function createPendingClassApprovalVocabProposal({
     termKind: 'class',
     label: pendingClass.label,
     valueType: 'class',
-    description: '当前表格只展示这个 class 的 subject。',
+    description: '当前表格只显示这个类型的行。',
     shape: 'rdf:type scope',
     podRootUri: currentPodRootUri,
     targetVocabUri,

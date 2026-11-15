@@ -37,7 +37,7 @@ describe('useFolderDetailViewController', () => {
       { mode: 'icons', label: '网格', iconKind: 'icons', active: false },
     ])
     expect(result.current.toolbarChrome).toEqual({
-      uploadInputLabel: '选择上传文件',
+      uploadInputLabel: '选择要上传到此文件夹的文件',
     })
     expect(result.current.sort).toEqual({ key: 'name', direction: 'asc' })
     expect(result.current.visibleChildren.map((entry) => entry.name)).toEqual(['beta.md', 'alpha.md'])

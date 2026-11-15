@@ -97,7 +97,7 @@ export function SourceLinkedCardPreview({ file }: { file: FilesDetail }) {
           aria-expanded={Boolean(preview.detailsPanel)}
           onClick={preview.toggleSourceDetails}
         >
-          Ingest 与审批
+          来源读取与确认
         </Button>
         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={preview.openSheet}>
           编辑正文
@@ -132,7 +132,7 @@ export function SourceLinkedCardPreview({ file }: { file: FilesDetail }) {
           <DetailRows rows={preview.detailsPanel.rows} />
           {preview.detailsPanel.stagedIngestContent ? (
             <div className="mt-3">
-              <p className="mb-1 text-xs font-medium text-muted-foreground">待审批 Ingest 内容</p>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">待确认的新内容</p>
               <RawTextBlock text={preview.detailsPanel.stagedIngestContent} />
             </div>
           ) : null}

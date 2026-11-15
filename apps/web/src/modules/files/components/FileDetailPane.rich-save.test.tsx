@@ -419,7 +419,7 @@ describe('FileDetailPane rich text save wiring', () => {
     expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
 
     setRichDraft(within(editorDialog), '# AI candidate\n\n[report](https://source.example/report.pdf)')
-    fireEvent.click(within(editorDialog).getByRole('button', { name: '提交 Ingest 审批' }))
+    fireEvent.click(within(editorDialog).getByRole('button', { name: '提交 来源更新确认' }))
 
     await vi.waitFor(() => expect(mockMutateSourceUpdate).toHaveBeenCalledTimes(1))
     expect(mockMutateSourceUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -491,7 +491,7 @@ describe('FileDetailPane rich text save wiring', () => {
     expect(screen.queryByText('完整内容暂时不可用，不能进入编辑。')).not.toBeInTheDocument()
 
     setRichDraft(within(editorDialog), '# AI candidate\n\n- serialized rich draft')
-    fireEvent.click(within(editorDialog).getByRole('button', { name: '提交 Ingest 审批' }))
+    fireEvent.click(within(editorDialog).getByRole('button', { name: '提交 来源更新确认' }))
 
     await vi.waitFor(() => expect(mockMutateSourceUpdate).toHaveBeenCalledTimes(1))
     expect(mockMutateSourceUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -557,7 +557,7 @@ describe('FileDetailPane rich text save wiring', () => {
     fireEvent.change(rawEditor, {
       target: { value: '# Quarterly report\n\nReviewed staged body.' },
     })
-    fireEvent.click(within(editorDialog).getByRole('button', { name: '提交 Ingest 审批' }))
+    fireEvent.click(within(editorDialog).getByRole('button', { name: '提交 来源更新确认' }))
 
     await vi.waitFor(() => expect(mockMutateSourceUpdate).toHaveBeenCalledTimes(1))
     expect(mockMutateSourceUpdate).toHaveBeenCalledWith(expect.objectContaining({

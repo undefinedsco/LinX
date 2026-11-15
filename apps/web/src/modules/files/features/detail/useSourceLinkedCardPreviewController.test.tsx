@@ -126,21 +126,21 @@ describe('useSourceLinkedCardPreviewController', () => {
       ['review-ingest', false],
     ])
     expect(result.current.ingestRangeActions.map((action) => [action.id, action.label, action.disabled])).toEqual([
-      ['request-next-ingest-range', 'Ingest 下一段', false],
-      ['request-all-ingest-ranges', 'Ingest 全部', false],
+      ['request-next-ingest-range', '读取下一段', false],
+      ['request-all-ingest-ranges', '读取全部', false],
     ])
     expect(result.current.stagedIngestContent).toBe('# Staged report')
     expect(result.current.sourceDetailRows).toEqual(expect.arrayContaining([
       ['标题', 'Quarterly report'],
       ['来源', 'https://example.com/report.pdf'],
       ['类型', 'PDF'],
-      ['已 Ingest chunk', '2 / 4'],
-      ['待 Ingest', '4..8'],
-      ['Ingest 审批', 'pending'],
+      ['已读取', '2 / 4'],
+      ['未读取的部分', '4..8'],
+      ['确认状态', 'pending'],
       ['审批目标', 'https://pod.example/.data/cards/report.md'],
       ['审批状态', 'pending'],
       ['正文', 'https://pod.example/.data/cards/report.md'],
-      ['写入方式', 'canonical 内容需审批后更新'],
+      ['写入方式', '内容更新需要确认'],
     ]))
 
     act(() => result.current.openSheet())

@@ -1,6 +1,7 @@
 import { CircleDot, Download, ExternalLink, Loader2, Play, RotateCw, Server, Square } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,6 +24,7 @@ export interface ServiceManagementDialogUIProps {
   serviceSetupReady: boolean
   hasPublicIp: boolean | null
   advancedOpen: boolean
+  stopConfirmOpen: boolean
   running: boolean
   podBaseUrl: string
   runtime: ServiceRuntimeStatus | undefined
@@ -32,6 +34,7 @@ export interface ServiceManagementDialogUIProps {
   tunnelSuggested: boolean
   updateDraft: (patch: Partial<SetupDraft>) => void
   setAdvancedOpen: (open: boolean) => void
+  setStopConfirmOpen: (open: boolean) => void
   saveAndStart: () => Promise<void>
   runRuntimeAction: (action: 'stop' | 'restart') => Promise<void>
   upgradeRuntime: () => Promise<void>
@@ -49,6 +52,7 @@ export function ServiceManagementDialog({
   serviceSetupReady,
   hasPublicIp,
   advancedOpen,
+  stopConfirmOpen,
   running,
   podBaseUrl,
   runtime,
@@ -58,6 +62,7 @@ export function ServiceManagementDialog({
   tunnelSuggested,
   updateDraft,
   setAdvancedOpen,
+  setStopConfirmOpen,
   saveAndStart,
   runRuntimeAction,
   upgradeRuntime,
@@ -292,7 +297,7 @@ export function ServiceManagementDialog({
                   {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCw className="mr-2 h-4 w-4" />}
                   重启
                 </Button>
-                <Button variant="destructive" onClick={() => void runRuntimeAction('stop')} disabled={submitting}>
+                <Button variant="destructive" onClick={() => setStopConfirmOpen(true)} disabled={submitting}>
                   {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
                   停止
                 </Button>
@@ -301,6 +306,19 @@ export function ServiceManagementDialog({
           )}
         </div>
       </DialogContent>
+      <ConfirmDialog
+        open={stopConfirmOpen}
+        onOpenChange={setStopConfirmOpen}
+        title="停止本机服务？"
+        description="停止后，LinX 将无法读写这个本机空间，直到你重新启动服务。"
+        confirmLabel="停止"
+        destructive
+        busy={submitting}
+        onConfirm={() => {
+          setStopConfirmOpen(false)
+          void runRuntimeAction('stop')
+        }}
+      />
     </Dialog>
   )
 }

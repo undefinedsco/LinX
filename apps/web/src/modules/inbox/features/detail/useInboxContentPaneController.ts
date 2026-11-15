@@ -149,7 +149,7 @@ export function useInboxContentPaneController() {
     if (!selectedItem?.approval) return null
     return {
       createdAt: formatTime(String(selectedItem.approval.createdAt ?? '')),
-      resolvedAt: formatTime(String(selectedItem.approval.resolvedAt ?? '')),
+      resolvedAt: selectedItem.approval.resolvedAt ? formatTime(String(selectedItem.approval.resolvedAt)) : null,
     }
   }, [selectedItem])
   const auditPresentation = useMemo(

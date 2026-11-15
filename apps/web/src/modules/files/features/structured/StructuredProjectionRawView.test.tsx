@@ -20,7 +20,7 @@ describe('StructuredProjectionRawView', () => {
     render(<StructuredProjectionRawView text="@prefix schema: <https://schema.org/> ." />)
 
     expect(screen.getByText('当前视图文本')).toBeInTheDocument()
-    expect(screen.getByText('当前筛选、predicate 可见性和待确认更改后的投影视图。')).toBeInTheDocument()
+    expect(screen.getByText('按当前筛选、显示的列和待确认修改得到的原始数据。')).toBeInTheDocument()
     expect(screen.getByText('@prefix schema: <https://schema.org/> .')).toBeInTheDocument()
   })
 })

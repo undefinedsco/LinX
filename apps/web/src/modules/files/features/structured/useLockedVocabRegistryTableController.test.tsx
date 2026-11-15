@@ -51,7 +51,7 @@ describe('useLockedVocabRegistryTableController', () => {
     }))
 
     expect(result.current.columns.map((column) => column.label)).toEqual([
-      '术语 URI',
+      '术语地址',
       '名称',
       '说明',
       '类型',
@@ -110,7 +110,7 @@ describe('useLockedVocabRegistryTableController', () => {
       { initialProps: { registryKind: 'terms' } },
     )
 
-    expect(result.current.columns[0].label).toBe('术语 URI')
+    expect(result.current.columns[0].label).toBe('术语地址')
 
     rerender({ registryKind: 'namespaces' })
 

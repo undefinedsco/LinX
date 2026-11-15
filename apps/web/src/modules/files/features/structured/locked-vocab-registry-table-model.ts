@@ -32,7 +32,7 @@ export const LOCKED_VOCAB_REGISTRY_TABLE_CHROME = {
 
 export const LOCKED_VOCAB_REGISTRY_COLUMNS: Record<LockedVocabRegistryKind, LockedVocabRegistryColumn[]> = {
   terms: [
-    { key: 'uri', label: '术语 URI', className: 'font-medium text-foreground/80' },
+    { key: 'uri', label: '术语地址', className: 'font-medium text-foreground/80' },
     { key: 'label', label: '名称' },
     { key: 'definition', label: '说明' },
     { key: 'kind', label: '类型' },
@@ -41,7 +41,7 @@ export const LOCKED_VOCAB_REGISTRY_COLUMNS: Record<LockedVocabRegistryKind, Lock
     { key: 'shape', label: 'Shape' },
   ],
   shapes: [
-    { key: 'uri', label: '规则 URI', className: 'font-medium text-foreground/80' },
+    { key: 'uri', label: '规则地址', className: 'font-medium text-foreground/80' },
     { key: 'label', label: '名称' },
     { key: 'term', label: 'term' },
     { key: 'classScope', label: 'class' },
