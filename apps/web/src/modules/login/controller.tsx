@@ -12,6 +12,8 @@ import {
   clearPendingCallbackError,
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
+  clearSolidClientRegistrationForAccount,
+  clearSolidSessionForAccount,
   clearStoredSolidSession,
   clearUnrestorableSolidAuthState,
   consumePendingPostLoginMicroAppId,
@@ -239,15 +241,18 @@ export function useLoginController() {
       localConnectKeyRef.current = null
       if (isInvalidClientError(error) && !options?.isInvalidClientRetry) {
         // Local pods keep dynamic client registrations in memory; a pod restart
-        // invalidates the stored client. Purge it and retry once — the next
-        // login() performs a fresh registration without user involvement.
-        clearStoredSolidSession()
+        // invalidates the stored client. Drop only THIS account's registration
+        // and retry once — the next login() registers exactly once and then
+        // reuses that client. Other providers keep their registrations.
+        clearSolidClientRegistrationForAccount({ issuerUrl: accountIssuerUrl })
+        clearSolidSessionForAccount({ issuerUrl: accountIssuerUrl })
         return connectReadyLocalSnapshot(snapshot, source, { ...options, isInvalidClientRetry: true })
       }
       setConnectingProvider(null)
       setState('idle')
       if (isInvalidClientError(error)) {
-        clearStoredSolidSession()
+        // Forget only this account; another provider's session must survive.
+        clearSolidSessionForAccount({ issuerUrl: accountIssuerUrl })
       }
       setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回登录方式页重试。'))
     }
@@ -317,8 +322,15 @@ export function useLoginController() {
     const callbackError = getPendingCallbackError()
     if (callbackError && isInvalidClientErrorCode(callbackError.error)) {
       // The provider rejected a stale/invalid OIDC client on the callback.
-      // Purge the cached session and send the user back to re-login.
-      clearStoredSolidSession()
+      // Purge only that account's session/registration, so a rejected login
+      // cannot sign the user out of a different provider.
+      const rejectedIssuer = pendingTransaction?.oidcIssuerUrl
+        ?? pendingAttempt?.accountIssuerUrl
+        ?? pendingAttempt?.issuerUrl
+        ?? storedAccount?.issuerUrl
+        ?? null
+      clearSolidClientRegistrationForAccount({ issuerUrl: rejectedIssuer })
+      clearSolidSessionForAccount({ issuerUrl: rejectedIssuer })
       clearPendingLoginAttempt()
       clearPendingPostLoginMicroAppId()
       setConnectingProvider(null)
@@ -776,19 +788,29 @@ export function useLoginController() {
         // A remembered account can still require first-party consent (for
         // example after the IdP or dynamic client was recreated). Retry once
         // interactively instead of leaving the user on a timed-out spinner.
+        //
+        // The retry must NOT re-register: `useOidcConnect` reads the client this
+        // browser already stored and passes it back as clientId/clientSecret,
+        // so the consent prompt covers the same client the silent attempt used.
+        // Nothing is purged here — a silent failure is not a rejected client.
         return connect(providerKey, { ...options, prompt: 'consent' })
       }
       if (isInvalidClientError(err) && !options?.isInvalidClientRetry) {
         // The provider forgot our dynamic client registration (server restart or
-        // registration expiry). Purge the stale registration and retry once —
-        // the next login() performs a fresh DCR without user involvement.
-        clearStoredSolidSession()
+        // registration expiry). Clear only this provider/account's registration
+        // and retry once — the next login() performs one fresh DCR without user
+        // involvement, and never destroys another provider's client.
+        clearSolidClientRegistrationForAccount({ issuerUrl })
         return connect(providerKey, { ...options, isInvalidClientRetry: true })
       }
       resetDesktopAuthState()
       setConnectingProvider(null)
       if (isInvalidClientError(err)) {
-        clearStoredSolidSession()
+        // The bounded retry above already failed, so this client is genuinely
+        // unusable. Forget ONLY this provider's registration instead of wiping
+        // every provider's client, and leave no invalid client persisted.
+        clearSolidClientRegistrationForAccount({ issuerUrl })
+        clearSolidSessionForAccount({ issuerUrl })
       }
       setError(formatLoginErrorForUser(err, '连接失败。请检查网络后重试。'))
       setState('idle')
@@ -849,7 +871,14 @@ export function useLoginController() {
         }
       } catch (restoreError) {
         if (isInvalidClientError(restoreError)) {
-          clearStoredSolidSession()
+          clearSolidClientRegistrationForAccount({
+            issuerUrl: storedSolidSession?.issuerUrl ?? targetStorageProviderUrl,
+            webId: storedAccount?.webId,
+          })
+          clearSolidSessionForAccount({
+            issuerUrl: storedSolidSession?.issuerUrl ?? targetStorageProviderUrl,
+            webId: storedAccount?.webId,
+          })
           storedSolidSession = null
         }
       }
@@ -894,7 +923,8 @@ export function useLoginController() {
         void connect(targetStorageProviderUrl, connectOptions)
       }).catch((restoreError) => {
         if (isInvalidClientError(restoreError)) {
-          clearStoredSolidSession()
+          clearSolidClientRegistrationForAccount({ issuerUrl: storedSolidSession?.issuerUrl ?? targetStorageProviderUrl })
+          clearSolidSessionForAccount({ issuerUrl: storedSolidSession?.issuerUrl ?? targetStorageProviderUrl })
           setError(formatLoginErrorForUser(restoreError, '登录凭据已失效（OIDC 客户端未注册），请重新登录。'))
         }
         setState('idle')

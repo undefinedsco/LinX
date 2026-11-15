@@ -84,7 +84,7 @@ export function projectFilesListSelectionProjection({
   return {
     batchSelectionActions: {
       cancelLabel: '取消选择',
-      copyLabel: '复制所选 URI',
+      copyLabel: '复制所选链接',
       deleteLabel: '删除所选项',
     },
     batchSelectionLabel: `已选择 ${selectedVisibleCount} 项`,
@@ -143,7 +143,7 @@ export function projectFilesListContextMenuView({
   const isBatchContext = targetFiles.length > 1
 
   return {
-    copyLabel: isBatchContext ? '复制所选 URI' : '复制 URI',
+    copyLabel: isBatchContext ? '复制所选链接' : '复制链接',
     copyToLabel: '复制到...',
     deleteLabel: isBatchContext ? '删除所选项' : '删除',
     isBatchContext,

@@ -6,6 +6,8 @@ import type { Session } from '@inrupt/solid-client-authn-browser'
 import { AssistantRuntimeProvider, WebSpeechDictationAdapter, type ThreadHistoryAdapter } from '@assistant-ui/react'
 import { useAgUiRuntime, type UseAgUiRuntimeOptions } from '@assistant-ui/react-ag-ui'
 import { ShieldCheck, WifiOff } from 'lucide-react'
+import { MatrixAuthorizationBanner } from './MatrixAuthorizationBanner'
+import { describeConversationLoadError } from '../../domain/conversation-load-error'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import type { PendingComposerDraft } from '../../domain/conversation-workbench'
@@ -76,18 +78,19 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
     setImageGeneration: (on: boolean) => setTool(on ? 'image_generation' : null),
   }), [tool])
   useEffect(() => () => useWorkbenchDialogs.getState().close(), [])
+  const isSharedRoom = runtime.isSharedRoom
   const agent = useMemo(
     () => new LinxConversationAgent({
       localThreadId: anchorThreadId,
-      threadUri: anchorThreadId,
+      threadUri: props.selectedThreadId,
       chatId: props.selectedChatId,
-      backend: localFetch.conversation,
-      takeInferenceOptions,
-      prepareSendThread,
+      backend: runtime.conversation,
+      ...(isSharedRoom ? {} : { takeInferenceOptions, prepareSendThread }),
     }),
-    [localFetch, anchorThreadId, props.selectedChatId, takeInferenceOptions, prepareSendThread],
+    [isSharedRoom, localFetch.conversation, runtime.conversation, anchorThreadId, props.selectedChatId, takeInferenceOptions, prepareSendThread],
   )
   const [loadError, setLoadError] = useState(false)
+  const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null)
   const [threadUri, setThreadUri] = useState<string | null>(null)
   const [stopState, setStopState] = useState<'idle' | 'stopping'>('idle')
   useEffect(() => agent.onStopRequested(setStopState), [agent])
@@ -102,8 +105,9 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
         setThreadUri(agent.threadId)
         setLoadError(false)
         return toRepository(loaded)
-      } catch {
+      } catch (error) {
         setLoadError(true)
+        setLoadErrorMessage(describeConversationLoadError(error))
         return { messages: [] }
       } finally {
         setFirstLoadDone(true)
@@ -122,12 +126,23 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
       setThreadUri(agent.threadId)
       runtimeRef.current?.thread.import(toRepository(loaded))
       setLoadError(false)
+      setLoadErrorMessage(null)
     } catch (error) {
       setLoadError(true)
+      setLoadErrorMessage(describeConversationLoadError(error))
       throw error
     }
   }, [agent, toRepository])
 
+  // Shared poll announces owner changes; import through the same repository
+  // path the initial history uses (no remount, no second poll owner).
+  useEffect(() => {
+    if (!isSharedRoom) return
+    const subscribe = (runtime.conversation as { subscribe?: (listener: () => void) => () => void }).subscribe
+    return typeof subscribe === 'function'
+      ? subscribe.call(runtime.conversation, () => { void refreshFromPod().catch(() => undefined) })
+      : undefined
+  }, [isSharedRoom, refreshFromPod, runtime.conversation])
   const { isOnline: online, synchronize } = useChatConnectivity({
     podBaseUrl,
     sessionFetch,
@@ -193,10 +208,11 @@ export function ConversationSurface(props: ConversationSurfaceProps) {
       </ConversationProvider>
       {loadError ? (
         <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-sm">
-          <span>读不到这个聊天的消息。</span>
+          <span>{loadErrorMessage ?? '读不到这个聊天的消息。'}</span>
           <Button size="sm" variant="outline" onClick={() => { void refreshFromPod().catch(() => undefined) }}>重试</Button>
         </div>
       ) : null}
+      <MatrixAuthorizationBanner runtime={runtime} />
       {runtime.serviceAccessRequired ? (
         <div role="alert" className="absolute inset-x-3 top-3 z-30 flex items-center justify-between gap-4 rounded-xl border bg-background/95 px-4 py-3 shadow-md">
           <div className="flex min-w-0 items-start gap-3">

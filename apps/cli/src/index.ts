@@ -32,6 +32,7 @@ import { isOidcLoginExpiredError } from './lib/oidc-auth.js'
 import { clearDefaultPodDataSession, createPodDataSession, getDefaultPodDataSession, type PodDataSession } from './lib/pod-data-session.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS } from './lib/default-model.js'
 import {
+  assertLinxPiSessionSelectorCompatibility,
   createLinxPiSessionManager,
   listLinxPiSessions,
 } from './lib/pi-adapter/session.js'
@@ -471,6 +472,8 @@ async function runPiCommand(argv: {
   last?: boolean
   'pi-sync-status'?: boolean
   'pi-sync-retry'?: string
+  'session-dir'?: string
+  'session-id'?: string
   prompt?: string[]
 } & AutoModeCommandArgs): Promise<void> {
   const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
@@ -478,8 +481,15 @@ async function runPiCommand(argv: {
   if (firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
     throw new Error(`Unknown command: ${firstPromptToken}`)
   }
+  // Reject incompatible selectors before any chooser/auth/TUI starts; the
+  // session factory asserts the same rule for direct callers.
+  assertLinxPiSessionSelectorCompatibility({
+    session: argv.session,
+    sessionId: argv['session-id'],
+    last: Boolean(argv.continue || argv.last || argv.resume),
+  })
   if (argv.resume) {
-    const selectedSession = await selectLinxSession(cwdFromArg(argv.cwd))
+    const selectedSession = await selectLinxSession(cwdFromArg(argv.cwd), argv['session-dir'])
     if (!selectedSession) {
       process.stdout.write('No session selected\n')
       return
@@ -530,9 +540,13 @@ async function runPiCommand(argv: {
     cwd,
     agentDir: LINX_AGENT_DIR,
     session: argv.session,
+    sessionDir: argv['session-dir'],
+    sessionId: argv['session-id'],
     last: Boolean(argv.continue || argv.last),
   })
-  const restoreAutoFromHydration = Boolean(argv.session || argv.continue || argv.last)
+  const restoreAutoFromHydration = Boolean(
+    argv.session || argv['session-id'] || argv.continue || argv.last,
+  )
   const controlState = await resolvePiStartupControlState({
     requestedAuto: typeof argv.auto === 'boolean' ? argv.auto : undefined,
     hydrateFromPod: !argv.print && !startupLoginPrompt.shouldPrompt,
@@ -723,7 +737,7 @@ function cwdFromArg(cwd: unknown): string {
   return typeof cwd === 'string' && cwd.trim() ? cwd : process.cwd()
 }
 
-async function selectLinxSession(cwd: string): Promise<string | null> {
+async function selectLinxSession(cwd: string, sessionDirOverride?: string): Promise<string | null> {
   const settingsManager = SettingsManager.create(cwd, LINX_AGENT_DIR)
   initTheme(settingsManager.getTheme())
 
@@ -738,7 +752,10 @@ async function selectLinxSession(cwd: string): Promise<string | null> {
       ui.stop()
       resolve(sessionPath)
     }
-    const loadSessions = () => listLinxPiSessions(cwd, LINX_AGENT_DIR, { podSessionSource: null })
+    const loadSessions = () => listLinxPiSessions(cwd, LINX_AGENT_DIR, {
+      podSessionSource: null,
+      sessionDir: sessionDirOverride,
+    })
     const selector = new SessionSelectorComponent(
       loadSessions,
       loadSessions,
@@ -806,6 +823,8 @@ interface PiCommandArgs {
   last?: boolean
   'pi-sync-status'?: boolean
   'pi-sync-retry'?: string
+  'session-dir'?: string
+  'session-id'?: string
   prompt?: string[]
 }
 
@@ -834,6 +853,14 @@ function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandArgs> {
     .option('session', {
       type: 'string',
       describe: 'Resume a specific LinX session id or JSONL file',
+    })
+    .option('session-dir', {
+      type: 'string',
+      describe: 'Directory for LinX session storage and lookup',
+    })
+    .option('session-id', {
+      type: 'string',
+      describe: 'Use exact LinX session ID, creating it if missing',
     })
     .option('continue', {
       alias: 'c',

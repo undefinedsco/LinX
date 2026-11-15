@@ -39,6 +39,37 @@ jobs:
       - name: Web build check
         run: yarn workspace @linx/web build:check
 
+      - name: Matrix credential and shared-room regressions
+        env:
+          LINX_TEST_LOCALSTORAGE_FILE: ${{ runner.temp }}/linx-matrix-localstorage
+        run: |
+          cd apps/web
+          yarn test run \
+            src/lib/matrix \
+            src/lib/solid/advertised-acr.test.ts \
+            src/lib/data/linx-solid-database.test.ts \
+            src/lib/data/linx-solid-database.cache.test.ts \
+            src/modules/model-services/data/use-model-services.test.tsx \
+            src/modules/chat/data/matrix-service.test.ts \
+            src/modules/chat/data/matrix-room-access.test.ts \
+            src/modules/chat/data/matrix-invitations.test.ts \
+            src/modules/chat/data/shared-room-reference.test.ts \
+            src/modules/chat/data/shared-room-runtime.test.ts \
+            src/modules/chat/features/conversation/shared-room-conversation.test.ts \
+            src/modules/chat/features/conversation/shared-room-selection.test.ts \
+            src/modules/chat/features/conversation/shared-room-surface.test.ts \
+            src/modules/chat/components/MatrixInvitationList.test.tsx \
+            src/modules/chat/components/ChatContentPane.test.tsx \
+            src/modules/contacts/collections.cp1.test.ts \
+            src/modules/contacts/components/CreateGroupDialog.cp1.test.tsx \
+            src/modules/chat/services/chatkit-local/__tests__/service.platform-runtime.test.ts \
+            src/modules/chat/services/chatkit-local/__tests__/fetch-handler-outbox.test.ts
+
+      - name: Matrix client protocol regressions
+        run: |
+          yarn workspace @linx/agent-runtime build
+          node --import tsx --test packages/agent-runtime/test/matrix-client.test.ts
+
       - name: Desktop tests
         run: yarn workspace @linx/desktop test
 

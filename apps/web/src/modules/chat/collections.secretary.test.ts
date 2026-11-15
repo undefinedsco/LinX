@@ -119,6 +119,8 @@ import {
   LINX_DEFAULT_SECRETARY,
   messageCollection,
   SECRETARY_BOOTSTRAP_TIMEOUT_MS,
+  SecretaryBootstrapSupersededError,
+  SecretaryBootstrapTimeoutError,
   threadCollection,
 } from './collections'
 
@@ -679,6 +681,158 @@ describe('AI Secretary bootstrap', () => {
     expect(db.select).not.toHaveBeenCalled()
   })
 
+  it('lets a multi-step cold bootstrap run past the 10s aggregate while it keeps progressing', async () => {
+    vi.useFakeTimers()
+    const { db, findByIdMock, authenticatedFetchMock } = createSecretaryDb()
+    await initializeChatCollections(db as any)
+
+    // Existence, metadata hydration and thread reads make progress every 4s.
+    // Their total exceeds 10s, but no individual step is stalled.
+    const inner = findByIdMock.getMockImplementation()!
+    findByIdMock.mockImplementation(async (resource: unknown, id: string) => {
+      await new Promise((resolve) => setTimeout(resolve, 4_000))
+      return inner(resource, id)
+    })
+    const fetchInner = authenticatedFetchMock.getMockImplementation()!
+    authenticatedFetchMock.mockImplementation(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 4_000))
+      return fetchInner(...args)
+    })
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    await expect(resultPromise).resolves.toMatchObject({
+      chatId: LINX_DEFAULT_SECRETARY.chatId,
+      created: true,
+    })
+    expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(false)
+  })
+
+  it('still fails a genuine stall where no operation ever completes', async () => {
+    vi.useFakeTimers()
+    const { db } = createSecretaryDb()
+    // An exact-read timeout has a separate, verified LDP existence path.
+    // Stall the actual persistence rather than mistaking that recovery for a hang.
+    db.insert = vi.fn(() => ({ values: () => ({ execute: () => new Promise(() => {}) }) }))
+    await initializeChatCollections(db as any)
+
+    const resultPromise = chatOps.ensureLinxWelcome({ force: true })
+    const stallResult = expect(resultPromise).rejects.toMatchObject({
+      kind: 'timeout',
+      name: 'SecretaryBootstrapTimeoutError',
+      recoverable: true,
+    })
+    await vi.advanceTimersByTimeAsync(SECRETARY_BOOTSTRAP_TIMEOUT_MS)
+    await stallResult
+  })
+
+  it('shares one in-flight bootstrap between a second caller and a forced retry', async () => {
+    vi.useFakeTimers()
+    const { db, insertedRows } = createSecretaryDb()
+    const insertSpy = db.insert as unknown as ReturnType<typeof vi.fn>
+    await initializeChatCollections(db as any)
+
+    const first = chatOps.ensureLinxWelcome({ force: true })
+    const second = chatOps.ensureLinxWelcome({ force: true })
+    await vi.advanceTimersByTimeAsync(7_000)
+
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2)
+    // One shared run must not double-insert the Secretary rows.
+    const insertedChatRows = insertedRows.filter(({ resource }) => resource === contactResource
+      || resource === chatResource)
+    expect(insertSpy).toHaveBeenCalledTimes(2)
+    expect(insertedChatRows).toHaveLength(2)
+  })
+
+  function pendingSecretaryWrites(contactFailure?: Error) {
+    const { db } = createSecretaryDb()
+    const persisted = new Map<unknown, Record<string, unknown>>()
+    const completions: Array<() => void> = []
+    db.findById.mockImplementation(async (resource: unknown) => persisted.get(resource) ?? null)
+    db.insert = vi.fn((resource: unknown) => ({
+      values(row: Record<string, unknown>) {
+        return {
+          execute: vi.fn(async () => {
+            if (resource === contactResource && contactFailure) throw contactFailure
+            return new Promise((resolve) => completions.push(() => {
+              persisted.set(resource, row)
+              resolve([{ ...row }])
+            }))
+          }),
+        }
+      },
+    }))
+    return { db, complete: () => completions.splice(0).forEach((finish) => finish()) }
+  }
+
+  it('keeps timed-out writes singleflight across retry and an A -> B -> A switch', async () => {
+    vi.useFakeTimers()
+    const first = pendingSecretaryWrites()
+    const second = createSecretaryDb()
+    await initializeChatCollections(first.db as any)
+    const stalled = chatOps.ensureLinxWelcome()
+    const outcome = expect(stalled).rejects.toBeInstanceOf(SecretaryBootstrapTimeoutError)
+    await vi.advanceTimersByTimeAsync(SECRETARY_BOOTSTRAP_TIMEOUT_MS)
+    await outcome
+    await expect(chatOps.ensureLinxWelcome({ force: true })).rejects.toBeInstanceOf(SecretaryBootstrapTimeoutError)
+    expect(first.db.insert).toHaveBeenCalledTimes(2)
+
+    await initializeChatCollections(second.db as any)
+    await expect(chatOps.ensureLinxWelcome()).resolves.toMatchObject({ created: true })
+    await initializeChatCollections(first.db as any)
+    await expect(chatOps.ensureLinxWelcome()).rejects.toBeInstanceOf(SecretaryBootstrapTimeoutError)
+    expect(first.db.insert).toHaveBeenCalledTimes(2)
+
+    first.complete()
+    await vi.advanceTimersByTimeAsync(0)
+    await expect(chatOps.ensureLinxWelcome()).resolves.toMatchObject({ created: false })
+    expect(first.db.insert).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports a real failure immediately while retaining the other write drain barrier', async () => {
+    vi.useFakeTimers()
+    const denied = new Error('HTTP 403 Forbidden')
+    const pending = pendingSecretaryWrites(denied)
+    await initializeChatCollections(pending.db as any)
+    await expect(chatOps.ensureLinxWelcome()).rejects.toBe(denied)
+    expect(isLinxDefaultSecretaryBootstrapSettling()).toBe(false)
+    await expect(chatOps.ensureLinxWelcome({ force: true })).rejects.toBe(denied)
+    expect(pending.db.insert).toHaveBeenCalledTimes(2)
+    pending.complete()
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  it('stops a superseded account from starting new writes after a context switch', async () => {
+    vi.useFakeTimers()
+    const { db, insertedRows } = createSecretaryDb()
+    // The first existence read never resolves, so the run is still inside its
+    // first step when the account changes.
+    const inner = (db.findById as any).getMockImplementation()
+    let first = true
+    ;(db.findById as any).mockImplementation(async (...args: unknown[]) => {
+      if (first) {
+        first = false
+        await new Promise(() => {})
+      }
+      return inner?.(...args)
+    })
+    await initializeChatCollections(db as any)
+
+    const staleRun = chatOps.ensureLinxWelcome()
+    const staleResult = expect(staleRun).rejects.toBeInstanceOf(SecretaryBootstrapSupersededError)
+
+    // A different account becomes current while the old run is still in flight.
+    await initializeChatCollections({ id: 'second-db' } as any)
+
+    await vi.advanceTimersByTimeAsync(0)
+    await staleResult
+    // The stale generation must not have created Secretary rows for the old
+    // account once it stops being current.
+    expect(insertedRows.filter(({ resource }) => resource === contactResource
+      || resource === chatResource)).toHaveLength(0)
+  })
+
   it('does not publish an older account bootstrap after a new database is active', async () => {
     const firstRows = createSecretaryRows({
       podBase: 'https://node-0000.undefineds.co/alice/',
@@ -709,6 +863,7 @@ describe('AI Secretary bootstrap', () => {
 
     initializeChatCollections(firstDb as any)
     const firstBootstrap = chatOps.ensureLinxWelcome({ force: true })
+    const firstOutcome = expect(firstBootstrap).rejects.toBeInstanceOf(SecretaryBootstrapSupersededError)
     await vi.waitFor(() => {
       expect(resolveFirstContact).toBeTypeOf('function')
       expect(resolveFirstChat).toBeTypeOf('function')
@@ -725,10 +880,7 @@ describe('AI Secretary bootstrap', () => {
 
     resolveFirstContact?.()
     resolveFirstChat?.()
-    await expect(firstBootstrap).resolves.toEqual({
-      chatId: LINX_DEFAULT_SECRETARY.chatId,
-      created: true,
-    })
+    await firstOutcome
     expect(collectionStates.get('chats')?.get(LINX_DEFAULT_SECRETARY.chatId)).toMatchObject({
       '@id': secondRows.chatIri,
     })
@@ -814,6 +966,9 @@ describe('AI Secretary bootstrap', () => {
     expect(db.select).not.toHaveBeenCalled()
     expect(insertedRows).toEqual([])
     expect(bootstrapPromise).toBeInstanceOf(Promise)
+    await vi.waitFor(() => expect(executeResolvers).toHaveLength(2))
+    executeResolvers.forEach((finish) => finish())
+    await bootstrapPromise
   })
 
   it('reads the staged Secretary without starting a parallel remote chat query', async () => {

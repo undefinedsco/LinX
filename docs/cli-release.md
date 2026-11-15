@@ -137,31 +137,33 @@ git status --short
 yarn pack:cli:release
 node scripts/smoke-install-cli-release.mjs
 git push origin <branch>
-git tag linx-v<cli-version>
-git push origin linx-v<cli-version>
+git tag linx-cli-v<cli-version>
+git push origin linx-cli-v<cli-version>
 ```
 
-The tag must match the CLI version in `apps/cli/package.json`. For example,
+The tag must match the CLI version in `apps/cli/package.json`. `linx-v*` tags
+belong to LinX Web/desktop releases (`docs/RELEASE.md`). Earlier CLI releases
+used `linx-v*` too; new CLI releases must use `linx-cli-v*`. For example,
 `apps/cli/package.json` version `0.3.3` is released with:
 
 ```bash
-git tag linx-v0.3.3
-git push origin linx-v0.3.3
+git tag linx-cli-v0.3.3
+git push origin linx-cli-v0.3.3
 ```
 
 Never reuse or force-move a release tag. Before tagging, check both local and
 remote tags:
 
 ```bash
-git tag --list "linx-v<cli-version>"
-git ls-remote --tags origin "linx-v<cli-version>"
+git tag --list "linx-cli-v<cli-version>"
+git ls-remote --tags origin "linx-cli-v<cli-version>"
 ```
 
 If the tag already exists, the current package version is not releasable as a
 new release. Bump `apps/cli/package.json` to the next intended version, rebuild,
 smoke-install, commit that version change, then tag the new version.
 
-The `linx-v*` tag starts `.github/workflows/cli-release.yml`. That workflow
+The `linx-cli-v*` tag starts `.github/workflows/cli-release.yml`. That workflow
 rebuilds, packs, smoke-installs, publishes the npm package from GitHub Actions,
 and creates the GitHub Release. Publication uses the GitHub Actions secret
 `NPM_TOKEN`, passed to npm as `NODE_AUTH_TOKEN` during the publish steps. Local
@@ -303,9 +305,9 @@ Release publishing is handled by:
 
 It verifies the same CLI release tarball on Linux and macOS. Only the Linux
 artifact is uploaded for the publish job. The normal trigger is a pushed
-`linx-v*` git tag.
+`linx-cli-v*` git tag.
 
-Automatic registry publish happens in GitHub Actions on tags matching `linx-v*`.
+Automatic registry publish happens in GitHub Actions on tags matching `linx-cli-v*`.
 Manual `workflow_dispatch` can verify without publishing, or publish when
 `publish=true`. npm publishing requires `NPM_TOKEN` in GitHub Actions secrets;
 local developer/agent npm credentials are not part of the standard release

@@ -114,13 +114,13 @@ function openResourceActionsMenu() {
 
 function openHeaderMetaDrawer() {
   const head = screen.queryByLabelText('文件详情 head')
-  const headMetaButton = head ? within(head).queryByRole('button', { name: '查看 .meta' }) : null
+  const headMetaButton = head ? within(head).queryByRole('button', { name: '信息' }) : null
   if (headMetaButton) {
     fireEvent.click(headMetaButton)
     return
   }
   openResourceActionsMenu()
-  fireEvent.click(screen.getByRole('menuitem', { name: '查看 .meta' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '信息' }))
 }
 
 function openHeaderAccessDialog() {
@@ -137,17 +137,17 @@ function openHeaderAccessDialog() {
   const editorHeader = screen.queryByLabelText('文件详情标题')
   if (editorHeader && within(editorHeader).queryByRole('button', { name: '更多文件操作' })) {
     fireEvent.pointerDown(within(editorHeader).getByRole('button', { name: '更多文件操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '查看 Access 来源' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '访问权限' }))
     return
   }
   const head = screen.queryByLabelText('文件详情 head')
-  const headAccessButton = head ? within(head).queryByRole('button', { name: '查看 Access 来源' }) : null
+  const headAccessButton = head ? within(head).queryByRole('button', { name: '访问权限' }) : null
   if (headAccessButton) {
     fireEvent.click(headAccessButton)
     return
   }
   openResourceActionsMenu()
-  fireEvent.click(screen.getByRole('menuitem', { name: '查看 Access 来源' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '访问权限' }))
 }
 
 async function fillOperationSheet(label: string, value: string, confirmLabel: string) {
@@ -718,9 +718,9 @@ describe('FileDetailPane', () => {
     expect(within(titleRegion).queryByRole('button', { name: '显示 Info' })).not.toBeInTheDocument()
     fireEvent.pointerDown(within(titleRegion).getByRole('button', { name: '更多文件操作' }))
     expect(screen.queryByRole('menuitem', { name: '显示 Info' })).not.toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '访问权限' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitem', { name: '富文本' }))
-    expect(screen.queryByRole('menuitem', { name: '查看 Access 来源' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: '访问权限' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('资源附属信息')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /保存/ })).not.toBeInTheDocument()
     expect(within(getRichEditorTextbox()).getByRole('heading', { name: 'Hello' })).toBeInTheDocument()
@@ -752,7 +752,7 @@ describe('FileDetailPane', () => {
     expect(within(sheetHeader).queryByRole('button', { name: '显示 Info' })).not.toBeInTheDocument()
     fireEvent.pointerDown(within(sheetHeader).getByRole('button', { name: '更多文件操作' }))
     expect(screen.getByRole('menuitem', { name: '源码' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '访问权限' })).toBeInTheDocument()
   })
 
   it('keeps editable file content out of the main detail pane until the sheet opens', async () => {
@@ -3129,7 +3129,7 @@ describe('FileDetailPane', () => {
 
     expect(screen.queryByLabelText('资源附属信息')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
-    expect(within(screen.getByLabelText('文件详情 head')).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
+    expect(within(screen.getByLabelText('文件详情 head')).queryByRole('button', { name: '信息' })).not.toBeInTheDocument()
 
     openHeaderMetaDrawer()
 
@@ -3181,13 +3181,13 @@ describe('FileDetailPane', () => {
     expect(within(metaDrawer).getByText(/<#meta> dcterms:source <https:\/\/source\.example\/readme>/)).toBeInTheDocument()
     expect(within(metaDrawer).getByText(/udfs:shape <https:\/\/pod\.example\/\.vocab\/shapes\.ttl#MarkdownFileShape>/)).toBeInTheDocument()
     expect(within(metaDrawer).getByLabelText('属性信息')).toBeInTheDocument()
-    expect(within(metaDrawer).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
-    expect(within(metaDrawer).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByRole('button', { name: '信息' })).not.toBeInTheDocument()
+    expect(within(metaDrawer).queryByRole('button', { name: '访问权限' })).not.toBeInTheDocument()
 
     const head = screen.getByLabelText('文件详情 head')
-    expect(within(head).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: '访问权限' })).not.toBeInTheDocument()
     openResourceActionsMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: '查看 Access 来源' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '访问权限' }))
     const accessDialog = screen.getByRole('dialog', { name: '权限' })
     expect(within(accessDialog).getAllByText('ACL').length).toBeGreaterThan(0)
     expect(within(accessDialog).getByText('当前资源')).toBeInTheDocument()
@@ -3300,8 +3300,8 @@ describe('FileDetailPane', () => {
     expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: 'state.ttl' })).not.toBeInTheDocument()
     const head = screen.getByLabelText('文件详情 head')
-    expect(within(head).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
-    expect(within(head).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: '信息' })).not.toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: '访问权限' })).not.toBeInTheDocument()
 
     openHeaderMetaDrawer()
 
@@ -3313,7 +3313,7 @@ describe('FileDetailPane', () => {
     expect(within(drawer).getByText(/State metadata/)).toBeInTheDocument()
     expect(screen.queryByLabelText('文件 meta')).not.toBeInTheDocument()
     openResourceActionsMenu()
-    expect(screen.getByRole('menuitem', { name: '查看 .meta' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '信息' })).toBeInTheDocument()
   })
 
   it('renders image resources as readonly previews with metadata in the right drawer', () => {
@@ -3667,7 +3667,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     openResourceActionsMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: '复制 URI' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '复制链接' }))
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://pod.example/public/README.md')
   })
@@ -3724,22 +3724,22 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     const head = screen.getByLabelText('文件详情 head')
-    expect(within(head).queryByRole('button', { name: '打开原始 URI' })).not.toBeInTheDocument()
-    expect(within(head).queryByRole('button', { name: '复制 URI' })).not.toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: '在浏览器打开' })).not.toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: '复制链接' })).not.toBeInTheDocument()
     expect(within(head).getByRole('button', { name: '收藏' })).toBeInTheDocument()
-    expect(within(head).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
-    expect(within(head).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: '信息' })).not.toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: '访问权限' })).not.toBeInTheDocument()
     expect(within(head).getByRole('button', { name: '更多资源操作' })).toBeInTheDocument()
     expect(within(head).queryByText('打开 URI')).not.toBeInTheDocument()
-    expect(within(head).queryByText('复制 URI')).not.toBeInTheDocument()
+    expect(within(head).queryByText('复制链接')).not.toBeInTheDocument()
     expect(within(head).queryByText('进入容器')).not.toBeInTheDocument()
 
     openResourceActionsMenu()
 
-    expect(screen.getByRole('menuitem', { name: '打开原始 URI' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: '复制 URI' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: '查看 .meta' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '在浏览器打开' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '复制链接' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '信息' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '访问权限' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: '加入收藏' })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: '取消收藏' })).not.toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: '进入所在容器' })).toBeInTheDocument()
@@ -3750,7 +3750,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     openResourceActionsMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: '打开原始 URI' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '在浏览器打开' }))
 
     expect(window.open).toHaveBeenCalledWith('https://pod.example/public/README.md', '_blank', 'noopener,noreferrer')
   })
@@ -10502,14 +10502,14 @@ describe('FileDetailPane', () => {
     expect(iconViewButton).toHaveTextContent('网格')
     expect(screen.queryByRole('button', { name: '分栏视图' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '图标预览' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '新建文件夹' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新建文件夹' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Folder container actions')).not.toBeInTheDocument()
     const detailHead = screen.getByLabelText('文件详情 head')
-    expect(within(detailHead).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
-    expect(within(detailHead).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
+    expect(within(detailHead).queryByRole('button', { name: '信息' })).not.toBeInTheDocument()
+    expect(within(detailHead).queryByRole('button', { name: '访问权限' })).not.toBeInTheDocument()
     openResourceActionsMenu()
-    expect(screen.getByRole('menuitem', { name: '查看 .meta' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '信息' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '访问权限' })).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.getByLabelText('Folder list view')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '按名称排序' })).toBeInTheDocument()
@@ -10592,19 +10592,6 @@ describe('FileDetailPane', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(mockMoveFileResource).toHaveBeenCalledTimes(2)
 
-    fireEvent.click(screen.getByRole('button', { name: '新建文件夹' }))
-    const blankFolderInput = await screen.findByLabelText('名称')
-    fireEvent.change(blankFolderInput, { target: { value: '' } })
-    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled()
-    fireEvent.change(blankFolderInput, { target: { value: 'docs' } })
-    expect(screen.getByText('同名项目已存在')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled()
-    fireEvent.change(blankFolderInput, { target: { value: '../escape' } })
-    expect(screen.getByText('名称不能包含路径')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '创建' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: '取消' }))
-    expect(mockCreateFolderResource).not.toHaveBeenCalled()
-
     const metaCallStart = mockUseFilesMetaSidecar.mock.calls.length
     openHeaderMetaDrawer()
 
@@ -10634,7 +10621,7 @@ describe('FileDetailPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '关闭 .meta inspector' }))
     openResourceActionsMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: '查看 Access 来源' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '访问权限' }))
 
     const accessDialog = screen.getByRole('dialog', { name: '权限' })
     expect(within(accessDialog).getAllByText('https://pod.example/public/').length).toBeGreaterThan(0)
@@ -10772,43 +10759,6 @@ describe('FileDetailPane', () => {
 
   })
 
-  it('creates a child folder from folder detail actions', async () => {
-    useFilesStore.setState({ selectedFileId: 'https://pod.example/public/' })
-    mockUseFileDetail.mockReturnValue({
-      data: {
-        id: 'https://pod.example/public/',
-        uri: 'https://pod.example/public/',
-        name: 'public',
-        kind: 'container',
-        semanticKind: 'container',
-        parentUri: 'https://pod.example/',
-        mimeType: 'inode/container',
-        size: null,
-        modifiedAt: null,
-        headers: {},
-        previewText: null,
-        childEntries: [],
-      },
-      isLoading: false,
-      error: null,
-    })
-
-    render(<FileDetailPane />)
-
-    fireEvent.click(screen.getByRole('button', { name: '新建文件夹' }))
-    await fillOperationSheet('名称', 'Project Notes', '创建')
-
-    await waitFor(() => {
-      expect(mockCreateFolderResource).toHaveBeenCalledWith({
-        containerUri: 'https://pod.example/public/',
-        name: 'Project Notes',
-      })
-    })
-    expect(useFilesStore.getState().selectedTreeNodeId).toBe('container:https://pod.example/public/Project%20Notes/')
-    expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/Project%20Notes/')
-    expect(mockToast).toHaveBeenCalledWith({ description: '文件夹已创建' })
-  })
-
   it('creates a markdown file from folder detail actions', async () => {
     mockCreateRaw.mockResolvedValueOnce({
       uri: 'https://pod.example/public/Meeting%20Notes.md',
@@ -10839,7 +10789,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.click(screen.getByRole('button', { name: '新建文档' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建文件' }))
     const blankMarkdownInput = await screen.findByLabelText('标题')
     fireEvent.change(blankMarkdownInput, { target: { value: '' } })
     expect(screen.getByRole('button', { name: '创建' })).toBeDisabled()
@@ -10849,7 +10799,7 @@ describe('FileDetailPane', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(mockCreateRaw).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: '新建文档' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建文件' }))
     await fillOperationSheet('标题', 'Meeting Notes.md', '创建')
 
     await waitFor(() => {
@@ -10900,7 +10850,7 @@ describe('FileDetailPane', () => {
 
     render(<FileDetailPane />)
 
-    fireEvent.click(screen.getByRole('button', { name: '新建文档' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
     const markdownInput = await screen.findByLabelText('标题')
     fireEvent.change(markdownInput, { target: { value: 'Meeting Notes' } })
 
@@ -11408,7 +11358,7 @@ describe('FileDetailPane', () => {
 
     fireEvent.contextMenu(childRow())
 
-    fireEvent.click(await screen.findByRole('menuitem', { name: '复制 URI' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '复制链接' }))
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://pod.example/public/diagram.png')
 
     fireEvent.contextMenu(childRow())
@@ -11494,7 +11444,7 @@ describe('FileDetailPane', () => {
 
     expect(alphaTreeItem).toHaveAttribute('aria-selected', 'true')
     expect(betaTreeItem).toHaveAttribute('aria-selected', 'false')
-    fireEvent.click(await screen.findByRole('menuitem', { name: '复制 URI' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '复制链接' }))
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://pod.example/public/beta.md')
     await waitFor(() => {
       expect(betaTreeItem).toHaveAttribute('aria-selected', 'true')
@@ -11642,7 +11592,7 @@ describe('FileDetailPane', () => {
 
     expect(screen.getByText('已选择 2 项')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '复制所选 URI' }))
+    fireEvent.click(screen.getByRole('button', { name: '复制所选链接' }))
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith([
       'https://pod.example/public/alpha.md',
       'https://pod.example/public/beta.md',
@@ -11837,7 +11787,7 @@ describe('FileDetailPane', () => {
     expect(mockUseRawTextResource.mock.calls).not.toContainEqual(['https://pod.example/public/README.md', true])
     fireEvent.contextMenu(readmeChild)
     expect(screen.getByRole('menuitem', { name: '打开' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: '复制 URI' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '复制链接' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitem', { name: '打开' }))
     await waitFor(() => expect(useCardDialog.getState().request?.uri).toBe('https://pod.example/public/README.md'))
 
@@ -11933,7 +11883,7 @@ describe('FileDetailPane', () => {
     expect(within(metaDrawer).queryByText(/acl:mode acl:Read/)).not.toBeInTheDocument()
     expect(within(metaDrawer).queryByText(/acr:accessControl/)).not.toBeInTheDocument()
     openResourceActionsMenu()
-    expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '访问权限' })).toBeInTheDocument()
   })
 
   it('previews structured child resources from folder rows and opens them on explicit open', () => {
@@ -12226,7 +12176,7 @@ describe('FileDetailPane', () => {
     render(<FileDetailPane />)
 
     fireEvent.contextMenu(screen.getByText('README').closest('button')!)
-    fireEvent.click(await screen.findByRole('menuitem', { name: '复制 URI' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '复制链接' }))
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://pod.example/public/README.md')
     expect(screen.queryByRole('dialog', { name: 'Hello' })).not.toBeInTheDocument()
@@ -12297,7 +12247,7 @@ describe('FileDetailPane', () => {
 
     act(() => useFilesStore.getState().selectFile('https://pod.example/public/diagram.png'))
     const detailHead = screen.getByLabelText('文件详情 head')
-    expect(within(detailHead).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
+    expect(within(detailHead).queryByRole('button', { name: '信息' })).not.toBeInTheDocument()
 
     const metaCallStart = mockUseFilesMetaSidecar.mock.calls.length
     openHeaderMetaDrawer()
@@ -12366,8 +12316,8 @@ describe('FileDetailPane', () => {
 
     act(() => useFilesStore.getState().selectFile('https://pod.example/public/diagram.png'))
     const detailHead = screen.getByLabelText('文件详情 head')
-    expect(within(detailHead).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
-    expect(within(detailHead).queryByRole('button', { name: '查看 .meta' })).not.toBeInTheDocument()
+    expect(within(detailHead).queryByRole('button', { name: '访问权限' })).not.toBeInTheDocument()
+    expect(within(detailHead).queryByRole('button', { name: '信息' })).not.toBeInTheDocument()
     openHeaderAccessDialog()
 
     const accessDialog = screen.getByRole('dialog', { name: '权限' })
@@ -12408,9 +12358,9 @@ describe('FileDetailPane', () => {
     expect(screen.getAllByText('https://pod.example/public/').length).toBeGreaterThan(0)
     expect(screen.getByText('acr')).toBeInTheDocument()
     expect(screen.getByText('权限策略通过 Access 查看。')).toBeInTheDocument()
-    expect(within(screen.getByLabelText('文件详情 head')).queryByRole('button', { name: '查看 Access 来源' })).not.toBeInTheDocument()
+    expect(within(screen.getByLabelText('文件详情 head')).queryByRole('button', { name: '访问权限' })).not.toBeInTheDocument()
     openResourceActionsMenu()
-    expect(screen.getByRole('menuitem', { name: '查看 Access 来源' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: '访问权限' })).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByText('<#owner> <#mode> "Read" .')).not.toBeInTheDocument()
 

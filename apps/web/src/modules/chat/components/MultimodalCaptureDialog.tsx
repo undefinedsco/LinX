@@ -121,7 +121,7 @@ export function MultimodalCaptureDialog({ open, onOpenChange, onCapture }: Multi
         <DialogHeader>
           <DialogTitle>添加屏幕或摄像头画面</DialogTitle>
           <DialogDescription>
-            画面只在你点击“添加到输入框”后截取，并沿用当前会话的附件上传与 Pod 存储链路。
+            画面只在你点击“添加到输入框”后截取，作为附件保存到你的空间。
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap gap-2">

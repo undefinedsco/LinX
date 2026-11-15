@@ -1,4 +1,5 @@
 import type { IStorage } from '@inrupt/solid-client-authn-core'
+import { withRetainedSolidClientRegistration } from '@/modules/login/login-utils'
 
 const SECURE_STORAGE_PREFIX = 'solidClientAuthn:secure:'
 
@@ -22,7 +23,15 @@ export class PersistentSessionStorage implements IStorage {
   }
 
   async set(key: string, value: string): Promise<void> {
-    this.storage.setItem(this.key(key), value)
+    // Complete the SDK's own session-record write with reusable client
+    // metadata for the same issuer/client. Without this the SDK persists a
+    // static client without `expiresAt` and re-registers a DIFFERENT client
+    // during the callback token exchange. Applies to the insecure store only;
+    // secure (token/DPoP) records are passed through untouched.
+    const completed = this.prefix === ''
+      ? withRetainedSolidClientRegistration(key, value)
+      : value
+    this.storage.setItem(this.key(key), completed)
   }
 
   async delete(key: string): Promise<void> {

@@ -450,7 +450,7 @@ test.describe('Files real Pod smoke', () => {
     if (await rootExpandButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
       await rootExpandButton.click()
     }
-    await openFilesTreeAction(page, smoke.fileName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.fileName, '信息')
 
     const metaTail = page.getByLabel('资源附属信息')
     await expect(metaTail).toBeVisible({ timeout: 30_000 })
@@ -922,7 +922,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(workspacesRow).toBeVisible({ timeout: 30_000 })
     const workspacesToggle = workspacesRow.getByRole('button', { name: '展开 workspaces', exact: true })
     if (await workspacesToggle.count()) await workspacesToggle.click()
-    await openFilesTreeAction(page, smoke.workspaceName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.workspaceName, '信息')
     const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.workspaceMetaUri)
@@ -1734,7 +1734,7 @@ test.describe('Files real Pod smoke', () => {
 
     const rootToggle = page.getByRole('button', { name: /^展开 .*Pod|^展开 根目录/ }).first()
     if (await rootToggle.count()) await rootToggle.click()
-    await openFilesTreeAction(page, smoke.fileName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.fileName, '信息')
     const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
@@ -2153,7 +2153,7 @@ test.describe('Files real Pod smoke', () => {
 
     const rootToggle = page.getByRole('button', { name: /^展开 .*Pod|^展开 根目录/ }).first()
     if (await rootToggle.count()) await rootToggle.click()
-    await openFilesTreeAction(page, smoke.fileName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.fileName, '信息')
     const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
@@ -3311,7 +3311,7 @@ test.describe('Files real Pod smoke', () => {
     if (await podRootToggle.getAttribute('aria-expanded') === 'false') await podRootToggle.click()
     const folderTreeRow = filesTree.getByRole('treeitem', { name: new RegExp(`^(?:(?:展开|收起) )?${escapeRegExp(smoke.folderName)}(?:\\s|$)`) })
     await expect(folderTreeRow).toBeVisible({ timeout: 30_000 })
-    await openFilesTreeAction(page, smoke.folderName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.folderName, '信息')
     const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
@@ -3354,7 +3354,8 @@ test.describe('Files real Pod smoke', () => {
 
     const childFolderName = `child-${Date.now()}`
     const childFolderUri = new URL(`${childFolderName}/`, smoke.folderUri).href
-    await page.getByRole('button', { name: '新建文件夹' }).click()
+    await page.getByRole('button', { name: '添加' }).first().click()
+    await page.getByRole('menuitem', { name: '新建文件夹' }).click()
     const createFolderDialog = page.getByRole('dialog', { name: '新建文件夹' })
     await expect(createFolderDialog).toBeVisible()
     const createFolderNameInput = createFolderDialog.getByRole('textbox', { name: '名称' })
@@ -3789,6 +3790,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(proposalTarget).toBeVisible({ timeout: 30_000 })
     await proposalTarget.click()
     await expect(page.getByRole('heading', { name: 'files.access.proposal' })).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: '添加备注' }).click()
     await page.getByLabel('处理备注').fill(`Approve real Pod ${policyProvider?.toUpperCase()} smoke`)
     await expect(page.getByRole('button', { name: '批准' })).toBeVisible({ timeout: 30_000 })
     await page.getByRole('button', { name: '批准' }).click()

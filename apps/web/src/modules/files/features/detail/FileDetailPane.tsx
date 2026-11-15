@@ -185,11 +185,11 @@ export function FileDetailPane() {
         <DropdownMenuContent align="end" className="min-w-44">
           <DropdownMenuItem onSelect={handleCopyUri}>
             <Copy className="mr-2 h-3.5 w-3.5" />
-            复制 URI
+            复制链接
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={handleOpenUri}>
             <ExternalLink className="mr-2 h-3.5 w-3.5" />
-            打开原始 URI
+            在浏览器打开
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={handleEnterParentContainer}>
             <FolderOpen className="mr-2 h-3.5 w-3.5" />
