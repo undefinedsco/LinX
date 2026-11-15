@@ -14,8 +14,8 @@ const root = path.resolve(import.meta.dirname, '..')
 const helper = path.join(root, 'scripts/rc-browser-results.mjs')
 const workflow = readFileSync(path.join(root, '.github/workflows/candidate.yml'), 'utf8')
 const SENTINEL = 'FAKE_SECRET_SENTINEL_9f3a'
-const SIGNED_IN_SPEC = 'specs/deployed-signed-in.spec.ts'
-const SHARED_GROUP_SPEC = 'specs/rc-shared-group.spec.ts'
+const SIGNED_IN_SPEC = 'deployed-signed-in.spec.ts'
+const SHARED_GROUP_SPEC = 'rc-shared-group.spec.ts'
 
 function result(status = 'passed', retry = 0) {
   return { status, retry }

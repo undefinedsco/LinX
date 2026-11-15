@@ -17,12 +17,13 @@ import { pathToFileURL } from 'node:url'
 export const RC_BROWSER_PRESETS = Object.freeze({
   'signed-in': Object.freeze({
     suite: 'signed-in',
-    spec: 'specs/deployed-signed-in.spec.ts',
+    // Playwright reports spec files relative to testDir (tests/e2e/specs).
+    spec: 'deployed-signed-in.spec.ts',
     minPassed: 2,
   }),
   'shared-group': Object.freeze({
     suite: 'shared-group',
-    spec: 'specs/rc-shared-group.spec.ts',
+    spec: 'rc-shared-group.spec.ts',
     minPassed: 1,
   }),
 })
