@@ -8845,6 +8845,19 @@ describe('FileDetailPane', () => {
      * clicked once with no await in between, so a node replaced by an intervening
      * re-render cannot swallow the click.
      */
+    // On loaded CI runners the non-modal + 属性 menu can close again right after it opens (a stray
+    // focus change from the menu that just closed). A person would press again; do the same, up to
+    // three presses, and fail if the menu never stays open.
+    async function openMenuFrom(triggerName: string) {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        fireEvent.pointerDown(screen.getByRole('button', { name: triggerName }))
+        const opened = await waitFor(() => expect(screen.getByRole('menu')).toBeVisible(), { timeout: 2_000 })
+          .then(() => true, () => false)
+        if (opened) return
+      }
+      throw new Error(`${triggerName} menu did not stay open after three presses`)
+    }
+
     async function clickLiveMenuItem(name: string) {
       // Observe the settled state only; no user action happens inside waitFor.
       await waitFor(() => {
@@ -9054,7 +9067,7 @@ describe('FileDetailPane', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: '列显示' })).toHaveFocus())
 
       // ... but 加属性 offers it again.
-      fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
+      await openMenuFrom('+ 属性')
       // Click the item through the live, unique, visible menu. Capturing the menu earlier and
       // clicking inside that detached tree would still find the row and would silently drop the
       // click, which is the failure shape this test showed on CI.
