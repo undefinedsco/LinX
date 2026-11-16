@@ -288,6 +288,14 @@ async function startLocalRuntimeProcess(options: {
     cssPort: options.cssPort,
     apiPort: options.apiPort,
     logLevel: process.env.XPOD_TEST_LOG_LEVEL || 'error',
+    // Hermetic OIDC: pin the issuer to this loopback runtime. Xpod 0.4.34
+    // otherwise defaults an unconfigured local runtime to the external
+    // https://id.undefineds.co/ issuer and may then attempt first-run
+    // registration against production. options.env wins over the env file and
+    // is consulted before that default branch, so CSS keeps serving its own IdP.
+    env: {
+      SOLID_OIDC_ISSUER: options.baseUrl,
+    },
     shorthand: {
       seedConfig: options.seedConfigPath,
     },
