@@ -183,13 +183,24 @@ export async function grantAdvertisedAcrAccess(
   return input.access
 }
 
-/** Discover whether the resource advertises WAC (`.acl`) or ACP (`.acr`). */
+/**
+ * Discover whether the resource advertises WAC (`.acl`) or ACP (`.acr`).
+ *
+ * `allowMissingResource` additionally accepts a 404 response, but only from the
+ * same HEAD that advertises a usable control URI: the server still names the
+ * control document for the absent container, which is how a first grant on a
+ * not-yet-materialized container is authorized. A 404 with no advertised link,
+ * an off-origin link, or a link that is not exactly `<resource>.acl|.acr` keeps
+ * failing. 401/403 and every other status keep failing.
+ */
 export async function discoverAdvertisedAccessControl(
   resourceUrl: string,
   authFetch: typeof fetch,
+  options: { allowMissingResource?: boolean } = {},
 ): Promise<{ kind: 'acp' | 'wac'; url: string }> {
   const info = await authFetch(resourceUrl, { method: 'HEAD' })
-  if (info.status !== 200) {
+  const missing = info.status === 404
+  if (!(info.status === 200 || (missing && options.allowMissingResource === true))) {
     throw new Error(`读取资源授权信息失败（HTTP ${info.status}）。`)
   }
   const match = info.headers.get('Link')?.match(/<([^>]+)>\s*;\s*rel=["']acl["']/iu)
