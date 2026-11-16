@@ -259,7 +259,7 @@ describe('PrimaryLayout', () => {
     expect(listPanel.parentElement?.style.maxWidth).toBe('360px')
   })
 
-  it('toggles the list panel when clicking the active rail icon', async () => {
+  it('keeps the list panel when clicking the active rail icon', async () => {
     const onNavigate = vi.fn()
     render(<PrimaryLayout microAppId="files" onNavigate={onNavigate} />)
 
@@ -267,17 +267,12 @@ describe('PrimaryLayout', () => {
     expect(screen.getByTestId('micro-app-list-panel')).toBeTruthy()
 
     filesButton.click()
-    await waitFor(() => {
-      expect(screen.queryByTestId('micro-app-list-panel')).toBeNull()
-    })
-    expect(mockNavigate).not.toHaveBeenCalled()
-    expect(onNavigate).not.toHaveBeenCalled()
-
     filesButton.click()
     await waitFor(() => {
       expect(screen.getByTestId('micro-app-list-panel')).toBeTruthy()
     })
     expect(mockNavigate).not.toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 
   it('keeps normal navigation for non-active rail icons', () => {

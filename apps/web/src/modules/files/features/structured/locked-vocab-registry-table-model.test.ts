@@ -50,7 +50,7 @@ describe('locked vocab registry table model', () => {
       searchText: '',
     })
     expect(emptySearch.columns.map((column) => column.label)).toEqual([
-      '术语 URI',
+      '术语地址',
       '名称',
       '说明',
       '类型',
@@ -114,7 +114,7 @@ describe('locked vocab registry table model', () => {
       rows,
       searchText: '',
     })
-    expect(terms.columns[0].label).toBe('术语 URI')
+    expect(terms.columns[0].label).toBe('术语地址')
 
     const namespaces = projectLockedVocabRegistryTableModel({
       registryKind: 'namespaces',

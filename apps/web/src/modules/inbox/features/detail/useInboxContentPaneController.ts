@@ -31,6 +31,7 @@ function formatTime(value: string | undefined) {
 
 export function useInboxContentPaneController() {
   const [reason, setReason] = useState('')
+  const [noteOpen, setNoteOpen] = useState(false)
   const [inputAnswer, setInputAnswer] = useState('')
   const [grantChecked, setGrantChecked] = useState(false)
   const [confirmGrantOpen, setConfirmGrantOpen] = useState(false)
@@ -61,6 +62,7 @@ export function useInboxContentPaneController() {
   useEffect(() => {
     setGrantChecked(false)
     setConfirmGrantOpen(false)
+    setNoteOpen(false)
   }, [selectedItemId])
   useEffect(() => {
     // Re-read on open: it may have been decided somewhere else since the list loaded.
@@ -147,7 +149,7 @@ export function useInboxContentPaneController() {
     if (!selectedItem?.approval) return null
     return {
       createdAt: formatTime(String(selectedItem.approval.createdAt ?? '')),
-      resolvedAt: formatTime(String(selectedItem.approval.resolvedAt ?? '')),
+      resolvedAt: selectedItem.approval.resolvedAt ? formatTime(String(selectedItem.approval.resolvedAt)) : null,
     }
   }, [selectedItem])
   const auditPresentation = useMemo(
@@ -167,6 +169,7 @@ export function useInboxContentPaneController() {
       })
       setDecidedHereId(selectedItem.id)
       setReason('')
+      setNoteOpen(false)
       setGrantChecked(false)
       setConfirmGrantOpen(false)
     } catch {
@@ -256,6 +259,8 @@ export function useInboxContentPaneController() {
     requestState,
     reason,
     setReason,
+    noteOpen,
+    setNoteOpen,
     isPendingApproval,
     isPendingAuthRequired,
     isResolvedAuthRequired,

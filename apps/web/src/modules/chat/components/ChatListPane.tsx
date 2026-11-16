@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { Check, ListFilter, Loader2, Plus, Search, ShieldAlert, User, Users, WifiOff, X } from 'lucide-react'
+import { ListFilter, Loader2, Plus, Search, ShieldAlert, User, Users, WifiOff, X } from 'lucide-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { ContactPickerDialog } from '@/modules/contacts'
 import { useBrowserOnline } from '@/lib/use-browser-online'
@@ -29,6 +29,7 @@ import { useChatListEntries } from '../features/list/useChatListEntries'
 import { GlobalSearchResults } from '../features/search/GlobalSearchResults'
 import { ChatListRow } from '../ui/ChatListRow'
 import { AddChatDialog } from './AddChatDialog'
+import { MatrixInvitationList } from './MatrixInvitationList'
 
 type ListFilter = 'all' | 'unread'
 
@@ -170,27 +171,17 @@ export function ChatListPane(_props: ChatListPaneProps) {
           )}
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              title="筛选会话"
-              aria-label="筛选会话"
-              className={cn('h-8 w-8 shrink-0 rounded-sm', filter !== 'all' ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground hover:bg-muted/80')}
-            >
-              <ListFilter strokeWidth={1.5} className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-32">
-            {([['all', '全部'], ['unread', '未读']] as const).map(([value, label]) => (
-              <DropdownMenuItem key={value} onClick={() => setFilter(value)}>
-                <Check strokeWidth={1.5} className={cn('mr-2 h-4 w-4', filter === value ? 'opacity-100' : 'opacity-0')} />
-                <span>{label}</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          size="icon"
+          variant="ghost"
+          title="只看未读"
+          aria-label="只看未读"
+          aria-pressed={filter === 'unread'}
+          onClick={() => setFilter((current) => (current === 'unread' ? 'all' : 'unread'))}
+          className={cn('h-8 w-8 shrink-0 rounded-sm', filter !== 'all' ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground hover:bg-muted/80')}
+        >
+          <ListFilter strokeWidth={1.5} className="h-4 w-4" />
+        </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -211,6 +202,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
         </DropdownMenu>
       </div>
 
+      <MatrixInvitationList />
       {!isOnline ? (
         <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/60 px-4 py-2 text-xs text-muted-foreground">
           <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />

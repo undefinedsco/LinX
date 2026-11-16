@@ -6,7 +6,6 @@ import {
 import {
   createMatrixClient,
   matrixChatResourceIdFromRoomId,
-  matrixServerNameFromBaseUrl,
   matrixThreadResourceIdFromRoomId,
   matrixUserIdFromWebId,
   type MatrixClient,
@@ -19,9 +18,24 @@ import {
   type ThreadRow,
 } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import {
+  createMatrixInterfaceFetch,
+  MatrixInterfaceAuthorizationRequiredError,
+  MatrixInterfaceScopeError,
+  normalizeMatrixPodRoot,
+  type MatrixInterfaceAccess,
+  type MatrixInterfaceCredential,
+} from '@/lib/matrix/pod-interface-access'
+import {
+  grantMatrixRoomAccess,
+  matrixRoomContainerUri,
+  validateMatrixInvitees,
+  type MatrixRoomGrantResult,
+} from './matrix-room-access'
 
 export interface MatrixAuthOptions {
-  authFetch: typeof fetch
+  /** Browser-owned Pod interface credential, scoped to the Pod origin. */
+  access: MatrixInterfaceAccess
 }
 
 export interface CreateMatrixGroupRoomInput extends MatrixAuthOptions {
@@ -30,6 +44,12 @@ export interface CreateMatrixGroupRoomInput extends MatrixAuthOptions {
   topic?: string
   participants: string[]
   ownerRef?: string
+  /** Test seam; production resolves the owner's DPoP fetch from the DB dialect. */
+  grantRoomAccess?: (input: {
+    roomContainerUri: string
+    participants: string[]
+    ownerWebId: string
+  }) => Promise<MatrixRoomGrantResult>
 }
 
 export interface MatrixGroupRoomResult {
@@ -38,6 +58,8 @@ export interface MatrixGroupRoomResult {
   chatUri: string
   threadId: string
   threadUri: string
+  /** Canonical room container the owner granted to invitees (path from ORM URI). */
+  roomContainerUri: string
 }
 
 export interface MatrixThreadLike {
@@ -64,7 +86,10 @@ export interface SendMatrixThreadMessageResult {
 
 export function createPodMatrixClient(input: {
   db: SolidDatabase
-  authFetch: typeof fetch
+  credential: MatrixInterfaceCredential
+  /** Verified shared-room storage root; must stay on the pinned service origin. */
+  targetPodUrl?: string
+  fetchImpl?: typeof fetch
   randomId?: () => string
 }): MatrixClient {
   const baseUrl = resolveMatrixApiBaseUrl(input.db)
@@ -73,9 +98,61 @@ export function createPodMatrixClient(input: {
   }
   return createMatrixClient({
     baseUrl,
-    fetch: input.authFetch,
+    // Only this origin ever receives the credential; the browser session's
+    // DPoP transport and cookies are not forwarded to Matrix routes.
+    fetch: createMatrixInterfaceFetch({
+      baseUrl,
+      credential: input.credential,
+      // The trusted current-Pod root, not a host alias and not caller input.
+      targetPodUrl: input.targetPodUrl ?? input.credential.podUrl,
+      ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
+    }),
     ...(input.randomId ? { randomId: input.randomId } : {}),
   })
+}
+
+/**
+ * Canonical Matrix server name from the authenticated account's own MXID
+ * (`@user:server`). The API host is not assumed to be the service identity.
+ *
+ * The server part is the whole authority after the localpart delimiter, not
+ * the text after the last colon: an authority legitimately carries a
+ * non-default port (`localhost:5739`, `pod.local:8443`) or a bracketed IPv6
+ * literal (`[::1]`, `[2001:db8::1]:8448`). Splitting on the last colon would
+ * reduce those to a bare port and invite a Matrix user on a different server.
+ */
+export function matrixServerNameFromUserId(userId: string): string {
+  if (typeof userId !== 'string' || !userId) {
+    throw new Error('群聊服务返回了无效的账号标识，无法确认所在服务器。')
+  }
+  const separator = userId.indexOf(':')
+  if (!userId.startsWith('@') || separator <= 1 || separator === userId.length - 1) {
+    throw new Error('群聊服务返回了无效的账号标识，无法确认所在服务器。')
+  }
+  return userId.slice(separator + 1)
+}
+
+function requireMatrixCredential(
+  input: MatrixAuthOptions,
+  db: SolidDatabase,
+  webId: string,
+): MatrixInterfaceCredential {
+  const baseUrl = resolveMatrixApiBaseUrl(db)
+  if (!baseUrl) {
+    throw new Error('无法解析当前空间地址，不能连接 Matrix 群聊服务。')
+  }
+  const credential = input.access.get()
+  if (!credential) {
+    throw new MatrixInterfaceAuthorizationRequiredError(new URL(baseUrl).origin)
+  }
+  if ((webId && credential.webId !== webId) || credential.origin !== new URL(baseUrl).origin) {
+    throw new MatrixInterfaceScopeError('当前账号或空间已变化，请重新授权 Matrix 群聊。')
+  }
+  const currentPod = normalizeMatrixPodRoot(resolveCurrentPodBaseUrl(db))
+  if (!currentPod || credential.podUrl !== currentPod) {
+    throw new MatrixInterfaceScopeError('当前选择的空间已变化，请重新授权 Matrix 群聊。')
+  }
+  return credential
 }
 
 export async function createMatrixGroupRoom(input: CreateMatrixGroupRoomInput): Promise<MatrixGroupRoomResult> {
@@ -83,17 +160,25 @@ export async function createMatrixGroupRoom(input: CreateMatrixGroupRoomInput): 
   if (!baseUrl) {
     throw new Error('无法解析当前空间地址，不能创建 Matrix 群聊。')
   }
-  const serverName = matrixServerNameFromBaseUrl(baseUrl)
-  const invite = normalizeMatrixInvitees(input.participants, input.ownerRef, serverName)
-  const client = createMatrixClient({
-    baseUrl,
-    fetch: input.authFetch,
-  })
+  // Validate every invitee before creating a room or granting anything: one
+  // invalid full WebID must not produce a partial invite.
+  const validatedWebIds = validateMatrixInvitees(input.participants, input.ownerRef)
+  const credential = requireMatrixCredential(input, input.db, input.ownerRef ?? '')
+  const client = createPodMatrixClient({ db: input.db, credential })
+  // The canonical server name is the service's own identity, not the API host.
+  const whoami = await client.whoami()
+  const serverName = matrixServerNameFromUserId(whoami.user_id)
+  // Canonical MXID: @u_<sha256(full WebID)>:<service authority from whoami>.
+  const invite = await Promise.all(
+    validatedWebIds.map((webId) => matrixUserIdFromWebId(webId, serverName)),
+  )
+  // Private room WITHOUT invites: access is granted on the canonical room
+  // container first, then the Matrix invite is sent. The server never grants
+  // Solid ACL from a Matrix invitation.
   const room = await client.createRoom({
     visibility: 'private',
     name: input.name,
     ...(input.topic ? { topic: input.topic } : {}),
-    invite,
     preset: 'private_chat',
     is_direct: false,
     creation_content: {
@@ -107,13 +192,44 @@ export async function createMatrixGroupRoom(input: CreateMatrixGroupRoomInput): 
   if (!chatUri || !threadUri) {
     throw new Error('Matrix 群聊已创建，但无法解析对应的 Pod Chat/Thread 地址。')
   }
+  const roomContainerUri = matrixRoomContainerUri(chatUri)
+  const ownerWebId = input.ownerRef
+  if (ownerWebId && invite.length > 0) {
+    const grant = input.grantRoomAccess
+      ?? ((grantInput) => grantMatrixRoomAccess({
+        db: input.db,
+        authFetch: resolveOwnerAuthFetch(input.db),
+        ownerWebId: grantInput.ownerWebId,
+        participants: grantInput.participants,
+        chatUri,
+      }))
+    await grant({
+      roomContainerUri,
+      participants: validatedWebIds,
+      ownerWebId,
+    })
+    // Pair each canonical MXID with its original full WebID so the server can
+    // register the cross-Pod room reference (MXID alone never registers one).
+    for (const [index, invitee] of invite.entries()) {
+      await client.inviteUser(room.room_id, invitee, { targetWebID: validatedWebIds[index] })
+    }
+  }
   return {
     roomId: room.room_id,
     chatId,
     chatUri,
     threadId,
     threadUri,
+    roomContainerUri,
   }
+}
+
+function resolveOwnerAuthFetch(db: SolidDatabase): typeof fetch {
+  const authFetch = (db as any)?.getDialect?.()?.getAuthenticatedFetch?.()
+  if (typeof authFetch !== 'function') {
+    throw new Error('当前登录无法写入群聊空间的访问规则。')
+  }
+  return authFetch.bind((db as any).getDialect())
 }
 
 export async function loadMatrixChatRow(db: SolidDatabase, chatId: string): Promise<ChatRow | null> {
@@ -199,9 +315,10 @@ export async function sendMatrixThreadMessage(
     randomId: input.txnId ?? roomId,
   })
   const metadata = appendChatReconcilerMetadata({ protocol: 'matrix' }, summary)
+  const credential = requireMatrixCredential(input, input.db, input.webId)
   const client = createPodMatrixClient({
     db: input.db,
-    authFetch: input.authFetch,
+    credential,
   })
   const response = await client.sendMessage(roomId, input.body, {
     ...(input.txnId ? { txnId: input.txnId } : {}),
@@ -220,16 +337,6 @@ export async function sendMatrixThreadMessage(
   }
 }
 
-function normalizeMatrixInvitees(participants: string[], ownerRef: string | undefined, serverName: string): string[] {
-  return Array.from(new Set(
-    participants
-      .filter((participant) => participant && participant !== ownerRef)
-      .map((participant) => participant.startsWith('@')
-        ? participant
-        : matrixUserIdFromWebId(participant, serverName)),
-  ))
-}
-
 function resolveMatrixApiBaseUrl(db: SolidDatabase): string | null {
   const podBaseUrl = resolveCurrentPodBaseUrl(db)
   if (!podBaseUrl) {
@@ -241,3 +348,9 @@ function resolveMatrixApiBaseUrl(db: SolidDatabase): string | null {
     return podBaseUrl.replace(/\/+$/, '')
   }
 }
+
+export {
+  MatrixUserFacingError,
+  formatMatrixErrorForUser,
+  isMatrixUserFacingError,
+} from '@/lib/matrix/error-format'

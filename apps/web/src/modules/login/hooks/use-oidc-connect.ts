@@ -1,13 +1,16 @@
 import { useCallback, useRef } from 'react'
 import { useSession } from '@/providers/solid-session-context'
 import {
+  adoptPreservedSolidClientRegistration,
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
-  clearSolidAuthClientState,
-  clearStoredSolidSession,
+  clearSolidClientRegistration,
+  clearSolidSessionPreservingClient,
   getPendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
+  getStoredSolidClientLoginOptions,
   isInvalidClientError,
+  rememberSolidClientRegistration,
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
 } from '../login-utils'
@@ -241,12 +244,20 @@ export function useOidcConnect() {
         }
         : undefined
 
+      // Reuse this issuer's client after the SDK clears interactive-login storage.
+      // The storage adapter retains its registration metadata for the callback.
+      const sessionId = solidSession.session?.info?.sessionId ?? ''
+      const requestedIssuer = transaction?.oidcIssuerUrl ?? oidcIssuerUrl
+      const existingClient = getStoredSolidClientLoginOptions(requestedIssuer)
+        ?? adoptPreservedSolidClientRegistration(sessionId, requestedIssuer)
+      rememberSolidClientRegistration()
       const loginOptions = {
-        oidcIssuer: transaction?.oidcIssuerUrl ?? oidcIssuerUrl,
+        oidcIssuer: requestedIssuer,
         redirectUrl,
         clientName: 'LinX',
         tokenType: 'DPoP',
         handleRedirect,
+        ...(existingClient ?? {}),
       } satisfies Parameters<typeof login>[0]
       if (options?.prompt) {
         ;(loginOptions as Parameters<typeof login>[0] & { prompt: 'none' | 'consent' | 'login' }).prompt = options.prompt
@@ -272,17 +283,22 @@ export function useOidcConnect() {
           return
         } catch (error) {
           if (attempt === 1 && isInvalidClientError(error)) {
-            // The stored client was deleted server-side. Purge it and retry
-            // once with a fresh dynamic registration.
-            clearSolidAuthClientState()
+            // The provider said THIS client is unknown. Drop only this
+            // session's registration and retry once: the next login()
+            // performs one fresh DCR and then reuses it. Scoped on purpose —
+            // a global purge would force every other provider to re-register
+            // and re-consent.
+            clearSolidClientRegistration()
             continue
           }
           clearPendingLoginAttempt()
           clearPendingPostLoginMicroAppId()
           if (isInvalidClientError(error)) {
-            // The provider rejected a stale/invalid client. Drop the cached Solid
-            // session so the next login attempt registers a fresh client.
-            clearStoredSolidSession()
+            // Retrying with the same rejected client cannot succeed, so drop
+            // the registration AND the unrestorable session — but only for
+            // this session record, never another provider's.
+            clearSolidClientRegistration()
+            clearSolidSessionPreservingClient()
           }
           throw error
         }

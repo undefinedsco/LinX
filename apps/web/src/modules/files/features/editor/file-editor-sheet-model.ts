@@ -126,10 +126,10 @@ export function projectFileEditorSourceLinkedDraft(descriptor: FileEditorSourceL
       `# ${descriptor.title}`,
       '',
       `Source: ${descriptor.sourceUri}`,
-      `Ingest: ${displayIngestVersion}`,
-      `Ingest 记录: ${descriptor.sourceIngestManifestUri}`,
+      `读取版本: ${displayIngestVersion}`,
+      `读取记录: ${descriptor.sourceIngestManifestUri}`,
       '',
-      '确认 Ingest 审批后才会写入正文资源。',
+      '确认后才会写入正文。',
     ].join('\n'),
   }
 }
@@ -154,13 +154,13 @@ export function projectFileEditorSourceLinkedPanel({
       },
       {
         id: 'ingestVersion',
-        label: 'Ingest',
+        label: '读取版本',
         value: displayIngestVersion,
         breakAll: false,
       },
       {
         id: 'manifestUri',
-        label: 'Ingest 记录',
+        label: '读取记录',
         value: descriptor.sourceIngestManifestUri,
         breakAll: true,
       },
@@ -308,7 +308,7 @@ export function projectFileEditorRichTextSourceInput(sourceText: string | null |
     warning: hasSourceConflict
       ? {
           title: '来源内容有冲突',
-          description: '请先确认 Ingest 更新，再替换本地编辑。',
+          description: '请先确认来源更新，再替换本地编辑。',
         }
       : null,
   }

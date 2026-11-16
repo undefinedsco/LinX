@@ -1,4 +1,4 @@
-import { Copy, FilePlus, FolderPlus, Grid3X3, List, Trash2, Upload } from 'lucide-react'
+import { Copy, FilePlus, Grid3X3, List, Trash2, Upload } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -86,54 +86,14 @@ export function FolderDetailPreview({
         }))}
         activeViewId={viewModeOptions.find((option) => option.active)?.mode ?? 'list'}
         onSelectView={setViewMode}
-        rightActions={(
-          <>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            aria-label={toolbarChrome.createFolderLabel}
-            title={toolbarChrome.createFolderLabel}
-            disabled={folderOperation.createFolderPending}
-            onClick={() => folderOperation.openOperation({ type: 'create-folder' })}
-          >
-            <FolderPlus className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            aria-label={toolbarChrome.createMarkdownLabel}
-            title={toolbarChrome.createMarkdownLabel}
-            disabled={folderOperation.createMarkdownPending}
-            onClick={() => folderOperation.openOperation({ type: 'create-markdown' })}
-          >
-            <FilePlus className="h-3.5 w-3.5" />
-          </Button>
-          <input
-            ref={folderUpload.uploadInputRef}
-            type="file"
-            className="sr-only"
-            aria-label={toolbarChrome.uploadInputLabel}
-            multiple
-            onChange={(event) => void folderUpload.uploadPickedFiles(event)}
-          />
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            aria-label={toolbarChrome.uploadLabel}
-            title={toolbarChrome.uploadLabel}
-            disabled={folderUpload.uploadPending}
-            onClick={folderUpload.openUploadPicker}
-          >
-            <Upload className="h-3.5 w-3.5" />
-          </Button>
-          </>
-        )}
+      />
+      <input
+        ref={folderUpload.uploadInputRef}
+        type="file"
+        className="sr-only"
+        aria-label={toolbarChrome.uploadInputLabel}
+        multiple
+        onChange={(event) => void folderUpload.uploadPickedFiles(event)}
       />
       {folderUpload.uploadProgress ? (
         <div role="status" aria-label="文件上传进度" className="flex items-center gap-2 text-xs text-muted-foreground">

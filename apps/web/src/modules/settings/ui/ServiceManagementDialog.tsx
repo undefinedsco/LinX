@@ -1,6 +1,7 @@
 import { CircleDot, Download, ExternalLink, Loader2, Play, RotateCw, Server, Square } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,6 +24,7 @@ export interface ServiceManagementDialogUIProps {
   serviceSetupReady: boolean
   hasPublicIp: boolean | null
   advancedOpen: boolean
+  stopConfirmOpen: boolean
   running: boolean
   podBaseUrl: string
   runtime: ServiceRuntimeStatus | undefined
@@ -32,6 +34,7 @@ export interface ServiceManagementDialogUIProps {
   tunnelSuggested: boolean
   updateDraft: (patch: Partial<SetupDraft>) => void
   setAdvancedOpen: (open: boolean) => void
+  setStopConfirmOpen: (open: boolean) => void
   saveAndStart: () => Promise<void>
   runRuntimeAction: (action: 'stop' | 'restart') => Promise<void>
   upgradeRuntime: () => Promise<void>
@@ -49,6 +52,7 @@ export function ServiceManagementDialog({
   serviceSetupReady,
   hasPublicIp,
   advancedOpen,
+  stopConfirmOpen,
   running,
   podBaseUrl,
   runtime,
@@ -58,6 +62,7 @@ export function ServiceManagementDialog({
   tunnelSuggested,
   updateDraft,
   setAdvancedOpen,
+  setStopConfirmOpen,
   saveAndStart,
   runRuntimeAction,
   upgradeRuntime,
@@ -126,7 +131,7 @@ export function ServiceManagementDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="service-data-dir">1) 数据地址</Label>
+                  <Label htmlFor="service-data-dir">数据地址</Label>
                   <Input
                     id="service-data-dir"
                     value={draft.dataDir}
@@ -136,7 +141,7 @@ export function ServiceManagementDialog({
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="service-auto-start">2) 开机自动启动</Label>
+                  <Label htmlFor="service-auto-start">开机自动启动</Label>
                   <Switch
                     id="service-auto-start"
                     checked={draft.autoStart}
@@ -147,7 +152,7 @@ export function ServiceManagementDialog({
                 <AdvancedDisclosure open={advancedOpen} onOpenChange={setAdvancedOpen}>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="service-public-domain">3) 公网域名（可选）</Label>
+                      <Label htmlFor="service-public-domain">公网域名（可选）</Label>
                       <Input
                         id="service-public-domain"
                         value={draft.publicDomain}
@@ -164,7 +169,7 @@ export function ServiceManagementDialog({
                     {draft.spaceKind === 'local' ? (
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <Label htmlFor="auto-check">4) 自动检查公网 IP</Label>
+                          <Label htmlFor="auto-check">自动检查公网 IP</Label>
                           <Switch
                             id="auto-check"
                             checked={draft.autoDetectPublicIp}
@@ -182,7 +187,7 @@ export function ServiceManagementDialog({
                     {draft.spaceKind === 'local' ? (
                       <div className="space-y-2">
                         <Label>
-                          5) 隧道供应商{tunnelSuggested ? '（建议，外网访问时需要）' : '（可选）'}
+                          隧道供应商{tunnelSuggested ? '（建议，外网访问时需要）' : '（可选）'}
                         </Label>
                         <Select
                           value={draft.tunnelProvider || 'none'}
@@ -218,7 +223,7 @@ export function ServiceManagementDialog({
 
                     <div className="space-y-2">
                       <Label htmlFor="service-cert-path">
-                        {draft.spaceKind === 'local' ? '6) HTTPS 证书' : '4) HTTPS 证书（可选）'}
+                        {draft.spaceKind === 'local' ? 'HTTPS 证书' : 'HTTPS 证书（可选）'}
                       </Label>
                       <Input
                         id="service-cert-path"
@@ -292,7 +297,7 @@ export function ServiceManagementDialog({
                   {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCw className="mr-2 h-4 w-4" />}
                   重启
                 </Button>
-                <Button variant="destructive" onClick={() => void runRuntimeAction('stop')} disabled={submitting}>
+                <Button variant="destructive" onClick={() => setStopConfirmOpen(true)} disabled={submitting}>
                   {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
                   停止
                 </Button>
@@ -301,6 +306,19 @@ export function ServiceManagementDialog({
           )}
         </div>
       </DialogContent>
+      <ConfirmDialog
+        open={stopConfirmOpen}
+        onOpenChange={setStopConfirmOpen}
+        title="停止本机服务？"
+        description="停止后，LinX 将无法读写这个本机空间，直到你重新启动服务。"
+        confirmLabel="停止"
+        destructive
+        busy={submitting}
+        onConfirm={() => {
+          setStopConfirmOpen(false)
+          void runRuntimeAction('stop')
+        }}
+      />
     </Dialog>
   )
 }

@@ -31,6 +31,9 @@ vi.mock('../features/search/GlobalSearchResults', () => ({
   GlobalSearchResults: ({ query }: { query: string }) => <div data-testid="global-search-results">{query}</div>,
 }))
 vi.mock('./AddChatDialog', () => ({ AddChatDialog: () => null }))
+// The invitation banner owns its own session/credential tests; the list tests
+// cover list rendering only, so keep that unrelated child out of this boundary.
+vi.mock('./MatrixInvitationList', () => ({ MatrixInvitationList: () => null }))
 vi.mock('@/modules/contacts', () => ({
   ContactPickerDialog: ({ open }: { open: boolean }) => (open ? <div role="dialog" aria-label="找人聊天" /> : null),
 }))
@@ -108,10 +111,15 @@ describe('ChatListPane', () => {
       entry({ id: 'b', title: '已读' }),
     ]
     render(<ChatListPane theme="light" />)
-    fireEvent.pointerDown(screen.getByLabelText('筛选会话'), { button: 0, ctrlKey: false })
-    fireEvent.click(await screen.findByText('未读'))
+    const toggle = screen.getByRole('button', { name: '只看未读' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByText('已读')).not.toBeInTheDocument()
     expect(screen.getByText('有未读')).toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('已读')).toBeInTheDocument()
   })
 
   it('offers only 找人聊天 and 发起群聊 (no 新的 AI 工作) from the + menu', async () => {

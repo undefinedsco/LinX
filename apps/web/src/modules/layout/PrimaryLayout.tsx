@@ -99,7 +99,6 @@ function MicroAppContentRenderer({
   isNarrowList,
   isWideViewport,
   compactHeadActions,
-  listPanelHidden = false,
 }: {
   microAppId: MicroAppId
   theme: ThemeMode
@@ -107,7 +106,6 @@ function MicroAppContentRenderer({
   isNarrowList: boolean
   isWideViewport: boolean
   compactHeadActions?: ReactNode
-  listPanelHidden?: boolean
 }) {
   const activeMicroApp = microAppRegistry[microAppId]
   const ListPane = activeMicroApp.ListPane
@@ -125,7 +123,7 @@ function MicroAppContentRenderer({
     [],
   )
 
-  const showListPane = Boolean(ListPane) && !isCompactViewport && !listPanelHidden
+  const showListPane = Boolean(ListPane) && !isCompactViewport
   const rightSidebarWidth = layoutConfig?.rightSidebar ? layoutConfig.rightSidebarWidth ?? 320 : 0
   const configuredListMaxWidth = layoutConfig?.listPanel?.maxWidth ?? linxLayout.listPanel.maxWidth
   const listPanelMaxWidth = isNarrowList ? Math.min(configuredListMaxWidth, NARROW_LIST_PANEL_WIDTH) : configuredListMaxWidth
@@ -317,10 +315,6 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   const isNarrowList = useMediaQuery(narrowListViewportQuery)
   const isWideViewport = useMediaQuery(wideViewportQuery, true)
   const [isServiceMgmtOpen, setIsServiceMgmtOpen] = useState(false)
-  const [listPanelHidden, setListPanelHidden] = useState(false)
-  useEffect(() => {
-    setListPanelHidden(false)
-  }, [microAppId])
   const appUpdate = useAppUpdateStatus()
   const isWorkspaceReady = session.info.isLoggedIn && !sessionRequestInProgress
 
@@ -341,10 +335,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   }, [setIsSignOutOpen])
 
   const handleNavigate = (id: MicroAppId) => {
-    if (id === microAppId && !isCompactViewport && microAppRegistry[id].ListPane) {
-      setListPanelHidden((current) => !current)
-      return
-    }
+    if (id === microAppId && !isCompactViewport && microAppRegistry[id].ListPane) return
     onNavigate?.(id, 'default')
     navigate({ to: '/$microAppId', params: { microAppId: id } })
   }
@@ -478,7 +469,6 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                 className={railNavButtonClassName(microAppId === 'inbox')}
               />
             )}
-            listPanelHidden={listPanelHidden}
           />
         </div>
         {isCompactViewport ? (

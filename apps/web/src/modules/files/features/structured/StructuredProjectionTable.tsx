@@ -394,6 +394,7 @@ export function StructuredProjectionTable({
       removeEnumOption,
     }),
     [
+      headerCache,
       columnMenu,
       selectedSubjects,
       toggleSubject,

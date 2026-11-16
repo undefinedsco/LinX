@@ -194,7 +194,7 @@ describe('file editor raw source model', () => {
 
     expect(projectFileEditorRawSourceChrome({
       sourceState: { kind: 'ready', rawResource: resource },
-      proposalLabel: 'Ingest 审批',
+      proposalLabel: '来源更新确认',
       savePending: true,
     })).toEqual({
       loadingMessage: '正在读取完整原始内容...',
@@ -204,7 +204,7 @@ describe('file editor raw source model', () => {
         label: 'text/markdown · ETag "etag"',
         title: 'text/markdown · "etag"',
       },
-      proposalSubmitLabel: '提交 Ingest 审批',
+      proposalSubmitLabel: '提交 来源更新确认',
       canonicalSaveLabel: '保存中',
     })
   })

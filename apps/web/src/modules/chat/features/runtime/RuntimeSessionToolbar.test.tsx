@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const runtimeMode = { value: true }
@@ -44,5 +44,17 @@ describe('RuntimeSessionToolbar', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     act(() => useWorkbenchDialogs.getState().open('runtime-session'))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('keeps the base commit and branch behind the advanced section', () => {
+    render(<RuntimeSessionToolbar threadId="thread-1" threadTitle="默认话题" />)
+    act(() => useWorkbenchDialogs.getState().open('runtime-session'))
+    expect(screen.getByLabelText('仓库路径')).toBeVisible()
+    expect(screen.getByLabelText('工具')).toBeVisible()
+    expect(screen.getByLabelText('基于哪个提交')).not.toBeVisible()
+    expect(screen.getByLabelText('分支')).not.toBeVisible()
+    fireEvent.click(screen.getByText('高级'))
+    expect(screen.getByLabelText('基于哪个提交')).toBeVisible()
+    expect(screen.getByLabelText('分支')).toBeVisible()
   })
 })

@@ -8,7 +8,7 @@ import {
   FolderOpen,
   MoreHorizontal,
 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -40,7 +40,7 @@ const TABS: { value: FileDetailTab; label: string; icon: typeof Eye }[] = [
   { value: 'lineage', label: '来源', icon: GitBranch },
 ]
 
-function ResourceLayoutTitle({ slot, name, subtitle }: { slot: HTMLElement; name: string; subtitle?: string }) {
+function ResourceLayoutTitle({ slot, name, subtitle, actions }: { slot: HTMLElement; name: string; subtitle?: string; actions: ReactNode }) {
   useLayoutEffect(() => {
     const fallback = slot.querySelector<HTMLElement>('[data-default-micro-app-title="true"]')
     if (fallback) fallback.hidden = true
@@ -50,11 +50,14 @@ function ResourceLayoutTitle({ slot, name, subtitle }: { slot: HTMLElement; name
   }, [slot])
 
   return (
-    <div data-resource-title="true" className="min-w-0 max-w-[42vw]">
-      <h3 className="truncate text-sm font-medium" title={name}>{name}</h3>
-      {subtitle ? (
-        <p className="truncate text-[11px] leading-tight text-muted-foreground" title={subtitle}>{subtitle}</p>
-      ) : null}
+    <div className="flex min-w-0 items-center gap-2">
+      <div data-resource-title="true" className="min-w-0 max-w-[42vw]">
+        <h3 className="truncate text-sm font-medium" title={name}>{name}</h3>
+        {subtitle ? (
+          <p className="truncate text-[11px] leading-tight text-muted-foreground" title={subtitle}>{subtitle}</p>
+        ) : null}
+      </div>
+      <div data-resource-actions="true" className="flex shrink-0 items-center gap-1">{actions}</div>
     </div>
   )
 }
@@ -185,11 +188,11 @@ export function FileDetailPane() {
         <DropdownMenuContent align="end" className="min-w-44">
           <DropdownMenuItem onSelect={handleCopyUri}>
             <Copy className="mr-2 h-3.5 w-3.5" />
-            复制 URI
+            复制链接
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={handleOpenUri}>
             <ExternalLink className="mr-2 h-3.5 w-3.5" />
-            打开原始 URI
+            在浏览器打开
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={handleEnterParentContainer}>
             <FolderOpen className="mr-2 h-3.5 w-3.5" />
@@ -228,7 +231,7 @@ export function FileDetailPane() {
         />
       ) : null}
       {titleSlot ? createPortal(
-        <ResourceLayoutTitle slot={titleSlot} name={detailChrome?.title ?? file.name} subtitle={detailChrome?.subtitle} />,
+        <ResourceLayoutTitle slot={titleSlot} name={detailChrome?.title ?? file.name} subtitle={detailChrome?.subtitle} actions={detailActions} />,
         titleSlot,
       ) : null}
       {!titleSlot ? (

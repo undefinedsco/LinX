@@ -450,7 +450,7 @@ test.describe('Files real Pod smoke', () => {
     if (await rootExpandButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
       await rootExpandButton.click()
     }
-    await openFilesTreeAction(page, smoke.fileName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.fileName, '信息')
 
     const metaTail = page.getByLabel('资源附属信息')
     await expect(metaTail).toBeVisible({ timeout: 30_000 })
@@ -922,7 +922,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(workspacesRow).toBeVisible({ timeout: 30_000 })
     const workspacesToggle = workspacesRow.getByRole('button', { name: '展开 workspaces', exact: true })
     if (await workspacesToggle.count()) await workspacesToggle.click()
-    await openFilesTreeAction(page, smoke.workspaceName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.workspaceName, '信息')
     const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.workspaceMetaUri)
@@ -1734,7 +1734,7 @@ test.describe('Files real Pod smoke', () => {
 
     const rootToggle = page.getByRole('button', { name: /^展开 .*Pod|^展开 根目录/ }).first()
     if (await rootToggle.count()) await rootToggle.click()
-    await openFilesTreeAction(page, smoke.fileName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.fileName, '信息')
     const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
@@ -2048,7 +2048,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(subjectSidecar).toContainText('卡片预览')
     await expect(subjectSidecar).toContainText(smoke.markdownName)
     await expect(subjectSidecar).not.toContainText(smoke.markdownUri)
-    await subjectSidecar.getByRole('button', { name: '查看 URI 详情' }).click()
+    await subjectSidecar.getByRole('button', { name: '查看地址详情' }).click()
     await expect(subjectSidecar).toContainText(smoke.markdownUri)
     await expect(page.getByRole('dialog', { name: smoke.noteTitle })).toHaveCount(0)
     await expect(contentHead.getByRole('heading', { name: smoke.tableName, exact: true })).toBeVisible()
@@ -2153,7 +2153,7 @@ test.describe('Files real Pod smoke', () => {
 
     const rootToggle = page.getByRole('button', { name: /^展开 .*Pod|^展开 根目录/ }).first()
     if (await rootToggle.count()) await rootToggle.click()
-    await openFilesTreeAction(page, smoke.fileName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.fileName, '信息')
     const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
@@ -2178,7 +2178,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.getByRole('button', { name: 'Whiteboard', exact: true })).toBeVisible()
 
     const addWhiteboardSubject = async (subject: string) => {
-      await page.getByRole('button', { name: '添加 subject 到白板' }).click()
+      await page.getByRole('button', { name: '添加卡片到白板' }).click()
       const subjectItem = page
         .getByRole('dialog', { name: '快速添加 Subject' })
         .getByRole('button')
@@ -2307,7 +2307,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.locator(`[data-whiteboard-subject="${smoke.workspaceSubject}"]`)).toHaveAttribute('data-layout-x', String(Math.round(movedWorkspacePosition.x)))
     await expect(page.locator(`[data-whiteboard-subject="${smoke.workspaceSubject}"]`)).toHaveAttribute('data-layout-y', String(Math.round(movedWorkspacePosition.y)))
     await expect(page.locator('[data-whiteboard-relation-source="visual"]')).toHaveCount(1)
-    await expect(page.getByRole('button', { name: '添加 subject 到白板' })).toHaveAttribute('title', /白板中 2 张卡片/)
+    await expect(page.getByRole('button', { name: '添加卡片到白板' })).toHaveAttribute('title', /白板中 2 张卡片/)
     expect(sourceWriteResponses).toEqual([])
 
     const debugState = await readSeededAuthDebugState(page)
@@ -2454,7 +2454,7 @@ test.describe('Files real Pod smoke', () => {
 
     const workspace = page.getByLabel('文件工作区')
     await expect(workspace.getByRole('heading', { name: title })).toBeVisible({ timeout: 30_000 })
-    await expect(workspace.getByText('确认 Ingest 审批后才会写入正文资源。')).toBeVisible()
+    await expect(workspace.getByText('确认后才会写入正文。')).toBeVisible()
 
     const persisted = await page.evaluate(async ({ cardUri, proposalContainerUri, sourceUri }) => {
       const db = (window as any).__SOLID_DB__
@@ -2899,7 +2899,7 @@ test.describe('Files real Pod smoke', () => {
     const workspace = page.getByLabel('文件工作区')
     await expect(workspace.getByRole('heading', { name: smoke.title })).toBeVisible({ timeout: 30_000 })
     await expect(workspace.getByText('Local edited body must stay canonical.')).toBeVisible()
-    await workspace.getByRole('button', { name: 'Ingest 与审批' }).click()
+    await workspace.getByRole('button', { name: '来源读取与确认' }).click()
     await expect(workspace.getByText('Fresh Ingest body must not replace local edits.')).toBeVisible({ timeout: 30_000 })
     await workspace.getByRole('button', { name: '保留本地编辑' }).click()
 
@@ -3108,10 +3108,10 @@ test.describe('Files real Pod smoke', () => {
     const workspace = page.getByLabel('文件工作区')
     await expect(workspace.getByRole('heading', { name: smoke.title })).toBeVisible({ timeout: 30_000 })
     await expect(workspace.getByText('Original approved body stays unchanged while ranges are queued.')).toBeVisible()
-    await workspace.getByRole('button', { name: 'Ingest 与审批' }).click()
-    await expect(workspace.getByText(`待 Ingest${smoke.firstRange}, ${smoke.secondRange}`)).toBeVisible({ timeout: 30_000 })
+    await workspace.getByRole('button', { name: '来源读取与确认' }).click()
+    await expect(workspace.getByText(`未读取的部分${smoke.firstRange}, ${smoke.secondRange}`)).toBeVisible({ timeout: 30_000 })
 
-    await workspace.getByRole('button', { name: 'Ingest 下一段' }).click()
+    await workspace.getByRole('button', { name: '读取下一段' }).click()
     await expect.poll(() =>
       page.evaluate(async ({ manifestUri }) => {
         const db = (window as any).__SOLID_DB__
@@ -3145,7 +3145,7 @@ test.describe('Files real Pod smoke', () => {
     expect(afterNext.manifestText).not.toContain('parserStatus')
     expect(afterNext.manifestText).not.toContain('SourceIndexManifest')
 
-    await workspace.getByRole('button', { name: 'Ingest 全部' }).click()
+    await workspace.getByRole('button', { name: '读取全部' }).click()
     await expect.poll(() =>
       page.evaluate(async ({ manifestUri }) => {
         const db = (window as any).__SOLID_DB__
@@ -3311,7 +3311,7 @@ test.describe('Files real Pod smoke', () => {
     if (await podRootToggle.getAttribute('aria-expanded') === 'false') await podRootToggle.click()
     const folderTreeRow = filesTree.getByRole('treeitem', { name: new RegExp(`^(?:(?:展开|收起) )?${escapeRegExp(smoke.folderName)}(?:\\s|$)`) })
     await expect(folderTreeRow).toBeVisible({ timeout: 30_000 })
-    await openFilesTreeAction(page, smoke.folderName, '查看 .meta')
+    await openFilesTreeAction(page, smoke.folderName, '信息')
     const drawer = page.getByLabel('资源附属信息')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText(smoke.metaUri)
@@ -3354,7 +3354,8 @@ test.describe('Files real Pod smoke', () => {
 
     const childFolderName = `child-${Date.now()}`
     const childFolderUri = new URL(`${childFolderName}/`, smoke.folderUri).href
-    await page.getByRole('button', { name: '新建文件夹' }).click()
+    await page.getByRole('button', { name: '添加' }).first().click()
+    await page.getByRole('menuitem', { name: '新建文件夹' }).click()
     const createFolderDialog = page.getByRole('dialog', { name: '新建文件夹' })
     await expect(createFolderDialog).toBeVisible()
     const createFolderNameInput = createFolderDialog.getByRole('textbox', { name: '名称' })
@@ -3377,7 +3378,7 @@ test.describe('Files real Pod smoke', () => {
 
     const uploadedTextUri = new URL('uploaded-note.md', childFolderUri).href
     const uploadedBinaryUri = new URL('uploaded-image.png', childFolderUri).href
-    await page.getByLabel('文件工作区').getByLabel('选择上传文件').setInputFiles([
+    await page.getByLabel('文件工作区').getByLabel('选择要上传到此文件夹的文件').setInputFiles([
       {
         name: 'uploaded-note.md',
         mimeType: 'text/markdown',
@@ -3789,6 +3790,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(proposalTarget).toBeVisible({ timeout: 30_000 })
     await proposalTarget.click()
     await expect(page.getByRole('heading', { name: 'files.access.proposal' })).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: '添加备注' }).click()
     await page.getByLabel('处理备注').fill(`Approve real Pod ${policyProvider?.toUpperCase()} smoke`)
     await expect(page.getByRole('button', { name: '批准' })).toBeVisible({ timeout: 30_000 })
     await page.getByRole('button', { name: '批准' }).click()
@@ -4393,7 +4395,7 @@ test.describe('Files real Pod smoke', () => {
     await expect(page.getByText('词表定义表')).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('定义表只读；修改通过待确认提案进入审批。')).toBeVisible()
     await expect(page.getByText('只读', { exact: true })).toBeVisible()
-    await expect(page.getByRole('columnheader', { name: '术语 URI' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '术语地址' })).toBeVisible()
     await expect(page.getByRole('columnheader', { name: '类型', exact: true })).toBeVisible()
     await expect(page.getByRole('columnheader', { name: '值类型' })).toBeVisible()
     await expect(page.getByRole('cell', { name: smoke.termUri })).toBeVisible()

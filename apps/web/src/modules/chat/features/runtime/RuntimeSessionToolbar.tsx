@@ -240,13 +240,16 @@ export function RuntimeSessionToolbar({ threadId, threadTitle, workspaceUri }: R
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>创建运行时会话</DialogTitle><DialogDescription>为当前聊天绑定一个本地运行时与文件夹。</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="runtime-repo-path">仓库路径</Label><Input id="runtime-repo-path" value={repoPath} onChange={(event) => setRepoPath(event.target.value)} placeholder="例如：/Users/ganlu/develop/linx" /></div>
+            <div className="space-y-2"><Label htmlFor="runtime-repo-path">仓库路径</Label><Input id="runtime-repo-path" value={repoPath} onChange={(event) => setRepoPath(event.target.value)} placeholder="例如：~/projects/my-app" /></div>
             <div className="space-y-2"><Label htmlFor="runtime-folder-path">文件夹路径</Label><Input id="runtime-folder-path" value={folderPath} onChange={(event) => setFolderPath(event.target.value)} placeholder="留空则默认使用仓库路径" /></div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2"><Label htmlFor="runtime-tool">工具</Label><Input id="runtime-tool" value={tool} onChange={(event) => setTool(event.target.value as RuntimeToolType)} placeholder="codex" /></div>
-              <div className="space-y-2"><Label htmlFor="runtime-base-ref">Base Ref</Label><Input id="runtime-base-ref" value={baseRef} onChange={(event) => setBaseRef(event.target.value)} placeholder="HEAD" /></div>
-              <div className="space-y-2"><Label htmlFor="runtime-branch">Branch</Label><Input id="runtime-branch" value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="留空则自动生成" /></div>
-            </div>
+            <div className="space-y-2"><Label htmlFor="runtime-tool">工具</Label><Input id="runtime-tool" value={tool} onChange={(event) => setTool(event.target.value as RuntimeToolType)} placeholder="codex" /></div>
+            <details className="group">
+              <summary className="cursor-pointer text-xs text-muted-foreground">高级</summary>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2"><Label htmlFor="runtime-base-ref">基于哪个提交</Label><Input id="runtime-base-ref" value={baseRef} onChange={(event) => setBaseRef(event.target.value)} placeholder="HEAD" /></div>
+                <div className="space-y-2"><Label htmlFor="runtime-branch">分支</Label><Input id="runtime-branch" value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="留空则自动生成" /></div>
+              </div>
+            </details>
           </div>
           {!current && runtimeError ? <p role="alert" className="text-xs text-destructive">{runtimeError}</p> : null}
           <DialogFooter><Button variant="outline" onClick={closeDialog}>取消</Button><Button onClick={createSession} disabled={isBusy}>{isBusy ? '处理中...' : '创建并启动'}</Button></DialogFooter>

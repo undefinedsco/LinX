@@ -30,7 +30,7 @@ function projectStructuredSubjectPeekBodyChrome() {
       typePrefix: '类型',
     },
     technicalDetails: {
-      ariaLabel: '查看 URI 详情',
+      ariaLabel: '查看地址详情',
       label: '更多信息',
       subjectUriLabel: 'Subject URI',
     },
