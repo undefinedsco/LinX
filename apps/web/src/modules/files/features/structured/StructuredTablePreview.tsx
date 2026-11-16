@@ -522,7 +522,7 @@ export function StructuredResourcePreview({ file }: { file: FilesDetail }) {
                   className="h-7 text-xs"
                   onClick={() => setClassScopeMenuOpen(true)}
                 >
-                  创建类型
+                  新建类型
                 </Button>
               )}
             />

@@ -47,7 +47,7 @@ describe('StructuredPredicateCellTrailing', () => {
     expect(screen.getByLabelText('#Workspace 的 tags 格式提醒')).toBeInTheDocument()
 
     rerender(<StructuredPredicateCellPendingWriteControl pendingWrite={submittingWrite} />)
-    expect(screen.getByRole('status', { name: '正在提交 tags on #Workspace 的单元格变更' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: '正在提交「#Workspace」的「tags」修改' })).toBeInTheDocument()
   })
 
   it('preserves active editor pending affordance when only a fallback label is available', () => {

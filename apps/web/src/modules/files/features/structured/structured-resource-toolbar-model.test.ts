@@ -109,19 +109,19 @@ describe('projectStructuredResourceToolbarModel', () => {
         headingLabel: '当前类型',
       },
       classCreateControl: {
-        ariaLabel: '创建类型',
+        ariaLabel: '新建类型',
         expanded: true,
         inputAriaLabel: '新类型的地址',
         placeholder: 'udfs:Note',
         stateLabel: '收起',
         submitLabel: '创建',
-        toggleLabel: '创建类型',
+        toggleLabel: '新建类型',
         uriLabel: '类型的地址',
       },
       classDefinitionPanel: {
         headingLabel: 'Task',
         rows: [
-          { key: 'scope', text: '此视图只展示该类型的属性。' },
+          { key: 'scope', text: '只显示这个类型的属性。' },
           { key: 'description', text: '描述：Cards grouped as tasks' },
           { key: 'status', text: '状态：defined' },
         ],
@@ -160,8 +160,8 @@ describe('projectStructuredResourceToolbarModel', () => {
       },
       subjectFilterRows: [
         { id: 'warningRowsOnly', checked: true, label: '有校验提醒的行' },
-        { id: 'pendingWritesOnly', checked: false, label: '有待确认更改的行' },
-        { id: 'sourceUpdatesOnly', checked: false, label: '有导入更新的行' },
+        { id: 'pendingWritesOnly', checked: false, label: '有待确认修改的行' },
+        { id: 'sourceUpdatesOnly', checked: false, label: '来源有更新的行' },
       ],
       namespaceSwitchChecked: false,
       namespaceSwitch: {
@@ -188,7 +188,7 @@ describe('projectStructuredResourceToolbarModel', () => {
           label: 'DraftTask',
           openApprovalLabel: null,
           status: 'pending',
-          submitLabel: '提交待确认类型 *',
+          submitLabel: '提交新类型（待确认）',
           uri: 'https://schema.org/DraftTask',
         },
         {
@@ -319,17 +319,17 @@ describe('projectStructuredResourceToolbarModel', () => {
     })
     expect(model.subjectFilterRows).toEqual([
       { id: 'warningRowsOnly', checked: false, label: '有校验提醒的行' },
-      { id: 'pendingWritesOnly', checked: false, label: '有待确认更改的行' },
-      { id: 'sourceUpdatesOnly', checked: false, label: '有导入更新的行' },
+      { id: 'pendingWritesOnly', checked: false, label: '有待确认修改的行' },
+      { id: 'sourceUpdatesOnly', checked: false, label: '来源有更新的行' },
     ])
     expect(model.classCreateControl).toEqual({
-      ariaLabel: '创建类型',
+      ariaLabel: '新建类型',
       expanded: false,
       inputAriaLabel: '新类型的地址',
       placeholder: 'udfs:Note',
       stateLabel: '展开',
       submitLabel: '创建',
-      toggleLabel: '创建类型',
+      toggleLabel: '新建类型',
       uriLabel: '类型的地址',
     })
     expect(model.classScopeMenu).toEqual({
@@ -338,8 +338,8 @@ describe('projectStructuredResourceToolbarModel', () => {
     expect(model.classDefinitionPanel).toEqual({
       headingLabel: null,
       rows: [
-        { key: 'scope', text: '此视图只展示该类型的属性。' },
-        { key: 'description', text: '描述：先选择或创建类型，再添加行。' },
+        { key: 'scope', text: '只显示这个类型的属性。' },
+        { key: 'description', text: '描述：先选择或新建一个类型，再添加行。' },
       ],
       uri: '未选择类型',
     })

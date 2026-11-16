@@ -187,9 +187,9 @@ export function useFileEditorSheetController({
           summary: `审阅 ${sourceLinkedDescriptor.title} 的本地编辑。`,
           diff: `本地富文本草稿与 ${sourceLinkedDescriptor.sourceUri} 不一致。`,
         }))
-        toast({ description: 'Ingest 审批已提交' })
+        toast({ description: '来源更新已提交确认' })
       } catch (error) {
-        const description = formatFilesErrorForUser(error, 'Ingest 审批提交失败')
+        const description = formatFilesErrorForUser(error, '来源更新提交失败')
         toast({ description, variant: 'destructive' })
       }
       return
@@ -247,6 +247,6 @@ export function useFileEditorSheetController({
     saveRichTextContent,
     submitChangeProposal,
     proposalPending: isSourceLinkedEditor ? createSourceProposal.isPending : createAiProposal.isPending,
-    proposalLabel: isSourceLinkedEditor ? 'Ingest 审批' : 'AI 修改审批',
+    proposalLabel: isSourceLinkedEditor ? '来源更新确认' : 'AI 修改审批',
   }
 }

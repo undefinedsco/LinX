@@ -10,6 +10,7 @@ import { useChatStore } from '../../store'
 import type { ChatDraftScope } from '../../draft-store'
 import { pickSendThread } from '../../domain/chat-threads'
 import { chatThreadRefsMatch, readActiveBranchSelections } from '../../domain/thread-selection'
+import { isSharedRoomChatRow } from '../../data/shared-room-runtime'
 import { useSecretaryDraft } from './useSecretaryDraft'
 
 interface ScopedError { message: string; scopeKey: string; chatId: string }
@@ -66,8 +67,10 @@ export function useSecretaryChatController({ databaseScopeKey, webId, isReady }:
   const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data])
   const activeChat = useMemo(() => selectedChatId && chats ? chats.find((chat) => chat.id === selectedChatId) ?? null : null, [chats, selectedChatId])
   // Shared rooms carry the owner's canonical thread IRI; they must not get a
-  // fabricated local Thread row from the auto-create path.
-  const isSharedRoom = Boolean(activeChat && (activeChat.metadata as any)?.sharedRoom)
+  // fabricated local Thread row from the auto-create path. Use the same validated
+  // reader as the rest of the app: after a reload the row's metadata comes back
+  // from the Pod in its serialized shape.
+  const isSharedRoom = Boolean(activeChat && isSharedRoomChatRow(activeChat))
   const activeThread = useMemo(() => selectedThreadId ? threads.find((thread) => chatThreadRefsMatch(thread.id, selectedThreadId)) ?? null : null, [selectedThreadId, threads])
   const persistedActiveBranchByParent = useMemo(() => readActiveBranchSelections(activeThread?.metadata), [activeThread?.metadata])
 

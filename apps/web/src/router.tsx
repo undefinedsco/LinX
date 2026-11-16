@@ -139,6 +139,10 @@ const inruptSimpleTestRoute = createRoute({
   ),
 })
 
+const devOnlyRoutes = import.meta.env.DEV
+  ? [debugSearchSelectRoute, debugChatRoute, inruptTestRoute, solidUiReactTestRoute, inruptSimpleTestRoute]
+  : []
+
 // Setup route for LinX Service configuration
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -265,11 +269,7 @@ const appDemoRoute = createRoute({
 // 干净的Layout示例
 // Create the route tree
 const routeTree = rootRoute.addChildren([
-  debugSearchSelectRoute,
-  debugChatRoute,
-  inruptTestRoute,
-  solidUiReactTestRoute,
-  inruptSimpleTestRoute,
+  ...devOnlyRoutes,
   setupRoute,
   callbackRoute,
   homeRedirectRoute,

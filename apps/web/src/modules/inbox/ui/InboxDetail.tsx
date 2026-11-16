@@ -77,7 +77,7 @@ export interface InboxDetailProps {
   handleSubmitInput?: (mode?: 'queue' | 'steer') => void
   steerError?: string | null
   isMutating: boolean
-  approvalMeta: { createdAt: string; resolvedAt: string } | null
+  approvalMeta: { createdAt: string; resolvedAt: string | null } | null
   auditPresentation: AuditPresentation | null
   auditTime: string | null
   statusLabel: string | null
@@ -209,10 +209,12 @@ export function InboxDetail({
                   <div className="text-xs text-muted-foreground">创建时间</div>
                   <div className="mt-1 text-foreground">{approvalMeta?.createdAt}</div>
                 </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">处理时间</div>
-                  <div className="mt-1 text-foreground">{approvalMeta?.resolvedAt}</div>
-                </div>
+                {approvalMeta?.resolvedAt && (
+                  <div>
+                    <div className="text-xs text-muted-foreground">处理时间</div>
+                    <div className="mt-1 text-foreground">{approvalMeta.resolvedAt}</div>
+                  </div>
+                )}
                 <div className="sm:col-span-2">
                   <div className="text-xs text-muted-foreground">涉及</div>
                   <div className="mt-1 break-all text-foreground">{readableTargetName(selectedItem.approval.target)}</div>
@@ -422,10 +424,6 @@ export function InboxDetail({
                           <div className="text-muted-foreground">认证方式</div>
                           <div className="mt-1">{selectedItem.authMethod || '—'}</div>
                         </div>
-                        <div>
-                          <div className="text-muted-foreground">认证地址</div>
-                          <div className="mt-1 break-all">{selectedItem.authUrl || '—'}</div>
-                        </div>
                         {selectedItem.authMessage && (
                           <div className="sm:col-span-2">
                             <div className="text-muted-foreground">说明</div>
@@ -473,10 +471,6 @@ export function InboxDetail({
                   <div className="text-xs text-muted-foreground">时间</div>
                   <div className="mt-1 text-foreground">{auditTime}</div>
                 </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">原始动作</div>
-                  <div className="mt-1 font-mono text-xs text-foreground">{selectedItem.audit.action}</div>
-                </div>
                 {statusLabel && (
                   <div>
                     <div className="text-xs text-muted-foreground">状态</div>
@@ -486,13 +480,24 @@ export function InboxDetail({
               </div>
             )}
 
-            {selectedItem.audit?.entry && (
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">事件详情</div>
-                <div className="mt-2 break-all rounded-xl border border-border/50 bg-card/70 p-4 font-mono text-xs leading-6 text-foreground">
-                  {selectedItem.audit.entry}
+            {selectedItem.audit && (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer select-none">技术详情</summary>
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <div>原始动作</div>
+                    <div className="mt-1 break-all font-mono text-foreground">{selectedItem.audit.action}</div>
+                  </div>
+                  {selectedItem.audit.entry && (
+                    <div>
+                      <div>事件详情</div>
+                      <div className="mt-1 break-all rounded-xl border border-border/50 bg-card/70 p-3 font-mono leading-6 text-foreground">
+                        {selectedItem.audit.entry}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              </details>
             )}
           </CardContent>
         </Card>

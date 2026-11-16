@@ -6,7 +6,8 @@ import {
   sharedRoomCollectionOptions,
   sharedRoomReferenceFromInvitation,
 } from './shared-room-reference'
-import { findSharedRoomRow, rememberSharedRoom, sharedRoomIndexFromChat } from './shared-room-index'
+import { findSharedRoomRow, rememberSharedRoom, sharedRoomIndexFromChat, sharedRoomTitleFromChat } from './shared-room-index'
+import { isSharedRoomChatRow, sharedRoomReferenceForSelection } from './shared-room-runtime'
 
 const CHAT = 'https://pods.example/alice/.data/chat/matrix-abc/index.ttl#this'
 const THREAD = 'https://pods.example/alice/.data/chat/matrix-abc/index.ttl#thread'
@@ -172,5 +173,63 @@ describe('shared room reference identity', () => {
         },
       },
     })).toMatchObject({ ownerChat: CHAT, ownerThread: THREAD })
+  })
+
+  // After a browser reload the discovery row is read back from the Pod, not from
+  // the in-memory object that the invitation flow wrote. The chat `metadata`
+  // column is an inline object whose nested values are stored as xsd:json
+  // literals, so a nested `sharedRoom` comes back as a JSON STRING. Treating it
+  // as "not an object" made the row look like a plain local chat after reload,
+  // which is exactly when the shared history disappeared in RC55.
+  describe('discovery row read back from the Pod after reload', () => {
+    const recorded = {
+      roomId: INVITE.roomId,
+      storage: INVITE.storageBinding,
+      roomContainer: ROOM_CONTAINER,
+      ownerChat: CHAT,
+      ownerThread: THREAD,
+    }
+
+    it('still selects the owner room when sharedRoom comes back as a JSON string', () => {
+      const reloadedRow = {
+        id: 'matrix-abc/index.ttl#this',
+        title: 'Alice Room',
+        // Exactly what the inline-object read path yields for a nested object.
+        metadata: { protocol: 'matrix', sharedRoom: JSON.stringify(recorded) },
+      }
+
+      expect(sharedRoomIndexFromChat(reloadedRow)).toMatchObject({
+        ownerChat: CHAT,
+        ownerThread: THREAD,
+        storage: INVITE.storageBinding,
+        roomContainer: ROOM_CONTAINER,
+      })
+      // The reloaded row must still be recognized as a shared room, so the
+      // conversation keeps reading the owner's thread instead of going local.
+      expect(sharedRoomReferenceForSelection(reloadedRow)).toMatchObject({
+        chatIri: CHAT,
+        threadIri: THREAD,
+      })
+      expect(isSharedRoomChatRow(reloadedRow)).toBe(true)
+      expect(sharedRoomTitleFromChat(reloadedRow)).toBe('Alice Room')
+    })
+
+    it('accepts the object form as well, so both write and read paths work', () => {
+      expect(sharedRoomIndexFromChat({ id: 'r', metadata: { sharedRoom: recorded } }))
+        .toMatchObject({ ownerChat: CHAT, ownerThread: THREAD })
+    })
+
+    it('still fails closed on a string that is not a usable shared-room record', () => {
+      for (const bad of ['not json', '{}', '"text"', JSON.stringify({ roomId: '!r' }), 'null']) {
+        expect(sharedRoomIndexFromChat({ id: 'r', metadata: { sharedRoom: bad } })).toBeNull()
+        expect(isSharedRoomChatRow({ id: 'r', metadata: { sharedRoom: bad } })).toBe(false)
+      }
+    })
+
+    it('does not treat an unrelated string metadata value as a shared room', () => {
+      expect(sharedRoomIndexFromChat({ id: 'r', metadata: { sharedRoom: 'true' } })).toBeNull()
+      expect(sharedRoomIndexFromChat({ id: 'r', metadata: null })).toBeNull()
+      expect(sharedRoomIndexFromChat({ id: 'r', metadata: {} })).toBeNull()
+    })
   })
 })

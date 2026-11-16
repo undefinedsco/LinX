@@ -114,20 +114,20 @@ export function projectStructuredWhiteboardChrome(): StructuredWhiteboardChrome 
   return {
     toolsButtonAriaLabel: '白板工具',
     toolsButtonLabel: '白板工具',
-    addSubjectButtonAriaLabel: '添加 subject 到白板',
+    addSubjectButtonAriaLabel: '添加卡片到白板',
     addSubjectButtonLabel: 'Subject',
-    noAvailableSubjectOptionsLabel: '可见 subject 已全部加入白板',
+    noAvailableSubjectOptionsLabel: '可见的卡片都已在白板上',
     addRelationButtonAriaLabel: '连接两张卡片',
     addRelationButtonLabel: '关系',
-    clearSubjectsButtonAriaLabel: '清空白板 subject',
+    clearSubjectsButtonAriaLabel: '清空白板上的卡片',
     clearSubjectsButtonLabel: '清空',
-    emptyCanvasMessage: '添加 subject 后会在白板中显示卡片。',
+    emptyCanvasMessage: '添加卡片后会显示在白板上。',
   }
 }
 
 export function projectStructuredWhiteboardNodeChrome(subject: string): StructuredWhiteboardNodeChrome {
   return {
-    openAriaLabel: `打开 subject ${subject}`,
+    openAriaLabel: `打开卡片 ${subject}`,
     removeAriaLabel: `从白板移除 ${subject}`,
   }
 }

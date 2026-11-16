@@ -149,14 +149,14 @@ describe('source-linked card preview model', () => {
   it('projects ingest range action labels and busy state', () => {
     expect(projectSourceLinkedCardIngestRangeActions({ requestPending: false }))
       .toEqual([
-        { disabled: false, id: 'request-next-ingest-range', label: 'Ingest 下一段' },
-        { disabled: false, id: 'request-all-ingest-ranges', label: 'Ingest 全部' },
+        { disabled: false, id: 'request-next-ingest-range', label: '读取下一段' },
+        { disabled: false, id: 'request-all-ingest-ranges', label: '读取全部' },
       ])
 
     expect(projectSourceLinkedCardIngestRangeActions({ requestPending: true }))
       .toEqual([
         { disabled: true, id: 'request-next-ingest-range', label: '排队中' },
-        { disabled: true, id: 'request-all-ingest-ranges', label: 'Ingest 全部' },
+        { disabled: true, id: 'request-all-ingest-ranges', label: '读取全部' },
       ])
   })
 
@@ -171,8 +171,8 @@ describe('source-linked card preview model', () => {
       fallbackRawText: '<#card> a udfs:SourceLinkedCard .',
     })).toEqual({
       kind: 'unavailable',
-      title: 'Source-linked card',
-      description: 'Source-linked card metadata 暂不可用或不完整。',
+      title: '来源卡片',
+      description: '来源卡片的信息暂时不可用或不完整。',
       rawText: '<#card> a udfs:SourceLinkedCard .',
     })
 
@@ -186,7 +186,7 @@ describe('source-linked card preview model', () => {
       fallbackRawText: '<#card> a udfs:SourceLinkedCard .',
     })).toEqual({
       kind: 'unavailable',
-      title: 'Source-linked card',
+      title: '来源卡片',
       description: '未找到这个 source-linked card 的正文资源。',
       rawText: '<#card> a udfs:SourceLinkedCard .',
     })
@@ -313,23 +313,23 @@ describe('source-linked card preview model', () => {
       ['来源', 'https://example.com/report.pdf'],
       ['类型', 'PDF'],
       ['格式', 'application/pdf'],
-      ['Ingest', 'v3'],
-      ['来源 hash', 'sha256-report'],
-      ['Ingest 记录', 'https://pod.example/.parser/report/manifest.ttl'],
-      ['Ingest 状态', 'partial'],
-      ['已 Ingest chunk', '2 / 4'],
-      ['待 Ingest', '4..8'],
-      ['最近 Ingest', '2026/6/29 18:00:00'],
-      ['Ingest 审批', 'pending'],
+      ['读取版本', 'v3'],
+      ['来源校验值', 'sha256-report'],
+      ['读取记录', 'https://pod.example/.parser/report/manifest.ttl'],
+      ['来源读取状态', 'partial'],
+      ['已读取', '2 / 4'],
+      ['未读取的部分', '4..8'],
+      ['最近读取', '2026/6/29 18:00:00'],
+      ['确认状态', 'pending'],
       ['审批摘要', 'Refresh parsed report'],
-      ['审批 diff', '+ updated section'],
+      ['待确认的改动', '+ updated section'],
       ['审批目标', bodyFile.uri],
-      ['待审批内容', '已准备'],
+      ['待确认内容', '已准备'],
       ['审批状态', 'pending'],
-      ['审批 ID', 'approval-1'],
+      ['确认编号', 'approval-1'],
       ['正文', bodyFile.uri],
       ['创建时间', '2026/6/29 17:30:00'],
-      ['写入方式', 'canonical 内容需审批后更新'],
+      ['写入方式', '内容更新需要确认'],
     ])
   })
 
@@ -385,13 +385,13 @@ describe('source-linked card preview model', () => {
         proposedContent: '# Staged report',
       },
     })).toEqual({
-      badgeLabel: 'Source-linked card',
-      description: 'Ingest 输出需审批后才更新 card 内容。',
+      badgeLabel: '来源卡片',
+      description: '来源有新内容时，需要你确认后才会更新卡片。',
       hasPendingIngestRangeActions: true,
       rawText: '<#card> a udfs:SourceLinkedCard .',
       rows: [['标题', 'Quarterly report']],
       stagedIngestContent: '# Staged report',
-      title: 'Source-linked card',
+      title: '来源卡片',
     })
 
     expect(projectSourceLinkedCardDetailsPanel({

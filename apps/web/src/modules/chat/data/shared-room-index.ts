@@ -39,13 +39,37 @@ function discoveryIdFor(key: string): string {
   return chatResource.buildId({ id: key })
 }
 
+/**
+ * The chat `metadata` column is an inline object: nested values are persisted as
+ * xsd:json literals, so a nested `sharedRoom` is read back as a JSON string
+ * rather than an object. Accept both shapes — the invitation flow writes the
+ * object form, and a reload reads the string form — while still rejecting
+ * anything that is not a complete, usable record.
+ */
+function readSharedRoomRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  if (typeof value !== 'string') return null
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
 /** Dedup via existing collection state: same storage + roomId keeps one row. */
 export function findSharedRoomRow(
   rows: readonly { id: string; metadata?: Record<string, unknown> | null }[],
   input: { roomId: string; storage: string },
 ): { id: string; metadata?: Record<string, unknown> | null } | null {
   return rows.find((row) => {
-    const shared = (row.metadata as any)?.sharedRoom
+    // Same read-back shape as sharedRoomIndexFromChat: a reloaded row's nested
+    // record arrives serialized, and a duplicate row would split one room in two.
+    const shared = readSharedRoomRecord((row.metadata as any)?.sharedRoom)
     return shared?.roomId === input.roomId && shared?.storage === input.storage
   }) ?? null
 }
@@ -111,9 +135,9 @@ export function sharedRoomIndexFromChat(chat: {
   id: string
   metadata?: Record<string, unknown> | null
 }): SharedRoomIndexRow | null {
-  const shared = (chat.metadata as any)?.sharedRoom
-  if (!shared || typeof shared !== 'object') return null
-  const { roomId, storage, roomContainer, ownerChat, ownerThread } = shared as Record<string, unknown>
+  const shared = readSharedRoomRecord((chat.metadata as any)?.sharedRoom)
+  if (!shared) return null
+  const { roomId, storage, roomContainer, ownerChat, ownerThread } = shared
   if (typeof roomId !== 'string' || typeof storage !== 'string' || typeof ownerChat !== 'string'
     || typeof ownerThread !== 'string' || typeof roomContainer !== 'string') return null
   return { id: chat.id, roomId, name: '', storage, roomContainer, ownerChat, ownerThread }

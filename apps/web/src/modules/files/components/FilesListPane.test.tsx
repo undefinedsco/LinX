@@ -401,7 +401,7 @@ describe('FilesListPane', () => {
         sourceKind: 'pdf',
       })
     })
-    expect(await screen.findByText('网页已添加')).toBeInTheDocument()
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith({ description: '网页已添加' }))
     expect(useFilesStore.getState().selectedFileId).toBe('https://pod.example/public/quarterly-report.card.ttl')
   })
 

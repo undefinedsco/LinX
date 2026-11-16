@@ -301,7 +301,7 @@ const FOLDER_DETAIL_VIEW_MODE_OPTIONS: Array<Omit<FolderDetailViewModeOption, 'a
 ]
 
 const FOLDER_DETAIL_TOOLBAR_CHROME: FolderDetailToolbarChrome = {
-  uploadInputLabel: '选择上传文件',
+  uploadInputLabel: '选择要上传到此文件夹的文件',
 }
 
 const FOLDER_DETAIL_EMPTY_STATE_CHROME: FolderDetailEmptyStateChrome = {

@@ -108,10 +108,10 @@ export function projectSourceLinkedCardBodyFile({
       `# ${descriptor.title}`,
       '',
       `Source: ${descriptor.sourceUri}`,
-      `Ingest: ${displayIngestVersion}`,
-      `Ingest 记录: ${descriptor.sourceIngestManifestUri}`,
+      `读取版本: ${displayIngestVersion}`,
+      `读取记录: ${descriptor.sourceIngestManifestUri}`,
       '',
-      '确认 Ingest 审批后才会写入正文资源。',
+      '确认后才会写入正文。',
     ].join('\n'),
   }
 }

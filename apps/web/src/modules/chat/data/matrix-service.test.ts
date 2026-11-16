@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { matrixUserIdFromWebId, MatrixClientError } from '@linx/agent-runtime/matrix-client'
 import {
+  createMatrixGroupRoom,
   createPodMatrixClient,
   formatMatrixErrorForUser,
   matrixServerNameFromUserId,
@@ -216,5 +217,101 @@ describe('matrix error wording', () => {
 
   it('returns null for unrelated errors so the shared formatter owns them', () => {
     expect(formatMatrixErrorForUser(new Error('network down'))).toBeNull()
+  })
+})
+
+describe('createMatrixGroupRoom grant-then-invite ordering', () => {
+  // The precondition the RC54 backend acceptance flow also encodes: room-scoped
+  // access is granted BEFORE the Matrix invite, and a failed grant aborts with no
+  // invite sent. Matrix invitations never grant Solid ACL themselves.
+  function orderingDb(): any {
+    return {
+      getDialect: () => ({ getPodUrl: () => POD_BASE, getAuthenticatedFetch: () => vi.fn() }),
+      // Use the real shared layout rather than a hand-rolled path, so the asserted
+      // container is the one the product actually authorizes.
+      resolveRowIri: (resource: any, row: { id: string }) => resource.buildIri(POD_BASE, { id: row.id }),
+    }
+  }
+
+  /** Stub the Pod-facing Matrix transport; record which endpoints were hit. */
+  function stubMatrixTransport() {
+    const hits: string[] = []
+    const original = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init)
+      const path = new URL(request.url).pathname
+      hits.push(path)
+      if (path.endsWith('/account/whoami')) return Response.json({ user_id: '@alice:pod.example' })
+      if (path.endsWith('/createRoom')) return Response.json({ room_id: '!room:pod.example' })
+      if (path.endsWith('/invite')) return Response.json({})
+      return Response.json({})
+    }) as unknown as typeof fetch
+    return { hits, restore: () => { globalThis.fetch = original } }
+  }
+
+  it('resolves the room grant before the first invite, on the canonical container', async () => {
+    // One shared timeline: the grant pushes into it, and the transport stub pushes
+    // the Matrix endpoints it actually received, so their relative order is real.
+    const events: string[] = []
+    const original = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init)
+      const path = new URL(request.url).pathname
+      events.push(`matrix:${path}`)
+      if (path.endsWith('/account/whoami')) return Response.json({ user_id: '@alice:pod.example' })
+      if (path.endsWith('/createRoom')) return Response.json({ room_id: '!room:pod.example' })
+      return Response.json({})
+    }) as unknown as typeof fetch
+    try {
+      await createMatrixGroupRoom({
+        db: orderingDb(),
+        access: accessWith(CREDENTIAL),
+        webId: WEB_ID,
+        ownerRef: WEB_ID,
+        name: 'group',
+        participants: ['https://bob.example/#id'],
+        grantRoomAccess: (async (input: { roomContainerUri: string }) => {
+          events.push(`grant:${input.roomContainerUri}`)
+          return {
+            roomContainerUri: input.roomContainerUri,
+            aclUri: `${input.roomContainerUri}.acr`,
+            grantedWebIds: ['https://bob.example/#id'],
+            mechanism: 'acp' as const,
+          }
+        }) as any,
+      })
+    } finally {
+      globalThis.fetch = original
+    }
+
+    const grantIndex = events.findIndex((entry) => entry.startsWith('grant:'))
+    const inviteIndex = events.findIndex((entry) => entry.endsWith('/invite'))
+    expect(grantIndex).toBeGreaterThanOrEqual(0)
+    expect(inviteIndex).toBeGreaterThanOrEqual(0)
+    // The invite must be sent only after the room-scoped grant resolves.
+    expect(grantIndex).toBeLessThan(inviteIndex)
+    // The canonical ORM container, not a guessed path and not the Pod root.
+    expect(events[grantIndex]).toMatch(/\.data\/chat\/matrix-[0-9a-f]{16}\/$/)
+  })
+
+  it('sends no invite when the room grant fails', async () => {
+    const { hits, restore } = stubMatrixTransport()
+    try {
+      await expect(createMatrixGroupRoom({
+        db: orderingDb(),
+        access: accessWith(CREDENTIAL),
+        webId: WEB_ID,
+        ownerRef: WEB_ID,
+        name: 'group',
+        participants: ['https://bob.example/#id'],
+        grantRoomAccess: (async () => {
+          throw new Error('群聊空间还不存在，暂时不能授权。')
+        }) as any,
+      })).rejects.toThrow('群聊空间还不存在')
+    } finally {
+      restore()
+    }
+
+    expect(hits.some((path) => path.endsWith('/invite'))).toBe(false)
   })
 })
