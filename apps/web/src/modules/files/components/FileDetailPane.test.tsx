@@ -8836,6 +8836,55 @@ describe('FileDetailPane', () => {
       fireEvent.keyDown(trigger, { key: 'ArrowRight' })
     }
 
+    // RC53 failed only at the restored-column step, and only on CI. The question a diagnostic has to
+    // answer is whether the restore click ever committed. These are bounded, sanitized facts copied
+    // BY VALUE from the view store and the rendered UI at one instant, so a later store update cannot
+    // rewrite an earlier snapshot. They never contain the document body or any credential, and they
+    // are only recorded: no assertion reads them, so they cannot make the test pass.
+    function collectRestoredColumnFacts(uri: string) {
+      const columnView = useFilesStore.getState().structuredColumnViewByDocument[uri]
+      const saveLine = document.querySelector<HTMLElement>('[data-structured-save-line]')
+      const saveIndicator = Array.from(document.querySelectorAll<HTMLElement>('[aria-label]'))
+        .map((element) => element.getAttribute('aria-label') ?? '')
+        .find((label) => label.startsWith('视图配置') || label === '正在同步视图配置')
+      const headerLabels = Array.from(document.querySelectorAll('[data-column-menu-trigger]'))
+        .map((element) => element.getAttribute('aria-label') ?? '')
+      // The + 属性 trigger is always mounted, so its presence says nothing. Radix's DropdownMenuTrigger
+      // renders aria-expanded from the menu's open state; that is the real open/closed signal.
+      const addAttributeTrigger = screen.queryByRole('button', { name: '+ 属性' })
+      return {
+        // Copied by value, so a later setState of the same objects cannot rewrite this snapshot.
+        removed: columnView ? [...columnView.removed] : null,
+        filters: columnView ? columnView.filters.length : null,
+        // A rename is the one "different header label" story: it shows here and in the headers below.
+        labels: columnView ? { ...columnView.labels } : null,
+        loadingSkeleton: !!document.querySelector('[aria-label="结构化表加载中"]'),
+        viewportPresent: !!document.querySelector('[data-structured-resource-viewport="true"]'),
+        tableHeaderLabels: headerLabels.slice(0, 12),
+        tagsHeaderCount: headerLabels.filter((label) => label === 'tags 列菜单').length,
+        tagsCells: {
+          coreCells: screen.queryAllByRole('cell', { name: 'core' }).length,
+          rdfCells: screen.queryAllByRole('cell', { name: 'rdf' }).length,
+        },
+        viewMetadataSaveIndicator: saveIndicator ?? null,
+        structuredSaveLine: saveLine?.getAttribute('data-structured-save-line') ?? null,
+        openMenus: {
+          count: screen.queryAllByRole('menu').length,
+          addAttributeExpanded: addAttributeTrigger?.getAttribute('aria-expanded') ?? null,
+        },
+      }
+    }
+
+    function describeRestoredColumnSnapshot({
+      afterClick,
+      afterWait,
+    }: {
+      afterClick: ReturnType<typeof collectRestoredColumnFacts>
+      afterWait: ReturnType<typeof collectRestoredColumnFacts>
+    }) {
+      return JSON.stringify({ afterClick, afterWait })
+    }
+
     it('filters rows by an option value from the header menu and shows a chip that takes the filter off', async () => {
       showTagsTable()
       render(<FileDetailPane />)
@@ -8980,8 +9029,35 @@ describe('FileDetailPane', () => {
       // ... but 加属性 offers it again.
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
       fireEvent.click(within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' }))
-      // Restoring the column re-renders the whole table; loaded CI runners need more than the default 1s.
-      expect(await screen.findByRole('button', { name: 'tags 列菜单' }, { timeout: 5_000 })).toBeInTheDocument()
+      // Restoring the column re-renders the whole table. RC53 only ever failed at this step, on CI,
+      // and the truncated DOM could not say whether the restore click had committed. Record an
+      // immutable snapshot of the view store and the rendered UI immediately after the click, and a
+      // second one if and when the header does not appear, so the two can be compared. The 5s query
+      // and every assertion below are the original ones: the snapshots are evidence, not a settling
+      // mechanism, and they add no wait, delay or retry.
+      const headerName = 'tags 列菜单'
+      const afterClick = collectRestoredColumnFacts(documentUri)
+      const restoreHeaderButton = await screen.findByRole('button', { name: headerName }, { timeout: 5_000 })
+        .catch((error: unknown) => {
+          throw new Error(
+            `restored tags column menu did not appear: ${describeRestoredColumnSnapshot({
+              afterClick,
+              afterWait: collectRestoredColumnFacts(documentUri),
+            })}`,
+            { cause: error },
+          )
+        })
+      // A re-render between the query and this check detaches the node; say so with the same facts
+      // instead of failing on a bare "element could not be found".
+      if (!restoreHeaderButton.isConnected) {
+        throw new Error(
+          `restored tags column menu was replaced before it could be checked: ${describeRestoredColumnSnapshot({
+            afterClick,
+            afterWait: collectRestoredColumnFacts(documentUri),
+          })}`,
+        )
+      }
+      expect(restoreHeaderButton).toBeInTheDocument()
       expect(useFilesStore.getState().structuredColumnViewByDocument[documentUri]?.removed).toEqual([])
     })
 
