@@ -118,6 +118,135 @@ describe('grantMatrixRoomAccess', () => {
   })
 })
 
+// The passing backend acceptance helper tolerates HEAD 200 OR 404 and then
+// authorizes via the container's own server-advertised Link rel="acl". That is
+// what its source proves: the helper ALLOWS a 404, not that the real 431 run
+// measured one. These cases pin the same contract on the product path — a
+// simulated 404 with a valid advertised control — plus everything that must
+// still refuse. Whether a real RC container is actually absent stays unobserved.
+describe('grantMatrixRoomAccess when the container HEAD answers 404', () => {
+  /**
+   * Simulates a server that answers 404 for the room container while still
+   * advertising the container's own control document.
+   */
+  function missingContainerFetch(options: {
+    link?: string | null
+    acrPutStatus?: number
+  } = {}) {
+    const link = options.link === undefined ? `<${ROOM}.acr>; rel="acl"` : options.link
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method?.toUpperCase()
+      if (url === ROOM && method === 'HEAD') {
+        return new Response(null, {
+          status: 404,
+          ...(link ? { headers: { Link: link } } : {}),
+        })
+      }
+      if (url === `${ROOM}.acr` && method === 'PUT') {
+        return new Response(null, { status: options.acrPutStatus ?? 201 })
+      }
+      return new Response(null, { status: 404 })
+    })
+  }
+
+  it('establishes the room-scoped ACR when the container is absent, before any invite', async () => {
+    const fetchImpl = missingContainerFetch()
+    // This case owns the grant itself; the create-then-grant-then-invite ordering
+    // is asserted separately in matrix-service.test.ts, where the invite happens.
+    const result = await grantMatrixRoomAccess({
+      db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
+    })
+
+    expect(result).toMatchObject({ roomContainerUri: ROOM, mechanism: 'acp', grantedWebIds: [BOB] })
+    const put = fetchImpl.mock.calls.find(([input, init]) => (
+      String(input) === `${ROOM}.acr` && init?.method === 'PUT'
+    ))
+    expect(put).toBeDefined()
+    const body = String((put?.[1] as RequestInit).body)
+    // The container itself plus future descendants; owner keeps Control, Bob never gets it.
+    expect(body).toContain(`acp:resource <${ROOM}>`)
+    expect(body).toContain(`<${BOB}>`)
+    expect(body).toContain('acp:memberAccessControl')
+    expect(body).toContain('acl:Control')
+    // The control document written is the container's own advertised ACR.
+    expect(fetchImpl.mock.calls.some(([input, init]) => (
+      String(input) === `${ROOM}.acl` && init?.method === 'PUT'
+    ))).toBe(false)
+  })
+
+  it('still refuses a 404 that advertises no control link, and writes nothing', async () => {
+    const fetchImpl = missingContainerFetch({ link: null })
+    await expect(grantMatrixRoomAccess({
+      db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
+    })).rejects.toThrow('资源没有提供访问控制地址，无法授权。')
+    expect(fetchImpl.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+  })
+
+  it('still refuses a 404 that advertises a control outside the owner root', async () => {
+    const fetchImpl = missingContainerFetch({ link: '<https://evil.example/x.acr>; rel="acl"' })
+    await expect(grantMatrixRoomAccess({
+      db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
+    })).rejects.toThrow('资源返回了越界的访问控制地址。')
+    expect(fetchImpl.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+  })
+
+  it('still refuses a 404 whose advertised control is not this container\'s own document', async () => {
+    // Same origin and inside the container path, but not <container>.acl|.acr:
+    // the product never rewrites the advertised URI into one it prefers.
+    const fetchImpl = missingContainerFetch({ link: `<${ROOM}other.acr>; rel="acl"` })
+    await expect(grantMatrixRoomAccess({
+      db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
+    })).rejects.toThrow('资源返回了越界的访问控制地址。')
+    expect(fetchImpl.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+  })
+
+  it('still refuses a missing container when the Pod advertises WAC, which needs the resource itself', async () => {
+    const fetchImpl = missingContainerFetch({ link: `<${ROOM}.acl>; rel="acl"` })
+    await expect(grantMatrixRoomAccess({
+      db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
+    })).rejects.toThrow('群聊空间还不存在，暂时不能授权。')
+    expect(fetchImpl.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+  })
+
+  it('keeps 401 and 403 as failures instead of reading them as a missing container', async () => {
+    for (const status of [401, 403]) {
+      const fetchImpl = vi.fn(async () => new Response(null, { status }))
+      await expect(grantMatrixRoomAccess({
+        db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
+      })).rejects.toThrow(`HTTP ${status}`)
+      expect(fetchImpl.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+    }
+  })
+
+  it('surfaces the discovery HEAD status when the container first answers 404 then discovery is denied', async () => {
+    // First HEAD (the container probe) is a 404, so the missing-container path is
+    // taken; the discovery HEAD that follows is denied. The refusal must report
+    // the real permission status, not be folded into "the space does not exist".
+    let headCount = 0
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        headCount += 1
+        return new Response(null, { status: headCount === 1 ? 404 : 403 })
+      }
+      return new Response(null, { status: 404 })
+    })
+    await expect(grantMatrixRoomAccess({
+      db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
+    })).rejects.toThrow('HTTP 403')
+    // It really was the second HEAD that produced the status.
+    expect(headCount).toBe(2)
+    expect(fetchImpl.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+  })
+
+  it('reports a refused ACR bootstrap on a missing container instead of claiming success', async () => {
+    const fetchImpl = missingContainerFetch({ acrPutStatus: 403 })
+    await expect(grantMatrixRoomAccess({
+      db: db(), authFetch: fetchImpl as unknown as typeof fetch, ownerWebId: OWNER, participants: [BOB], chatUri: CHAT_URI,
+    })).rejects.toThrow('HTTP 403')
+  })
+})
+
 describe('validateMatrixInvitees', () => {
   it('keeps arbitrary legitimate full WebIDs', () => {
     const ids = validateMatrixInvitees([

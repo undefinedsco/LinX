@@ -62,10 +62,26 @@ export async function grantMatrixRoomAccess(input: MatrixRoomGrantInput): Promis
   const granted = normalizeParticipants(input.participants, owner)
 
   const info = await input.authFetch(roomContainerUri, { method: 'HEAD' })
-  if (info.status === 404) throw new Error('群聊空间还不存在，暂时不能授权。')
-  if (!info.ok) throw new Error(`读取群聊空间失败（HTTP ${info.status}）。`)
+  const containerMissing = info.status === 404
+  if (!containerMissing && !info.ok) throw new Error(`读取群聊空间失败（HTTP ${info.status}）。`)
 
-  const control = await discoverAdvertisedAccessControl(roomContainerUri, input.authFetch)
+  // An absent container is not by itself a refusal: the server may still name a
+  // room-scoped control document for it, which is how a first grant is
+  // authorized before the container materializes. The control is only ever the
+  // server-advertised link, accepted only when it is exactly this container's
+  // own `.acr`/`.acl` (same origin, inside the container path) — never a guessed
+  // path and never the Pod root. Discovery failures keep their own reason: a
+  // 401/403, a network failure, or a missing/forged advertised link must surface
+  // as what it actually was, not be folded into "the space does not exist yet".
+  const control = await discoverAdvertisedAccessControl(roomContainerUri, input.authFetch, {
+    allowMissingResource: containerMissing,
+  })
+  // WAC derives its ACL from the container resource itself, so the existing WAC
+  // grant cannot bootstrap an absent container. Refuse instead of creating the
+  // container or inventing an ACL path as a side effect of authorizing.
+  if (containerMissing && control.kind === 'wac') {
+    throw new Error('群聊空间还不存在，暂时不能授权。')
+  }
   for (const webId of granted) {
     if (control.kind === 'wac') {
       await grantAdvertisedWacAccess({
