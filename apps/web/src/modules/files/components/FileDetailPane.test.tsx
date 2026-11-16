@@ -8850,7 +8850,7 @@ describe('FileDetailPane', () => {
       await waitFor(() => {
         const menu = screen.getByRole('menu')
         expect(within(menu).getByRole('button', { name })).toBeVisible()
-      })
+      }, { timeout: 5_000 })
       // Final query and the single click share one synchronous block.
       const menu = screen.getByRole('menu')
       const item = within(menu).getByRole('button', { name })
@@ -9048,6 +9048,10 @@ describe('FileDetailPane', () => {
       // Let the 列显示 menu finish closing first: on slow runners its close otherwise dismisses the
       // + 属性 menu that opens right after, and the click lands on a row that is already gone.
       await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+      // The menu leaves the DOM before Radix hands focus back to the 列显示 trigger (from a timeout).
+      // If that focus lands after + 属性 opens, the non-modal + 属性 menu treats it as focus outside
+      // and closes. Wait for the focus to come back before opening it (root cause found in PR #34).
+      await waitFor(() => expect(screen.getByRole('button', { name: '列显示' })).toHaveFocus())
 
       // ... but 加属性 offers it again.
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
