@@ -107,9 +107,9 @@ export async function createAgentContactRecords(
     contactType: ContactType.AGENT,
     isPublic: false,
   })
+  // Preserve the canonical resource id returned by the repository.
   const contact = {
     ...createdContact,
-    id: contactId,
     '@id': contactUri,
     about: agentUri,
   } as ContactRow
@@ -227,7 +227,6 @@ export async function createSolidContactRecord(
   })
   const contact = {
     ...createdContact,
-    id: contactId,
     '@id': contactUri,
     about: input.webId,
   } as ContactRow
@@ -263,7 +262,6 @@ export async function createGroupContactRecord(
   })
   const contact = {
     ...createdContact,
-    id: contactId,
     '@id': contactUri,
     about: input.about,
   } as ContactRow
