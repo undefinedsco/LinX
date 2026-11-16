@@ -252,7 +252,12 @@ test('Alice and Bob share one real group through the product UI', async ({ brows
     await openChat(bob)
     const invitations = bob.getByRole('region', { name: '群聊邀请', exact: true })
     const authorizeInvitations = invitations.getByRole('button', { name: '授权群聊', exact: true })
-    if (await authorizeInvitations.isVisible().catch(() => false)) {
+    const invitation = invitations.getByText(groupName, { exact: true })
+    // The invitation area renders only after the space and Matrix access are ready.
+    // A fresh account first sees 授权群聊; wait for it or the invitation before deciding.
+    await expect(authorizeInvitations.or(invitation), 'the invitation area must offer authorization or show the invitation')
+      .toBeVisible({ timeout: 60_000 })
+    if (await authorizeInvitations.isVisible()) {
       await authorizeInvitations.click()
       await bob.getByRole('group', { name: '群聊授权', exact: true })
         .waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined)
