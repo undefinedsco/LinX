@@ -8836,6 +8836,29 @@ describe('FileDetailPane', () => {
       fireEvent.keyDown(trigger, { key: 'ArrowRight' })
     }
 
+    /**
+     * Click a menu item that is attached to the document at the moment of the click.
+     *
+     * Testing Library's own role semantics are kept: exactly one *visible* menu must match,
+     * so a duplicate or hidden menu fails instead of being silently accepted. After the
+     * settled state is observed, the menu and its item are re-queried synchronously and
+     * clicked once with no await in between, so a node replaced by an intervening
+     * re-render cannot swallow the click.
+     */
+    async function clickLiveMenuItem(name: string) {
+      // Observe the settled state only; no user action happens inside waitFor.
+      await waitFor(() => {
+        const menu = screen.getByRole('menu')
+        expect(within(menu).getByRole('button', { name })).toBeVisible()
+      })
+      // Final query and the single click share one synchronous block.
+      const menu = screen.getByRole('menu')
+      const item = within(menu).getByRole('button', { name })
+      expect(menu.isConnected).toBe(true)
+      expect(item.isConnected).toBe(true)
+      fireEvent.click(item)
+    }
+
     // RC53 failed only at the restored-column step, and only on CI. The question a diagnostic has to
     // answer is whether the restore click ever committed. These are bounded, sanitized facts copied
     // BY VALUE from the view store and the rendered UI at one instant, so a later store update cannot
@@ -9028,7 +9051,10 @@ describe('FileDetailPane', () => {
 
       // ... but 加属性 offers it again.
       fireEvent.pointerDown(screen.getByRole('button', { name: '+ 属性' }))
-      fireEvent.click(within(await screen.findByRole('menu')).getByRole('button', { name: '选择属性 tags' }))
+      // Click the item through the live, unique, visible menu. Capturing the menu earlier and
+      // clicking inside that detached tree would still find the row and would silently drop the
+      // click, which is the failure shape this test showed on CI.
+      await clickLiveMenuItem('选择属性 tags')
       // Restoring the column re-renders the whole table. RC53 only ever failed at this step, on CI,
       // and the truncated DOM could not say whether the restore click had committed. Record an
       // immutable snapshot of the view store and the rendered UI immediately after the click, and a
