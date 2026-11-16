@@ -215,6 +215,23 @@ async function createGroupWithBob(page: Page, bobSearch: string): Promise<void> 
   }
 }
 
+// The Matrix credential lives in memory for the current page session only (see
+// lib/matrix/pod-interface-access.ts), so after a reload the group asks again with
+// 授权并继续 before it can read. Do that explicit gesture, as at group creation,
+// then require the persisted message.
+async function expectMessageAfterReload(page: Page, body: string, message: string): Promise<void> {
+  const shown = page.locator('[data-role="user"]').filter({ hasText: body })
+  const reauthorize = page.getByRole('button', { name: '授权并继续', exact: true })
+  await expect(shown.or(reauthorize), 'the reloaded group must show the message or ask to authorize').toBeVisible({ timeout: 60_000 })
+  if (await reauthorize.isVisible()) {
+    await reauthorize.click()
+    await page.getByRole('group', { name: '群聊授权', exact: true })
+      .waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined)
+    await completeNativeMatrixGrant(page)
+  }
+  await expect(shown, message).toBeVisible({ timeout: 60_000 })
+}
+
 async function sendInSelectedChat(page: Page, body: string): Promise<void> {
   const input = page.getByRole('textbox', { name: '消息' })
   await expect(input).toBeVisible({ timeout: 30_000 })
@@ -280,14 +297,14 @@ test('Alice and Bob share one real group through the product UI', async ({ brows
     await expect(bob.getByTestId('chat-list-header')).toBeVisible({ timeout: 30_000 })
     await expect(chatRow(bob, groupName)).toBeVisible({ timeout: 30_000 })
     await chatRow(bob, groupName).click()
-    await expect(bob.locator('[data-role="user"]').filter({ hasText: aliceMessage })).toBeVisible({ timeout: 60_000 })
+    await expectMessageAfterReload(bob, aliceMessage, 'Bob must read Alice\'s message from the persisted group after a reload')
     await sendInSelectedChat(bob, bobReply)
 
     await alice.reload({ waitUntil: 'domcontentloaded' })
     await expect(alice.getByTestId('chat-list-header')).toBeVisible({ timeout: 30_000 })
     await expect(chatRow(alice, groupName)).toBeVisible({ timeout: 30_000 })
     await chatRow(alice, groupName).click()
-    await expect(alice.locator('[data-role="user"]').filter({ hasText: bobReply })).toBeVisible({ timeout: 60_000 })
+    await expectMessageAfterReload(alice, bobReply, 'Alice must read Bob\'s reply from the persisted group after a reload')
   } finally {
     await Promise.allSettled([aliceContext.close(), bobContext.close()])
   }
