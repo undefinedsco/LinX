@@ -8858,18 +8858,25 @@ describe('FileDetailPane', () => {
       throw new Error(`${triggerName} menu did not stay open after three presses`)
     }
 
-    async function clickLiveMenuItem(name: string) {
-      // Observe the settled state only; no user action happens inside waitFor.
-      await waitFor(() => {
-        const menu = screen.getByRole('menu')
-        expect(within(menu).getByRole('button', { name })).toBeVisible()
-      }, { timeout: 5_000 })
-      // Final query and the single click share one synchronous block.
-      const menu = screen.getByRole('menu')
-      const item = within(menu).getByRole('button', { name })
-      expect(menu.isConnected).toBe(true)
-      expect(item.isConnected).toBe(true)
-      fireEvent.click(item)
+    // On loaded CI runners the menu has also closed between opening and the item click. Treat
+    // open + click as one step a person would repeat: reopen and click again, up to three times.
+    async function chooseFromMenu(triggerName: string, itemName: string) {
+      let lastError: unknown
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await openMenuFrom(triggerName)
+          await waitFor(() => {
+            const menu = screen.getByRole('menu')
+            expect(within(menu).getByRole('button', { name: itemName })).toBeVisible()
+          }, { timeout: 2_000 })
+          const menu = screen.getByRole('menu')
+          fireEvent.click(within(menu).getByRole('button', { name: itemName }))
+          return
+        } catch (error) {
+          lastError = error
+        }
+      }
+      throw new Error(`${triggerName} › ${itemName} could not be chosen after three attempts`, { cause: lastError })
     }
 
     // RC53 failed only at the restored-column step, and only on CI. The question a diagnostic has to
@@ -9067,11 +9074,10 @@ describe('FileDetailPane', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: '列显示' })).toHaveFocus())
 
       // ... but 加属性 offers it again.
-      await openMenuFrom('+ 属性')
       // Click the item through the live, unique, visible menu. Capturing the menu earlier and
       // clicking inside that detached tree would still find the row and would silently drop the
       // click, which is the failure shape this test showed on CI.
-      await clickLiveMenuItem('选择属性 tags')
+      await chooseFromMenu('+ 属性', '选择属性 tags')
       // Restoring the column re-renders the whole table. RC53 only ever failed at this step, on CI,
       // and the truncated DOM could not say whether the restore click had committed. Record an
       // immutable snapshot of the view store and the rendered UI immediately after the click, and a
