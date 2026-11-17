@@ -70,7 +70,8 @@ describe('shared room conversation adapter', () => {
 
     const loaded = await conversation.load()
 
-    expect(openRuntime).toHaveBeenCalledWith(expect.objectContaining({ reference: REFERENCE, credential: CREDENTIAL() }))
+    expect(openRuntime).toHaveBeenCalledWith(expect.objectContaining({ reference: REFERENCE }))
+    expect(openRuntime.mock.calls[0]?.[0]).not.toHaveProperty('credential')
     expect(loaded.threadUri).toBe(THREAD)
     expect(loaded.items.map((entry) => entry.uri)).toEqual([
       'https://pods.example/alice/.data/2026/10/25/messages.ttl#m1',
@@ -180,33 +181,46 @@ describe('shared room conversation adapter', () => {
     conversation.dispose()
   })
 
-  it('requires an explicit credential error before any runtime opens', async () => {
-    const openRuntime = vi.fn()
+  it('reads the room with the WebID login alone and asks for a credential only when sending', async () => {
+    const runtime = runtimeWith(() => [message({ content: 'Alice asks' })])
+    const openRuntime = vi.fn(async () => runtime)
+    const onError = vi.fn()
     const access = matrixAccess()
     access.get = () => null
     const conversation = createSharedRoomConversation({
       session: {} as any, reference: REFERENCE, matrixAccess: access,
-      openRuntime: openRuntime as any, pollIntervalMs: 0,
+      openRuntime: openRuntime as any, pollIntervalMs: 0, onError,
     })
-    await expect(conversation.load()).rejects.toMatchObject({ code: 'shared_room_authorization_required' })
-    expect(openRuntime).not.toHaveBeenCalled()
+
+    const loaded = await conversation.load()
+    expect(loaded.items.map((entry) => entry.item.content[0]?.text)).toEqual(['Alice asks'])
+
+    const sending = conversation.run({
+      type: 'threads.add_user_message',
+      params: { thread_id: THREAD, input: { content: [{ type: 'input_text', text: 'Bob reply' }] } },
+    })
+    await expect((async () => { for await (const _event of sending) { /* drain */ } })())
+      .rejects.toMatchObject({ code: 'shared_room_authorization_required' })
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'shared_room_authorization_required' }))
+    expect(runtime.send).not.toHaveBeenCalled()
   })
 
-  it('reopens the room runtime after credential rotation and never reuses the old one', async () => {
-    const openRuntime = vi.fn(async (input: { credential: { apiKey: string } }) => ({
-      reference: REFERENCE,
-      loadMessages: vi.fn(async () => [message({ content: `read with ${input.credential.apiKey}` })]),
-      send: vi.fn(),
-    }))
+  it('keeps one room runtime across credential rotation and sends with the current credential', async () => {
+    const runtime = runtimeWith(() => [])
+    const openRuntime = vi.fn(async () => runtime)
     const conversation = createSharedRoomConversation({
       session: {} as any, reference: REFERENCE, matrixAccess: matrixAccess(),
       openRuntime: openRuntime as any, pollIntervalMs: 0,
     })
     await conversation.load()
     apiKey = 'sk-bob-2'
-    const loaded = await conversation.load()
-    expect(openRuntime).toHaveBeenCalledTimes(2)
-    expect(loaded.items[0]?.item.content[0]?.text).toBe('read with sk-bob-2')
+    await conversation.refresh()
+    for await (const _event of conversation.run({
+      type: 'threads.add_user_message',
+      params: { thread_id: THREAD, input: { content: [{ type: 'input_text', text: 'Bob reply' }] } },
+    })) { /* drain */ }
+    expect(openRuntime).toHaveBeenCalledTimes(1)
+    expect(runtime.send).toHaveBeenCalledWith('Bob reply', expect.objectContaining({ apiKey: 'sk-bob-2' }))
     conversation.dispose()
   })
 
@@ -222,7 +236,7 @@ describe('shared room conversation adapter', () => {
       params: { thread_id: THREAD, input: { content: [{ type: 'input_text', text: 'Bob reply' }] } },
     })) events.push(event)
 
-    expect(runtime.send).toHaveBeenCalledWith('Bob reply')
+    expect(runtime.send).toHaveBeenCalledWith('Bob reply', CREDENTIAL())
     const added = events.find((event) => event.type === 'thread.item.added')
     expect(added.item.id).toBe('$bob-reply')
     expect(added.item.id).not.toContain('/.data/')
