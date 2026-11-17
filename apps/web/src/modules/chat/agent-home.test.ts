@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { agentResource } from '@undefineds.co/models'
 import { agentResourceId } from '@/lib/data/resource-identity'
 import { buildAgentHomePath, ensureAgentHome, updateAgentHomeMetadata } from './agent-home'
 
@@ -62,6 +63,101 @@ describe('agent-home', () => {
     expect(agentResourceId('__secretary__')).toBe('__secretary__/')
   })
 
+  it('writes app-owned createdAt and never the server-managed modified predicate', async () => {
+    const fetchMock = vi.fn(async (_input, init) => new Response('', { status: init?.method === 'HEAD' ? 404 : 201 }))
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+    const createdAt = new Date('2026-11-16T16:00:00.000Z')
+
+    await ensureAgentHome(db, {
+      agentId: agentResourceId('agent-1'),
+      name: 'AI Secretary',
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+      createdAt,
+    })
+
+    const metaPatch = fetchMock.mock.calls.find(([input, init]) =>
+      String(input).endsWith('/.meta') && init?.method === 'PATCH'
+    )
+    const body = String(metaPatch?.[1]?.body)
+    expect(body).toContain('BASE <https://alice.example/>')
+    expect(body).toContain(`<${agentResource.createdAt.getPredicate()}> "2026-11-16T16:00:00.000Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>`)
+    // The Pod rejects client edits to dcterms:modified on a .meta resource.
+    expect(body).not.toContain(agentResource.updatedAt.getPredicate())
+    expect(body).toContain(`<${agentResource.getRdfClass()}>`)
+    expect(body).toContain('<https://undefineds.co/ns#AgentConfig>')
+  })
+
+  it('does not invent timestamps when reconciling pre-existing metadata', async () => {
+    const fetchMock = vi.fn(async (_input, init) => {
+      if (init?.method === 'HEAD') return new Response('', { status: 200 })
+      if (!init?.method) {
+        return new Response([
+          '<https://alice.example/agents/agent-1/> a <https://undefineds.co/ns#AgentConfig> .',
+          '<https://alice.example/agents/agent-1/> <http://xmlns.com/foaf/0.1/name> "Legacy" .',
+        ].join('\n'), { status: 200 })
+      }
+      return new Response('', { status: 200 })
+    })
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    await ensureAgentHome(db, {
+      agentId: agentResourceId('agent-1'),
+      name: 'AI Secretary',
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+
+    const metaPatch = fetchMock.mock.calls.find(([input, init]) =>
+      String(input).endsWith('/.meta') && init?.method === 'PATCH'
+    )
+    const body = String(metaPatch?.[1]?.body)
+    expect(body).toContain('<http://xmlns.com/foaf/0.1/Agent>')
+    expect(body).not.toContain('dcterms/created')
+    expect(body).not.toContain('dcterms/modified')
+  })
+
+  it('publishes timestamps from the authoritative row on first creation', async () => {
+    const fetchMock = vi.fn(async (_input, init) => new Response('', { status: init?.method === 'HEAD' ? 404 : 201 }))
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    const before = Date.now()
+    await ensureAgentHome(db, {
+      agentId: agentResourceId('agent-1'),
+      name: 'AI Secretary',
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+    const after = Date.now()
+
+    const metaPatch = fetchMock.mock.calls.find(([input, init]) =>
+      String(input).endsWith('/.meta') && init?.method === 'PATCH'
+    )
+    const body = String(metaPatch?.[1]?.body)
+    const created = body.match(new RegExp(`<${agentResource.createdAt.getPredicate()}> "([^"]+)"`))?.[1]
+    expect(created).toBeTruthy()
+    expect(body).not.toContain(agentResource.updatedAt.getPredicate())
+    const parsed = Date.parse(created as string)
+    expect(Number.isNaN(parsed)).toBe(false)
+    expect(parsed).toBeGreaterThanOrEqual(before)
+    expect(parsed).toBeLessThanOrEqual(after)
+  })
+
   it('rejects full Agent IRIs because callers must pass Agent row.id', async () => {
     const fetchMock = vi.fn(async () => new Response('', { status: 201 }))
     const db = {
@@ -98,11 +194,9 @@ describe('agent-home', () => {
     await updateAgentHomeMetadata(db, agentResourceId('agent-1'), {
       name: 'Updated Agent',
       metadata: { linx: { aiRuntimeLocation: 'server' } },
-      updatedAt: new Date('2026-08-07T00:00:00.000Z'),
     }, {
       name: 'Previous Agent',
       metadata: { linx: { aiRuntimeLocation: 'client' } },
-      updatedAt: new Date('2026-08-06T00:00:00.000Z'),
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)

@@ -1,0 +1,9 @@
+{
+  "name": "@linx/xpod-sdk-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated real-SDK installation for the LinX xpod self-boot integration harness. Owns the ONLY xpod version the harness may load. Installed with Bun from public npm; committed bun.lock pins it.",
+  "dependencies": {
+    "@undefineds.co/xpod": "0.4.34"
+  }
+}

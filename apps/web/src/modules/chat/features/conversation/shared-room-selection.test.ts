@@ -54,9 +54,10 @@ describe('conversation surface selection', () => {
     expect(sharedRoomReferenceForSelection({ id: 'local/index.ttl#this', metadata: null })).toBeNull()
   })
 
-  it('requires active authorization before the adapter can open the room', async () => {
+  it('opens the room for reading without Matrix authorization and asks for it only to send', async () => {
     const reference = sharedRoomReferenceForSelection(ROW)!
-    const openRuntime = vi.fn()
+    const send = vi.fn()
+    const openRuntime = vi.fn(async () => ({ reference, loadMessages: vi.fn(async () => []), send }))
     const conversation = createSharedRoomConversation({
       session: {} as any,
       reference,
@@ -64,8 +65,14 @@ describe('conversation surface selection', () => {
       openRuntime: openRuntime as any,
       pollIntervalMs: 0,
     })
-    await expect(conversation.load()).rejects.toThrow('群聊服务还没有授权')
-    expect(openRuntime).not.toHaveBeenCalled()
+    await expect(conversation.load()).resolves.toMatchObject({ items: [] })
+    expect(openRuntime).toHaveBeenCalledTimes(1)
+    const sending = conversation.run({
+      type: 'threads.add_user_message',
+      params: { thread_id: reference.threadIri, input: { content: [{ type: 'input_text', text: 'hi' }] } },
+    } as any)
+    await expect((async () => { for await (const _event of sending) { /* drain */ } })()).rejects.toThrow('群聊服务还没有授权')
+    expect(send).not.toHaveBeenCalled()
     conversation.dispose()
   })
 })

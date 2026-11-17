@@ -6,7 +6,7 @@ import { openSharedRoomRuntime, type SharedRoomRuntime } from '../../data/shared
 import type { SharedRoomReference } from '../../data/shared-room-reference'
 import { ownerMessageEntries, ownerThreadMetadata } from '../../data/shared-room-reference'
 
-/** No Matrix credential yet: the surface must show the authorization banner. */
+/** Sending needs a Matrix credential and there is none yet: show the authorization banner. */
 export class SharedRoomAuthorizationRequiredError extends Error {
   readonly code = 'shared_room_authorization_required'
   constructor() {
@@ -25,7 +25,10 @@ export interface SharedRoomLoaded {
  * Shared-room conversation adapter for the existing AG-UI surface.
  *
  * Owner messages are read from the owner's canonical thread through the
- * room-scoped DB; `run` sends through Bob's own Matrix service and yields the
+ * room-scoped DB with Bob's own WebID login, which the owner's room grant
+ * already allows; reading never needs the Matrix credential, so history stays
+ * readable after a reload. `run` sends through Bob's own Matrix service, the
+ * only step that needs that credential, and yields the
  * sent item. New owner messages are detected by ONE coalesced poll and
  * announced to the surface, which imports the loaded thread into assistant-ui.
  */
@@ -47,11 +50,6 @@ export interface SharedRoomConversation extends LocalConversationApi {
   dispose: () => void
 }
 
-function credentialScope(credential: MatrixInterfaceCredential | null): string {
-  return credential
-    ? [credential.webId, credential.accountOrigin, credential.origin, credential.podUrl, credential.apiKey].join('\n')
-    : ''
-}
 
 function itemText(item: ThreadItem): string {
   return item.type === 'user_message' || item.type === 'assistant_message'
@@ -82,24 +80,28 @@ export function createSharedRoomConversation(options: SharedRoomConversationOpti
   let lastSignature = ''
   const listeners = new Set<() => void>()
 
-  const currentCredential = (): MatrixInterfaceCredential => {
+  // The room DB reads with Bob's session, so it is keyed by the signed-in WebID.
+  const readerScope = (): string => session.info?.webId ?? ''
+
+  const sendCredential = (): MatrixInterfaceCredential => {
     const current = matrixAccess.get()
-    if (!current) throw new SharedRoomAuthorizationRequiredError()
-    return current
+    if (current) return current
+    const missing = new SharedRoomAuthorizationRequiredError()
+    options.onError?.(missing)
+    throw missing
   }
 
   const ensureRuntime = async (): Promise<SharedRoomRuntime> => {
     if (disposed) throw new Error('共享群聊已关闭。')
-    const credential = currentCredential()
-    const scope = credentialScope(credential)
+    const scope = readerScope()
     if (runtime && runtimeScope === scope) return runtime
     if (opening && openingScope === scope) return await opening
-    // Credential rotation/account switch invalidates the previous room DB.
+    // An account switch invalidates the previous room DB.
     runtime = null
     runtimeScope = ''
     cache = null
     openingScope = scope
-    opening = openRuntime({ reference, session, credential })
+    opening = openRuntime({ reference, session })
       .then((opened) => {
         if (disposed) throw new Error('共享群聊已关闭。')
         runtime = opened
@@ -128,13 +130,12 @@ export function createSharedRoomConversation(options: SharedRoomConversationOpti
     const active = await ensureRuntime()
     const rows = await active.loadMessages()
     const loaded = toLoaded(rows as Parameters<typeof ownerMessageEntries>[0])
-    const credential = currentCredential()
-    cache = { loaded, scope: credentialScope(credential), at: Date.now() }
+    cache = { loaded, scope: readerScope(), at: Date.now() }
     return loaded
   }
 
   const load = async (): Promise<SharedRoomLoaded> => {
-    const scope = credentialScope(matrixAccess.get())
+    const scope = readerScope()
     if (cache && cache.scope === scope && Date.now() - cache.at <= cacheTtlMs) return cache.loaded
     return await loadFresh()
   }
@@ -195,9 +196,10 @@ export function createSharedRoomConversation(options: SharedRoomConversationOpti
         : ''
       if (!text) return
       if (signal?.aborted) return
+      const credential = sendCredential()
       const active = await ensureRuntime()
       if (signal?.aborted) return
-      const sent = await active.send(text)
+      const sent = await active.send(text, credential)
       // A just-sent event has no RDF resource yet: its id stays the event id,
       // never a fabricated message IRI.
       const item: ThreadItem = {

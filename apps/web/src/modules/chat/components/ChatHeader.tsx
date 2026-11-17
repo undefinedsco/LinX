@@ -103,7 +103,7 @@ export function ChatHeader() {
 
   const { data: chats } = useChatList()
   const mutations = useChatMutations()
-  const { providers: configuredProviders } = useModelServices()
+  const { providers: configuredProviders, builtinDirectory: configuredBuiltinDirectory } = useModelServices()
 
   const chat = useMemo(
     () => chats?.find((c) => c.id === selectedChatId) ?? null,
@@ -440,6 +440,9 @@ export function ChatHeader() {
             </div>
             {draftProviderName ? (
               <p className="text-xs text-muted-foreground">来自：{draftProviderName}</p>
+            ) : null}
+            {configuredBuiltinDirectory.status === 'failed' ? (
+              <p className="text-xs text-destructive">内置模型暂时无法读取，仍可选择已连接的提供商模型。</p>
             ) : null}
             <div className="space-y-2">
               <Label htmlFor="chat-header-ai-runtime-location">在哪里运行</Label>

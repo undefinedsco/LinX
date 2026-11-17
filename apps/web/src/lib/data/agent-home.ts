@@ -1,4 +1,6 @@
 import {
+  UDFS,
+  agentResource,
   aiConfigModelRef,
   aiConfigProviderRef,
   getDefaultAIConfigCredentialId,
@@ -17,6 +19,13 @@ export interface EnsureAgentHomeInput {
   provider: string
   model: string
   instructions?: string
+  /**
+   * Creation time of the authoritative Agent row. The Agent Home `.meta` is
+   * server-managed metadata, so the Pod owns `dcterms:modified`; only the
+   * app-owned `dcterms:created` is supplied here, from the row that the caller
+   * already built. Omitted on reconciliation so no historical date is invented.
+   */
+  createdAt?: Date
 }
 
 export interface AgentHomeCreationReceipt {
@@ -104,7 +113,7 @@ async function readAgentMetadata(fetchFn: typeof fetch, metadataUrl: string): Pr
 
 function buildAgentSchemaTypeInsert(metadataUrl: string): string {
   const subjectRef = metadataUrl.endsWith('.meta') ? metadataUrl.slice(0, -'.meta'.length) : metadataUrl
-  return `INSERT DATA { <${subjectRef}> a <http://xmlns.com/foaf/0.1/Agent> . }`
+  return `INSERT DATA { <${subjectRef}> a <${agentResource.getRdfClass()}> . }`
 }
 
 async function deletePodResource(fetchFn: typeof fetch, resourceUrl: string): Promise<void> {
@@ -171,7 +180,12 @@ function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{
   ]
 }
 
-function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: string, podBaseUrl: string): string {
+function buildAgentMetaSparqlInsert(
+  input: EnsureAgentHomeInput,
+  metadataUrl: string,
+  podBaseUrl: string,
+  timestamps?: { createdAt: Date },
+): string {
   const providerId = input.provider
   const modelId = input.model
   const providerRef = aiConfigProviderRef(providerId)
@@ -180,25 +194,35 @@ function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: st
   const instructions = input.instructions?.trim()
   const subjectRef = metadataUrl.endsWith('.meta') ? metadataUrl.slice(0, -'.meta'.length) : metadataUrl
 
+  const predicates = [
+    `a <${agentResource.getRdfClass()}>, <${UDFS('AgentConfig')}>`,
+    `<${agentResource.name.getPredicate()}> ${toTurtleString(input.name)}`,
+    `<${UDFS('provider')}> <${providerRef}>`,
+    `<${UDFS('credential')}> <${credentialRef}>`,
+    `<${UDFS('model')}> <${modelRef}>`,
+    `<${UDFS('runtimeKind')}> "codex"`,
+    `<${UDFS('enabled')}> "true"`,
+    `<${UDFS('permissionMode')}> "acceptEdits"`,
+    `<${UDFS('maxTurns')}> 20`,
+  ]
+  if (instructions) {
+    predicates.push(`<${agentResource.instructions.getPredicate()}> ${toTurtleString(instructions)}`)
+  }
+  if (timestamps) {
+    // `agentResource` declares `dcterms:created` notNull, and the Pod itself
+    // sets `dcterms:modified` when it stores this .meta auxiliary resource.
+    // Only the app-owned creation timestamp is written here; sending the
+    // server-managed modified predicate would be rejected with HTTP 409.
+    predicates.push(`<${agentResource.createdAt.getPredicate()}> ${toTurtleDate(timestamps.createdAt)}`)
+  }
+
   return [
+    // Provider/model/credential refs are Pod-root-relative by shared-model
+    // contract, so the insert must declare the Pod root as BASE.
     `BASE <${podBaseUrl}>`,
-    'PREFIX udfs: <https://undefineds.co/ns#>',
-    'PREFIX foaf: <http://xmlns.com/foaf/0.1/>',
     '',
     'INSERT DATA {',
-    `<${subjectRef}>`,
-    '  a foaf:Agent, udfs:AgentConfig ;',
-    `  foaf:name ${toTurtleString(input.name)} ;`,
-    `  udfs:provider <${providerRef}> ;`,
-    `  udfs:credential <${credentialRef}> ;`,
-    `  udfs:model <${modelRef}> ;`,
-    '  udfs:runtimeKind "codex" ;',
-    '  udfs:enabled "true" ;',
-    '  udfs:permissionMode "acceptEdits" ;',
-    '  udfs:maxTurns 20' + (instructions ? ' ;' : ' .'),
-    ...(instructions ? [
-      `  udfs:systemMessage ${toTurtleString(instructions)} .`,
-    ] : []),
+    `<${subjectRef}> ${predicates.join(' ;\n  ')} .`,
     '}',
     '',
   ].join('\n')
@@ -217,15 +241,22 @@ function toTurtleDate(value: Date | string): string {
   return `${JSON.stringify(date.toISOString())}^^<http://www.w3.org/2001/XMLSchema#dateTime>`
 }
 
+// Predicates come from the shared `agentResource` schema so the Agent Home
+// adapter cannot drift from the authoritative RDF contract.
+//
+// `dcterms:modified` is deliberately absent. A `.meta` auxiliary resource is
+// server-managed metadata: Solid servers reject client writes to that predicate
+// (xpod/CSS answers HTTP 409) and set it to the server's own timestamp. The
+// canonical read path still returns it as `updatedAt`, so the app must not try
+// to own it. `dcterms:created` is app-owned and is written once at creation.
 const AGENT_UPDATE_PREDICATES: Partial<Record<keyof AgentRow, string>> = {
-  name: 'http://xmlns.com/foaf/0.1/name',
-  instructions: 'https://undefineds.co/ns#systemMessage',
-  provider: 'https://undefineds.co/ns#provider',
-  model: 'https://undefineds.co/ns#model',
-  tools: 'https://undefineds.co/ns#tools',
-  metadata: 'https://undefineds.co/ns#metadata',
-  avatarUrl: 'http://www.w3.org/2006/vcard/ns#hasPhoto',
-  updatedAt: 'http://purl.org/dc/terms/modified',
+  name: agentResource.name.getPredicate(),
+  instructions: agentResource.instructions.getPredicate(),
+  provider: agentResource.provider.getPredicate(),
+  model: agentResource.model.getPredicate(),
+  tools: agentResource.tools.getPredicate(),
+  metadata: agentResource.metadata.getPredicate(),
+  avatarUrl: agentResource.avatarUrl.getPredicate(),
 }
 
 function formatAgentUpdateValues(field: keyof AgentRow, value: unknown, provider: unknown): string[] {
@@ -233,7 +264,6 @@ function formatAgentUpdateValues(field: keyof AgentRow, value: unknown, provider
     return Array.isArray(value) ? value.map((entry) => toTurtleString(String(entry))) : []
   }
   if (field === 'metadata') return [toTurtleJson(value)]
-  if (field === 'updatedAt') return [toTurtleDate(value as Date | string)]
   if (field === 'avatarUrl') return [`<${String(value)}>`]
   if (field === 'provider') return [`<${aiConfigProviderRef(String(value))}>`]
   if (field === 'model') return [`<${aiConfigModelRef(String(provider ?? ''), String(value))}>`]
@@ -262,7 +292,7 @@ export async function updateAgentHomeMetadata(
   db: SolidDatabase,
   agentId: BaseRelativeResourceId,
   changes: Partial<Pick<AgentRow,
-    'name' | 'instructions' | 'provider' | 'model' | 'tools' | 'metadata' | 'avatarUrl' | 'updatedAt'
+    'name' | 'instructions' | 'provider' | 'model' | 'tools' | 'metadata' | 'avatarUrl'
   >>,
   previous: Partial<AgentRow> = {},
 ): Promise<void> {
@@ -272,7 +302,9 @@ export async function updateAgentHomeMetadata(
   const homeUrl = resolvePodPath(db, buildAgentHomePath(agentId))
   const metadataUrl = `${homeUrl}.meta`
   const entries = Object.entries(changes).filter(([field, value]) =>
-    value !== undefined && !agentFieldValuesEqual(value, previous[field as keyof AgentRow])
+    value !== undefined
+    && AGENT_UPDATE_PREDICATES[field as keyof AgentRow] !== undefined
+    && !agentFieldValuesEqual(value, previous[field as keyof AgentRow])
   )
   if (entries.length === 0) return
 
@@ -316,16 +348,29 @@ export async function createAgentHome(
   const homeUrl = resolvePodPath(db, homePath)
   const created = !await agentHomeExists(fetchFn, homeUrl)
   const rollback = createAgentHomeRollback(fetchFn, homeUrl, created)
-
+  // One app-owned creation timestamp. A caller that already owns the Agent row
+  // passes its createdAt; reconciliation of an existing document without one
+  // never invents a creation time. This boundary writes only `dcterms:created`.
+  const createdTimestamp = input.createdAt ?? (created ? new Date() : null)
+  const rowTimestamps = createdTimestamp ? { createdAt: createdTimestamp } : undefined
   try {
     for (const file of buildAgentHomeFiles(input)) {
       const fileUrl = resolvePodPath(db, `${homePath}${file.path}`)
       if (file.writeMode === 'patch-metadata') {
         const existingMetadata = created ? null : await readAgentMetadata(fetchFn, fileUrl)
-        if (existingMetadata?.includes('http://xmlns.com/foaf/0.1/Agent')) continue
-        const patch = existingMetadata?.includes('https://undefineds.co/ns#AgentConfig')
-          ? buildAgentSchemaTypeInsert(fileUrl)
-          : buildAgentMetaSparqlInsert(input, fileUrl, resolvePodPath(db, ''))
+        if (existingMetadata?.includes(agentResource.getRdfClass())) continue
+        if (existingMetadata?.includes('https://undefineds.co/ns#AgentConfig')) {
+          // Pre-existing AgentConfig metadata: only fill the missing RDF type.
+          // Its original timestamps are unknown, so none are fabricated here.
+          await patchPodMetadata(fetchFn, fileUrl, buildAgentSchemaTypeInsert(fileUrl))
+          continue
+        }
+        const patch = buildAgentMetaSparqlInsert(
+          input,
+          fileUrl,
+          resolvePodPath(db, ''),
+          rowTimestamps,
+        )
         await patchPodMetadata(fetchFn, fileUrl, patch)
         continue
       }

@@ -13,13 +13,115 @@ import { initializeLinxPodStorage } from '@/lib/data/pod-storage-bootstrap'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const XPOD_RUNTIME_MODULE_URL = pathToFileURL(
-  resolve(__dirname, '../../../../node_modules/@undefineds.co/xpod/dist/runtime/index.js'),
-).href
-const XPOD_LOCAL_PROVISIONING_SERVICE_MODULE_URL = pathToFileURL(
-  resolve(__dirname, '../../../../node_modules/@undefineds.co/xpod/dist/provision/LocalPodProvisioningService.js'),
-).href
+
 dotenv.config({ path: resolve(__dirname, '../../../../.env') })
+
+/**
+ * The self-boot harness loads the SDK from ONE committed private fixture install,
+ * never from the application's Yarn graph.
+ *
+ * LinX's own @undefineds.co/xpod dependency serves `apps/service` at runtime and
+ * `apps/desktop` packaging, and is resolved by Yarn 1. The harness needs a real
+ * published SDK to boot a Gateway for Pod tests, and that SDK is installed with
+ * Bun from public npm into tests/fixtures/xpod-sdk (see that package.json and
+ * its committed bun.lock). Both modules come from that single root, so a
+ * runtime/provisioning skew is structurally impossible.
+ *
+ * Everything here is LAZY. Importing this module must never require the fixture:
+ * the committed unit suite imports it, and that suite also has to run on a clean
+ * checkout with no Bun and no fixture. Only a real self-boot (or Pod
+ * provisioning) touches the filesystem, and only then may it fail.
+ *
+ * Prepare once with `yarn xpod:fixture` (or `bun install` inside the fixture).
+ * There is no fallback to the application's xpod copy.
+ */
+const XPOD_FIXTURE_ROOT = resolve(__dirname, '../../../../tests/fixtures/xpod-sdk')
+const XPOD_FIXTURE_PACKAGE_JSON = resolve(XPOD_FIXTURE_ROOT, 'package.json')
+
+/** The exact version the fixture manifest pins; the only version source. */
+function readFixtureDeclaredVersion(): string {
+  const raw = readFileSync(XPOD_FIXTURE_PACKAGE_JSON, 'utf-8')
+  const declared = (JSON.parse(raw) as { dependencies?: Record<string, string> })
+    .dependencies?.['@undefineds.co/xpod']
+  if (typeof declared !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(declared)) {
+    throw new Error(
+      `xpod SDK fixture must pin an exact @undefineds.co/xpod version in ${XPOD_FIXTURE_PACKAGE_JSON}`,
+    )
+  }
+  return declared
+}
+
+/**
+ * Absolute path to one module inside the fixture install, version-validated.
+ *
+ * Fails with an actionable message when the fixture is absent, and refuses to
+ * hand back bytes that do not match the manifest pin — a stale install after a
+ * fixture bump must not silently pair mismatched runtime and SDK.
+ */
+function xpodFixtureModulePath(relativePath: string): string {
+  const sdkRoot = resolve(XPOD_FIXTURE_ROOT, 'node_modules/@undefineds.co/xpod')
+  const absolute = resolve(sdkRoot, relativePath)
+  if (!existsSync(absolute)) {
+    throw new Error(
+      `xpod SDK fixture is not installed (missing ${relativePath}).\n` +
+      'Run `yarn xpod:fixture` from the repo root, which installs the exact ' +
+      'published @undefineds.co/xpod from tests/fixtures/xpod-sdk/package.json.',
+    )
+  }
+  const expected = readFixtureDeclaredVersion()
+  const installed = (JSON.parse(readFileSync(resolve(sdkRoot, 'package.json'), 'utf-8')) as {
+    version?: string
+  }).version
+  if (installed !== expected) {
+    throw new Error(
+      `xpod SDK fixture version mismatch: manifest pins ${expected}, installed ${String(installed)}.\n` +
+      'Run `yarn xpod:fixture` to reinstall the pinned version.',
+    )
+  }
+  return absolute
+}
+
+function xpodFixtureModuleUrl(relativePath: string): string {
+  return pathToFileURL(xpodFixtureModulePath(relativePath)).href
+}
+
+/**
+ * The published SDK's local storage runtime is a packaged native executable, not
+ * a JS fallback. The SDK resolves it from XPOD_QLEVER_LOCAL_RUNTIME_COMMAND and
+ * otherwise assumes the `/opt/xpod/...` deployment layout, which a normal npm
+ * install never has. Point it at the platform binary the fixture already
+ * unpacked, so the harness boots the REAL published runtime on a plain machine.
+ *
+ * Resolved at spawn time (never at module load) so the `.env` loaded above and a
+ * shell-exported value both take precedence, and so the platform package is
+ * required to match the pinned SDK version before it is used.
+ */
+function resolveFixtureNativeRuntimeCommand(): string | undefined {
+  const platformPackage = `@undefineds.co/xpod-${process.platform}-${process.arch}`
+  const packageRoot = resolve(XPOD_FIXTURE_ROOT, 'node_modules', platformPackage)
+  const candidate = resolve(packageRoot, 'qlever/bin/xpod_qlever_local_runtime')
+  if (!existsSync(candidate)) return undefined
+  try {
+    const expected = readFixtureDeclaredVersion()
+    const nativeVersion = (JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf-8')) as {
+      version?: string
+    }).version
+    if (nativeVersion !== expected) return undefined
+  } catch {
+    return undefined
+  }
+  return candidate
+}
+
+/**
+ * The command the self-boot child should use: an explicit operator value wins,
+ * otherwise the fixture's version-matched platform binary.
+ */
+export function resolveEffectiveNativeRuntimeCommand(
+  env: EnvLike = process.env,
+): string | undefined {
+  return env.XPOD_QLEVER_LOCAL_RUNTIME_COMMAND?.trim() || resolveFixtureNativeRuntimeCommand()
+}
 
 type AuthType = 'client_credentials' | 'oidc_oauth'
 type RequestedMode = 'local' | 'auth' | 'auto'
@@ -278,6 +380,9 @@ async function startLocalRuntimeProcess(options: {
   const readyPath = join(options.runtimeRoot, 'xpod-runtime-ready.json')
   const errorPath = join(options.runtimeRoot, 'xpod-runtime-error.log')
   const scriptPath = join(options.runtimeRoot, 'xpod-runtime-child.mjs')
+  // Resolved here (after dotenv, once per real self-boot) rather than at module
+  // load, so importing the module on a clean checkout never needs the fixture.
+  const nativeRuntimeCommand = resolveEffectiveNativeRuntimeCommand()
 
   const runtimeOptions = {
     mode: 'local',
@@ -288,6 +393,14 @@ async function startLocalRuntimeProcess(options: {
     cssPort: options.cssPort,
     apiPort: options.apiPort,
     logLevel: process.env.XPOD_TEST_LOG_LEVEL || 'error',
+    // Hermetic OIDC: pin the issuer to this loopback runtime. Xpod 0.4.34
+    // otherwise defaults an unconfigured local runtime to the external
+    // https://id.undefineds.co/ issuer and may then attempt first-run
+    // registration against production. options.env wins over the env file and
+    // is consulted before that default branch, so CSS keeps serving its own IdP.
+    env: {
+      SOLID_OIDC_ISSUER: options.baseUrl,
+    },
     shorthand: {
       seedConfig: options.seedConfigPath,
     },
@@ -295,7 +408,7 @@ async function startLocalRuntimeProcess(options: {
 
   const script = `
 import { appendFile, readFile, writeFile } from 'node:fs/promises'
-import { startXpodRuntime } from ${JSON.stringify(XPOD_RUNTIME_MODULE_URL)}
+import { startXpodRuntime } from ${JSON.stringify(xpodFixtureModuleUrl('dist/runtime/index.js'))}
 
 const options = JSON.parse(await readFile(process.env.XPOD_RUNTIME_OPTIONS_PATH, 'utf-8'))
 const errorPath = process.env.XPOD_RUNTIME_ERROR_PATH
@@ -341,6 +454,11 @@ try {
     stdio: ['ignore', 'ignore', 'pipe'],
     env: {
       ...process.env,
+      // Inherited only when the fixture actually shipped a native binary; an
+      // operator-set value is never overwritten.
+      ...(nativeRuntimeCommand
+        ? { XPOD_QLEVER_LOCAL_RUNTIME_COMMAND: nativeRuntimeCommand }
+        : {}),
       XPOD_RUNTIME_OPTIONS_PATH: optionsPath,
       XPOD_RUNTIME_READY_PATH: readyPath,
       XPOD_RUNTIME_ERROR_PATH: errorPath,
@@ -568,7 +686,7 @@ async function ensureLocalSeedPodMetadata(options: {
   podUrl: string
   webId: string
 }): Promise<void> {
-  const module = await import(XPOD_LOCAL_PROVISIONING_SERVICE_MODULE_URL) as {
+  const module = await import(xpodFixtureModuleUrl('dist/provision/LocalPodProvisioningService.js')) as {
     LocalPodProvisioningService: new (options: {
       baseUrl: string
       rootDir: string
