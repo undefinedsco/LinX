@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "postinstall": "patch-package && node scripts/normalize-drizzle-solid-install.mjs",
+    "xpod:fixture": "bun install --cwd tests/fixtures/xpod-sdk --frozen-lockfile",
     "dev:cli": "yarn workspace @undefineds.co/linx dev",
     "dev:web": "yarn workspace @linx/web dev",
     "dev:desktop": "yarn workspace @linx/desktop dev",
@@ -94,7 +95,6 @@
     "**/@radix-ui/react-dismissable-layer": "1.1.15",
     "**/drizzle-orm": "^0.45.2",
     "**/@undefineds.co/drizzle-solid": "0.3.27",
-    "**/@undefineds.co/models": "0.2.54",
     "**/@tiptap/core": "3.27.1",
     "**/@tiptap/extensions": "3.27.1",
     "**/@tiptap/pm": "3.27.1",

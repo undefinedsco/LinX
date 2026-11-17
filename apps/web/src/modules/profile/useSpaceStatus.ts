@@ -31,11 +31,26 @@ export function useSpaceStatus() {
     ))
     // "Still checking" and "could not read" are different: neither may claim
     // the AI is connected or missing.
-    const aiStatus: 'checking' | 'connected' | 'not-connected' | 'unknown' = databaseStatus !== 'ready' || modelServices.isLoading
+    //
+    // A deployment directory that is unsupported or failed is also NOT an empty
+    // directory: with no personal connection we cannot say the account has no
+    // AI, only that we do not know. Claiming 'not-connected' there is the exact
+    // false certainty the directory state exists to prevent.
+    //
+    // Order matters. A provider the account already connected is positive proof
+    // of AI, so it wins over an uncertain directory: the directory can only
+    // weaken a "nothing is available" conclusion, never a "something works" one.
+    const directory = modelServices.builtinDirectory
+    const directoryUnknown = directory.status === 'failed' || directory.status === 'unsupported'
+    const aiStatus: 'checking' | 'connected' | 'not-connected' | 'unknown' = databaseStatus !== 'ready'
+      || modelServices.isLoading
+      || directory.status === 'loading'
       ? 'checking'
       : modelServices.error
         ? 'unknown'
-        : connectedProviders.length > 0 ? 'connected' : 'not-connected'
+        : connectedProviders.length > 0
+          ? 'connected'
+          : directoryUnknown ? 'unknown' : 'not-connected'
     const aiConnected = aiStatus === 'connected' ? true : aiStatus === 'not-connected' ? false : null
     const spaceKind = resolveSpaceKind(storedAccount)
     // Only the desktop app runs a local service; elsewhere there is nothing to start.
@@ -56,5 +71,5 @@ export function useSpaceStatus() {
       localServiceRunning,
       attention: resolveSpaceAttention({ online, databaseStatus, aiConnected, localServiceRunning }),
     }
-  }, [databaseStatus, isDesktop, localLoading, localState, modelServices.error, modelServices.isLoading, modelServices.providers, online, storedAccount])
+  }, [databaseStatus, isDesktop, localLoading, localState, modelServices.builtinDirectory, modelServices.error, modelServices.isLoading, modelServices.providers, online, storedAccount])
 }

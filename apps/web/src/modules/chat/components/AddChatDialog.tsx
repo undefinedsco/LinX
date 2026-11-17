@@ -44,7 +44,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const { toast } = useToast()
 
   const agentProviders = CHAT_AGENT_PROVIDERS
-  const { providers: configuredProviders } = useModelServices()
+  const { providers: configuredProviders, builtinDirectory: configuredBuiltinDirectory } = useModelServices()
   const mutations = useChatMutations()
   const runtimeAvailable = isRuntimeSessionMode()
   const configuredModelOptions = useMemo<ModelOption[]>(() =>
@@ -278,6 +278,9 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
           models={configuredModelOptions.length > 0 ? configuredModelOptions : undefined}
           className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground"
         />
+        {configuredBuiltinDirectory.status === 'failed' ? (
+          <p className="text-xs text-destructive">内置模型暂时无法读取，仍可选择已连接的提供商模型。</p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
