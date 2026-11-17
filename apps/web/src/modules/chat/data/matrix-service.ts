@@ -12,6 +12,7 @@ import {
 } from '@linx/agent-runtime/matrix-client'
 import {
   chatResource,
+  getProtocolMetadata,
   threadResource,
   type ChatRow,
   type SolidDatabase,
@@ -244,8 +245,15 @@ export function readMatrixRoomId(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
     return null
   }
-  const value = (metadata as Record<string, unknown>).roomId
-  return typeof value === 'string' && value.length > 0 ? value : null
+  const record = metadata as Record<string, unknown>
+  // Xpod's canonical writer keeps protocol ids under metadata.protocols.<ns>;
+  // read that first so a room created by the backend is addressable here.
+  const canonical = getProtocolMetadata(record, 'matrix')?.roomId
+  if (typeof canonical === 'string' && canonical.length > 0) return canonical
+  // Compatibility boundary: rows written before protocol namespacing (and the
+  // contacts flow) still carry a flat roomId. Keep reading it, nothing else.
+  const legacy = record.roomId
+  return typeof legacy === 'string' && legacy.length > 0 ? legacy : null
 }
 
 export function readMatrixChatId(metadata: unknown): string | null {

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { matrixUserIdFromWebId, MatrixClientError } from '@linx/agent-runtime/matrix-client'
+import { withProtocolMetadata } from '@undefineds.co/models'
 import {
   createMatrixGroupRoom,
   createPodMatrixClient,
   formatMatrixErrorForUser,
   matrixServerNameFromUserId,
+  readMatrixRoomId,
   sendMatrixThreadMessage,
 } from './matrix-service'
 import {
@@ -186,6 +188,61 @@ describe('matrix transport authorization', () => {
       body: 'hello',
     })).rejects.toThrow('当前账号或空间已变化')
     expect(fetchImpl).not.toHaveBeenCalled()
+  })
+})
+
+// Xpod's canonical Matrix writer stores the room id under
+// metadata.protocols.matrix. roomId, not at the metadata root. The old reader saw
+// no room id, returned false from the ChatKit send hook, and Alice's message was
+// written into her local chat instead of the shared room Bob reads.
+describe('matrix room id from canonical server metadata', () => {
+  const canonicalMetadata = withProtocolMetadata(
+    { chat_id: 'matrix/index.ttl#this', protocol: 'matrix', surface_id: 'matrix-index' },
+    'matrix',
+    { roomId: '!canonical:pod.example' },
+  )
+
+  it('reads the namespaced room id the backend persists', () => {
+    expect(canonicalMetadata).not.toHaveProperty('roomId')
+    expect(readMatrixRoomId(canonicalMetadata)).toBe('!canonical:pod.example')
+  })
+
+  it('keeps reading a legacy flat room id for rows written before namespacing', () => {
+    expect(readMatrixRoomId({ chat_id: 'matrix/index.ttl#this', roomId: '!legacy:pod.example' }))
+      .toBe('!legacy:pod.example')
+  })
+
+  it('still refuses metadata with no usable room id', () => {
+    expect(readMatrixRoomId(null)).toBeNull()
+    expect(readMatrixRoomId({ chat_id: 'matrix/index.ttl#this' })).toBeNull()
+    expect(readMatrixRoomId({ protocols: { matrix: { roomId: '' } } })).toBeNull()
+  })
+
+  it('performs the Matrix send for a server-shaped thread instead of falling back to a local message', async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ event_id: '$canonical-event' }))
+    vi.stubGlobal('fetch', fetchImpl)
+    try {
+      const result = await sendMatrixThreadMessage({
+        db: database(),
+        access: accessWith(CREDENTIAL),
+        webId: WEB_ID,
+        thread: {
+          id: 'chat/matrix/index.ttl#thread',
+          metadata: canonicalMetadata,
+        },
+        body: 'Alice 原消息',
+      })
+
+      // The regression is the missing request: 0 calls meant no room send at all.
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+      expect(result).not.toBeNull()
+      const [request] = fetchImpl.mock.calls[0] as unknown as [Request]
+      expect(request.method).toBe('PUT')
+      expect(new URL(request.url).pathname)
+        .toContain('/_matrix/client/v3/rooms/!canonical%3Apod.example/send/m.room.message/')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 
