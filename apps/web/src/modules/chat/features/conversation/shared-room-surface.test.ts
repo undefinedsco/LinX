@@ -124,7 +124,7 @@ describe('shared room surface integration (network boundary faked)', () => {
       params: { thread_id: THREAD, input: { content: [{ type: 'input_text', text: 'Bob: on my way' }] } },
     })) events.push(event)
 
-    expect(send).toHaveBeenCalledWith('Bob: on my way')
+    expect(send).toHaveBeenCalledWith('Bob: on my way', expect.objectContaining({ apiKey: expect.any(String) }))
     expect(events.find((event) => event.type === 'thread.item.added').item.id).toBe('$bob-event')
     await vi.advanceTimersByTimeAsync(50)
     expect(surface.displayed).toContain('Alice: hello')
