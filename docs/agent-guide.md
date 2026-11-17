@@ -58,6 +58,7 @@ Modeling principles:
 Feature contracts:
 
 - `docs/cli-login-and-key-principles.md` — CLI 登录、provider key 获取、Pod AI config 存储与 backend runtime 消费边界
+- `docs/group-chat-service-access-spec.md` — 群聊服务授权（随建群授予房间级服务 WebID、可见可收回）、Matrix 接口用 Solid 登录调用与 xpod 安全要求
 - `docs/login-modal-local-binding-spec.md` — 桌面/Web 紧凑登录弹窗、记住账号、undefineds Cloud/Local 绑定与 Local provisionCode 分流契约
 - `docs/cli-status-line.md` — CLI TUI footer/statusline 的可配置 token、配置优先级和默认显示契约
 - `docs/approval-grant-design.md` — approval/grant 统一流水线、grant scope、auto 与 Secretary 授权边界
