@@ -58,20 +58,27 @@ vi.mock('@/providers/solid-database-provider', () => ({
 
 vi.mock('@undefineds.co/models', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@undefineds.co/models')>()
-  const mockResource = {
+  // Only `buildId` is stubbed. Everything else — field descriptors and their
+  // `getPredicate()` — must stay the REAL shared schema: production derives its
+  // RDF predicates from `agentResource.name.getPredicate()` (agent-home.ts), so
+  // replacing the whole resource with a buildId-only object breaks the contract
+  // the app actually depends on. Stubbing the schema here would hide a genuine
+  // drift instead of testing the favourite hooks.
+  const withStubbedBuildId = <T extends { buildId?: unknown }>(resource: T) => ({
+    ...resource,
     buildId: ({ id }: { id: string }) => id,
-  }
+  })
   return {
     ...actual,
-    chatResource: mockResource,
-    threadResource: mockResource,
-    workspaceResource: mockResource,
-    messageResource: mockResource,
-    agentResource: mockResource,
-    contactResource: mockResource,
-    credentialResource: mockResource,
-    solidProfileResource: mockResource,
-    favoriteResource: mockResource,
+    chatResource: withStubbedBuildId(actual.chatResource),
+    threadResource: withStubbedBuildId(actual.threadResource),
+    workspaceResource: withStubbedBuildId(actual.workspaceResource),
+    messageResource: withStubbedBuildId(actual.messageResource),
+    agentResource: withStubbedBuildId(actual.agentResource),
+    contactResource: withStubbedBuildId(actual.contactResource),
+    credentialResource: withStubbedBuildId(actual.credentialResource),
+    solidProfileResource: withStubbedBuildId(actual.solidProfileResource),
+    favoriteResource: withStubbedBuildId(actual.favoriteResource),
     eq: vi.fn(),
     getBuiltinProvider: vi.fn(),
   }
