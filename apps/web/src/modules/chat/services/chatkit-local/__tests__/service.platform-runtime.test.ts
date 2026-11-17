@@ -33,6 +33,15 @@ vi.mock('@undefineds.co/models', () => ({
   threadResource: mocked.threadResource,
   contactResource: mocked.contactResource,
   credentialResource: mocked.credentialResource,
+  // Same contract as the real models helper: protocol ids live under
+  // metadata.protocols.<namespace>.
+  getProtocolMetadata: (metadata: unknown, namespace: string) => {
+    if (!metadata || typeof metadata !== 'object') return undefined
+    const protocols = (metadata as Record<string, unknown>).protocols
+    if (!protocols || typeof protocols !== 'object') return undefined
+    const value = (protocols as Record<string, unknown>)[namespace]
+    return value && typeof value === 'object' ? value as Record<string, unknown> : undefined
+  },
   extractChatIdFromChatRef: (value?: string | null) => {
     if (!value) return null
     const direct = value.match(/^([^/]+)\/index\.ttl#this$/)
@@ -1264,6 +1273,65 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(body['co.undefineds.linx'].reconciler.latest.chat).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#this')
     expect(body['co.undefineds.linx'].reconciler.latest.thread).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#thread')
     expect(events.map((event) => event.type)).toEqual(['thread.item.added', 'thread.item.done'])
+  })
+
+  it('routes a server-shaped Matrix thread through the room send, not a local message', async () => {
+    const store = createMockStore()
+    // Exactly what Xpod persists for a Matrix room thread row: the room id is
+    // namespaced under metadata.protocols.matrix, with no top-level roomId.
+    store.loadThread.mockResolvedValue({
+      id: 'chat/matrix-room/index.ttl#thread',
+      status: { type: 'active' as const },
+      created_at: 1,
+      updated_at: 1,
+      metadata: {
+        chat_id: 'matrix-room/index.ttl#this',
+        protocol: 'matrix',
+        protocols: { matrix: { roomId: '!room:node-0000.undefineds.co' } },
+      },
+    })
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    }, 'https://node-0000.undefineds.co/alice/')
+    const matrixFetch = vi.fn(async () => new Response(JSON.stringify({
+      event_id: '$event:node-0000.undefineds.co',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', matrixFetch)
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+      authFetch: modelTraffic(vi.fn()) as any,
+      matrixAccess: {
+        get: () => ({
+          apiKey: 'sk-matrix-test',
+          webId: 'https://id.undefineds.co/alice/profile/card#me',
+          accountOrigin: 'https://id.undefineds.co',
+          origin: 'https://node-0000.undefineds.co',
+          podUrl: 'https://node-0000.undefineds.co/alice/',
+        }),
+        authorize: async () => {
+          throw new Error('not used')
+        },
+        release: async () => undefined,
+      },
+    })
+
+    await sendMessage(service)
+
+    // The defect was that this array stayed empty and the message was written
+    // locally instead, so the shared room never received it.
+    const matrixRequest = matrixFetch.mock.calls[0]?.[0] as Request
+    expect(matrixRequest).toBeInstanceOf(Request)
+    expect(matrixRequest.method).toBe('PUT')
+    expect(matrixRequest.url).toContain(
+      '/_matrix/client/v3/rooms/!room%3Anode-0000.undefineds.co/send/m.room.message/',
+    )
+    expect(store.addThreadItem).not.toHaveBeenCalled()
   })
 
   it('shows the Matrix server refusal without treating the login as expired', async () => {
