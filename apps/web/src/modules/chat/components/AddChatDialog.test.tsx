@@ -117,7 +117,7 @@ vi.mock('@/providers/solid-session-context', () => ({
 }))
 
 vi.mock('@/modules/model-services/data/use-model-services', () => ({
-  useModelServices: () => ({ providers: {} }),
+  useModelServices: () => ({ providers: {}, builtinDirectory: { status: 'ready', providers: [] } }),
 }))
 
 // The real add-friend form runs; only the Pod-facing operations are replaced.

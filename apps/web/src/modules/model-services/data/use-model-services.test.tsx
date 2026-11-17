@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import type { PropsWithChildren } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AiBuiltinProviderSummary } from '@undefineds.co/ai-connections/client'
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -28,87 +29,88 @@ vi.mock('@/providers/solid-database-provider', () => ({
   }),
 }))
 
-import { projectDeploymentBuiltin, useModelServices } from './use-model-services'
+import { projectBuiltinDirectory, useModelServices } from './use-model-services'
 
-const BUILTIN_ROWS = {
-  providers: [{
-    id: 'xpod-builtin',
-    name: 'Xpod',
-    status: 'available',
-    builtin: true,
-    readOnly: true,
-    offerings: [],
-    credentials: [],
-    selectedModels: [{ id: 'linx', provider: 'xpod-builtin', displayName: 'linx', protocols: ['chatCompletions', 'responses'] }],
-  }],
+/**
+ * The directory exactly as the published client parses it.
+ *
+ * Note what is absent: no advertisement header, no raw provider rows, no
+ * `builtin`/`readOnly` flags for LinX to re-inspect, and no deployment provider
+ * id for LinX to branch on. The client is the only authority that can produce
+ * this shape, so these tests describe the 0.1.7 contract rather than a payload.
+ */
+const BUILTIN_DIRECTORY: AiBuiltinProviderSummary[] = [{
+  id: 'xpod-builtin',
+  name: 'Xpod',
+  status: 'available',
   models: [
-    { id: 'linx', object: 'model', owned_by: 'xpod-builtin', display_name: 'linx', protocols: ['chatCompletions', 'responses'] },
-    { id: 'linx-lite', object: 'model', owned_by: 'xpod-builtin', display_name: 'linx-lite', protocols: ['chatCompletions'] },
+    { id: 'linx', displayName: 'linx' },
+    { id: 'linx-lite', displayName: 'linx-lite' },
   ],
-  builtinHeader: 'xpod-builtin',
+}]
+
+function personalProvider(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'custom',
+    name: 'Custom',
+    offerings: [],
+    credentials: [{
+      id: 'credential-1',
+      offeringId: 'custom',
+      authMode: 'apiKey',
+      enabled: true,
+      priority: 0,
+      health: 'healthy',
+      baseUrl: 'https://gateway.example',
+      version: 1,
+    }],
+    selectedModels: [{
+      id: 'gpt-test',
+      provider: 'custom',
+      displayName: 'GPT Test',
+      capabilities: ['chat'],
+    }],
+    status: 'available',
+    ...overrides,
+  }
 }
 
-describe('useModelServices', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.session.info = { webId: 'https://pod.example/profile/card#me', sessionId: 's-alice' }
-    mocks.session.fetch = mocks.fetch
-    mocks.createClient.mockReturnValue({
-      webId: 'https://pod.example/profile/card#me',
-      apiBase: 'https://pod.example/api/ai',
-      listProviders: vi.fn(async () => [{
-        id: 'custom',
-        name: 'Custom',
-        offerings: [],
-        credentials: [{
-          id: 'credential-1',
-          offeringId: 'custom',
-          authMode: 'apiKey',
-          enabled: true,
-          priority: 0,
-          health: 'healthy',
-          baseUrl: 'https://gateway.example',
-          version: 1,
-        }],
-        selectedModels: [{
-          id: 'gpt-test',
-          provider: 'custom',
-          displayName: 'GPT Test',
-          capabilities: ['chat'],
-        }],
-        status: 'available',
-      }]),
-      listModels: vi.fn(async () => []),
-    })
-  })
+function stubClient(overrides: {
+  listProviders?: () => Promise<unknown>
+  listModels?: () => Promise<unknown>
+  listBuiltinProviders?: (() => Promise<AiBuiltinProviderSummary[]>) | undefined
+} = {}) {
+  const client: Record<string, unknown> = {
+    webId: 'https://pod.example/profile/card#me',
+    apiBase: 'https://pod.example/api/ai',
+    listProviders: vi.fn(overrides.listProviders ?? (async () => [personalProvider()])),
+    listModels: vi.fn(overrides.listModels ?? (async () => [])),
+  }
+  // `undefined` models a client built without the optional capability at all.
+  if (overrides.listBuiltinProviders !== undefined) {
+    client.listBuiltinProviders = vi.fn(overrides.listBuiltinProviders)
+  }
+  mocks.createClient.mockReturnValue(client)
+  return client
+}
 
-  it('reads the Xpod catalog without mounting the management applet', async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrapper = ({ children }: PropsWithChildren) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
+function renderServices() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = ({ children }: PropsWithChildren) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
+  return renderHook(() => useModelServices(), { wrapper })
+}
 
-    const { result } = renderHook(() => useModelServices(), { wrapper })
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
-    expect(mocks.createClient).toHaveBeenCalledWith({
-      webId: 'https://pod.example/profile/card#me',
-      podBaseUrl: 'https://pod.example',
-      // The catalog load observes the same fetch; it is wrapped, not replaced.
-      authenticatedFetch: expect.any(Function),
-    })
-    expect(result.current.providers.custom).toMatchObject({
-      enabled: true,
-      baseUrl: 'https://gateway.example',
-      models: [{ id: 'gpt-test', name: 'GPT Test', capabilities: ['chat'] }],
-    })
-  })
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.session.info = { webId: 'https://pod.example/profile/card#me', sessionId: 's-alice' }
+  mocks.session.fetch = mocks.fetch
 })
 
-
-describe('deployment built-in projection', () => {
-  it('projects the advertised read-only builtin only through the platform identity', () => {
-    const provider = projectDeploymentBuiltin(BUILTIN_ROWS, {})
+describe('deployment builtin directory projection', () => {
+  it('offers the declared models under the platform identity, read-only and credential-free', () => {
+    const provider = projectBuiltinDirectory(BUILTIN_DIRECTORY, {})
     expect(provider).toMatchObject({
       id: 'undefineds',
       builtin: true,
@@ -119,149 +121,204 @@ describe('deployment built-in projection', () => {
         { id: 'linx-lite', name: 'linx-lite', enabled: true },
       ],
     })
-    // Never normalized into the personal provider vocabulary.
+    // The deployment's own id never leaks into the picker identity.
     expect(provider?.id).not.toBe('xpod-builtin')
+    // Read-only: nothing credential-shaped is projected.
     expect(provider?.credentialId).toBeUndefined()
+    expect(provider?.apiKey).toBeUndefined()
+    expect(provider?.baseUrl).toBeUndefined()
   })
 
-  it('does not show the builtin when the server omits it', () => {
-    expect(projectDeploymentBuiltin({ ...BUILTIN_ROWS, builtinHeader: null }, {})).toBeNull()
-    expect(projectDeploymentBuiltin({
-      ...BUILTIN_ROWS,
-      providers: [{ ...BUILTIN_ROWS.providers[0], readOnly: false }],
-    }, {})).toBeNull()
-    expect(projectDeploymentBuiltin({
-      ...BUILTIN_ROWS,
-      providers: [{ ...BUILTIN_ROWS.providers[0], builtin: false }],
-    }, {})).toBeNull()
-    expect(projectDeploymentBuiltin({ ...BUILTIN_ROWS, models: [] }, {})).toBeNull()
+  it('keeps every currently-available deployment and de-duplicates shared model ids', () => {
+    const directory: AiBuiltinProviderSummary[] = [
+      ...BUILTIN_DIRECTORY,
+      {
+        id: 'second-deployment',
+        name: 'Second',
+        status: 'available',
+        models: [{ id: 'linx' }, { id: 'other-model' }],
+      },
+    ]
+    const provider = projectBuiltinDirectory(directory, {})
+    expect(provider?.models.map((model) => model.id)).toEqual(['linx', 'linx-lite', 'other-model'])
   })
 
-  it('does not override existing personal providers', () => {
+  it('does not offer a directory the server no longer declares as available', () => {
+    for (const status of ['unconfigured', 'unavailable', 'attention'] as const) {
+      const provider = projectBuiltinDirectory([{ ...BUILTIN_DIRECTORY[0], status }], {})
+      expect(provider).toBeNull()
+    }
+  })
+
+  it('does not invent a builtin when the directory is empty', () => {
+    expect(projectBuiltinDirectory([], {})).toBeNull()
+    expect(projectBuiltinDirectory([{ ...BUILTIN_DIRECTORY[0], models: [] }], {})).toBeNull()
+  })
+
+  it('never overrides a personal provider that already owns the platform identity', () => {
     const existing = { undefineds: { id: 'undefineds' } } as any
-    expect(projectDeploymentBuiltin(BUILTIN_ROWS, existing)).toBeNull()
+    expect(projectBuiltinDirectory(BUILTIN_DIRECTORY, existing)).toBeNull()
   })
 })
 
-describe('useModelServices with an advertised deployment built-in', () => {
-  it('enables a fresh empty account from the raw server payloads without a second client', async () => {
-    const rawRequests: string[] = []
-    mocks.fetch.mockImplementation(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-      rawRequests.push(new URL(url).pathname)
-      if (new URL(url).pathname.endsWith('/api/ai/providers')) {
-        return new Response(JSON.stringify({ data: BUILTIN_ROWS.providers }), {
-          status: 200,
-          headers: { 'content-type': 'application/json', 'X-Xpod-Builtin-Providers': 'xpod-builtin' },
-        })
-      }
-      if (new URL(url).pathname.endsWith('/v1/models')) {
-        return new Response(JSON.stringify({ object: 'list', data: BUILTIN_ROWS.models }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      return new Response(JSON.stringify({ data: [] }), { status: 200 })
-    })
-    const realClient = await vi.importActual<typeof import('@undefineds.co/ai-connections/client')>(
-      '@undefineds.co/ai-connections/client',
-    )
-    // Real published client: it performs both GETs through the wrapped fetch
-    // and drops the builtin rows with its own strict parsers.
-    mocks.createClient.mockImplementation((options: { authenticatedFetch: typeof fetch }) => (
-      realClient.createAiConnectionsClient(options as any)
-    ))
+describe('useModelServices on the published builtin contract', () => {
+  it('reads the directory through listBuiltinProviders, not from the personal provider rows', async () => {
+    const client = stubClient({ listBuiltinProviders: async () => BUILTIN_DIRECTORY })
 
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrapper = ({ children }: PropsWithChildren) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
-    const { result } = renderHook(() => useModelServices(), { wrapper })
+    const { result } = renderServices()
     await waitFor(() => expect(result.current.isLoading).toBe(false))
-    expect(rawRequests.filter((path) => path.endsWith('/api/ai/providers'))).toHaveLength(1)
-    expect(rawRequests.filter((path) => path.endsWith('/v1/models'))).toHaveLength(1)
-    // Published parser dropped the rows, but the read-only projection restores
-    // them under the platform identity so a fresh account is connected.
+
+    // The hook must not wrap the client's fetch: the capability is the contract.
+    expect(mocks.createClient).toHaveBeenCalledWith({
+      webId: 'https://pod.example/profile/card#me',
+      podBaseUrl: 'https://pod.example',
+      authenticatedFetch: mocks.fetch,
+    })
+    expect(client.listBuiltinProviders).toHaveBeenCalledTimes(1)
+    expect(mocks.fetch).not.toHaveBeenCalled()
     expect(result.current.providers.undefineds).toMatchObject({
       id: 'undefineds',
       builtin: true,
       readOnly: true,
       enabled: true,
-      models: [{ id: 'linx' }, { id: 'linx-lite' }],
     })
-    expect(result.current.providers.undefineds?.credentialId).toBeUndefined()
+    expect(result.current.providers.undefineds?.models.map((model) => model.id))
+      .toEqual(['linx', 'linx-lite'])
+    // The deployment id is never a personal provider entry.
     expect(result.current.providers['xpod-builtin']).toBeUndefined()
+  })
+
+  it('keeps the directory visible when the personal provider read fails', async () => {
+    stubClient({
+      listProviders: async () => { throw new Error('AI Connection request failed (HTTP 404)') },
+      listBuiltinProviders: async () => BUILTIN_DIRECTORY,
+    })
+
+    const { result } = renderServices()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.providers.undefineds?.models.map((model) => model.id))
+      .toEqual(['linx', 'linx-lite'])
+    // Personal failures stay reported for personal operations.
+    expect(result.current.error).toBe('AI Connection request failed (HTTP 404)')
+  })
+
+  it('keeps the directory visible when the personal model read fails', async () => {
+    stubClient({
+      listModels: async () => { throw new Error('AI Connection request failed (HTTP 404)') },
+      listBuiltinProviders: async () => BUILTIN_DIRECTORY,
+    })
+
+    const { result } = renderServices()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.providers.undefineds).toBeDefined()
+    expect(result.current.error).not.toBeNull()
+  })
+
+  it('keeps personal providers when only the directory read fails, and reports it as failed', async () => {
+    stubClient({
+      listBuiltinProviders: async () => { throw new Error('AI Connection request failed (HTTP 503)') },
+    })
+
+    const { result } = renderServices()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.providers.custom).toMatchObject({ enabled: true })
+    expect(result.current.providers.undefineds).toBeUndefined()
+    // A failed read is NOT an empty directory, and is NOT a personal failure.
+    expect(result.current.builtinDirectory).toEqual({
+      status: 'failed',
+      message: 'AI Connection request failed (HTTP 503)',
+    })
+    // The personal catalog itself succeeded, so it reports no personal error.
+    expect(result.current.error).toBeNull()
+  })
+
+  it('treats a client without the capability as unsupported, not as an empty directory', async () => {
+    stubClient({ listBuiltinProviders: undefined })
+
+    const { result } = renderServices()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.providers.custom).toBeDefined()
+    expect(result.current.providers.undefineds).toBeUndefined()
+    expect(result.current.builtinDirectory).toEqual({ status: 'unsupported' })
+    expect(result.current.error).toBeNull()
   })
 })
 
-describe('builtin projection in existing UI consumers', () => {
-  it('offers linx/linx-lite in the model picker and reads as a connected provider', async () => {
-    const { buildChatModelOptions } = await import('@/modules/chat/components/ChatHeader')
-    const provider = projectDeploymentBuiltin(BUILTIN_ROWS, {})!
-    const options = buildChatModelOptions(
-      { [provider.id]: provider },
-      'undefineds',
-      'linx-lite',
-    )
-    expect(options.map((option) => option.id)).toEqual(['undefineds/linx', 'undefineds/linx-lite'])
-    // Read-only: no credential/account action data is projected.
-    expect(provider.readOnly).toBe(true)
-    expect(provider.builtin).toBe(true)
-    expect(provider.credentialId).toBeUndefined()
-    expect(provider.apiKey).toBeUndefined()
+describe('deployment directory states stay distinct', () => {
+  it('reports ready with an empty directory when the deployment declares none', async () => {
+    stubClient({ listBuiltinProviders: async () => [] })
+
+    const { result } = renderServices()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    // Distinct from both unsupported and failed: the read succeeded, there
+    // simply is no deployment directory.
+    expect(result.current.builtinDirectory).toEqual({ status: 'ready', providers: [] })
+    expect(result.current.providers.undefineds).toBeUndefined()
+    expect(result.current.error).toBeNull()
+  })
+
+  it('reports loading before the directory read settles', () => {
+    let release: (value: AiBuiltinProviderSummary[]) => void = () => {}
+    stubClient({
+      listBuiltinProviders: () => new Promise<AiBuiltinProviderSummary[]>((resolve) => { release = resolve }),
+    })
+
+    const { result } = renderServices()
+    // Nothing has settled yet: not unsupported, not failed, not empty.
+    expect(result.current.builtinDirectory).toEqual({ status: 'loading' })
+    release([])
+  })
+
+  it('gives unsupported, failed, ready-empty and loading four different observables', async () => {
+    const observe = async (listBuiltinProviders: (() => Promise<AiBuiltinProviderSummary[]>) | undefined) => {
+      stubClient({ listBuiltinProviders })
+      const { result, unmount } = renderServices()
+      await waitFor(() => expect(result.current.isLoading).toBe(false))
+      const state = result.current.builtinDirectory
+      unmount()
+      return state
+    }
+    const unsupported = await observe(undefined)
+    const failed = await observe(async () => { throw new Error('boom') })
+    const readyEmpty = await observe(async () => [])
+    const readyPopulated = await observe(async () => BUILTIN_DIRECTORY)
+
+    expect(unsupported).toEqual({ status: 'unsupported' })
+    expect(failed).toMatchObject({ status: 'failed' })
+    expect(readyEmpty).toEqual({ status: 'ready', providers: [] })
+    expect(readyPopulated).toMatchObject({ status: 'ready' })
+    // No two states are indistinguishable.
+    expect(new Set([
+      JSON.stringify(unsupported),
+      JSON.stringify(failed),
+      JSON.stringify(readyEmpty),
+      JSON.stringify(readyPopulated),
+    ]).size).toBe(4)
   })
 })
 
 describe('catalog isolation across login/service switches', () => {
-  function wrapperFor(queryClient: QueryClient) {
-    return ({ children }: PropsWithChildren) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
-  }
-
-  it('a delayed response from the previous Alice client cannot contaminate the current catalog', async () => {
-    const realClient = await vi.importActual<typeof import('@undefineds.co/ai-connections/client')>(
-      '@undefineds.co/ai-connections/client',
-    )
-    mocks.createClient.mockImplementation((options: { authenticatedFetch: typeof fetch }) => (
-      realClient.createAiConnectionsClient(options as any)
-    ))
+  it('a delayed directory from the previous client cannot contaminate the current catalog', async () => {
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-    const pathOf = (input: RequestInfo | URL) => new URL(
-      typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
-    ).pathname
-    const json = (body: unknown, headers: Record<string, string> = {}) => new Response(
-      JSON.stringify(body),
-      { status: 200, headers: { 'content-type': 'application/json', ...headers } },
-    )
 
-    // Alice's service advertises builtin provider `xpod-builtin`; her response
-    // is slow and lands while Bob's catalog is loading.
-    const aliceFetch = vi.fn(async (input: RequestInfo | URL) => {
-      await sleep(50)
-      if (pathOf(input).endsWith('/api/ai/providers')) {
-        return json({ data: BUILTIN_ROWS.providers }, { 'X-Xpod-Builtin-Providers': 'xpod-builtin' })
-      }
-      return json({ object: 'list', data: BUILTIN_ROWS.models })
-    })
-    // Bob's service is a different deployment: provider `xpod-builtin-b`.
-    // His providers answer early, his models late — so Alice's late response
-    // sits in the window and a shared mutable store would be contaminated
-    // exactly when Bob projects.
-    const bobModels = BUILTIN_ROWS.models.map((model) => ({ ...model, owned_by: 'xpod-builtin-b' }))
-    const bobFetch = vi.fn(async (input: RequestInfo | URL) => {
-      const path = pathOf(input)
-      if (path.endsWith('/api/ai/providers')) {
-        await sleep(10)
-        return json({
-          data: [{ ...BUILTIN_ROWS.providers[0], id: 'xpod-builtin-b' }],
-        }, { 'X-Xpod-Builtin-Providers': 'xpod-builtin-b' })
-      }
-      await sleep(120)
-      return json({ object: 'list', data: bobModels })
+    // Alice's deployment declares `linx-alice`; her read is slow.
+    const alice = stubClient({
+      listBuiltinProviders: async () => {
+        await sleep(60)
+        return [{
+          id: 'deployment-alice',
+          name: 'Alice Deployment',
+          status: 'available' as const,
+          models: [{ id: 'linx-alice' }],
+        }]
+      },
     })
 
-    mocks.session.fetch = aliceFetch
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const { result, rerender } = renderHook(() => useModelServices(), {
       wrapper: ({ children }: PropsWithChildren) => (
@@ -270,40 +327,44 @@ describe('catalog isolation across login/service switches', () => {
     })
     await sleep(5)
 
+    // Bob is a different account AND a different deployment; his directory is fast.
     mocks.session.info = { webId: 'https://ids.example/bob/profile/card#me', sessionId: 's-bob' }
-    mocks.session.fetch = bobFetch
+    const bob = stubClient({
+      listBuiltinProviders: async () => [{
+        id: 'deployment-bob',
+        name: 'Bob Deployment',
+        status: 'available' as const,
+        models: [{ id: 'linx-bob' }, { id: 'linx-bob-lite' }],
+      }],
+    })
     rerender()
 
     await waitFor(() => expect(result.current.providers.undefineds).toBeDefined(), { timeout: 3_000 })
-    // Bob's own deployment models are the ones offered.
     expect(result.current.providers.undefineds?.models.map((model) => model.id))
-      .toEqual(['linx', 'linx-lite'])
-    expect(result.current.providers.undefineds?.models.length).toBe(2)
-    // Let Alice's delayed response arrive too; Bob's catalog must not change.
-    await sleep(80)
-    expect(aliceFetch).toHaveBeenCalled()
-    expect(bobFetch).toHaveBeenCalled()
+      .toEqual(['linx-bob', 'linx-bob-lite'])
+
+    // Let Alice's delayed directory land; Bob's catalog must not change.
+    await sleep(90)
+    expect(alice.listBuiltinProviders).toHaveBeenCalled()
+    expect(bob.listBuiltinProviders).toHaveBeenCalled()
     expect(result.current.providers.undefineds?.models.map((model) => model.id))
-      .toEqual(['linx', 'linx-lite'])
-    expect(result.current.providers.undefineds?.models[0]?.name).toBe('linx')
-    expect(result.current.providers.undefineds?.models[1]?.name).toBe('linx-lite')
+      .toEqual(['linx-bob', 'linx-bob-lite'])
+    expect(result.current.providers.undefineds?.models.map((model) => model.id))
+      .not.toContain('linx-alice')
   })
+})
 
-  it('does not offer a builtin whose server row is unavailable, unconfigured, or disabled', () => {
-    for (const status of ['unavailable', 'unconfigured', 'attention'] as const) {
-      expect(projectDeploymentBuiltin({
-        ...BUILTIN_ROWS,
-        providers: [{ ...BUILTIN_ROWS.providers[0], status }],
-      }, {})).toBeNull()
-    }
-    expect(projectDeploymentBuiltin({
-      ...BUILTIN_ROWS,
-      providers: [{ ...BUILTIN_ROWS.providers[0], enabled: false }],
-    }, {})).toBeNull()
-  })
-
-  it('keeps the builtin when the server advertises it available and read-only', () => {
-    expect(projectDeploymentBuiltin(BUILTIN_ROWS, {})?.models.map((model) => model.id))
-      .toEqual(['linx', 'linx-lite'])
+describe('builtin directory in existing UI consumers', () => {
+  it('offers the deployment models in the model picker as a connected provider', async () => {
+    const { buildChatModelOptions } = await import('@/modules/chat/components/ChatHeader')
+    const provider = projectBuiltinDirectory(BUILTIN_DIRECTORY, {})!
+    const options = buildChatModelOptions(
+      { [provider.id]: provider },
+      'undefineds',
+      'linx-lite',
+    )
+    expect(options.map((option) => option.id)).toEqual(['undefineds/linx', 'undefineds/linx-lite'])
+    expect(provider.readOnly).toBe(true)
+    expect(provider.builtin).toBe(true)
   })
 })

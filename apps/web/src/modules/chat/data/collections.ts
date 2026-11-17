@@ -1232,11 +1232,15 @@ export function isLinxDefaultSecretaryBootstrapPending(): boolean {
 
 async function ensureDefaultSecretaryAgentHome(db: SolidDatabase): Promise<void> {
   try {
+    // Reuse the staged default Secretary Agent row creation time so its .meta
+    // graph matches the row the user sees (modified stays Pod-owned).
+    const stagedAgent = stagedDefaultSecretaryRows?.agent
     await ensureAgentHome(db, {
       agentId: LINX_DEFAULT_SECRETARY.agentId,
       name: LINX_DEFAULT_SECRETARY.title,
       provider: normalizeAIConfigProviderId(LINX_DEFAULT_SECRETARY.provider),
       model: normalizeAIConfigResourceId(LINX_DEFAULT_SECRETARY.model),
+      createdAt: stagedAgent?.createdAt,
     })
   } catch (error) {
     console.warn('[chatOps] Failed to prepare default Secretary Agent Home:', error)
@@ -1728,6 +1732,11 @@ export const chatOps = {
     }
 
     const providerInfo = getAgentProviderInfo(provider)
+    // creation boundary: the Agent Home .meta must carry the same app-owned
+    // dcterms:created value as the in-memory Agent row. dcterms:modified is
+    // owned by the Pod when it stores the .meta auxiliary resource.
+    const agentCreatedAt = new Date()
+    const agentUpdatedAt = agentCreatedAt
     const {
       agent,
       contact,
@@ -1741,6 +1750,8 @@ export const chatOps = {
       provider: normalizeAIConfigProviderId(provider),
       model: normalizeAIConfigResourceId(model),
       instructions: systemPrompt,
+      createdAt: agentCreatedAt,
+      updatedAt: agentUpdatedAt,
     })
     await ensureAgentHome(db, {
       agentId,
@@ -1748,6 +1759,7 @@ export const chatOps = {
       provider: normalizeAIConfigProviderId(provider),
       model: normalizeAIConfigResourceId(model),
       instructions: systemPrompt,
+      createdAt: agentCreatedAt,
     })
 
     const chatId = input.chatId?.trim() || crypto.randomUUID()

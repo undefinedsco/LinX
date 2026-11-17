@@ -144,7 +144,7 @@ vi.mock('@/components/ui/model-selector', () => ({
 }))
 
 vi.mock('@/modules/model-services/data/use-model-services', () => ({
-  useModelServices: () => ({ providers: {} }),
+  useModelServices: () => ({ providers: {}, builtinDirectory: { status: 'ready', providers: [] } }),
 }))
 
 vi.mock('./CreateGroupDialog', () => ({
