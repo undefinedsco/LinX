@@ -112,8 +112,9 @@ export function useLocalChatRuntime({
   }, [sharedReference])
   useEffect(() => {
     if (!sharedConversation) return
-    // Initial read also decides whether the authorization banner is needed: a
-    // missing/revoked credential must be actionable, not a silent empty room.
+    // Reading uses Bob's WebID login, so a missing Matrix credential never hides
+    // the history; the banner comes from a real permission failure here, or from
+    // a send without a credential.
     void sharedConversation.load().then((loaded) => {
       setThreadItems(loaded.items.map((entry) => entry.item))
       setMatrixAuthorizationRequired(false)

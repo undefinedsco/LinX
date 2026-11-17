@@ -1,100 +1,79 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
+  type AiBuiltinProviderSummary,
   type AiConnectionsClient,
   type AiConnectionsProvider,
   type AiGatewayModel,
   type AiProviderSummary,
   createAiConnectionsClient,
 } from '@undefineds.co/ai-connections/client'
+import type { BuiltinDirectoryState } from '@undefineds.co/ai-connections'
 import type { AIProvider } from '../domain/types'
 import { LINX_PLATFORM_PROVIDER_ID } from '@/lib/agent-providers'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { useSession } from '@/providers/solid-session-context'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 
-const BUILTIN_PROVIDERS_HEADER = 'x-xpod-builtin-providers'
-
-interface RawCatalogRows {
-  providers: unknown[] | null
-  models: unknown[] | null
-  builtinHeader: string | null
-}
-
 /**
- * One client plus the raw rows only that client's fetch closure writes.
- * Nothing is shared across sessions/service origins, so a late response from a
- * previous login can never overwrite the current advertisement.
+ * One client per (webId, pod) pair. Nothing is shared between sessions, so a
+ * response for a replaced client is never adopted.
  */
 interface CatalogLoad {
   client: AiConnectionsClient
-  rawRows: RawCatalogRows
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
- * Read-only deployment built-ins from the authoritative server advertisement.
+ * The deployment's own read-only AI directory, as the server declared it.
  *
- * Personal providers keep the published client's strict parsing; only rows the
- * server itself marks `builtin:true` + `readOnly:true` are projected, and only
- * when the response advertises them (header) — never a hardcoded "available".
- * They are mapped to the existing platform provider identity so inference keeps
- * using the platform runtime with bare `linx`/`linx-lite`, and they cannot be
- * edited or given credentials.
+ * The published client reads this through `listBuiltinProviders()`, which
+ * answers from `builtin:true` + `readOnly:true` rows on `/api/ai/providers`.
+ * That parser is the single authority for the deployment id, so LinX never
+ * inspects the payload, never reads an advertisement header and never carries a
+ * provider-id branch of its own.
+ *
+ * The directory is mapped onto the existing platform identity so chat keeps
+ * addressing the platform runtime with bare `linx`/`linx-lite`. Nothing here
+ * grants a credential, enables editing, or invents a provider the server did
+ * not declare.
  */
-export function projectDeploymentBuiltin(
-  rows: RawCatalogRows,
+export function projectBuiltinDirectory(
+  summaries: AiBuiltinProviderSummary[],
   existing: Record<string, AIProvider>,
 ): AIProvider | null {
-  const advertised = (rows.builtinHeader ?? '')
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-  const providers = (rows.providers ?? []).filter(isRecord)
-  const provider = providers.find((row) => (
-    typeof row.id === 'string'
-    && row.builtin === true
-    && row.readOnly === true
-    // The server's own state is authoritative: an unconfigured/disabled or
-    // non-available row is not offered, and nothing is assumed when absent.
-    && row.status === 'available'
-    && row.enabled !== false
-    && advertised.includes(row.id)
-  ))
-  if (!provider || typeof provider.id !== 'string') return null
   if (existing[LINX_PLATFORM_PROVIDER_ID]) return null
 
-  const models = (rows.models ?? [])
-    .filter(isRecord)
-    .filter((row) => (row.owned_by === provider.id || row.provider === provider.id))
-    .filter((row) => row.availability !== 'unavailable')
-    .flatMap((row) => {
-      const id = typeof row.id === 'string' ? row.id.trim() : ''
+  const models = summaries
+    .flatMap((summary) => (summary.status === 'available' ? summary.models : []))
+    .flatMap((model) => {
+      const id = typeof model.id === 'string' ? model.id.trim() : ''
       if (!id) return []
-      const protocols = Array.isArray(row.protocols)
-        ? row.protocols.filter((entry): entry is string => typeof entry === 'string')
-        : []
       return [{
         id,
-        name: (typeof row.display_name === 'string' && row.display_name) || id,
+        name: model.displayName?.trim() || id,
         enabled: true,
-        capabilities: protocols,
+        capabilities: [],
         isCustom: false,
       }]
     })
+    // Two deployments can declare the same model id; the first wins so the
+    // picker never shows a duplicate row for one model.
+    .filter((model, index, all) => all.findIndex((candidate) => candidate.id === model.id) === index)
   if (models.length === 0) return null
+
+  const advertisedName = summaries
+    .find((summary) => summary.status === 'available' && summary.models.length > 0)
+    ?.name
+    .trim()
 
   return {
     id: LINX_PLATFORM_PROVIDER_ID,
-    name: typeof provider.name === 'string' && provider.name.trim() ? provider.name.trim() : 'LinX',
+    name: advertisedName || 'LinX',
     description: '由当前站点提供的内置模型服务，只读',
     enabled: true,
     models,
     defaultModels: models.map((model) => model.id),
-    capabilities: [...new Set(models.flatMap((model) => model.capabilities))],
+    capabilities: [],
     builtin: true,
     readOnly: true,
   }
@@ -113,37 +92,17 @@ export function useModelServices() {
   const database = useSolidDatabase()
   const webId = session.info.webId
   const podBaseUrl = database.db ? resolveCurrentPodBaseUrl(database.db) : null
-  // Capture the raw payloads of the client's own catalog GETs (the published
-  // parser drops platform ids and unknown builtin providers). The state is
-  // created per client and captured by that client's fetch closure: there is
-  // no hook-wide mutable store, no extra request, no parallel client.
+  // The published client owns catalog parsing. LinX does not wrap its fetch,
+  // re-parse the payload, or read an advertisement header: `listBuiltinProviders`
+  // is the declared surface for the deployment's own directory.
   const catalog = useMemo<CatalogLoad | null>(() => {
     if (database.status !== 'ready' || !webId || !podBaseUrl) return null
-    const rawRows: RawCatalogRows = { providers: null, models: null, builtinHeader: null }
-    const authenticatedFetch: typeof session.fetch = async (input, init) => {
-      const response = await session.fetch(input, init)
-      const url = typeof input === 'string'
-        ? input
-        : input instanceof URL ? input.href : input.url
-      try {
-        const path = new URL(url).pathname
-        if (path.endsWith('/api/ai/providers')) {
-          const header = response.headers.get(BUILTIN_PROVIDERS_HEADER)
-          const payload = await response.clone().json() as { data?: unknown }
-          rawRows.builtinHeader = header
-          rawRows.providers = Array.isArray(payload?.data) ? payload.data : null
-        } else if (path.endsWith('/v1/models')) {
-          const payload = await response.clone().json() as { data?: unknown }
-          rawRows.models = Array.isArray(payload?.data) ? payload.data : null
-        }
-      } catch {
-        // A non-JSON/opaque response is not a catalog advertisement.
-      }
-      return response
-    }
     return {
-      client: createAiConnectionsClient({ webId, podBaseUrl, authenticatedFetch }),
-      rawRows,
+      client: createAiConnectionsClient({
+        webId,
+        podBaseUrl,
+        authenticatedFetch: session.fetch,
+      }),
     }
   }, [database.status, podBaseUrl, session.fetch, webId])
 
@@ -159,31 +118,105 @@ export function useModelServices() {
     enabled: Boolean(catalog),
     staleTime: 30_000,
     queryFn: async () => {
-      if (!catalog) return { providers: [], models: [] }
-      const [providers, models] = await Promise.all([
-        catalog.client.listProviders(),
-        catalog.client.listModels(),
+      if (!catalog) {
+        return {
+          providers: [],
+          models: [],
+          builtinDirectory: { status: 'loading' } as BuiltinDirectoryState,
+          personalError: null,
+        }
+      }
+      const { client } = catalog
+      // The personal catalog and the deployment directory are independent reads:
+      // whichever one fails, the other still describes what it owns. The builtin
+      // directory is never derived from the personal provider list, so a failing
+      // Pod read cannot erase a directory the caller never had to read the Pod for.
+      //
+      // `listBuiltinProviders` is an optional capability. The method is captured
+      // and invoked with the client as receiver, exactly as the shared panel
+      // does, so an absent method declares the absence and an older client is not
+      // mistaken for a deployment that serves no built-ins.
+      const readBuiltin = client.listBuiltinProviders
+      const builtinPromise: Promise<AiBuiltinProviderSummary[]> = readBuiltin
+        ? readBuiltin.call(client)
+        : Promise.resolve([])
+
+      const [providersResult, modelsResult, builtinResult] = await Promise.allSettled([
+        client.listProviders(),
+        client.listModels(),
+        builtinPromise,
       ])
+
+      const providers = providersResult.status === 'fulfilled' ? providersResult.value : []
+      const models = modelsResult.status === 'fulfilled' ? modelsResult.value : []
+      const failure = [providersResult, modelsResult]
+        .find((result): result is PromiseRejectedResult => result.status === 'rejected')
+
+      // A failed directory read is reported as failed, never as an empty one.
+      // The four states mirror the shared panel so every LinX consumer can tell
+      // "the deployment has no built-ins" apart from "the read did not succeed".
+      const builtinDirectory: BuiltinDirectoryState = !readBuiltin
+        ? { status: 'unsupported' }
+        : builtinResult.status === 'fulfilled'
+          ? { status: 'ready', providers: builtinResult.value }
+          : { status: 'failed', message: errorMessage(builtinResult.reason) }
+
       return {
         providers,
         models,
-        builtin: projectDeploymentBuiltin(catalog.rawRows, projectCatalog(providers, models)),
+        builtinDirectory,
+        personalError: failure ? errorMessage(failure.reason) : null,
       }
     },
   })
 
   const providers = useMemo(() => {
     const projected = projectCatalog(query.data?.providers ?? [], query.data?.models ?? [])
-    const builtin = query.data?.builtin
+    const directory = query.data?.builtinDirectory
+    const builtin = directory?.status === 'ready'
+      ? projectBuiltinDirectory(directory.providers, projected)
+      : null
     return builtin ? { ...projected, [builtin.id]: builtin } : projected
   }, [query.data])
 
   return {
     providers,
-    error: query.error instanceof Error ? query.error.message : null,
+    // Personal connection failures stay visible for personal operations, while
+    // the deployment built-in remains usable.
+    error: query.error instanceof Error
+      ? query.error.message
+      : query.data?.personalError ?? null,
+    /**
+     * The deployment directory, distinct from the personal catalog on purpose.
+     *
+     * `unsupported`/`failed`/`ready`-empty are three different facts, and
+     * consumers that only look at `providers` cannot tell them apart. Reporting
+     * `loading` while the query is pending keeps a slow read from reading as a
+     * settled failure.
+     */
+    builtinDirectory: resolveBuiltinDirectory(query.data?.builtinDirectory, query.error),
     isLoading: query.isLoading,
     refresh: query.refetch,
   }
+}
+
+/**
+ * The settled directory state, or `loading` while nothing has settled yet.
+ *
+ * A query-level failure is a failed directory read. It is never folded into the
+ * personal `error` above, because that string drives personal operations.
+ */
+function resolveBuiltinDirectory(
+  settled: BuiltinDirectoryState | undefined,
+  queryError: unknown,
+): BuiltinDirectoryState {
+  if (settled) return settled
+  if (queryError instanceof Error) return { status: 'failed', message: queryError.message }
+  return { status: 'loading' }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function projectCatalog(

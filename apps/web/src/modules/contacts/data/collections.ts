@@ -314,6 +314,10 @@ export const contactOps = {
 
     const compensations: Array<() => Promise<void>> = []
     const agentId = agentResourceId(crypto.randomUUID())
+    // One creation timestamp for the authoritative Agent row, shared with the
+    // Agent Home .meta graph. dcterms:modified stays Pod-owned on .meta.
+    const agentCreatedAt = new Date()
+    const agentUpdatedAt = agentCreatedAt
     try {
       const agentHome = await createAgentHome(db, {
         agentId,
@@ -321,6 +325,7 @@ export const contactOps = {
         provider,
         model,
         instructions,
+        createdAt: agentCreatedAt,
       })
       compensations.push(agentHome.rollback)
 
@@ -330,6 +335,8 @@ export const contactOps = {
         provider,
         model,
         instructions,
+        createdAt: agentCreatedAt,
+        updatedAt: agentUpdatedAt,
       })
       compensations.push(deletePersistedContact(contactId))
 

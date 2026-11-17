@@ -75,6 +75,7 @@ vi.mock('@/components/ui/model-selector', () => ({
 
 vi.mock('@/modules/model-services/data/use-model-services', () => ({
   useModelServices: () => ({
+    builtinDirectory: { status: 'ready', providers: [] },
     providers: {
       undefineds: {
         id: 'undefineds',

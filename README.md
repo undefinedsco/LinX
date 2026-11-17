@@ -156,6 +156,18 @@ yarn workspace @linx/web build
 yarn test
 ```
 
+需要真实自举 Pod 的集成测试（`*.integration.test.ts` 中启动本地 xpod 的用例）额外依赖一个
+独立安装的官方 SDK 夹具，不读取应用自身的 Yarn 依赖树：
+
+```bash
+# 一次性准备（需要 Bun）；之后可重复运行
+yarn xpod:fixture
+```
+
+未安装该夹具时，普通单元测试（包括 `xpod-integration-config`）照常通过；只有真正启动
+自举网关的集成用例会以明确的 `Run \`yarn xpod:fixture\`` 提示失败，不会回退到应用的
+xpod 版本。应用本身的依赖安装（`yarn install`）不受影响。
+
 ## 工作区结构
 
 - `apps/web`：主 React/Vite 应用

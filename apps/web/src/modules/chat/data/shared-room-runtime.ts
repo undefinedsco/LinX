@@ -1,7 +1,7 @@
 import type { SolidDatabase } from '@undefineds.co/models'
 import type { Session } from '@inrupt/solid-client-authn-browser'
 import { createLinxSolidDatabase } from '@/lib/data/linx-solid-database'
-import type { MatrixInterfaceAccess } from '@/lib/matrix/pod-interface-access'
+import type { MatrixInterfaceCredential } from '@/lib/matrix/pod-interface-access'
 import { sharedRoomIndexFromChat } from './shared-room-index'
 import {
   readOwnerRoomMessages,
@@ -15,13 +15,14 @@ import {
  *
  * The reference in Bob's local Pod names the owner's canonical chat/thread.
  * Reads go through a room-scoped DB built on Bob's authenticated session with
- * the published ORM per-DB endpoint; writes go through Bob's own Matrix
- * service. Bob's normal collections stay on his own Pod.
+ * the published ORM per-DB endpoint, so reading needs only Bob's WebID login.
+ * Writes go through Bob's own Matrix service and take his Matrix credential at
+ * send time. Bob's normal collections stay on his own Pod.
  */
 export interface SharedRoomRuntime {
   reference: SharedRoomReference
   loadMessages: () => Promise<unknown[]>
-  send: (body: string) => Promise<{ roomId: string; eventId: string }>
+  send: (body: string, credential: MatrixInterfaceCredential) => Promise<{ roomId: string; eventId: string }>
 }
 
 export function sharedRoomReferenceFromChatRow(chat: {
@@ -53,7 +54,6 @@ export function sharedRoomReferenceFromChatRow(chat: {
 export async function openSharedRoomRuntime(input: {
   reference: SharedRoomReference
   session: Session
-  credential: NonNullable<ReturnType<MatrixInterfaceAccess['get']>>
   createDatabase?: typeof createLinxSolidDatabase
   fetchImpl?: typeof fetch
 }): Promise<SharedRoomRuntime> {
@@ -67,8 +67,8 @@ export async function openSharedRoomRuntime(input: {
   return {
     reference: input.reference,
     loadMessages: async () => await readOwnerRoomMessages({ roomDb, reference: input.reference }),
-    send: async (body) => await sendSharedRoomMessage({
-      credential: input.credential,
+    send: async (body, credential) => await sendSharedRoomMessage({
+      credential,
       reference: input.reference,
       body,
       ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),

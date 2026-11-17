@@ -107,7 +107,7 @@ vi.mock('@/components/ui/use-toast', () => ({
 }))
 
 vi.mock('@/modules/model-services/data/use-model-services', () => ({
-  useModelServices: () => ({ providers: {} }),
+  useModelServices: () => ({ providers: {}, builtinDirectory: { status: 'ready', providers: [] } }),
 }))
 
 vi.mock('@/lib/data/use-entity', () => ({

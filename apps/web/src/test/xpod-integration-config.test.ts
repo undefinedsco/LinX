@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   readUnifiedCredentialsFromSolidHome,
+  resolveEffectiveNativeRuntimeCommand,
   resolveExternalAuthConfigFromEnv,
   resolveSeedAccount,
 } from './xpod-integration'
@@ -54,5 +55,19 @@ describe('xpod integration smoke auth config', () => {
       password: 'seed-password',
       podName: 'seed-pod',
     })
+  })
+
+  // The committed unit suite imports the harness module; that import must never
+  // require the Bun-installed SDK fixture. Reaching this assertion at all proves
+  // module evaluation stayed lazy, and the pure helpers below stay filesystem-free.
+  it('imports the harness without requiring the self-boot SDK fixture', () => {
+    expect(typeof resolveExternalAuthConfigFromEnv).toBe('function')
+    expect(typeof resolveSeedAccount).toBe('function')
+  })
+
+  it('lets an explicit operator native runtime command win over the fixture', () => {
+    expect(resolveEffectiveNativeRuntimeCommand({
+      XPOD_QLEVER_LOCAL_RUNTIME_COMMAND: '/operator/own/qlever',
+    })).toBe('/operator/own/qlever')
   })
 })

@@ -22,6 +22,14 @@ export interface CreateAgentContactRecordsInput {
   provider: string
   model: string
   instructions?: string
+  /**
+   * Authoritative Agent row timestamps captured once at the creation boundary.
+   * `createdAt` is also the value serialized into the Agent Home `.meta`; the
+   * Pod owns `dcterms:modified` on auxiliary metadata, so `updatedAt` stays an
+   * in-memory row value only.
+   */
+  createdAt?: Date
+  updatedAt?: Date
 }
 
 export interface EnsureAgentContactRecordsInput {
@@ -78,7 +86,10 @@ export async function createAgentContactRecords(
   contactUri: string
 }> {
   const agentId = agentResourceId(input.agentId?.trim() || crypto.randomUUID())
-  const now = new Date()
+  // One creation timestamp for the authoritative Agent row. Agent Home
+  // serialization reuses this value rather than inventing its own.
+  const createdAt = input.createdAt ?? new Date()
+  const updatedAt = input.updatedAt ?? createdAt
   const agentUri = db.resolveRowIri(agentResource as any, { id: agentId })
   const agent = {
     id: agentId,
@@ -87,8 +98,8 @@ export async function createAgentContactRecords(
     provider: input.provider,
     model: input.model,
     instructions: input.instructions || undefined,
-    createdAt: now,
-    updatedAt: now,
+    createdAt,
+    updatedAt,
   } as AgentRow
   if (!agentUri) {
     throw new Error('Failed to resolve Agent resource IRI.')
@@ -107,9 +118,9 @@ export async function createAgentContactRecords(
     contactType: ContactType.AGENT,
     isPublic: false,
   })
+  // Preserve the canonical resource id returned by the repository.
   const contact = {
     ...createdContact,
-    id: contactId,
     '@id': contactUri,
     about: agentUri,
   } as ContactRow
@@ -227,7 +238,6 @@ export async function createSolidContactRecord(
   })
   const contact = {
     ...createdContact,
-    id: contactId,
     '@id': contactUri,
     about: input.webId,
   } as ContactRow
@@ -263,7 +273,6 @@ export async function createGroupContactRecord(
   })
   const contact = {
     ...createdContact,
-    id: contactId,
     '@id': contactUri,
     about: input.about,
   } as ContactRow
