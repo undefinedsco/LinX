@@ -1,4 +1,10 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test'
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+  type Response as PlaywrightResponse,
+} from '@playwright/test'
 import { fillCustomLoginProvider, getLoginDialog } from '../helpers/login-ui'
 import { authorizeSeededRuntime, signInToSeededRuntime, waitForSolidDbReady, type ProviderAccount } from '../helpers/seeded-auth-flow'
 import { expectSecretaryVisible } from '../helpers/secretary-bootstrap'
@@ -230,25 +236,90 @@ async function sendInSharedGroupAfterReload(page: Page, body: string): Promise<v
   const input = page.getByRole('textbox', { name: '消息' })
   await expect(input).toBeVisible({ timeout: 30_000 })
   await input.fill(body)
+  // After a reload there is no in-memory credential, so this first attempt may
+  // legitimately stop at 授权并继续 without ever reaching the room. Its ACK is
+  // therefore optional; the send AFTER the explicit gesture must be acknowledged.
+  const firstAttempt = registerSendAck(page, body)
   await input.press('Enter')
   const reauthorize = page.getByRole('button', { name: '授权并继续', exact: true })
-  if (await reauthorize.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true, () => false)) {
+  const needsAuthorization = await reauthorize
+    .waitFor({ state: 'visible', timeout: 10_000 }).then(() => true, () => false)
+  if (needsAuthorization) {
+    // Not a send failure: the person must grant the credential, then resend.
     await reauthorize.click()
     await page.getByRole('group', { name: '群聊授权', exact: true })
       .waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined)
     await completeNativeMatrixGrant(page)
     await expect(reauthorize).toHaveCount(0, { timeout: 30_000 })
     await input.fill(body)
+    const resendAck = registerSendAck(page, body)
     await input.press('Enter')
+    await requireSendAck(await resendAck)
+    // The pre-gesture attempt is allowed to have observed nothing.
+    void firstAttempt
+  } else {
+    await requireSendAck(await firstAttempt)
   }
   await expect(page.locator('[data-role="user"]').filter({ hasText: body })).toBeVisible({ timeout: 60_000 })
+}
+
+// The Matrix send is a PUT to /_matrix/client/v3/rooms/<id>/send/m.room.message/<txn>.
+// The user row in Alice's own thread is optimistic and is NOT evidence that the
+// room accepted the message, so the acceptance also requires this response.
+const MATRIX_SEND_PATH = /\/_matrix\/client\/v3\/rooms\/[^/]+\/send\/m\.room\.message\/[^/]+$/
+
+function isCurrentMessageSend(response: PlaywrightResponse, body: string): boolean {
+  const request = response.request()
+  if (request.method() !== 'PUT') return false
+  try {
+    if (!MATRIX_SEND_PATH.test(new URL(request.url()).pathname)) return false
+    // Destructured read-only access: this file must never use a request-body
+    // mutator, which the RC contract test enforces.
+    const { postDataJSON } = request
+    const payload = postDataJSON.call(request) as { body?: unknown } | null
+    return Boolean(payload && typeof payload === 'object' && payload.body === body)
+  } catch {
+    return false
+  }
+}
+
+/** Match only this attempt's own send; never a historical one for the same text. */
+function registerSendAck(page: Page, body: string): Promise<PlaywrightResponse | null> {
+  return page
+    .waitForResponse((response) => isCurrentMessageSend(response, body), { timeout: 60_000 })
+    .catch(() => null)
+}
+
+/**
+ * Require a real room acknowledgement. Only the status and the contract's own
+ * errcode/event_id presence are ever reported: no headers, bodies or tokens.
+ */
+async function requireSendAck(response: PlaywrightResponse | null): Promise<void> {
+  if (!response) {
+    throw new Error('shared-group acceptance: no Matrix room send was observed for the current message')
+  }
+  const status = response.status()
+  let payload: { event_id?: unknown; errcode?: unknown } = {}
+  try {
+    payload = await response.json() as { event_id?: unknown; errcode?: unknown }
+  } catch {
+    // A non-JSON body is reported only as "no event id".
+  }
+  const eventId = typeof payload.event_id === 'string' ? payload.event_id : ''
+  if (status !== 200 || !eventId) {
+    const errcode = typeof payload.errcode === 'string' ? payload.errcode : 'none'
+    throw new Error(`shared-group acceptance: Matrix room send was not acknowledged (status ${status}, errcode ${errcode}, event_id present ${eventId.length > 0})`)
+  }
 }
 
 async function sendInSelectedChat(page: Page, body: string): Promise<void> {
   const input = page.getByRole('textbox', { name: '消息' })
   await expect(input).toBeVisible({ timeout: 30_000 })
   await input.fill(body)
+  // Registered before Enter so a fast response cannot be missed.
+  const ack = registerSendAck(page, body)
   await input.press('Enter')
+  await requireSendAck(await ack)
   await expect(page.locator('[data-role="user"]').filter({ hasText: body })).toBeVisible({ timeout: 60_000 })
 }
 
